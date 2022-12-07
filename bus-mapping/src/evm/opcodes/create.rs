@@ -192,13 +192,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
-        if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
-            // 1. Create with empty initcode.
-            state.handle_return(geth_step)?;
-            Ok(vec![exec_step])
-        } else {
-            // 2. Create with non-empty initcode.
-            Ok(vec![exec_step])
-        }
+        Ok(vec![exec_step])
     }
 }

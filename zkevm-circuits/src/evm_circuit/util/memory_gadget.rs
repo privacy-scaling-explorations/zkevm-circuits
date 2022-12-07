@@ -95,6 +95,12 @@ impl<F: Field> MemoryAddressGadget<F> {
         }
     }
 
+    pub(crate) fn construct_2(cb: &mut ConstraintBuilder<F>) -> Self {
+        let offset = cb.query_cell();
+        let length = cb.query_rlc();
+        Self::construct(cb, offset, length)
+    }
+
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,

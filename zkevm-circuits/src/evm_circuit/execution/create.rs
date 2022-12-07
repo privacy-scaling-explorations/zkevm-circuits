@@ -37,8 +37,8 @@ pub(crate) struct CreateGadget<F> {
     opcode: Cell<F>,
     is_create2: Cell<F>,
 
-    initialization_code_start: Word<F>,
-    initialization_code_length: Word<F>,
+    // initialization_code_start: Word<F>,
+    // initialization_code_length: Word<F>,
     value: Word<F>,
     salt: Word<F>,
     new_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
@@ -54,6 +54,9 @@ pub(crate) struct CreateGadget<F> {
     callee_reversion_info: ReversionInfo<F>,
 
     transfer: TransferGadget<F>,
+
+    initialization_code: MemoryAddressGadget<F>,
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -103,11 +106,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         );
 
-        let [value, initialization_code_start, initialization_code_length] = [(); 3].map(|_| {
-            let cell = cb.query_word();
-            cb.stack_pop(cell.expr());
-            cell
-        });
+        let value = cb.query_word();
+        cb.stack_pop(value.expr());
+
+        let initialization_code = MemoryAddressGadget::construct_2(cb);
+        cb.stack_pop(initialization_code.offset());
+        cb.stack_pop(initialization_code.length());
+
         let salt = cb.condition(is_create2.expr(), |cb| {
             let salt = cb.query_word();
             cb.stack_pop(salt.expr());
@@ -157,6 +162,37 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             value.clone(),
             &mut callee_reversion_info,
         );
+
+        let memory_expansion =
+            MemoryExpansionGadget::construct(cb, [initialization_code.address()]);
+
+        let stack_pointer_delta = 2.expr() + is_create2.expr();
+        // let gas_cost =
+        // let callee_gas_left =
+        for (field_tag, value) in [
+            (
+                CallContextFieldTag::ProgramCounter,
+                cb.curr.state.program_counter.expr() + 1.expr(),
+            ),
+            (
+                CallContextFieldTag::StackPointer,
+                cb.curr.state.stack_pointer.expr() + stack_pointer_delta,
+            ),
+            // (
+            //     CallContextFieldTag::GasLeft,
+            //     cb.curr.state.gas_left.expr() - gas_cost - callee_gas_left.clone(),
+            // ),
+            // (
+            //     CallContextFieldTag::MemorySize,
+            //     memory_expansion.next_memory_word_size(),
+            // ),
+            // (
+            //     CallContextFieldTag::ReversibleWriteCounter,
+            //     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
+            // ),
+        ] {
+            cb.call_context_lookup(true.expr(), None, field_tag, value);
+        }
 
         // let caller_address = cb.call_context(None,
         // CallContextFieldTag::CalleeAddress); let [callee_address, value,
@@ -230,8 +266,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             reversion_info,
             tx_id,
             was_warm,
-            initialization_code_start,
-            initialization_code_length,
             value,
             salt,
             new_address,
@@ -239,6 +273,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             nonce,
             callee_reversion_info,
             transfer,
+            initialization_code,
+            memory_expansion,
         }
     }
 
@@ -272,13 +308,20 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         };
 
         for (word, assignment) in [
-            (&self.initialization_code_start, initialization_code_start),
-            (&self.initialization_code_length, initialization_code_length),
+            // (&self.initialization_code_start, initialization_code_start),
+            // (&self.initialization_code_length, initialization_code_length),
             (&self.value, value),
             (&self.salt, salt),
         ] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;
         }
+        let initialization_code_address = self.initialization_code.assign(
+            region,
+            offset,
+            initialization_code_start,
+            initialization_code_length,
+            block.randomness,
+        )?;
 
         self.new_address.assign(
             region,
@@ -359,6 +402,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             caller_balance_pair,
             callee_balance_pair,
             value,
+        )?;
+
+        self.memory_expansion.assign(
+            region,
+            offset,
+            step.memory_word_size(),
+            [initialization_code_address],
         )?;
 
         Ok(())
