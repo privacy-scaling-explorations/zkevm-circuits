@@ -186,10 +186,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 cb.curr.state.stack_pointer.expr() + stack_pointer_delta,
             ),
             (CallContextFieldTag::GasLeft, gas_left.quotient()),
-            // (
-            //     CallContextFieldTag::MemorySize,
-            //     memory_expansion.next_memory_word_size(),
-            // ),
+            (
+                CallContextFieldTag::MemorySize,
+                memory_expansion.next_memory_word_size(),
+            ),
             // (
             //     CallContextFieldTag::ReversibleWriteCounter,
             //     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
