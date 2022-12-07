@@ -144,7 +144,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             call.value,
         )?;
 
-        // here in gadget.....
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
 
@@ -172,6 +171,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         ] {
             state.call_context_write(&mut exec_step, current_call.call_id, field, value);
         }
+
+        // here in gadget.....
 
         for (field, value) in [
             (CallContextField::CallerId, current_call.call_id.into()),

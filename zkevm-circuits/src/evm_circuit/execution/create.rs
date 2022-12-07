@@ -190,10 +190,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 CallContextFieldTag::MemorySize,
                 memory_expansion.next_memory_word_size(),
             ),
-            // (
-            //     CallContextFieldTag::ReversibleWriteCounter,
-            //     cb.curr.state.reversible_write_counter.expr() + 1.expr(),
-            // ),
+            (
+                CallContextFieldTag::ReversibleWriteCounter,
+                cb.curr.state.reversible_write_counter.expr() + 2.expr(),
+            ),
         ] {
             cb.call_context_lookup(true.expr(), None, field_tag, value);
         }
