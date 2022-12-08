@@ -342,7 +342,7 @@ pub mod test {
                 &mut layouter,
                 &block.txs,
                 block.circuits_params.max_txs,
-                block.randomness,
+                &challenges,
             )?;
             block.rws.check_rw_counter_sanity();
             config.rw_table.load(
@@ -357,9 +357,7 @@ pub mod test {
             config
                 .block_table
                 .load(&mut layouter, &block.context, block.randomness)?;
-            config
-                .copy_table
-                .load(&mut layouter, block, block.randomness)?;
+            config.copy_table.load(&mut layouter, block, &challenges)?;
             config
                 .keccak_table
                 .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;

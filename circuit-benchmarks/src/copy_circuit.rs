@@ -41,12 +41,8 @@ mod tests {
         ]);
 
         // Create the circuit
-        let num_rows = 1 << degree;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
         let block = generate_full_events_block(degree);
-        let randomness = CopyCircuit::<Fr>::get_randomness();
-        let circuit = CopyCircuit::<Fr>::new(1, block, randomness);
-        let instance = vec![randomness; num_rows - NUM_BLINDING_ROWS];
+        let circuit = CopyCircuit::<Fr>::new(1, block);
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", degree);
@@ -71,14 +67,7 @@ mod tests {
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
             CopyCircuit<Fr>,
-        >(
-            &general_params,
-            &pk,
-            &[circuit],
-            &[&[instance.as_slice()][..]][..],
-            rng,
-            &mut transcript,
-        )
+        >(&general_params, &pk, &[circuit], &[], rng, &mut transcript)
         .expect("proof generation should not fail");
         let proof = transcript.finalize();
         end_timer!(start2);
@@ -98,7 +87,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[instance.as_slice()][..]][..],
+            &[],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
