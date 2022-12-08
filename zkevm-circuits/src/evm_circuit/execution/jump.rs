@@ -146,11 +146,6 @@ mod test {
     }
 
     #[test]
-    fn invalid_jump_err() {
-        test_invalid_jump(34);
-    }
-
-    #[test]
     #[ignore]
     fn jump_gadget_huge_bytecode() {
         test_ok(0x5ffe);

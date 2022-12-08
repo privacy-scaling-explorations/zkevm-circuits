@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::ExecError,
+    error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
         AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
@@ -42,7 +42,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
-mod r#return;
+mod return_revert;
 mod returndatacopy;
 mod returndatasize;
 mod selfbalance;
@@ -54,6 +54,7 @@ mod stop;
 mod swap;
 
 mod error_invalid_jump;
+mod error_oog_call;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -72,6 +73,7 @@ use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
 use error_invalid_jump::ErrorInvalidJump;
+use error_oog_call::OOGCall;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -81,7 +83,7 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
-use r#return::Return;
+use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;
 use selfbalance::Selfbalance;
@@ -232,9 +234,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL | OpcodeId::CALLCODE => CallOpcode::<7>::gen_associated_ops,
         OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
-        OpcodeId::RETURN => Return::gen_associated_ops,
-        // REVERT is almost the same as RETURN
-        OpcodeId::REVERT => Return::gen_associated_ops,
+        OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
@@ -257,6 +257,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
     match error {
         ExecError::InvalidJump => ErrorInvalidJump::gen_associated_ops,
+        ExecError::OutOfGas(OogError::Call) => OOGCall::gen_associated_ops,
         // more future errors place here
         _ => {
             warn!("Using dummy gen_associated_ops for error state {:?}", error);
@@ -300,12 +301,12 @@ pub fn gen_associated_ops(
         );
 
         exec_step.error = Some(exec_error.clone());
-        // for `oog_or_stack_error` error message will be returned by geth_step error
-        // field, when this kind of error happens, no more proceeding
-        if exec_step.oog_or_stack_error() {
+        // TODO: after more error state handled, refactor all error handling in
+        // fn_gen_error_state_associated_ops method
+        if exec_step.oog_or_stack_error() && !geth_step.op.is_call_or_create() {
             state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         } else {
-            if geth_step.op.is_call_or_create() {
+            if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
                 let call = state.parse_call(geth_step)?;
                 // Switch to callee's call context
                 state.push_call(call);

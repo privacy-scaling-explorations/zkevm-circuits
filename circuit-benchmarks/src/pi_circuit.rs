@@ -119,7 +119,7 @@ mod tests {
 
         let n_tx = MAX_TXS;
         for _ in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id));
+            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, true));
             public_data.transactions.push(eth_tx);
         }
         public_data

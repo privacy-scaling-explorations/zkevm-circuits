@@ -2,14 +2,14 @@ name: Integration Tests
 
 on:
   pull_request:
-    types: [synchronize, opened, reopened, ready_for_review]
+    types: [synchronize, labeled]
   push:
     branches:
       - main
 
 jobs:
   consecutiveness:
-    if: github.event.pull_request.draft == false
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
 
     runs-on: ubuntu-latest
     steps:
