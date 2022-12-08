@@ -399,7 +399,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            // panic!("shouldn't be here!!!!");
             state.account_read(
                 &mut exec_step,
                 call.address,
@@ -455,9 +454,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             }
 
             // 4. Call to account with non-empty code.
-            dbg!("we are here correclty!!!");
-            dbg!(call.caller_address);
-            dbg!(call.address);
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
