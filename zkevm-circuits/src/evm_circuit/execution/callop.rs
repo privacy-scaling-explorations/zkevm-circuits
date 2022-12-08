@@ -34,12 +34,12 @@ pub(crate) struct CallOpGadget<F> {
     reversion_info: ReversionInfo<F>,
     current_callee_address: Cell<F>,
     current_caller_address: Cell<F>,
-    current_value: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
     code_address: Word<F>,
     value: Word<F>,
+    current_value: Word<F>,
     is_success: Cell<F>,
     gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
@@ -103,12 +103,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         ]
         .map(|field_tag| cb.call_context(None, field_tag));
 
-        let [current_caller_address, current_value] = cb.condition(is_delegatecall.expr(), |cb| {
-            [
-                CallContextFieldTag::CallerAddress,
-                CallContextFieldTag::Value,
-            ]
-            .map(|field_tag| cb.call_context(None, field_tag))
+        let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
+            (
+                cb.call_context(None, CallContextFieldTag::CallerAddress),
+                cb.call_context_as_word(None, CallContextFieldTag::Value),
+            )
         });
 
         cb.range_lookup(depth.expr(), 1024);
@@ -368,12 +367,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             reversion_info,
             current_callee_address,
             current_caller_address,
-            current_value,
             is_static,
             depth,
             gas: gas_word,
             code_address: code_address_word,
             value,
+            current_value,
             is_success,
             gas_is_u64,
             is_warm,
@@ -505,15 +504,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.current_value.assign(
-            region,
-            offset,
-            Value::known(
-                current_value
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
+        self.current_value
+            .assign(region, offset, Some(current_value.to_le_bytes()))?;
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth

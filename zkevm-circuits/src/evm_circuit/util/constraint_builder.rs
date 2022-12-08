@@ -1005,6 +1005,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         cell
     }
 
+    pub(crate) fn call_context_as_word(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> Word<F> {
+        let word = self.query_word();
+        self.call_context_lookup(false.expr(), call_id, field_tag, word.expr());
+        word
+    }
+
     pub(crate) fn call_context_lookup(
         &mut self,
         is_write: Expression<F>,
