@@ -83,7 +83,7 @@ async fn main() {
         let path_sol = Path::new(CONTRACTS_PATH).join(contract_path);
         let compiled = Solc::default()
             .compile_source(&path_sol)
-            .expect("solc compile error");
+            .unwrap_or_else(|_| panic!("solc compile error {:?}", path_sol));
         if !compiled.errors.is_empty() {
             panic!("Errors compiling {:?}:\n{:#?}", &path_sol, compiled.errors)
         }

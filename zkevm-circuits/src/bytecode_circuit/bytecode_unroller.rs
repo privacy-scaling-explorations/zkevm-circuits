@@ -721,6 +721,16 @@ impl<F: Field> BytecodeCircuit<F> {
     pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
         BytecodeCircuit { bytecodes, size }
     }
+
+    /// Creates bytecode circuit from block and bytecode_size.
+    pub fn new_from_block_sized(block: &witness::Block<F>, bytecode_size: usize) -> Self {
+        let bytecodes: Vec<UnrolledBytecode<F>> = block
+            .bytecodes
+            .iter()
+            .map(|(_, b)| unroll(b.bytes.clone()))
+            .collect();
+        Self::new(bytecodes, bytecode_size)
+    }
 }
 
 impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
@@ -735,12 +745,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         //     cs.blinding_factors()
         // }
         let bytecode_size = block.circuits_params.max_bytecode + 128;
-        let bytecodes: Vec<UnrolledBytecode<F>> = block
-            .bytecodes
-            .iter()
-            .map(|(_, b)| unroll(b.bytes.clone()))
-            .collect();
-        Self::new(bytecodes, bytecode_size)
+        Self::new_from_block_sized(block, bytecode_size)
     }
 
     /// Make the assignments to the TxCircuit
