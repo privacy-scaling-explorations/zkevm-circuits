@@ -5,6 +5,7 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
+            and,
             common_gadget::TransferGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -59,6 +60,8 @@ pub(crate) struct CreateGadget<F> {
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
+
+    callee_is_success: Cell<F>,
     //
     // // transfer value to new address
     // transfer: TransferGadget<F>,
@@ -175,7 +178,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
 
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost();
-        let gas_left = ConstantDivisionGadget::construct(cb, cb.curr.state.gas_left.expr() - gas_cost, 64);
+        let gas_left =
+            ConstantDivisionGadget::construct(cb, cb.curr.state.gas_left.expr() - gas_cost, 64);
         for (field_tag, value) in [
             (
                 CallContextFieldTag::ProgramCounter,
@@ -198,60 +202,71 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.call_context_lookup(true.expr(), None, field_tag, value);
         }
 
-        // let caller_address = cb.call_context(None,
-        // CallContextFieldTag::CalleeAddress); let [callee_address, value,
-        // callee_address] = [(); 3].map(|| cb.query_word()); let is_failure =
-        // IsZeroGadget::construct(cb, callee_address);
-        // let mut callee_reversion_info =
-        //     ReversionInfo::from_caller(cb, &reversion_info,
-        // not::expr(is_failure.expr())); let transfer =
-        // TransferGadget::construct(     cb,
-        //     caller_address.expr(),
-        //     address.expr(),
-        //     value.expr(),
-        //     &mut callee_reversion_info,
-        // );
+        // (CallContextField::CallerId, current_call.call_id.into()),
+        // (CallContextField::IsSuccess, call.is_success.to_word()),
+        // (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        // (CallContextField::TxId, state.tx_ctx.id().into()),
+        // (
+        //     CallContextField::CallerAddress,
+        //     current_call.address.to_word(),
+        // ),
+        // (CallContextField::CalleeAddress, call.address.to_word()),
+        // (
+        //     CallContextField::RwCounterEndOfReversion,
+        //     call.rw_counter_end_of_reversion.to_word(),
+        // ),
+        // (CallContextField::IsPersistent, call.is_persistent.to_word()),
 
-        // let [offset, size] = [(); 2].map(|| cb.query_word());
-        // let memory_address = MemoryAddressGadget::construct(cb, offset, size);
-        // let memory_expansion = MemoryExpansionGadget::construct(
-        //     cb,
-        //     cb.curr.state.memory_word_size.expr(),
-        //     [memory_address.address()],
-        // );
-        //
-        // let [value, offset, size, salt, address] = [(); 5].map(cb.query_cell());
-        // [value, offset, size].map(|cell| cb.stack_pop(cell.expr()));
-        // cb.condition(is_create2.expr(), |cb| cb.stack_pop(salt.expr()));
-        // cb.stack_push(address);
-        //
-        // let [current_address, is_static, depth] = [
-        //     CallContextFieldTag::CalleeAddress,
-        //     CallContextFieldTag::IsStatic,
-        //     CallContextFieldTag::Depth,
-        // ]
-        // .map(|field_tag| cb.call_context(None, field_tag));
-        //
-        // cb.range_lookup(depth.expr(), 1024);
-        //
-        // // Lookup values from stack
-        // cb.stack_pop(gas_word.expr());
-        // cb.stack_pop(callee_address_word.expr());
+        // (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
+        // (CallContextFieldTag::TxId, tx_id.expr()),
+        // (CallContextFieldTag::Depth, depth.expr() + 1.expr()),
+        // (CallContextFieldTag::CallerAddress, caller_address),
+        // (CallContextFieldTag::CalleeAddress, callee_address),
+        // (CallContextFieldTag::CallDataOffset, cd_address.offset()),
+        // (CallContextFieldTag::CallDataLength, cd_address.length()),
+        // (CallContextFieldTag::ReturnDataOffset, rd_address.offset()),
+        // (CallContextFieldTag::ReturnDataLength, rd_address.length()),
+        // (
+        //     CallContextFieldTag::Value,
+        //     select::expr(is_delegatecall.expr(), current_value.expr(), value.expr()),
+        // ),
+        // (CallContextFieldTag::IsSuccess, is_success.expr()),
+        // (CallContextFieldTag::IsStatic, is_staticcall.expr()),
+        // (CallContextFieldTag::LastCalleeId, 0.expr()),
+        // (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+        // (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+        // (CallContextFieldTag::IsRoot, 0.expr()),
+        // (CallContextFieldTag::IsCreate, 0.expr()),
+        // (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
 
-        // // `CALL` opcode has an additional stack pop `value`.
-        // cb.condition(IS_CREATE2.expr(), |cb| cb.stack_pop(value.expr()));
-        //
-        // [
-        //     cd_offset.expr(),
-        //     cd_length.expr(),
-        //     rd_offset.expr(),
-        //     rd_length.expr(),
-        // ]
-        // .map(|expression| cb.stack_pop(expression));
-        // cb.stack_push(is_success.expr());
+        // TODO: get this from reversion info...
+        let callee_is_success = cb.query_bool();
+        // let caller_is_persistent = cb.call_context(None,
+        // CallContextFieldTag::IsPersistent); let callee_is_persistent =
+        // and::expr(&[callee_is_success.expr(), caller_is_persistent.expr()]);
 
-        // let gas = Eip150Gadget::construct(cb, cb.curr.state.gas_left.expr() -
-        // GasCost::CREATE);
+        for (field_tag, value) in [
+            (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
+            (CallContextFieldTag::IsSuccess, callee_is_success.expr()),
+            (
+                CallContextFieldTag::IsPersistent,
+                callee_reversion_info.is_persistent(),
+            ),
+            (CallContextFieldTag::TxId, tx_id.expr()),
+            // (
+            //     CallContextField::CallerAddress,
+            //     current_call.address.to_word(),
+            // ),
+            // (CallContextField::CalleeAddress, new_address.expr()),
+            // (
+            //     CallContextField::RwCounterEndOfReversion,
+            //     call.rw_counter_end_of_reversion.to_word(),
+            // ),
+            // (CallContextField::IsPersistent, call.is_persistent.to_word()),
+        ] {
+            cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
+        }
+
         //
         // cb.require_step_state_transition(StepStateTransition {
         //     rw_counter: Delta(cb.rw_counter_offset.clone()),
@@ -280,6 +295,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             initialization_code,
             memory_expansion,
             gas_left,
+            callee_is_success,
         }
     }
 
@@ -416,7 +432,22 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             [initialization_code_address],
         )?;
 
-        self.gas_left.assign(region, offset, (step.gas_left - GasCost::CREATE.as_u64()).into())?;
+        self.gas_left.assign(
+            region,
+            offset,
+            (step.gas_left - GasCost::CREATE.as_u64()).into(),
+        )?;
+
+        self.callee_is_success.assign(
+            region,
+            offset,
+            Value::known(
+                block.rws[step.rw_indices[20 + usize::from(is_create2)]]
+                    .call_context_value()
+                    .to_scalar()
+                    .unwrap(),
+            ),
+        )?;
 
         Ok(())
     }
