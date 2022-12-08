@@ -258,7 +258,14 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         CallContextField::ReturnDataLength,
                         call.return_data_length.into(),
                     ),
-                    (CallContextField::Value, call.value),
+                    (
+                        CallContextField::Value,
+                        if call.kind == CallKind::DelegateCall {
+                            current_call.value
+                        } else {
+                            call.value
+                        },
+                    ),
                     (CallContextField::IsSuccess, (call.is_success as u64).into()),
                     (CallContextField::IsStatic, (call.is_static as u64).into()),
                     (CallContextField::LastCalleeId, 0.into()),
