@@ -202,48 +202,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.call_context_lookup(true.expr(), None, field_tag, value);
         }
 
-        // (CallContextField::CallerId, current_call.call_id.into()),
-        // (CallContextField::IsSuccess, call.is_success.to_word()),
-        // (CallContextField::IsPersistent, call.is_persistent.to_word()),
-        // (CallContextField::TxId, state.tx_ctx.id().into()),
-        // (
-        //     CallContextField::CallerAddress,
-        //     current_call.address.to_word(),
-        // ),
-        // (CallContextField::CalleeAddress, call.address.to_word()),
-        // (
-        //     CallContextField::RwCounterEndOfReversion,
-        //     call.rw_counter_end_of_reversion.to_word(),
-        // ),
-        // (CallContextField::IsPersistent, call.is_persistent.to_word()),
-
-        // (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
-        // (CallContextFieldTag::TxId, tx_id.expr()),
-        // (CallContextFieldTag::Depth, depth.expr() + 1.expr()),
-        // (CallContextFieldTag::CallerAddress, caller_address),
-        // (CallContextFieldTag::CalleeAddress, callee_address),
-        // (CallContextFieldTag::CallDataOffset, cd_address.offset()),
-        // (CallContextFieldTag::CallDataLength, cd_address.length()),
-        // (CallContextFieldTag::ReturnDataOffset, rd_address.offset()),
-        // (CallContextFieldTag::ReturnDataLength, rd_address.length()),
-        // (
-        //     CallContextFieldTag::Value,
-        //     select::expr(is_delegatecall.expr(), current_value.expr(), value.expr()),
-        // ),
-        // (CallContextFieldTag::IsSuccess, is_success.expr()),
-        // (CallContextFieldTag::IsStatic, is_staticcall.expr()),
-        // (CallContextFieldTag::LastCalleeId, 0.expr()),
-        // (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
-        // (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
-        // (CallContextFieldTag::IsRoot, 0.expr()),
-        // (CallContextFieldTag::IsCreate, 0.expr()),
-        // (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
-
         // TODO: get this from reversion info...
         let callee_is_success = cb.query_bool();
-        // let caller_is_persistent = cb.call_context(None,
-        // CallContextFieldTag::IsPersistent); let callee_is_persistent =
-        // and::expr(&[callee_is_success.expr(), caller_is_persistent.expr()]);
 
         for (field_tag, value) in [
             (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
@@ -253,16 +213,12 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 callee_reversion_info.is_persistent(),
             ),
             (CallContextFieldTag::TxId, tx_id.expr()),
-            // (
-            //     CallContextField::CallerAddress,
-            //     current_call.address.to_word(),
-            // ),
-            // (CallContextField::CalleeAddress, new_address.expr()),
-            // (
-            //     CallContextField::RwCounterEndOfReversion,
-            //     call.rw_counter_end_of_reversion.to_word(),
-            // ),
-            // (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (CallContextFieldTag::CallerAddress, caller_address.expr()),
+            (CallContextFieldTag::CalleeAddress, new_address.expr()),
+            (
+                CallContextFieldTag::RwCounterEndOfReversion,
+                callee_reversion_info.rw_counter_end_of_reversion(),
+            ),
         ] {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }

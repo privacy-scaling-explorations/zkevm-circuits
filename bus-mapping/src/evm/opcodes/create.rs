@@ -172,8 +172,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.call_context_write(&mut exec_step, current_call.call_id, field, value);
         }
 
-        // here in gadget.....
-
         for (field, value) in [
             (CallContextField::CallerId, current_call.call_id.into()),
             (CallContextField::IsSuccess, call.is_success.to_word()),
@@ -188,7 +186,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 CallContextField::RwCounterEndOfReversion,
                 call.rw_counter_end_of_reversion.to_word(),
             ),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
         ] {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
