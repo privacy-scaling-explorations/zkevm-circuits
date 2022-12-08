@@ -115,16 +115,28 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
-        )?;
-
         let (_, callee_account) = state.sdb.get_account(&call.address);
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
+
+        if call.kind == CallKind::Call {
+            state.transfer(
+                &mut exec_step,
+                call.caller_address,
+                call.address,
+                call.value,
+            )?;
+        } else {
+            let callee_balance = callee_account.balance;
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::Balance,
+                callee_balance,
+                callee_balance,
+            )?;
+        }
+
         state.account_read(
             &mut exec_step,
             call.address,
