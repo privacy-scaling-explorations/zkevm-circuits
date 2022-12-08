@@ -3,7 +3,6 @@ use crate::evm::Opcode;
 use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp, RW};
 use crate::Error;
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
-use keccak256::EMPTY_HASH;
 
 #[derive(Debug, Copy, Clone)]
 pub struct DummyCreate<const IS_CREATE2: bool>;
@@ -94,9 +93,12 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        for (field, value) in [(CallContextField::CalleeAddress, current_call.address)] {
-            state.call_context_read(&mut exec_step, current_call.call_id, field, value.to_word());
-        }
+        state.call_context_read(
+            &mut exec_step,
+            current_call.call_id,
+            CallContextField::CalleeAddress,
+            current_call.address.to_word(),
+        );
 
         // Increase caller's nonce
         let nonce_prev = state.sdb.get_nonce(&call.caller_address);

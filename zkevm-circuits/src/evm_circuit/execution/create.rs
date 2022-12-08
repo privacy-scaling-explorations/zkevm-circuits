@@ -5,19 +5,12 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            and,
             common_gadget::TransferGadget,
-            constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Delta, To},
-            },
+            constraint_builder::{ConstraintBuilder, ReversionInfo},
             from_bytes,
-            math_gadget::{
-                BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget,
-                MinMaxGadget,
-            },
+            math_gadget::ConstantDivisionGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            select, sum, CachedRegion, Cell, Word,
+            select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -25,12 +18,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{
-    evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE},
-    Field, ToAddress, ToLittleEndian, ToScalar, U256,
-};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
@@ -417,7 +406,7 @@ mod test {
         Word,
     };
     use itertools::Itertools;
-    use mock::{eth, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, TestContext};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);

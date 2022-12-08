@@ -1019,7 +1019,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
