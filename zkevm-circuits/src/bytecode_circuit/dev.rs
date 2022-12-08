@@ -76,12 +76,6 @@ impl<F: Field> BytecodeCircuit<F> {
     }
 }
 
-/// Test bytecode circuit with raw bytecode
-pub fn test_bytecode_circuit<F: Field>(k: u32, bytecodes: Vec<Vec<u8>>) {
-    let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll::<F>(b.clone())).collect();
-    test_bytecode_circuit_unrolled(k, unrolled, true);
-}
-
 /// Test bytecode circuit with unrolled bytecode
 pub fn test_bytecode_circuit_unrolled<F: Field>(
     k: u32,
