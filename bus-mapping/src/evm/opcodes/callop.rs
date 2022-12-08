@@ -120,6 +120,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let callee_nonce = callee_account.nonce;
 
         if call.kind == CallKind::Call {
+            // Transfer value only for CALL opcode.
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -127,6 +128,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 call.value,
             )?;
         } else {
+            // Get callee balance for CALLCODE, DELEGATECALL and STATICCALL opcodes.
             let callee_balance = callee_account.balance;
             state.account_read(
                 &mut exec_step,
@@ -260,6 +262,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::Value,
+                        // Should set to value of current call for DELEGATECALL.
                         if call.kind == CallKind::DelegateCall {
                             current_call.value
                         } else {

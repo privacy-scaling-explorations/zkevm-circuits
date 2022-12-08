@@ -306,6 +306,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
                 ),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
+                // For CALL opcode, `transfer` invocation has two account write.
                 reversible_write_counter: Delta(1.expr() + is_call.expr() * 2.expr()),
                 ..StepStateTransition::default()
             });
@@ -390,6 +391,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 is_create: To(false.expr()),
                 code_hash: To(callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
+                // For CALL opcode, `transfer` invocation has two account write.
                 reversible_write_counter: To(is_call.expr() * 2.expr()),
                 ..StepStateTransition::new_context()
             });
@@ -685,12 +687,9 @@ mod test {
     use super::*;
     use crate::evm_circuit::test::run_test_circuit_geth_data;
     use bus_mapping::circuit_input_builder::CircuitsParams;
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::geth_types::{Account, GethData};
     use eth_types::{address, bytecode, Address, ToWord, Word};
-    use eth_types::{
-        bytecode::Bytecode,
-        evm_types::OpcodeId,
-        geth_types::{Account, GethData},
-    };
     use halo2_proofs::halo2curves::bn256::Fr;
     use itertools::Itertools;
     use mock::TestContext;
@@ -775,6 +774,15 @@ mod test {
                 rd_length: 0,
                 ..Default::default()
             },
+            // With memory expansion and value
+            Stack {
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                value: Word::from(10).pow(18.into()),
+                ..Default::default()
+            },
         ];
         let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
         for ((opcode, stack), callee) in TEST_CALL_OPCODES
@@ -796,7 +804,7 @@ mod test {
         rd_length: u64,
     }
 
-    fn callee(code: Bytecode) -> Account {
+    fn callee(code: bytecode::Bytecode) -> Account {
         let code = code.to_vec();
         let is_empty = code.is_empty();
         Account {
@@ -936,7 +944,9 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(100000.into());
+                    .gas(100000.into())
+                    // Set a non-zero value could test if DELEGATECALL use value of current call.
+                    .value(1000.into());
             },
             |block, _tx| block.number(0xcafeu64),
         )
