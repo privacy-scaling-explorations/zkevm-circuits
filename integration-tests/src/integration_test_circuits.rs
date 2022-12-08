@@ -325,22 +325,17 @@ pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
     let (builder, _) = gen_inputs(block_num).await;
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let randomness = CopyCircuit::<Fr>::get_randomness();
-    let circuit = CopyCircuit::<Fr>::new(4, block, randomness);
-
-    let num_rows = 1 << COPY_CIRCUIT_DEGREE;
-    const NUM_BLINDING_ROWS: usize = 7 - 1;
-    let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
+    let circuit = CopyCircuit::<Fr>::new_from_block(&block);
 
     if actual {
         test_actual(
             COPY_CIRCUIT_DEGREE,
             circuit,
-            instance,
+            vec![],
             Some((*COPY_CIRCUIT_KEY).clone()),
         );
     } else {
-        test_mock(COPY_CIRCUIT_DEGREE, &circuit, instance);
+        test_mock(COPY_CIRCUIT_DEGREE, &circuit, vec![]);
     }
 }
 
