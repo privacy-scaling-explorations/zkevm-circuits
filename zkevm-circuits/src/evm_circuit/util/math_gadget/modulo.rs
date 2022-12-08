@@ -7,15 +7,15 @@ use crate::{
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::plonk::Error;
 
-/// Constraints the words a, n, r such that:
+/// Constraints for the words a, n, r:
 /// a mod n = r, if n!=0
 /// r = 0,       if n==0
 ///
-/// We use the auxiliary a_or_zero word, whose value is constrained to be: a if
-/// n!=0, 0 if n==0. This allows to use the equation k * n + r = a_or_zero to
-/// verify the modulus, which holds with r=0 in the case of n=0. Unlike the
-/// usual k * n + r = a, which forces r = a when n=0, this equation assures that
-/// r<n or r=n=0.
+/// We use the auxiliary a_or_zero word, whose value is constrained to be:
+/// a_or_zero = a if n!=0, 0 if n==0.  This allows to use the equation
+/// k * n + r = a_or_zero to verify the modulus, which holds with r=0 in the
+/// case of n=0. Unlike the usual k * n + r = a, which forces r = a when n=0,
+/// this equation assures that r<n or r=n=0.
 #[derive(Clone, Debug)]
 pub(crate) struct ModGadget<F> {
     k: util::Word<F>,

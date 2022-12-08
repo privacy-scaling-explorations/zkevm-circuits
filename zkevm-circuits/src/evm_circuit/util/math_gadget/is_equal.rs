@@ -59,7 +59,7 @@ mod tests {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let eq_gadget = IsEqualGadget::<F>::construct(cb, a.expr(), b.expr());
-            cb.require_equal("Inputs must equal", eq_gadget.expr(), 1.expr());
+            cb.require_equal("Inputs must equal (a==b)", eq_gadget.expr(), 1.expr());
             IsEqualGadgetTestContainer { eq_gadget, a, b }
         }
 

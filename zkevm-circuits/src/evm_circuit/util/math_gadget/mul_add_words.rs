@@ -283,7 +283,7 @@ mod tests {
             ],
             true,
         );
-        // 100 * 54 + low_max == low_max + 5400
+        // 100 * 54 + high_max == high_max + 5400
         try_test!(
             MulAddGadgetContainer<Fr>,
             vec![
