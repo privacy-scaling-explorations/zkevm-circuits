@@ -26,7 +26,7 @@ use crate::{
             IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
             IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
             RLP_NUM, ACCOUNT_LEAF_ROWS_NUM, LEAF_ROWS_NUM, EXISTING_EXT_NODE_BEFORE_S,
-            EXISTING_EXT_NODE_AFTER_S, EXISTING_EXT_NODE_AFTER_SELECTORS,
+            EXISTING_EXT_NODE_AFTER_S, EXISTING_EXT_NODE_AFTER_SELECTORS, EXISTING_EXT_NODE_BEFORE_C,
             EXISTING_EXT_NODE_BEFORE_SELECTORS, EXTENSION_ROWS_NUM,
         },
     },
@@ -438,10 +438,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                             * (after_rlc - before_rlc),
                     ));
 
-                    // TODO: number of nibbles in existing = number of nibbles of inserted + number of nibbles of drifted
-                    // TODO: RLC of nibbles of existing = RLC of nibbles of inserted and nibbles of drifted
-                    // TODO: inserted extension node branch has an extension node (drifted_pos)
-                    // at the proper nibble
                     /*
                     Note: otherwise the existing extension node (corrupted nibbles) might not lead
                     to the requested address (account proof) or storage key (storage proof).
@@ -559,11 +555,70 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     
                     constraints.push((
                         "The number of nibbles of the existing extension node corresponds to the nibbles in the inserted extension node",
-                        q_not_first
-                            * q_enable
+                        q_not_first.clone()
+                            * q_enable.clone()
                             * (before_nibbles_num - nibbles_num - after_nibbles_num - one.clone()),
                             // -1 because one nibble is used for the position of the extension node in the branch
                     ));
+
+                    // TODO: RLC of nibbles of existing = RLC of nibbles of inserted and nibbles of drifted
+
+                    // `drifted_pos` is stored in branch children
+                    let drifted_pos =
+                        meta.query_advice(branch.drifted_pos, Rotation(rot_into_branch_init_account + 1))
+                        * is_account_proof.clone() 
+                        + meta.query_advice(branch.drifted_pos, Rotation(rot_into_branch_init_storage + 1))
+                        * (one.clone() - is_account_proof.clone()); 
+
+                    let mut before_nibbles_rlc = Expression::Constant(F::zero());
+                    let mut nibbles_rlc = Expression::Constant(F::zero());
+                    let mut mult = Expression::Constant(F::one());
+                    for ind in 0..HASH_WIDTH-1 {
+                        let s_before = meta.query_advice(s_main.bytes[1+ind], Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S)));
+                        let second_nibble_before = meta.query_advice(s_main.bytes[ind], Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_C)));
+                        let first_nibble_before = (s_before.clone() - second_nibble_before.clone()) * c16inv.clone();
+    
+                        let s =
+                            meta.query_advice(s_main.bytes[1+ind], Rotation(rot_into_ext_node_account))
+                            * is_account_proof.clone()
+                            + meta.query_advice(s_main.bytes[1+ind], Rotation(rot_into_ext_node_storage))
+                            * (one.clone() - is_account_proof.clone());
+                        let second_nibble =
+                            meta.query_advice(s_main.bytes[ind], Rotation(rot_into_ext_node_account + 1))
+                            * is_account_proof.clone()
+                            + meta.query_advice(s_main.bytes[ind], Rotation(rot_into_ext_node_storage + 1))
+                            * (one.clone() - is_account_proof.clone());
+                        let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
+
+                        /*
+                        let s_after = meta.query_advice(s_main.bytes[1+ind], Rotation::cur());
+                        let second_nibble_after = meta.query_advice(s_main.bytes[ind], Rotation::next());
+                        let first_nibble_after = (s_after.clone() - second_nibble_after.clone()) * c16inv.clone();
+                        */
+                        
+                        before_nibbles_rlc = before_nibbles_rlc + (first_nibble_before * c16.clone() + second_nibble_before) * mult.clone();
+                        nibbles_rlc = nibbles_rlc + (first_nibble * c16.clone() + second_nibble) * mult.clone();
+
+                        // TODO: uncomment:
+                        // mult = mult * power_of_randomness[0].clone();
+                    }
+
+                    // TODO: cover all cases - even, odd, short
+
+                    let n = s_rlp2_after - c16.clone();
+
+                    // TODO: mult here depends on the number of nibbles
+                    nibbles_rlc = nibbles_rlc + (drifted_pos.clone() * c16.clone() + n) * mult;
+
+                    constraints.push((
+                        "Nibbles in before are the same as nibbles in inserted + after",
+                        q_not_first
+                            * q_enable
+                            * (before_nibbles_rlc - nibbles_rlc)
+                    ));
+                    
+                    // TODO: inserted extension node branch has an extension node (drifted_pos)
+                    // at the proper nibble
 
                     constraints
                 },
@@ -813,11 +868,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 start = C_START;
                 len = HASH_WIDTH;
             }
-
-            println!("{:?}", offset);
-            println!("{:?}", row.bytes);
-            println!("{:?}", start);
-            println!("{:?}", len);
 
             mpt_config.compute_acc_and_mult(
                 &row.bytes,
