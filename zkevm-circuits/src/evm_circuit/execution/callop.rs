@@ -10,7 +10,7 @@ use crate::evm_circuit::util::math_gadget::{
     BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
-use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
+use crate::evm_circuit::util::{from_bytes, or, select, sum, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -355,7 +355,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     select::expr(is_delegatecall.expr(), current_value.expr(), value.expr()),
                 ),
                 (CallContextFieldTag::IsSuccess, is_success.expr()),
-                (CallContextFieldTag::IsStatic, is_staticcall.expr()),
+                (
+                    CallContextFieldTag::IsStatic,
+                    or::expr([is_static.expr(), is_staticcall.expr()]),
+                ),
                 (CallContextFieldTag::LastCalleeId, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
