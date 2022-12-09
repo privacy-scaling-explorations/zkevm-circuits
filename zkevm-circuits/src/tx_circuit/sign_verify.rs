@@ -40,7 +40,7 @@ use std::{iter, marker::PhantomData};
 
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct SignVerifyChip<F: Field> {
     /// Aux generator for EccChip
     pub aux_generator: Secp256k1Affine,
@@ -67,6 +67,17 @@ impl<F: Field> SignVerifyChip<F> {
             window_size: 2,
             max_verif,
             _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: Field> Default for SignVerifyChip<F> {
+    fn default() -> Self {
+        Self {
+            aux_generator: Secp256k1Affine::default(),
+            window_size: 1,
+            max_verif: 0,
+            _marker: PhantomData::default(),
         }
     }
 }

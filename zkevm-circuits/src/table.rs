@@ -122,7 +122,7 @@ impl TxTable {
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
-        randomness: F,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
             txs.len() <= max_txs,
@@ -158,20 +158,20 @@ impl TxTable {
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    for row in tx.table_assignments(randomness) {
+                    for row in tx.table_assignments(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
                                 || format!("tx table row {}", offset),
                                 *column,
                                 offset,
-                                || Value::known(row[if index > 0 { index + 1 } else { index }]),
+                                || row[if index > 0 { index + 1 } else { index }],
                             )?;
                         }
                         region.assign_fixed(
                             || format!("tx table row {}", offset),
                             self.tag,
                             offset,
-                            || Value::known(row[1]),
+                            || row[1],
                         )?;
                         offset += 1;
                     }
@@ -435,11 +435,11 @@ impl RwTable {
         layouter: &mut impl Layouter<F>,
         rws: &[Rw],
         n_rows: usize,
-        randomness: Value<F>,
+        challenges: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "rw table",
-            |mut region| self.load_with_region(&mut region, rws, n_rows, randomness),
+            |mut region| self.load_with_region(&mut region, rws, n_rows, challenges),
         )
     }
 
@@ -448,11 +448,11 @@ impl RwTable {
         region: &mut Region<'_, F>,
         rws: &[Rw],
         n_rows: usize,
-        randomness: Value<F>,
+        challenges: Value<F>,
     ) -> Result<(), Error> {
         let (rows, _) = RwMap::table_assignments_prepad(rws, n_rows);
         for (offset, row) in rows.iter().enumerate() {
-            self.assign(region, offset, &row.table_assignment(randomness))?;
+            self.assign(region, offset, &row.table_assignment(challenges))?;
         }
         Ok(())
     }
@@ -880,20 +880,20 @@ pub struct CopyTable {
     pub tag: BinaryNumberConfig<CopyDataType, 3>,
 }
 
-type CopyTableRow<F> = [(F, &'static str); 8];
-type CopyCircuitRow<F> = [(F, &'static str); 4];
+type CopyTableRow<F> = [(Value<F>, &'static str); 8];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 4];
 
 impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
             is_first: meta.advice_column(),
-            id: meta.advice_column(),
+            id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
-            rlc_acc: meta.advice_column(),
+            rlc_acc: meta.advice_column_in(SecondPhase),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
         }
@@ -902,7 +902,7 @@ impl CopyTable {
     /// Generate the copy table and copy circuit assignments from a copy event.
     pub fn assignments<F: Field>(
         copy_event: &CopyEvent,
-        randomness: F,
+        challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
         let mut assignments = Vec::new();
         // rlc_acc
@@ -912,11 +912,13 @@ impl CopyTable {
                 .iter()
                 .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
-            rlc::value(values.iter().rev(), randomness)
+            challenges
+                .evm_word()
+                .map(|evm_word_challenge| rlc::value(values.iter().rev(), evm_word_challenge))
         } else {
-            F::zero()
+            Value::known(F::zero())
         };
-        let mut value_acc = F::zero();
+        let mut value_acc = Value::known(F::zero());
         for (step_idx, (is_read_step, copy_step)) in copy_event
             .bytes
             .iter()
@@ -942,19 +944,19 @@ impl CopyTable {
             .enumerate()
         {
             // is_first
-            let is_first = if step_idx == 0 { F::one() } else { F::zero() };
+            let is_first = Value::known(if step_idx == 0 { F::one() } else { F::zero() });
             // is last
             let is_last = if step_idx == copy_event.bytes.len() * 2 - 1 {
-                F::one()
+                Value::known(F::one())
             } else {
-                F::zero()
+                Value::known(F::zero())
             };
 
             // id
             let id = if is_read_step {
-                number_or_hash_to_field(&copy_event.src_id, randomness)
+                number_or_hash_to_field(&copy_event.src_id, challenges.evm_word())
             } else {
-                number_or_hash_to_field(&copy_event.dst_id, randomness)
+                number_or_hash_to_field(&copy_event.dst_id, challenges.evm_word())
             };
 
             // tag binary bumber chip
@@ -973,15 +975,17 @@ impl CopyTable {
                 } + (u64::try_from(step_idx).unwrap() - if is_read_step { 0 } else { 1 }) / 2u64;
 
             let addr = if tag == CopyDataType::TxLog {
-                build_tx_log_address(
-                    copy_step_addr,
-                    TxLogFieldTag::Data,
-                    copy_event.log_id.unwrap(),
+                Value::known(
+                    build_tx_log_address(
+                        copy_step_addr,
+                        TxLogFieldTag::Data,
+                        copy_event.log_id.unwrap(),
+                    )
+                    .to_scalar()
+                    .unwrap(),
                 )
-                .to_scalar()
-                .unwrap()
             } else {
-                F::from(copy_step_addr)
+                Value::known(F::from(copy_step_addr))
             };
 
             // bytes_left
@@ -989,19 +993,22 @@ impl CopyTable {
             // value
             let value = if copy_event.dst_type == CopyDataType::RlcAcc {
                 if is_read_step {
-                    F::from(copy_step.value as u64)
+                    Value::known(F::from(copy_step.value as u64))
                 } else {
-                    value_acc = value_acc * randomness + F::from(copy_step.value as u64);
+                    value_acc = value_acc * challenges.evm_word()
+                        + Value::known(F::from(copy_step.value as u64));
                     value_acc
                 }
             } else {
-                F::from(copy_step.value as u64)
+                Value::known(F::from(copy_step.value as u64))
             };
             // is_pad
-            let is_pad = F::from(is_read_step && copy_step_addr >= copy_event.src_addr_end);
+            let is_pad = Value::known(F::from(
+                is_read_step && copy_step_addr >= copy_event.src_addr_end,
+            ));
 
             // is_code
-            let is_code = copy_step.is_code.map_or(F::zero(), |v| F::from(v));
+            let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
 
             assignments.push((
                 tag,
@@ -1009,12 +1016,18 @@ impl CopyTable {
                     (is_first, "is_first"),
                     (id, "id"),
                     (addr, "addr"),
-                    (F::from(copy_event.src_addr_end), "src_addr_end"),
-                    (F::from(bytes_left), "bytes_left"),
-                    (rlc_acc, "rlc_acc"),
-                    (F::from(copy_event.rw_counter(step_idx)), "rw_counter"),
                     (
-                        F::from(copy_event.rw_counter_increase_left(step_idx)),
+                        Value::known(F::from(copy_event.src_addr_end)),
+                        "src_addr_end",
+                    ),
+                    (Value::known(F::from(bytes_left)), "bytes_left"),
+                    (rlc_acc, "rlc_acc"),
+                    (
+                        Value::known(F::from(copy_event.rw_counter(step_idx))),
+                        "rw_counter",
+                    ),
+                    (
+                        Value::known(F::from(copy_event.rw_counter_increase_left(step_idx))),
                         "rwc_inc_left",
                     ),
                 ],
@@ -1034,7 +1047,7 @@ impl CopyTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        randomness: F,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "copy table",
@@ -1053,13 +1066,13 @@ impl CopyTable {
                 let tag_chip = BinaryNumberChip::construct(self.tag);
                 let copy_table_columns = self.columns();
                 for copy_event in block.copy_events.iter() {
-                    for (tag, row, _) in Self::assignments(copy_event, randomness) {
+                    for (tag, row, _) in Self::assignments(copy_event, *challenges) {
                         for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("{} at row: {}", label, offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
                         tag_chip.assign(&mut region, offset, &tag)?;
