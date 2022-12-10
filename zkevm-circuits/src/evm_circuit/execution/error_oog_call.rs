@@ -360,7 +360,7 @@ mod test {
             PUSH32(stack.value)
             PUSH32(Address::repeat_byte(0xff).to_word())
             PUSH32(Word::from(stack.gas))
-            CALL
+            DELEGATECALL
             PUSH1(0)
             PUSH1(0)
             .write_op(terminator)
@@ -481,7 +481,7 @@ mod test {
             PUSH32(stack.value)
             PUSH32(Address::repeat_byte(0xfe).to_word())
             PUSH32(Word::from(stack.gas))
-            CALL // make this call out of gas
+            DELEGATECALL // make this call out of gas
             PUSH32(Word::from(0))
             PUSH32(Word::from(0))
         };
