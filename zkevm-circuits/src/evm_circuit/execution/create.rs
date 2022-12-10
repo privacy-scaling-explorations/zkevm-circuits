@@ -113,7 +113,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             salt
         });
         let new_address = cb.query_rlc();
-        cb.stack_push(new_address.expr());
+        let callee_is_success = cb.query_bool();
+        cb.stack_push(callee_is_success.expr() * new_address.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -136,9 +137,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Some(&mut reversion_info),
             // None,
         );
-
-        // let caller_address = cb.call_context(None,
-        // CallContextFieldTag::CalleeAddress);
 
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.account_write(
@@ -190,9 +188,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         ] {
             cb.call_context_lookup(true.expr(), None, field_tag, value);
         }
-
-        // TODO: get this from reversion info...
-        let callee_is_success = cb.query_bool();
 
         for (field_tag, value) in [
             (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
@@ -263,15 +258,20 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Value::known(is_create2.to_scalar().unwrap()),
         )?;
 
-        let [value, initialization_code_start, initialization_code_length, new_address] =
-            [0, 1, 2, 3 + usize::from(is_create2)]
-                .map(|i| step.rw_indices[i])
-                .map(|idx| block.rws[idx].stack_value());
+        let [value, initialization_code_start, initialization_code_length] = [0, 1, 2]
+            .map(|i| step.rw_indices[i])
+            .map(|idx| block.rws[idx].stack_value());
         let salt = if is_create2 {
             block.rws[step.rw_indices[3]].stack_value()
         } else {
             U256::zero()
         };
+
+        let tx_access_rw = block.rws[step.rw_indices[7 + usize::from(is_create2)]];
+        dbg!(tx_access_rw.clone());
+
+        let new_address = tx_access_rw.address().expect("asdfawefasdf");
+        dbg!(new_address);
 
         for (word, assignment) in [
             // (&self.initialization_code_start, initialization_code_start),
@@ -289,15 +289,15 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             block.randomness,
         )?;
 
-        self.new_address.assign(
-            region,
-            offset,
-            Some(new_address.to_le_bytes()[0..20].try_into().unwrap()),
-        )?;
+        let mut bytes = new_address.to_fixed_bytes();
+        bytes.reverse();
+
+        self.new_address.assign(region, offset, Some(bytes))?;
 
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
 
+        dbg!(call.rw_counter_end_of_reversion, call.is_persistent);
         self.reversion_info.assign(
             region,
             offset,
@@ -309,7 +309,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             region,
             offset,
             Value::known(
-                block.rws[step.rw_indices[7 + usize::from(is_create2)]]
+                tx_access_rw
                     .tx_access_list_value_pair()
                     .1
                     .to_scalar()
@@ -317,7 +317,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         )?;
 
-        dbg!(call.callee_address);
+        // dbg!(call.callee_address);
         self.caller_address.assign(
             region,
             offset,
@@ -347,7 +347,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11]
             .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].call_context_value());
 
-        dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
+        // dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
 
         self.callee_reversion_info.assign(
             region,
@@ -361,7 +361,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let [caller_balance_pair, callee_balance_pair] = [13, 14]
             .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].account_value_pair());
-        dbg!(caller_balance_pair, callee_balance_pair, value);
+        // dbg!(caller_balance_pair, callee_balance_pair, value);
         self.transfer.assign(
             region,
             offset,
@@ -383,11 +383,15 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (step.gas_left - GasCost::CREATE.as_u64()).into(),
         )?;
 
+        // dbg!(block.rws[step.rw_indices[20 + usize::from(is_create2)]]);
+        // dbg!(block.rws[step.rw_indices[21 + usize::from(is_create2)]]);
+        // dbg!(block.rws[step.rw_indices[22 + usize::from(is_create2)]]);
+        // dbg!(block.rws[step.rw_indices[23 + usize::from(is_create2)]]);
         self.callee_is_success.assign(
             region,
             offset,
             Value::known(
-                block.rws[step.rw_indices[20 + usize::from(is_create2)]]
+                block.rws[step.rw_indices[21 + usize::from(is_create2)]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap(),

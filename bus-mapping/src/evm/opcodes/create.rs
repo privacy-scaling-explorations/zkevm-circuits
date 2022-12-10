@@ -47,6 +47,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.create_address()?
         };
 
+        dbg!(call.is_success);
+        dbg!(call.clone());
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
@@ -82,6 +84,9 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         }
 
         let is_warm = state.sdb.check_account_in_access_list(&address);
+        dbg!(state.call()?.is_persistent);
+        dbg!(state.call()?.is_success);
+        dbg!(state.block_ctx.rwc);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -92,6 +97,9 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 is_warm_prev: is_warm,
             },
         )?;
+        dbg!(state.block_ctx.rwc);
+        // dbg!(state.rw_counter);
+        // this should not be be reversed?????, but now it's in the wrong call????
 
         state.call_context_read(
             &mut exec_step,

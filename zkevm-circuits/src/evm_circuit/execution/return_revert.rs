@@ -508,9 +508,7 @@ mod test {
     #[test]
     fn test_return_nonroot_create() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
-        for ((offset, length), is_return) in
-            test_parameters.iter().cartesian_product(&[true, false])
-        {
+        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[false]) {
             let initializer = callee_bytecode(*is_return, *offset, *length).code();
 
             let root_code = bytecode! {

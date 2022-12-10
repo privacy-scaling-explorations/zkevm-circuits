@@ -1182,24 +1182,27 @@ impl<F: Field> ExecutionConfig<F> {
 
         for (name, value) in assigned_rw_values.iter() {
             if !rlc_assignments.contains(value) {
-                log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
+                log::error!("rw lookup error: name: {}", *name);
+                // log::error!("rw lookup error: name: {}, step: {:?}", *name,
+                // step);
             }
         }
-        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
-            let rw_idx = step.rw_indices[idx];
-            let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
-            if rlc != assigned_rw_value.1 {
-                log::error!(
-                    "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
-                    assigned_rw_value.0,
-                    assigned_rw_value.1,
-                    rw,
-                    rw_idx,
-                    idx,
-                    step.execution_state);
-            }
-        }
+        // for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate()
+        // {     let rw_idx = step.rw_indices[idx];
+        //     let rw = block.rws[rw_idx];
+        //     let table_assignments =
+        // rw.table_assignment_aux(block.randomness);     let rlc =
+        // table_assignments.rlc(block.randomness);     if rlc !=
+        // assigned_rw_value.1 {         log::error!(
+        //             "incorrect rw witness. lookup input name:
+        // \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
+        //             assigned_rw_value.0,
+        //             assigned_rw_value.1,
+        //             rw,
+        //             rw_idx,
+        //             idx,
+        //             step.execution_state);
+        //     }
+        // }
     }
 }
