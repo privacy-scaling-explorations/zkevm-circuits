@@ -12,11 +12,10 @@ use crate::{
     mpt_circuit::helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
-        get_is_extension_node_one_nibble,
+        get_is_extension_node_one_nibble, get_branch_len, key_len_lookup, get_is_inserted_extension_node
     },
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{get_branch_len, key_len_lookup, get_is_inserted_extension_node},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
@@ -33,7 +32,7 @@ use crate::{
 };
 
 use super::BranchCols;
-use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors};
+use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors, check_intermediate_mult};
 
 /*
 A branch occupies 19 rows:
@@ -782,11 +781,22 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         * q_enable
                         * is_long_odd_nibbles
                         * is_ext_longer_than_55
-                        * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one), // - 1 is for branch position
+                        * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
                 ));
 
                 constraints
             });
+
+            check_intermediate_mult(
+                meta,
+                q_enable.clone(),
+                position_cols.clone(),
+                s_main.clone(),
+                accs.acc_s.mult,
+                rot_into_branch_init,
+                fixed_table,
+                power_of_randomness[1].clone(),
+            );
         }
 
         // Note: range_lookups are in extension_node_key.
@@ -833,6 +843,12 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 } else {
                     len = (row.get_byte(2) - 128) as usize + 3;
                 }
+
+                println!("=========");
+                println!("{:?}", offset);
+                println!("{:?}", len);
+                println!("{:?}", row.bytes);
+
                 mpt_config.compute_acc_and_mult(
                     &row.bytes,
                     &mut pv.acc_s,

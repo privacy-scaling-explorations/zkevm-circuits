@@ -247,7 +247,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             fixed_table,
         );
 
-        //  Note: there is no need to check `key_rlc_mult` as it is not used after this
+        // Note: there is no need to check `key_rlc_mult` as it is not used after this
         // row.
 
         meta.create_gate(

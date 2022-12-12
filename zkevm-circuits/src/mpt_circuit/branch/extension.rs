@@ -1,7 +1,7 @@
 use gadgets::util::Expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -18,7 +18,7 @@ use crate::{
     mpt_circuit::helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
-        get_is_extension_node_one_nibble,
+        get_is_extension_node_one_nibble, mult_diff_lookup,
     },
 };
 
@@ -701,4 +701,88 @@ pub(crate) fn extension_node_selectors<F: FieldExt>(
 
         constraints
     });
+}
+
+pub(crate) fn check_intermediate_mult<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
+    position_cols: PositionCols<F>,
+    s_main: MainCols<F>,
+    acc_s_mult: Column<Advice>,
+    /*
+    `rot_into_ext_node` and `rot_into_branch_init` are different for inserted extension node (inserted
+    at the place of some existing extension node). We use `rot_into_branch_init` for inserted
+    extension node to retrieve information about `is_branch_c16` and `is_branch_c1` - the
+    constraints for these two flags are implemented in the branch configs.
+    */
+    rot_into_branch_init: i32,
+    fixed_table: [Column<Fixed>; 3],
+    power_of_randomness_sqr: Expression<F>,
+) {
+    let one = Expression::Constant(F::from(1_u64));
+
+    meta.create_gate(
+        "Short extension node intermediate mult",
+        |meta| {
+            let mut constraints = vec![];
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+            let q_enable = q_enable(meta);
+
+            let is_short =
+                get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
+
+            let mut mult = meta.query_advice(acc_s_mult, Rotation::cur());
+            
+            constraints.push((
+                "Intermediate mult",
+                q_not_first * q_enable * is_short * (mult - power_of_randomness_sqr),
+            ));
+
+            constraints
+        },
+    );
+
+    let sel_two_bytes = |meta: &mut VirtualCells<F>| {
+        let q_enable = q_enable(meta);
+        let is_short =
+            get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
+        let is_ext_longer_than_55 = meta.query_advice(
+                s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                Rotation(rot_into_branch_init),
+            );
+        
+        q_enable
+            * (one.clone() - is_short)
+            * (one.clone() - is_ext_longer_than_55)
+    };
+
+    let sel_three_bytes = |meta: &mut VirtualCells<F>| {
+        let q_enable = q_enable(meta);
+        let is_ext_longer_than_55 = meta.query_advice(
+                s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                Rotation(rot_into_branch_init),
+            );
+        
+        q_enable * is_ext_longer_than_55
+    };
+
+    mult_diff_lookup(
+        meta,
+        sel_two_bytes,
+        2,
+        s_main.rlp2,
+        acc_s_mult,
+        128,
+        fixed_table,
+    );
+
+    mult_diff_lookup(
+        meta,
+        sel_three_bytes,
+        3,
+        s_main.bytes[0],
+        acc_s_mult,
+        128,
+        fixed_table,
+    );
 }

@@ -1027,7 +1027,7 @@ impl<F: FieldExt> BranchConfig<F> {
             is_branch_init: true,
             ..Default::default()
         };
-
+ 
         row.assign(
             region,
             mpt_config,
