@@ -116,7 +116,7 @@ mod balance_tests {
         test_ok(true, true);
     }
 
-    fn test_ok(is_existing: bool, is_warm: bool) {
+    fn test_ok(exists: bool, is_warm: bool) {
         let address = address!("0xaabbccddee000000000000000000000000000000");
 
         // Pop balance first for warm account.
@@ -134,7 +134,7 @@ mod balance_tests {
             STOP
         });
 
-        let balance = if is_existing {
+        let balance = if exists {
             Word::from(800u64)
         } else {
             Word::zero()
@@ -148,7 +148,13 @@ mod balance_tests {
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .balance(Word::from(1u64 << 20))
                     .code(code.clone());
-                accs[1].address(address).balance(balance);
+                if exists {
+                    accs[1].address(address).balance(balance);
+                } else {
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000020"))
+                        .balance(Word::from(1u64 << 20));
+                }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000cafe01"))
                     .balance(Word::from(1u64 << 20));
@@ -246,7 +252,11 @@ mod balance_tests {
             operation.op(),
             &AccountOp {
                 address,
-                field: AccountField::Balance,
+                field: if exists {
+                    AccountField::Balance
+                } else {
+                    AccountField::NonExisting
+                },
                 value: balance,
                 value_prev: balance,
             }

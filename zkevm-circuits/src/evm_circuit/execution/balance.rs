@@ -208,12 +208,15 @@ mod test {
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(1_u64 << 20))
                     .code(code);
-                accs[1].address(address);
                 if let Some(account) = account {
-                    accs[1].balance(account.balance);
+                    accs[1].address(address).balance(account.balance);
+                } else {
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000010"))
+                        .balance(Word::from(1_u64 << 20));
                 }
                 accs[2]
-                    .address(address!("0x0000000000000000000000000000000000000010"))
+                    .address(address!("0x0000000000000000000000000000000000000020"))
                     .balance(Word::from(1_u64 << 20));
             },
             |mut txs, accs| {
@@ -274,12 +277,15 @@ mod test {
             |accs| {
                 accs[0].address(addr_b).code(code_b);
                 accs[1].address(addr_a).code(code_a);
-                accs[2].address(address);
                 if let Some(account) = account {
-                    accs[2].balance(account.balance);
+                    accs[2].address(address).balance(account.balance);
+                } else {
+                    accs[2]
+                        .address(mock::MOCK_ACCOUNTS[2])
+                        .balance(Word::from(1_u64 << 20));
                 }
                 accs[3]
-                    .address(mock::MOCK_ACCOUNTS[2])
+                    .address(mock::MOCK_ACCOUNTS[3])
                     .balance(Word::from(1_u64 << 20));
             },
             |mut txs, accs| {
