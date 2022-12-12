@@ -208,6 +208,7 @@ mod test {
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(1_u64 << 20))
                     .code(code);
+                // Set balance if account exists.
                 if let Some(account) = account {
                     accs[1].address(address).balance(account.balance);
                 } else {
@@ -277,6 +278,7 @@ mod test {
             |accs| {
                 accs[0].address(addr_b).code(code_b);
                 accs[1].address(addr_a).code(code_a);
+                // Set balance if account exists.
                 if let Some(account) = account {
                     accs[2].address(address).balance(account.balance);
                 } else {
