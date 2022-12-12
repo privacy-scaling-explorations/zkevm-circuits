@@ -1,6 +1,5 @@
 //! Exp circuit benchmarks
 
-
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
@@ -115,7 +114,7 @@ mod tests {
         let test_ctx = TestContext::<2, 1>::new(
             None,
             account_0_code_account_1_no_code(code),
-                tx_from_1_to_0,
+            tx_from_1_to_0,
             |block, _txs| block.number(0xcafeu64),
         )
         .unwrap();
