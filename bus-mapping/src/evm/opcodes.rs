@@ -254,14 +254,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
     }
 }
 
-fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
+fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
     match error {
-        ExecError::InvalidJump => ErrorInvalidJump::gen_associated_ops,
-        ExecError::OutOfGas(OogError::Call) => OOGCall::gen_associated_ops,
+        ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         // more future errors place here
         _ => {
-            warn!("Using dummy gen_associated_ops for error state {:?}", error);
-            Dummy::gen_associated_ops
+            warn!("TODO: error state {:?} not implemented", error);
+            None
         }
     }
 }
@@ -306,16 +306,22 @@ pub fn gen_associated_ops(
         if exec_step.oog_or_stack_error() && !geth_step.op.is_call_or_create() {
             state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         } else {
+            let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
+            // if fn_gen_error_associated_ops handles the target error, return the handled
+            // result
+            if let Some(fn_gen_error_ops) = fn_gen_error_associated_ops {
+                return fn_gen_error_ops(state, geth_steps);
+            }
+
+            // here for some errors which fn_gen_error_associated_ops don't handle now,
+            // continue to use dummy handling until all errors implemented in
+            // fn_gen_error_associated_ops
             if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
                 let call = state.parse_call(geth_step)?;
                 // Switch to callee's call context
                 state.push_call(call);
-            } else {
-                let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
-                return fn_gen_error_associated_ops(state, geth_steps);
             }
         }
-
         state.handle_return(geth_step)?;
         return Ok(vec![exec_step]);
     }
