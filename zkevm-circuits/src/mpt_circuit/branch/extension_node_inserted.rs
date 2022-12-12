@@ -12,11 +12,10 @@ use crate::{
     mpt_circuit::helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
-        get_is_extension_node_one_nibble,
+        get_is_extension_node_one_nibble, get_branch_len, key_len_lookup, get_is_inserted_extension_node, range_lookups,
     },
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{get_branch_len, key_len_lookup, get_is_inserted_extension_node, range_lookups},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
@@ -35,7 +34,7 @@ use crate::{
 };
 
 use super::BranchCols;
-use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors};
+use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors, check_intermediate_mult};
 
 /*
 An existing extension node (which gets modified because of an inserted extension node) occupies 6 rows.
@@ -701,6 +700,17 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 constraints
             });
         }
+
+        check_intermediate_mult(
+            meta,
+            q_enable.clone(),
+            position_cols.clone(),
+            s_main.clone(),
+            accs.acc_s.mult,
+            -1,
+            fixed_table,
+            power_of_randomness[1].clone(),
+        );
 
         let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
