@@ -276,6 +276,9 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
+        if field == AccountField::NonExisting {
+            step.add_non_existent_account(address);
+        }
         self.push_op(
             step,
             RW::READ,

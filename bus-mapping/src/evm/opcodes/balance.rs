@@ -3,7 +3,7 @@ use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::state_db::Account;
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, Word, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Balance;
@@ -59,14 +59,24 @@ impl Opcode for Balance {
         )?;
 
         // Read account balance.
-        let &Account { balance, .. } = state.sdb.get_account(&address).1;
-        state.account_read(
-            &mut exec_step,
-            address,
-            AccountField::Balance,
-            balance,
-            balance,
-        )?;
+        let (exists, &Account { balance, .. }) = state.sdb.get_account(&address);
+        if exists {
+            state.account_read(
+                &mut exec_step,
+                address,
+                AccountField::Balance,
+                balance,
+                balance,
+            )?;
+        } else {
+            state.account_read(
+                &mut exec_step,
+                address,
+                AccountField::NonExisting,
+                Word::zero(),
+                Word::zero(),
+            )?;
+        };
 
         // Write the BALANCE result to stack.
         state.stack_write(

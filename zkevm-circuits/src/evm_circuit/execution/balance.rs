@@ -6,7 +6,7 @@ use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
-use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell, RandomLinearCombination};
+use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, RandomLinearCombination};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -23,6 +23,7 @@ pub(crate) struct BalanceGadget<F> {
     tx_id: Cell<F>,
     is_warm: Cell<F>,
     balance: Cell<F>,
+    exists: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
@@ -45,13 +46,25 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let balance = cb.query_cell();
-        cb.account_read(
-            from_bytes::expr(&address.cells),
-            AccountFieldTag::Balance,
-            balance.expr(),
-        );
-        cb.stack_push(balance.expr());
+        let exists = cb.query_bool();
+        let balance = cb.condition(exists.expr(), |cb| {
+            let balance = cb.query_cell();
+            cb.account_read(
+                from_bytes::expr(&address.cells),
+                AccountFieldTag::Balance,
+                balance.expr(),
+            );
+            balance
+        });
+        cb.condition(1.expr() - exists.expr(), |cb| {
+            cb.account_read(
+                from_bytes::expr(&address.cells),
+                AccountFieldTag::NonExisting,
+                0.expr(),
+            );
+        });
+
+        cb.stack_push(select::expr(exists.expr(), balance.expr(), 0.expr()));
 
         let gas_cost = is_warm.expr() * GasCost::WARM_ACCESS.expr()
             + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
@@ -75,6 +88,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             tx_id,
             is_warm,
             balance,
+            exists,
         }
     }
 
@@ -89,7 +103,8 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let mut address_bytes = block.rws[step.rw_indices[0]].stack_value().to_address().0;
+        let address = block.rws[step.rw_indices[0]].stack_value().to_address();
+        let mut address_bytes = address.0;
         address_bytes.reverse();
         self.address.assign(region, offset, Some(address_bytes))?;
 
@@ -107,10 +122,17 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let balance = block.rws[step.rw_indices[5]]
-            .table_assignment_aux(block.randomness)
-            .value;
+        let exists = step.account_exists(&address);
+        let balance = if exists {
+            block.rws[step.rw_indices[5]]
+                .table_assignment_aux(block.randomness)
+                .value
+        } else {
+            F::zero()
+        };
         self.balance.assign(region, offset, Value::known(balance))?;
+        self.exists
+            .assign(region, offset, Value::known(F::from(exists)))?;
 
         Ok(())
     }
