@@ -73,7 +73,7 @@ mod tests {
             &general_params,
             &pk,
             &[circuit],
-            &[&[&[]]],
+            &[&[]],
             rng,
             &mut transcript,
         )
@@ -96,7 +96,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&[&[]]],
+            &[&[]],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
