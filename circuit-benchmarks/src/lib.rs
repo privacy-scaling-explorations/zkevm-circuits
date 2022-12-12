@@ -31,3 +31,7 @@ pub mod pi_circuit;
 #[cfg(test)]
 #[cfg(feature = "benches")]
 pub mod copy_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod exp_circuit;
