@@ -12,20 +12,19 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
-        // TODO: replace dummy create here
         let geth_step = &geth_steps[0];
 
         let offset = geth_step.stack.nth_last(1)?.as_usize();
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
-        let curr_memory_word_size = (state.call_ctx()?.memory.len() as u64) / 32;
+        let curr_memory_word_size = state.call_ctx()?.memory_word_size();
         if length != 0 {
             state
                 .call_ctx_mut()?
                 .memory
                 .extend_at_least(offset + length);
         }
-        let next_memory_word_size = (state.call_ctx()?.memory.len() as u64) / 32;
+        let next_memory_word_size = state.call_ctx()?.memory_word_size();
 
         let mut exec_step = state.new_step(geth_step)?;
 
@@ -46,9 +45,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         } else {
             state.create_address()?
         };
-
-        dbg!(call.is_success);
-        dbg!(call.clone());
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
@@ -84,9 +80,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         }
 
         let is_warm = state.sdb.check_account_in_access_list(&address);
-        dbg!(state.call()?.is_persistent);
-        dbg!(state.call()?.is_success);
-        dbg!(state.block_ctx.rwc);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -97,9 +90,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 is_warm_prev: is_warm,
             },
         )?;
-        dbg!(state.block_ctx.rwc);
-        // dbg!(state.rw_counter);
-        // this should not be be reversed?????, but now it's in the wrong call????
 
         state.call_context_read(
             &mut exec_step,
@@ -146,7 +136,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
-        dbg!(call.value);
         state.transfer(
             &mut exec_step,
             call.caller_address,
