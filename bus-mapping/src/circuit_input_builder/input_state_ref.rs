@@ -809,27 +809,35 @@ impl<'a> CircuitInputStateRef<'a> {
     /// previous call context.
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
         // handle return_data
-        if !self.call()?.is_root {
-            match step.op {
-                OpcodeId::RETURN | OpcodeId::REVERT => {
-                    let offset = step.stack.nth_last(0)?.as_usize();
-                    let length = step.stack.nth_last(1)?.as_usize();
-                    // TODO: Try to get rid of clone.
-                    // At the moment it conflicts with `call_ctx` and `caller_ctx`.
-                    let callee_memory = self.call_ctx()?.memory.clone();
-                    let caller_ctx = self.caller_ctx_mut()?;
-                    caller_ctx.return_data.resize(length, 0);
-                    if length != 0 {
-                        caller_ctx.return_data[0..length]
-                            .copy_from_slice(&callee_memory.0[offset..offset + length]);
+        let (return_data_offset, return_data_length) = {
+            if !self.call()?.is_root {
+                let (offset, length) = match step.op {
+                    OpcodeId::RETURN | OpcodeId::REVERT => {
+                        let offset = step.stack.nth_last(0)?.as_usize();
+                        let length = step.stack.nth_last(1)?.as_usize();
+                        // TODO: Try to get rid of clone.
+                        // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+                        let callee_memory = self.call_ctx()?.memory.clone();
+                        let caller_ctx = self.caller_ctx_mut()?;
+                        caller_ctx.return_data.resize(length, 0);
+                        if length != 0 {
+                            caller_ctx.return_data[0..length]
+                                .copy_from_slice(&callee_memory.0[offset..offset + length]);
+                        }
+                        (offset, length)
                     }
-                }
-                _ => {
-                    let caller_ctx = self.caller_ctx_mut()?;
-                    caller_ctx.return_data.truncate(0);
-                }
+                    _ => {
+                        let caller_ctx = self.caller_ctx_mut()?;
+                        caller_ctx.return_data.truncate(0);
+                        (0, 0)
+                    }
+                };
+
+                (offset.try_into().unwrap(), length.try_into().unwrap())
+            } else {
+                (0, 0)
             }
-        }
+        };
 
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
@@ -857,8 +865,8 @@ impl<'a> CircuitInputStateRef<'a> {
         // If current call has caller.
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
-            caller.last_callee_return_data_length = call.return_data_length;
-            caller.last_callee_return_data_offset = call.return_data_offset;
+            caller.last_callee_return_data_length = return_data_length;
+            caller.last_callee_return_data_offset = return_data_offset;
         }
 
         self.tx_ctx.pop_call_ctx();
