@@ -220,7 +220,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
                 bytecode_table: bytecode_table.clone(),
                 copy_table,
                 q_enable: q_copy_table,
-                randomness: power_of_randomness[0].clone(),
+                challenges: challenges.clone(),
             },
         );
         let state_circuit = StateCircuitConfig::new(
