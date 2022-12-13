@@ -194,12 +194,22 @@ mod test {
 
     #[test]
     fn stack_overflow_simple() {
-        test_stack_overflow(OpcodeId::PUSH1, &[1]);
+        test_stack_overflow(OpcodeId::PUSH1, &[123]);
+        test_stack_overflow(
+            OpcodeId::PUSH10,
+            &[2, 10, 2, 5, 22, 100, 124, 210, 156, 120],
+        );
+        test_stack_overflow(
+            OpcodeId::PUSH20,
+            &[
+                2, 10, 2, 5, 22, 100, 124, 210, 156, 120, 10, 28, 37, 87, 211, 255, 212, 60, 76,
+                119,
+            ],
+        );
     }
 
     fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
         assert!(bytes.len() == opcode.data_len());
-
         let mut bytecode = bytecode! {
             .write_op(opcode)
         };
