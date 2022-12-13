@@ -708,7 +708,7 @@ pub(crate) fn check_intermediate_mult<F: FieldExt>(
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
     position_cols: PositionCols<F>,
     s_main: MainCols<F>,
-    acc_s_mult: Column<Advice>,
+    accs: AccumulatorCols<F>,
     /*
     `rot_into_ext_node` and `rot_into_branch_init` are different for inserted extension node (inserted
     at the place of some existing extension node). We use `rot_into_branch_init` for inserted
@@ -731,7 +731,7 @@ pub(crate) fn check_intermediate_mult<F: FieldExt>(
             let is_short =
                 get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
 
-            let mut mult = meta.query_advice(acc_s_mult, Rotation::cur());
+            let mut mult = meta.query_advice(accs.acc_s.mult, Rotation::cur());
             
             constraints.push((
                 "Intermediate mult",
@@ -771,7 +771,7 @@ pub(crate) fn check_intermediate_mult<F: FieldExt>(
         sel_two_bytes,
         2,
         s_main.rlp2,
-        acc_s_mult,
+        accs.acc_s.mult,
         128,
         fixed_table,
     );
@@ -781,7 +781,28 @@ pub(crate) fn check_intermediate_mult<F: FieldExt>(
         sel_three_bytes,
         3,
         s_main.bytes[0],
-        acc_s_mult,
+        accs.acc_s.mult,
+        128,
+        fixed_table,
+    );
+
+    // Nibbles RLC multiplication:
+    mult_diff_lookup(
+        meta,
+        sel_two_bytes,
+        -1,
+        s_main.rlp2,
+        accs.acc_c.mult,
+        128,
+        fixed_table,
+    );
+
+    mult_diff_lookup(
+        meta,
+        sel_three_bytes,
+        -1,
+        s_main.bytes[0],
+        accs.acc_c.mult,
         128,
         fixed_table,
     );

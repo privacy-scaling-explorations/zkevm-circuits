@@ -12,7 +12,8 @@ use crate::{
     mpt_circuit::helpers::{
         bytes_expr_into_rlc, compute_rlc, get_bool_constraint, get_is_extension_node,
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
-        get_is_extension_node_one_nibble, get_branch_len, key_len_lookup, get_is_inserted_extension_node, range_lookups,
+        get_is_extension_node_one_nibble, get_branch_len, key_len_lookup, get_is_inserted_extension_node,
+        range_lookups,
     },
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
@@ -598,16 +599,21 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         before_nibbles_rlc = before_nibbles_rlc + (first_nibble_before * c16.clone() + second_nibble_before) * mult.clone();
                         nibbles_rlc = nibbles_rlc + (first_nibble * c16.clone() + second_nibble) * mult.clone();
 
-                        // TODO: uncomment:
-                        // mult = mult * power_of_randomness[0].clone();
+                        mult = mult * power_of_randomness[0].clone();
                     }
 
                     // TODO: cover all cases - even, odd, short
 
                     let n = s_rlp2_after - c16.clone();
 
-                    // TODO: mult here depends on the number of nibbles
-                    nibbles_rlc = nibbles_rlc + (drifted_pos.clone() * c16.clone() + n) * mult;
+                    let mult_after = meta.query_advice(
+                        accs.acc_c.mult,
+                        Rotation(rot_into_ext_node_account)) * is_account_proof.clone()
+                        + meta.query_advice(
+                        accs.acc_c.mult,
+                        Rotation(rot_into_ext_node_storage)) * (one.clone() - is_account_proof.clone());
+
+                    nibbles_rlc = nibbles_rlc + (drifted_pos.clone() * c16.clone() + n) * mult_after;
 
                     constraints.push((
                         "Nibbles in before are the same as nibbles in inserted + after",
@@ -615,7 +621,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                             * q_enable
                             * (before_nibbles_rlc - nibbles_rlc)
                     ));
-                    
+
                     // TODO: inserted extension node branch has an extension node (drifted_pos)
                     // at the proper nibble
 
@@ -706,7 +712,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             q_enable.clone(),
             position_cols.clone(),
             s_main.clone(),
-            accs.acc_s.mult,
+            accs,
             -1,
             fixed_table,
             power_of_randomness[1].clone(),
@@ -723,6 +729,8 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         };
 
         let sel_long = |meta: &mut VirtualCells<F>| {
+            let q_enable = q_enable(meta);
+
             let is_ext_long_even_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
                 Rotation(-1),
@@ -744,7 +752,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 + is_ext_long_odd_c16
                 + is_ext_long_odd_c1;
 
-            is_long
+            q_enable * is_long
         };
 
         /*
@@ -852,13 +860,17 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             pv.acc_s = F::zero();
             pv.acc_mult_s = F::one();
             let len: usize;
+            let len_full_bytes: usize; // how many pairs of nibbles
             if row.get_byte(1) <= 32 {
                 // key length is 1
+                len_full_bytes = 0;
                 len = 2 // [length byte, key]
             } else if row.get_byte(0) < 248 {
-                len = (row.get_byte(1) - 128) as usize + 2;
+                len_full_bytes = (row.get_byte(1) - 128) as usize - 1;
+                len = len_full_bytes + 1 + 2; // +1 for the first position which might contain 0 or 1 nibble
             } else {
-                len = (row.get_byte(2) - 128) as usize + 3;
+                len_full_bytes = (row.get_byte(1) - 128) as usize - 1;
+                len = len_full_bytes + 1 + 3; // +1 for the first position which might contain 0 or 1 nibble
             }
             mpt_config.compute_acc_and_mult(
                 &row.bytes,
@@ -887,8 +899,14 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 len,
             );
 
+            let mut nibbles_rlc_mult = F::one();
+            for ind in 0..len_full_bytes {
+                nibbles_rlc_mult *= mpt_config.randomness;
+            }
+
+            // We don't need to store `pv.acc_mult_c`, so we can store `nibbles_rlc_mult` using `acc_mult_c`.
             mpt_config
-                .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
+                .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, nibbles_rlc_mult, offset)
                 .ok();
 
             region

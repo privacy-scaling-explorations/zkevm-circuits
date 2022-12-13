@@ -174,7 +174,7 @@ pub(crate) fn key_len_lookup<F: FieldExt>(
 pub(crate) fn mult_diff_lookup<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-    addition: usize,
+    addition: i8,
     key_len_col: Column<Advice>,
     mult_diff_col: Column<Advice>,
     key_len_offset: usize,
@@ -185,9 +185,15 @@ pub(crate) fn mult_diff_lookup<F: FieldExt>(
         let mut constraints = vec![];
 
         let offset = Expression::Constant(F::from(key_len_offset as u64));
-        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
+        let mut key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
+        if addition < 0 {
+            key_len = key_len - Expression::Constant(F::from(-addition as u64));
+        }
         let mult_diff = meta.query_advice(mult_diff_col, Rotation::cur());
-        let add_expr = Expression::Constant(F::from(addition as u64));
+        let mut add_expr = Expression::Constant(F::from(addition as u64));
+        if addition < 0 {
+            add_expr = Expression::Constant(F::zero());
+        }
 
         constraints.push((
             Expression::Constant(F::from(FixedTableTag::RMult as u64)),

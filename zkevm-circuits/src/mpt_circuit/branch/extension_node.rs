@@ -792,7 +792,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 q_enable.clone(),
                 position_cols.clone(),
                 s_main.clone(),
-                accs.acc_s.mult,
+                accs,
                 rot_into_branch_init,
                 fixed_table,
                 power_of_randomness[1].clone(),
@@ -835,20 +835,18 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 pv.acc_s = F::zero();
                 pv.acc_mult_s = F::one();
                 let len: usize;
+                let len_full_bytes: usize; // how many pairs of nibbles
                 if row.get_byte(1) <= 32 {
                     // key length is 1
+                    len_full_bytes = 0;
                     len = 2 // [length byte, key]
                 } else if row.get_byte(0) < 248 {
-                    len = (row.get_byte(1) - 128) as usize + 2;
+                    len_full_bytes = (row.get_byte(1) - 128) as usize - 1;
+                    len = len_full_bytes + 1 + 2; // +1 for the first position which might contain 0 or 1 nibble
                 } else {
-                    len = (row.get_byte(2) - 128) as usize + 3;
+                    len_full_bytes = (row.get_byte(1) - 128) as usize - 1;
+                    len = len_full_bytes + 1 + 3; // +1 for the first position which might contain 0 or 1 nibble
                 }
-
-                println!("=========");
-                println!("{:?}", offset);
-                println!("{:?}", len);
-                println!("{:?}", row.bytes);
-
                 mpt_config.compute_acc_and_mult(
                     &row.bytes,
                     &mut pv.acc_s,
@@ -875,8 +873,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     len,
                 );
 
+                let mut nibbles_rlc_mult = F::one();
+                for ind in 0..len_full_bytes {
+                    nibbles_rlc_mult *= mpt_config.randomness;
+                }
+
+                // We don't need to store `pv.acc_mult_c`, so we can store `nibbles_rlc_mult` using `acc_mult_c`.
+
                 mpt_config
-                    .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
+                    .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, nibbles_rlc_mult, offset)
                     .ok();
             } else {
                 // We use intermediate value from previous row (because

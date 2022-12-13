@@ -227,8 +227,6 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             Currently, the extension node S and extension node C both have the same key RLC -
             however, sometimes extension node can be replaced by a shorter extension node
             (in terms of nibbles), this is still to be implemented.
-
-            TODO: extension nodes of different nibbles length
             */
             constraints.push((
                 "Extension node row S and C key RLC are the same",
