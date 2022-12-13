@@ -10,14 +10,14 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
@@ -37,6 +37,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
+    intrinsic_gas_cost: Cell<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     code_hash: Cell<F>,
@@ -110,14 +111,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: Take gas cost of access list (EIP 2930) into consideration.
         // Use intrinsic gas
+        /*
         let intrinsic_gas_cost = select::expr(
             tx_is_create.expr(),
             GasCost::CREATION_TX.expr(),
             GasCost::TX.expr(),
         ) + tx_call_data_gas_cost.expr();
-
+        */
         // Check gas_left is sufficient
-        let gas_left = tx_gas.expr() - intrinsic_gas_cost;
+        let intrinsic_gas_cost = cb.query_cell();
+        let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
         // Prepare access list of caller and callee
@@ -151,10 +154,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let code_hash = cb.query_cell();
-        cb.account_read(
+        cb.account_write(
             tx_callee_address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.expr(),
+            code_hash.expr(),
+            None,
         );
 
         let is_empty_code_hash = IsEqualGadget::construct(
@@ -273,6 +278,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             sufficient_gas_left,
             transfer_with_gas_fee,
             code_hash,
+            intrinsic_gas_cost,
             is_empty_code_hash,
         }
     }
@@ -287,6 +293,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
+
+        let _callee_addr = call.callee_address; // block.rws[step.rw_indices[5]].tx_access_list_value_pair();
         let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
             [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
                 .map(|idx| block.rws[idx].account_value_pair());
@@ -299,6 +307,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, Value::known(F::from(tx.gas)))?;
         self.tx_gas_price
             .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
+        self.tx_value
+            .assign(region, offset, Some(tx.value.to_le_bytes()))?;
         self.mul_gas_fee_by_gas
             .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
         let caller_address = tx
@@ -320,6 +330,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
+
+        let _call_data_length = block.rws[step.rw_indices[14]].call_context_value().as_u64();
         self.tx_call_data_length.assign(
             region,
             offset,
@@ -336,6 +348,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.rw_counter_end_of_reversion,
             call.is_persistent,
         )?;
+        self.intrinsic_gas_cost
+            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.sufficient_gas_left
             .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(

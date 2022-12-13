@@ -1,18 +1,22 @@
+use crate::util::Challenges;
+use crate::{evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag};
 use bus_mapping::circuit_input_builder;
+use eth_types::H256;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::circuit::Value;
 
-use crate::{
-    evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag, util::Challenges,
-};
-
 use super::{step::step_convert, Call, ExecStep};
+use crate::evm_circuit::step::ExecutionState;
 
 /// Transaction in a witness block
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Transaction {
+    /// The block number in which this tx is included in
+    pub block_number: u64,
     /// The transaction identifier in the block
     pub id: usize,
+    /// The hash of the transaction
+    pub hash: H256,
     /// The sender account nonce of the transaction
     pub nonce: u64,
     /// The gas limit of the transaction
@@ -111,6 +115,12 @@ impl Transaction {
                     Value::known(F::zero()),
                     Value::known(F::from(self.call_data_gas_cost)),
                 ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.block_number)),
+                ],
             ],
             self.call_data
                 .iter()
@@ -129,9 +139,15 @@ impl Transaction {
     }
 }
 
-pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
+pub(super) fn tx_convert(
+    tx: &circuit_input_builder::Transaction,
+    id: usize,
+    next_tx: Option<&circuit_input_builder::Transaction>,
+) -> Transaction {
     Transaction {
+        block_number: tx.block_num,
         id,
+        hash: tx.hash,
         nonce: tx.nonce,
         gas: tx.gas,
         gas_price: tx.gas_price,
@@ -168,6 +184,41 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
                 is_static: call.is_static,
             })
             .collect(),
-        steps: tx.steps().iter().map(step_convert).collect(),
+        steps: tx
+            .steps()
+            .iter()
+            .map(|step| step_convert(step, tx.block_num))
+            .chain(if let Some(next_tx) = next_tx {
+                debug_assert!(next_tx.block_num >= tx.block_num);
+                let block_gap = next_tx.block_num - tx.block_num;
+                (0..block_gap)
+                    .map(|i| {
+                        let rwc = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
+                        ExecStep {
+                            rw_counter: rwc,
+                            execution_state: ExecutionState::EndInnerBlock,
+                            block_num: tx.block_num + i,
+                            ..Default::default()
+                        }
+                    })
+                    .collect::<Vec<ExecStep>>()
+            } else {
+                let rwc = tx.steps().last().unwrap().rwc.0 + 9 - (id == 1) as usize;
+                vec![
+                    ExecStep {
+                        rw_counter: rwc,
+                        execution_state: ExecutionState::EndInnerBlock,
+                        block_num: tx.block_num,
+                        ..Default::default()
+                    },
+                    //ExecStep {
+                    //    rw_counter: rwc,
+                    //    execution_state: ExecutionState::EndBlock,
+                    //    block_num: tx.block_num,
+                    //    ..Default::default()
+                    //},
+                ]
+            })
+            .collect(),
     }
 }

@@ -4,6 +4,7 @@ use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
+use eth_types::{evm_types::OpcodeId, H256};
 use eth_types::{GethExecStep, ToWord};
 use keccak256::EMPTY_HASH;
 use log::warn;
@@ -23,7 +24,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-
         let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
         let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
@@ -115,16 +115,31 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
-        )?;
-
         let (_, callee_account) = state.sdb.get_account(&call.address);
+        let callee_account = callee_account.clone();
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
+
+        if call.kind == CallKind::Call {
+            // Transfer value only for CALL opcode.
+            state.transfer(
+                &mut exec_step,
+                call.caller_address,
+                call.address,
+                call.value,
+            )?;
+        } else {
+            // Get callee balance for CALLCODE, DELEGATECALL and STATICCALL opcodes.
+            let callee_balance = callee_account.balance;
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::Balance,
+                callee_balance,
+                callee_balance,
+            )?;
+        }
+
         state.account_read(
             &mut exec_step,
             call.address,
@@ -132,7 +147,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             callee_nonce,
             callee_nonce,
         )?;
-        let callee_code_hash = call.code_hash;
+        let mut callee_code_hash = call.code_hash;
+        if callee_code_hash.is_zero() {
+            callee_code_hash = H256::from(*EMPTY_HASH);
+            assert!(callee_code_hash.to_fixed_bytes() == *EMPTY_HASH);
+        };
         let callee_code_hash_word = callee_code_hash.to_word();
         state.account_read(
             &mut exec_step,
@@ -173,20 +192,55 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             0
         } + memory_expansion_gas_cost;
         let gas_specified = geth_step.stack.last()?;
+        debug_assert!(
+            geth_step.gas.0 >= gas_cost,
+            "gas {:?} gas_cost {:?} memory_expansion_gas_cost {:?}",
+            geth_step.gas.0,
+            gas_cost,
+            memory_expansion_gas_cost
+        );
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
+        if geth_steps[0].op == OpcodeId::CALL
+            && geth_steps[1].depth == geth_steps[0].depth + 1
+            && geth_steps[1].gas.0 != callee_gas_left + if has_value { 2300 } else { 0 }
+        {
+            // panic with full info
+            let info1 = format!("callee_gas_left {} gas_specified {} gas_cost {} is_warm {} has_value {} is_empty_account {} current_memory_word_size {} next_memory_word_size {}, memory_expansion_gas_cost {}",
+                    callee_gas_left, gas_specified, gas_cost, is_warm, has_value, is_empty_account, curr_memory_word_size, next_memory_word_size, memory_expansion_gas_cost);
+            let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
+                        geth_step.stack.nth_last(2),
+                        geth_step.stack.nth_last(3),
+                        geth_step.stack.nth_last(4),
+                        geth_step.stack.nth_last(5),
+                        geth_step.stack.nth_last(6)
+                    );
+            let full_ctx = format!(
+                "step0 {:?} step1 {:?} call {:?}, {} {}",
+                geth_steps[0], geth_steps[1], call, info1, info2
+            );
+            debug_assert_eq!(
+                geth_steps[1].gas.0,
+                callee_gas_left + if has_value { 2300 } else { 0 },
+                "{}",
+                full_ctx
+            );
+        }
+
         // There are 3 branches from here.
+        let code_address = call.code_address();
         match (
-            state.is_precompiled(&call.address),
+            code_address
+                .map(|ref addr| state.is_precompiled(addr))
+                .unwrap_or(false),
             callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
         ) {
             // 1. Call to precompiled.
             (true, _) => {
                 warn!("Call to precompiled is left unimplemented");
-                Ok(vec![exec_step])
-            }
-            // 2. Call to account with empty code.
-            (_, true) => {
+
                 for (field, value) in [
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -195,6 +249,42 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
                 state.handle_return(geth_step)?;
+                let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
+                if real_cost != exec_step.gas_cost.0 {
+                    log::warn!(
+                        "precompile gas fixed from {} to {}, step {:?}",
+                        exec_step.gas_cost.0,
+                        real_cost,
+                        geth_steps[0]
+                    );
+                }
+                exec_step.gas_cost = GasCost(real_cost);
+                Ok(vec![exec_step])
+            }
+            // 2. Call to account with empty code.
+            (_, true) => {
+                log::warn!("Call to account with empty code is not supported yet.");
+                for (field, value) in [
+                    (CallContextField::LastCalleeId, 0.into()),
+                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                ] {
+                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
+                }
+                state.handle_return(geth_step)?;
+
+                // FIXME
+                let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
+                if real_cost != exec_step.gas_cost.0 {
+                    log::warn!(
+                        "empty call gas fixed from {} to {}, step {:?}",
+                        exec_step.gas_cost.0,
+                        real_cost,
+                        geth_steps[0]
+                    );
+                }
+                exec_step.gas_cost = GasCost(real_cost);
+
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
@@ -210,7 +300,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     ),
                     (
                         CallContextField::GasLeft,
-                        (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
+                        (geth_step.gas.0 - geth_step.gas_cost.0).into(),
                     ),
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
@@ -246,7 +336,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         CallContextField::ReturnDataLength,
                         call.return_data_length.into(),
                     ),
-                    (CallContextField::Value, call.value),
+                    (
+                        CallContextField::Value,
+                        // Should set to value of current call for DELEGATECALL.
+                        if call.kind == CallKind::DelegateCall {
+                            current_call.value
+                        } else {
+                            call.value
+                        },
+                    ),
                     (CallContextField::IsSuccess, (call.is_success as u64).into()),
                     (CallContextField::IsStatic, (call.is_static as u64).into()),
                     (CallContextField::LastCalleeId, 0.into()),
@@ -262,5 +360,144 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 Ok(vec![exec_step])
             }
         }
+    }
+}
+
+#[cfg(feature = "skip")]
+mod return_tests {
+    use crate::mock::BlockData;
+    use eth_types::geth_types::GethData;
+    use eth_types::{bytecode, word};
+    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
+    use mock::TestContext;
+
+    #[test]
+    fn test_precompiled_call() {
+        let code = bytecode! {
+            PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+            PUSH1(0x00)
+            MSTORE
+
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x04)
+            PUSH1(0xFF)
+            CALL
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_precompiled_callcode() {
+        let code = bytecode! {
+            PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+            PUSH1(0x00)
+            MSTORE
+
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x04)
+            PUSH1(0xFF)
+            CALLCODE
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_precompiled_static_call() {
+        let code = bytecode! {
+            PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+            PUSH1(0x00)
+            MSTORE
+
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x00)
+            PUSH1(0x04)
+            PUSH1(0xFF)
+            STATICCALL
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_precompiled_delegate_call() {
+        let code = bytecode! {
+            PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
+            PUSH1(0x00)
+            MSTORE
+
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x20)
+            PUSH1(0x00)
+            PUSH1(0x04)
+            PUSH1(0xFF)
+            DELEGATECALL
+        };
+
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
     }
 }

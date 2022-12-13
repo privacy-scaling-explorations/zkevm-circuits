@@ -61,13 +61,14 @@ jobs:
           command: test
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks
       - name: Run heavy tests # heavy tests are run serially to avoid OOM
+        if: false
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --verbose --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
 
   build:
-    if: github.event.pull_request.draft == false
+    if: false
 
     name: Build target ${{ matrix.target }}
     runs-on: ubuntu-latest

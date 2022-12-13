@@ -310,8 +310,10 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         Self::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.context.chain_id.as_u64(),
+            block.context.chain_id().as_u64(),
             block
+                .context
+                .first()
                 .eth_block
                 .transactions
                 .iter()

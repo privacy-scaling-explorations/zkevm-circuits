@@ -12,10 +12,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{
-        Advice, Challenge, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        Selector,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -120,7 +117,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
     ) -> Self {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
-        let value = meta.advice_column_in(SecondPhase);
+        let value = meta.advice_column();
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
@@ -675,7 +672,7 @@ pub mod dev {
     };
 
     impl<F: Field> Circuit<F> for CopyCircuit<F> {
-        type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
+        type Config = (CopyCircuitConfig<F>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {

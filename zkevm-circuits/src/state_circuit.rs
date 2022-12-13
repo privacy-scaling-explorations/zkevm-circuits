@@ -18,10 +18,7 @@ use eth_types::{Address, Field};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
@@ -104,9 +101,9 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             challenges.evm_word_powers_of_randomness(),
         );
 
-        let initial_value = meta.advice_column_in(SecondPhase);
-        let is_non_exist = meta.advice_column_in(SecondPhase);
-        let state_root = meta.advice_column_in(SecondPhase);
+        let initial_value = meta.advice_column();
+        let is_non_exist = meta.advice_column();
+        let state_root = meta.advice_column();
 
         let sort_keys = SortKeysConfig {
             tag,
@@ -248,13 +245,11 @@ impl<F: Field> StateCircuitConfig<F> {
                                 assert_eq!(state_root, old_root);
                                 state_root = new_root;
                             }
-                            if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
-                                assert_eq!(
-                                    row.value_assignment(randomness),
-                                    F::zero(),
-                                    "{:?}",
-                                    row
-                                );
+                            if matches!(row.tag(), RwTableTag::CallContext)
+                                && !row.is_write()
+                                && row.value_assignment(randomness) != F::zero()
+                            {
+                                log::error!("invalid call context: {:?}", row);
                             }
                             state_root
                         });
@@ -304,7 +299,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 )?;
             }
 
-            if offset == rows_len - 1 {
+            if offset + 1 == rows_len {
                 // The last row is always a last access, so we need to handle the case where the
                 // state root changes because of an mpt lookup on the last row.
                 if let Some(update) = updates.get(row) {
@@ -536,6 +531,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
+        value_prev_col: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         is_non_exist: meta.query_advice(c.is_non_exist, Rotation::cur()),

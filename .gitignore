@@ -2,3 +2,6 @@
 *.png
 .DS_Store
 .vscode
+*.log
+*.json
+*.sh

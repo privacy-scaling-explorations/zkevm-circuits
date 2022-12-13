@@ -6,9 +6,9 @@ use eth_types::geth_types::BlockConstants;
 use eth_types::sign_types::SignData;
 use eth_types::H256;
 use eth_types::{
-    geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
-    Word,
+    geth_types::Transaction, Address, Field, ToBigEndian, ToLittleEndian, ToScalar, Word,
 };
+use ethers_core::abi::ethereum_types::BigEndianHash;
 use halo2_proofs::plonk::Instance;
 
 use crate::table::BlockTable;
@@ -1119,19 +1119,20 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
+        let context = block.context.ctxs.iter().next().unwrap().1;
         let public_data = PublicData {
-            chain_id: block.context.chain_id,
-            history_hashes: block.context.history_hashes.clone(),
-            transactions: block.eth_block.transactions.clone(),
-            state_root: block.eth_block.state_root,
+            chain_id: context.chain_id,
+            history_hashes: context.history_hashes.clone(),
+            transactions: context.eth_block.transactions.clone(),
+            state_root: context.eth_block.state_root,
             prev_state_root: H256::from_uint(&block.prev_state_root),
             block_constants: BlockConstants {
-                coinbase: block.context.coinbase,
-                timestamp: block.context.timestamp,
-                number: block.context.number.as_u64().into(),
-                difficulty: block.context.difficulty,
-                gas_limit: block.context.gas_limit.into(),
-                base_fee: block.context.base_fee,
+                coinbase: context.coinbase,
+                timestamp: context.timestamp,
+                number: context.number.as_u64().into(),
+                difficulty: context.difficulty,
+                gas_limit: context.gas_limit.into(),
+                base_fee: context.base_fee,
             },
         };
         PiCircuit::new(
