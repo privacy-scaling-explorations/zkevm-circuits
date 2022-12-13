@@ -407,7 +407,7 @@ pub mod test {
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         run_test_circuit(block)
     }
-    
+
     pub fn get_test_degree<F: Field>(block: &Block<F>) -> u32 {
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(block);
