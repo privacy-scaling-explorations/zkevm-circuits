@@ -1,3 +1,4 @@
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
@@ -5,10 +6,13 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
-use crate::mpt_circuit::{
-    columns::{MainCols, PositionCols},
-    helpers::key_len_lookup,
-    param::HASH_WIDTH,
+use crate::{
+    cs,
+    mpt_circuit::{
+        columns::{MainCols, PositionCols},
+        helpers::{key_len_lookup, BaseConstraintBuilder, ColumnTransition},
+        param::HASH_WIDTH,
+    },
 };
 
 use super::BranchCols;
@@ -92,184 +96,116 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         fixed_table: [Column<Fixed>; 3],
         check_zeros: bool,
     ) -> Self {
-        let config = BranchParallelConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::from(1_u64));
-        let c128 = Expression::Constant(F::from(128_u64));
-
-        /*
-        Empty nodes have 0 at `rlp2`, have `128` at `bytes[0]` and 0 everywhere else:
-        [0, 0, 128, 0, ..., 0].
-        While non-empty nodes have `160` at `rlp2` and then any byte at `bytes`:
-        [0, 160, a0, ..., a31].
-
-        Note: `s_rlp1` and `c_rlp1` store the number of RLP still left in the in the branch rows.
-        The constraints are in `branch.rs`, see `RLP length` gate.
-        */
         meta.create_gate("Empty and non-empty branch children", |meta| {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let mut constraints = vec![];
-
-            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
+            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+            let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
             let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
-
-            let c160 = Expression::Constant(F::from(160_u64));
-
             let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
+            let node_index = meta.query_advice(branch.node_index, Rotation::cur());
+            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
 
-            /*
-            Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
-            */
-            constraints.push((
-                "rlp2 = 0 or rlp2 = 160",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (one.clone() - is_node_hashed.clone())
-                    * rlp2.clone()
-                    * (rlp2.clone() - c160.clone()),
-            ));
+            let sel = ColumnTransition::new(meta, sel);
+            let mod_node_hash_rlc = ColumnTransition::new(meta, mod_node_hash_rlc);
 
-            /*
-            No further constraints needed for non-empty nodes besides `rlp2 = 160`
-            and values to be bytes which is constrained by the byte range lookups
-            on `s_main.bytes` and `c_main.bytes`.
-            */
+            let mut cb = BaseConstraintBuilder::default();
 
-            let advice0 = meta.query_advice(main.bytes[0], Rotation::cur());
+            cs!{[cb],
+            ifx(is_branch_child.expr()) {
+                // Empty and non-empty branch children
+                // Empty nodes have 0 at `rlp2`, have `128` at `bytes[0]` and 0 everywhere else:
+                // [0, 0, 128, 0, ..., 0].
+                // While non-empty nodes have `160` at `rlp2` and then any byte at `bytes`:
+                // [0, 160, a0, ..., a31].
+                // Note: `s_rlp1` and `c_rlp1` store the number of RLP still left in the in the branch rows.
+                // The constraints are in `branch.rs`, see `RLP length` gate.
+                cs!{[cb],
+                ifx(and::expr([q_enable.expr(), not::expr(is_node_hashed.expr())])) {
+                    // Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
+                    cb.require_in_set(
+                        "rlp2 = 0 or rlp2 = 160",
+                        rlp2.expr(),
+                        [0.expr(), 160.expr()].to_vec(),
+                    );
 
-            /*
-            When an empty node (0 at `rlp2`), `bytes[0] = 128`.
-            Note that `rlp2` can be only 0 or 128.
-            */
-            constraints.push((
-                "bytes[0] = 128 in empty node",
-                q_enable.clone()
-                    * is_branch_child_cur.clone()
-                    * (one.clone() - is_node_hashed.clone())
-                    * (rlp2.clone() - c160.clone()) // filters out non-empty nodes
-                    * (advice0 - c128.clone()),
-            ));
+                    // For empty nodes
+                    cs!{[cb],
+                    ifx(rlp2.expr() - 160.expr()) {
+                        for (idx, byte) in main.bytes.iter().map(|col| meta.query_advice(*col, Rotation::cur())).enumerate() {
+                            if idx == 0 {
+                                // When an empty node (0 at `rlp2`), `bytes[0] = 128`.
+                                // Note that `rlp2` can be only 0 or 128.
+                                cb.require_equal("bytes[0] = 128 in empty node", byte, 128.expr());
+                            } else {
+                                // When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
+                                cb.require_zero("bytes[i] = 0 for i > 0 in empty", byte);
+                            }
+                        }
+                    }}
 
-            /*
-            When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
-            */
-            for col in main.bytes.iter().skip(1) {
-                let s = meta.query_advice(*col, Rotation::cur());
-                constraints.push((
-                    "bytes[i] = 0 for i > 0 in empty",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (one.clone() - is_node_hashed.clone())
-                        * (rlp2.clone() - c160.clone()) // filters out non-empty nodes
-                        * s,
-                ));
-            }
+                    // No further constraints needed for non-empty nodes besides `rlp2 = 160`
+                    // and values to be bytes which is constrained by the byte range lookups
+                    // on `s_main.bytes` and `c_main.bytes`.
 
-            /*
-            Note: The attacker could put 160 in an empty node (the constraints
-            above does not / cannot prevent this) and thus try to
-            modify the branch RLC (used for checking the hash of a branch), like:
-            [0, 160, 128, 0, ..., 0]
-            But then the constraints related to the branch RLP length would fail -
-            the length of RLP bytes in such a row would then be `32 + 1 = 160 - 128 + 1`
-            instead of `1` and the RLP length constraint would fail.
-            */
+                    // Note: The attacker could put 160 in an empty node (the constraints
+                    // above does not / cannot prevent this) and thus try to
+                    // modify the branch RLC (used for checking the hash of a branch), like:
+                    // [0, 160, 128, 0, ..., 0]
+                    // But then the constraints related to the branch RLP length would fail -
+                    // the length of RLP bytes in such a row would then be `32 + 1 = 160 - 128 + 1`
+                    // instead of `1` and the RLP length constraint would fail.
+                }}
 
-            constraints
+                // Branch child RLC & selector for specifying whether the modified node is empty
+                cs!{[cb],
+                ifx(q_not_first.expr()) {
+                    // `mod_node_hash_rlc` is the same for all `is_branch_child` rows.
+                    // Having the values stored in all 16 rows makes it easier to check whether it is really the value that
+                    // corresponds to the `modified_node`. This is used in `branch.rs` constraints like:
+                    // ```
+                    // * is_modified.clone()
+                    // * (hash_rlc.clone() - mod_node_hash_rlc_cur.clone()
+                    // ```
+                    // `hash_rlc` is computed in each row as: `bytes[0] + bytes[1] * r + ... + bytes[31] * r^31`.
+                    // Note that `hash_rlc` is somehow misleading name because the branch child can be non-hashed too.
+                    cs!{[cb],
+                    ifx(node_index.expr()) { // ignore if node_index = 0 (there is no previous)
+                        cb.require_equal(
+                            "mod_node_hash_rlc the same for all branch children",
+                            mod_node_hash_rlc.cur(),
+                            mod_node_hash_rlc.prev(),
+                        );
+                        cb.require_equal(
+                            "Selector for the modified child being empty the same for all branch children",
+                            sel.cur(),
+                            sel.prev(),
+                        );
+                    }}
+
+                    // When a value is being added (and reverse situation when deleted) to the trie and
+                    // there is no other leaf at the position where it is to be added, we have empty branch child
+                    // in `S` proof and hash of a newly added leaf at the parallel position in `C` proof.
+                    // That means we have empty node in `S` proof at `modified_node`.
+                    // When this happens, we denote this situation by having `sel = 1`.
+                    // In this case we need to check that `main.bytes = [128, 0, ..., 0]`.
+                    cs!{[cb],
+                    ifx(and::expr([is_modified.expr(), sel.expr()])) {
+                        for (idx, byte) in main.bytes.iter().map(|col| meta.query_advice(*col, Rotation::cur())).enumerate() {
+                            if idx == 0 {
+                                // We first check `bytes[0] = 128`.
+                                cb.require_equal("Empty branch child modified: bytes[0] = 128", byte, 128.expr());
+                            } else {
+                                // The remaining constraints for `main.bytes = [128, 0, ..., 0]`:
+                                // `bytes[i] = 0` for `i > 0`.
+                                cb.require_zero("bytes[i] = 0 for i > 0 in empty", byte);
+                            }
+                        }
+                    }}
+                }}
+            }}
+
+            cb.gate(1.expr())
         });
-
-        meta.create_gate(
-            "Branch child RLC & selector for specifying whether the modified node is empty",
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-
-                let mut constraints = vec![];
-                let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-
-                let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
-
-                let mod_node_hash_rlc_prev = meta.query_advice(mod_node_hash_rlc, Rotation::prev());
-                let mod_node_hash_cur = meta.query_advice(mod_node_hash_rlc, Rotation::cur());
-
-                /*
-                `mod_node_hash_rlc` is the same for all `is_branch_child` rows.
-                Having the values stored in all 16 rows makes it easier to check whether it is really the value that
-                corresponds to the `modified_node`. This is used in `branch.rs` constraints like:
-                ```
-                * is_modified.clone()
-                * (hash_rlc.clone() - mod_node_hash_rlc_cur.clone()
-                ```
-
-                `hash_rlc` is computed in each row as: `bytes[0] + bytes[1] * r + ... + bytes[31] * r^31`.
-
-                Note that `hash_rlc` is somehow misleading name because the branch child can be non-hashed too.
-                */
-                constraints.push((
-                    "mod_node_hash_rlc the same for all branch children",
-                    q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * node_index_cur.clone() // ignore if node_index = 0 (there is no previous)
-                    * (mod_node_hash_cur - mod_node_hash_rlc_prev),
-                ));
-
-                let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
-                let sel_prev = meta.query_advice(sel, Rotation::prev());
-                let sel_cur = meta.query_advice(sel, Rotation::cur());
-                let advices0 = meta.query_advice(main.bytes[0], Rotation::cur());
-
-                /*
-                When a value is being added (and reverse situation when deleted) to the trie and
-                there is no other leaf at the position where it is to be added, we have empty branch child
-                in `S` proof and hash of a newly added leaf at the parallel position in `C` proof.
-                That means we have empty node in `S` proof at `modified_node`.
-                When this happens, we denote this situation by having `sel = 1`.
-                In this case we need to check that `main.bytes = [128, 0, ..., 0]`.
-                We first check `bytes[0] = 128`.
-                */
-                constraints.push((
-                    "Empty branch child modified: bytes[0] = 128",
-                    q_not_first.clone()
-                        * is_branch_child_cur.clone()
-                        * is_modified.clone()
-                        * (advices0 - c128.clone())
-                        * sel_cur.clone(),
-                ));
-
-                /*
-                The remaining constraints for `main.bytes = [128, 0, ..., 0]`:
-                `bytes[i] = 0` for `i > 0`.
-                */
-                for column in main.bytes.iter().skip(1) {
-                    let s = meta.query_advice(*column, Rotation::cur());
-                    constraints.push((
-                        "Empty branch child modified: bytes[i] = 0 for i > 0",
-                        q_not_first.clone()
-                            * is_branch_child_cur.clone()
-                            * is_modified.clone()
-                            * s
-                            * sel_cur.clone(),
-                    ));
-                }
-
-                /*
-                Having selector `sel` the same for all branch children makes it easier to write
-                the constraint above for checking that `main.bytes = [128, 0, ..., 0]`
-                when `modified_node`. As for writing the constraints for RLC above, we would not know
-                what rotation to use otherwise (if information about modified node being empty would
-                be stored for example in branch init row).
-                */
-                constraints.push((
-                    "Selector for the modified child being empty the same for all branch children",
-                    q_not_first
-                    * is_branch_child_cur
-                    * node_index_cur // ignore if node_index = 0 (there is no previous)
-                    * (sel_cur - sel_prev),
-                ));
-
-                constraints
-            },
-        );
 
         let sel = |meta: &mut VirtualCells<F>| {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
@@ -298,6 +234,8 @@ impl<F: FieldExt> BranchParallelConfig<F> {
             }
         }
 
-        config
+        BranchParallelConfig {
+            _marker: PhantomData,
+        }
     }
 }

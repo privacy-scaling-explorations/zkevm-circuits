@@ -1,3 +1,4 @@
+use gadgets::util::Expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
@@ -6,9 +7,16 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    mpt_circuit::columns::{AccumulatorCols, MainCols},
+    cs,
+    evm_circuit::util::rlc,
     mpt_circuit::helpers::{get_bool_constraint, range_lookups},
     mpt_circuit::FixedTableTag,
+    mpt_circuit::{
+        columns::{AccumulatorCols, MainCols},
+        helpers::{
+            get_num_rlp_bytes, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
+        },
+    },
 };
 
 /*
@@ -89,14 +97,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        randomness: Expression<F>,
+        r: Expression<F>,
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
-        let config = BranchInitConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::one());
-
         // Short RLP, meta data contains two bytes: 248, 81
         // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
         // The length of RLP stream is: 81.
@@ -105,136 +108,58 @@ impl<F: FieldExt> BranchInitConfig<F> {
         // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
         // The length of RLP stream is: 2 * 256 + 17.
 
-        /*
-        The RLC of the init branch comprises 1, 2, or 3 bytes. This gate ensures the RLC
-        is computed properly in each of the three cases. It also ensures that the values
-        that specify the case are boolean.
-        */
+        // The RLC of the init branch comprises 1, 2, or 3 bytes. This gate ensures the
+        // RLC is computed properly in each of the three cases. It also ensures
+        // that the values that specify the case are boolean.
         meta.create_gate("Branch init RLC", |meta| {
+            let rot = Rotation::cur();
             let q_enable = q_enable(meta);
+            let mut cb = BaseConstraintBuilder::default();
+            cs!{[cb],
+            ifx(q_enable) {
+                for (accumulators, is_s) in [
+                    (accs.acc_s, true),
+                    (accs.acc_c, false)
+                ] {
+                    let rlp_meta = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
+                    let (one_rlp_byte, two_rlp_bytes, three_rlp_bytes) = get_num_rlp_bytes(meta, s_main.clone(), is_s, rot);
+                    let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
 
-            let mut constraints = vec![];
+                    // Check branch accumulator in row 0
+                    let acc = meta.query_advice(accumulators.rlc, rot);
+                    let mult = meta.query_advice(accumulators.mult, rot);
 
-            // check branch accumulator S in row 0
-            let branch_acc_s_cur = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-            let branch_acc_c_cur = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-            let branch_mult_s_cur = meta.query_advice(accs.acc_s.mult, Rotation::cur());
-            let branch_mult_c_cur = meta.query_advice(accs.acc_c.mult, Rotation::cur());
+                    // Boolean checks
+                    for selector in rlp_meta {
+                        cb.require_boolean("branch init boolean", selector);
+                    }
 
-            let s1 = meta.query_advice(s_main.rlp1, Rotation::cur());
-            let s2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-            let c1 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-            let c2 = meta.query_advice(s_main.bytes[1], Rotation::cur());
+                    // Branch RLC checks
+                    // 1 RLP byte
+                    cs!{[cb],
+                    ifx(one_rlp_byte) {
+                        cb.require_equal("Branch accumulator row 0 (1)", rlp[0].expr(), acc.expr());
+                        cb.require_equal("Branch mult row 0 (1)", r.expr(), mult.expr());
+                    }}
+                    // 2 RLP bytes
+                    cs!{[cb],
+                    ifx(two_rlp_bytes) {
+                        cb.require_equal("Branch accumulator row 0 (2)", rlp[0].expr() + rlp[1].expr() * r.expr(), acc.expr());
+                        cb.require_equal("Branch mult row 0 (2)", r.expr() * r.expr(), mult.expr());
+                    }}
+                    // 3 RLP bytes
+                    cs!{[cb],
+                    ifx(three_rlp_bytes) {
+                        cb.require_equal(
+                            "Branch accumulator row 0 (3)",
+                             rlp[0].expr() + rlp[1].expr() * r.expr() + rlp[2].expr() * r.expr() * r.expr(), acc.expr()
+                        );
+                        cb.require_equal("Branch mult row 0 (3)", r.expr() * r.expr() * r.expr(), mult.expr());
+                    }}
+                }
+            }}
 
-            let one_rlp_byte_s = s1.clone() * s2.clone();
-            let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
-            let three_rlp_bytes_s = (one.clone() - s1.clone()) * s2.clone();
-
-            let one_rlp_byte_c = c1.clone() * c2.clone();
-            let two_rlp_bytes_c = c1.clone() * (one.clone() - c2.clone());
-            let three_rlp_bytes_c = (one.clone() - c1.clone()) * c2.clone();
-
-            constraints.push((
-                "Branch init s1 boolean",
-                get_bool_constraint(q_enable.clone(), s1),
-            ));
-            constraints.push((
-                "Branch init c1 boolean",
-                get_bool_constraint(q_enable.clone(), c1),
-            ));
-            constraints.push((
-                "Branch init s2 boolean",
-                get_bool_constraint(q_enable.clone(), s2),
-            ));
-            constraints.push((
-                "Branch init c2 boolean",
-                get_bool_constraint(q_enable.clone(), c2),
-            ));
-
-            let s_rlp1 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-            let s_rlp2 = meta.query_advice(s_main.bytes[3], Rotation::cur());
-            let s_rlp3 = meta.query_advice(s_main.bytes[4], Rotation::cur());
-
-            let c_rlp1 = meta.query_advice(s_main.bytes[5], Rotation::cur());
-            let c_rlp2 = meta.query_advice(s_main.bytes[6], Rotation::cur());
-            let c_rlp3 = meta.query_advice(s_main.bytes[7], Rotation::cur());
-
-            constraints.push((
-                "Branch accumulator S row 0 (1)",
-                q_enable.clone()
-                    * one_rlp_byte_s.clone()
-                    * (s_rlp1.clone() - branch_acc_s_cur.clone()),
-            ));
-            constraints.push((
-                "Branch mult S row 0 (1)",
-                q_enable.clone()
-                    * one_rlp_byte_s
-                    * (randomness.clone() - branch_mult_s_cur.clone()),
-            ));
-            constraints.push((
-                "Branch accumulator C row 0 (1)",
-                q_enable.clone()
-                    * one_rlp_byte_c.clone()
-                    * (c_rlp1.clone() - branch_acc_c_cur.clone()),
-            ));
-            constraints.push((
-                "Branch mult C row 0 (1)",
-                q_enable.clone()
-                    * one_rlp_byte_c
-                    * (randomness.clone() - branch_mult_s_cur.clone()),
-            ));
-
-            let acc_s_two = s_rlp1.clone() + s_rlp2.clone() * randomness.clone();
-            constraints.push((
-                "Branch accumulator S row 0 (2)",
-                q_enable.clone() * two_rlp_bytes_s.clone() * (acc_s_two - branch_acc_s_cur.clone()),
-            ));
-
-            let mult_two = randomness.clone() * randomness.clone();
-            constraints.push((
-                "Branch mult S row 0 (2)",
-                q_enable.clone() * two_rlp_bytes_s * (mult_two.clone() - branch_mult_s_cur.clone()),
-            ));
-
-            let acc_c_two = c_rlp1.clone() + c_rlp2.clone() * randomness.clone();
-            constraints.push((
-                "Branch accumulator C row 0 (2)",
-                q_enable.clone() * two_rlp_bytes_c.clone() * (acc_c_two - branch_acc_c_cur.clone()),
-            ));
-
-            constraints.push((
-                "Branch mult C row 0 (2)",
-                q_enable.clone() * two_rlp_bytes_c * (mult_two - branch_mult_c_cur.clone()),
-            ));
-
-            let acc_s_three = s_rlp1
-                + s_rlp2 * randomness.clone()
-                + s_rlp3 * randomness.clone() * randomness.clone();
-            constraints.push((
-                "Branch accumulator S row 0 (3)",
-                q_enable.clone() * three_rlp_bytes_s.clone() * (acc_s_three - branch_acc_s_cur),
-            ));
-
-            let mult_three = randomness.clone() * randomness.clone() * randomness.clone();
-            constraints.push((
-                "Branch mult S row 0 (3)",
-                q_enable.clone() * three_rlp_bytes_s * (mult_three.clone() - branch_mult_s_cur),
-            ));
-
-            let acc_c_three = c_rlp1
-                + c_rlp2 * randomness.clone()
-                + c_rlp3 * randomness.clone() * randomness.clone();
-            constraints.push((
-                "Branch accumulator C row 0 (3)",
-                q_enable.clone() * three_rlp_bytes_c.clone() * (acc_c_three - branch_acc_c_cur),
-            ));
-
-            constraints.push((
-                "Branch mult C row 0 (3)",
-                q_enable * three_rlp_bytes_c * (mult_three - branch_mult_c_cur),
-            ));
-
-            constraints
+            cb.gate(1.expr())
         });
 
         /*
@@ -256,6 +181,8 @@ impl<F: FieldExt> BranchInitConfig<F> {
             fixed_table,
         );
 
-        config
+        BranchInitConfig {
+            _marker: PhantomData,
+        }
     }
 }

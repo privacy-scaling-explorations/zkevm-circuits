@@ -204,7 +204,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     // - after storage leaf (after storage mod proof ends)
                     // - in the first row
                     (
-                        "Branch/account leaf/storage leaf/first row -> branch init",
+                        "Last branch row/last storage leaf/last account leaf -> branch init",
                         1.expr(),
                         vec![
                             is_extension_node_c.prev(),
@@ -215,7 +215,8 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     ),
                     // Account leaf key S can appear after
                     // - extension node C (last branch row)
-                    // - the last storage leaf row (if only one account in the trie)
+                    // - the last storage leaf row (if only one account in the trie) and there is
+                    //   another proof above it (having last storage leaf row as the last row)
                     (
                         "Last branch row/last storage leaf -> account leaf key S",
                         is_account_leaf_key_s.cur(),

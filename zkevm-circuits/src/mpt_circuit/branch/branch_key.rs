@@ -1,3 +1,4 @@
+use gadgets::util::{and, not, sum, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression},
@@ -6,11 +7,18 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    mpt_circuit::columns::{AccumulatorPair, MainCols, PositionCols},
-    mpt_circuit::param::{
-        IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        RLP_NUM,
+    cs,
+    mpt_circuit::{
+        columns::{AccumulatorPair, MainCols, PositionCols},
+        helpers::ColumnTransition,
+    },
+    mpt_circuit::{
+        helpers::BaseConstraintBuilder,
+        param::{
+            IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+            IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
+            IS_EXT_SHORT_C1_POS, RLP_NUM,
+        },
     },
 };
 
@@ -117,32 +125,23 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         acc_pair: AccumulatorPair<F>, // used first for account address, then for storage key
         randomness: Expression<F>,
     ) -> Self {
-        let config = BranchKeyConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::one());
-
         meta.create_gate("Branch key RLC", |meta| {
-            /*
-            For the first branch node (node_index = 0), the key rlc needs to be:
-            key_rlc = key_rlc::Rotation(-19) + modified_node * key_rlc_mult
-            Note: we check this in the first branch node (after branch init),
-            Rotation(-19) lands into the previous first branch node, that's because
-             branch has 1 (init) + 16 (children) + 2 (extension nodes for S and C) rows
+            // For the first branch node (node_index = 0), the key rlc needs to be:
+            // key_rlc = key_rlc::Rotation(-19) + modified_node * key_rlc_mult
+            // Note: we check this in the first branch node (after branch init),
+            // Rotation(-19) lands into the previous first branch node, that's because
+            //  branch has 1 (init) + 16 (children) + 2 (extension nodes for S and C) rows
+            let rot_prev = -19;
 
-            We need to check whether we are in the first storage level, we can do this
-            by checking whether is_account_leaf_storage_codehash_c is true in the
-            previous row.
-            */
-
+            // We need to check whether we are in the first storage level, we can do this
+            // by checking whether is_account_leaf_storage_codehash_c is true in the
+            // previous row.
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-
-            let mut constraints = vec![];
-
             let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
-            let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
+            let modified_node = meta.query_advice(branch.modified_node, Rotation::cur());
 
+            // Get extension node selectors
             let is_ext_short_c16 =
                 meta.query_advice(s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM], Rotation(-1));
             let is_ext_short_c1 =
@@ -165,7 +164,6 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             let is_extension_key_even = is_ext_long_even_c16 + is_ext_long_even_c1;
             let is_extension_key_odd =
                 is_ext_long_odd_c16 + is_ext_long_odd_c1 + is_ext_short_c16 + is_ext_short_c1;
-
             let is_extension_node = is_extension_key_even.clone() + is_extension_key_odd.clone();
 
             // -2 because we are in the first branch child and -1 is branch init row, -2 is
@@ -173,293 +171,171 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             let is_account_leaf_in_added_branch_prev =
                 meta.query_advice(is_account_leaf_in_added_branch, Rotation(-2));
 
-            let c16 = Expression::Constant(F::from(16));
             // If sel1 = 1, then modified_node is multiplied by 16.
             // If sel2 = 1, then modified_node is multiplied by 1.
             // NOTE: modified_node presents nibbles: n0, n1, ...
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-            let sel1_prev =
-                meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(-20));
+
             // Rotation(-20) lands into previous branch init.
-            let sel1_cur =
-                meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation::prev());
-            let sel2_cur =
-                meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation::prev());
+            let sel1 = ColumnTransition::new_with_rot(
+                meta, s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], Rotation(-1 + rot_prev), Rotation(-1)
+            );
+            let sel2 = ColumnTransition::new_with_rot(
+                meta, s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], Rotation(-1 + rot_prev), Rotation(-1)
+            );
+            let key_rlc = ColumnTransition::new_with_rot(
+                meta, acc_pair.rlc, Rotation(rot_prev), Rotation::cur()
+            );
+            let key_rlc_mult = ColumnTransition::new_with_rot(
+                meta, acc_pair.mult, Rotation(rot_prev), Rotation::cur()
+            );
 
-            let key_rlc_prev = meta.query_advice(acc_pair.rlc, Rotation(-19));
-            let key_rlc_cur = meta.query_advice(acc_pair.rlc, Rotation::cur());
-            let key_rlc_mult_prev = meta.query_advice(acc_pair.mult, Rotation(-19));
-            let key_rlc_mult_cur = meta.query_advice(acc_pair.mult, Rotation::cur());
+            let mut cb = BaseConstraintBuilder::default();
 
-            /*
-            When we are not in the first level and when sel1, the intermediate key RLC needs to be
-            computed by adding `modified_node * 16 * mult_prev` to the previous intermediate key RLC.
-            */
-            constraints.push((
-                "Key RLC sel1 not first level",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (one.clone() - is_extension_node.clone())
-                    * sel1_cur.clone()
-                    * (key_rlc_cur.clone()
-                        - key_rlc_prev.clone()
-                        - modified_node_cur.clone() * c16.clone()
-                            * key_rlc_mult_prev.clone()),
-            ));
+            cs!{[cb],
+            ifx(and::expr([q_not_first.expr(), is_branch_init_prev.expr()])) {
+                let selectors = [sel1.expr(), sel2.expr()];
+                // Selectors need to be boolean.
+                for selector in selectors.iter() {
+                    cb.require_boolean("selector boolean", selector.expr());
+                }
+                // One selector needs to be enabled.
+                cb.require_equal("One selector needs to be enabled", sum::expr(&selectors), 1.expr());
 
-            /*
-            When we are not in the first level and when sel2, the intermediate key RLC needs to be
-            computed by adding `modified_node * mult_prev` to the previous intermediate key RLC.
-            */
-            constraints.push((
-                "Key RLC sel2 not first level",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (one.clone() - is_extension_node.clone())
-                    * sel2_cur.clone()
-                    * (key_rlc_cur.clone()
-                        - key_rlc_prev
-                        - modified_node_cur.clone()
-                            * key_rlc_mult_prev.clone()),
-            ));
+                 // `sel1/sel2` present with what multiplier (16 or 1) is to be multiplied
+                // the `modified_node` in a branch, so when we have an extension node as a parent of
+                // a branch, we need to take account the nibbles of the extension node.
 
-            /*
-            When we are not in the first level and when sel1, the intermediate key RLC mult needs to
-            stay the same - `modified_node` in the next branch will be multiplied by the same mult
-            when computing the intermediate key RLC.
-            */
-            constraints.push((
-                "Key RLC sel1 not first level mult",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (one.clone() - is_extension_node.clone())
-                    * sel1_cur.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev.clone()),
-            ));
+                // If extension node, `sel1` and `sel2` in the first level depend on the extension key
+                // (whether it is even or odd). If key is even, the constraints stay the same. If key
+                // is odd, the constraints get turned around. Note that even/odd
+                // presents the number of key nibbles (what we actually need here) and
+                // not key byte length (how many bytes key occupies in RLP).
 
-            /*
-            When we are not in the first level and when sel1, the intermediate key RLC mult needs to
-            be multiplied by `r` - `modified_node` in the next branch will be multiplied
-            by `mult * r`.
-            */
-            constraints.push((
-                "Key RLC sel2 not first level mult",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (one.clone() - is_extension_node.clone())
-                    * sel2_cur.clone()
-                    * (key_rlc_mult_cur.clone() - key_rlc_mult_prev * randomness),
-            ));
+                cs!{[cb],
+                ifx(and::expr([not_first_level.expr(), not::expr(is_account_leaf_in_added_branch_prev.expr())])) {
+                    cs!{[cb],
+                    ifx(not::expr(is_extension_node.expr())) {
+                        cs!{[cb],
+                        ifx(sel1.expr()) {
+                            // When we are not in the first level and when sel1, the intermediate key RLC needs to be
+                            // computed by adding `modified_node * 16 * mult_prev` to the previous intermediate key RLC.
+                            cb.require_equal(
+                                "Key RLC sel1 not first level",
+                                key_rlc.cur(),
+                                key_rlc.prev() + modified_node.clone() * 16.expr() * key_rlc_mult.prev(),
+                            );
+                            // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
+                            // stay the same - `modified_node` in the next branch will be multiplied by the same mult
+                            // when computing the intermediate key RLC.
+                            cb.require_equal(
+                                "Key RLC sel1 not first level mult",
+                                key_rlc_mult.cur(),
+                                key_rlc_mult.prev(),
+                            );
+                        }}
+                        cs!{[cb],
+                        ifx(sel2.expr()) {
+                            // When we are not in the first level and when sel2, the intermediate key RLC needs to be
+                            // computed by adding `modified_node * mult_prev` to the previous intermediate key RLC.
+                            cb.require_equal(
+                                "Key RLC sel2 not first level",
+                                key_rlc.cur(),
+                                key_rlc.prev() + modified_node.clone() * key_rlc_mult.prev()
+                            );
+                            // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
+                            // be multiplied by `r` - `modified_node` in the next branch will be multiplied
+                            // by `mult * r`.
+                            cb.require_equal(
+                                "Key RLC sel2 not first level mult",
+                                key_rlc_mult.cur(),
+                                key_rlc_mult.prev() * randomness.clone(),
+                            );
+                        }}
+                    }}
 
-            /*
-            In the first level, address RLC is simply `modified_node * 16`.
-            */
-            constraints.push((
-                "Account address RLC first level",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * (one.clone() - is_extension_node.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_cur.clone() - modified_node_cur.clone() * c16.clone()),
-            ));
+                    // `sel1` alernates between 0 and 1 for regular branches.
+                    // Note that `sel2` alternates implicitly because of `sel1 + sel2 = 1`.
+                    cs!{[cb],
+                    ifx(not::expr(is_extension_node.expr())) {
+                        cb.require_equal(
+                            "sel1 0->1->0->...",
+                            sel1.cur(),
+                            not::expr(sel1.prev()),
+                        );
+                    }}
+                    // `sel1` alernates between 0 and 1 for extension nodes with even number of nibbles.
+                    cs!{[cb],
+                    ifx(is_extension_key_even) {
+                        cb.require_equal(
+                            "sel1 0->1->0->... (extension node even key)",
+                            sel1.cur(),
+                            not::expr(sel1.prev()),
+                        );
+                    }}
+                    // `sel1` stays the same for extension nodes with odd number of nibbles.
+                    cs!{[cb],
+                    ifx(is_extension_key_odd) {
+                        cb.require_equal(
+                            "sel1 stays the same (extension odd key)",
+                            sel1.cur(),
+                            sel1.prev(),
+                        );
+                    }}
+                }}
 
-            /*
-            In the first level, address RLC mult is simply 1.
-            */
-            constraints.push((
-                "Account address RLC mult first level",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * (one.clone() - is_extension_node.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur.clone() - one.clone()),
-            ));
+                let is_account = not::expr(not_first_level.expr());
+                let is_storage = is_account_leaf_in_added_branch_prev.expr();
+                // TODO(Brecht): are the above mutually exclusive? is so can just do is_account + is_storage
+                for (pre_condition, condition) in [
+                    (not::expr(not_first_level.expr()), is_account.expr()),
+                    (not_first_level.expr(), is_storage.expr()),
+                    ] {
+                    cs!{[cb],
+                    ifx(and::expr([pre_condition.expr(), condition.expr(), not::expr(is_extension_node.expr())])) {
+                        // In the first level, address RLC is simply `modified_node * 16`.
+                        cb.require_equal(
+                            "Account/Storage address RLC first level",
+                            key_rlc.expr(),
+                            modified_node.clone() * 16.expr(),
+                        );
+                        // In the first level, address RLC mult is simply 1.
+                        cb.require_equal(
+                            "Account/Storage address RLC mult first level",
+                            key_rlc_mult.expr(),
+                            1.expr(),
+                        );
 
-            /*
-            In the first level, storage key RLC is simply `modified_node * 16`.
-            */
-            constraints.push((
-                "Storage key RLC first level",
-                q_not_first.clone()
-                    * is_account_leaf_in_added_branch_prev.clone()
-                    * (one.clone() - is_extension_node.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_cur - modified_node_cur * c16),
-            ));
+                        // Key RLC for extension node is checked in `extension_node.rs`,
+                        // however, `sel1` & `sel2` being properly set are checked here
+                        // to avoid additional rotations.
+                    }}
 
-            /*
-            In the first level, storage key RLC mult is simply 1.
-            */
-            constraints.push((
-                "Storage key RLC first level mult",
-                q_not_first.clone()
-                    * is_account_leaf_in_added_branch_prev.clone()
-                    * (one.clone() - is_extension_node.clone())
-                    * is_branch_init_prev.clone()
-                    * (key_rlc_mult_cur - one.clone()),
-            ));
+                    // `sel1` in the first level is 1.
+                    cs!{[cb],
+                    ifx(condition) {
+                        cs!{[cb],
+                        ifx(not::expr(is_extension_node.expr())) {
+                            cb.require_true("Account/Storage first level sel1 (regular branch)", sel1.expr());
+                        }}
+                        cs!{[cb],
+                        ifx(is_extension_key_even) {
+                            cb.require_true("Account/Storage first level sel1 = 1 (extension node even key)", sel1.expr());
+                        }}
+                        cs!{[cb],
+                        ifx(is_extension_key_odd) {
+                            // `sel1/sel2` get turned around when odd number of nibbles.
+                            cb.require_false("Account/Storage first level sel1 = 0 (extension node odd key)", sel1.expr());
+                        }}
+                    }}
+                }
+            }}
 
-            /*
-            Selectors `sel1` and `sel2` need to be boolean and `sel1 + sel2 = 1`.
-            */
-            constraints.push((
-                "sel1 is bool",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * sel1_cur.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-            constraints.push((
-                "sel2 is bool",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * sel2_cur.clone()
-                    * (sel2_cur.clone() - one.clone()),
-            ));
-            constraints.push((
-                "sel1 + sel2 = 1",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur.clone() + sel2_cur - one.clone()),
-            ));
-
-            /*
-            Key RLC for extension node is checked in `extension_node.rs`,
-            however, `sel1` & `sel2` being properly set are checked here
-            to avoid additional rotations.
-            */
-
-            /*
-            `sel1` in the first level is 1.
-            */
-            constraints.push((
-                "Account first level sel1 (regular branch)",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * (one.clone() - is_extension_node.clone())
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-
-            /*
-            `sel1/sel2` present with what multiplier (16 or 1) is to be multiplied
-            the `modified_node` in a branch, so when we have an extension node as a parent of
-            a branch, we need to take account the nibbles of the extension node.
-
-            If extension node, `sel1` and `sel2` in the first level depend on the extension key
-            (whether it is even or odd). If key is even, the constraints stay the same. If key
-            is odd, the constraints get turned around. Note that even/odd
-            presents the number of key nibbles (what we actually need here) and
-            not key byte length (how many bytes key occupies in RLP).
-            */
-            constraints.push((
-                "Account first level sel1 = 1 (extension node even key)",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * is_extension_key_even.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-
-            /*
-            `sel1/sel2` get turned around when odd number of nibbles.
-            */
-            constraints.push((
-                "Account first level sel1 = 0 (extension node odd key)",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level.clone())
-                    * is_branch_init_prev.clone()
-                    * is_extension_key_odd.clone()
-                    * sel1_cur.clone(),
-            ));
-
-            /*
-            Similarly as for the account first level above.
-            */
-            constraints.push((
-                "Storage first level sel1 = 1 (regular branch)",
-                q_not_first.clone()
-                    * is_account_leaf_in_added_branch_prev.clone()
-                    * (one.clone() - is_extension_node.clone())
-                    * is_branch_init_prev.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-
-            /*
-            Similarly as for the account first level above (extension node even key).
-            */
-            constraints.push((
-                "Storage first level sel1 = 1 (extension node even key)",
-                q_not_first.clone()
-                    * is_account_leaf_in_added_branch_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * is_extension_key_even.clone()
-                    * (sel1_cur.clone() - one.clone()),
-            ));
-
-            /*
-            Similarly as for the account first level above (extension node odd key).
-            */
-            constraints.push((
-                "Storage first level sel1 = 0 (extension node odd key)",
-                q_not_first.clone()
-                    * is_account_leaf_in_added_branch_prev.clone()
-                    * is_branch_init_prev.clone()
-                    * is_extension_key_odd.clone()
-                    * sel1_cur.clone(),
-            ));
-
-            /*
-            `sel1` alernates between 0 and 1 for regular branches.
-            Note that `sel2` alternates implicitly because of `sel1 + sel2 = 1`.
-            */
-            constraints.push((
-                "sel1 0->1->0->...",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * (one.clone() - is_extension_node)
-                    * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
-            ));
-
-            /*
-            `sel1` alernates between 0 and 1 for extension nodes with even number of nibbles.
-            */
-            constraints.push((
-                "sel1 0->1->0->... (extension node even key)",
-                q_not_first.clone()
-                    * not_first_level.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - is_account_leaf_in_added_branch_prev.clone()) // When this is 0, we check as for the first level key rlc.
-                    * is_extension_key_even
-                    * (sel1_cur.clone() + sel1_prev.clone() - one.clone()),
-            ));
-
-            /*
-            `sel1` stays the same for extension nodes with odd number of nibbles.
-            */
-            constraints.push((
-                "sel1 stays the same (extension odd key)",
-                q_not_first
-                    * not_first_level
-                    * is_branch_init_prev
-                    * (one - is_account_leaf_in_added_branch_prev) // When this is 0, we check as for the first level key rlc.
-                    * is_extension_key_odd
-                    * (sel1_cur - sel1_prev),
-            ));
-
-            constraints
+            cb.gate(1.expr())
         });
 
-        config
+        BranchKeyConfig {
+            _marker: PhantomData,
+        }
     }
 }

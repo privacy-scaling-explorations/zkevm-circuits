@@ -1,4 +1,5 @@
 use crate::util::Expr;
+use gadgets::util::{and, not, select};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
@@ -310,10 +311,9 @@ pub(crate) fn get_branch_len<F: FieldExt>(
         );
     }
 
-    let c256 = Expression::Constant(F::from(256_u64));
     one_rlp_byte * (rlp_byte0 - c192 + one.clone())
         + two_rlp_bytes * (rlp_byte1.clone() + one.clone() + one.clone())
-        + three_rlp_bytes * (rlp_byte1 * c256 + rlp_byte2 + one.clone() + one.clone() + one)
+        + three_rlp_bytes * (rlp_byte1 * 256.expr() + rlp_byte2 + one.clone() + one.clone() + one)
 }
 
 pub(crate) fn get_leaf_len<F: FieldExt>(
@@ -335,18 +335,87 @@ pub(crate) fn get_leaf_len<F: FieldExt>(
         + (one.clone() - is_leaf_long) * (rlp1 - c192 + one)
 }
 
+pub(crate) fn get_rlp_meta_bytes<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    is_s: bool,
+    rot: Rotation,
+) -> [Expression<F>; 2] {
+    let (rlp_column_1, rlp_column_2) = if is_s {
+        (s_main.rlp1, s_main.rlp2)
+    } else {
+        (s_main.bytes[0], s_main.bytes[1])
+    };
+    [
+        meta.query_advice(rlp_column_1, rot),
+        meta.query_advice(rlp_column_2, rot),
+    ]
+}
+
+pub(crate) fn get_num_rlp_bytes<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    is_s: bool,
+    rot: Rotation,
+) -> (Expression<F>, Expression<F>, Expression<F>) {
+    let (rlp1, rlp2) = if is_s {
+        (
+            meta.query_advice(s_main.rlp1, rot),
+            meta.query_advice(s_main.rlp2, rot),
+        )
+    } else {
+        (
+            meta.query_advice(s_main.bytes[0], rot),
+            meta.query_advice(s_main.bytes[1], rot),
+        )
+    };
+    let one_rlp_byte = and::expr([rlp1.expr(), rlp2.expr()]);
+    let two_rlp_bytes = and::expr([rlp1.expr(), not::expr(rlp2.expr())]);
+    let three_rlp_bytes = and::expr([not::expr(rlp1.expr()), rlp2.expr()]);
+    (one_rlp_byte, two_rlp_bytes, three_rlp_bytes)
+}
+
+pub(crate) fn get_rlp_value_bytes<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    is_s: bool,
+    rot: Rotation,
+) -> [Expression<F>; 3] {
+    let rlp_offset = if is_s { 2 } else { 5 };
+    let rlp1 = meta.query_advice(s_main.bytes[rlp_offset + 0], rot);
+    let rlp2 = meta.query_advice(s_main.bytes[rlp_offset + 1], rot);
+    let rlp3 = meta.query_advice(s_main.bytes[rlp_offset + 2], rot);
+    [rlp1, rlp2, rlp3]
+}
+
 #[derive(Clone)]
 pub(crate) struct ColumnTransition<F> {
-    cur: Expression<F>,
     prev: Expression<F>,
+    cur: Expression<F>,
 }
 
 impl<F: FieldExt> ColumnTransition<F> {
     pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>) -> ColumnTransition<F> {
         ColumnTransition {
-            cur: meta.query_advice(column, Rotation::cur()),
             prev: meta.query_advice(column, Rotation::prev()),
+            cur: meta.query_advice(column, Rotation::cur()),
         }
+    }
+
+    pub(crate) fn new_with_rot(
+        meta: &mut VirtualCells<F>,
+        column: Column<Advice>,
+        rot_prev: Rotation,
+        rot_cur: Rotation,
+    ) -> ColumnTransition<F> {
+        ColumnTransition {
+            prev: meta.query_advice(column, rot_prev),
+            cur: meta.query_advice(column, rot_cur),
+        }
+    }
+
+    pub(crate) fn from(prev: Expression<F>, cur: Expression<F>) -> ColumnTransition<F> {
+        ColumnTransition { prev, cur }
     }
 
     pub(crate) fn cur(&self) -> Expression<F> {
@@ -355,6 +424,10 @@ impl<F: FieldExt> ColumnTransition<F> {
 
     pub(crate) fn prev(&self) -> Expression<F> {
         self.prev.clone()
+    }
+
+    pub(crate) fn delta(&self) -> Expression<F> {
+        self.prev() - self.cur()
     }
 }
 
@@ -393,6 +466,14 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         self.add_constraint(name, lhs - rhs);
     }
 
+    pub(crate) fn require_true(&mut self, name: &'static str, expr: Expression<F>) {
+        self.require_equal(name, expr, 1.expr());
+    }
+
+    pub(crate) fn require_false(&mut self, name: &'static str, expr: Expression<F>) {
+        self.require_equal(name, expr, 0.expr());
+    }
+
     pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1u64.expr() - value));
     }
@@ -421,6 +502,24 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         ret
     }
 
+    pub(crate) fn if_else<R>(
+        &mut self,
+        condition: Expression<F>,
+        when_true: impl FnOnce(&mut Self) -> R,
+        when_false: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        self.conditions.push(condition.clone());
+        let ret_true = when_true(self);
+        self.conditions.pop();
+
+        self.conditions.push(not::expr(condition));
+        let ret_false = when_false(self);
+        self.conditions.pop();
+
+        ret_true
+        //select::expr(condition, ret_true, ret_false)
+    }
+
     pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
         for (name, constraint) in constraints {
             self.add_constraint(name, constraint);
@@ -431,11 +530,7 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         let constraint = if self.conditions.is_empty() {
             constraint
         } else {
-            constraint
-                * self
-                    .conditions
-                    .iter()
-                    .fold(1.expr(), |acc, x| acc * x.clone())
+            constraint * self.get_condition()
         };
         self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
@@ -464,4 +559,33 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             })
             .collect()
     }
+
+    pub(crate) fn get_condition(&self) -> Expression<F> {
+        and::expr(self.conditions.iter())
+    }
+}
+
+/// Constraint builder macros
+#[macro_export]
+macro_rules! cs {
+    ([$cb:ident], ifx ($condition:expr) $when_true:block elsex $when_false:block) => {{
+        $cb.condition($condition.expr(), |$cb| $when_true);
+        $cb.condition(not::expr($condition.expr()), |$cb| $when_false);
+    }};
+    ([$cb:ident], ifx ($condition:expr) $when_true:block) => {{
+        $cb.condition($condition.expr(), |$cb| $when_true);
+    }};
+    ([$meta:ident, $cb:ident], $column_lhs:ident@$rot_lhs:tt == $column_rhs:ident@$rot_rhs:tt) => {{
+        $cb.require_equal(
+            "equal",
+            $meta.query_advice($column_lhs, Rotation($rot_lhs as i32)),
+            $meta.query_advice($column_rhs, Rotation($rot_rhs as i32)),
+        );
+    }}; /*($arg_a:ident $(&& $(!)* $args:ident)*) => {{
+            and::expr([$arg_a.expr(),
+            $(
+                $args.expr(),
+            )*
+            ])
+        }};*/
 }

@@ -12,14 +12,13 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 use crate::{
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
     mpt_circuit::helpers::{
-        bytes_expr_into_rlc, bytes_into_rlc, get_bool_constraint, get_is_extension_node,
-        range_lookups,
+        bytes_expr_into_rlc, bytes_into_rlc, get_is_extension_node, range_lookups,
     },
     mpt_circuit::param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
@@ -31,6 +30,13 @@ use crate::{
     mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    util::Expr,
+};
+use gadgets::util::{and, not, or, select};
+
+use super::{
+    helpers::{BaseConstraintBuilder, ColumnTransition},
+    param::ARITY,
 };
 
 /*
@@ -138,492 +144,42 @@ impl<F: FieldExt> BranchConfig<F> {
         fixed_table: [Column<Fixed>; 3],
         randomness: Expression<F>,
     ) -> Self {
-        let config = BranchConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::one());
-        let c320 = Expression::Constant(F::from(320));
-
-        /*
-        The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
-        `S` and `C` proof occur at `modified_node` (denoting which child of the branch is changed) position.
-        This is needed because the circuit allows only one change at at time.
-        */
-        meta.create_gate(
-            "Branch S and C equal at NON modified_node position & only two non-nil nodes when placeholder",
-            |meta| {
-                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-                let mut constraints = vec![];
-
-                let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-                let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
-                let modified_node = meta.query_advice(branch.modified_node, Rotation::cur());
-
-                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-                let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
-
-                /*
-                We check `s_main.rlp2 = c_main.rlp2` everywhere except at `modified_node`.
-
-                Note: We do not compare `s_main.rlp1 = c_main.rlp1` because there is no information
-                about branch. We use `rlp1` to store information about `S` branch and
-                `C` branch RLP length (see the gate below).
-                */
-                constraints.push((
-                    "rlp2",
-                    q_enable.clone()
-                        * is_branch_child_cur.clone()
-                        * (s_rlp2 - c_rlp2)
-                        * (node_index_cur.clone() - modified_node.clone()),
-                ));
-
-                for (ind, col) in s_main.bytes.iter().enumerate() {
-                    let s = meta.query_advice(*col, Rotation::cur());
-                    let c = meta.query_advice(c_main.bytes[ind], Rotation::cur());
-
-                    /*
-                    Similarly as above for `rlp2` we check here that `s_main.bytes[i] = c_main.bytes[i]`
-                    except at `modified_node`.
-                    */
-                    constraints.push((
-                        "s = c when NOT is_modified",
-                        q_enable.clone()
-                            * is_branch_child_cur.clone()
-                            * (s.clone() - c.clone())
-                            * (node_index_cur.clone() - modified_node.clone()),
-                    ));
-                }
-
-                let mut sum_rlp2_s = Expression::Constant(F::zero());
-                let mut sum_rlp2_c = Expression::Constant(F::zero());
-                /*
-                So many rotation is not optimal, but most of these rotations are used elsewhere, so
-                it should not be much of an overhead. Alternative approach would be to have a column
-                specifying whether there is a placeholder branch or not (we currently have this info
-                only in branch init). Another alternative would be to have a column where we add
-                `rlp2` value from the current row in each of the 16 rows. Both alternative would
-                require additional column.
-                */
-                for ind in 0..16 {
-                    let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation(-ind));
-                    let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation(-ind));
-                    sum_rlp2_s = sum_rlp2_s.clone() + s_rlp2;
-                    sum_rlp2_c = sum_rlp2_c.clone() + c_rlp2;
-                }
-
-                let is_last_child = meta.query_advice(branch.is_last_child, Rotation::cur());
-                let is_branch_placeholder_s =
-                    meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
-                let is_branch_placeholder_c =
-                    meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], Rotation(-16));
-
-                /*
-                This constraint applies for when we have a placeholder branch.
-                In this case, both branches are the same - the placeholder branch and its
-                parallel counterpart, which is not a placeholder, but a regular branch (newly added branch).
-                The regular branch has only two non-nil nodes, because the placeholder branch
-                appears only when an existing leaf drifts down into a newly added branch.
-                Besides an existing leaf, we have a leaf that was being added and that caused
-                a new branch to be added. So we need to check that there are exactly two non-nil nodes
-                (otherwise the attacker could add two or more new leaves at the same time).
-
-                The non-nil nodes need to be at `is_modified` and `is_at_drifted_pos`, elsewhere
-                there have to be zeros. When there is no placeholder branch, this constraint is ignored.
-                */
-                constraints.push((
-                    "Only two nil-nodes when placeholder branch S",
-                    q_enable.clone()
-                    * is_last_child.clone()
-                    * is_branch_placeholder_c // C is correct here
-                    * (sum_rlp2_s - c320.clone()) // There are constraints which ensure there is only 0 or 160 at rlp2 for branch children.
-                ));
-                constraints.push((
-                    "Only two nil-nodes when placeholder branch C",
-                    q_enable
-                    * is_last_child
-                    * is_branch_placeholder_s // S is correct here
-                    * (sum_rlp2_c - c320)
-                ));
-
-                constraints
-            },
-        );
-
-        /*
-        We need to check that the length of the branch corresponds to the bytes at the beginning of
-        the RLP stream that specify the length of the RLP stream. There are three possible cases:
-        1. Branch (length 21 = 213 - 192) with one byte of RLP meta data
-           [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-        2. Branch (length 83) with two bytes of RLP meta data
-           [248,81,128,128,...
-
-        3. Branch (length 340) with three bytes of RLP meta data
-           [249,1,81,128,16,...
-
-        We specify the case as (note that `S` branch and
-        `C` branch can be of different length. `s_rlp1, s_rlp2` is used for `S` and
-        `s_main.bytes[0], s_main.bytes[1]` is used for `C`):
-           rlp1, rlp2: 1, 1 means 1 RLP byte
-           rlp1, rlp2: 1, 0 means 2 RLP bytes
-           rlp1, rlp2: 0, 1 means 3 RLP bytes
-        */
-        meta.create_gate("RLP length", |meta| {
+        let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
+        meta.create_gate("Branch", |meta| {
+            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let mut constraints = vec![];
+            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
-            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
-
-            let s1 = meta.query_advice(s_main.rlp1, Rotation::prev());
-            let s2 = meta.query_advice(s_main.rlp2, Rotation::prev());
-            let c1 = meta.query_advice(s_main.bytes[0], Rotation::prev());
-            let c2 = meta.query_advice(s_main.bytes[1], Rotation::prev());
-
-            /*
-            There should never be `rlp1, rlp2: 0, 0` for `S` (we only have three cases, there is no case with
-            both being 0).
-            */
-            constraints.push((
-                "Not both zeros: rlp1, rlp2",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - s1.clone())
-                    * (one.clone() - s2.clone()),
-            ));
-
-            /*
-            There should never be `rlp1, rlp2: 0, 0` for `C` (we only have three cases, there is no case with
-            both being 0).
-            */
-            constraints.push((
-                "Not both zeros: s_advices[0], s_advices[1]",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * (one.clone() - c1.clone())
-                    * (one.clone() - c2.clone()),
-            ));
-
-            let one_rlp_byte_s = s1.clone() * s2.clone();
-            let two_rlp_bytes_s = s1.clone() * (one.clone() - s2.clone());
-            let three_rlp_bytes_s = (one.clone() - s1) * s2;
-
-            let one_rlp_byte_c = c1.clone() * c2.clone();
-            let two_rlp_bytes_c = c1.clone() * (one.clone() - c2.clone());
-            let three_rlp_bytes_c = (one.clone() - c1) * c2;
-
-            let rlp_byte0_s =
-                meta.query_advice(s_main.bytes[BRANCH_0_S_START - RLP_NUM], Rotation::prev());
-            let rlp_byte1_s = meta.query_advice(
-                s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1],
-                Rotation::prev(),
+            let drifted_pos = ColumnTransition::new(meta, branch.drifted_pos);
+            let node_index = ColumnTransition::new(meta, branch.node_index);
+            let modified_node = ColumnTransition::new(meta, branch.modified_node);
+            let is_modified = ColumnTransition::new(meta, branch.is_modified);
+            let is_branch_init = ColumnTransition::new(meta, branch.is_init);
+            let is_branch_child = ColumnTransition::new(meta, branch.is_child);
+            let is_last_child = ColumnTransition::new(meta, branch.is_last_child);
+            let is_at_drifted_pos = ColumnTransition::new(meta, branch.is_at_drifted_pos);
+            let is_account_leaf_in_added_branch = ColumnTransition::new(meta, is_account_leaf_in_added_branch);
+            let s1 = ColumnTransition::new(meta, s_main.rlp1);
+            let s2 = ColumnTransition::new(meta, s_main.rlp2);
+            let c1 = ColumnTransition::from(
+                meta.query_advice(s_main.bytes[0], Rotation::prev()),
+                meta.query_advice(c_main.rlp1, Rotation::cur()),
             );
-            let rlp_byte2_s = meta.query_advice(
-                s_main.bytes[BRANCH_0_S_START - RLP_NUM + 2],
-                Rotation::prev(),
+            let c2 = ColumnTransition::from(
+                meta.query_advice(s_main.bytes[1], Rotation::prev()),
+                meta.query_advice(c_main.rlp2, Rotation::cur()),
             );
 
-            let rlp_byte0_c =
-                meta.query_advice(s_main.bytes[BRANCH_0_C_START - RLP_NUM], Rotation::prev());
-            let rlp_byte1_c = meta.query_advice(
-                s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1],
-                Rotation::prev(),
-            );
-            let rlp_byte2_c = meta.query_advice(
-                s_main.bytes[BRANCH_0_C_START - RLP_NUM + 2],
-                Rotation::prev(),
-            );
+            let is_branch_placeholder_s = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
+            let is_branch_placeholder_c = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM]);
+            let is_branch_non_hashed_s = ColumnTransition::new(meta, s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM]);
+            let is_branch_non_hashed_c = ColumnTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
 
-            let one = Expression::Constant(F::one());
-            let c32 = Expression::Constant(F::from(32_u64));
-            let c192 = Expression::Constant(F::from(192_u64));
-            let c256 = Expression::Constant(F::from(256_u64));
-            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-
-            let s_rlp1_cur = meta.query_advice(s_main.rlp1, Rotation::cur());
-            let s_rlp2_cur = meta.query_advice(s_main.rlp2, Rotation::cur());
-            let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
-            let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-            let s_advices0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
-            let c_advices0_cur = meta.query_advice(c_main.bytes[0], Rotation::cur());
-
-            /*
-            [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-            [0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165 42 222 110 4 252 228 93 243 26 160 241 85 0 160 95 174 59 239 229 74 221 53 227 115 207 137 94 29 119 126 56 209 55 198 212 179 38 213 219 36 111 62 46 43 176 168 1]
-
-            There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when non-nil node.
-            The expression `s_rlp2 * c160_inv * c32 + 1` gives us the number of bytes used
-            in a row (1 or 33 for nil node or non-nil node respectively).
-            */
-
-            let is_node_hashed_s = meta.query_advice(denoter.is_node_hashed_s, Rotation::cur());
-            let is_node_hashed_c = meta.query_advice(denoter.is_node_hashed_c, Rotation::cur());
-
-            // The following value can be either 1 or 33 (if hashed node),
-            // depending on whether it's empty or non-empty row.
-            let mut bytes_num_in_row_s = s_rlp2_cur * c160_inv.clone() * c32.clone() + one.clone();
-            let mut bytes_num_in_row_c = c_rlp2_cur * c160_inv * c32 + one.clone();
-
-            bytes_num_in_row_s = is_node_hashed_s.clone()
-                * (s_advices0_cur - c192.clone() + one.clone())
-                + (one.clone() - is_node_hashed_s) * bytes_num_in_row_s.clone();
-            bytes_num_in_row_c = is_node_hashed_c.clone()
-                * (c_advices0_cur - c192.clone() + one.clone())
-                + (one.clone() - is_node_hashed_c) * bytes_num_in_row_c.clone();
-
-            /*
-            One RLP byte:
-            [1,1,1,1,217,0,0,217,0,0,1,...
-            Two RLP bytes:
-            [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
-            Three RLP bytes:
-            [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
-            */
-
-            /*
-            Note: `s_rlp1` stores the number of the remaining bytes in the branch. If there
-            are 81 bytes in the branch, and the first branch children contains 33 bytes,
-            then `s_rlp1` in this row will have `s_rlp1 = 81 - 33`.
-            */
-
-            /*
-            We check that the first branch children has properly stored the number of the remaining
-            bytes. For example, if there are 81 bytes in the branch and the first branch child
-            contains 1 byte, then it needs to store the value `80 = 81 - 1`.
-            */
-            constraints.push((
-                "First branch children RLP length (one RLP meta byte S)",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * one_rlp_byte_s
-                    * (rlp_byte0_s
-                        - c192.clone()
-                        - bytes_num_in_row_s.clone()
-                        - s_rlp1_cur.clone()),
-            ));
-            constraints.push((
-                "First branch children RLP length (one RLP meta byte C)",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * one_rlp_byte_c
-                    * (rlp_byte0_c - c192 - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
-            ));
-
-            constraints.push((
-                "First branch children RLP length (two RLP meta bytes S)",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * two_rlp_bytes_s
-                    * (rlp_byte1_s.clone() - bytes_num_in_row_s.clone() - s_rlp1_cur.clone()),
-            ));
-            constraints.push((
-                "First branch children RLP length (two RLP meta bytes C)",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * two_rlp_bytes_c
-                    * (rlp_byte1_c.clone() - bytes_num_in_row_c.clone() - c_rlp1_cur.clone()),
-            ));
-
-            constraints.push((
-                "First branch children RLP length (three RLP meta bytes S)",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * three_rlp_bytes_s
-                    * (rlp_byte1_s * c256.clone() + rlp_byte2_s
-                        - bytes_num_in_row_s.clone()
-                        - s_rlp1_cur.clone()),
-            ));
-            constraints.push((
-                "First branch children RLP length (three RLP meta bytes C)",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * three_rlp_bytes_c
-                    * (rlp_byte1_c * c256 + rlp_byte2_c
-                        - bytes_num_in_row_c.clone()
-                        - c_rlp1_cur.clone()),
-            ));
-
-            // is_branch_child with node_index > 0
-            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-            let s_rlp1_prev = meta.query_advice(s_main.rlp1, Rotation::prev());
-            let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
-
-            /*
-            We check that the non-first branch children has properly stored the number of the remaining
-            bytes. For example, if there are 81 bytes in the branch, the first branch child
-            contains 1 byte, the second child contains 33 bytes, then the third child
-            needs to store the value `81 - 1 - 33`.
-            */
-            constraints.push((
-                "Branch children node_index > 0 RLP S",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * (one.clone() - is_branch_init_prev.clone())
-                    * (s_rlp1_prev - bytes_num_in_row_s - s_rlp1_cur.clone()),
-            ));
-            constraints.push((
-                "Branch children node_index > 0 RLP C",
-                q_not_first.clone()
-                    * is_branch_child_cur
-                    * (one.clone() - is_branch_init_prev)
-                    * (c_rlp1_prev - bytes_num_in_row_c - c_rlp1_cur.clone()),
-            ));
-
-            /*
-            In the final branch child `s_rlp1` and `c_rlp1` need to be 1 (because RLP length
-            specifies also ValueNode which occupies 1 byte).
-            */
-            // TODO: ValueNode
-            let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
-            constraints.push((
-                "Branch last child RLP length S",
-                q_not_first.clone() * is_last_branch_child.clone() * (s_rlp1_cur - one.clone()),
-            ));
-            constraints.push((
-                "Branch last child RLP length C",
-                q_not_first * is_last_branch_child * (c_rlp1_cur - one),
-            ));
-
-            constraints
-        });
-
-        meta.create_gate("Branch children selectors", |meta| {
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-
-            let mut constraints = vec![];
-            let is_branch_child_prev = meta.query_advice(branch.is_child, Rotation::prev());
-            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-            let is_branch_init_prev = meta.query_advice(branch.is_init, Rotation::prev());
-            let is_last_branch_child_prev =
-                meta.query_advice(branch.is_last_child, Rotation::prev());
-            let is_last_branch_child_cur = meta.query_advice(branch.is_last_child, Rotation::cur());
-
-            /*
-            If we have  branch child, we can only have branch child or branch init in the previous row.
-            */
-            constraints.push((
-                "Before branch child",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * (is_branch_child_prev.clone() - one.clone())
-                    * (is_branch_init_prev.clone() - one.clone()),
-            ));
-
-            /*
-            If we have `is_branch_init` in the previous row, we have `is_branch_child = 1` in the current row.
-            */
-            constraints.push((
-                "is_branch_child branch is_branch_init",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * (is_branch_child_cur.clone() - one.clone()), // is_branch_child has to be 1
-            ));
-
-            /*
-            We could have only one constraint using sum, but then we would need
-            to limit `node_index` (to prevent values like -1). Now, `node_index` is
-            limited by ensuring its first value is 0, its last value is 15,
-            and it is being increased by 1.
-            If we have `is_branch_init` in the previous row, we have
-            `node_index = 0` in the current row.
-            */
-            let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
-            constraints.push((
-                "node_index = 0 after is_branch_init",
-                q_not_first.clone()
-                    * is_branch_init_prev.clone()
-                    * node_index_cur.clone(), // node_index has to be 0
-            ));
-
-            // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15.
-            let node_index_prev = meta.query_advice(branch.node_index, Rotation::prev());
-            constraints.push((
-                "Last branch child node_index",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev.clone()) // ignore if previous row was is_branch_init (here is_branch_child changes too)
-                    * (is_branch_child_prev.clone()
-                        - is_branch_child_cur.clone()) // is_branch_child changes
-                    * (node_index_prev
-                        - Expression::Constant(F::from(15_u64))), // node_index has to be 15
-            ));
-
-            // When `node_index` is not 15, `is_last_child` needs to be 0.
-            constraints.push((
-                "is_last_child index",
-                q_not_first.clone()
-                    * is_last_branch_child_cur
-                    * (node_index_cur.clone() // for this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
-                        - Expression::Constant(F::from(15_u64))),
-            ));
-
-            // When node_index is 15, is_last_child needs to be 1.
-            constraints.push((
-                "is_last_child when node_index = 15",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init_prev) // ignore if previous row was is_branch_init (here is_branch_child changes too)
-                    * (is_last_branch_child_prev - one.clone())
-                    * (is_branch_child_prev
-                        - is_branch_child_cur.clone()), /* for this to work properly make sure
-                                                         * to have constraints like
-                                                         * is_branch_child + is_keccak_leaf +
-                                                         * ... = 1 */
-            ));
-
-            // `node_index` is increased by 1 for each is_branch_child node.
-            let node_index_prev = meta.query_advice(branch.node_index, Rotation::prev());
-            constraints.push((
-                "node_index increasing for branch children",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (node_index_cur.clone() - node_index_prev - one.clone()),
-            ));
-
-            let modified_node_prev = meta.query_advice(branch.modified_node, Rotation::prev());
-            let modified_node_cur = meta.query_advice(branch.modified_node, Rotation::cur());
-
-            /*
-            `modified_node` (the index of the branch child that is modified)
-            needs to be the same for all branch nodes.
-            */
-            constraints.push((
-                "modified_node the same for all branch children",
-                q_not_first.clone()
-                    * is_branch_child_cur
-                    * node_index_cur // ignore if node_index = 0
-                    * (modified_node_cur.clone() - modified_node_prev),
-            ));
-
-            // modified_node = drifted_pos when NOT placeholder.
-            // We check modified_node = drifted_pos in first branch node and then check
-            // in each branch node: modified_node_prev = modified_node_cur and
-            // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
-            let drifted_pos_prev = meta.query_advice(branch.drifted_pos, Rotation::prev());
-            let drifted_pos_cur = meta.query_advice(branch.drifted_pos, Rotation::cur());
-            let node_index_cur = meta.query_advice(branch.node_index, Rotation::cur());
-            let is_branch_placeholder_s = meta.query_advice(
-                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation::prev(),
-            );
-            let is_branch_placeholder_c = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation::prev(),
+            let nibbles_count = ColumnTransition::from(
+                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation(-BRANCH_ROWS_NUM)),
+                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation::cur()),
             );
 
-            /*
-            `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
-            needs to be the same for all branch nodes.
-            */
-            constraints.push((
-                "drifted_pos the same for all branch children",
-                q_not_first.clone()
-                    * (one.clone()
-                        - is_branch_placeholder_s
-                        - is_branch_placeholder_c)
-                    * node_index_cur.clone() // ignore if node_index = 0
-                    * (drifted_pos_prev - drifted_pos_cur),
-            ));
-
-            let is_last_branch_child = meta.query_advice(branch.is_last_child, Rotation::cur());
             let is_branch_placeholder_s_from_last = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(-16),
@@ -632,298 +188,413 @@ impl<F: FieldExt> BranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(-16),
             );
-            // Rotations could be avoided but we would need additional is_branch_placeholder column.
-            for ind in 0..16 {
-                let mut s_hash = vec![];
-                let mut c_hash = vec![];
-                for column in s_main.bytes.iter() {
-                    s_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
+
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.condition(q_enable.clone(), |cb| {
+                // These selectors are only stored in branch init rows
+                cb.condition(is_branch_init.expr(), |cb| {
+                    // Boolean checks
+                    for selector in [is_branch_placeholder_s.expr(), is_branch_placeholder_c.expr(), is_branch_non_hashed_s.expr(), is_branch_non_hashed_c.expr()] {
+                        cb.require_boolean("bool check", selector);
+                    }
+
+                    // The cell `s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]` in branch init row stores the number of
+                    // nibbles used up to this point (up to this branch). If a regular branch, the counter increases only
+                    // by 1 as only one nibble is used to determine the position of `modified_node` in a branch.
+                    // On the contrary, when it is an extension node the counter increases by the number of nibbles
+                    // in the extension key and the additional nibble for the position in a branch (this constraint
+                    // is in `extension_node.rs` though).
+
+                    // extension node counterpart constraint is in extension_node.rs
+                    let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
+                    cb.condition(not::expr(is_extension_node.expr()), |cb| {
+                        cb.if_else(and::expr([not::expr(is_account_leaf_in_added_branch.prev()), not_first_level.expr()]), |cb| {
+                            // Only check if there is an account above the branch.
+                            cb.require_equal(
+                                "nibbles_count",
+                                nibbles_count.cur(),
+                                nibbles_count.prev() + 1.expr(),
+                            );
+                        }, |cb| {
+                            // If we are in the first level of the trie, `nibbles_count` needs to be 1.
+                            // If branch is in the first level of the account/storage trie, `nibbles_count` needs to be 1.
+                            cb.require_equal(
+                                "nibbles_count first level account/storage",
+                                nibbles_count.cur(),
+                                1.expr(),
+                            );
+                        });
+
+                    });
+                });
+
+                // The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
+                // * `S` and `C` proof occur at `modified_node` (denoting which child of the branch is changed) position.
+                // This is needed because the circuit allows only one change at at time.
+
+                // We check `s_main.rlp = c_main.rlp` everywhere except at `modified_node`.
+                // Note: We do not compare `s_main.rlp1 = c_main.rlp1` because there is no
+                // information about branch. We use `rlp1` to store information
+                // about `S` branch and `C` branch RLP length (see the gate
+                // below).
+                let at_modification = node_index.expr() - modified_node.expr();
+                cb.condition(
+                    and::expr([is_branch_child.expr(), at_modification]),
+                    |cb| {
+                        for (lhs, rhs) in iter::once(&s_main.rlp2)
+                            .chain(s_main.bytes.iter())
+                            .zip(iter::once(&c_main.rlp2).chain(c_main.bytes.iter()))
+                        {
+                            cb.require_equal(
+                                "branch child rlp needs to remain the same when not modified",
+                                meta.query_advice(*lhs, Rotation::cur()),
+                                meta.query_advice(*rhs, Rotation::cur()),
+                            );
+                        }
+                    },
+                );
+
+                // This constraint applies for when we have a placeholder branch.
+                // In this case, both branches are the same - the placeholder branch and its
+                // parallel counterpart, which is not a placeholder, but a regular branch (newly
+                // added branch). The regular branch has only two non-nil nodes,
+                // because the placeholder branch appears only when an existing
+                // leaf drifts down into a newly added branch. Besides an
+                // existing leaf, we have a leaf that was being added and that caused
+                // a new branch to be added. So we need to check that there are exactly two
+                // non-nil nodes (otherwise the attacker could add two or more
+                // new leaves at the same time). The non-nil nodes need to be at
+                // `is_modified` and `is_at_drifted_pos`, elsewhere there have
+                // to be zeros. When there is no placeholder branch, this constraint is ignored.
+                for (column, is_branch_placeholder) in [
+                    (s_main.rlp2, is_branch_placeholder_c_from_last.expr()),
+                    (c_main.rlp2, is_branch_placeholder_s_from_last.expr()),
+                ] {
+                    // So many rotation is not optimal, but most of these rotations are used
+                    // elsewhere, so it should not be much of an overhead.
+                    // Alternative approach would be to have a column specifying
+                    // whether there is a placeholder branch or not (we currently have this info
+                    // only in branch init). Another alternative would be to have a column where we
+                    // add `rlp2` value from the current row in each of the 16
+                    // rows. Both alternative would require additional column.
+                    let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
+                        acc + meta.query_advice(column, Rotation(-(idx as i32)))
+                    });
+                    cb.condition(
+                        and::expr([is_last_child.expr(), is_branch_placeholder]),
+                        |cb| {
+                            // There are constraints which ensure there is only 0 or 160 at rlp2 for
+                            // branch children.
+                            cb.require_equal(
+                                "Only two nil-nodes when placeholder branch",
+                                sum_rlp2,
+                                320.expr(),
+                            )
+                        },
+                    );
                 }
-                for column in c_main.bytes.iter() {
-                    c_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
+            });
+
+            cb.condition(q_not_first.clone(), |cb| {
+                // We need to check that the length of the branch corresponds to the bytes at
+                // the beginning of the RLP stream that specify the length of
+                // the RLP stream. There are three possible cases:
+                // 1. Branch (length 21 = 213 - 192) with one byte of RLP meta data
+                // [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,
+                // 128,128]
+                // 2. Branch (length 83) with two bytes of RLP meta data
+                // [248,81,128,128,...
+                // 3. Branch (length 340) with three bytes of RLP meta data
+                // [249,1,81,128,16,...
+                // We specify the case as (note that `S` branch and
+                // `C` branch can be of different length. `s_rlp1, s_rlp2` is used for `S` and
+                // `s_main.bytes[0], s_main.bytes[1]` is used for `C`):
+                // rlp1, rlp2: 1, 1 means 1 RLP byte
+                // rlp1, rlp2: 1, 0 means 2 RLP bytes
+                // rlp1, rlp2: 0, 1 means 3 RLP bytes
+                for (rlp1, rlp2, branch_start, is_node_hashed, main) in [
+                    (s1, s2, BRANCH_0_S_START, denoter.is_node_hashed_s, &s_main),
+                    (c1, c2, BRANCH_0_C_START, denoter.is_node_hashed_c, &c_main),
+                ] {
+                    let rlp_byte0 =
+                        meta.query_advice(s_main.bytes[branch_start - RLP_NUM], Rotation::prev());
+                    let rlp_byte1 = meta
+                        .query_advice(s_main.bytes[branch_start - RLP_NUM + 1], Rotation::prev());
+                    let rlp_byte2 = meta
+                        .query_advice(s_main.bytes[branch_start - RLP_NUM + 2], Rotation::prev());
+
+                    // [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+                    // 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
+                    // [0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165
+                    // 42 222 110 4 252 228 93 243 26 160 241 85 0 160 95 174 59 239 229 74 221 53
+                    // 227 115 207 137 94 29 119 126 56 209 55 198 212 179 38 213 219 36 111 62 46
+                    // 43 176 168 1]
+                    // Calculate the number of bytes on this row
+                    // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
+                    // non-nil node. The expression `s_rlp2 * c160_inv * c32 +
+                    // 1` gives us the number of bytes used in a row (1 or 33
+                    // for nil node or non-nil node respectively).
+                    let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
+                    let bytes_0 = meta.query_advice(main.bytes[0], Rotation::cur());
+                    let num_bytes_in_row = select::expr(
+                        is_node_hashed.clone(),
+                        bytes_0 - 192.expr() + 1.expr(),
+                        // The following value can be either 1 or 33 (if hashed node),
+                        // depending on whether it's empty or non-empty row.
+                        rlp2.cur() * c160_inv.clone() * 32.expr() + 1.expr(),
+                    );
+
+                    cb.if_else(is_branch_init.prev(), |cb| {
+                        // There should never be `rlp1, rlp2: 0, 0` for `S` and `C`
+                        // (we only have three cases, there is no case with both being 0).
+                        cb.require_true(
+                            "`rlp1 == 1` and/or `rlp2 == 1`",
+                            or::expr([rlp1.prev(), rlp2.prev()]),
+                        );
+                        // We check that the first branch children has properly stored the number of
+                        // the remaining bytes. For example, if there are 81
+                        // bytes in the branch and the first branch child
+                        // contains 1 byte, then it needs to store the value `80 = 81 - 1`.
+                        // 1 RLP byte
+                        cb.condition(and::expr([rlp1.prev(), rlp2.prev()]), |cb| {
+                            cb.require_equal(
+                                "First branch children RLP length (one RLP meta byte)",
+                                rlp_byte0,
+                                192.expr() + num_bytes_in_row.clone() + rlp1.cur(),
+                            );
+                        });
+                        // 2 RLP bytes
+                        cb.condition(and::expr([rlp1.prev(), not::expr(rlp2.prev())]), |cb| {
+                            cb.require_equal(
+                                "First branch children RLP length (two RLP meta byte)",
+                                rlp_byte1.clone(),
+                                num_bytes_in_row.clone() + rlp1.cur(),
+                            );
+                        });
+                        // 3 RLP bytes
+                        cb.condition(and::expr([not::expr(rlp1.prev()), rlp2.prev()]), |cb| {
+                            cb.require_equal(
+                                "First branch children RLP length (three RLP meta byte)",
+                                rlp_byte1 * 256.expr() + rlp_byte2,
+                                num_bytes_in_row.expr() + rlp1.cur(),
+                            );
+                        });
+                    }, |cb| {
+                        // We check that the non-first branch children has properly stored the number of
+                        // the remaining bytes. For example, if there are 81 bytes
+                        // in the branch, the first branch child contains 1 byte,
+                        // the second child contains 33 bytes, then the third child
+                        // needs to store the value `81 - 1 - 33`.
+                        cb.condition(is_branch_child.expr(), |cb| {
+                                cb.require_equal(
+                                    "Branch children node_index > 0 RLP",
+                                    meta.query_advice(main.rlp1, Rotation::prev()),
+                                    num_bytes_in_row.expr() + rlp1.cur(),
+                                );
+                            },
+                        );
+                    });
+                    // In the final branch child `rlp1` needs to be 1 (because RLP length
+                    // specifies also ValueNode which occupies 1 byte).
+                    // TODO: ValueNode
+                    cb.condition(is_last_child.expr(), |cb| {
+                        cb.require_equal("Branch last child RLP length", rlp1.cur(), 1.expr());
+                    });
                 }
-                let s_hash_rlc = bytes_expr_into_rlc(&s_hash, randomness.clone());
-                let c_hash_rlc = bytes_expr_into_rlc(&c_hash, randomness.clone());
 
-                let is_modified = meta.query_advice(branch.is_modified, Rotation(-15+ind));
-                let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation(-15+ind));
-                let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-15+ind));
-                let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-15+ind));
+                cb.condition(is_branch_child.cur(), |cb| {
+                    // If we have branch child, we can only have branch child or branch init in the previous row.
+                    cb.require_true(
+                        "Before branch child",
+                        or::expr([is_branch_child.prev(), is_branch_init.prev()]),
+                    );
 
-                /*
-                For a branch placeholder we do not have any constraints. However, in the parallel
-                (regular) branch we have an additional constraint (besides `is_modified` row
-                corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
-                is stored in the placeholder `mod_node_hash_rlc`. For example, if there is a placeholder
-                branch in `S` proof, we have:
-                 * `is_modified c_main.bytes RLC = c_mod_node_hash_rlc`
-                 * `is_at_drifted_pos c_main.bytes RLC = s_mod_node_hash_rlc`
-                That means we simply use `mod_node_hash_rlc` column (because it is not occupied)
-                in the placeholder branch for `is_at_drifted_pos main.bytes RLC` of
-                the regular parallel branch.
+                    // When `node_index` != 0
+                    cb.condition(node_index.cur(), |cb| {
+                        // `node_index` is increased by 1 for each is_branch_child node.
+                        cb.require_equal(
+                            "node_index increasing for branch children",
+                            node_index.cur(),
+                            node_index.prev() + 1.expr(),
+                        );
+                        // `modified_node` (the index of the branch child that is modified)
+                        // needs to be the same for all branch nodes.
+                        cb.require_equal(
+                            "modified_node the same for all branch children",
+                            modified_node.cur(),
+                            modified_node.prev(),
+                        );
+                    });
 
-                When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
-                stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
+                    // modified_node = drifted_pos when NOT placeholder.
+                    // We check modified_node = drifted_pos in first branch node and then check
+                    // in each branch node: modified_node_prev = modified_node_cur and
+                    // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
 
-                Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
-                child is not hashed (shorter than 32 bytes), but in this case we need to compute
-                the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
-                we check in `branch_parallel` that the non-hashed child is of the appropriate length
-                (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
-                The same applies for `c_hash_rlc`.
-                */
-                constraints.push((
-                    "NOT is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to s_main.bytes at modified pos",
-                    q_not_first.clone()
-                            * is_last_branch_child.clone()
-                            * (one.clone() - is_branch_placeholder_s_from_last.clone())
-                            * is_modified.clone()
-                            * (s_hash_rlc.clone() - s_mod_node_hash_rlc_cur.clone()),
-                ));
+                    // `is_modified` is boolean (booleanity is checked in `selectors.rs`):
+                    // - 0 when `node_index != modified_node`
+                    // - 1 when `node_index == modified_node`
+                    cb.condition(is_modified.expr(), |cb| {
+                        cb.require_equal(
+                            "is_modified = 1 only for modified node",
+                            node_index.expr(),
+                            modified_node.expr(),
+                        );
+                    });
 
-                /*
-                When `S` branch is a placeholder, `c_main.bytes RLC` corresponds to the value
-                stored in `accumulators.s_mod_node_rlc` in `is_at_drifted_pos` row.
-                */
-                constraints.push((
-                    "is_branch_placeholder_s: s_mod_node_hash_rlc corresponds to c_main.bytes at drifted pos",
-                    q_not_first.clone()
-                            * is_last_branch_child.clone()
-                            * is_branch_placeholder_s_from_last.clone()
-                            * is_at_drifted_pos.clone()
-                            * (c_hash_rlc.clone() - s_mod_node_hash_rlc_cur), // c_hash_rlc is correct
-                ));
+                    // `is_at_drifted_pos` is boolean (booleanity is checked in `selectors.rs`):
+                    // - 0 when `node_index != drifted_pos`
+                    // - 1 when `node_index == drifted_pos`
+                    cb.condition(is_at_drifted_pos.expr(), |cb| {
+                        cb.require_equal(
+                            "is_at_drifted_pos = 1 only for drifted node",
+                            node_index.expr(),
+                            drifted_pos.expr(),
+                        );
+                    });
+                });
 
-                /*
-                When `C` branch is NOT a placeholder, `c_main.bytes RLC` corresponds to the value
-                stored in `accumulators.c_mod_node_rlc` in `is_modified` row.
-                */
-                constraints.push((
-                    "NOT is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to c_main.bytes at modified pos",
-                    q_not_first.clone()
-                            * is_last_branch_child.clone()
-                            * (one.clone() - is_branch_placeholder_c_from_last.clone())
-                            * is_modified.clone()
-                            * (c_hash_rlc.clone() - c_mod_node_hash_rlc_cur.clone()),
-                ));
+                cb.if_else(is_branch_init.prev(), |cb| {
+                    // If we have `is_branch_init` in the previous row, we have `is_branch_child = 1` in the current row.
+                    cb.require_true(
+                        "is_branch_init -> is_branch_child branch",
+                        is_branch_child.cur(),
+                    );
 
-                /*
-                When `C` branch is a placeholder, `s_main.bytes RLC` corresponds to the value
-                stored in `accumulators.c_mod_node_rlc` in `is_at_drifted_pos` row.
-                */
-                constraints.push((
-                    "is_branch_placeholder_c: c_mod_node_hash_rlc corresponds to s_main.bytes at drifted pos",
-                    q_not_first.clone()
-                            * is_last_branch_child.clone()
-                            * is_branch_placeholder_c_from_last.clone()
-                            * is_at_drifted_pos.clone()
-                            * (s_hash_rlc.clone() - c_mod_node_hash_rlc_cur), // s_hash_rlc is correct
-                ));
-            }
+                    // We could have only one constraint using sum, but then we would need
+                    // to limit `node_index` (to prevent values like -1). Now, `node_index` is
+                    // limited by ensuring its first value is 0, its last value is 15,
+                    // and it is being increased by 1.
+                    // If we have `is_branch_init` in the previous row, we have
+                    // `node_index = 0` in the current row.
+                    cb.require_zero("node_index = 0 after is_branch_init", node_index.cur());
+                }, |cb| {
+                    // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15.
+                    cb.condition(is_branch_child.delta(), |cb| {
+                        cb.require_equal(
+                            "Last branch child node_index",
+                            node_index.prev(),
+                            15.expr(),
+                        );
+                    });
+                    // TODO(Brecht)
+                    // When node_index is 15, is_last_child needs to be 1.
+                    cb.condition(is_last_child.prev() - 1.expr(), |cb| {
+                        cb.require_equal(
+                            "is_last_child when node_index = 15",
+                            is_branch_child.prev(),
+                            is_branch_child.cur(),
+                        );
+                    });
+                });
 
-            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
-            let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation::cur());
-            let drifted_pos = meta.query_advice(branch.drifted_pos, Rotation::cur());
 
-            /*
-            `is_modified` is boolean (booleanity is checked in `selectors.rs`):
-              * 0 when `node_index != modified_node`
-              * 1 when `node_index == modified_node`
-            */
-            constraints.push((
-                "is_modified = 1 only for modified node",
-                q_not_first.clone()
-                    * is_branch_child_cur.clone()
-                    * is_modified
-                    * (node_index_cur.clone() - modified_node_cur),
-            ));
+                cb.condition(is_last_child.expr(), |cb| {
+                    // When `node_index` is not 15, `is_last_child` needs to be 0.
+                    // For this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
+                    cb.require_equal(
+                        "is_last_child index",
+                        node_index.cur(),
+                        15.expr(),
+                    );
 
-            /* 
-            `is_at_drifted_pos` is boolean (booleanity is checked in `selectors.rs`):
-              * 0 when `node_index != drifted_pos`
-              * 1 when `node_index == drifted_pos`
-            */
-            constraints.push((
-                "is_at_drifted_pos = 1 only for drifted node",
-                q_not_first
-                    * is_branch_child_cur
-                    * is_at_drifted_pos
-                    * (node_index_cur - drifted_pos),
-            ));
+                    // Rotations could be avoided but we would need additional is_branch_placeholder column.
+                    for ind in 0..16 {
+                        let mut s_hash = vec![];
+                        let mut c_hash = vec![];
+                        for column in s_main.bytes.iter() {
+                            s_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
+                        }
+                        for column in c_main.bytes.iter() {
+                            c_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
+                        }
+                        let s_hash_rlc = bytes_expr_into_rlc(&s_hash, randomness.clone());
+                        let c_hash_rlc = bytes_expr_into_rlc(&c_hash, randomness.clone());
 
-            constraints
+                        let is_modified = meta.query_advice(branch.is_modified, Rotation(-15+ind));
+                        let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation(-15+ind));
+                        let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-15+ind));
+                        let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-15+ind));
+
+                        // For a branch placeholder we do not have any constraints. However, in the parallel
+                        // (regular) branch we have an additional constraint (besides `is_modified` row
+                        // corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
+                        // is stored in the placeholder `mod_node_hash_rlc`. For example, if there is a placeholder
+                        // branch in `S` proof, we have:
+                        // - `is_modified c_main.bytes RLC = c_mod_node_hash_rlc`
+                        // - `is_at_drifted_pos c_main.bytes RLC = s_mod_node_hash_rlc`
+                        // That means we simply use `mod_node_hash_rlc` column (because it is not occupied)
+                        // in the placeholder branch for `is_at_drifted_pos main.bytes RLC` of
+                        // the regular parallel branch.
+
+                        // When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
+                        // stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
+
+                        // Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
+                        // child is not hashed (shorter than 32 bytes), but in this case we need to compute
+                        // the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
+                        // we check in `branch_parallel` that the non-hashed child is of the appropriate length
+                        // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
+                        // The same applies for `c_hash_rlc`.
+
+                        for (is_branch_placeholder_from_last, hash_rlc_a, hash_rlc_b, mod_node_hash_rlc) in [
+                            (is_branch_placeholder_s_from_last.clone(), s_hash_rlc.clone(), c_hash_rlc.clone(), s_mod_node_hash_rlc_cur),
+                            (is_branch_placeholder_c_from_last.clone(), c_hash_rlc, s_hash_rlc, c_mod_node_hash_rlc_cur)
+                        ] {
+                            cb.if_else(is_branch_placeholder_from_last.clone(), |cb| {
+                                // When branch is a placeholder, `main.bytes RLC` corresponds to the value
+                                // stored in `accumulators.mod_node_rlc` in `is_at_drifted_pos` row.
+                                cb.condition(is_at_drifted_pos.expr(), |cb| {
+                                    cb.require_equal(
+                                        "is_branch_placeholder: mod_node_hash_rlc corresponds to main.bytes at drifted pos",
+                                        hash_rlc_b.expr(),
+                                        mod_node_hash_rlc.expr(),
+                                    );
+                                });
+                            }, |cb| {
+                                cb.condition(is_modified.expr(), |cb| {
+                                    cb.require_equal(
+                                        "NOT is_branch_placeholder: mod_node_hash_rlc corresponds to main.bytes at modified pos",
+                                        hash_rlc_a.expr(),
+                                        mod_node_hash_rlc.expr(),
+                                    );
+                                });
+                            });
+                        }
+                    }
+                });
+
+                // When `node_index` != 0
+                cb.condition(node_index.cur(), |cb| {
+                    // When not in a placeholder branch
+                    cb.condition(not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()), |cb| {
+                        // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
+                        // needs to be the same for all branch nodes.
+                        cb.require_equal(
+                            "drifted_pos the same for all branch children",
+                            drifted_pos.cur(),
+                            drifted_pos.prev(),
+                        );
+                    });
+                });
+            });
+
+            cb.gate(1.expr())
         });
 
-        meta.create_gate("Branch placeholder selectors", |meta| {
-            /*
-            Note: Not merged with gate above because this needs to be checked in the first row
-            too and we need to avoid rotation -1.
-            */
-            let mut constraints = vec![];
-            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
-
-            let is_branch_placeholder_s = meta.query_advice(
-                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation::cur(),
-            );
-            let is_branch_placeholder_c = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation::cur(),
-            );
-            let is_branch_non_hashed_s = meta.query_advice(
-                s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM],
-                Rotation::cur(),
-            );
-            let is_branch_non_hashed_c = meta.query_advice(
-                s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM],
-                Rotation::cur(),
-            );
-
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-
-            /*
-            `is_branch_placeholder_s` needs to be boolean.
-            */
-            constraints.push((
-                "Bool check is_branch_placeholder_s",
-                get_bool_constraint(
-                    q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_placeholder_s,
-                ),
-            ));
-
-            /*
-            `is_branch_placeholder_c` needs to be boolean.
-            */
-            constraints.push((
-                "Bool check is_branch_placeholder_c",
-                get_bool_constraint(
-                    q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_placeholder_c,
-                ),
-            ));
-
-            /*
-            `is_branch_non_hashed_s` needs to be boolean.
-            */
-            constraints.push((
-                "Bool check is_branch_non_hashed_s",
-                get_bool_constraint(
-                    q_enable.clone() * is_branch_init_cur.clone(),
-                    is_branch_non_hashed_s,
-                ),
-            ));
-
-            /*
-            `is_branch_non_hashed_c` needs to be boolean.
-            */
-            constraints.push((
-                "Bool check is_branch_non_hashed_c",
-                get_bool_constraint(q_enable * is_branch_init_cur, is_branch_non_hashed_c),
-            ));
-
-            constraints
-        });
-
-        /*
-        The cell `s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]` in branch init row stores the number of
-        nibbles used up to this point (up to this branch). If a regular branch, the counter increases only
-        by 1 as only one nibble is used to determine the position of `modified_node` in a branch.
-        On the contrary, when it is an extension node the counter increases by the number of nibbles
-        in the extension key and the additional nibble for the position in a branch (this constraint
-        is in `extension_node.rs` though).
-        */
-        meta.create_gate("Branch number of nibbles (not first level)", |meta| {
-            let mut constraints = vec![];
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
-            let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
-
-            // Only check if there is an account above the branch.
-            let is_account_leaf_in_added_branch =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-1));
-
-            let nibbles_count_cur =
-                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation::cur());
-            let nibbles_count_prev = meta.query_advice(
-                s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                Rotation(-BRANCH_ROWS_NUM),
-            );
-
-            constraints.push((
-                "nibbles_count",
-                q_enable
-                    * is_branch_init_cur
-                    * (one.clone() - is_extension_node) // extension node counterpart constraint is in extension_node.rs
-                    * (one.clone() - is_account_leaf_in_added_branch)
-                    * not_first_level
-                    * (nibbles_count_cur - nibbles_count_prev - one.clone()),
-            ));
-
-            constraints
-        });
-
-        /*
-        If we are in the first level of the trie, `nibbles_count` needs to be 1.
-        */
-        meta.create_gate("Branch number of nibbles (first level)", |meta| {
-            let mut constraints = vec![];
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-            let is_branch_init_cur = meta.query_advice(branch.is_init, Rotation::cur());
-            let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
-
-            // Only check if there is an account above the branch.
-            let is_account_leaf_in_added_branch =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(-1));
-
-            let nibbles_count_cur =
-                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation::cur());
-
-            /*
-            If branch is in the first level of the account trie, `nibbles_count` needs to be 1.
-            */
-            constraints.push((
-                "nibbles_count first level account",
-                q_enable.clone()
-                    * is_branch_init_cur.clone()
-                    * (one.clone() - is_extension_node.clone()) // extension node counterpart constraint is in extension_node.rs
-                    * (one.clone() - not_first_level)
-                    * (nibbles_count_cur.clone() - one.clone()),
-            ));
-
-            /*
-            If branch is in the first level of the storage trie, `nibbles_count` needs to be 1.
-            */
-            constraints.push((
-                "nibbles_count first level storage",
-                q_enable
-                    * is_branch_init_cur
-                    * (one.clone() - is_extension_node) // extension node counterpart constraint is in extension_node.rs
-                    * is_account_leaf_in_added_branch
-                    * (nibbles_count_cur - one.clone()),
-            ));
-
-            constraints
-        });
-
-        /*
-        Range lookups ensure that `s_main.bytes` and `c_main.bytes` columns are all bytes (between 0 - 255).
-
-        Note: We do not check this for branch init row here.
-        Branch init row contains selectors related to drifted_pos,
-        modified_node, branch placeholders, extension node selectors. The constraints for these
-        selectors are in `branch_init.rs`.
-        Range lookups for extension node rows are in `extension_node_key.rs`.
-        */
+        // Range lookups ensure that `s_main.bytes` and `c_main.bytes` columns are all
+        // bytes (between 0 - 255). Note: We do not check this for branch init
+        // row here. Branch init row contains selectors related to drifted_pos,
+        // modified_node, branch placeholders, extension node selectors. The constraints
+        // for these selectors are in `branch_init.rs`.
+        // Range lookups for extension node rows are in `extension_node_key.rs`.
         let sel = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
             let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
 
-            q_not_first * (one.clone() - is_branch_init) * is_branch_child
+            q_not_first * not::expr(is_branch_init) * is_branch_child
         };
         range_lookups(
             meta,
@@ -940,7 +611,9 @@ impl<F: FieldExt> BranchConfig<F> {
             fixed_table,
         );
 
-        config
+        BranchConfig {
+            _marker: PhantomData,
+        }
     }
 
     pub(crate) fn assign_branch_init(
