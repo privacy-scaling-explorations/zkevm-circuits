@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_rlc();
+        let destination = cb.query_word_rlc();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());

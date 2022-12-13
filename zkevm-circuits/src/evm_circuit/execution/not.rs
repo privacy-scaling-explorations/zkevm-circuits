@@ -31,8 +31,8 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let input = cb.query_word();
-        let output = cb.query_word();
+        let input = cb.query_word_rlc();
+        let output = cb.query_word_rlc();
 
         cb.stack_pop(input.expr());
         cb.stack_push(output.expr());

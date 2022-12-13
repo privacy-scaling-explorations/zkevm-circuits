@@ -10,14 +10,14 @@ use crate::{
             },
             from_bytes,
             math_gadget::BatchedIsZeroGadget,
-            CachedRegion, Cell, RandomLinearCombination, Word,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToAddress};
+use eth_types::{evm_types::GasCost, Field, ToAddress, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
@@ -40,7 +40,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODEHASH;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let external_address = cb.query_rlc();
+        let external_address = cb.query_word_rlc();
         cb.stack_pop(external_address.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -74,10 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             code_hash.expr(),
         );
 
-        let empty_code_hash_rlc = Word::random_linear_combine_expr(
-            (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-            cb.power_of_randomness(),
-        );
+        let empty_code_hash_rlc = cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()));
         // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
         // go to the work of writing out the RLC expression
         let is_empty = BatchedIsZeroGadget::construct(
@@ -156,17 +153,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
         let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
             block.rws[step.rw_indices[i]]
-                .table_assignment_aux(block.randomness)
+                .table_assignment(region.challenges().evm_word())
                 .value
         });
 
-        self.nonce.assign(region, offset, Value::known(nonce))?;
-        self.balance.assign(region, offset, Value::known(balance))?;
-        self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
+        self.nonce.assign(region, offset, nonce)?;
+        self.balance.assign(region, offset, balance)?;
+        self.code_hash.assign(region, offset, code_hash)?;
 
-        let empty_code_hash_rlc = Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness);
-        self.is_empty.assign(
+        let empty_code_hash_rlc = region.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE));
+        self.is_empty.assign_value(
             region,
             offset,
             [nonce, balance, code_hash - empty_code_hash_rlc],

@@ -10,7 +10,7 @@ use crate::evm_circuit::util::math_gadget::{
     BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
-use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
+use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, CellType, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -51,7 +51,7 @@ pub(crate) struct CallOpGadget<F> {
     memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
     callee_nonce: Cell<F>,
-    callee_code_hash: Cell<F>,
+    phase2_callee_code_hash: Cell<F>,
     is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
     is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
@@ -64,6 +64,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_OP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+ 
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
@@ -82,13 +83,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             1.expr(),
         );
 
-        let gas_word = cb.query_word();
-        let code_address_word = cb.query_word();
-        let value = cb.query_word();
+        let gas_word = cb.query_word_rlc();
+        let code_address_word = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
         let cd_offset = cb.query_cell();
-        let cd_length = cb.query_rlc();
+        let cd_length = cb.query_word_rlc();
         let rd_offset = cb.query_cell();
-        let rd_length = cb.query_rlc();
+        let rd_length = cb.query_word_rlc();
         let is_success = cb.query_bool();
 
         // Use rw_counter of the step which triggers next call as its call_id.
@@ -210,11 +211,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             AccountFieldTag::Nonce,
             callee_nonce.expr(),
         );
-        let callee_code_hash = cb.query_cell();
+        let phase2_callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
         cb.account_read(
             code_address,
             AccountFieldTag::CodeHash,
-            callee_code_hash.expr(),
+            phase2_callee_code_hash.expr(),
         );
         let is_empty_nonce_and_balance = BatchedIsZeroGadget::construct(
             cb,
@@ -225,12 +226,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
         let is_empty_code_hash = IsEqualGadget::construct(
             cb,
-            callee_code_hash.expr(),
-            Word::random_linear_combine_expr(
-                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                cb.power_of_randomness(),
-            ),
+            phase2_callee_code_hash.expr(),
+            cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr())),
         );
+
         let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
         // Sum up gas cost
         let gas_cost = select::expr(
@@ -333,7 +332,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 0.expr()),
                 (CallContextFieldTag::IsCreate, 0.expr()),
-                (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
+                (
+                    CallContextFieldTag::CodeHash,
+                    phase2_callee_code_hash.expr(),
+                ),
             ] {
                 cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
@@ -351,13 +353,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(false.expr()),
-                code_hash: To(callee_code_hash.expr()),
+                code_hash: To(phase2_callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
                 reversible_write_counter: To(2.expr()),
                 ..StepStateTransition::new_context()
             });
         });
-
+ 
         Self {
             opcode,
             is_call,
@@ -385,7 +387,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             memory_expansion,
             transfer,
             callee_nonce,
-            callee_code_hash,
+            phase2_callee_code_hash,
             is_empty_nonce_and_balance,
             is_empty_code_hash,
             one_64th_gas,
@@ -542,12 +544,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         )?;
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
-        let cd_address =
-            self.cd_address
-                .assign(region, offset, cd_offset, cd_length, block.randomness)?;
-        let rd_address =
-            self.rd_address
-                .assign(region, offset, rd_offset, rd_length, block.randomness)?;
+        let cd_address = self
+            .cd_address
+            .assign(region, offset, cd_offset, cd_length)?;
+        let rd_address = self
+            .rd_address
+            .assign(region, offset, rd_offset, rd_length)?;
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
@@ -570,31 +572,25 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
-        self.callee_code_hash.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
+        self.phase2_callee_code_hash
+            .assign(region, offset, region.word_rlc(callee_code_hash))?;
+        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign_value(
             region,
             offset,
             [
-                F::from(callee_nonce.low_u64()),
-                Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
+                Value::known(F::from(callee_nonce.low_u64())),
+                region.word_rlc(callee_balance_pair.1),
             ],
         )?;
-        let is_empty_code_hash = self.is_empty_code_hash.assign(
+        let is_empty_code_hash = self.is_empty_code_hash.assign_value(
             region,
             offset,
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
+            region.word_rlc(callee_code_hash),
+            region.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE)),
         )?;
         let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
-        let gas_cost = if is_warm_prev {
+        let gas_cost = is_empty_account.map(|is_empty_account| if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
         } else {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
@@ -607,15 +603,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 }
         } else {
             0
-        } + memory_expansion_gas_cost;
-        let gas_available = step.gas_left - gas_cost;
-        self.one_64th_gas
-            .assign(region, offset, gas_available as u128)?;
-        self.capped_callee_gas_left.assign(
+        } + memory_expansion_gas_cost);
+        let gas_available = Value::known(step.gas_left) - gas_cost;
+        self.one_64th_gas.assign_value(
             region,
             offset,
-            F::from(gas.low_u64()),
-            F::from(gas_available - gas_available / 64),
+            gas_available.map(|gas_available| F::from(gas_available)),
+        )?;
+        self.capped_callee_gas_left.assign_value(
+            region,
+            offset,
+            Value::known(F::from(gas.low_u64())),
+            gas_available.map(|gas_available| F::from(gas_available - gas_available / 64)),
         )?;
         Ok(())
     }
@@ -853,6 +852,13 @@ mod test {
         for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
             test_ok(caller, callee);
         }
+    }
+
+    #[test]
+    fn callop_base() {
+        test_ok(caller(&OpcodeId::CALL, Stack::default(), true), callee(bytecode!{}));
+        // use crate::evm_circuit::util::print_op_count;
+        // print_op_count();
     }
 
     fn test_ok(caller: Account, callee: Account) {

@@ -686,7 +686,7 @@ impl BlockTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &BlockContext,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -709,7 +709,7 @@ impl BlockTable {
                             || format!("block table row {}", offset),
                             *column,
                             offset,
-                            || Value::known(value),
+                            || value,
                         )?;
                     }
                     offset += 1;
@@ -816,6 +816,7 @@ impl KeccakTable {
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
+                        dbg!(row);
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
@@ -913,8 +914,8 @@ impl CopyTable {
                 .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
             challenges
-                .evm_word()
-                .map(|evm_word_challenge| rlc::value(values.iter().rev(), evm_word_challenge))
+                .keccak_input()
+                .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         } else {
             Value::known(F::zero())
         };

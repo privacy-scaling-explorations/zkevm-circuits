@@ -170,7 +170,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let exp_table = ExpTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
 
-        let power_of_randomness = array::from_fn(|i| {
+        let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
         });
 
@@ -228,14 +228,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             StateCircuitConfigArgs {
                 rw_table,
                 mpt_table,
-                challenges,
+                challenges: challenges.clone(),
             },
         );
         let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                power_of_randomness,
+                challenges,
                 tx_table,
                 rw_table,
                 bytecode_table,
@@ -272,9 +272,11 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         );
         let rws = &self.state_circuit.rows;
 
-        config
-            .block_table
-            .load(&mut layouter, &block.context, block.randomness)?;
+        config.block_table.load(
+            &mut layouter,
+            &block.context,
+            Value::known(block.randomness),
+        )?;
 
         config.mpt_table.load(
             &mut layouter,
@@ -301,7 +303,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
-        self.evm_circuit.synthesize(config.evm_circuit, layouter)?;
+        // TODO
+        // self.evm_circuit.synthesize(config.evm_circuit, layouter)?;
         Ok(())
     }
 }

@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -11,14 +11,17 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, Expr},
+    util::{query_expression, Challenges, Expr},
 };
 use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
+        Selector, ThirdPhase, VirtualCells,
+    },
     poly::Rotation,
 };
 use std::{
@@ -284,7 +287,7 @@ impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: [Expression<F>; 31],
+        challenges: Challenges<Expression<F>>,
         fixed_table: &dyn LookupTable<F>,
         byte_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
@@ -303,7 +306,22 @@ impl<F: Field> ExecutionConfig<F> {
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
-        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
+        let advices = [(); STEP_WIDTH]
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                if n < N_PHASE3_COLUMNS {
+                    meta.advice_column_in(ThirdPhase)
+                } else if n < N_PHASE3_COLUMNS + N_PHASE2_COLUMNS {
+                    meta.advice_column_in(SecondPhase)
+                } else {
+                    meta.advice_column_in(FirstPhase)
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
 
         let step_curr = Step::new(meta, advices, 0, false);
         let mut height_map = HashMap::new();
@@ -390,10 +408,12 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
+
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+        let word_powers_of_randomness : [Expression<F>;31] = challenges.evm_word_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
-                Self::configure_gadget(
+                 Self::configure_gadget(
                     meta,
                     advices,
                     q_usable,
@@ -401,7 +421,8 @@ impl<F: Field> ExecutionConfig<F> {
                     num_rows_until_next_step,
                     q_step_first,
                     q_step_last,
-                    &power_of_randomness,
+                    &challenges,
+                    &word_powers_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut height_map,
@@ -411,6 +432,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         let cell_manager = step_curr.cell_manager.clone();
+
         let config = Self {
             q_usable,
             q_step,
@@ -529,10 +551,9 @@ impl<F: Field> ExecutionConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
-            &power_of_randomness,
+            &challenges,
             &cell_manager,
         );
-
         config
     }
 
@@ -554,19 +575,21 @@ impl<F: Field> ExecutionConfig<F> {
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
         q_step_last: Selector,
-        power_of_randomness: &[Expression<F>; 31],
+        challenges: &Challenges<Expression<F>>,
+        word_power_of_randomness: &[Expression<F>;31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
-        // height
+        // heightn
         let height = {
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
                 step_next.clone(),
-                power_of_randomness,
+                challenges,
+                word_power_of_randomness,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
@@ -579,7 +602,8 @@ impl<F: Field> ExecutionConfig<F> {
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),
-            power_of_randomness,
+            &challenges,
+            word_power_of_randomness,
             G::EXECUTION_STATE,
         );
 
@@ -600,6 +624,7 @@ impl<F: Field> ExecutionConfig<F> {
             !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
+       
         height_map.insert(G::EXECUTION_STATE, height);
         debug_assert!(
             !stored_expressions_map.contains_key(&G::EXECUTION_STATE),
@@ -617,6 +642,7 @@ impl<F: Field> ExecutionConfig<F> {
         let sel_not_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> = &|meta| {
             meta.query_advice(q_step, Rotation::cur()) * not::expr(meta.query_selector(q_step_last))
         };
+
         for (selector, constraints) in [
             (sel_step, constraints.step),
             (sel_step_first, constraints.step_first),
@@ -709,9 +735,10 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
-        power_of_randomness: &[Expression<F>; 31],
+        challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
+        let powers_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -730,7 +757,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, power_of_randomness),
+                        rlc::expr(&table_expressions, &powers_of_randomness),
                     )]
                 });
             }
@@ -744,13 +771,8 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let power_of_randomness = (1..32)
-            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
-            .collect::<Vec<F>>()
-            .try_into()
-            .unwrap();
-
         layouter.assign_region(
             || "Execution step",
             |mut region| {
@@ -822,7 +844,7 @@ impl<F: Field> ExecutionConfig<F> {
                         step,
                         height,
                         next,
-                        power_of_randomness,
+                        challenges,
                     )?;
 
                     // q_step logic
@@ -904,7 +926,7 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
         height: usize,
         next: Option<(&Transaction, &Call, &ExecStep)>,
-        power_of_randomness: [F; 31],
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         if !matches!(step.execution_state, ExecutionState::EndBlock) {
             log::trace!(
@@ -920,7 +942,7 @@ impl<F: Field> ExecutionConfig<F> {
         // enough for 3 steps.
         let region = &mut CachedRegion::<'_, '_, F>::new(
             region,
-            power_of_randomness,
+            challenges,
             STEP_WIDTH,
             MAX_STEP_HEIGHT * 3,
             self.advices[0].index(),
@@ -1126,7 +1148,12 @@ impl<F: Field> ExecutionConfig<F> {
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
             // expensive function call
-            Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+            Self::check_rw_lookup(
+                &assigned_stored_expressions,
+                step,
+                block,
+                region.challenges(),
+            );
         }
         Ok(())
     }
@@ -1156,6 +1183,7 @@ impl<F: Field> ExecutionConfig<F> {
         assigned_stored_expressions: &[(String, F)],
         step: &ExecStep,
         block: &Block<F>,
+        challenges: &Challenges<Value<F>>,
     ) {
         let mut assigned_rw_values = Vec::new();
         // Reversion lookup expressions have different ordering compared to rw table,
@@ -1176,21 +1204,24 @@ impl<F: Field> ExecutionConfig<F> {
             .table_assignments()
             .iter()
             .map(|rw| {
-                rw.table_assignment_aux(block.randomness)
-                    .rlc(block.randomness)
+                challenges
+                    .evm_word()
+                    .map(|randomness| rw.table_assignment_aux(randomness).rlc(randomness))
             })
             .collect();
 
+        // [TODO] Check this
         for (name, value) in assigned_rw_values.iter() {
-            if !rlc_assignments.contains(value) {
+            if !rlc_assignments.contains(&Value::known(*value)) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
+        challenges.evm_word().map(|randomness| {
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
+            let table_assignments = rw.table_assignment_aux(randomness);
+            let rlc = table_assignments.rlc(randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
                     "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
@@ -1202,5 +1233,6 @@ impl<F: Field> ExecutionConfig<F> {
                     step.execution_state);
             }
         }
+    });
     }
 }

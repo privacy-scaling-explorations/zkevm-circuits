@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // The gas passed to a transaction is a 64-bit number.
-        let gas_left = cb.query_rlc();
+        let gas_left = cb.query_word_rlc();
 
         // The `gas_left` in the current state has to be deducted by the gas
         // used by the `GAS` opcode itself.

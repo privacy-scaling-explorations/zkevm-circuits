@@ -1166,7 +1166,6 @@ dependencies = [
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
 dependencies = [
  "group",
  "integer",
@@ -1180,7 +1179,6 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
 dependencies = [
  "ecc",
  "group",
@@ -1983,7 +1981,6 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2022_09_10#a9e99a72a65d7c98e8a4258c2c94269c834d1c10"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -2014,7 +2011,6 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
 dependencies = [
  "group",
  "halo2_proofs 0.2.0",
@@ -2319,7 +2315,6 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
 dependencies = [
  "group",
  "maingate",
@@ -2569,7 +2564,6 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2022_09_09#2d708b4453387f03059aad68d6d87441db112a2f"
 dependencies = [
  "group",
  "halo2wrong",

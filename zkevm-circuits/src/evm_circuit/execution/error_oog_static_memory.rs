@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // Query address by a full word
-        let address = cb.query_word();
+        let address = cb.query_word_rlc();
 
         // Check if this is an MSTORE8
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());

@@ -40,8 +40,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
-        let address = cb.query_rlc();
-        let value = cb.query_word();
+        let address = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());

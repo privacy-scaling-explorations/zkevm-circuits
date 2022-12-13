@@ -1,4 +1,4 @@
-use super::CachedRegion;
+use super::{CachedRegion, CellType};
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
@@ -24,7 +24,7 @@ pub struct IsZeroGadget<F> {
 
 impl<F: Field> IsZeroGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
-        let inverse = cb.query_cell();
+        let inverse = cb.query_cell_with_type(CellType::storage_for_inv(&value));
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
@@ -58,6 +58,17 @@ impl<F: Field> IsZeroGadget<F> {
             F::zero()
         })
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<Value<F>, Error> {
+        value
+            .map(|value| self.assign(region, offset, value))
+            .transpose()
+    }
 }
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
@@ -90,6 +101,18 @@ impl<F: Field> IsEqualGadget<F> {
     ) -> Result<F, Error> {
         self.is_zero.assign(region, offset, lhs - rhs)
     }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<Value<F>, Error> {
+        lhs.zip(rhs)
+            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs))
+            .transpose()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -100,8 +123,16 @@ pub struct BatchedIsZeroGadget<F, const N: usize> {
 
 impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
-        let is_zero = cb.query_bool();
-        let nonempty_witness = cb.query_cell();
+        let values_in_phase_1 = values
+            .iter()
+            .any(|value| CellType::storage_for(value) == CellType::StoragePhase1);
+        let in_phase = if values_in_phase_1 {
+            CellType::StoragePhase2
+        } else {
+            CellType::StoragePhase1
+        };
+        let is_zero = cb.query_bool_with_type(in_phase);
+        let nonempty_witness = cb.query_cell_with_type(in_phase);
 
         for value in values.iter() {
             cb.require_zero(
@@ -144,6 +175,19 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
         self.is_zero.assign(region, offset, Value::known(is_zero))?;
 
         Ok(is_zero)
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        values: [Value<F>; N],
+    ) -> Result<Value<F>, Error> {
+        let values: Value<[F; N]> =
+            Value::<Vec<F>>::from_iter(values).map(|vv| vv.try_into().unwrap());
+        values
+            .map(|values| self.assign(region, offset, values))
+            .transpose()
     }
 }
 
@@ -301,7 +345,7 @@ impl<F: Field> MulWordByU64Gadget<F> {
     ) -> Self {
         let gadget = Self {
             multiplicand,
-            product: cb.query_word(),
+            product: cb.query_word_rlc(),
             carry_lo: cb.query_bytes(),
         };
 
@@ -470,6 +514,18 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
 
     pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {
         self.diff.to_vec()
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<Value<(F, Vec<u8>)>, Error> {
+        lhs.zip(rhs)
+            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs))
+            .transpose()
     }
 }
 
@@ -647,8 +703,8 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
-        let quotient = cb.query_cell();
-        let remainder = cb.query_cell();
+        let quotient = cb.query_cell_with_type(CellType::storage_for(&numerator));
+        let remainder = cb.query_cell_with_type(CellType::storage_for(&numerator));
 
         // Require that remainder < denominator
         cb.range_lookup(remainder.expr(), denominator);
@@ -700,6 +756,16 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
 
         Ok((quotient, remainder))
     }
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        numerator: Value<F>,
+    ) -> Result<Value<(u128, u128)>, Error> {
+        numerator
+            .map(|numerator| self.assign(region, offset, numerator.get_lower_128()))
+            .transpose()
+    }
 }
 
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
@@ -746,6 +812,18 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         } else {
             (lhs, rhs)
         })
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<Value<(F, F)>, Error> {
+        lhs.zip(rhs)
+            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs))
+            .transpose()
     }
 }
 
@@ -1188,8 +1266,8 @@ pub(crate) struct ModGadget<F> {
 impl<F: Field> ModGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = cb.query_word();
-        let a_or_zero = cb.query_word();
+        let k = cb.query_word_rlc();
+        let a_or_zero = cb.query_word_rlc();
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
         let mul = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
@@ -1226,7 +1304,6 @@ impl<F: Field> ModGadget<F> {
         a: Word,
         n: Word,
         r: Word,
-        randomness: F,
     ) -> Result<(), Error> {
         let k = if n.is_zero() { Word::zero() } else { a / n };
         let a_or_zero = if n.is_zero() { Word::zero() } else { a };
@@ -1241,11 +1318,11 @@ impl<F: Field> ModGadget<F> {
             .assign(region, offset, F::from(a_or_zero_sum))?;
         self.mul.assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
-        self.eq.assign(
+        self.eq.assign_value(
             region,
             offset,
-            util::Word::random_linear_combine(a.to_le_bytes(), randomness),
-            util::Word::random_linear_combine(a_or_zero.to_le_bytes(), randomness),
+            region.word_rlc(a),
+            region.word_rlc(a_or_zero),
         )?;
 
         Ok(())
@@ -1265,9 +1342,9 @@ pub(crate) struct AbsWordGadget<F> {
 
 impl<F: Field> AbsWordGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let x = cb.query_word();
-        let x_abs = cb.query_word();
-        let sum = cb.query_word();
+        let x = cb.query_word_rlc();
+        let x_abs = cb.query_word_rlc();
+        let sum = cb.query_word_rlc();
         let x_lo = from_bytes::expr(&x.cells[0..16]);
         let x_hi = from_bytes::expr(&x.cells[16..32]);
         let x_abs_lo = from_bytes::expr(&x_abs.cells[0..16]);

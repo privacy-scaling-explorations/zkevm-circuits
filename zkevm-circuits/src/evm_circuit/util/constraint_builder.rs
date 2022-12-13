@@ -9,7 +9,7 @@ use crate::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::{build_tx_log_expression, Expr},
+    util::{build_tx_log_expression, Challenges, Expr},
 };
 use eth_types::Field;
 use gadgets::util::{and, not};
@@ -264,7 +264,8 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
-    power_of_randomness: &'a [Expression<F>; 31],
+    challenges: &'a Challenges<Expression<F>>,
+    word_power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
@@ -281,14 +282,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
-        power_of_randomness: &'a [Expression<F>; 31],
+        challenges: &'a Challenges<Expression<F>>,
+        word_power_of_randomness: &'a [Expression<F>;31],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
             max_degree: MAX_DEGREE,
             curr,
             next,
-            power_of_randomness,
+            challenges,
             execution_state,
             constraints: Constraints {
                 step: Vec::new(),
@@ -304,6 +306,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             condition: None,
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
+            word_power_of_randomness,
         }
     }
 
@@ -329,8 +332,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn power_of_randomness(&self) -> &[Expression<F>] {
-        self.power_of_randomness
+    pub(crate) fn challenges(&self) -> &Challenges<Expression<F>> {
+        self.challenges
     }
 
     pub(crate) fn execution_state(&self) -> ExecutionState {
@@ -371,12 +374,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.query_cell_with_type(CellType::Lookup(Table::Byte))
     }
 
-    pub(crate) fn query_word(&mut self) -> Word<F> {
-        self.query_rlc()
-    }
-
-    pub(crate) fn query_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
-        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.power_of_randomness)
+    pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.word_power_of_randomness)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -388,7 +387,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::Storage)
+        self.query_cell_with_type(CellType::StoragePhase1)
     }
 
     pub(crate) fn query_copy_cell(&mut self) -> Cell<F> {
@@ -399,6 +398,12 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.query_cells(cell_type, 1).first().unwrap().clone()
     }
 
+    pub(crate) fn query_bool_with_type(&mut self, cell_type: CellType) -> Cell<F> {
+        let cell = self.query_cell_with_type(cell_type);
+        self.require_boolean("Constrain cell to be a bool", cell.expr());
+        cell
+    }
+
     fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         if self.in_next_step {
             &mut self.next
@@ -407,6 +412,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         }
         .cell_manager
         .query_cells(cell_type, count)
+    }
+
+    pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
+        RandomLinearCombination::random_linear_combine_expr(bytes, self.word_power_of_randomness)
     }
 
     // Common
@@ -613,7 +622,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
     ) -> Word<F> {
-        let word = self.query_word();
+        let word = self.query_word_rlc();
         self.tx_context_lookup(id, field_tag, index, word.expr());
         word
     }
@@ -984,7 +993,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Cell<F> {
-        let cell = self.query_cell();
+        let phase = match field_tag {
+            CallContextFieldTag::CodeHash => CellType::StoragePhase2,
+            _ => CellType::StoragePhase1,
+        };
+        let cell = self.query_cell_with_type(phase);
         self.call_context_lookup(false.expr(), call_id, field_tag, cell.expr());
         cell
     }
@@ -1380,17 +1393,25 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
+        //let now = std::time::Instant::now();
         let lookup = match &self.condition {
             Some(condition) => lookup.conditional(condition.clone()),
             None => lookup,
         };
-
+        //let diff_1 = now.elapsed();
         let compressed_expr = self.split_expression(
             "Lookup compression",
-            rlc::expr(&lookup.input_exprs(), self.power_of_randomness),
+            rlc::expr(&lookup.input_exprs(), self.word_power_of_randomness),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
+        //let diff_2 = now.elapsed();
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
+        /* 
+        if now.elapsed() > std::time::Duration::from_millis(2) {
+            let diff_3 = now.elapsed();
+            println!("add_lookup: {:<10} {:<10} {:<10}", (diff_3 - diff_2).as_millis(), (diff_2 - diff_1).as_millis(), diff_1.as_millis() );
+        }
+        */
     }
 
     pub(crate) fn store_expression(
@@ -1399,8 +1420,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         expr: Expression<F>,
         cell_type: CellType,
     ) -> Expression<F> {
+
         // Check if we already stored the expression somewhere
-        let stored_expression = self.find_stored_expression(expr.clone(), cell_type);
+        let stored_expression = self.find_stored_expression(&expr, cell_type);
+
         match stored_expression {
             Some(stored_expression) => {
                 debug_assert!(
@@ -1428,7 +1451,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                     name,
                     cell: cell.clone(),
                     cell_type,
-                    expr_id: expr.identifier(),
+                    expr_id: expr.fast_identifier(),
                     expr,
                 });
                 cell.expr()
@@ -1438,10 +1461,14 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn find_stored_expression(
         &self,
-        expr: Expression<F>,
+        expr: &Expression<F>,
         cell_type: CellType,
     ) -> Option<&StoredExpression<F>> {
-        let expr_id = expr.identifier();
+        let now = std::time::Instant::now();
+        let expr_id = expr.fast_identifier();
+        if now.elapsed().as_millis() > 0 {
+            println!("store_expression {} -> stored_expressions_len {}", now.elapsed().as_millis(), self.stored_expressions.len());
+        }
         self.stored_expressions
             .iter()
             .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
@@ -1473,7 +1500,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                             if expr.degree() > max_degree {
                                 self.split_expression(name, expr, max_degree)
                             } else {
-                                self.store_expression(name, expr, CellType::Storage)
+                                self.store_expression(name, expr, CellType::StoragePhase1)
                             }
                         };
                         if a.degree() >= b.degree() {
