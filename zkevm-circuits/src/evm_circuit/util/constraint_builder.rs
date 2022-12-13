@@ -527,7 +527,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
-    // look up opcode's  min and max stack pointer
+    // look up opcode's min and max stack pointer
     pub(crate) fn opcode_stack_lookup(
         &mut self,
         opcode: Expression<F>,

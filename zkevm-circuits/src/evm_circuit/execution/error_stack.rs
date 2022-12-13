@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
             min_stack_pointer.expr(),
             max_stack_pointer.expr(),
         );
-        // Check current stack pointer is underflow or overflow
+        // Check whether current stack pointer is underflow or overflow
 
         let is_overflow = LtGadget::construct(
             cb,
@@ -333,7 +333,7 @@ mod test {
         let bytecode = bytecode! {
             PUSH1(Word::from(11))
             POP
-            POP // underflow occur in this POP operation
+            POP // underflow occurs in this POP operation
             STOP
         };
         let callee = callee(bytecode);
