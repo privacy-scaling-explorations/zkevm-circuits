@@ -7,7 +7,7 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::math_gadget::{
-    BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
+    BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget, LtWordGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
 use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
@@ -24,6 +24,7 @@ use keccak256::EMPTY_HASH_LE;
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
 #[derive(Clone, Debug)]
+
 pub(crate) struct CallOpGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
@@ -50,6 +51,10 @@ pub(crate) struct CallOpGadget<F> {
     rd_address: MemoryAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
+    // adding
+    callee_balance_word: Word<F>,
+    is_insufficient_balance: LtWordGadget<F>,
+    // end adding
     callee_nonce: Cell<F>,
     callee_code_hash: Cell<F>,
     is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
@@ -91,6 +96,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let rd_length = cb.query_rlc();
         let is_success = cb.query_bool();
 
+        let callee_balance_word = cb.query_word();
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
@@ -194,16 +200,27 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        // Verify transfer
-        let transfer = TransferGadget::construct(
-            cb,
-            caller_address.expr(),
-            callee_address.expr(),
-            value.clone(),
-            &mut callee_reversion_info,
-        );
+        // TODO:  constrain balance < transfer value  
 
-        // Verify gas cost
+        // Verify transfer
+        cb.account_read(
+            callee_address.expr(),
+            AccountFieldTag::Balance,
+            callee_balance_word.expr(),
+        );
+        let is_insufficient_balance = LtWordGadget::construct(cb, &callee_balance_word, &value);
+    
+        let transfer = cb.condition(1.expr() - is_insufficient_balance.expr(), |cb| {
+            TransferGadget::construct(
+                cb,
+                caller_address.expr(),
+                callee_address.expr(),
+                value.clone(),
+                &mut callee_reversion_info,
+            )
+        });
+        
+        // Verify gas cost 
         let callee_nonce = cb.query_cell();
         cb.account_read(
             callee_address.expr(),
@@ -220,8 +237,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb,
             [
                 callee_nonce.expr(),
-                transfer.receiver().balance_prev().expr(),
-            ],
+                callee_balance_word.expr(),          
+                ],
         );
         let is_empty_code_hash = IsEqualGadget::construct(
             cb,
@@ -244,7 +261,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
-        let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
+        let all_but_one_64th_gas = gas_available.clone() - one_64th_gas.quotient();
         let capped_callee_gas_left = MinMaxGadget::construct(cb, gas, all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
             gas_is_u64.expr(),
@@ -256,7 +273,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
-        cb.condition(is_empty_code_hash.expr(), |cb| {
+
+        // TODO: handle is_insufficient_balance step transition
+        cb.condition(is_empty_code_hash.expr() * (1.expr() - is_insufficient_balance.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -284,7 +303,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             });
         });
 
-        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
+        cb.condition((1.expr() - is_empty_code_hash.expr())*(1.expr() - is_insufficient_balance.expr() ), |cb| {
             // Save caller's call state
             for (field_tag, value) in [
                 (
@@ -384,6 +403,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_address,
             memory_expansion,
             transfer,
+            // new to add
+            callee_balance_word,
+            is_insufficient_balance,
             callee_nonce,
             callee_code_hash,
             is_empty_nonce_and_balance,
@@ -449,12 +471,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[15 + rw_offset],
         ]
         .map(|idx| block.rws[idx].call_context_value());
-        let [caller_balance_pair, callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] =
+        // handling new fields
+        let (callee_balance, _) = block.rws[step.rw_indices[16 + rw_offset]].account_value_pair();
+        self.callee_balance_word.assign(region, offset, Some(callee_balance.to_le_bytes()))?;
+        self.is_insufficient_balance.assign(region, offset, callee_balance, value)?;
+
+        //TODO: conditionly get transfer value
+      let [/*caller_balance_pair, callee_balance_pair, */ (callee_nonce, _), (callee_code_hash, _)] =
             [
-                step.rw_indices[16 + rw_offset],
                 step.rw_indices[17 + rw_offset],
                 step.rw_indices[18 + rw_offset],
-                step.rw_indices[19 + rw_offset],
+                //step.rw_indices[19 + rw_offset],
+                //step.rw_indices[20 + rw_offset],
             ]
             .map(|idx| block.rws[idx].account_value_pair());
         self.opcode
@@ -554,13 +582,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.memory_word_size(),
             [cd_address, rd_address],
         )?;
-        self.transfer.assign(
-            region,
-            offset,
-            caller_balance_pair,
-            callee_balance_pair,
-            value,
-        )?;
+        // conditionally assign
+        // self.transfer.assign(
+        //     region,
+        //     offset,
+        //     caller_balance_pair,
+        //     callee_balance_pair,
+        //     value,
+        // )?;
         self.callee_nonce.assign(
             region,
             offset,
@@ -583,7 +612,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             offset,
             [
                 F::from(callee_nonce.low_u64()),
-                Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
+                Word::random_linear_combine(callee_balance.to_le_bytes(), block.randomness),
             ],
         )?;
         let is_empty_code_hash = self.is_empty_code_hash.assign(
@@ -651,8 +680,13 @@ mod test {
             value: Word::from(11).pow(18.into()),
             ..Default::default()
         }];
-        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
-        for ((opcode, stack), callee) in TEST_CALL_OPCODES
+
+        //let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
+        let callees = [callee(bytecode! {})];
+        let test_opcodes: &[OpcodeId] = &[
+            OpcodeId::CALL,
+        ];
+        for ((opcode, stack), callee) in test_opcodes
             .iter()
             .cartesian_product(stacks.into_iter())
             .cartesian_product(callees.into_iter())

@@ -23,6 +23,13 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
+        // let next_step = if geth_steps.len() > 1 {
+        //     Some(&geth_steps[1])
+        // } else {
+        //     None
+        // };
+        // exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
+
 
         let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
@@ -90,6 +97,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (call.is_success as u64).into(),
         )?;
 
+        // transfer value is not sufficient case
+
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
             &mut exec_step,
@@ -112,19 +121,39 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, call.clone().call_id, field, value);
         }
 
-        state.transfer(
+        let (found, sender_account) = state.sdb.get_account(&call.caller_address);
+        //let (_, callee_account) = state.sdb.get_account(&call.address);
+        let caller_balance = sender_account.balance;
+        let insufficient_balance = call.value > caller_balance;
+        if insufficient_balance {
+            println!("insufficient balance");
+        }
+        
+        // adding: always read balance of callee
+        state.account_read(
             &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
+            call.address, // callee account
+            AccountField::Balance,
+            caller_balance,
+            caller_balance,
         )?;
 
-        let (_, callee_account) = state.sdb.get_account(&call.address);
+        if !insufficient_balance{
+            state.transfer(
+                &mut exec_step,
+                call.caller_address,
+                call.address,
+                call.value,
+            )?;
+        }
+
+        let (found, callee_account) = state.sdb.get_account(&call.address);
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
+       
         state.account_read(
             &mut exec_step,
             call.address,
