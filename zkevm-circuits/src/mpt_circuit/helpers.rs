@@ -496,9 +496,9 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.conditions.push(condition);
+        self.push_condition(condition);
         let ret = constraint(self);
-        self.conditions.pop();
+        self.pop_condition();
         ret
     }
 
@@ -508,16 +508,24 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         when_true: impl FnOnce(&mut Self) -> R,
         when_false: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.conditions.push(condition.clone());
+        self.push_condition(condition.clone());
         let ret_true = when_true(self);
-        self.conditions.pop();
+        self.pop_condition();
 
-        self.conditions.push(not::expr(condition));
+        self.push_condition(not::expr(condition));
         let ret_false = when_false(self);
-        self.conditions.pop();
+        self.pop_condition();
 
         ret_true
         //select::expr(condition, ret_true, ret_false)
+    }
+
+    pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
+        self.conditions.push(condition);
+    }
+
+    pub(crate) fn pop_condition(&mut self) {
+        self.conditions.pop();
     }
 
     pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
@@ -581,6 +589,21 @@ macro_rules! cs {
             $meta.query_advice($column_lhs, Rotation($rot_lhs as i32)),
             $meta.query_advice($column_rhs, Rotation($rot_rhs as i32)),
         );
+    }};
+    ([$cb:ident], $lhs:block == $rhs:block) => {{
+        $cb.require_equal(
+            concat!(
+                file!(),
+                ":",
+                line!(),
+                ": ",
+                stringify!($lhs),
+                " == ",
+                stringify!($rhs)
+            ),
+            $lhs.expr(),
+            $rhs.expr(),
+        );
     }}; /*($arg_a:ident $(&& $(!)* $args:ident)*) => {{
             and::expr([$arg_a.expr(),
             $(
@@ -588,4 +611,96 @@ macro_rules! cs {
             )*
             ])
         }};*/
+}
+
+/// Constraint builder macros
+#[macro_export]
+macro_rules! constraints {
+    ([$meta:ident, $cb:ident], $content:block) => {{
+        macro_rules! ifx {
+                            (($condition:expr) $when_true:block elsex $when_false:block) => {{
+                                $cb.push_condition($condition.expr());
+                                $when_true
+                                $cb.pop_condition();
+
+                                $cb.push_condition(not::expr($condition.expr()));
+                                $when_false
+                                $cb.pop_condition();
+                            }};
+                            (($condition:expr) $when_true:block) => {{
+                                $cb.push_condition($condition.expr());
+                                $when_true
+                                $cb.pop_condition();
+                            }};
+                        }
+
+        macro_rules! f {
+            ($column:expr, $rot:expr) => {{
+                $meta.query_fixed($column, Rotation($rot as i32))
+            }};
+            ($column:expr) => {{
+                $meta.query_fixed($column, Rotation::cur())
+            }};
+        }
+
+        macro_rules! a {
+            ($column:expr, $rot:expr) => {{
+                $meta.query_advice($column, Rotation($rot as i32))
+            }};
+            ($column:expr) => {{
+                $meta.query_advice($column, Rotation::cur())
+            }};
+        }
+
+        macro_rules! require {
+            ($lhs:block in $rhs:block) => {{
+                $cb.require_in_set(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": ",
+                        stringify!($lhs),
+                        " in ",
+                        stringify!($rhs)
+                    ),
+                    $lhs.expr(),
+                    $rhs.to_vec(),
+                );
+            }};
+
+            ($lhs:expr => bool) => {{
+                $cb.require_boolean(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": ",
+                        stringify!($lhs),
+                        " in ",
+                        stringify!($rhs)
+                    ),
+                    $lhs.expr(),
+                );
+            }};
+
+            ($lhs:expr => $rhs:expr) => {{
+                $cb.require_equal(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": ",
+                        stringify!($lhs),
+                        " == ",
+                        stringify!($rhs)
+                    ),
+                    $lhs.expr(),
+                    $rhs.expr(),
+                );
+            }};
+        }
+
+        $content
+    }};
 }

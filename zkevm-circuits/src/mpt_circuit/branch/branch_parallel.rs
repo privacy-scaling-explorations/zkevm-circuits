@@ -7,7 +7,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    cs,
+    constraints, cs,
     mpt_circuit::{
         columns::{MainCols, PositionCols},
         helpers::{key_len_lookup, BaseConstraintBuilder, ColumnTransition},
@@ -97,21 +97,21 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         check_zeros: bool,
     ) -> Self {
         meta.create_gate("Empty and non-empty branch children", |meta| {
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
-            let rlp2 = meta.query_advice(main.rlp2, Rotation::cur());
-            let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
-            let node_index = meta.query_advice(branch.node_index, Rotation::cur());
-            let is_modified = meta.query_advice(branch.is_modified, Rotation::cur());
+            let mut cb = BaseConstraintBuilder::default();
+            constraints! {[meta, cb], {
+
+            let q_enable = f!(position_cols.q_enable);
+            let q_not_first = f!(position_cols.q_not_first);
+            let is_branch_child = a!(branch.is_child);
+            let rlp2 = a!(main.rlp2);
+            let is_node_hashed = a!(is_node_hashed);
+            let node_index = a!(branch.node_index);
+            let is_modified = a!(branch.is_modified);
 
             let sel = ColumnTransition::new(meta, sel);
             let mod_node_hash_rlc = ColumnTransition::new(meta, mod_node_hash_rlc);
 
-            let mut cb = BaseConstraintBuilder::default();
-
-            cs!{[cb],
-            ifx(is_branch_child.expr()) {
+            ifx!{(is_branch_child.expr()) {
                 // Empty and non-empty branch children
                 // Empty nodes have 0 at `rlp2`, have `128` at `bytes[0]` and 0 everywhere else:
                 // [0, 0, 128, 0, ..., 0].
@@ -119,26 +119,20 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 // [0, 160, a0, ..., a31].
                 // Note: `s_rlp1` and `c_rlp1` store the number of RLP still left in the in the branch rows.
                 // The constraints are in `branch.rs`, see `RLP length` gate.
-                cs!{[cb],
-                ifx(and::expr([q_enable.expr(), not::expr(is_node_hashed.expr())])) {
+                ifx!{(and::expr([q_enable.expr(), not::expr(is_node_hashed.expr())])) {
                     // Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
-                    cb.require_in_set(
-                        "rlp2 = 0 or rlp2 = 160",
-                        rlp2.expr(),
-                        [0.expr(), 160.expr()].to_vec(),
-                    );
+                    require!({rlp2.expr()} in {[0.expr(), 160.expr()]});
 
                     // For empty nodes
-                    cs!{[cb],
-                    ifx(rlp2.expr() - 160.expr()) {
-                        for (idx, byte) in main.bytes.iter().map(|col| meta.query_advice(*col, Rotation::cur())).enumerate() {
+                    ifx!{(rlp2.expr() - 160.expr()) {
+                        for (idx, byte) in main.bytes.iter().map(|&byte| a!(byte)).enumerate() {
                             if idx == 0 {
                                 // When an empty node (0 at `rlp2`), `bytes[0] = 128`.
                                 // Note that `rlp2` can be only 0 or 128.
-                                cb.require_equal("bytes[0] = 128 in empty node", byte, 128.expr());
+                                require!(byte => 128.expr());
                             } else {
                                 // When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
-                                cb.require_zero("bytes[i] = 0 for i > 0 in empty", byte);
+                                require!(byte => 0.expr());
                             }
                         }
                     }}
@@ -157,8 +151,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 }}
 
                 // Branch child RLC & selector for specifying whether the modified node is empty
-                cs!{[cb],
-                ifx(q_not_first.expr()) {
+                ifx!{(q_not_first.expr()) {
                     // `mod_node_hash_rlc` is the same for all `is_branch_child` rows.
                     // Having the values stored in all 16 rows makes it easier to check whether it is really the value that
                     // corresponds to the `modified_node`. This is used in `branch.rs` constraints like:
@@ -168,18 +161,11 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                     // ```
                     // `hash_rlc` is computed in each row as: `bytes[0] + bytes[1] * r + ... + bytes[31] * r^31`.
                     // Note that `hash_rlc` is somehow misleading name because the branch child can be non-hashed too.
-                    cs!{[cb],
-                    ifx(node_index.expr()) { // ignore if node_index = 0 (there is no previous)
-                        cb.require_equal(
-                            "mod_node_hash_rlc the same for all branch children",
-                            mod_node_hash_rlc.cur(),
-                            mod_node_hash_rlc.prev(),
-                        );
-                        cb.require_equal(
-                            "Selector for the modified child being empty the same for all branch children",
-                            sel.cur(),
-                            sel.prev(),
-                        );
+                    ifx!{(node_index.expr()) { // ignore if node_index = 0 (there is no previous)
+                        // mod_node_hash_rlc the same for all branch children
+                        require!(mod_node_hash_rlc.cur() => mod_node_hash_rlc.prev());
+                        // Selector for the modified child being empty the same for all branch children
+                        require!(sel.cur() => sel.prev());
                     }}
 
                     // When a value is being added (and reverse situation when deleted) to the trie and
@@ -188,20 +174,20 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                     // That means we have empty node in `S` proof at `modified_node`.
                     // When this happens, we denote this situation by having `sel = 1`.
                     // In this case we need to check that `main.bytes = [128, 0, ..., 0]`.
-                    cs!{[cb],
-                    ifx(and::expr([is_modified.expr(), sel.expr()])) {
-                        for (idx, byte) in main.bytes.iter().map(|col| meta.query_advice(*col, Rotation::cur())).enumerate() {
+                    ifx!{(and::expr([is_modified.expr(), sel.expr()])) {
+                        for (idx, byte) in main.bytes.iter().map(|&byte| a!(byte)).enumerate() {
                             if idx == 0 {
                                 // We first check `bytes[0] = 128`.
-                                cb.require_equal("Empty branch child modified: bytes[0] = 128", byte, 128.expr());
+                                require!(byte => 128.expr());
                             } else {
                                 // The remaining constraints for `main.bytes = [128, 0, ..., 0]`:
                                 // `bytes[i] = 0` for `i > 0`.
-                                cb.require_zero("bytes[i] = 0 for i > 0 in empty", byte);
+                                require!(byte => 0.expr());
                             }
                         }
                     }}
                 }}
+            }}
             }}
 
             cb.gate(1.expr())

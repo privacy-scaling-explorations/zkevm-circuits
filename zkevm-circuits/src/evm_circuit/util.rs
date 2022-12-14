@@ -430,6 +430,29 @@ pub(crate) mod rlc {
     }
 }
 
+/// Returns the dot product of the two inputs.
+pub(crate) mod dot {
+    use crate::util::Expr;
+    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(a: &[E], b: &[E]) -> Expression<F> {
+        debug_assert!(a.len() == b.len());
+        a.iter()
+            .zip(b.iter())
+            .fold(0.expr(), |acc, (a, b)| acc + a.expr() * b.expr())
+    }
+
+    pub(crate) fn value<'a, F: FieldExt, I>(a: I, b: I) -> F
+    where
+        I: IntoIterator<Item = &'a F>,
+        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+    {
+        a.into_iter()
+            .zip(b.into_iter())
+            .fold(F::zero(), |acc, (&a, &b)| acc + a * b)
+    }
+}
+
 /// Returns 2**by as FieldExt
 pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])

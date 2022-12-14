@@ -75,6 +75,12 @@ impl<F: FieldExt> MainCols<F> {
             _marker: PhantomData,
         }
     }
+
+    pub(crate) fn rlp_bytes(&self) -> Vec<Column<Advice>> {
+        [[self.rlp1, self.rlp2].to_vec(), self.bytes.to_vec()]
+            .concat()
+            .to_vec()
+    }
 }
 
 #[derive(Clone, Debug)]
