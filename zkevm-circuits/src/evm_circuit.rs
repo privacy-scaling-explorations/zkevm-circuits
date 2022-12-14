@@ -419,7 +419,7 @@ pub mod test {
         let num_rows_required_for_bytecode_table: usize = block
             .bytecodes
             .values()
-            .map(|bytecode| bytecode.bytes.len())
+            .map(|bytecode| bytecode.bytes.len() + 1)
             .sum();
         let num_rows_required_for_copy_table: usize =
             block.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
