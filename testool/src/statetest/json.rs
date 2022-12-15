@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports)]
 
+use super::parse;
 use super::spec::{AccountMatch, Env, StateTest};
 use crate::abi;
 use crate::compiler::Compiler;
@@ -113,11 +114,11 @@ impl<'a> JsonStateTestBuilder<'a> {
             let env = Self::parse_env(&test.env)?;
             let pre = self.parse_accounts_pre(&test.pre)?;
 
-            let to = Self::parse_to_address(&test.transaction.to)?;
-            let secret_key = Self::parse_bytes(&test.transaction.secret_key)?;
+            let to = parse::parse_to_address(&test.transaction.to)?;
+            let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
             let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
-            let nonce = Self::parse_u256(&test.transaction.nonce)?;
-            let gas_price = Self::parse_u256(&test.transaction.gas_price)?;
+            let nonce = parse::parse_u256(&test.transaction.nonce)?;
+            let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
 
             let data_s: Vec<_> = test
                 .transaction
@@ -130,14 +131,14 @@ impl<'a> JsonStateTestBuilder<'a> {
                 .transaction
                 .gas_limit
                 .iter()
-                .map(|item| Self::parse_u64(item))
+                .map(|item| parse::parse_u64(item))
                 .collect::<Result<_>>()?;
 
             let value_s: Vec<_> = test
                 .transaction
                 .value
                 .iter()
-                .map(|item| Self::parse_u256(item))
+                .map(|item| parse::parse_u256(item))
                 .collect::<Result<_>>()?;
 
             let mut expects = Vec::new();
@@ -199,12 +200,12 @@ impl<'a> JsonStateTestBuilder<'a> {
     /// parse env section
     fn parse_env(env: &TestEnv) -> Result<Env> {
         Ok(Env {
-            current_coinbase: Self::parse_address(&env.current_coinbase)?,
-            current_difficulty: Self::parse_u256(&env.current_difficulty)?,
-            current_gas_limit: Self::parse_u64(&env.current_gas_limit)?,
-            current_number: Self::parse_u64(&env.current_number)?,
-            current_timestamp: Self::parse_u64(&env.current_timestamp)?,
-            previous_hash: Self::parse_hash(&env.previous_hash)?,
+            current_coinbase: parse::parse_address(&env.current_coinbase)?,
+            current_difficulty: parse::parse_u256(&env.current_difficulty)?,
+            current_gas_limit: parse::parse_u64(&env.current_gas_limit)?,
+            current_number: parse::parse_u64(&env.current_number)?,
+            current_timestamp: parse::parse_u64(&env.current_timestamp)?,
+            previous_hash: parse::parse_hash(&env.previous_hash)?,
         })
     }
 
@@ -215,15 +216,15 @@ impl<'a> JsonStateTestBuilder<'a> {
     ) -> Result<HashMap<Address, Account>> {
         let mut accounts = HashMap::new();
         for (address, acc) in accounts_pre {
-            let address = Self::parse_address(address)?;
+            let address = parse::parse_address(address)?;
             let mut storage = HashMap::new();
             for (k, v) in &acc.storage {
-                storage.insert(Self::parse_u256(k)?, Self::parse_u256(v)?);
+                storage.insert(parse::parse_u256(k)?, parse::parse_u256(v)?);
             }
             let account = Account {
                 address,
-                balance: Self::parse_u256(&acc.balance)?,
-                nonce: Self::parse_u256(&acc.nonce)?,
+                balance: parse::parse_u256(&acc.balance)?,
+                nonce: parse::parse_u256(&acc.nonce)?,
                 code: self.parse_code(&acc.code)?,
                 storage,
             };
@@ -239,11 +240,11 @@ impl<'a> JsonStateTestBuilder<'a> {
     ) -> Result<HashMap<Address, AccountMatch>> {
         let mut accounts = HashMap::new();
         for (address, acc) in accounts_post {
-            let address = Self::parse_address(address)?;
+            let address = parse::parse_address(address)?;
             let mut storage: HashMap<U256, U256> = HashMap::new();
             if let Some(acc_storage) = &acc.storage {
                 for (k, v) in acc_storage {
-                    storage.insert(Self::parse_u256(k)?, Self::parse_u256(v)?);
+                    storage.insert(parse::parse_u256(k)?, parse::parse_u256(v)?);
                 }
             }
             let account = AccountMatch {
@@ -251,13 +252,13 @@ impl<'a> JsonStateTestBuilder<'a> {
                 balance: acc
                     .balance
                     .as_ref()
-                    .map(|v| Self::parse_u256(v))
+                    .map(|v| parse::parse_u256(v))
                     .transpose()?,
                 code: acc.code.as_ref().map(|v| self.parse_code(v)).transpose()?,
                 nonce: acc
                     .nonce
                     .as_ref()
-                    .map(|v| Self::parse_u256(v))
+                    .map(|v| parse::parse_u256(v))
                     .transpose()?,
                 storage,
             };
@@ -293,35 +294,6 @@ impl<'a> JsonStateTestBuilder<'a> {
             }
         }
         tags
-    }
-    /// returns the element as an address
-    fn parse_address(as_str: &str) -> Result<Address> {
-        if let Some(hex) = as_str.strip_prefix("0x") {
-            Ok(Address::from_slice(
-                &hex::decode(hex).context("parse_address")?,
-            ))
-        } else {
-            Ok(Address::from_slice(
-                &hex::decode(as_str).context("parse_address")?,
-            ))
-        }
-    }
-
-    /// returns the element as a to address
-    fn parse_to_address(as_str: &str) -> Result<Option<Address>> {
-        if as_str.trim().is_empty() {
-            return Ok(None);
-        }
-        Self::parse_address(as_str).map(|x| Ok(Some(x)))?
-    }
-
-    /// returns the element as an array of bytes
-    fn parse_bytes(as_str: &str) -> Result<Bytes> {
-        if let Some(hex) = as_str.strip_prefix("0x") {
-            Ok(Bytes::from(hex::decode(hex).context("parse_bytes")?))
-        } else {
-            Ok(Bytes::from(hex::decode(as_str).context("parse_bytes")?))
-        }
     }
 
     /// parse entry as code, can be 0x, :raw or { LLL }
@@ -392,39 +364,6 @@ impl<'a> JsonStateTestBuilder<'a> {
                 tags,
                 as_str
             )
-        }
-    }
-
-    /// parse a hash entry
-    fn parse_hash(value: &str) -> Result<H256> {
-        if let Some(hex) = value.strip_prefix("0x") {
-            Ok(H256::from_slice(&hex::decode(hex).context("parse_hash")?))
-        } else {
-            Ok(H256::from_slice(&hex::decode(value).context("parse_hash")?))
-        }
-    }
-
-    /// parse an uint256 entry
-    fn parse_u256(as_str: &str) -> Result<U256> {
-        if let Some(stripped) = as_str.strip_prefix("0x") {
-            Ok(U256::from_str_radix(stripped, 16)?)
-        } else if as_str
-            .to_lowercase()
-            .contains(['a', 'b', 'c', 'd', 'e', 'f'])
-        {
-            Ok(U256::from_str_radix(as_str, 16)?)
-        } else {
-            Ok(U256::from_str_radix(as_str, 10)?)
-        }
-    }
-
-    /// parse u64 entry
-    #[allow(clippy::cast_sign_loss)]
-    fn parse_u64(as_str: &str) -> Result<u64> {
-        if let Some(stripped) = as_str.strip_prefix("0x") {
-            Ok(U256::from_str_radix(stripped, 16)?.as_u64())
-        } else {
-            Ok(U256::from_str_radix(as_str, 10)?.as_u64())
         }
     }
 

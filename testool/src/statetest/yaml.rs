@@ -1,3 +1,4 @@
+use super::parse;
 use super::spec::{AccountMatch, Env, StateTest};
 use crate::abi;
 use crate::utils::MainnetFork;
@@ -291,11 +292,7 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// returns the element as an address
     fn parse_address(yaml: &Yaml) -> Result<Address> {
         if let Some(as_str) = yaml.as_str() {
-            if let Some(hex) = as_str.strip_prefix("0x") {
-                Ok(Address::from_slice(&hex::decode(hex)?))
-            } else {
-                Ok(Address::from_slice(&hex::decode(as_str)?))
-            }
+            parse::parse_address(as_str)
         } else if let Some(as_i64) = yaml.as_i64() {
             let hex = format!("{:0>40}", as_i64);
             Ok(Address::from_slice(&hex::decode(hex)?))
@@ -312,17 +309,16 @@ impl<'a> YamlStateTestBuilder<'a> {
             if as_str.trim().is_empty() {
                 return Ok(None);
             }
+            parse::parse_to_address(as_str)
+        } else {
+            bail!("cannot parse to address {:?}", yaml);
         }
-        Self::parse_address(yaml).map(|x| Ok(Some(x)))?
     }
 
     /// returns the element as an array of bytes
     fn parse_bytes(yaml: &Yaml) -> Result<Bytes> {
-        let mut as_str = yaml.as_str().context("bytes_as_str")?;
-        if let Some(stripped) = as_str.strip_prefix("0x") {
-            as_str = stripped;
-        }
-        Ok(Bytes::from(hex::decode(as_str)?))
+        let as_str = yaml.as_str().context("bytes_as_str")?;
+        parse::parse_bytes(as_str)
     }
 
     /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
@@ -421,11 +417,7 @@ impl<'a> YamlStateTestBuilder<'a> {
     /// parse a hash entry
     fn parse_hash(yaml: &Yaml) -> Result<H256> {
         let value = yaml.as_str().context("not a str")?;
-        if let Some(hex) = value.strip_prefix("0x") {
-            Ok(H256::from_slice(&hex::decode(hex)?))
-        } else {
-            Ok(H256::from_slice(&hex::decode(value)?))
-        }
+        parse::parse_hash(value)
     }
 
     /// parse an uint256 entry
@@ -433,16 +425,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         if let Some(as_int) = yaml.as_i64() {
             Ok(U256::from(as_int))
         } else if let Some(as_str) = yaml.as_str() {
-            if let Some(stripped) = as_str.strip_prefix("0x") {
-                Ok(U256::from_str_radix(stripped, 16)?)
-            } else if as_str
-                .to_lowercase()
-                .contains(['a', 'b', 'c', 'd', 'e', 'f'])
-            {
-                Ok(U256::from_str_radix(as_str, 16)?)
-            } else {
-                Ok(U256::from_str_radix(as_str, 10)?)
-            }
+            parse::parse_u256(as_str)
         } else if yaml.as_f64().is_some() {
             if let Yaml::Real(value) = yaml {
                 Ok(U256::from_str_radix(value, 10)?)
@@ -460,11 +443,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         if let Some(as_int) = yaml.as_i64() {
             Ok(as_int as u64)
         } else if let Some(as_str) = yaml.as_str() {
-            if let Some(stripped) = as_str.strip_prefix("0x") {
-                Ok(U256::from_str_radix(stripped, 16)?.as_u64())
-            } else {
-                Ok(U256::from_str_radix(as_str, 10)?.as_u64())
-            }
+            parse::parse_u64(as_str)
         } else {
             bail!("parse_u64 {:?}", yaml)
         }
