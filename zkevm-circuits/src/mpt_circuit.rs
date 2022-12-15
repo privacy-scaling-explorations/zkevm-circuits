@@ -363,7 +363,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             accumulators.clone(),
             keccak_table.clone(),
-            power_of_randomness[0].clone(),
+            power_of_randomness.clone(),
             true,
         );
 
@@ -376,7 +376,7 @@ impl<F: FieldExt> MPTConfig<F> {
             s_main.clone(),
             accumulators.clone(),
             keccak_table.clone(),
-            power_of_randomness[0].clone(),
+            power_of_randomness.clone(),
             false,
         );
 

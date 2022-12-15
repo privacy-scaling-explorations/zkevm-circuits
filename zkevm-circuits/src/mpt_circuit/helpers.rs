@@ -1,5 +1,5 @@
-use crate::util::Expr;
-use gadgets::util::{and, not, select};
+use crate::{util::Expr, evm_circuit::table::Lookup, table::{KeccakTable, DynamicTableColumns}};
+use gadgets::util::{and, not, select, sum};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
@@ -388,6 +388,54 @@ pub(crate) fn get_rlp_value_bytes<F: FieldExt>(
     [rlp1, rlp2, rlp3]
 }
 
+pub(crate) fn generate_keccak_lookup<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    keccak_table: KeccakTable,
+    lookups: Vec<KeccakLookup<F>>,
+) {
+    /*meta.lookup_any("Hash lookup", |meta| {
+        let selector = sum::expr(lookups.iter().map(|lookup| lookup.selector.expr()));
+        let input_rlc = sum::expr(
+            lookups
+                .iter()
+                .map(|lookup| lookup.selector.expr() * lookup.input_rlc.expr()),
+        );
+        let input_len = sum::expr(
+            lookups
+                .iter()
+                .map(|lookup| lookup.selector.expr() * lookup.input_len.expr()),
+        );
+        let output_rlc = sum::expr(
+            lookups
+                .iter()
+                .map(|lookup| lookup.selector.expr() * lookup.output_rlc.expr()),
+        );
+        let values = [selector, input_rlc, input_len, output_rlc];
+        keccak_table.columns().iter().zip(values.iter()).map(|(&table, value)| {
+            (
+                value.expr(),
+                meta.query_advice(table, Rotation::cur()),
+            )
+        }).collect()
+    });*/
+
+    for lookup in lookups.iter() {
+        meta.lookup_any("Hash lookup", |meta| {
+            let selector = lookup.selector.expr();
+            let input_rlc = lookup.selector.expr() * lookup.input_rlc.expr();
+            let input_len = lookup.selector.expr() * lookup.input_len.expr();
+            let output_rlc = lookup.selector.expr() * lookup.output_rlc.expr();
+            let values = [selector, input_rlc, input_len, output_rlc];
+            keccak_table.columns().iter().zip(values.iter()).map(|(&table, value)| {
+                (
+                    value.expr(),
+                    meta.query_advice(table, Rotation::cur()),
+                )
+            }).collect()
+        });
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ColumnTransition<F> {
     prev: Expression<F>,
@@ -437,11 +485,19 @@ impl<F: FieldExt> Expr<F> for ColumnTransition<F> {
     }
 }
 
+pub struct KeccakLookup<F> {
+    pub selector: Expression<F>,
+    pub input_rlc: Expression<F>,
+    pub input_len: Expression<F>,
+    pub output_rlc: Expression<F>,
+}
+
 #[derive(Default)]
 pub struct BaseConstraintBuilder<F> {
     pub constraints: Vec<(&'static str, Expression<F>)>,
     pub max_degree: usize,
     pub conditions: Vec<Expression<F>>,
+    pub lookups: Vec<KeccakLookup<F>>,
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {
@@ -450,6 +506,7 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             constraints: Vec::new(),
             max_degree,
             conditions: Vec::new(),
+            lookups: Vec::new(),
         }
     }
 
@@ -535,10 +592,9 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
     }
 
     pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = if self.conditions.is_empty() {
-            constraint
-        } else {
-            constraint * self.get_condition()
+        let constraint = match self.get_condition() {
+            Some(condition) => condition * constraint,
+            None => constraint,
         };
         self.validate_degree(constraint.degree(), name);
         self.constraints.push((name, constraint));
@@ -568,8 +624,26 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             .collect()
     }
 
-    pub(crate) fn get_condition(&self) -> Expression<F> {
-        and::expr(self.conditions.iter())
+    pub(crate) fn get_condition(&self) -> Option<Expression<F>> {
+        if self.conditions.is_empty() {
+            None
+        } else {
+            Some(and::expr(self.conditions.iter()))
+        }
+    }
+
+    pub(crate) fn keccak_table_lookup(
+        &mut self,
+        input_rlc: Expression<F>,
+        input_len: Expression<F>,
+        output_rlc: Expression<F>,
+    ) {
+        self.lookups.push(KeccakLookup {
+            selector: self.get_condition().unwrap_or_else(|| 1.expr()),
+            input_rlc,
+            input_len,
+            output_rlc,
+        });
     }
 }
 
@@ -604,35 +678,65 @@ macro_rules! cs {
             $lhs.expr(),
             $rhs.expr(),
         );
-    }}; /*($arg_a:ident $(&& $(!)* $args:ident)*) => {{
-            and::expr([$arg_a.expr(),
-            $(
-                $args.expr(),
-            )*
-            ])
-        }};*/
+    }};
 }
 
 /// Constraint builder macros
 #[macro_export]
 macro_rules! constraints {
     ([$meta:ident, $cb:ident], $content:block) => {{
+        // Nested macro's can't do repitition... (https://github.com/rust-lang/rust/issues/35853)
         macro_rules! ifx {
-                            (($condition:expr) $when_true:block elsex $when_false:block) => {{
-                                $cb.push_condition($condition.expr());
-                                $when_true
-                                $cb.pop_condition();
+            ($condition:expr => $when_true:block elsex $when_false:block) => {{
+                $cb.push_condition($condition.expr());
+                $when_true
+                $cb.pop_condition();
 
-                                $cb.push_condition(not::expr($condition.expr()));
-                                $when_false
-                                $cb.pop_condition();
-                            }};
-                            (($condition:expr) $when_true:block) => {{
-                                $cb.push_condition($condition.expr());
-                                $when_true
-                                $cb.pop_condition();
-                            }};
-                        }
+                $cb.push_condition(not::expr($condition.expr()));
+                $when_false
+                $cb.pop_condition();
+            }};
+            ($condition_a:expr, $condition_b:expr  => $when_true:block elsex $when_false:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
+
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+
+                $cb.push_condition(not::expr(condition.expr()));
+                $when_false
+                $cb.pop_condition();
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr  => $when_true:block elsex $when_false:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
+
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+
+                $cb.push_condition(not::expr(condition.expr()));
+                $when_false
+                $cb.pop_condition();
+            }};
+
+            ($condition:expr => $when_true:block) => {{
+                $cb.push_condition($condition.expr());
+                $when_true
+                $cb.pop_condition();
+            }};
+            ($condition_a:expr, $condition_b:expr => $when_true:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+            }};
+        }
 
         macro_rules! f {
             ($column:expr, $rot:expr) => {{
@@ -681,6 +785,14 @@ macro_rules! constraints {
                         stringify!($rhs)
                     ),
                     $lhs.expr(),
+                );
+            }};
+
+            (($input_rlc:expr, $input_len:expr, $output_rlc:expr) => keccak) => {{
+                $cb.keccak_table_lookup(
+                    $input_rlc.expr(),
+                    $input_len.expr(),
+                    $output_rlc.expr(),
                 );
             }};
 

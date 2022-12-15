@@ -82,8 +82,8 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             let branch_rlc = ColumnTransition::new(meta, branch_acc.rlc);
 
             // TODO(Brecht): comments hashed/non-hashed don't seem to match `is_node_hashed`.
-            ifx!{(q_enable.expr()) {
-                ifx!{(is_node_hashed.expr()) {
+            ifx!{q_enable.expr() => {
+                ifx!{is_node_hashed.expr() => {
                     // When a branch child is non-hashed, we have `bytes[0] - 192` bytes in a row.
                     // We need to add these bytes to the RLC. Note that we add all `bytes` to the RLC, but
                     // we rely that there are 0s after the last non-hashed byte (see constraints in `branch.rs`).
@@ -101,7 +101,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     // We have to multiply with r[0] because of the first (length) byte.
                     require!(branch_mult.cur() => branch_mult.prev() * r[0].expr() * node_mult_diff.expr());
                 } elsex {
-                    ifx!{(rlp2.expr() - 160.expr()) {
+                    ifx!{rlp2.expr() - 160.expr() => {
                         // When a branch child is empty, we only have one byte (128 at `bytes[0]`)
                         // that needs to be added to the RLC.
                         // `branch_mult_prev` is the value that is to be used when multiplying the byte to be added
@@ -113,7 +113,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                         require!(branch_mult.cur() => branch_mult.prev() * r[0].expr());
                     }}
 
-                    ifx!{(rlp2.expr()) {
+                    ifx!{rlp2.expr() => {
                         // When a branch child is non-empty and hashed, we have 33 bytes in a row.
                         // We need to add these 33 bytes to the RLC.
                         let rlc = 160.expr() * branch_mult.prev() + dot::expr(
