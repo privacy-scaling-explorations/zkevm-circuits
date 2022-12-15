@@ -389,23 +389,9 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
         let randomness = challenges.evm_word();
 
-        // Assigning to same columns in different regions should be avoided.
-        // Here we use one single region to assign `overrides` to both rw table and
-        // other parts.
         layouter.assign_region(
             || "state circuit",
             |mut region| {
-                config.rw_table.load_with_region(
-                    &mut region,
-                    &self.rows,
-                    self.n_rows,
-                    randomness,
-                )?;
-
-                config
-                    .mpt_table
-                    .load_with_region(&mut region, &self.updates, randomness)?;
-
                 config.assign_with_region(
                     &mut region,
                     &self.rows,
@@ -413,22 +399,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.n_rows,
                     randomness,
                 )?;
-                #[cfg(test)]
-                {
-                    let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
-                    for ((column, row_offset), &f) in &self.overrides {
-                        let advice_column = column.value(config);
-                        let offset =
-                            usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
-                                .unwrap();
-                        region.assign_advice(
-                            || "override",
-                            advice_column,
-                            offset,
-                            || Value::known(f),
-                        )?;
-                    }
-                }
 
                 Ok(())
             },
@@ -479,7 +449,55 @@ where
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
+
+        config.load_aux_tables(&mut layouter)?;
+
+        let randomness = challenges.evm_word();
+
+        // Assigning to same columns in different regions should be avoided.
+        // Here we use one single region to assign `overrides` to both rw table and
+        // other parts.
+        layouter.assign_region(
+            || "state circuit",
+            |mut region| {
+                config.rw_table.load_with_region(
+                    &mut region,
+                    &self.rows,
+                    self.n_rows,
+                    randomness,
+                )?;
+
+                config
+                    .mpt_table
+                    .load_with_region(&mut region, &self.updates, randomness)?;
+
+                config.assign_with_region(
+                    &mut region,
+                    &self.rows,
+                    &self.updates,
+                    self.n_rows,
+                    randomness,
+                )?;
+                #[cfg(test)]
+                {
+                    let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
+                    for ((column, row_offset), &f) in &self.overrides {
+                        let advice_column = column.value(&config);
+                        let offset =
+                            usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
+                                .unwrap();
+                        region.assign_advice(
+                            || "override",
+                            advice_column,
+                            offset,
+                            || Value::known(f),
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 
