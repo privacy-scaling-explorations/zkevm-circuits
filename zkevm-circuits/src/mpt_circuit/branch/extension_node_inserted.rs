@@ -613,6 +613,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                             + (first_nibble + second_nibble * c16.clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()); 
 
                         // `after_nibbles_rlc` computation depends on whether `nibbles_rlc` has even or odd nibbles
+                        // TODO: is_short
                         after_nibbles_rlc = after_nibbles_rlc
                             + (first_nibble_after.clone() * c16.clone() + second_nibble_after.clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()) // 1 - is_even_nibbles because `drifted_pos` needs to be taken into account too
                             // + (first_nibble_after * mult.clone() + second_nibble_after * c16.clone() * mult.clone() * power_of_randomness[0].clone()) * is_even_nibbles.clone();
@@ -622,8 +623,9 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         // mult = mult * power_of_randomness[0].clone();
                     } 
 
-                    after_nibbles_rlc = (s_main0_after - c16.clone()) * is_after_short.clone()
-                        + after_nibbles_rlc * (one.clone() - is_after_short.clone());
+                    // If short, then the first (only) nibbles is in `rlp2`.
+                    nibbles_rlc = (s_rlp2 - c16.clone()) * c16.clone() * is_short.clone()
+                        + nibbles_rlc * (one.clone() - is_short.clone());
 
                     /*
                     let mult_after = meta.query_advice(
@@ -635,7 +637,8 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     */
                     let mult_after = one.clone();
 
-                    let foo = Expression::Constant(F::from(4 + 5 * 16 + 6));
+                    /*
+                    let foo = Expression::Constant(F::from(4 + 86));
                     constraints.push((
                         "foo",
                         q_not_first.clone()
@@ -643,22 +646,32 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                             * (after_nibbles_rlc.clone() - foo)
                     ));
 
-                    nibbles_rlc = nibbles_rlc
-                        + ((drifted_pos.clone() * c16.clone() + after_nibbles_rlc.clone()) * mult_after.clone()) * is_even_nibbles.clone()
-                        // + ((drifted_pos.clone() + after_nibbles_rlc * c16.clone() * power_of_randomness[0].clone()) * mult_after) * (one.clone() - is_even_nibbles.clone());
-                        + ((drifted_pos.clone() + after_nibbles_rlc * c16.clone()) * mult_after) * (one.clone() - is_even_nibbles.clone());
-
-                    /*
-                    let foo = Expression::Constant(F::from(1 * 16 + 2 + 3 * 16 + 4 + 5 * 16 + 6));
+                    let foo = Expression::Constant(F::from(2 * 16));
                     constraints.push((
                         "foo",
                         q_not_first.clone()
                             * q_enable.clone()
                             * (nibbles_rlc.clone() - foo)
                     ));
-                    */ 
-
+                    */
                     
+                    nibbles_rlc = nibbles_rlc
+                        + (drifted_pos.clone() * c16.clone() + (s_rlp2_after.clone() - c16.clone())) * mult_after.clone() * is_after_short.clone() * is_even_nibbles.clone() // if short, then the first nibbles is in `s_rlp2`
+                        // + (drifted_pos.clone() + (s_rlp2_after - c16.clone()) * c16.clone() * power_of_randomness[0].clone()) * mult_after.clone() * is_after_short.clone() * (one.clone() - is_even_nibbles.clone());
+                        + (drifted_pos.clone() + (s_rlp2_after - c16.clone()) * c16.clone() * one.clone()) * mult_after.clone() * is_after_short.clone() * (one.clone() - is_even_nibbles.clone())
+                        + (drifted_pos.clone() * c16.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * (one.clone() - is_after_short.clone()) * is_even_nibbles.clone()
+                        + (drifted_pos.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * (one.clone() - is_after_short.clone()) * (one.clone() - is_even_nibbles.clone());
+
+                    /*
+                    let foo = Expression::Constant(F::from(2 * 16 + 3 + 4 * 16 + 5 + 6 * 16));
+                    constraints.push((
+                        "foo",
+                        q_not_first.clone()
+                            * q_enable.clone()
+                            * (nibbles_rlc.clone() - foo)
+                    ));
+                    */
+
                     /*
                     constraints.push((
                         "Nibbles in before are the same as nibbles in inserted + after",
