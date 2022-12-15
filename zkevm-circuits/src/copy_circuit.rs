@@ -308,7 +308,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.require_equal(
                 "rows[2].value == rows[0].value * r + rows[1].value",
                 meta.query_advice(value, Rotation(2)),
-                meta.query_advice(value, Rotation::cur()) * challenges.evm_word()
+                meta.query_advice(value, Rotation::cur()) * challenges.keccak_input()
                     + meta.query_advice(value, Rotation::next()),
             );
 

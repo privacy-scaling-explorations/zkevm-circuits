@@ -996,7 +996,7 @@ impl CopyTable {
                 if is_read_step {
                     Value::known(F::from(copy_step.value as u64))
                 } else {
-                    value_acc = value_acc * challenges.evm_word()
+                    value_acc = value_acc * challenges.keccak_input()
                         + Value::known(F::from(copy_step.value as u64));
                     value_acc
                 }
