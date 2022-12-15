@@ -1,8 +1,15 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::circuit_input_builder::{
+    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+};
 use crate::evm::Opcode;
-use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{
+    AccountField, AccountOp, CallContextField, MemoryOp, TxAccessListAccountOp, RW,
+};
 use crate::Error;
-use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
+use eth_types::{
+    evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToWord, Word, H256,
+};
+use ethers_core::utils::keccak256;
 
 #[derive(Debug, Copy, Clone)]
 pub struct DummyCreate<const IS_CREATE2: bool>;
@@ -54,6 +61,10 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 Word::zero()
             },
         )?;
+
+        if length > 0 {
+            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?;
+        }
 
         // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
         // > When a CREATE or CREATE2 opcode is called,
@@ -191,4 +202,48 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         Ok(vec![exec_step])
     }
+}
+
+fn handle_copy(
+    state: &mut CircuitInputStateRef,
+    step: &mut ExecStep,
+    callee_id: usize,
+    offset: usize,
+    length: usize,
+) -> Result<(), Error> {
+    dbg!("asdfasdf");
+    dbg!(offset, length, state.call_ctx()?.memory.0.len());
+    let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
+    dbg!("asdfaw3r12341");
+    let dst_id = NumberOrHash::Hash(H256(keccak256(&initialization_bytes)));
+    let bytes: Vec<_> = Bytecode::from(initialization_bytes)
+        .code
+        .iter()
+        .map(|element| (element.value, element.is_code))
+        .collect();
+
+    let rw_counter_start = state.block_ctx.rwc;
+    for (i, (byte, _)) in bytes.iter().enumerate() {
+        // this could be a memory read, if this happens before we push the new call?
+        state.push_op(
+            step,
+            RW::READ,
+            MemoryOp::new(callee_id, (offset + i).into(), *byte),
+        );
+    }
+
+    state.push_copy(CopyEvent {
+        rw_counter_start,
+        src_type: CopyDataType::Memory,
+        src_id: NumberOrHash::Number(callee_id.try_into().unwrap()),
+        src_addr: offset.try_into().unwrap(),
+        src_addr_end: (offset + length).try_into().unwrap(),
+        dst_type: CopyDataType::Bytecode,
+        dst_id,
+        dst_addr: 0,
+        log_id: None,
+        bytes,
+    });
+
+    Ok(())
 }

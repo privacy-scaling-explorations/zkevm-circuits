@@ -10,16 +10,18 @@ use crate::{
             from_bytes,
             math_gadget::ConstantDivisionGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            select, CachedRegion, Cell, Word,
+            not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
+use keccak256::EMPTY_HASH_LE;
 
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
@@ -75,6 +77,7 @@ pub(crate) struct CreateGadget<F> {
     // errors:
     // is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
     // is_empty_code_hash: IsEqualGadget<F>,
+    code_hash: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
@@ -115,6 +118,32 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let new_address = cb.query_rlc();
         let callee_is_success = cb.query_bool();
         cb.stack_push(callee_is_success.expr() * new_address.expr());
+
+        let code_hash = cb.query_cell();
+        cb.condition(initialization_code.has_length(), |cb| {
+            cb.copy_table_lookup(
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                code_hash.expr(),
+                CopyDataType::Bytecode.expr(),
+                initialization_code.offset(),
+                initialization_code.address(),
+                0.expr(),
+                initialization_code.length(),
+                0.expr(),
+                initialization_code.length(),
+            );
+        });
+        cb.condition(not::expr(initialization_code.has_length()), |cb| {
+            cb.require_equal(
+                "",
+                code_hash.expr(),
+                Word::random_linear_combine_expr(
+                    (*EMPTY_HASH_LE).map(|b| b.expr()),
+                    cb.power_of_randomness(),
+                ),
+            );
+        });
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -236,6 +265,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             memory_expansion,
             gas_left,
             callee_is_success,
+            code_hash,
         }
     }
 
@@ -267,7 +297,26 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             U256::zero()
         };
 
-        let tx_access_rw = block.rws[step.rw_indices[7 + usize::from(is_create2)]];
+        let copy_rw_increase = initialization_code_length.as_usize();
+        // dopy lookup here advances rw_counter by initialization_code_length;
+
+        let values: Vec<_> = (4 + usize::from(is_create2)
+            ..4 + usize::from(is_create2) + initialization_code_length.as_usize())
+            .map(|i| block.rws[step.rw_indices[i]].memory_value())
+            .collect();
+        let mut code_hash = keccak256(&values);
+        code_hash.reverse();
+        self.code_hash.assign(
+            region,
+            offset,
+            Value::known(RandomLinearCombination::random_linear_combine(
+                code_hash,
+                block.randomness,
+            )),
+        )?;
+
+        let tx_access_rw =
+            block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
         dbg!(tx_access_rw.clone());
 
         let new_address = tx_access_rw.address().expect("asdfawefasdf");
@@ -328,7 +377,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             region,
             offset,
             Value::known(
-                block.rws[step.rw_indices[9 + usize::from(is_create2)]]
+                block.rws[step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
                     .account_value_pair()
                     .1
                     .to_scalar()
@@ -344,8 +393,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //     Some(address_bytes)
         // )?;
 
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11]
-            .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].call_context_value());
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11].map(|i| {
+            block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
+                .call_context_value()
+        });
 
         // dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
 
@@ -359,8 +410,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             callee_is_persistent.low_u64() != 0,
         )?;
 
-        let [caller_balance_pair, callee_balance_pair] = [13, 14]
-            .map(|i| block.rws[step.rw_indices[i + usize::from(is_create2)]].account_value_pair());
+        let [caller_balance_pair, callee_balance_pair] = [13, 14].map(|i| {
+            block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
+                .account_value_pair()
+        });
         // dbg!(caller_balance_pair, callee_balance_pair, value);
         self.transfer.assign(
             region,
@@ -391,7 +444,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             region,
             offset,
             Value::known(
-                block.rws[step.rw_indices[21 + usize::from(is_create2)]]
+                block.rws[step.rw_indices[21 + usize::from(is_create2) + copy_rw_increase]]
                     .call_context_value()
                     .to_scalar()
                     .unwrap(),
