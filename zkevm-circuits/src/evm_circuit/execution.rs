@@ -1153,7 +1153,7 @@ impl<F: Field> ExecutionConfig<F> {
 
     fn check_rw_lookup(
         assigned_stored_expressions: &[(String, F)],
-        step: &ExecStep,
+        _step: &ExecStep,
         block: &Block<F>,
     ) {
         let mut assigned_rw_values = Vec::new();

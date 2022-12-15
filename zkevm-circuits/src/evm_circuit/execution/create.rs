@@ -317,17 +317,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let tx_access_rw =
             block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
-        dbg!(tx_access_rw.clone());
 
         let new_address = tx_access_rw.address().expect("asdfawefasdf");
-        dbg!(new_address);
 
-        for (word, assignment) in [
-            // (&self.initialization_code_start, initialization_code_start),
-            // (&self.initialization_code_length, initialization_code_length),
-            (&self.value, value),
-            (&self.salt, salt),
-        ] {
+        for (word, assignment) in [(&self.value, value), (&self.salt, salt)] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;
         }
         let initialization_code_address = self.initialization_code.assign(
@@ -346,7 +339,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
 
-        dbg!(call.rw_counter_end_of_reversion, call.is_persistent);
         self.reversion_info.assign(
             region,
             offset,
@@ -366,7 +358,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         )?;
 
-        // dbg!(call.callee_address);
         self.caller_address.assign(
             region,
             offset,
@@ -385,20 +376,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         )?;
 
-        //
-        // let address_bytes =
-        // block.rws[step.rw_indices[2]].stack_value().to_le_bytes()[0..20].try_into().
-        // unwrap(); self.new_address.assign(
-        //     region, offset,
-        //     Some(address_bytes)
-        // )?;
-
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11].map(|i| {
             block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
                 .call_context_value()
         });
-
-        // dbg!(callee_rw_counter_end_of_reversion, callee_is_persistent);
 
         self.callee_reversion_info.assign(
             region,
@@ -414,7 +395,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
                 .account_value_pair()
         });
-        // dbg!(caller_balance_pair, callee_balance_pair, value);
         self.transfer.assign(
             region,
             offset,
@@ -436,10 +416,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (step.gas_left - GasCost::CREATE.as_u64()).into(),
         )?;
 
-        // dbg!(block.rws[step.rw_indices[20 + usize::from(is_create2)]]);
-        // dbg!(block.rws[step.rw_indices[21 + usize::from(is_create2)]]);
-        // dbg!(block.rws[step.rw_indices[22 + usize::from(is_create2)]]);
-        // dbg!(block.rws[step.rw_indices[23 + usize::from(is_create2)]]);
         self.callee_is_success.assign(
             region,
             offset,

@@ -211,10 +211,7 @@ fn handle_copy(
     offset: usize,
     length: usize,
 ) -> Result<(), Error> {
-    dbg!("asdfasdf");
-    dbg!(offset, length, state.call_ctx()?.memory.0.len());
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
-    dbg!("asdfaw3r12341");
     let dst_id = NumberOrHash::Hash(H256(keccak256(&initialization_bytes)));
     let bytes: Vec<_> = Bytecode::from(initialization_bytes)
         .code
