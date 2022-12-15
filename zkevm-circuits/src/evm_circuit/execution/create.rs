@@ -1,4 +1,3 @@
-use crate::evm_circuit::util::RandomLinearCombination;
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
@@ -6,11 +5,14 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::TransferGadget,
-            constraint_builder::{ConstraintBuilder, ReversionInfo},
+            constraint_builder::{
+                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::{Any, Delta, To},
+            },
             from_bytes,
             math_gadget::ConstantDivisionGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, Word,
+            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -29,8 +31,6 @@ pub(crate) struct CreateGadget<F> {
     opcode: Cell<F>,
     is_create2: Cell<F>,
 
-    // initialization_code_start: Word<F>,
-    // initialization_code_length: Word<F>,
     value: Word<F>,
     salt: Word<F>,
     new_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
@@ -44,6 +44,7 @@ pub(crate) struct CreateGadget<F> {
     nonce: Cell<F>,
 
     callee_reversion_info: ReversionInfo<F>,
+    callee_is_success: Cell<F>,
 
     transfer: TransferGadget<F>,
 
@@ -52,31 +53,6 @@ pub(crate) struct CreateGadget<F> {
 
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
 
-    callee_is_success: Cell<F>,
-    //
-    // // transfer value to new address
-    // transfer: TransferGadget<F>,
-    // callee_reversion_info: ReversionInfo<F>,
-    //
-    // // memory
-    // caller_memory_address: MemoryAddressGadget<F>,
-    // memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-    // // new call context
-    // current_address: Cell<F>,
-    // depth: Cell<F>,
-    // gas: Word<F>,
-    // callee_address: Word<F>,
-    // value: Word<F>,
-    // is_success: Cell<F>,
-    // gas_is_u64: IsZeroGadget<F>,
-    //
-    // // gas
-    // one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
-    // capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
-
-    // errors:
-    // is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
-    // is_empty_code_hash: IsEqualGadget<F>,
     code_hash: Cell<F>,
 }
 
@@ -194,8 +170,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
 
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost();
-        let gas_left =
-            ConstantDivisionGadget::construct(cb, cb.curr.state.gas_left.expr() - gas_cost, 64);
+        let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost;
+        let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
+        let callee_gas_left = gas_remaining - gas_left.quotient();
         for (field_tag, value) in [
             (
                 CallContextFieldTag::ProgramCounter,
@@ -236,17 +213,16 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }
 
-        //
-        // cb.require_step_state_transition(StepStateTransition {
-        //     rw_counter: Delta(cb.rw_counter_offset.clone()),
-        //     call_id: To(callee_call_id.expr()),
-        //     is_root: To(false.expr()),
-        //     is_create: To(true.expr()),
-        //     code_hash: To(initialization_code_hash.expr()),
-        //     gas_left: To(gas.callee_gas_left()),
-        //     reversible_write_counter: To(2.expr()),
-        //     ..StepStateTransition::new_context()
-        // });
+        cb.require_step_state_transition(StepStateTransition {
+            rw_counter: Delta(cb.rw_counter_offset()),
+            call_id: To(callee_call_id.expr()),
+            is_root: To(false.expr()),
+            is_create: To(true.expr()),
+            code_hash: To(code_hash.expr()),
+            gas_left: To(callee_gas_left),
+            reversible_write_counter: To(3.expr()),
+            ..StepStateTransition::new_context()
+        });
 
         Self {
             opcode,
@@ -430,6 +406,27 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         Ok(())
     }
 }
+//
+// struct Eip150GasGadget<F> {
+//     divide_by_64: ConstantDivisionGadget<F, N_BYTES_GAS>,
+// }
+//
+// impl<F:Field> Eip150GasGadget<F> {
+//     fn construct() {
+//         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost();
+//         let gas_left =
+//             ConstantDivisionGadget::construct(cb,
+// cb.curr.state.gas_left.expr() - gas_cost, 64);
+//
+//     }
+//
+//     fn callee_gas_left(&self) -> Expression<F> {
+//
+//     }
+//
+//     fn caller_gas_left(&self) -> Expression<F> {
+//
+//     }
 
 #[cfg(test)]
 mod test {
