@@ -2,7 +2,7 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
+    plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells, SecondPhase},
     poly::Rotation,
 };
 
@@ -50,6 +50,7 @@ pub fn power_of_randomness_from_instance<F: FieldExt, const N: usize>(
 pub struct Challenges<T = Challenge> {
     evm_word: T,
     keccak_input: T,
+    lookup_input: T,
 }
 
 impl Challenges {
@@ -61,17 +62,19 @@ impl Challenges {
         Self {
             evm_word: meta.challenge_usable_after(FirstPhase),
             keccak_input: meta.challenge_usable_after(FirstPhase),
+            lookup_input: meta.challenge_usable_after(SecondPhase),
         }
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
     pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
-        let [evm_word, keccak_input] = query_expression(meta, |meta| {
-            [self.evm_word, self.keccak_input].map(|challenge| meta.query_challenge(challenge))
+        let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
+            [self.evm_word, self.keccak_input, self.lookup_input].map(|challenge| meta.query_challenge(challenge))
         });
         Challenges {
             evm_word,
             keccak_input,
+            lookup_input,
         }
     }
 
@@ -80,6 +83,7 @@ impl Challenges {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
+            lookup_input: layouter.get_challenge(self.lookup_input),
         }
     }
 }
@@ -95,10 +99,21 @@ impl<T: Clone> Challenges<T> {
         self.keccak_input.clone()
     }
 
-    pub(crate) fn mock(evm_word: T, keccak_input: T) -> Self {
+        /// Returns challenge of `lookup_input`.
+        pub fn lookup_input(&self) -> T {
+            self.lookup_input.clone()
+        }
+
+    /// Returns the challenges indexed by the challenge index
+    pub fn indexed(&self ) -> [&T;3] {
+        [&self.evm_word, &self.keccak_input, &self.lookup_input]
+    } 
+
+    pub(crate) fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {
         Self {
             evm_word,
             keccak_input,
+            lookup_input
         }
     }
 }
@@ -114,6 +129,18 @@ impl<F: Field> Challenges<Expression<F>> {
         .try_into()
         .unwrap()
     }
+
+    /// Returns powers of randomness for lookups
+    pub fn lookup_input_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
+        std::iter::successors(self.lookup_input.clone().into(), |power| {
+            (self.lookup_input.clone() * power.clone()).into()
+        })
+        .take(S)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
+    }
+    
 }
 
 pub(crate) fn build_tx_log_address(index: u64, field_tag: TxLogFieldTag, log_id: u64) -> Address {

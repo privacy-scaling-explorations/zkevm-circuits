@@ -187,10 +187,6 @@ impl<F: FieldExt> StoredExpression<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
     ) -> Result<AssignedCell<F, F>, Error> {
-        let challenges = &[
-            region.challenges.evm_word(),
-            region.challenges.keccak_input(),
-        ];
         let value = self.expr.evaluate(
             &|scalar| Value::known(scalar),
             &|_| unimplemented!("selector column"),
@@ -209,7 +205,7 @@ impl<F: FieldExt> StoredExpression<F> {
                 ))
             },
             &|_| unimplemented!("instance column"),
-            &|challenge| challenges[challenge.index()],
+            &|challenge| *region.challenges().indexed()[challenge.index()],
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
@@ -226,6 +222,7 @@ pub(crate) enum CellType {
     StoragePhase3,
     StoragePermutation,
     Lookup(Table),
+    LookupPhase3(Table)
 }
 
 impl CellType {

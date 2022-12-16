@@ -177,6 +177,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         let challenges = Challenges::mock(
             power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
+            power_of_randomness[0].clone(),
         );
 
         let keccak_circuit = KeccakCircuitConfig::new(
@@ -267,6 +268,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
     ) -> Result<(), Error> {
         let block = self.evm_circuit.block.as_ref().unwrap();
         let challenges = Challenges::mock(
+            Value::known(block.randomness),
             Value::known(block.randomness),
             Value::known(block.randomness),
         );
