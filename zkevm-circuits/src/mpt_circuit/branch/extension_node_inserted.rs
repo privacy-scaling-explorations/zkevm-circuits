@@ -569,16 +569,24 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         * (one.clone() - is_account_proof.clone()); 
 
                     // 0 if `is_before_even_nibbles`:
-                    let mut before_nibbles_rlc = (s_main0_before - c16.clone()) * c16.clone() * (one.clone() - is_before_even_nibbles.clone());
+                    // Note: before cannot be short because otherwise no extension node could be inserted
+                    let mut before_nibbles_rlc =
+                        (s_main0_before - c16.clone()) * c16.clone()
+                        * (one.clone() - is_before_even_nibbles.clone());
 
+                    let first_nibble =
+                        (s_main0_after.clone() - c16.clone()) * (one.clone() - is_after_short.clone())
+                        + (s_rlp2_after.clone() - c16.clone()) * is_after_short.clone();
                     // 0 if `is_after_even_nibbles`:
                     let mut after_nibbles_rlc =
-                        ((s_main0_after.clone() - c16.clone()) * c16.clone() * is_even_nibbles.clone()
-                        + (s_main0_after.clone() - c16.clone()) * (one.clone() - is_even_nibbles.clone()))
+                        (first_nibble.clone() * c16.clone() * (one.clone() - is_even_nibbles.clone()) // `1 - is_even_nibbles` because of `drifted_pos`
+                        + first_nibble * is_even_nibbles.clone())
                         * (one.clone() - is_after_even_nibbles.clone());
 
                     // 0 if `is_even_nibbles`:
-                    let mut nibbles_rlc = (s_main0 - c16.clone()) * c16.clone() * (one.clone() - is_even_nibbles.clone());
+                    let mut nibbles_rlc =
+                        ((s_main0 - c16.clone()) * c16.clone() * (one.clone() - is_short.clone()) + (s_rlp2.clone() - c16.clone()) * c16.clone() * is_short.clone())
+                        * (one.clone() - is_even_nibbles.clone());
 
                     let mut mult = Expression::Constant(F::one());
                     for ind in 0..HASH_WIDTH-1 {
@@ -613,11 +621,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                             + (first_nibble + second_nibble * c16.clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()); 
 
                         // `after_nibbles_rlc` computation depends on whether `nibbles_rlc` has even or odd nibbles
-                        // TODO: is_short
                         after_nibbles_rlc = after_nibbles_rlc
-                            + (first_nibble_after.clone() * c16.clone() + second_nibble_after.clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()) // 1 - is_even_nibbles because `drifted_pos` needs to be taken into account too
-                            // + (first_nibble_after * mult.clone() + second_nibble_after * c16.clone() * mult.clone() * power_of_randomness[0].clone()) * is_even_nibbles.clone();
-                            + (first_nibble_after * mult.clone() + second_nibble_after * c16.clone() * mult.clone()) * is_even_nibbles.clone();
+                            + (first_nibble_after.clone() * c16.clone() + second_nibble_after.clone()) * mult.clone()
+                            * (is_after_even_nibbles.clone() * (one.clone() - is_even_nibbles.clone()) + (one.clone() - is_after_even_nibbles.clone()) * is_even_nibbles.clone())
+                            + (first_nibble_after.clone() * mult.clone() + second_nibble_after.clone() * c16.clone() * mult.clone() * one.clone())
+                            * ((is_after_even_nibbles.clone() * is_even_nibbles.clone() + (one.clone() - is_after_even_nibbles.clone()) * (one.clone() - is_even_nibbles.clone())));
+                            // TODO: mult
 
                         // TODO: uncomment mult setting
                         // mult = mult * power_of_randomness[0].clone();
@@ -637,52 +646,17 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     */
                     let mult_after = one.clone();
 
-                    /*
-                    let foo = Expression::Constant(F::from(4 + 86));
-                    constraints.push((
-                        "foo",
-                        q_not_first.clone()
-                            * q_enable.clone()
-                            * (after_nibbles_rlc.clone() - foo)
-                    ));
-
-                    let foo = Expression::Constant(F::from(2 * 16));
-                    constraints.push((
-                        "foo",
-                        q_not_first.clone()
-                            * q_enable.clone()
-                            * (nibbles_rlc.clone() - foo)
-                    ));
-                    */
-                    
                     nibbles_rlc = nibbles_rlc
-                        + (drifted_pos.clone() * c16.clone() + (s_rlp2_after.clone() - c16.clone())) * mult_after.clone() * is_after_short.clone() * is_even_nibbles.clone() // if short, then the first nibbles is in `s_rlp2`
-                        // + (drifted_pos.clone() + (s_rlp2_after - c16.clone()) * c16.clone() * power_of_randomness[0].clone()) * mult_after.clone() * is_after_short.clone() * (one.clone() - is_even_nibbles.clone());
-                        + (drifted_pos.clone() + (s_rlp2_after - c16.clone()) * c16.clone() * one.clone()) * mult_after.clone() * is_after_short.clone() * (one.clone() - is_even_nibbles.clone())
-                        + (drifted_pos.clone() * c16.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * (one.clone() - is_after_short.clone()) * is_even_nibbles.clone()
-                        + (drifted_pos.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * (one.clone() - is_after_short.clone()) * (one.clone() - is_even_nibbles.clone());
+                        + (drifted_pos.clone() * c16.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * is_even_nibbles.clone()
+                        + (drifted_pos.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * (one.clone() - is_even_nibbles.clone());
 
-                    /*
-                    let foo = Expression::Constant(F::from(2 * 16 + 3 + 4 * 16 + 5 + 6 * 16));
-                    constraints.push((
-                        "foo",
-                        q_not_first.clone()
-                            * q_enable.clone()
-                            * (nibbles_rlc.clone() - foo)
-                    ));
-                    */
 
-                    /*
                     constraints.push((
                         "Nibbles in before are the same as nibbles in inserted + after",
                         q_not_first
                             * q_enable
                             * (before_nibbles_rlc - nibbles_rlc)
                     ));
-                    */
-
-                    // TODO: inserted extension node branch has an extension node (drifted_pos)
-                    // at the proper nibble
 
                     constraints
                 },
