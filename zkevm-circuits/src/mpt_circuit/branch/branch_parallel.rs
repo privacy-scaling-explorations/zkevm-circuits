@@ -121,7 +121,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 // The constraints are in `branch.rs`, see `RLP length` gate.
                 ifx!{q_enable.expr(), not::expr(is_node_hashed.expr()) => {
                     // Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
-                    require!({rlp2.expr()} in {[0.expr(), 160.expr()]});
+                    require!(rlp2.expr() => {[0.expr(), 160.expr()]});
 
                     // For empty nodes
                     ifx!{rlp2.expr() - 160.expr() => {

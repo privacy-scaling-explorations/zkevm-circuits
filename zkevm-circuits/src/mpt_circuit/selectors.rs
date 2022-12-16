@@ -1,5 +1,6 @@
 use super::helpers::{BaseConstraintBuilder, ColumnTransition};
 use crate::{
+    constraints,
     mpt_circuit::account_leaf::AccountLeafCols,
     mpt_circuit::branch::BranchCols,
     mpt_circuit::columns::{DenoteCols, PositionCols, ProofTypeCols},
@@ -31,6 +32,8 @@ impl<F: FieldExt> SelectorsConfig<F> {
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
         meta.create_gate("Selectors", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            constraints!{[meta, cb], {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
@@ -80,8 +83,6 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_non_existing_storage_proof =
                 ColumnTransition::new(meta, proof_type.is_non_existing_storage_proof);
 
-            let mut cb = BaseConstraintBuilder::default();
-
             // Row type selectors
             let row_type_selectors = [
                 is_branch_init.expr(),
@@ -116,7 +117,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ];
 
             // Sanity checks on all rows
-            cb.condition(q_enable.expr(), |cb| {
+            ifx!{q_enable => {
                 // It needs to be ensured that all selectors are boolean. To trigger the
                 // constraints for a specific row the selectors could be of any
                 // nonnegative value, but being booleans it makes it easier to
@@ -134,23 +135,15 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     .iter()
                     .chain(row_type_selectors.iter().chain(proof_type_selectors.iter()))
                 {
-                    cb.require_boolean("bool check selector", selector.expr());
+                    require!(selector => bool);
                 }
 
                 // The type of the row needs to be set (if all selectors would be 0 for a row,
                 // then all constraints would be switched off).
-                cb.require_equal(
-                    "Type of the row is set",
-                    sum::expr(row_type_selectors.iter()),
-                    1.expr(),
-                );
+                require!(sum::expr(row_type_selectors.iter()) => 1);
 
                 // The type of the proof needs to be set.
-                cb.require_equal(
-                    "Type of the proof is set",
-                    sum::expr(proof_type_selectors.iter()),
-                    1.expr(),
-                );
+                require!(sum::expr(proof_type_selectors.iter()) => 1);
 
                 // We need to prevent lookups into non-lookup rows and we need to prevent for
                 // example nonce lookup into balance lookup row.
@@ -168,34 +161,24 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     .zip(proof_type_lookup_row_types.iter())
                     .enumerate()
                 {
-                    cb.require_zero(
-                        "Proof type is 0 everywhere except in the specific lookup row",
-                        proof_type_id.expr() * proof_type.expr() * (row_type.expr() - 1.expr()),
-                    );
-                    cb.condition(proof_type_id.expr() * row_type.expr(), |cb| {
-                        cb.require_equal(
-                            "Proof type is the expected value on the specific lookup row type",
-                            proof_type_id.expr(),
-                            (idx + 1).expr(),
-                        );
-                    });
+                    // Proof type is 0 everywhere except in the specific lookup row
+                    require!(proof_type_id.expr() * proof_type.expr() * (row_type.expr() - 1.expr()) => 0);
+
+                    ifx!{proof_type_id.expr(), row_type.expr() => {
+                        // Proof type is the expected value on the specific lookup row type
+                        require!(proof_type_id => idx + 1);
+                    }}
                 }
-            });
+            }};
 
             // First row
-            cb.condition(
-                and::expr([q_enable.expr(), not::expr(q_not_first.expr())]),
-                |cb| {
-                    cb.require_equal(
-                        "In the first row only account leaf key S row or branch init row can occur",
-                        or::expr([is_account_leaf_key_s.cur(), is_branch_init.cur()]),
-                        1.expr(),
-                    );
-                },
-            );
+            ifx!{q_enable, not::expr(q_not_first.expr()) => {
+                // In the first row only account leaf key S row or branch init row can occur
+                require!(or::expr([is_account_leaf_key_s.cur(), is_branch_init.cur()]) => true);
+            }};
 
             // All rows except the first row
-            cb.condition(q_not_first.expr(), |cb| {
+            ifx!{q_not_first => {
                 // State transitions
                 let transitions = [
                     // Branch init can start:
@@ -321,9 +304,9 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     ),
                 ];
                 for (name, condition, from, to) in transitions {
-                    cb.condition(condition, |cb| {
-                        cb.require_in_set(name, to.expr(), from);
-                    });
+                    ifx!{condition => {
+                        require!(name, to => {from});
+                    }}
                 }
 
                 // Data transitions
@@ -350,22 +333,17 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 ];
                 for (name, data) in modifications {
                     // Does not change outside first level
-                    cb.condition(not_first_level.expr(), |cb| {
-                        cb.require_equal(name, data.prev(), data.cur());
-                    });
-                    // Does not change inside first level except in the first row
-                    cb.condition(
-                        and::expr([
-                            not::expr(not_first_level.expr()),
-                            not::expr(is_branch_init.expr()),
-                            not::expr(is_account_leaf_key_s.expr()),
-                        ]),
-                        |cb| {
-                            cb.require_equal(name, data.prev(), data.cur());
-                        },
-                    );
+                    ifx!{not_first_level => {
+                        require!(name, data.prev() => data.cur());
+                    } elsex {
+                        // Does not change inside first level except in the first row
+                        ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr())  => {
+                            require!(name, data.prev() => data.cur());
+                        }}
+                    }};
                 }
-            });
+            }}
+            }}
 
             // Internal branch selectors (`is_init`, `is_last_child`) are checked in
             // `branch.rs`.

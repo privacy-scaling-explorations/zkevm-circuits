@@ -6,9 +6,13 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    cs,
-    mpt_circuit::{columns::{AccumulatorCols, MainCols, PositionCols}, param::HASH_WIDTH},
-    mpt_circuit::helpers::{bytes_expr_into_rlc, get_is_extension_node, generate_keccak_lookup},
+    constraints, cs,
+    evm_circuit::util::rlc,
+    mpt_circuit::helpers::{bytes_expr_into_rlc, generate_keccak_lookup, get_is_extension_node},
+    mpt_circuit::{
+        columns::{AccumulatorCols, MainCols, PositionCols},
+        param::HASH_WIDTH,
+    },
     mpt_circuit::{
         helpers::{get_branch_len, BaseConstraintBuilder},
         param::{
@@ -18,7 +22,7 @@ use crate::{
             RLP_NUM,
         },
     },
-    table::{KeccakTable, DynamicTableColumns}, constraints, evm_circuit::util::rlc,
+    table::{DynamicTableColumns, KeccakTable},
 };
 use gadgets::util::{and, not, sum, Expr};
 

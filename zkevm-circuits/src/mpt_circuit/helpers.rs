@@ -1,4 +1,8 @@
-use crate::{util::Expr, evm_circuit::table::Lookup, table::{KeccakTable, DynamicTableColumns}};
+use crate::{
+    evm_circuit::table::Lookup,
+    table::{DynamicTableColumns, KeccakTable},
+    util::Expr,
+};
 use gadgets::util::{and, not, select, sum};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -426,12 +430,12 @@ pub(crate) fn generate_keccak_lookup<F: FieldExt>(
             let input_len = lookup.selector.expr() * lookup.input_len.expr();
             let output_rlc = lookup.selector.expr() * lookup.output_rlc.expr();
             let values = [selector, input_rlc, input_len, output_rlc];
-            keccak_table.columns().iter().zip(values.iter()).map(|(&table, value)| {
-                (
-                    value.expr(),
-                    meta.query_advice(table, Rotation::cur()),
-                )
-            }).collect()
+            keccak_table
+                .columns()
+                .iter()
+                .zip(values.iter())
+                .map(|(&table, value)| (value.expr(), meta.query_advice(table, Rotation::cur())))
+                .collect()
         });
     }
 }
@@ -757,7 +761,7 @@ macro_rules! constraints {
         }
 
         macro_rules! require {
-            ($lhs:block in $rhs:block) => {{
+            ($lhs:expr => $rhs:block) => {{
                 $cb.require_in_set(
                     concat!(
                         file!(),
@@ -768,6 +772,14 @@ macro_rules! constraints {
                         " in ",
                         stringify!($rhs)
                     ),
+                    $lhs.expr(),
+                    $rhs.to_vec(),
+                );
+            }};
+            ($name:ident, $lhs:expr => $rhs:block) => {{
+                let descr = format!("{}:{}[{}]: {} => {{{}}}",  file!(), line!(), $name, stringify!($lhs), stringify!($rhs));
+                $cb.require_in_set(
+                    Box::leak(descr.into_boxed_str()),
                     $lhs.expr(),
                     $rhs.to_vec(),
                 );
@@ -807,6 +819,14 @@ macro_rules! constraints {
                         " == ",
                         stringify!($rhs)
                     ),
+                    $lhs.expr(),
+                    $rhs.expr(),
+                );
+            }};
+            ($name:expr, $lhs:expr => $rhs:expr) => {{
+                let descr = format!("{}:{}[{}]: {} == {}",  file!(), line!(), $name, stringify!($lhs), stringify!($rhs));
+                $cb.require_equal(
+                    Box::leak(descr.into_boxed_str()),
                     $lhs.expr(),
                     $rhs.expr(),
                 );

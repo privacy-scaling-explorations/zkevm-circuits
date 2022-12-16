@@ -17,7 +17,7 @@ use crate::{
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
         get_is_extension_node_one_nibble,
     },
-    mpt_circuit::{witness_row::MptWitnessRow, helpers::generate_keccak_lookup},
+    mpt_circuit::{helpers::generate_keccak_lookup, witness_row::MptWitnessRow},
     mpt_circuit::{
         helpers::{get_branch_len, key_len_lookup, BaseConstraintBuilder},
         param::{
@@ -174,28 +174,19 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         is_s: bool,
         check_zeros: bool,
     ) -> Self {
-        let config = ExtensionNodeConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::from(1_u64));
-        let c128 = Expression::Constant(F::from(128));
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-        let c192 = Expression::Constant(F::from(192));
-        let mut rot_into_branch_init = -17;
-        if !is_s {
-            rot_into_branch_init = -18;
-        }
 
         let mut cb = BaseConstraintBuilder::default();
-
         meta.create_gate("Extension node", |meta| {
             constraints! {[meta, cb], {
 
+            let rot_into_branch_init = if is_s {-17} else {-18};
             let rot = if is_s { 0 } else { -1 };
 
             let q_enable = q_enable(meta);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
+            let s_rlp2 = a!(s_main.rlp2);
             let c_rlp2 = a!(c_main.rlp2);
             let is_branch_init_prev = a!(branch.is_init, -1);
             let acc_s = a!(accs.acc_s.rlc, rot);
@@ -403,12 +394,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             require!(s_bytes0.expr() => 0.expr());
                         }}
 
-                        let c_rlp2 = meta.query_advice(c_main.rlp2, Rotation::cur());
                         let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
                         let c_bytes0 = meta.query_advice(c_main.bytes[0], Rotation::cur());
-
-                        let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
 
                         ifx!{is_short.expr() => {
                             ifx!{is_branch_hashed.expr() => {
@@ -605,6 +593,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Length
                 let rot = if is_s {0} else {-1};
                 let ext_len = a!(s_main.rlp1, rot) - 192.expr() + 1.expr();
+
                 ifx!{not_first_level.expr() => {
                     ifx!{not::expr(is_branch_placeholder.expr()) => {
                         ifx!{is_account_leaf_in_added_branch.expr() => {
@@ -653,182 +642,110 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }}
             }}
 
+            // We need to make sure the total number of nibbles is 64. This constraint ensures the number
+            // of nibbles used (stored in branch init) is correctly computed - nibbles up until this
+            // extension node + nibbles in this extension node.
+            // Once in a leaf, the remaining nibbles stored in a leaf need to be added to the count.
+            // The final count needs to be 64.
+            if is_s {
+                ifx!{q_enable.expr(), q_not_first.expr() => {
+                    let is_ext_longer_than_55 = meta.query_advice(
+                        s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init),
+                    );
+                    let is_short =
+                        get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
+                    let is_even_nibbles =
+                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
+                    let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
+                        meta,
+                        s_main.bytes,
+                        rot_into_branch_init,
+                    );
+
+                    // Note: for regular branches, the constraint that `nibbles_count` increases
+                    // by 1 is in `branch.rs`.
+
+                    let nibbles_count_cur = meta.query_advice(
+                        s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init),
+                    );
+                    // nibbles_count_prev needs to be 0 when in first account level or
+                    // in first storage level
+                    let is_first_storage_level = meta.query_advice(
+                        is_account_leaf_in_added_branch,
+                        Rotation(rot_into_branch_init - 1),
+                    );
+                    let nibbles_count_prev = not::expr(is_first_storage_level) * not_first_level * meta.query_advice(
+                        s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+                        Rotation(rot_into_branch_init - BRANCH_ROWS_NUM),
+                    );
+
+                    // When there is only one nibble in the extension node, `nibbles_count` changes
+                    // for 2: one nibble and `modified_node` in a branch.
+                    ifx!{is_short.expr() => {
+                        // +1 for nibble, +1 is for branch position
+                        require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + 1.expr() + 1.expr());
+                    }}
+
+                    ifx!{is_even_nibbles.expr() => {
+                        ifx!{is_ext_longer_than_55.expr() => {
+                            // When there is an even number of nibbles in the extension node and the extension
+                            // node is longer than 55 bytes, the number of bytes containing the nibbles
+                            // is given by `s_main.bytes[0]`.
+                            // We compute the number of nibbles as: `(s_bytes0 - 128 - 1) * 2`.
+                            // By `s_bytes0 - 128` we get the number of bytes where nibbles are compressed, but
+                            // then we need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
+                            // (it is just 0 when even number of nibbles).
+                            let num_nibbles = (a!{s_main.bytes[0]} - 128.expr() - 1.expr()) * 2.expr();
+                            // +1 is for branch position
+                            require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + num_nibbles.expr() + 1.expr());
+                        } elsex {
+                            // When there is an even number of nibbles in the extension node,
+                            // we compute the number of nibbles as: `(s_rlp2 - 128 - 1) * 2`.
+                            // By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed, but
+                            // then we need to subtract 1 because `s_main.bytes[0]` does not contain any nibbles
+                            // (it is just 0 when even number of nibbles).
+                            // In the example below it is: `(130 - 128 - 1) * 2`.
+                            // `[228,130,0,149,160,114,253...`
+                            let num_nibbles = (s_rlp2.expr() - 128.expr() - 1.expr()) * 2.expr();
+                            // +1 is for branch position
+                            require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + num_nibbles.expr() + 1.expr());
+                        }}
+                    }}
+
+                    ifx!{is_long_odd_nibbles.expr() => {
+                        ifx!{is_ext_longer_than_55.expr() => {
+                            // When there is an odd number of nibbles in the extension node and the extension,
+                            // node is longer than 55 bytes, the number of bytes containing the nibbles
+                            // is given by `s_main.bytes[0]`.
+                            // We compute the number of nibbles as: `(s_main.bytes[0] - 128) * 2`.
+                            // By `s_main.bytes[0] - 128` we get the number of bytes where nibbles are compressed. We
+                            // multiply by 2 to get the nibbles, but then subtract 1 because in
+                            // `s_main.bytes[1]` there is only 1 nibble.
+                            // Example:
+                            // `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
+                            let num_nibbles = (a!{s_main.bytes[0]} - 128.expr()) * 2.expr() - 1.expr();
+                            // +1 is for branch position
+                            require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + num_nibbles.expr() + 1.expr());
+                        } elsex {
+                            // When there is an odd number of nibbles in the extension node,
+                            // we compute the number of nibbles as: `(s_rlp2 - 128) * 2`.
+                            // By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed. We
+                            // multiply by 2 to get the nibbles, but then subtract 1 because in
+                            // `s_main.bytes[0]` there is only 1 nibble.
+                            let num_nibbles = (s_rlp2.expr() - 128.expr()) * 2.expr() - 1.expr();
+                            // +1 is for branch position
+                            require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + num_nibbles.expr() + 1.expr());
+                        }}
+                    }}
+                }}
+            }
+
             }}
 
             cb.gate(1.expr())
         });
-
-
-        /*
-        We need to make sure the total number of nibbles is 64. This constraint ensures the number
-        of nibbles used (stored in branch init) is correctly computed - nibbles up until this
-        extension node + nibbles in this extension node.
-        Once in a leaf, the remaining nibbles stored in a leaf need to be added to the count.
-        The final count needs to be 64.
-        */
-        if is_s {
-            meta.create_gate("Extension node number of nibbles", |meta| {
-                let mut constraints = vec![];
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let q_enable = q_enable(meta);
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
-
-                // Only check if there is an account above the branch.
-                let is_first_storage_level = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
-                );
-
-                let is_ext_longer_than_55 = meta.query_advice(
-                    s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-
-                let is_short =
-                    get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init);
-                let is_even_nibbles =
-                    get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init);
-                let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
-                    meta,
-                    s_main.bytes,
-                    rot_into_branch_init,
-                );
-
-                /*
-                Note: for regular branches, the constraint that `nibbles_count` increases
-                by 1 is in `branch.rs`.
-                */
-
-                let nibbles_count_cur = meta.query_advice(
-                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                let mut nibbles_count_prev = meta.query_advice(
-                    s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init - BRANCH_ROWS_NUM),
-                );
-
-                /*
-                nibbles_count_prev needs to be 0 when in first account level or
-                in first storage level
-                */
-                nibbles_count_prev =
-                    (one.clone() - is_first_storage_level) * nibbles_count_prev.clone();
-                nibbles_count_prev = not_first_level * nibbles_count_prev.clone();
-
-                /*
-                When there is only one nibble in the extension node, `nibbles_count` changes
-                for 2: one nibble and `modified_node` in a branch.
-                */
-                constraints.push((
-                    "Nibbles number when one nibble",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_short
-                        * (nibbles_count_cur.clone()
-                            - nibbles_count_prev.clone()
-                            - one.clone()
-                            - one.clone()), // -1 for nibble, - 1 is for branch position
-                ));
-
-                let s_rlp2 = meta.query_advice(s_main.rlp2, Rotation::cur());
-                let mut num_nibbles =
-                    (s_rlp2.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
-                /*
-                When there is an even number of nibbles in the extension node,
-                we compute the number of nibbles as: `(s_rlp2 - 128 - 1) * 2`.
-                By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed, but
-                then we need to subtract 1 because `s_main.bytes[0]` does not contain any nibbles
-                (it is just 0 when even number of nibbles).
-
-                In the example below it is: `(130 - 128 - 1) * 2`.
-                `[228,130,0,149,160,114,253...`
-                */
-                constraints.push((
-                    "Nibbles number when even number of nibbles & ext not longer than 55",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_even_nibbles.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone()
-                            - nibbles_count_prev.clone()
-                            - num_nibbles.clone()
-                            - one.clone()), // - 1 is for branch position
-                ));
-
-                num_nibbles = (s_rlp2 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
-
-                /*
-                When there is an odd number of nibbles in the extension node,
-                we compute the number of nibbles as: `(s_rlp2 - 128) * 2`.
-                By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed. We
-                multiply by 2 to get the nibbles, but then subtract 1 because in
-                `s_main.bytes[0]` there is only 1 nibble.
-                */
-                constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext not longer than 55",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_long_odd_nibbles.clone()
-                        * (one.clone() - is_ext_longer_than_55.clone())
-                        * (nibbles_count_cur.clone()
-                            - nibbles_count_prev.clone()
-                            - num_nibbles.clone()
-                            - one.clone()), // - 1 is for branch position
-                ));
-
-                let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                num_nibbles =
-                    (s_bytes0.clone() - c128.clone() - one.clone()) * (one.clone() + one.clone());
-
-                /*
-                When there is an even number of nibbles in the extension node and the extension
-                node is longer than 55 bytes, the number of bytes containing the nibbles
-                is given by `s_main.bytes[0]`.
-                We compute the number of nibbles as: `(s_bytes0 - 128 - 1) * 2`.
-                By `s_bytes0 - 128` we get the number of bytes where nibbles are compressed, but
-                then we need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
-                (it is just 0 when even number of nibbles).
-                */
-                constraints.push((
-                    "Nibbles num when even number of nibbles & ext longer than 55",
-                    q_not_first.clone()
-                        * q_enable.clone()
-                        * is_even_nibbles
-                        * is_ext_longer_than_55.clone()
-                        * (nibbles_count_cur.clone()
-                            - nibbles_count_prev.clone()
-                            - num_nibbles.clone()
-                            - one.clone()), // - 1 is for branch position
-                ));
-
-                num_nibbles = (s_bytes0 - c128.clone()) * (one.clone() + one.clone()) - one.clone();
-
-                /*
-                When there is an odd number of nibbles in the extension node and the extension,
-                node is longer than 55 bytes, the number of bytes containing the nibbles
-                is given by `s_main.bytes[0]`.
-                We compute the number of nibbles as: `(s_main.bytes[0] - 128) * 2`.
-                By `s_main.bytes[0] - 128` we get the number of bytes where nibbles are compressed. We
-                multiply by 2 to get the nibbles, but then subtract 1 because in
-                `s_main.bytes[1]` there is only 1 nibble.
-
-                Example:
-                `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
-                */
-                constraints.push((
-                    "Nibbles num when odd number (>1) of nibbles & ext longer than 55",
-                    q_not_first
-                        * q_enable
-                        * is_long_odd_nibbles
-                        * is_ext_longer_than_55
-                        * (nibbles_count_cur - nibbles_count_prev - num_nibbles - one.clone()), // - 1 is for branch position
-                ));
-
-                constraints
-            });
-        }
 
         // Hash lookups
         // TODO(Brecht): merge
@@ -842,12 +759,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
             let is_branch_hashed = c_rlp2 * c160_inv.clone();
 
-            q_not_first * q_enable * (one.clone() - is_branch_hashed)
+            q_not_first * q_enable * (1.expr() - is_branch_hashed)
         };
 
-        /*
-        There are 0s after non-hashed branch ends in `c_main.bytes`.
-        */
+        // There are 0s after non-hashed branch ends in `c_main.bytes`.
         if check_zeros {
             for ind in 1..HASH_WIDTH {
                 key_len_lookup(
@@ -864,7 +779,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         // Note: range_lookups are in extension_node_key.
 
-        config
+        ExtensionNodeConfig {
+            _marker: PhantomData,
+        }
     }
 
     pub fn assign(
