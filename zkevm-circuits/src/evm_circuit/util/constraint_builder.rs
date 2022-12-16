@@ -1393,25 +1393,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
-        //let now = std::time::Instant::now();
         let lookup = match &self.condition {
             Some(condition) => lookup.conditional(condition.clone()),
             None => lookup,
         };
-        //let diff_1 = now.elapsed();
         let compressed_expr = self.split_expression(
             "Lookup compression",
             rlc::expr(&lookup.input_exprs(), self.word_power_of_randomness),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
-        //let diff_2 = now.elapsed();
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));
-        /* 
-        if now.elapsed() > std::time::Duration::from_millis(2) {
-            let diff_3 = now.elapsed();
-            println!("add_lookup: {:<10} {:<10} {:<10}", (diff_3 - diff_2).as_millis(), (diff_2 - diff_1).as_millis(), diff_1.as_millis() );
-        }
-        */
     }
 
     pub(crate) fn store_expression(
@@ -1464,11 +1455,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         expr: &Expression<F>,
         cell_type: CellType,
     ) -> Option<&StoredExpression<F>> {
-        let now = std::time::Instant::now();
         let expr_id = expr.fast_identifier();
-        if now.elapsed().as_millis() > 0 {
-            println!("store_expression {} -> stored_expressions_len {}", now.elapsed().as_millis(), self.stored_expressions.len());
-        }
         self.stored_expressions
             .iter()
             .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
