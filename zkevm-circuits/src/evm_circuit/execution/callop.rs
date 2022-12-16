@@ -200,8 +200,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        // TODO:  constrain balance < transfer value  
-
         // Verify transfer
         cb.account_read(
             callee_address.expr(),
@@ -209,7 +207,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_balance_word.expr(),
         );
         let is_insufficient_balance = LtWordGadget::construct(cb, &callee_balance_word, &value);
-    
+        // stack write is zero when is_insufficient_balance is true
+        cb.require_zero("stack write result is zero when is_insufficient_balance is true", is_success.expr());
         let transfer = cb.condition(1.expr() - is_insufficient_balance.expr(), |cb| {
             TransferGadget::construct(
                 cb,
@@ -475,16 +474,29 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (callee_balance, _) = block.rws[step.rw_indices[16 + rw_offset]].account_value_pair();
         self.callee_balance_word.assign(region, offset, Some(callee_balance.to_le_bytes()))?;
         self.is_insufficient_balance.assign(region, offset, callee_balance, value)?;
+        
+        let is_insufficient = value > callee_balance;
+        let mut caller_balance_pair = (U256::zero(), U256::zero());
+        let mut callee_balance_pair = (U256::zero(), U256::zero());
 
-        //TODO: conditionly get transfer value
-      let [/*caller_balance_pair, callee_balance_pair, */ (callee_nonce, _), (callee_code_hash, _)] =
+        if !is_insufficient {
+            [caller_balance_pair, callee_balance_pair,] =
             [
                 step.rw_indices[17 + rw_offset],
                 step.rw_indices[18 + rw_offset],
-                //step.rw_indices[19 + rw_offset],
-                //step.rw_indices[20 + rw_offset],
             ]
             .map(|idx| block.rws[idx].account_value_pair());
+            rw_offset = rw_offset + 2;
+        }
+
+        //  read callee_nonce， callee_code_hash for gas cost
+        let [(callee_nonce, _), (callee_code_hash, _)] =
+        [
+            step.rw_indices[17 + rw_offset],
+            step.rw_indices[18 + rw_offset],
+        ]
+        .map(|idx| block.rws[idx].account_value_pair());
+
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -583,13 +595,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             [cd_address, rd_address],
         )?;
         // conditionally assign
-        // self.transfer.assign(
-        //     region,
-        //     offset,
-        //     caller_balance_pair,
-        //     callee_balance_pair,
-        //     value,
-        // )?;
+        if !is_insufficient {
+            self.transfer.assign(
+                region,
+                offset,
+                caller_balance_pair,
+                callee_balance_pair,
+                value,
+            )?;
+        }
+       
         self.callee_nonce.assign(
             region,
             offset,
