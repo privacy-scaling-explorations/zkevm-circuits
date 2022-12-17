@@ -142,7 +142,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let nonce = cb.query_rlc();
         cb.account_write(
-            caller_address.expr(),
+            from_bytes::expr(&caller_address.cells),
             AccountFieldTag::Nonce,
             from_bytes::expr(&nonce.cells) + 1.expr(),
             from_bytes::expr(&nonce.cells),
@@ -151,7 +151,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.account_write(
-            new_address.expr(),
+            from_bytes::expr(&new_address.cells),
             AccountFieldTag::Nonce,
             1.expr(),
             0.expr(),
@@ -160,8 +160,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let transfer = TransferGadget::construct(
             cb,
-            caller_address.expr(),
-            new_address.expr(),
+            from_bytes::expr(&caller_address.cells),
+            from_bytes::expr(&new_address.cells),
             value.clone(),
             &mut callee_reversion_info,
         );
@@ -209,8 +209,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 callee_reversion_info.is_persistent(),
             ),
             (CallContextFieldTag::TxId, tx_id.expr()),
-            (CallContextFieldTag::CallerAddress, caller_address.expr()),
-            (CallContextFieldTag::CalleeAddress, new_address.expr()),
+            (CallContextFieldTag::CallerAddress, from_bytes::expr(&caller_address.cells),),
+            (CallContextFieldTag::CalleeAddress, from_bytes::expr(&new_address.cells),),
             (
                 CallContextFieldTag::RwCounterEndOfReversion,
                 callee_reversion_info.rw_counter_end_of_reversion(),
