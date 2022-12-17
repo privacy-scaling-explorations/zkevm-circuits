@@ -124,7 +124,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 .transaction
                 .data
                 .iter()
-                .map(|item| self.parse_calldata(item))
+                .map(|item| parse::parse_calldata(self.compiler, item))
                 .collect::<Result<_>>()?;
 
             let gas_limit_s: Vec<_> = test
@@ -185,7 +185,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                                 gas_price,
                                 gas_limit: *gas_limit,
                                 value: *value,
-                                data: eth_types::Bytes(data.0.clone()),
+                                data: data.0.clone(),
                                 exception: false, // TODO: check
                             });
                         }
@@ -225,7 +225,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 address,
                 balance: parse::parse_u256(&acc.balance)?,
                 nonce: parse::parse_u256(&acc.nonce)?,
-                code: self.parse_code(&acc.code)?,
+                code: parse::parse_code(self.compiler, &acc.code)?,
                 storage,
             };
             accounts.insert(address, account);
@@ -254,7 +254,11 @@ impl<'a> JsonStateTestBuilder<'a> {
                     .as_ref()
                     .map(|v| parse::parse_u256(v))
                     .transpose()?,
-                code: acc.code.as_ref().map(|v| self.parse_code(v)).transpose()?,
+                code: acc
+                    .code
+                    .as_ref()
+                    .map(|v| parse::parse_code(self.compiler, v))
+                    .transpose()?,
                 nonce: acc
                     .nonce
                     .as_ref()
@@ -265,106 +269,6 @@ impl<'a> JsonStateTestBuilder<'a> {
             accounts.insert(address, account);
         }
         Ok(accounts)
-    }
-
-    /// converts list of tagged values string into a map
-    /// if there's no tags, an entry with an empty tag and the full string is
-    /// returned
-    fn decompose_tags(expr: &str) -> HashMap<String, String> {
-        let mut tags = HashMap::new();
-        let mut it = expr.trim();
-        if it.is_empty() {
-            tags.insert("".to_string(), "".to_string());
-        } else {
-            while !it.is_empty() {
-                if it.starts_with(':') {
-                    let tag = &it[..it.find(&[' ', '\n']).expect("unable to find end tag")];
-                    it = &it[tag.len() + 1..];
-                    let value_len = if tag == ":yul" || tag == ":solidity" || tag == ":asm" {
-                        it.len()
-                    } else {
-                        it.find(':').unwrap_or(it.len())
-                    };
-                    tags.insert(tag.to_string(), it[..value_len].trim().to_string());
-                    it = &it[value_len..];
-                } else {
-                    tags.insert("".to_string(), it.trim().to_string());
-                    it = &it[it.len()..]
-                }
-            }
-        }
-        tags
-    }
-
-    /// parse entry as code, can be 0x, :raw or { LLL }
-    fn parse_code(&mut self, as_str: &str) -> Result<Bytes> {
-        let tags = Self::decompose_tags(as_str);
-
-        let mut code = if let Some(notag) = tags.get("") {
-            if notag.starts_with("0x") {
-                Bytes::from(hex::decode(&tags[""][2..]).context("parse_code")?)
-            } else if notag.starts_with('{') {
-                self.compiler.lll(notag)?
-            } else if notag.trim().is_empty() {
-                Bytes::default()
-            } else {
-                bail!(
-                    "do not know what to do with code(1) {:?} '{}'",
-                    as_str,
-                    notag
-                );
-            }
-        } else if let Some(raw) = tags.get(":raw") {
-            Bytes::from(hex::decode(&raw[2..])?)
-        } else if let Some(yul) = tags.get(":yul") {
-            self.compiler.yul(yul)?
-        } else if let Some(solidity) = tags.get(":solidity") {
-            self.compiler.solidity(solidity)?
-        } else if let Some(asm) = tags.get(":asm") {
-            self.compiler.asm(asm)?
-        } else {
-            bail!("do not know what to do with code(2) '{:?}'", as_str);
-        };
-
-        // TODO: remote the finish with STOP if does not finish with it when fixed
-        if !code.0.is_empty() && code.0[code.0.len() - 1] != OpcodeId::STOP.as_u8() {
-            let mut code_stop = Vec::new();
-            code_stop.extend_from_slice(&code.0);
-            code_stop.push(OpcodeId::STOP.as_u8());
-            code = Bytes::from(code_stop);
-        }
-
-        Ok(code)
-    }
-
-    /// returns the element as calldata bytes, supports :raw and :abi
-    fn parse_calldata(&mut self, as_str: &str) -> Result<Bytes> {
-        let tags = Self::decompose_tags(as_str);
-
-        if let Some(notag) = tags.get("") {
-            let notag = notag.trim();
-            if notag.is_empty() {
-                Ok(Bytes::default())
-            } else if notag.starts_with('{') {
-                Ok(self.compiler.lll(notag)?)
-            } else if let Some(hex) = notag.strip_prefix("0x") {
-                Ok(Bytes::from(hex::decode(hex)?))
-            } else {
-                bail!("do not know what to do with calldata (1): '{:?}'", as_str);
-            }
-        } else if let Some(raw) = tags.get(":raw") {
-            Ok(Bytes::from(hex::decode(&raw[2..])?))
-        } else if let Some(abi) = tags.get(":abi") {
-            Ok(abi::encode_funccall(abi)?)
-        } else if let Some(yul) = tags.get(":yul") {
-            Ok(self.compiler.yul(yul)?)
-        } else {
-            bail!(
-                "do not know what to do with calldata: (2) {:?} '{:?}'",
-                tags,
-                as_str
-            )
-        }
     }
 
     /// parse a unique or a list of references,
