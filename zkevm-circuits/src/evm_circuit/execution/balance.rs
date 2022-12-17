@@ -124,9 +124,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         let exists = step.account_exists(&address);
         let balance = if exists {
-            block.rws[step.rw_indices[5]]
-                .table_assignment_aux(block.randomness)
-                .value
+            block.rws[step.rw_indices[5]].value_assignment(block.randomness)
         } else {
             F::zero()
         };
