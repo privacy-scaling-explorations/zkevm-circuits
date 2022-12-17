@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
         step::ExecutionState,
         util::{
             common_gadget::TransferGadget,
@@ -40,8 +40,8 @@ pub(crate) struct CreateGadget<F> {
     reversion_info: ReversionInfo<F>,
     was_warm: Cell<F>,
 
-    caller_address: Cell<F>,
-    nonce: Cell<F>,
+    caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    nonce: RandomLinearCombination<F, N_BYTES_U64>,
 
     callee_reversion_info: ReversionInfo<F>,
     callee_is_success: Cell<F>,
@@ -132,15 +132,21 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let caller_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
-        let nonce = cb.query_cell();
+        let caller_address = cb.query_rlc();
+        cb.call_context_lookup(
+            0.expr(),
+            None,
+            CallContextFieldTag::CalleeAddress,
+            from_bytes::expr(&caller_address.cells),
+        );
+
+        let nonce = cb.query_rlc();
         cb.account_write(
             caller_address.expr(),
             AccountFieldTag::Nonce,
-            nonce.expr() + 1.expr(),
-            nonce.expr(),
+            from_bytes::expr(&nonce.cells) + 1.expr(),
+            from_bytes::expr(&nonce.cells),
             Some(&mut reversion_info),
-            // None,
         );
 
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
@@ -309,7 +315,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let mut bytes = new_address.to_fixed_bytes();
         bytes.reverse();
-
         self.new_address.assign(region, offset, Some(bytes))?;
 
         self.tx_id
@@ -334,23 +339,17 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         )?;
 
-        self.caller_address.assign(
-            region,
-            offset,
-            Value::known(call.callee_address.to_scalar().unwrap()),
-        )?;
+        let mut bytes = call.callee_address.to_fixed_bytes();
+        bytes.reverse();
+        self.caller_address.assign(region, offset, Some(bytes))?;
 
-        self.nonce.assign(
-            region,
-            offset,
-            Value::known(
-                block.rws[step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
-                    .account_value_pair()
-                    .1
-                    .to_scalar()
-                    .unwrap(),
-            ),
-        )?;
+        let nonce_bytes = block.rws
+            [step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
+            .account_value_pair()
+            .1
+            .low_u64()
+            .to_le_bytes();
+        self.nonce.assign(region, offset, Some(nonce_bytes))?;
 
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11].map(|i| {
             block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
