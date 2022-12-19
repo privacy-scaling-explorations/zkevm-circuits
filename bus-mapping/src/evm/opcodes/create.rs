@@ -11,7 +11,6 @@ use eth_types::{
     Word, H160, H256,
 };
 use ethers_core::utils::{get_create2_address, keccak256};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Debug, Copy, Clone)]
 pub struct DummyCreate<const IS_CREATE2: bool>;
