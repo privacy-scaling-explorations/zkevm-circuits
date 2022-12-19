@@ -207,8 +207,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_balance_word.expr(),
         );
         let is_insufficient_balance = LtWordGadget::construct(cb, &callee_balance_word, &value);
+        
         // stack write is zero when is_insufficient_balance is true
-        cb.require_zero("stack write result is zero when is_insufficient_balance is true", is_success.expr());
+        cb.condition(is_insufficient_balance.expr(), |cb|{
+            cb.require_zero("stack write result is zero when is_insufficient_balance is true", is_success.expr());
+        });
+
         let transfer = cb.condition(1.expr() - is_insufficient_balance.expr(), |cb| {
             TransferGadget::construct(
                 cb,
@@ -274,6 +278,34 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
 
         // TODO: handle is_insufficient_balance step transition
+        cb.condition( is_insufficient_balance.expr() * is_call.expr(), |cb| {
+            // Save caller's call state
+            for field_tag in [
+                CallContextFieldTag::LastCalleeId,
+                CallContextFieldTag::LastCalleeReturnDataOffset,
+                CallContextFieldTag::LastCalleeReturnDataLength,
+            ] {
+                cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
+            }
+
+            // Both CALL and CALLCODE have an extra stack pop `value`, and
+            // opcode DELEGATECALL has two extra call context lookups - current
+            // caller address and current value.
+            let rw_counter_delta = 23.expr();
+            cb.require_step_state_transition(StepStateTransition {
+                rw_counter: Delta(rw_counter_delta),
+                program_counter: Delta(1.expr()),
+                stack_pointer: Delta(stack_pointer_delta.expr()),
+                gas_left: Delta(
+                    has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
+                ),
+                memory_word_size: To(memory_expansion.next_memory_word_size()),
+                reversible_write_counter: Delta(1.expr()),
+                ..StepStateTransition::default()
+            });
+        });
+
+
         cb.condition(is_empty_code_hash.expr() * (1.expr() - is_insufficient_balance.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
@@ -288,7 +320,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             // opcode DELEGATECALL has two extra call context lookups - current
             // caller address and current value.
             let rw_counter_delta =
-                23.expr() + is_call.expr() + is_callcode.expr() + is_delegatecall.expr() * 2.expr();
+                24.expr() + is_call.expr() + is_callcode.expr() + is_delegatecall.expr() * 2.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
@@ -363,7 +395,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             // opcode DELEGATECALL has two extra call context lookups - current
             // caller address and current value.
             let rw_counter_delta =
-                43.expr() + is_call.expr() + is_callcode.expr() + is_delegatecall.expr() * 2.expr();
+                44.expr() + is_call.expr() + is_callcode.expr() + is_delegatecall.expr() * 2.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 call_id: To(callee_call_id.expr()),
@@ -653,6 +685,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             0
         } + memory_expansion_gas_cost;
         let gas_available = step.gas_left - gas_cost;
+
+        println!("gas cost of callop assigning is {0}, has value {1},  is_empty_code_hash {2}, gas_cost
+        in step is {3}, gas_left in step is {4}", gas_cost, 
+        has_value, is_empty_code_hash == F::one(), step.gas_cost, step.gas_left);
+
         self.one_64th_gas
             .assign(region, offset, gas_available as u128)?;
         self.capped_callee_gas_left.assign(
@@ -683,9 +720,9 @@ mod test {
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALL,
-        OpcodeId::CALLCODE,
-        OpcodeId::DELEGATECALL,
-        OpcodeId::STATICCALL,
+        //OpcodeId::CALLCODE,
+        //OpcodeId::DELEGATECALL,
+        //OpcodeId::STATICCALL,
     ];
 
     #[test]
@@ -728,45 +765,47 @@ mod test {
     fn callop_simple() {
         let stacks = [
             // With nothing
-            Stack::default(),
+            // Stack::default(),
             // With value
-            Stack {
+             Stack {
                 value: Word::from(10).pow(18.into()),
                 ..Default::default()
             },
             // With gas
-            Stack {
-                gas: 100,
-                ..Default::default()
-            },
-            Stack {
-                gas: 100000,
-                ..Default::default()
-            },
+            // Stack {
+            //     gas: 100,
+            //     ..Default::default()
+            // },
+            // Stack {
+            //     gas: 100000,
+            //     ..Default::default()
+            // },
             // With memory expansion
-            Stack {
-                cd_offset: 64,
-                cd_length: 320,
-                rd_offset: 0,
-                rd_length: 32,
-                ..Default::default()
-            },
-            Stack {
-                cd_offset: 0,
-                cd_length: 32,
-                rd_offset: 64,
-                rd_length: 320,
-                ..Default::default()
-            },
-            Stack {
-                cd_offset: 0xFFFFFF,
-                cd_length: 0,
-                rd_offset: 0xFFFFFF,
-                rd_length: 0,
-                ..Default::default()
-            },
+            // Stack {
+            //     cd_offset: 64,
+            //     cd_length: 320,
+            //     rd_offset: 0,
+            //     rd_length: 32,
+            //     ..Default::default()
+            // },
+            // Stack {
+            //     cd_offset: 0,
+            //     cd_length: 32,
+            //     rd_offset: 64,
+            //     rd_length: 320,
+            //     ..Default::default()
+            // },
+            // Stack {
+            //     cd_offset: 0xFFFFFF,
+            //     cd_length: 0,
+            //     rd_offset: 0xFFFFFF,
+            //     rd_length: 0,
+            //     ..Default::default()
+            // },
         ];
-        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
+        //let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
+        let callees = [callee(bytecode! {})];
+
         for ((opcode, stack), callee) in TEST_CALL_OPCODES
             .iter()
             .cartesian_product(stacks.into_iter())

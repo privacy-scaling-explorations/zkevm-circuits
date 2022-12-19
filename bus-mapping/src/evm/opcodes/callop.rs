@@ -23,13 +23,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        // let next_step = if geth_steps.len() > 1 {
-        //     Some(&geth_steps[1])
-        // } else {
-        //     None
-        // };
-        // exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
-
 
         let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
@@ -100,6 +93,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // transfer value is not sufficient case
 
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
+        //println!("is_warm for tx access list of buss mapping is {0} ", is_warm);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -204,6 +198,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let gas_specified = geth_step.stack.last()?;
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
+        println!("gas cost of buss mapping is {0}, has value {1}", gas_cost, has_value);
         // There are 3 branches from here.
         match (
             state.is_precompiled(&call.address),
