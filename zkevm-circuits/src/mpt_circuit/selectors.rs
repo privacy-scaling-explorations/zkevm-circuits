@@ -337,7 +337,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                         require!(name, data.prev() => data.cur());
                     } elsex {
                         // Does not change inside first level except in the first row
-                        ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr())  => {
+                        ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()) => {
                             require!(name, data.prev() => data.cur());
                         }}
                     }};

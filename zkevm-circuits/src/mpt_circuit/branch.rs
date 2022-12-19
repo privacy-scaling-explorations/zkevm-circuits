@@ -15,6 +15,7 @@ use halo2_proofs::{
 use std::{iter, marker::PhantomData};
 
 use crate::{
+    constraints,
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
     mpt_circuit::helpers::{
@@ -146,6 +147,8 @@ impl<F: FieldExt> BranchConfig<F> {
     ) -> Self {
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         meta.create_gate("Branch", |meta| {
+        let mut cb = BaseConstraintBuilder::default();
+        constraints!{[meta, cb], {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
@@ -189,14 +192,12 @@ impl<F: FieldExt> BranchConfig<F> {
                 Rotation(-16),
             );
 
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.condition(q_enable.clone(), |cb| {
+            ifx!{q_enable => {
                 // These selectors are only stored in branch init rows
-                cb.condition(is_branch_init.expr(), |cb| {
+                ifx!{is_branch_init => {
                     // Boolean checks
                     for selector in [is_branch_placeholder_s.expr(), is_branch_placeholder_c.expr(), is_branch_non_hashed_s.expr(), is_branch_non_hashed_c.expr()] {
-                        cb.require_boolean("bool check", selector);
+                        require!(selector => bool);
                     }
 
                     // The cell `s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]` in branch init row stores the number of
@@ -208,26 +209,17 @@ impl<F: FieldExt> BranchConfig<F> {
 
                     // extension node counterpart constraint is in extension_node.rs
                     let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
-                    cb.condition(not::expr(is_extension_node.expr()), |cb| {
-                        cb.if_else(and::expr([not::expr(is_account_leaf_in_added_branch.prev()), not_first_level.expr()]), |cb| {
+                    ifx!{not::expr(is_extension_node.expr()) => {
+                        ifx!{not::expr(is_account_leaf_in_added_branch.prev()), not_first_level.expr() => {
                             // Only check if there is an account above the branch.
-                            cb.require_equal(
-                                "nibbles_count",
-                                nibbles_count.cur(),
-                                nibbles_count.prev() + 1.expr(),
-                            );
-                        }, |cb| {
+                            require!(nibbles_count.cur() => nibbles_count.prev() + 1.expr());
+                        } elsex {
                             // If we are in the first level of the trie, `nibbles_count` needs to be 1.
                             // If branch is in the first level of the account/storage trie, `nibbles_count` needs to be 1.
-                            cb.require_equal(
-                                "nibbles_count first level account/storage",
-                                nibbles_count.cur(),
-                                1.expr(),
-                            );
-                        });
-
-                    });
-                });
+                            require!(nibbles_count.cur() => 1);
+                        }}
+                    }}
+                }}
 
                 // The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
                 // * `S` and `C` proof occur at `modified_node` (denoting which child of the branch is changed) position.
@@ -239,21 +231,14 @@ impl<F: FieldExt> BranchConfig<F> {
                 // about `S` branch and `C` branch RLP length (see the gate
                 // below).
                 let at_modification = node_index.expr() - modified_node.expr();
-                cb.condition(
-                    and::expr([is_branch_child.expr(), at_modification]),
-                    |cb| {
-                        for (lhs, rhs) in iter::once(&s_main.rlp2)
-                            .chain(s_main.bytes.iter())
-                            .zip(iter::once(&c_main.rlp2).chain(c_main.bytes.iter()))
-                        {
-                            cb.require_equal(
-                                "branch child rlp needs to remain the same when not modified",
-                                meta.query_advice(*lhs, Rotation::cur()),
-                                meta.query_advice(*rhs, Rotation::cur()),
-                            );
-                        }
-                    },
-                );
+                ifx!{is_branch_child, at_modification => {
+                    for (lhs, rhs) in iter::once(&s_main.rlp2)
+                        .chain(s_main.bytes.iter())
+                        .zip(iter::once(&c_main.rlp2).chain(c_main.bytes.iter()))
+                    {
+                        require!(a!(lhs) => a!(rhs));
+                    }
+                }}
 
                 // This constraint applies for when we have a placeholder branch.
                 // In this case, both branches are the same - the placeholder branch and its
@@ -279,24 +264,17 @@ impl<F: FieldExt> BranchConfig<F> {
                     // add `rlp2` value from the current row in each of the 16
                     // rows. Both alternative would require additional column.
                     let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
-                        acc + meta.query_advice(column, Rotation(-(idx as i32)))
+                        acc + a!(column, -(idx as i32))
                     });
-                    cb.condition(
-                        and::expr([is_last_child.expr(), is_branch_placeholder]),
-                        |cb| {
-                            // There are constraints which ensure there is only 0 or 160 at rlp2 for
-                            // branch children.
-                            cb.require_equal(
-                                "Only two nil-nodes when placeholder branch",
-                                sum_rlp2,
-                                320.expr(),
-                            )
-                        },
-                    );
+                    ifx!{is_last_child, is_branch_placeholder => {
+                        // There are constraints which ensure there is only 0 or 160 at rlp2 for
+                        // branch children.
+                        require!(sum_rlp2 => 320);
+                    }}
                 }
-            });
+            }}
 
-            cb.condition(q_not_first.clone(), |cb| {
+            ifx!{q_not_first => {
                 // We need to check that the length of the branch corresponds to the bytes at
                 // the beginning of the RLP stream that specify the length of
                 // the RLP stream. There are three possible cases:
@@ -317,12 +295,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     (s1, s2, BRANCH_0_S_START, denoter.is_node_hashed_s, &s_main),
                     (c1, c2, BRANCH_0_C_START, denoter.is_node_hashed_c, &c_main),
                 ] {
-                    let rlp_byte0 =
-                        meta.query_advice(s_main.bytes[branch_start - RLP_NUM], Rotation::prev());
-                    let rlp_byte1 = meta
-                        .query_advice(s_main.bytes[branch_start - RLP_NUM + 1], Rotation::prev());
-                    let rlp_byte2 = meta
-                        .query_advice(s_main.bytes[branch_start - RLP_NUM + 2], Rotation::prev());
+                    let rlp_bytes = (0..3).map(|idx| a!(s_main.bytes[branch_start - RLP_NUM + idx], -1)).collect::<Vec<_>>();
 
                     // [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                     // 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
@@ -335,97 +308,65 @@ impl<F: FieldExt> BranchConfig<F> {
                     // non-nil node. The expression `s_rlp2 * c160_inv * c32 +
                     // 1` gives us the number of bytes used in a row (1 or 33
                     // for nil node or non-nil node respectively).
-                    let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
-                    let bytes_0 = meta.query_advice(main.bytes[0], Rotation::cur());
-                    let num_bytes_in_row = select::expr(
-                        is_node_hashed.clone(),
-                        bytes_0 - 192.expr() + 1.expr(),
+                    let num_bytes_in_row = selectx!{a!(is_node_hashed) => {
+                        a!(main.bytes[0]) - 192.expr() + 1.expr()
+                    } elsex {
                         // The following value can be either 1 or 33 (if hashed node),
                         // depending on whether it's empty or non-empty row.
-                        rlp2.cur() * c160_inv.clone() * 32.expr() + 1.expr(),
-                    );
+                        rlp2.cur() * c160_inv.clone() * 32.expr() + 1.expr()
+                    }};
 
-                    cb.if_else(is_branch_init.prev(), |cb| {
+                    ifx!{is_branch_init.prev() => {
                         // There should never be `rlp1, rlp2: 0, 0` for `S` and `C`
                         // (we only have three cases, there is no case with both being 0).
-                        cb.require_true(
-                            "`rlp1 == 1` and/or `rlp2 == 1`",
-                            or::expr([rlp1.prev(), rlp2.prev()]),
-                        );
+                        require!(or::expr([rlp1.prev(), rlp2.prev()]) => true);
+
                         // We check that the first branch children has properly stored the number of
                         // the remaining bytes. For example, if there are 81
                         // bytes in the branch and the first branch child
                         // contains 1 byte, then it needs to store the value `80 = 81 - 1`.
                         // 1 RLP byte
-                        cb.condition(and::expr([rlp1.prev(), rlp2.prev()]), |cb| {
-                            cb.require_equal(
-                                "First branch children RLP length (one RLP meta byte)",
-                                rlp_byte0,
-                                192.expr() + num_bytes_in_row.clone() + rlp1.cur(),
-                            );
-                        });
+                        ifx!{rlp1.prev(), rlp2.prev() => {
+                            require!(rlp_bytes[0] => 192.expr() + num_bytes_in_row.clone() + rlp1.cur());
+                        }}
                         // 2 RLP bytes
-                        cb.condition(and::expr([rlp1.prev(), not::expr(rlp2.prev())]), |cb| {
-                            cb.require_equal(
-                                "First branch children RLP length (two RLP meta byte)",
-                                rlp_byte1.clone(),
-                                num_bytes_in_row.clone() + rlp1.cur(),
-                            );
-                        });
+                        ifx!{rlp1.prev(), not::expr(rlp2.prev()) => {
+                            require!(rlp_bytes[1]  => num_bytes_in_row.clone() + rlp1.cur());
+                        }}
                         // 3 RLP bytes
-                        cb.condition(and::expr([not::expr(rlp1.prev()), rlp2.prev()]), |cb| {
-                            cb.require_equal(
-                                "First branch children RLP length (three RLP meta byte)",
-                                rlp_byte1 * 256.expr() + rlp_byte2,
-                                num_bytes_in_row.expr() + rlp1.cur(),
-                            );
-                        });
-                    }, |cb| {
+                        ifx!{not::expr(rlp1.prev()), rlp2.prev() => {
+                            require!(rlp_bytes[1].expr()  * 256.expr() + rlp_bytes[2].expr()  => num_bytes_in_row.expr() + rlp1.cur());
+                        }}
+                    } elsex {
                         // We check that the non-first branch children has properly stored the number of
                         // the remaining bytes. For example, if there are 81 bytes
                         // in the branch, the first branch child contains 1 byte,
                         // the second child contains 33 bytes, then the third child
                         // needs to store the value `81 - 1 - 33`.
-                        cb.condition(is_branch_child.expr(), |cb| {
-                                cb.require_equal(
-                                    "Branch children node_index > 0 RLP",
-                                    meta.query_advice(main.rlp1, Rotation::prev()),
-                                    num_bytes_in_row.expr() + rlp1.cur(),
-                                );
-                            },
-                        );
-                    });
+                        ifx!{is_branch_child => {
+                            require!(a!(main.rlp1, -1) => num_bytes_in_row.expr() + rlp1.cur());
+                        }}
+                    }}
                     // In the final branch child `rlp1` needs to be 1 (because RLP length
                     // specifies also ValueNode which occupies 1 byte).
                     // TODO: ValueNode
-                    cb.condition(is_last_child.expr(), |cb| {
-                        cb.require_equal("Branch last child RLP length", rlp1.cur(), 1.expr());
-                    });
+                    ifx!{is_last_child => {
+                        require!(rlp1.cur() => 1);
+                    }}
                 }
 
-                cb.condition(is_branch_child.cur(), |cb| {
+                ifx!{is_branch_child.cur() => {
                     // If we have branch child, we can only have branch child or branch init in the previous row.
-                    cb.require_true(
-                        "Before branch child",
-                        or::expr([is_branch_child.prev(), is_branch_init.prev()]),
-                    );
+                    require!(or::expr([is_branch_child.prev(), is_branch_init.prev()]) => true);
 
                     // When `node_index` != 0
-                    cb.condition(node_index.cur(), |cb| {
+                    ifx!{node_index.cur() => {
                         // `node_index` is increased by 1 for each is_branch_child node.
-                        cb.require_equal(
-                            "node_index increasing for branch children",
-                            node_index.cur(),
-                            node_index.prev() + 1.expr(),
-                        );
+                        require!(node_index.cur() => node_index.prev() + 1.expr());
                         // `modified_node` (the index of the branch child that is modified)
                         // needs to be the same for all branch nodes.
-                        cb.require_equal(
-                            "modified_node the same for all branch children",
-                            modified_node.cur(),
-                            modified_node.prev(),
-                        );
-                    });
+                        require!(modified_node.cur() => modified_node.prev());
+                    }}
 
                     // modified_node = drifted_pos when NOT placeholder.
                     // We check modified_node = drifted_pos in first branch node and then check
@@ -435,32 +376,21 @@ impl<F: FieldExt> BranchConfig<F> {
                     // `is_modified` is boolean (booleanity is checked in `selectors.rs`):
                     // - 0 when `node_index != modified_node`
                     // - 1 when `node_index == modified_node`
-                    cb.condition(is_modified.expr(), |cb| {
-                        cb.require_equal(
-                            "is_modified = 1 only for modified node",
-                            node_index.expr(),
-                            modified_node.expr(),
-                        );
-                    });
+                    ifx!{is_modified => {
+                        require!(node_index => modified_node);
+                    }}
 
                     // `is_at_drifted_pos` is boolean (booleanity is checked in `selectors.rs`):
                     // - 0 when `node_index != drifted_pos`
                     // - 1 when `node_index == drifted_pos`
-                    cb.condition(is_at_drifted_pos.expr(), |cb| {
-                        cb.require_equal(
-                            "is_at_drifted_pos = 1 only for drifted node",
-                            node_index.expr(),
-                            drifted_pos.expr(),
-                        );
-                    });
-                });
+                    ifx!{is_at_drifted_pos => {
+                        require!(node_index => drifted_pos);
+                    }}
+                }}
 
-                cb.if_else(is_branch_init.prev(), |cb| {
+                ifx!{is_branch_init.prev() => {
                     // If we have `is_branch_init` in the previous row, we have `is_branch_child = 1` in the current row.
-                    cb.require_true(
-                        "is_branch_init -> is_branch_child branch",
-                        is_branch_child.cur(),
-                    );
+                    require!(is_branch_child.cur() => true);
 
                     // We could have only one constraint using sum, but then we would need
                     // to limit `node_index` (to prevent values like -1). Now, `node_index` is
@@ -468,36 +398,23 @@ impl<F: FieldExt> BranchConfig<F> {
                     // and it is being increased by 1.
                     // If we have `is_branch_init` in the previous row, we have
                     // `node_index = 0` in the current row.
-                    cb.require_zero("node_index = 0 after is_branch_init", node_index.cur());
-                }, |cb| {
+                    require!(node_index.cur() => 0);
+                } elsex {
                     // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15.
-                    cb.condition(is_branch_child.delta(), |cb| {
-                        cb.require_equal(
-                            "Last branch child node_index",
-                            node_index.prev(),
-                            15.expr(),
-                        );
-                    });
+                    ifx!{is_branch_child.delta() => {
+                        require!(node_index.prev() => 15);
+                    }}
                     // TODO(Brecht)
                     // When node_index is 15, is_last_child needs to be 1.
-                    cb.condition(is_last_child.prev() - 1.expr(), |cb| {
-                        cb.require_equal(
-                            "is_last_child when node_index = 15",
-                            is_branch_child.prev(),
-                            is_branch_child.cur(),
-                        );
-                    });
-                });
+                    ifx!{is_last_child.prev() - 1.expr() => {
+                        require!(is_branch_child.prev() => is_branch_child.cur());
+                    }}
+                }}
 
-
-                cb.condition(is_last_child.expr(), |cb| {
+                ifx!{is_last_child => {
                     // When `node_index` is not 15, `is_last_child` needs to be 0.
                     // For this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
-                    cb.require_equal(
-                        "is_last_child index",
-                        node_index.cur(),
-                        15.expr(),
-                    );
+                    require!(node_index.cur() => 15);
 
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
                     for ind in 0..16 {
@@ -537,48 +454,36 @@ impl<F: FieldExt> BranchConfig<F> {
                         // we check in `branch_parallel` that the non-hashed child is of the appropriate length
                         // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
                         // The same applies for `c_hash_rlc`.
-
                         for (is_branch_placeholder_from_last, hash_rlc_a, hash_rlc_b, mod_node_hash_rlc) in [
                             (is_branch_placeholder_s_from_last.clone(), s_hash_rlc.clone(), c_hash_rlc.clone(), s_mod_node_hash_rlc_cur),
                             (is_branch_placeholder_c_from_last.clone(), c_hash_rlc, s_hash_rlc, c_mod_node_hash_rlc_cur)
                         ] {
-                            cb.if_else(is_branch_placeholder_from_last.clone(), |cb| {
+                            ifx!{is_branch_placeholder_from_last => {
                                 // When branch is a placeholder, `main.bytes RLC` corresponds to the value
                                 // stored in `accumulators.mod_node_rlc` in `is_at_drifted_pos` row.
-                                cb.condition(is_at_drifted_pos.expr(), |cb| {
-                                    cb.require_equal(
-                                        "is_branch_placeholder: mod_node_hash_rlc corresponds to main.bytes at drifted pos",
-                                        hash_rlc_b.expr(),
-                                        mod_node_hash_rlc.expr(),
-                                    );
-                                });
-                            }, |cb| {
-                                cb.condition(is_modified.expr(), |cb| {
-                                    cb.require_equal(
-                                        "NOT is_branch_placeholder: mod_node_hash_rlc corresponds to main.bytes at modified pos",
-                                        hash_rlc_a.expr(),
-                                        mod_node_hash_rlc.expr(),
-                                    );
-                                });
-                            });
+                                ifx!{is_at_drifted_pos => {
+                                    require!(hash_rlc_b => mod_node_hash_rlc);
+                                }}
+                            } elsex {
+                                ifx!{is_modified => {
+                                    require!(hash_rlc_a => mod_node_hash_rlc);
+                                }}
+                            }}
                         }
                     }
-                });
+                }}
 
                 // When `node_index` != 0
-                cb.condition(node_index.cur(), |cb| {
+                ifx!{node_index.cur() => {
                     // When not in a placeholder branch
-                    cb.condition(not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()), |cb| {
+                    ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()) => {
                         // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
                         // needs to be the same for all branch nodes.
-                        cb.require_equal(
-                            "drifted_pos the same for all branch children",
-                            drifted_pos.cur(),
-                            drifted_pos.prev(),
-                        );
-                    });
-                });
-            });
+                        require!(drifted_pos.cur() => drifted_pos.prev());
+                    }}
+                }}
+            }}
+            }}
 
             cb.gate(1.expr())
         });

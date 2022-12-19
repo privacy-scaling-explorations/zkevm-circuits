@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::table::Lookup,
+    evm_circuit::{table::Lookup, util::dot},
     table::{DynamicTableColumns, KeccakTable},
     util::Expr,
 };
@@ -392,7 +392,17 @@ pub(crate) fn get_rlp_value_bytes<F: FieldExt>(
     [rlp1, rlp2, rlp3]
 }
 
-pub(crate) fn generate_keccak_lookup<F: FieldExt>(
+pub(crate) fn extend_rand<F: FieldExt>(r: &[Expression<F>]) -> Vec<Expression<F>> {
+    [
+        r.to_vec(),
+        r.iter()
+            .map(|v| r.last().unwrap().expr() * v.clone())
+            .collect::<Vec<_>>(),
+    ]
+    .concat()
+}
+
+pub(crate) fn generate_keccak_lookups<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     keccak_table: KeccakTable,
     lookups: Vec<KeccakLookup<F>>,
@@ -435,6 +445,26 @@ pub(crate) fn generate_keccak_lookup<F: FieldExt>(
                 .iter()
                 .zip(values.iter())
                 .map(|(&table, value)| (value.expr(), meta.query_advice(table, Rotation::cur())))
+                .collect()
+        });
+    }
+}
+
+pub(crate) fn generate_fixed_lookups<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    fixed_table: [Column<Fixed>; 3],
+    lookups: Vec<FixedLookup<F>>,
+) {
+    for lookup in lookups.iter() {
+        meta.lookup_any("Fixed lookup", |meta| {
+            let tag = lookup.tag.expr();
+            let lhs = lookup.selector.expr() * lookup.lhs.expr();
+            let rhs = lookup.selector.expr() * lookup.rhs.expr();
+            let values = [tag, lhs, rhs];
+            fixed_table
+                .iter()
+                .zip(values.iter())
+                .map(|(&table, value)| (value.expr(), meta.query_fixed(table, Rotation::cur())))
                 .collect()
         });
     }
@@ -496,12 +526,20 @@ pub struct KeccakLookup<F> {
     pub output_rlc: Expression<F>,
 }
 
+pub struct FixedLookup<F> {
+    pub selector: Expression<F>,
+    pub tag: Expression<F>,
+    pub lhs: Expression<F>,
+    pub rhs: Expression<F>,
+}
+
 #[derive(Default)]
 pub struct BaseConstraintBuilder<F> {
     pub constraints: Vec<(&'static str, Expression<F>)>,
     pub max_degree: usize,
     pub conditions: Vec<Expression<F>>,
-    pub lookups: Vec<KeccakLookup<F>>,
+    pub keccak_lookups: Vec<KeccakLookup<F>>,
+    pub fixed_lookups: Vec<FixedLookup<F>>,
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {
@@ -510,7 +548,8 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             constraints: Vec::new(),
             max_degree,
             conditions: Vec::new(),
-            lookups: Vec::new(),
+            keccak_lookups: Vec::new(),
+            fixed_lookups: Vec::new(),
         }
     }
 
@@ -642,11 +681,25 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         input_len: Expression<F>,
         output_rlc: Expression<F>,
     ) {
-        self.lookups.push(KeccakLookup {
+        self.keccak_lookups.push(KeccakLookup {
             selector: self.get_condition().unwrap_or_else(|| 1.expr()),
             input_rlc,
             input_len,
             output_rlc,
+        });
+    }
+
+    pub(crate) fn fixed_table_lookup(
+        &mut self,
+        tag: Expression<F>,
+        lhs: Expression<F>,
+        rhs: Expression<F>,
+    ) {
+        self.fixed_lookups.push(FixedLookup {
+            selector: self.get_condition().unwrap_or_else(|| 1.expr()),
+            tag,
+            lhs,
+            rhs,
         });
     }
 }
@@ -700,7 +753,7 @@ macro_rules! constraints {
                 $when_false
                 $cb.pop_condition();
             }};
-            ($condition_a:expr, $condition_b:expr  => $when_true:block elsex $when_false:block) => {{
+            ($condition_a:expr, $condition_b:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
 
                 $cb.push_condition(condition.expr());
@@ -711,7 +764,7 @@ macro_rules! constraints {
                 $when_false
                 $cb.pop_condition();
             }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr  => $when_true:block elsex $when_false:block) => {{
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
 
                 $cb.push_condition(condition.expr());
@@ -722,6 +775,7 @@ macro_rules! constraints {
                 $when_false
                 $cb.pop_condition();
             }};
+
 
             ($condition:expr => $when_true:block) => {{
                 $cb.push_condition($condition.expr());
@@ -742,21 +796,42 @@ macro_rules! constraints {
             }};
         }
 
+        macro_rules! selectx {
+            ($condition:expr => $when_true:block elsex $when_false:block) => {{
+                $cb.push_condition($condition.expr());
+                let ret_true = $when_true.expr();
+                $cb.pop_condition();
+
+                $cb.push_condition(not::expr($condition.expr()));
+                let ret_false = $when_false.expr();
+                $cb.pop_condition();
+
+                select::expr($condition.expr(), ret_true, ret_false)
+            }};
+            ($condition:expr => $when_true:block) => {{
+                $cb.push_condition($condition.expr());
+                let ret_true = $when_true.expr();
+                $cb.pop_condition();
+
+                $condition.expr() * ret_true
+            }};
+        }
+
         macro_rules! f {
             ($column:expr, $rot:expr) => {{
-                $meta.query_fixed($column, Rotation($rot as i32))
+                $meta.query_fixed($column.clone(), Rotation($rot as i32))
             }};
             ($column:expr) => {{
-                $meta.query_fixed($column, Rotation::cur())
+                $meta.query_fixed($column.clone(), Rotation::cur())
             }};
         }
 
         macro_rules! a {
             ($column:expr, $rot:expr) => {{
-                $meta.query_advice($column, Rotation($rot as i32))
+                $meta.query_advice($column.clone(), Rotation($rot as i32))
             }};
             ($column:expr) => {{
-                $meta.query_advice($column, Rotation::cur())
+                $meta.query_advice($column.clone(), Rotation::cur())
             }};
         }
 
@@ -800,11 +875,26 @@ macro_rules! constraints {
                 );
             }};
 
-            (($input_rlc:expr, $input_len:expr, $output_rlc:expr) => keccak) => {{
+            (($input_rlc:expr, $input_len:expr, $output_rlc:expr) => @keccak) => {{
                 $cb.keccak_table_lookup(
                     $input_rlc.expr(),
                     $input_len.expr(),
                     $output_rlc.expr(),
+                );
+            }};
+
+            (($tag:expr, $lhs:expr, $rhs:expr) => @fixed) => {{
+                $cb.fixed_table_lookup(
+                    ($tag as u64).expr(),
+                    $lhs.expr(),
+                    $rhs.expr(),
+                );
+            }};
+            (($tag:expr, $lhs:expr) => @fixed) => {{
+                $cb.fixed_table_lookup(
+                    ($tag as u64).expr(),
+                    $lhs.expr(),
+                    0.expr(),
                 );
             }};
 
@@ -834,5 +924,23 @@ macro_rules! constraints {
         }
 
         $content
+    }};
+}
+
+/// Constraint builder macros
+#[macro_export]
+macro_rules! gate {
+    ([$meta:ident, $cb:ident], $name:expr, $content:block) => {{
+        $meta.create_gate($name, |meta| {
+            constraints! {[meta, $cb], {
+                macro_rules! get_meta {
+                    () => {{
+                        meta
+                    }};
+                }
+                $content
+            }}
+            $cb.gate(1.expr())
+        });
     }};
 }

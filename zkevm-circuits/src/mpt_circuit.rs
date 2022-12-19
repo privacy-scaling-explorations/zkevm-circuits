@@ -1,13 +1,16 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
+use gadgets::util::Expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
+    },
     poly::Rotation,
 };
 
-use std::convert::TryInto;
+use std::{convert::TryInto, marker::PhantomData};
 
 mod account_leaf;
 mod branch;
@@ -449,7 +452,7 @@ impl<F: FieldExt> MPTConfig<F> {
             },
             s_main.clone(),
             accumulators.clone(),
-            power_of_randomness[0].clone(),
+            power_of_randomness.clone(),
             fixed_table,
         );
 

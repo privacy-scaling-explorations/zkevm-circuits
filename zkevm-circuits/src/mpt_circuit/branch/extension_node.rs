@@ -17,7 +17,10 @@ use crate::{
         get_is_extension_node_even_nibbles, get_is_extension_node_long_odd_nibbles,
         get_is_extension_node_one_nibble,
     },
-    mpt_circuit::{helpers::generate_keccak_lookup, witness_row::MptWitnessRow},
+    mpt_circuit::{
+        helpers::{extend_rand, generate_keccak_lookups},
+        witness_row::MptWitnessRow,
+    },
     mpt_circuit::{
         helpers::{get_branch_len, key_len_lookup, BaseConstraintBuilder},
         param::{
@@ -206,7 +209,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         // extension row C s_bytes. So we use s_bytes from S row.
                         let rlc = rlc::expr(
                             &s_main.rlp_bytes().iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                            &[r.to_vec(), [r.last().unwrap().expr() * r[0].expr()].to_vec()].concat(),
+                            &extend_rand(&r),
                         );
                         // The intermediate RLC after `s_main` bytes needs to be properly computed.
                         require!(rlc.expr() => acc_s.expr());
@@ -220,7 +223,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `(extension_node_RLC, node_hash_RLC)` is in the keccak table.
                             let rlc_2 = acc_s.expr() + rlc::expr(
                                 &c_main.rlp_bytes()[1..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
-                                &r.to_vec(),
+                                &r,
                             );
                             require!(acc_c.expr() => rlc_2.expr());
                         } elsex {
@@ -230,7 +233,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `extension_node_RLC = node_hash_RLC` for some `node` in parent branch.
                             let rlc_non_hashed_branch = acc_s.expr() + rlc::expr(
                                 &c_main.rlp_bytes()[2..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
-                                &r.to_vec(),
+                                &r,
                             );
                             require!(acc_c.expr() => rlc_non_hashed_branch.expr());
                         }}
@@ -538,7 +541,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         // (computed over the first 17 rows) corresponds to the extension node hash stored in
                         // the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
                         // be in a keccak table.
-                        require!((branch_acc.expr(), branch_len.expr(), hash_rlc.expr()) => keccak);
+                        require!((branch_acc.expr(), branch_len.expr(), hash_rlc.expr()) => @keccak);
                     }}
                 } elsex {
                     /* Extension node branch hash in extension row (non-hashed branch) */
@@ -612,7 +615,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                                     &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
                                     &r,
                                 );
-                                require!((ext_acc.expr(), ext_len.expr(), hash_rlc.expr()) => keccak);
+                                require!((ext_acc.expr(), ext_len.expr(), hash_rlc.expr()) => @keccak);
                             }}
                         } elsex {
                             ifx!{is_ext_node_non_hashed.expr() => {
@@ -629,7 +632,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                                 // `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
                                 // branch child at `modified_node` position.
                                 // Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
-                                require!((ext_acc.expr(), ext_len.expr(), mod_node_hash_rlc.expr()) => keccak);
+                                require!((ext_acc.expr(), ext_len.expr(), mod_node_hash_rlc.expr()) => @keccak);
                             }}
                         }}
                     }}
@@ -638,7 +641,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     // When we have an extension node in the first level of the account trie,
                     // its hash needs to be compared to the root of the trie.
                     // Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
-                    require!((ext_acc.expr(), ext_len.expr(), a!(inter_root)) => keccak);
+                    require!((ext_acc.expr(), ext_len.expr(), a!(inter_root)) => @keccak);
                 }}
             }}
 
@@ -697,7 +700,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // By `s_bytes0 - 128` we get the number of bytes where nibbles are compressed, but
                             // then we need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
                             // (it is just 0 when even number of nibbles).
-                            let num_nibbles = (a!{s_main.bytes[0]} - 128.expr() - 1.expr()) * 2.expr();
+                            let num_nibbles = (a!(s_main.bytes[0]) - 128.expr() - 1.expr()) * 2.expr();
                             // +1 is for branch position
                             require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + num_nibbles.expr() + 1.expr());
                         } elsex {
@@ -725,7 +728,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `s_main.bytes[1]` there is only 1 nibble.
                             // Example:
                             // `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
-                            let num_nibbles = (a!{s_main.bytes[0]} - 128.expr()) * 2.expr() - 1.expr();
+                            let num_nibbles = (a!(s_main.bytes[0]) - 128.expr()) * 2.expr() - 1.expr();
                             // +1 is for branch position
                             require!(nibbles_count_cur.expr() => nibbles_count_prev.clone() + num_nibbles.expr() + 1.expr());
                         } elsex {
@@ -749,7 +752,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
         // Hash lookups
         // TODO(Brecht): merge
-        generate_keccak_lookup(meta, keccak_table, cb.lookups);
+        generate_keccak_lookups(meta, keccak_table, cb.keccak_lookups);
 
         let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());

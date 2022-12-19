@@ -7,16 +7,16 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    cs,
+    constraints, cs,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::{get_bool_constraint, range_lookups},
-    mpt_circuit::FixedTableTag,
     mpt_circuit::{
         columns::{AccumulatorCols, MainCols},
         helpers::{
             get_num_rlp_bytes, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
         },
     },
+    mpt_circuit::{param::HASH_WIDTH, FixedTableTag},
 };
 
 /*
@@ -97,7 +97,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
         s_main: MainCols<F>,
         accs: AccumulatorCols<F>,
-        r: Expression<F>,
+        r: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
     ) -> Self {
         // Short RLP, meta data contains two bytes: 248, 81
@@ -115,8 +115,8 @@ impl<F: FieldExt> BranchInitConfig<F> {
             let rot = Rotation::cur();
             let q_enable = q_enable(meta);
             let mut cb = BaseConstraintBuilder::default();
-            cs!{[cb],
-            ifx(q_enable) {
+            constraints!{[meta, cb], {
+            ifx!{q_enable => {
                 for (accumulators, is_s) in [
                     (accs.acc_s, true),
                     (accs.acc_c, false)
@@ -131,32 +131,27 @@ impl<F: FieldExt> BranchInitConfig<F> {
 
                     // Boolean checks
                     for selector in rlp_meta {
-                        cb.require_boolean("branch init boolean", selector);
+                        require!(selector => bool);
                     }
 
                     // Branch RLC checks
                     // 1 RLP byte
-                    cs!{[cb],
-                    ifx(one_rlp_byte) {
-                        cb.require_equal("Branch accumulator row 0 (1)", rlp[0].expr(), acc.expr());
-                        cb.require_equal("Branch mult row 0 (1)", r.expr(), mult.expr());
+                    ifx!{one_rlp_byte => {
+                        require!(acc => rlc::expr(&rlp[..1], &r));
+                        require!(mult => r[0]);
                     }}
                     // 2 RLP bytes
-                    cs!{[cb],
-                    ifx(two_rlp_bytes) {
-                        cb.require_equal("Branch accumulator row 0 (2)", rlp[0].expr() + rlp[1].expr() * r.expr(), acc.expr());
-                        cb.require_equal("Branch mult row 0 (2)", r.expr() * r.expr(), mult.expr());
+                    ifx!{two_rlp_bytes => {
+                        require!(acc => rlc::expr(&rlp[..2], &r));
+                        require!(mult => r[1]);
                     }}
                     // 3 RLP bytes
-                    cs!{[cb],
-                    ifx(three_rlp_bytes) {
-                        cb.require_equal(
-                            "Branch accumulator row 0 (3)",
-                             rlp[0].expr() + rlp[1].expr() * r.expr() + rlp[2].expr() * r.expr() * r.expr(), acc.expr()
-                        );
-                        cb.require_equal("Branch mult row 0 (3)", r.expr() * r.expr() * r.expr(), mult.expr());
+                    ifx!{three_rlp_bytes => {
+                        require!(acc => rlc::expr(&rlp[..3], &r));
+                        require!(mult => r[2]);
                     }}
                 }
+            }}
             }}
 
             cb.gate(1.expr())

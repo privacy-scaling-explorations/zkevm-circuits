@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::{
     constraints, cs,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::{bytes_expr_into_rlc, generate_keccak_lookup, get_is_extension_node},
+    mpt_circuit::helpers::{bytes_expr_into_rlc, generate_keccak_lookups, get_is_extension_node},
     mpt_circuit::{
         columns::{AccumulatorCols, MainCols, PositionCols},
         param::HASH_WIDTH,
@@ -24,7 +24,7 @@ use crate::{
     },
     table::{DynamicTableColumns, KeccakTable},
 };
-use gadgets::util::{and, not, sum, Expr};
+use gadgets::util::{and, not, select, sum, Expr};
 
 /*
 A branch occupies 19 rows:
@@ -139,7 +139,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                             &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
                             &r,
                         );
-                        require!((branch_acc.expr(), branch_length.expr(), hash_rlc.expr()) => keccak);
+                        require!((branch_acc.expr(), branch_length.expr(), hash_rlc.expr()) => @keccak);
                     } elsex {
                         ifx!{is_branch_non_hashed => {
                             ifx!{q_not_first => {
@@ -156,7 +156,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                             // - `hash(branch) = parent_branch_modified_node`. We do this by checking whether
                             // - `(branch_RLC, parent_branch_modified_node_RLC)` is in the Keccak table.
                             // When placeholder branch, we don't check its hash in a parent.
-                            require!((branch_acc.expr(), branch_length.expr(), mod_node_hash_rlc.expr()) => keccak);
+                            require!((branch_acc.expr(), branch_length.expr(), mod_node_hash_rlc.expr()) => @keccak);
                         }}
                     }}
                 } elsex {
@@ -166,7 +166,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         // `hash(branch) = account_trie_root`. We do this by checking whether
                         // `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
                         // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                        require!((branch_acc.expr(), branch_length.expr(), a!(inter_root)) => keccak);
+                        require!((branch_acc.expr(), branch_length.expr(), a!(inter_root)) => @keccak);
                     }}
                 }}
             }}
@@ -177,7 +177,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
 
         // Hash lookups
         // TODO(Brecht): merge
-        generate_keccak_lookup(meta, keccak_table, cb.lookups);
+        generate_keccak_lookups(meta, keccak_table, cb.keccak_lookups);
 
         BranchHashInParentConfig {
             _marker: PhantomData,
