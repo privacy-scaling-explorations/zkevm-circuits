@@ -612,44 +612,42 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         
                         before_nibbles_rlc = before_nibbles_rlc
                             + (first_nibble_before.clone() * c16.clone() + second_nibble_before.clone()) * mult.clone() * is_before_even_nibbles.clone()
-                            // + (first_nibble_before + second_nibble_before * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_before_even_nibbles.clone());
-                            + (first_nibble_before + second_nibble_before * c16.clone()) * mult.clone() * (one.clone() - is_before_even_nibbles.clone());
+                            + (first_nibble_before + second_nibble_before * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_before_even_nibbles.clone());
 
                         nibbles_rlc = nibbles_rlc
                             + (first_nibble.clone() * c16.clone() + second_nibble.clone()) * mult.clone() * is_even_nibbles.clone()
-                            // + (first_nibble + second_nibble * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone());
-                            + (first_nibble + second_nibble * c16.clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()); 
+                            + (first_nibble + second_nibble * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()); 
 
                         // `after_nibbles_rlc` computation depends on whether `nibbles_rlc` has even or odd nibbles
                         after_nibbles_rlc = after_nibbles_rlc
                             + (first_nibble_after.clone() * c16.clone() + second_nibble_after.clone()) * mult.clone()
                             * (is_after_even_nibbles.clone() * (one.clone() - is_even_nibbles.clone()) + (one.clone() - is_after_even_nibbles.clone()) * is_even_nibbles.clone())
-                            + (first_nibble_after.clone() * mult.clone() + second_nibble_after.clone() * c16.clone() * mult.clone() * one.clone())
+                            + (first_nibble_after.clone() + second_nibble_after.clone() * c16.clone() * power_of_randomness[0].clone()) * mult.clone()
                             * ((is_after_even_nibbles.clone() * is_even_nibbles.clone() + (one.clone() - is_after_even_nibbles.clone()) * (one.clone() - is_even_nibbles.clone())));
-                            // TODO: mult
 
-                        // TODO: uncomment mult setting
-                        // mult = mult * power_of_randomness[0].clone();
+                        mult = mult * power_of_randomness[0].clone();
                     } 
 
-                    // If short, then the first (only) nibbles is in `rlp2`.
-                    nibbles_rlc = (s_rlp2 - c16.clone()) * c16.clone() * is_short.clone()
-                        + nibbles_rlc * (one.clone() - is_short.clone());
-
-                    /*
                     let mult_after = meta.query_advice(
                         accs.acc_c.mult,
                         Rotation(rot_into_ext_node_account)) * is_account_proof.clone()
                         + meta.query_advice(
                         accs.acc_c.mult,
                         Rotation(rot_into_ext_node_storage)) * (one.clone() - is_account_proof.clone());
+
+                    /*
+                    let foo = Expression::Constant(F::from(6));
+                    constraints.push((
+                        "foo",
+                        q_not_first
+                            * q_enable
+                            * (after_nibbles_rlc.clone() - foo)
+                    ));
                     */
-                    let mult_after = one.clone();
 
                     nibbles_rlc = nibbles_rlc
                         + (drifted_pos.clone() * c16.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * is_even_nibbles.clone()
-                        + (drifted_pos.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * (one.clone() - is_even_nibbles.clone());
-
+                        + (drifted_pos.clone() + after_nibbles_rlc.clone() * power_of_randomness[0].clone()) * mult_after.clone() * (one.clone() - is_even_nibbles.clone());
 
                     constraints.push((
                         "Nibbles in before are the same as nibbles in inserted + after",
