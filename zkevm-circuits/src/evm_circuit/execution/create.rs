@@ -15,7 +15,7 @@ use crate::{
             from_bytes,
             math_gadget::ConstantDivisionGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, RandomLinearCombination, Word, rlc,
+            not, rlc, select, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -23,7 +23,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
@@ -256,20 +256,25 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let keccak_input_length = cb.query_cell();
         cb.condition(is_create2.expr(), |cb| {
             // TODO: some comments here explaining what's going on....
+            // is the power of randomness in reverse order??? that seems impossible
             let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
             let randomness_raised_to_32 = randomness_raised_to_16.clone().square();
             let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
             let randomness_raised_to_84 =
                 randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
-            // cb.require_equal(
-            //     "aw3rw3r",
-            //     keccak_input.expr(),
-            //     0xff.expr() * randomness_raised_to_84
-            //         + caller_address.expr() * randomness_raised_to_64
-            //         + salt.expr() * randomness_raised_to_32
-            //         + code_hash.expr(),
-            // );
-            cb.require_equal("23452345", keccak_input_length.expr(), (1 + 20 + 32 + 32).expr());
+            cb.require_equal(
+                "aw3rw3r",
+                keccak_input.expr(),
+                0xff.expr() * randomness_raised_to_84 //
+                    // + caller_address.expr() * randomness_raised_to_64
+                    // + salt.expr() * randomness_raised_to_32
+                    // + code_hash.expr(),
+            );
+            cb.require_equal(
+                "23452345",
+                keccak_input_length.expr(),
+                (1 + 20 + 32 + 32).expr(),
+            );
         });
         // cb.condition(not::expr(is_create2.expr()), |cb| {()});
 
@@ -344,7 +349,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         code_hash.reverse();
         let code_hash_rlc =
             RandomLinearCombination::random_linear_combine(code_hash.clone(), block.randomness);
-        self.code_hash.assign(region, offset, Value::known(code_hash_rlc))?;
+        self.code_hash
+            .assign(region, offset, Value::known(code_hash_rlc))?;
 
         let tx_access_rw =
             block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
@@ -470,9 +476,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 offset,
                 Value::known(rlc::value(
                     once(&0xffu8)
-                        .chain(&caller_address_bytes)
-                        .chain(salt.to_le_bytes().iter())
-                        .chain(&code_hash),
+                        .chain(&[0u8; 20])
+                        .chain(&[0u8; 32])
+                        .chain(&[0u8; 32])
+                        .rev(),
+                    // .chain(&caller_address_bytes)
+                    // .chain(salt.to_be_bytes().iter())
+                    // .chain(&code_hash),
                     block.randomness,
                 )),
             )?;
@@ -482,7 +492,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 Value::known((1 + 20 + 32 + 32).into()),
             )?;
         } else {
-            self.keccak_input.assign(region, offset, Value::known(0.into()))?;
+            self.keccak_input
+                .assign(region, offset, Value::known(0.into()))?;
             self.keccak_input_length
                 .assign(region, offset, Value::known(2.into()))?;
         }
@@ -601,8 +612,7 @@ mod test {
     #[test]
     fn test_create2() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
-        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[true])
-        {
+        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[true]) {
             let initializer = callee_bytecode(*is_return, *offset, *length).code();
 
             let root_code = bytecode! {
