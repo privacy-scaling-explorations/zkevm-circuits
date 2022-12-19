@@ -266,8 +266,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 "aw3rw3r",
                 keccak_input.expr(),
                 0xff.expr() * randomness_raised_to_84 //
-                    // + caller_address.expr() * randomness_raised_to_64
-                    // + salt.expr() * randomness_raised_to_32
+                    + caller_address.expr() * randomness_raised_to_64
+                    + salt.expr() * randomness_raised_to_32
                     // + code_hash.expr(),
             );
             cb.require_equal(
@@ -476,11 +476,11 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 offset,
                 Value::known(rlc::value(
                     once(&0xffu8)
-                        .chain(&[0u8; 20])
-                        .chain(&[0u8; 32])
+                        .chain(&caller_address_bytes)
+                        .chain(salt.to_be_bytes().iter())
                         .chain(&[0u8; 32])
                         .rev(),
-                    // .chain(&caller_address_bytes)
+                    //
                     // .chain(salt.to_be_bytes().iter())
                     // .chain(&code_hash),
                     block.randomness,
