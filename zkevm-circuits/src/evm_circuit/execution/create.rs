@@ -1,7 +1,10 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE, N_BYTES_U64},
+        param::{
+            N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE,
+            N_BYTES_U64,
+        },
         step::ExecutionState,
         util::{
             common_gadget::TransferGadget,
@@ -49,6 +52,7 @@ pub(crate) struct CreateGadget<F> {
     transfer: TransferGadget<F>,
 
     initialization_code: MemoryAddressGadget<F>,
+    initialization_code_word_size: ConstantDivisionGadget<F, N_BYTES_MEMORY_ADDRESS>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
 
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
@@ -83,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.stack_pop(value.expr());
 
         let initialization_code = MemoryAddressGadget::construct_2(cb);
-        cb.stack_pop(initialization_code.offset());
+        cb.stack_pop(initialization_code.offset()); // are these rlc or not?
         cb.stack_pop(initialization_code.length());
 
         let salt = cb.condition(is_create2.expr(), |cb| {
@@ -175,7 +179,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // let caller_gas_left =
         // (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
 
-        let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost();
+        let initialization_code_word_size =
+            ConstantDivisionGadget::construct(cb, initialization_code.length() + 31.expr(), 32);
+        let keccak_gas_cost = GasCost::COPY_SHA3.expr()
+            * is_create2.expr()
+            * initialization_code_word_size.quotient();
+
+        let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost;
         let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
         let callee_gas_left = gas_remaining - gas_left.quotient();
@@ -209,8 +219,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 callee_reversion_info.is_persistent(),
             ),
             (CallContextFieldTag::TxId, tx_id.expr()),
-            (CallContextFieldTag::CallerAddress, from_bytes::expr(&caller_address.cells),),
-            (CallContextFieldTag::CalleeAddress, from_bytes::expr(&new_address.cells),),
+            (
+                CallContextFieldTag::CallerAddress,
+                from_bytes::expr(&caller_address.cells),
+            ),
+            (
+                CallContextFieldTag::CalleeAddress,
+                from_bytes::expr(&new_address.cells),
+            ),
             (
                 CallContextFieldTag::RwCounterEndOfReversion,
                 callee_reversion_info.rw_counter_end_of_reversion(),
@@ -248,6 +264,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             gas_left,
             callee_is_success,
             code_hash,
+            initialization_code_word_size,
         }
     }
 
@@ -378,17 +395,29 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             value,
         )?;
 
-        self.memory_expansion.assign(
+        let (_next_memory_word_size, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
             step.memory_word_size(),
             [initialization_code_address],
         )?;
 
+        let (initialization_code_word_size, _remainder) =
+            self.initialization_code_word_size.assign(
+                region,
+                offset,
+                (31u64 + initialization_code_length.as_u64()).into(),
+            )?;
+
         self.gas_left.assign(
             region,
             offset,
-            (step.gas_left - GasCost::CREATE.as_u64()).into(),
+            (step.gas_left
+                - GasCost::CREATE.as_u64()
+                - u64::try_from(memory_expansion_gas_cost).unwrap()
+                - u64::try_from(initialization_code_word_size).unwrap()
+                    * GasCost::COPY_SHA3.as_u64())
+            .into(),
         )?;
 
         self.callee_is_success.assign(
@@ -405,27 +434,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         Ok(())
     }
 }
-//
-// struct Eip150GasGadget<F> {
-//     divide_by_64: ConstantDivisionGadget<F, N_BYTES_GAS>,
-// }
-//
-// impl<F:Field> Eip150GasGadget<F> {
-//     fn construct() {
-//         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost();
-//         let gas_left =
-//             ConstantDivisionGadget::construct(cb,
-// cb.curr.state.gas_left.expr() - gas_cost, 64);
-//
-//     }
-//
-//     fn callee_gas_left(&self) -> Expression<F> {
-//
-//     }
-//
-//     fn caller_gas_left(&self) -> Expression<F> {
-//
-//     }
 
 #[cfg(test)]
 mod test {
@@ -491,6 +499,62 @@ mod test {
                 PUSH1(0)                        // value
 
                 CREATE
+            };
+
+            let caller = Account {
+                address: CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: Word::one(),
+                balance: eth(10),
+                ..Default::default()
+            };
+
+            let test_context = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x000000000000000000000000000000000000cafe"))
+                        .balance(eth(10));
+                    accs[1].account(&caller);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(100000u64.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            assert_eq!(
+                run_test_circuits(test_context, None),
+                Ok(()),
+                "(offset, length, is_return) = {:?}",
+                (*offset, *length, *is_return),
+            );
+        }
+    }
+
+    #[test]
+    fn test_create2() {
+        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
+        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[true])
+        // FIX MEEEEEE there's an issue when the init call reverts.
+        {
+            let initializer = callee_bytecode(*is_return, *offset, *length).code();
+
+            let root_code = bytecode! {
+                PUSH32(Word::from_big_endian(&initializer))
+                PUSH1(0)
+                MSTORE
+
+                PUSH1(34)                       // salt
+                PUSH1(initializer.len())        // size
+                PUSH1(32 - initializer.len())   // offset
+                PUSH1(12)                       // value
+
+                CREATE2
             };
 
             let caller = Account {
