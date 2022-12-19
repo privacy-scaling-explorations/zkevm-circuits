@@ -245,14 +245,14 @@ impl CopyEvent {
     // increase in rw counter from the start of the copy event to step index
     fn rw_counter_increase(&self, step_index: usize) -> u64 {
         let source_rw_increase = match self.src_type {
-            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
+            CopyDataType::Bytecode | CopyDataType::TxCalldata | CopyDataType::RlcAcc => 0,
             CopyDataType::Memory => std::cmp::min(
                 u64::try_from(step_index + 1).unwrap() / 2,
                 self.src_addr_end
                     .checked_sub(self.src_addr)
                     .unwrap_or_default(),
             ),
-            CopyDataType::RlcAcc | CopyDataType::TxLog => unreachable!(),
+            CopyDataType::TxLog => unreachable!(),
         };
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,

@@ -12,7 +12,7 @@ use crate::{
             from_bytes,
             math_gadget::ConstantDivisionGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, select, CachedRegion, Cell, RandomLinearCombination, Word,
+            not, select, CachedRegion, Cell, RandomLinearCombination, Word, rlc,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -24,6 +24,7 @@ use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
+use std::iter::once;
 
 /// Gadget for CREATE and CREATE2 opcodes
 #[derive(Clone, Debug)]
@@ -54,6 +55,10 @@ pub(crate) struct CreateGadget<F> {
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
 
     code_hash: Cell<F>,
+
+    keccak_input: Cell<F>,
+    keccak_input_length: Cell<F>,
+    keccak_output: Word<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
@@ -209,8 +214,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 callee_reversion_info.is_persistent(),
             ),
             (CallContextFieldTag::TxId, tx_id.expr()),
-            (CallContextFieldTag::CallerAddress, from_bytes::expr(&caller_address.cells),),
-            (CallContextFieldTag::CalleeAddress, from_bytes::expr(&new_address.cells),),
+            (
+                CallContextFieldTag::CallerAddress,
+                from_bytes::expr(&caller_address.cells),
+            ),
+            (
+                CallContextFieldTag::CalleeAddress,
+                from_bytes::expr(&new_address.cells),
+            ),
             (
                 CallContextFieldTag::RwCounterEndOfReversion,
                 callee_reversion_info.rw_counter_end_of_reversion(),
@@ -225,10 +236,39 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             is_root: To(false.expr()),
             is_create: To(true.expr()),
             code_hash: To(code_hash.expr()),
-            gas_left: To(callee_gas_left),
+            // gas_left: To(callee_gas_left),
+            gas_left: Any,
             reversible_write_counter: To(3.expr()),
             ..StepStateTransition::new_context()
         });
+
+        let keccak_input = cb.query_cell();
+        let keccak_input_length = cb.query_cell();
+        cb.condition(is_create2.expr(), |cb| {
+            // TODO: some comments here explaining what's going on....
+            let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
+            let randomness_raised_to_32 = randomness_raised_to_16.clone().square();
+            let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
+            let randomness_raised_to_84 =
+                randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
+            // cb.require_equal(
+            //     "aw3rw3r",
+            //     keccak_input.expr(),
+            //     0xff.expr() * randomness_raised_to_84
+            //         + caller_address.expr() * randomness_raised_to_64
+            //         + salt.expr() * randomness_raised_to_32
+            //         + code_hash.expr(),
+            // );
+            cb.require_equal("23452345", keccak_input_length.expr(), (1 + 20 + 32 + 32).expr());
+        });
+        // cb.condition(not::expr(is_create2.expr()), |cb| {()});
+
+        let keccak_output = cb.query_word();
+        // cb.keccak_table_lookup(
+        //     keccak_input.expr(),
+        //     keccak_input_length.expr(),
+        //     keccak_output.expr(),
+        // );
 
         Self {
             opcode,
@@ -248,6 +288,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             gas_left,
             callee_is_success,
             code_hash,
+            keccak_output,
+            keccak_input,
+            keccak_input_length,
         }
     }
 
@@ -288,14 +331,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             .collect();
         let mut code_hash = keccak256(&values);
         code_hash.reverse();
-        self.code_hash.assign(
-            region,
-            offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                code_hash,
-                block.randomness,
-            )),
-        )?;
+        let code_hash_rlc =
+            RandomLinearCombination::random_linear_combine(code_hash.clone(), block.randomness);
+        self.code_hash.assign(region, offset, Value::known(code_hash_rlc))?;
 
         let tx_access_rw =
             block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
@@ -339,9 +377,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         )?;
 
-        let mut bytes = call.callee_address.to_fixed_bytes();
-        bytes.reverse();
-        self.caller_address.assign(region, offset, Some(bytes))?;
+        let mut caller_address_bytes = call.callee_address.to_fixed_bytes();
+        caller_address_bytes.reverse();
+        self.caller_address
+            .assign(region, offset, Some(caller_address_bytes.clone()))?;
 
         let nonce_bytes = block.rws
             [step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
@@ -401,6 +440,34 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                     .unwrap(),
             ),
         )?;
+
+        if is_create2 {
+            self.keccak_input.assign(
+                region,
+                offset,
+                Value::known(rlc::value(
+                    once(&0xffu8)
+                        .chain(&caller_address_bytes)
+                        .chain(salt.to_le_bytes().iter())
+                        .chain(&code_hash),
+                    block.randomness,
+                )),
+            )?;
+            self.keccak_input_length.assign(
+                region,
+                offset,
+                Value::known((1 + 20 + 32 + 32).into()),
+            )?;
+        } else {
+            self.keccak_input.assign(region, offset, Value::known(0.into()))?;
+            self.keccak_input_length
+                .assign(region, offset, Value::known(2.into()))?;
+        }
+
+        let mut keccak_output = keccak256(&[0, 0]);
+        keccak_output.reverse();
+        self.keccak_output
+            .assign(region, offset, Some(keccak_output))?;
 
         Ok(())
     }
@@ -486,11 +553,12 @@ mod test {
                 PUSH1(0)
                 MSTORE
 
+                PUSH1(45)                       // salt
                 PUSH1(initializer.len())        // size
                 PUSH1(32 - initializer.len())   // offset
                 PUSH1(0)                        // value
 
-                CREATE
+                CREATE2
             };
 
             let caller = Account {
@@ -547,6 +615,104 @@ mod test {
             PUSH1(0)
             PUSH1(0)
             REVERT
+        };
+
+        let caller = Account {
+            address: CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+
+        let test_context = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000u64.into());
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
+    }
+
+    #[test]
+    fn create() {
+        // Test the case where the initialization call is successful, but the CREATE
+        // call is reverted.
+        let initializer = callee_bytecode(true, 0, 10).code();
+
+        let root_code = bytecode! {
+            PUSH32(Word::from_big_endian(&initializer))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(initializer.len())        // size
+            PUSH1(32 - initializer.len())   // offset
+            PUSH1(0)                        // value
+
+            CREATE
+            PUSH1(0)
+            PUSH1(0)
+            REVERT
+        };
+
+        let caller = Account {
+            address: CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+
+        let test_context = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000u64.into());
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
+    }
+
+    #[test]
+    fn create2() {
+        // Test the case where the initialization call is successful, but the CREATE
+        // call is reverted.
+        let initializer = callee_bytecode(true, 0, 10).code();
+
+        let root_code = bytecode! {
+            PUSH32(Word::from_big_endian(&initializer))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(initializer.len())        // size
+            PUSH1(32 - initializer.len())   // offset
+            PUSH1(0)                        // value
+            PUSH1(56)                       // salt
+
+            CREATE2
         };
 
         let caller = Account {

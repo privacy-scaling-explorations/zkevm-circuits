@@ -200,6 +200,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
+        state.block.sha3_inputs.push(vec![0, 0]);
+
         Ok(vec![exec_step])
     }
 }
