@@ -265,7 +265,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.require_equal(
                 "aw3rw3r",
                 keccak_input.expr(),
-                0xff.expr() * randomness_raised_to_84 //
+                0xff.expr() * randomness_raised_to_84
                     + caller_address.expr() * randomness_raised_to_64
                     + salt.expr() * randomness_raised_to_32
                     + code_hash.expr(),
@@ -279,11 +279,23 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         // cb.condition(not::expr(is_create2.expr()), |cb| {()});
 
         let keccak_output = cb.query_word();
-        // cb.keccak_table_lookup(
-        //     keccak_input.expr(),
-        //     keccak_input_length.expr(),
-        //     keccak_output.expr(),
-        // );
+        cb.keccak_table_lookup(
+            keccak_input.expr(),
+            keccak_input_length.expr(),
+            keccak_output.expr(),
+        );
+
+        cb.require_equal(
+            "324124asfr",
+            new_address.expr(),
+            rlc::expr(
+                &keccak_output.cells[..20]
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<_>>(),
+                cb.power_of_randomness(),
+            ),
+        );
 
         Self {
             opcode,
@@ -480,7 +492,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                         .chain(salt.to_be_bytes().iter())
                         .chain(&keccak256(&values)) // don't need to reverse here???
                         .rev(),
-
                     block.randomness,
                 )),
             )?;
@@ -496,7 +507,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 .assign(region, offset, Value::known(2.into()))?;
         }
 
-        let mut keccak_output = keccak256(&[0, 0]);
+        let mut keccak_output = keccak256(
+            &once(0xffu8)
+                .chain(call.callee_address.to_fixed_bytes()) // also don't need to be reversed....
+                .chain(salt.to_be_bytes())
+                .chain(keccak256(&values))
+                .collect::<Vec<_>>(),
+        );
         keccak_output.reverse();
         self.keccak_output
             .assign(region, offset, Some(keccak_output))?;
@@ -512,16 +529,14 @@ mod test {
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
     };
-    use lazy_static::lazy_static;
     use itertools::Itertools;
+    use lazy_static::lazy_static;
     use mock::{eth, TestContext};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
-        static ref CALLER_ADDRESS: Address =
-            address!("0xaabbccddee000000000000000000000000000000");
+        static ref CALLER_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
     }
-
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
         let memory_bytes = [0x60; 10];

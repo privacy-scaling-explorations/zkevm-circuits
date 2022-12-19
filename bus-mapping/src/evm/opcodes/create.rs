@@ -7,9 +7,11 @@ use crate::operation::{
 };
 use crate::Error;
 use eth_types::{
-    evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToWord, Word, H256,
+    evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToBigEndian, ToWord,
+    Word, H160, H256,
 };
-use ethers_core::utils::keccak256;
+use ethers_core::utils::{get_create2_address, keccak256};
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Debug, Copy, Clone)]
 pub struct DummyCreate<const IS_CREATE2: bool>;
@@ -62,8 +64,10 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
+        let mut initialization_code = vec![];
         if length > 0 {
-            handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?;
+            initialization_code =
+                handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?;
         }
 
         // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
@@ -200,7 +204,32 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
-        state.block.sha3_inputs.push(vec![0, 0]);
+        let keccak_input = if IS_CREATE2 {
+            let salt = geth_step.stack.nth_last(3)?;
+            dbg!(salt);
+            assert_eq!(
+                address,
+                get_create2_address(
+                    current_call.address,
+                    salt.to_be_bytes().to_vec(),
+                    initialization_code.clone()
+                )
+            );
+            std::iter::once(0xffu8)
+                .chain(current_call.address.to_fixed_bytes()) // also don't need to be reversed....
+                .chain(salt.to_be_bytes())
+                .chain(keccak256(&initialization_code))
+                .collect::<Vec<_>>()
+        } else {
+            panic!()
+        };
+
+        assert_eq!(
+            address,
+            H160(keccak256(&keccak_input)[12..].try_into().unwrap())
+        );
+
+        state.block.sha3_inputs.push(keccak_input);
 
         Ok(vec![exec_step])
     }
@@ -212,10 +241,10 @@ fn handle_copy(
     callee_id: usize,
     offset: usize,
     length: usize,
-) -> Result<(), Error> {
+) -> Result<Vec<u8>, Error> {
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
-    let dst_id = NumberOrHash::Hash(H256(keccak256(&initialization_bytes)));
-    let bytes: Vec<_> = Bytecode::from(initialization_bytes)
+    let dst_id = NumberOrHash::Hash(H256(keccak256(&initialization_bytes.clone())));
+    let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
         .code
         .iter()
         .map(|element| (element.value, element.is_code))
@@ -244,5 +273,5 @@ fn handle_copy(
         bytes,
     });
 
-    Ok(())
+    Ok(initialization_bytes)
 }
