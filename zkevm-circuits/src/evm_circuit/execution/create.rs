@@ -268,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 0xff.expr() * randomness_raised_to_84 //
                     + caller_address.expr() * randomness_raised_to_64
                     + salt.expr() * randomness_raised_to_32
-                    // + code_hash.expr(),
+                    + code_hash.expr(),
             );
             cb.require_equal(
                 "23452345",
@@ -476,13 +476,11 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 offset,
                 Value::known(rlc::value(
                     once(&0xffu8)
-                        .chain(&caller_address_bytes)
+                        .chain(&call.callee_address.to_fixed_bytes()) // also don't need to be reversed....
                         .chain(salt.to_be_bytes().iter())
-                        .chain(&[0u8; 32])
+                        .chain(&keccak256(&values)) // don't need to reverse here???
                         .rev(),
-                    //
-                    // .chain(salt.to_be_bytes().iter())
-                    // .chain(&code_hash),
+
                     block.randomness,
                 )),
             )?;
@@ -514,11 +512,16 @@ mod test {
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
     };
+    use lazy_static::lazy_static;
     use itertools::Itertools;
     use mock::{eth, TestContext};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
-    const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
+    lazy_static! {
+        static ref CALLER_ADDRESS: Address =
+            address!("0xaabbccddee000000000000000000000000000000");
+    }
+
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
         let memory_bytes = [0x60; 10];
@@ -575,7 +578,7 @@ mod test {
             };
 
             let caller = Account {
-                address: CALLER_ADDRESS,
+                address: *CALLER_ADDRESS,
                 code: root_code.into(),
                 nonce: Word::one(),
                 balance: eth(10),
@@ -629,7 +632,7 @@ mod test {
             };
 
             let caller = Account {
-                address: CALLER_ADDRESS,
+                address: *CALLER_ADDRESS,
                 code: root_code.into(),
                 nonce: Word::one(),
                 balance: eth(10),
@@ -685,7 +688,7 @@ mod test {
         };
 
         let caller = Account {
-            address: CALLER_ADDRESS,
+            address: *CALLER_ADDRESS,
             code: root_code.into(),
             nonce: Word::one(),
             balance: eth(10),
@@ -735,7 +738,7 @@ mod test {
         };
 
         let caller = Account {
-            address: CALLER_ADDRESS,
+            address: *CALLER_ADDRESS,
             code: root_code.into(),
             nonce: Word::one(),
             balance: eth(10),
@@ -783,7 +786,7 @@ mod test {
         };
 
         let caller = Account {
-            address: CALLER_ADDRESS,
+            address: *CALLER_ADDRESS,
             code: root_code.into(),
             nonce: Word::one(),
             balance: eth(10),
