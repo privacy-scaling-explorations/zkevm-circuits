@@ -53,9 +53,10 @@ mod balance_tests {
         operation::{StackOp, RW},
     };
     use eth_types::{
-        bytecode,
+        address, bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
+        Word,
     };
     use mock::eth;
     use mock::test_ctx::{helpers::*, TestContext};
@@ -64,7 +65,10 @@ mod balance_tests {
     // If the given account doesn't exist, it will push 0 onto the stack instead.
     #[test]
     fn test_balance_of_non_exists_address() {
+        let address = address!("0x0000000000001111111111111111111111111111");
+
         let code = bytecode! {
+            PUSH32(address.to_word())
             BALANCE
             STOP
         };
@@ -83,14 +87,23 @@ mod balance_tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
+        let call_id = builder.block.txs()[0].calls()[0].call_id;
 
-        let _step = builder.block.txs()[0]
+        let step = builder.block.txs()[0]
             .steps()
             .iter()
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::BALANCE))
             .unwrap();
 
-        assert_eq!(&builder.block.container.stack.len(), &0_usize);
+        let operation = &builder.block.container.stack[step.bus_mapping_instance[1].as_usize()];
+
+        assert_eq!(
+            { (operation.rw(), operation.op()) },
+            (
+                RW::WRITE,
+                &StackOp::new(call_id, StackAddress::from(1023), Word::zero())
+            )
+        );
     }
 
     #[test]
