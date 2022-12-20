@@ -58,8 +58,7 @@ impl From<&ExecError> for ExecutionState {
     fn from(error: &ExecError) -> Self {
         match error {
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
-            ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
-            ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
+            ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
             ExecError::Depth => ExecutionState::ErrorDepth,
             ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
