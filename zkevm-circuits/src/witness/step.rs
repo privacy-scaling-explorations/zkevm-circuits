@@ -4,8 +4,6 @@ use crate::table::RwTableTag;
 use bus_mapping::error::{ExecError, OogError};
 use bus_mapping::evm::OpcodeId;
 use bus_mapping::{circuit_input_builder, operation};
-use eth_types::Address;
-use std::collections::HashSet;
 
 /// Step executed in a transaction
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -34,8 +32,6 @@ pub struct ExecStep {
     pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
-    /// Non existent account addresses
-    pub non_existent_accounts: HashSet<Address>,
 }
 
 impl ExecStep {
@@ -46,11 +42,6 @@ impl ExecStep {
         // Thus, the memory size must be a multiple of 32 bytes.
         assert_eq!(self.memory_size % N_BYTES_WORD as u64, 0);
         self.memory_size / N_BYTES_WORD as u64
-    }
-
-    /// Check if account address exists
-    pub fn account_exists(&self, address: &Address) -> bool {
-        !self.non_existent_accounts.contains(address)
     }
 }
 
@@ -238,6 +229,5 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
         log_id: step.log_id,
-        non_existent_accounts: step.non_existent_accounts.clone(),
     }
 }

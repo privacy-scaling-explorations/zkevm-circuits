@@ -7,11 +7,11 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, RandomLinearCombination};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
+use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToAddress};
+use eth_types::{Field, ToAddress, ToLittleEndian};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
@@ -122,12 +122,25 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let exists = step.account_exists(&address);
-        let balance = if exists {
-            block.rws[step.rw_indices[5]].value_assignment(block.randomness)
-        } else {
-            F::zero()
+        let (balance, exists) = match block.rws[step.rw_indices[5]] {
+            Rw::Account {
+                field_tag: AccountFieldTag::Balance,
+                value,
+                ..
+            } => (
+                RandomLinearCombination::random_linear_combine(
+                    value.to_le_bytes(),
+                    block.randomness,
+                ),
+                true,
+            ),
+            Rw::Account {
+                field_tag: AccountFieldTag::NonExisting,
+                ..
+            } => (F::zero(), false),
+            _ => unreachable!(),
         };
+
         self.balance.assign(region, offset, Value::known(balance))?;
         self.exists
             .assign(region, offset, Value::known(F::from(exists)))?;
