@@ -1,9 +1,17 @@
-use crate::evm_circuit::param::{N_BYTES_WORD, STACK_CAPACITY};
-use crate::evm_circuit::step::ExecutionState;
-use crate::table::RwTableTag;
-use bus_mapping::error::{ExecError, OogError};
-use bus_mapping::evm::OpcodeId;
-use bus_mapping::{circuit_input_builder, operation};
+use bus_mapping::{
+    circuit_input_builder,
+    error::{ExecError, OogError},
+    evm::OpcodeId,
+    operation,
+};
+
+use crate::{
+    evm_circuit::{
+        param::{N_BYTES_WORD, STACK_CAPACITY},
+        step::ExecutionState,
+    },
+    table::RwTableTag,
+};
 
 /// Step executed in a transaction
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
