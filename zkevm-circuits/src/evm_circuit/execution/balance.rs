@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset()),
+            rw_counter: Delta(7.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
