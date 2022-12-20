@@ -1,6 +1,5 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
-    param::N_BYTES_STACK,
     step::ExecutionState,
     util::{
         common_gadget::RestoreContextGadget,
@@ -17,6 +16,8 @@ use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
+
+const N_BYTES_STACK: usize = 2;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
@@ -57,9 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
             max_stack_pointer.expr(),
             cb.curr.state.stack_pointer.expr(),
         );
-
-        cb.require_boolean("is_overflow is bool", is_overflow.expr());
-        cb.require_boolean("is_underflow is bool", is_underflow.expr());
+        // is_overflow and is_underflow is bool ensure by LtGadget.
 
         // constrain one of [is_underflow, is_overflow] must be true when stack error
         // happens
@@ -75,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
-            "Go to EndTx only when is_root",
+            "Go to EndTx if and only if is_root",
             cb.curr.state.is_root.expr(),
             is_to_end_tx,
         );
@@ -125,27 +124,27 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let min_stack = opcode.stack_pair().0 as u64;
-        let max_stack = opcode.stack_pair().1 as u64;
+
+        let (min_stack, max_stack) = opcode.valid_stack_ptr_range();
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         // Inputs/Outputs
         self.min_stack_pointer
-            .assign(region, offset, Value::known(F::from(min_stack)))?;
+            .assign(region, offset, Value::known(F::from(min_stack as u64)))?;
         self.max_stack_pointer
-            .assign(region, offset, Value::known(F::from(max_stack)))?;
+            .assign(region, offset, Value::known(F::from(max_stack as u64)))?;
 
         self.is_overflow.assign(
             region,
             offset,
             F::from(step.stack_pointer as u64),
-            F::from(min_stack),
+            F::from(min_stack as u64),
         )?;
         self.is_underflow.assign(
             region,
             offset,
-            F::from(max_stack),
+            F::from(max_stack as u64),
             F::from(step.stack_pointer as u64),
         )?;
 

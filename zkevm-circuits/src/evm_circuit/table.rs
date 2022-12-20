@@ -114,8 +114,8 @@ impl FixedTableTag {
                         [
                             tag,
                             F::from(opcode.as_u64()),
-                            F::from(opcode.stack_pair().0 as u64),
-                            F::from(opcode.stack_pair().1 as u64),
+                            F::from(opcode.valid_stack_ptr_range().0 as u64),
+                            F::from(opcode.valid_stack_ptr_range().1 as u64),
                         ]
                     }),
             ),

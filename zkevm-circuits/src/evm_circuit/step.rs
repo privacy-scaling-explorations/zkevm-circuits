@@ -87,7 +87,6 @@ pub enum ExecutionState {
     // Error cases
     ErrorInvalidOpcode,
     ErrorStack,
-    //ErrorStackUnderflow,
     ErrorWriteProtection,
     ErrorDepth,
     ErrorInsufficientBalance,

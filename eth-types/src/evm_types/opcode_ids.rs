@@ -664,7 +664,7 @@ impl OpcodeId {
     }
 
     /// Returns the constant min & stack pointer of `OpcodeId`
-    pub const fn stack_pair(&self) -> (u32, u32) {
+    pub const fn valid_stack_ptr_range(&self) -> (u32, u32) {
         match self {
             // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
             // can only encounter underflow error, but never encounter overflow error.
