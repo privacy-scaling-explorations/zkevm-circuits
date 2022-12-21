@@ -1,4 +1,7 @@
 use super::{StateCircuit, StateCircuitConfig};
+use crate::state_circuit::StateCircuitConfigArgs;
+use crate::table::{MptTable, RwTable};
+use crate::util::{Challenges, SubCircuitConfig};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     util::SubCircuit,
@@ -13,6 +16,8 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
+use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
+use halo2_proofs::plonk::Error;
 use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -24,6 +29,47 @@ use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
+
+impl<F: Field> Circuit<F> for StateCircuit<F>
+where
+    F: Field,
+{
+    type Config = (StateCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let rw_table = RwTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            StateCircuitConfig::new(
+                meta,
+                StateCircuitConfigArgs {
+                    rw_table,
+                    mpt_table,
+                    challenges,
+                },
+            )
+        };
+
+        (config, challenges)
+    }
+
+    fn synthesize(
+        &self,
+        (config, challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = challenges.values(&mut layouter);
+        self.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+}
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum AdviceColumn {
