@@ -7,11 +7,13 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::math_gadget::{
-    BatchedIsZeroGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
+    CmpWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
-use crate::evm_circuit::util::{from_bytes, or, select, sum, CachedRegion, Cell, Word};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
+use crate::evm_circuit::util::{
+    from_bytes, or, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
+};
+use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
@@ -50,10 +52,10 @@ pub(crate) struct CallOpGadget<F> {
     rd_address: MemoryAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
-    callee_balance: Cell<F>,
-    callee_nonce: Cell<F>,
+    caller_balance: Word<F>,
+    callee_exists: Cell<F>,
     callee_code_hash: Cell<F>,
-    is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
+    enough_transfer_balance: CmpWordsGadget<F>,
     is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
@@ -195,51 +197,56 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         // Verify transfer only for CALL opcode.
+        let caller_balance = cb.query_word();
         let transfer = cb.condition(is_call.expr(), |cb| {
-            TransferGadget::construct(
+            let transfer = TransferGadget::construct(
                 cb,
                 caller_address.expr(),
                 callee_address.expr(),
                 value.clone(),
                 &mut callee_reversion_info,
-            )
-        });
-
-        // Get callee balance for CALLCODE, DELEGATECALL and STATICCALL opcodes.
-        let callee_balance = cb.condition(1.expr() - is_call.expr(), |cb| {
-            let callee_balance = cb.query_cell();
-            cb.account_read(
-                callee_address.expr(),
-                AccountFieldTag::Balance,
-                callee_balance.expr(),
             );
-            callee_balance
+            cb.require_equal(
+                "caller_balance == transfer.sender.balance_prev for CALL opcode",
+                caller_balance.expr(),
+                transfer.sender().balance_prev().expr(),
+            );
+            transfer
         });
 
-        // Verify gas cost
-        let callee_nonce = cb.query_cell();
-        cb.account_read(
-            callee_address.expr(),
-            AccountFieldTag::Nonce,
-            callee_nonce.expr(),
-        );
+        // For CALLCODE opcode, get caller balance to constrain it should be greater or
+        // equal to stack `value`.
+        cb.condition(is_callcode.expr(), |cb| {
+            cb.account_read(
+                caller_address.expr(),
+                AccountFieldTag::Balance,
+                caller_balance.expr(),
+            );
+        });
+
+        // For both CALL and CALLCODE opcodes, verify caller balance is greater than or
+        // equal to stack `value`.
+        let enough_transfer_balance = CmpWordsGadget::construct(cb, &value, &caller_balance);
+        cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
+            cb.require_zero(
+                "transfer_value <= caller_balance for both CALL and CALLCODE opcodes",
+                1.expr() - enough_transfer_balance.eq.expr() - enough_transfer_balance.lt.expr(),
+            );
+        });
+
+        let callee_exists = cb.query_bool();
         let callee_code_hash = cb.query_cell();
-        cb.account_read(
-            code_address,
-            AccountFieldTag::CodeHash,
-            callee_code_hash.expr(),
-        );
-        let is_empty_nonce_and_balance = BatchedIsZeroGadget::construct(
-            cb,
-            [
-                callee_nonce.expr(),
-                select::expr(
-                    is_call.expr(),
-                    transfer.receiver().balance_prev().expr(),
-                    callee_balance.expr(),
-                ),
-            ],
-        );
+        cb.condition(callee_exists.expr(), |cb| {
+            cb.account_read(
+                code_address.expr(),
+                AccountFieldTag::CodeHash,
+                callee_code_hash.expr(),
+            );
+        });
+        cb.condition(1.expr() - callee_exists.expr(), |cb| {
+            cb.account_read(code_address, AccountFieldTag::NonExisting, 0.expr());
+        });
+
         let is_empty_code_hash = IsEqualGadget::construct(
             cb,
             callee_code_hash.expr(),
@@ -248,14 +255,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb.power_of_randomness(),
             ),
         );
-        let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
-        // Sum up gas cost
+
+        // Sum up and verify gas cost.
         let gas_cost = select::expr(
             is_warm_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
         ) + has_value.clone()
-            * (GasCost::CALL_WITH_VALUE.expr() + is_empty_account * GasCost::NEW_ACCOUNT.expr())
+            * (GasCost::CALL_WITH_VALUE.expr()
+                // Only CALL opcode could invoke transfer to make empty account into non-empty.
+                + is_call.expr() * (1.expr() - callee_exists.expr()) * GasCost::NEW_ACCOUNT.expr())
             + memory_expansion.gas_cost();
 
         // Apply EIP 150
@@ -287,17 +296,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             // `transfer` call (+3).
             //
             // For CALLCODE opcode, it has an extra stack pop `value` and one account read
-            // for callee balance (+2).
+            // for caller balance (+2).
             //
-            // For DELEGATECALL opcode, has two extra call context lookups for current
-            // caller address and value, and one account read for callee balance (+3).
+            // For DELEGATECALL opcode, it has two extra call context lookups for current
+            // caller address and value (+2).
             //
-            // For STATICCALL opcode, it has one account read for callee balance (+1).
-            let rw_counter_delta = 21.expr()
+            // No extra lookups for STATICCALL opcode.
+            let rw_counter_delta = 20.expr()
                 + is_call.expr() * 3.expr()
                 + is_callcode.expr() * 2.expr()
-                + is_delegatecall.expr() * 3.expr()
-                + is_staticcall.expr();
+                + is_delegatecall.expr() * 2.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
@@ -376,17 +384,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             // `transfer` call (+3).
             //
             // For CALLCODE opcode, it has an extra stack pop `value` and one account read
-            // for callee balance (+2).
+            // for caller balance (+2).
             //
-            // For DELEGATECALL opcode, has two extra call context lookups for current
-            // caller address and value, and one account read for callee balance (+3).
+            // For DELEGATECALL opcode, it has two extra call context lookups for current
+            // caller address and value (+2).
             //
-            // For STATICCALL opcode, it has one account read for callee balance (+1).
-            let rw_counter_delta = 41.expr()
+            // No extra lookups for STATICCALL opcode.
+            let rw_counter_delta = 40.expr()
                 + is_call.expr() * 3.expr()
                 + is_callcode.expr() * 2.expr()
-                + is_delegatecall.expr() * 3.expr()
-                + is_staticcall.expr();
+                + is_delegatecall.expr() * 2.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 call_id: To(callee_call_id.expr()),
@@ -426,10 +433,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_address,
             memory_expansion,
             transfer,
-            callee_balance,
-            callee_nonce,
+            caller_balance,
+            callee_exists,
             callee_code_hash,
-            is_empty_nonce_and_balance,
+            enough_transfer_balance,
             is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
@@ -493,25 +500,51 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[15 + rw_offset],
         ]
         .map(|idx| block.rws[idx].call_context_value());
-        let [caller_balance_pair, callee_balance_pair, (callee_balance, _)] = if is_call {
+        let (caller_balance_pair, callee_balance_pair, caller_balance) = if is_call {
+            rw_offset += 2;
+            let caller_balance_pair =
+                block.rws[step.rw_indices[14 + rw_offset]].account_value_pair();
+            let callee_balance_pair =
+                block.rws[step.rw_indices[15 + rw_offset]].account_value_pair();
+            (
+                caller_balance_pair,
+                callee_balance_pair,
+                caller_balance_pair.1,
+            )
+        } else if is_callcode {
             rw_offset += 1;
-            [
-                block.rws[step.rw_indices[15 + rw_offset]].account_value_pair(),
-                block.rws[step.rw_indices[16 + rw_offset]].account_value_pair(),
+            (
                 (U256::zero(), U256::zero()),
-            ]
+                (U256::zero(), U256::zero()),
+                block.rws[step.rw_indices[15 + rw_offset]]
+                    .account_value_pair()
+                    .0,
+            )
         } else {
-            [
+            (
                 (U256::zero(), U256::zero()),
                 (U256::zero(), U256::zero()),
-                block.rws[step.rw_indices[16 + rw_offset]].account_value_pair(),
-            ]
+                U256::zero(),
+            )
         };
-        let [(callee_nonce, _), (callee_code_hash, _)] = [
-            step.rw_indices[17 + rw_offset],
-            step.rw_indices[18 + rw_offset],
-        ]
-        .map(|idx| block.rws[idx].account_value_pair());
+        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[16 + rw_offset]] {
+            Rw::Account {
+                field_tag: AccountFieldTag::CodeHash,
+                value,
+                ..
+            } => (
+                RandomLinearCombination::random_linear_combine(
+                    value.to_le_bytes(),
+                    block.randomness,
+                ),
+                true,
+            ),
+            Rw::Account {
+                field_tag: AccountFieldTag::NonExisting,
+                ..
+            } => (F::zero(), false),
+            _ => unreachable!(),
+        };
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -609,54 +642,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_balance_pair,
             value,
         )?;
-        self.callee_balance.assign(
+        self.caller_balance
+            .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
+        self.callee_exists
+            .assign(region, offset, Value::known(F::from(callee_exists)))?;
+        self.callee_code_hash
+            .assign(region, offset, Value::known(callee_code_hash))?;
+        self.enough_transfer_balance
+            .assign(region, offset, value, caller_balance)?;
+        self.is_empty_code_hash.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                callee_balance.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        self.callee_nonce.assign(
-            region,
-            offset,
-            Value::known(
-                callee_nonce
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
-        self.callee_code_hash.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
-            region,
-            offset,
-            [
-                F::from(callee_nonce.low_u64()),
-                Word::random_linear_combine(
-                    (if is_call {
-                        callee_balance_pair.1
-                    } else {
-                        callee_balance
-                    })
-                    .to_le_bytes(),
-                    block.randomness,
-                ),
-            ],
-        )?;
-        let is_empty_code_hash = self.is_empty_code_hash.assign(
-            region,
-            offset,
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
+            callee_code_hash,
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
-        let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
@@ -664,7 +663,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
-                + if is_empty_account == F::one() {
+                // Only CALL opcode could invoke transfer to make empty account into non-empty.
+                + if is_call && !callee_exists {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0
@@ -809,12 +809,12 @@ mod test {
 
     fn callee(code: bytecode::Bytecode) -> Account {
         let code = code.to_vec();
-        let is_empty = code.is_empty();
+        let balance = if code.is_empty() { 0 } else { 0xdeadbeefu64 };
         Account {
             address: Address::repeat_byte(0xff),
+            balance: balance.into(),
             code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            nonce: 1.into(),
             ..Default::default()
         }
     }

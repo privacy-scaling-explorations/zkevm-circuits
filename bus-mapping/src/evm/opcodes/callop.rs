@@ -4,7 +4,7 @@ use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
-use eth_types::{GethExecStep, ToWord};
+use eth_types::{GethExecStep, ToWord, Word};
 use keccak256::EMPTY_HASH;
 use log::warn;
 
@@ -115,46 +115,52 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
-        let (_, callee_account) = state.sdb.get_account(&call.address);
-        let is_empty_account = callee_account.is_empty();
-        let callee_nonce = callee_account.nonce;
-
-        if call.kind == CallKind::Call {
-            // Transfer value only for CALL opcode.
-            state.transfer(
-                &mut exec_step,
-                call.caller_address,
-                call.address,
-                call.value,
-            )?;
-        } else {
-            // Get callee balance for CALLCODE, DELEGATECALL and STATICCALL opcodes.
-            let callee_balance = callee_account.balance;
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::Balance,
-                callee_balance,
-                callee_balance,
-            )?;
+        match call.kind {
+            CallKind::Call => {
+                // Transfer value only for CALL opcode.
+                state.transfer(
+                    &mut exec_step,
+                    call.caller_address,
+                    call.address,
+                    call.value,
+                )?;
+            }
+            CallKind::CallCode => {
+                // For CALLCODE opcode, get caller balance to constrain it should be greater or
+                // equal to stack `value`.
+                let (_, caller_account) = state.sdb.get_account(&call.caller_address);
+                let caller_balance = caller_account.balance;
+                state.account_read(
+                    &mut exec_step,
+                    call.caller_address,
+                    AccountField::Balance,
+                    caller_balance,
+                    caller_balance,
+                )?;
+            }
+            _ => (),
         }
 
-        state.account_read(
-            &mut exec_step,
-            call.address,
-            AccountField::Nonce,
-            callee_nonce,
-            callee_nonce,
-        )?;
         let callee_code_hash = call.code_hash;
-        let callee_code_hash_word = callee_code_hash.to_word();
-        state.account_read(
-            &mut exec_step,
-            callee_address,
-            AccountField::CodeHash,
-            callee_code_hash_word,
-            callee_code_hash_word,
-        )?;
+        let (callee_exists, _) = state.sdb.get_account(&callee_address);
+        if callee_exists {
+            let callee_code_hash_word = callee_code_hash.to_word();
+            state.account_read(
+                &mut exec_step,
+                callee_address,
+                AccountField::CodeHash,
+                callee_code_hash_word,
+                callee_code_hash_word,
+            )?;
+        } else {
+            state.account_read(
+                &mut exec_step,
+                callee_address,
+                AccountField::NonExisting,
+                Word::zero(),
+                Word::zero(),
+            )?;
+        }
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
@@ -178,7 +184,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             GasCost::COLD_ACCOUNT_ACCESS.as_u64()
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
-                + if is_empty_account {
+                + if call.kind == CallKind::Call && !callee_exists {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0
