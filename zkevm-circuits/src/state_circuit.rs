@@ -86,6 +86,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         }: Self::ConfigArgs,
     ) -> Self {
         let selector = meta.fixed_column();
+        log::debug!("state circuit selector {:?}", selector);
         let lookups = LookupsChip::configure(meta);
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
@@ -183,6 +184,11 @@ impl<F: Field> StateCircuitConfig<F> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
+        log::info!(
+            "state circuit assign total rows {}, n_rows {}",
+            rows.len(),
+            n_rows
+        );
         let rows_len = rows.len();
         let rows = rows.iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));
@@ -191,7 +197,7 @@ impl<F: Field> StateCircuitConfig<F> {
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
-                log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
+                log::trace!("state circuit assign offset:{} row:{:?}", offset, row);
             }
 
             region.assign_fixed(
@@ -382,22 +388,30 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
         let randomness = challenges.evm_word();
 
+        let mut is_first_time = true;
+
         // Assigning to same columns in different regions should be avoided.
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
         layouter.assign_region(
             || "state circuit",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    region.assign_advice(
+                        || "step selector",
+                        config.rw_table.rw_counter,
+                        self.n_rows - 1,
+                        || Value::known(F::zero()),
+                    )?;
+                    return Ok(());
+                }
                 config.rw_table.load_with_region(
                     &mut region,
                     &self.rows,
                     self.n_rows,
                     randomness,
                 )?;
-
-                config
-                    .mpt_table
-                    .load_with_region(&mut region, &self.updates, randomness)?;
 
                 config.assign_with_region(
                     &mut region,
@@ -472,6 +486,9 @@ where
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
+        config
+            .mpt_table
+            .load(&mut layouter, &self.updates, challenges.evm_word())?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

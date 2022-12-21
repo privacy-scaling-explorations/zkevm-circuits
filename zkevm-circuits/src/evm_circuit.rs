@@ -162,20 +162,7 @@ impl<F: Field> EvmCircuitConfig<F> {
     }
 
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
-        if evm_rows == 0 {
-            for transaction in &block.txs {
-                for step in &transaction.steps {
-                    num_rows += self.execution.get_step_height(step.execution_state);
-                }
-            }
-            num_rows += 1; // EndBlock
-        } else {
-            num_rows += block.evm_circuit_pad_to;
-        }
-        num_rows
+        self.execution.get_num_rows_required(block)
     }
 }
 
@@ -425,7 +412,7 @@ pub mod test {
         let num_rows_required_for_bytecode_table: usize = block
             .bytecodes
             .values()
-            .map(|bytecode| bytecode.bytes.len())
+            .map(|bytecode| bytecode.bytes.len() + 1)
             .sum();
         let num_rows_required_for_copy_table: usize =
             block.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
@@ -439,7 +426,6 @@ pub mod test {
             .sum();
 
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
-
         const NUM_BLINDING_ROWS: usize = 64;
 
         let rows_needed: usize = itertools::max([
@@ -464,7 +450,7 @@ pub mod test {
             num_rows_required_for_tx_table,
             num_rows_required_for_exp_table
         ]);
-        log::info!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+        log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
         k
     }
 

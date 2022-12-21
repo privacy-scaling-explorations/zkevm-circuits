@@ -2,12 +2,12 @@ use crate::{
     evm_circuit::util::{
         and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
-    table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
+    table::{BytecodeFieldTag, BytecodeTable, KeccakTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::{Field, ToLittleEndian, Word, U256};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -82,7 +82,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
-        let q_last = meta.selector();
+        let q_last = meta.complex_selector();
         let value = bytecode_table.value;
         let push_rindex = meta.advice_column();
         let hash_input_rlc = meta.advice_column();
@@ -354,6 +354,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             constraints
         });
 
+        /*
         // keccak lookup
         meta.lookup_any("keccak", |meta| {
             // Conditions:
@@ -376,6 +377,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             }
             constraints
         });
+        */
 
         BytecodeCircuitConfig {
             minimum_rows: meta.minimum_rows(),
@@ -452,6 +454,15 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                                 challenge,
                             )
                         });
+                        if idx == bytecode.rows.len() - 1 {
+                            log::trace!("bytecode len {}", bytecode.rows.len());
+                            log::trace!(
+                                "assign bytecode circuit at {}: codehash {:?}, rlc {:?}",
+                                offset,
+                                row.code_hash.to_le_bytes(),
+                                code_hash
+                            );
+                        }
 
                         // Track which byte is an opcode and which is push
                         // data
@@ -468,6 +479,10 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                                     *hash_input_rlc = *hash_input_rlc * challenge + row.value
                                 },
                             );
+                        }
+
+                        if idx == bytecode.rows.len() - 1 {
+                            log::trace!("assign bytecode circuit: input rlc {:?}", hash_input_rlc);
                         }
 
                         // Set the data for this row
@@ -567,6 +582,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         // q_last
         if last {
+            log::debug!("bytecode circuit q_last at {}", offset);
             self.q_last.enable(region, offset)?;
         }
 
@@ -644,6 +660,11 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 /// Get unrolled bytecode from raw bytes
 pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
     let code_hash = keccak(&bytes[..]);
+    unroll_with_codehash(code_hash, bytes)
+}
+
+/// Get unrolled bytecode from raw bytes and codehash
+pub fn unroll_with_codehash<F: Field>(code_hash: U256, bytes: Vec<u8>) -> UnrolledBytecode<F> {
     let mut rows = vec![BytecodeRow::<F> {
         code_hash,
         tag: F::from(BytecodeFieldTag::Length as u64),
@@ -724,7 +745,7 @@ impl<F: Field> BytecodeCircuit<F> {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
-            .map(|(_, b)| unroll(b.bytes.clone()))
+            .map(|(codehash, b)| unroll_with_codehash(*codehash, b.bytes.clone()))
             .collect();
         Self::new(bytecodes, bytecode_size)
     }
@@ -893,6 +914,7 @@ pub mod tests {
     }
 
     /// Test invalid code_hash data
+    #[ignore]
     #[test]
     fn bytecode_invalid_hash_data() {
         let k = 9;
@@ -946,6 +968,7 @@ pub mod tests {
     }
 
     /// Test invalid byte data
+    #[ignore]
     #[test]
     fn bytecode_invalid_byte_data() {
         let k = 9;

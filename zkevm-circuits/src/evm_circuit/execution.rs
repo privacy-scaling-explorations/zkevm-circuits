@@ -780,6 +780,23 @@ impl<F: Field> ExecutionConfig<F> {
         }
     }
 
+    pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
+        // Start at 1 so we can be sure there is an unused `next` row available
+        let mut num_rows = 1;
+        let evm_rows = block.evm_circuit_pad_to;
+        if evm_rows == 0 {
+            for transaction in &block.txs {
+                for step in &transaction.steps {
+                    num_rows += self.get_step_height(step.execution_state);
+                }
+            }
+            num_rows += 1; // EndBlock
+        } else {
+            num_rows = block.evm_circuit_pad_to;
+        }
+        num_rows
+    }
+
     /// Assign block
     /// When exact is enabled, assign exact steps in block without padding for
     /// unit test purpose
@@ -794,9 +811,21 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
+        let mut is_first_time = false;
+
         layouter.assign_region(
             || "Execution step",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    region.assign_advice(
+                        || "step selector",
+                        self.q_step,
+                        self.get_num_rows_required(block) - 1,
+                        || Value::known(F::zero()),
+                    )?;
+                    return Ok(());
+                }
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
@@ -965,7 +994,7 @@ impl<F: Field> ExecutionConfig<F> {
                 self.q_step_last
                     .enable(&mut region, offset - END_BLOCK_HEIGHT)?;
 
-                log::debug!("assign for region done");
+                log::debug!("assign for region done at offset {}", offset);
                 Ok(())
             },
         )?;
@@ -986,7 +1015,8 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
-        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+        if !(matches!(step.execution_state, ExecutionState::EndBlock) && step.rw_indices.is_empty())
+        {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
                 offset,
@@ -1205,7 +1235,9 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug) {
+        if log::log_enabled!(log::Level::Debug)
+            && !(step.execution_state == ExecutionState::EndBlock && step.rw_indices.is_empty())
+        {
             // expensive function call
             Self::check_rw_lookup(
                 &assigned_stored_expressions,

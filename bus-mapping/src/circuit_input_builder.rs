@@ -214,6 +214,16 @@ impl<'a> CircuitInputBuilder {
         // accumulates gas across all txs in the block
         log::info!("handling block {:?}", eth_block.number);
         for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+            if self.block.txs.len() >= self.block.circuits_params.max_txs {
+                log::warn!(
+                    "skip tx outside MAX_TX limit {}, {}th(inner idx: {}) tx {:?}",
+                    self.block.circuits_params.max_txs,
+                    tx.transaction_index.unwrap_or_default(),
+                    self.block.txs.len(),
+                    tx.hash
+                );
+                continue;
+            }
             let geth_trace = &geth_traces[tx_index];
             if geth_trace.struct_logs.is_empty() {
                 // only update state
@@ -264,7 +274,8 @@ impl<'a> CircuitInputBuilder {
         Ok(())
     }
 
-    fn set_end_block(&mut self) {
+    /// ..
+    pub fn set_end_block(&mut self) {
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -417,12 +428,24 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     // Tx Circuit
     let txs: Vec<geth_types::Transaction> = block.txs.iter().map(|tx| tx.into()).collect();
     keccak_inputs.extend_from_slice(&keccak_inputs_tx_circuit(&txs, block.chain_id().as_u64())?);
+    log::debug!(
+        "keccak total len after txs: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
     // Bytecode Circuit
-    for bytecode in code_db.0.values() {
-        keccak_inputs.push(bytecode.clone());
+    for _bytecode in code_db.0.values() {
+        //keccak_inputs.push(bytecode.clone());
     }
+    log::debug!(
+        "keccak total len after bytecodes: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
     // EVM Circuit
     keccak_inputs.extend_from_slice(&block.sha3_inputs);
+    log::debug!(
+        "keccak total len after opcodes: {}",
+        keccak_inputs.iter().map(|i| i.len()).sum::<usize>()
+    );
     // MPT Circuit
     // TODO https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/696
     Ok(keccak_inputs)
@@ -715,11 +738,23 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-        let (eth_block, geth_traces, history_hashes, prev_state_root) =
+        let (mut eth_block, mut geth_traces, history_hashes, prev_state_root) =
             self.get_block(block_num).await?;
         let access_set = self.get_state_accesses(&eth_block, &geth_traces)?;
         let (proofs, codes) = self.get_state(block_num, access_set.into()).await?;
         let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        if eth_block.transactions.len() > self.circuits_params.max_txs {
+            log::error!(
+                "max_txs too small: {} < {} for block {}",
+                self.circuits_params.max_txs,
+                eth_block.transactions.len(),
+                eth_block.number.unwrap_or_default()
+            );
+            eth_block
+                .transactions
+                .truncate(self.circuits_params.max_txs);
+            geth_traces.truncate(self.circuits_params.max_txs);
+        }
         let builder = self.gen_inputs_from_state(
             state_db,
             code_db,

@@ -709,6 +709,7 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
     );
 }
 
+#[ignore]
 #[test]
 fn read_inconsistency() {
     let rows = vec![

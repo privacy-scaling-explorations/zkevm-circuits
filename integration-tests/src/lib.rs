@@ -37,7 +37,7 @@ pub const CONTRACTS: &[(&str, &str)] = &[
 /// Path to gen_blockchain_data output file
 pub const GENDATA_OUTPUT_PATH: &str = "gendata_output.json";
 
-const GETH0_URL_DEFAULT: &str = "http://localhost:8545";
+const GETH0_URL_DEFAULT: &str = "http://52.37.45.56:30303";
 
 lazy_static! {
     /// URL of the integration test geth0 instance, which contains blocks for which proofs will be
@@ -50,13 +50,13 @@ lazy_static! {
     /// ..
     pub static ref START_BLOCK: usize =  match env::var("START_BLOCK") {
         Ok(val) => str::parse::<usize>(&val).unwrap(),
-        Err(VarError::NotPresent) => 1,
+        Err(VarError::NotPresent) => 16140010,
         Err(e) => panic!("Error in START_BLOCK env var: {:?}", e),
     };
     /// ..
     pub static ref END_BLOCK: usize =  match env::var("END_BLOCK") {
         Ok(val) => str::parse::<usize>(&val).unwrap(),
-        Err(VarError::NotPresent) => 8,
+        Err(VarError::NotPresent) => 16140010,
         Err(e) => panic!("Error in END_BLOCK env var: {:?}", e),
     };
     /// ..

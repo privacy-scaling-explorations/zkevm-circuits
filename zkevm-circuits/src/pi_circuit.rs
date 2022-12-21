@@ -472,7 +472,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let tx_tag_is_cdl_config = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_tx_table),
-            |meta| meta.query_fixed(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
+            |meta| meta.query_advice(tag, Rotation::cur()) - TxFieldTag::CallDataLength.expr(),
             tx_id_inv,
         );
 
@@ -566,7 +566,7 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || Value::known(F::zero()),
         )?;
-        region.assign_fixed(
+        region.assign_advice(
             || "tag",
             self.tx_table.tag,
             offset,
@@ -639,7 +639,7 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || Value::known(tx_id),
         )?;
-        region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
+        region.assign_advice(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
         region.assign_advice(
             || "index",
             self.tx_table.index,
@@ -744,7 +744,7 @@ impl<F: Field> PiCircuitConfig<F> {
             calldata_offset,
             || Value::known(tx_id_inv),
         )?;
-        region.assign_fixed(
+        region.assign_advice(
             || "tag",
             self.tx_table.tag,
             calldata_offset,
@@ -1119,7 +1119,13 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let context = block.context.ctxs.iter().next().unwrap().1;
+        let context = block
+            .context
+            .ctxs
+            .iter()
+            .next()
+            .map(|(_k, v)| v.clone())
+            .unwrap_or_default();
         let public_data = PublicData {
             chain_id: context.chain_id,
             history_hashes: context.history_hashes.clone(),

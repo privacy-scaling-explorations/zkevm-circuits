@@ -24,7 +24,7 @@ use halo2_proofs::{
 use log::{debug, info};
 use std::{env::var, marker::PhantomData, vec};
 
-const MAX_DEGREE: usize = 3;
+const MAX_DEGREE: usize = 9;
 const ABSORB_LOOKUP_RANGE: usize = 3;
 const THETA_C_LOOKUP_RANGE: usize = 6;
 const RHO_PI_LOOKUP_RANGE: usize = 4;
@@ -32,7 +32,7 @@ const CHI_BASE_LOOKUP_RANGE: usize = 5;
 
 fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
-        .unwrap_or_else(|_| "5".to_string())
+        .unwrap_or_else(|_| "28".to_string())
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize")
 }
@@ -432,8 +432,11 @@ impl<F: Field> KeccakCircuit<F> {
     /// The number of keccak_f's that can be done in this circuit
     pub fn capacity(&self) -> Option<usize> {
         // Subtract two for unusable rows
-        self.num_rows
-            .map(|num_rows| num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()) - 2)
+        self.num_rows.map(|num_rows| {
+            (num_rows / ((NUM_ROUNDS + 1) * get_num_rows_per_round()))
+                .checked_sub(2)
+                .unwrap_or_default()
+        })
     }
 
     /// Sets the witness using the data to be hashed
@@ -2081,6 +2084,7 @@ pub fn multi_keccak<F: Field>(
     challenges: Challenges<Value<F>>,
     capacity: Option<usize>,
 ) -> Result<Vec<KeccakRow<F>>, Error> {
+    log::info!("multi_keccak assign with capacity: {:?}", capacity);
     let mut rows: Vec<KeccakRow<F>> = Vec::new();
     // Dummy first row so that the initial data is absorbed
     // The initial data doesn't really matter, `is_final` just needs to be disabled.
@@ -2101,7 +2105,20 @@ pub fn multi_keccak<F: Field>(
         });
     }
     // Actual keccaks
-    for bytes in bytes {
+    for (idx, bytes) in bytes.iter().enumerate() {
+        debug!("{}th keccak is of len {}", idx, bytes.len());
+    }
+    for (idx, bytes) in bytes.iter().enumerate() {
+        debug!("assigning {}th keccak, len {}", idx, bytes.len());
+        // early terminate
+        if let Some(capacity) = capacity {
+            if rows.len() >= (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
+                // TODO: better check & truncate after each keccak_f instead of full input
+                // bytes?
+                log::error!("keccak circuit overflow, truncate with len {}", rows.len());
+                return Ok(rows);
+            }
+        }
         keccak(&mut rows, bytes, challenges);
     }
     if let Some(capacity) = capacity {
@@ -2139,7 +2156,7 @@ mod tests {
 
     #[test]
     fn packed_multi_keccak_simple() {
-        let k = 11;
+        let k = 14;
         let inputs = vec![
             vec![],
             (0u8..1).collect::<Vec<_>>(),

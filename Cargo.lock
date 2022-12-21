@@ -1930,7 +1930,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-1220#5b38c9973fe5200833e26400f4d38842cf3ac855"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-1220#849b7b659dc44e7f20d23f9f90d546d00257d927"
 dependencies = [
  "blake2b_simd",
  "cfg-if 0.1.10",
