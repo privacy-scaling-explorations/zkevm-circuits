@@ -30,6 +30,7 @@ use strum::IntoEnumIterator;
 mod add_sub;
 mod addmod;
 mod address;
+mod balance;
 mod begin_tx;
 mod bitwise;
 mod block_ctx;
@@ -91,6 +92,7 @@ use self::sha3::Sha3Gadget;
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
+use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
@@ -192,6 +194,7 @@ pub(crate) struct ExecutionConfig<F> {
     add_sub_gadget: AddSubGadget<F>,
     addmod_gadget: AddModGadget<F>,
     address_gadget: AddressGadget<F>,
+    balance_gadget: BalanceGadget<F>,
     bitwise_gadget: BitwiseGadget<F>,
     byte_gadget: ByteGadget<F>,
     call_op_gadget: CallOpGadget<F>,
@@ -228,7 +231,6 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
-    balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
@@ -972,6 +974,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
             ExecutionState::ADDMOD => assign_exec_step!(self.addmod_gadget),
             ExecutionState::ADDRESS => assign_exec_step!(self.address_gadget),
+            ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::BITWISE => assign_exec_step!(self.bitwise_gadget),
             ExecutionState::BYTE => assign_exec_step!(self.byte_gadget),
             ExecutionState::CALL_OP => assign_exec_step!(self.call_op_gadget),
@@ -1014,7 +1017,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
