@@ -46,15 +46,14 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             Some(&mut reversion_info),
         );
 
+        let balance = cb.query_cell();
         let exists = cb.query_bool();
-        let balance = cb.condition(exists.expr(), |cb| {
-            let balance = cb.query_cell();
+        cb.condition(exists.expr(), |cb| {
             cb.account_read(
                 from_bytes::expr(&address.cells),
                 AccountFieldTag::Balance,
                 balance.expr(),
             );
-            balance
         });
         cb.condition(1.expr() - exists.expr(), |cb| {
             cb.account_read(
@@ -66,8 +65,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         cb.stack_push(select::expr(exists.expr(), balance.expr(), 0.expr()));
 
-        let gas_cost = is_warm.expr() * GasCost::WARM_ACCESS.expr()
-            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_ACCOUNT_ACCESS.expr(),
+        );
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(7.expr()),
