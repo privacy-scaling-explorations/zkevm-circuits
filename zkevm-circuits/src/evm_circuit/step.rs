@@ -86,8 +86,7 @@ pub enum ExecutionState {
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
-    ErrorStackOverflow,
-    ErrorStackUnderflow,
+    ErrorStack,
     ErrorWriteProtection,
     ErrorDepth,
     ErrorInsufficientBalance,
@@ -135,8 +134,7 @@ impl ExecutionState {
         matches!(
             self,
             Self::ErrorInvalidOpcode
-                | Self::ErrorStackOverflow
-                | Self::ErrorStackUnderflow
+                | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorDepth
                 | Self::ErrorInsufficientBalance
