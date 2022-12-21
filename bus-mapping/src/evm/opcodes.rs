@@ -258,6 +258,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> FnGenAssociatedOps {
     match error {
         ExecError::InvalidJump => ErrorInvalidJump::gen_associated_ops,
         ExecError::OutOfGas(OogError::Call) => OOGCall::gen_associated_ops,
+        // call & callcode can enouter InsufficientBalance error, Use Pop 7 generic CallOpcode
         ExecError::InsufficientBalance => CallOpcode::<7>::gen_associated_ops,
         // more future errors place here
         _ => {
