@@ -147,7 +147,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let callee_nonce = callee_account.nonce;
         let callee_balance = callee_account.balance;
 
-        // if it is insufficient balance base, read callee balance as gas cost
+        // if it is insufficient balance case, read callee balance as gas cost
         // calculation requires for normal case, callee balance can retrieve by
         // transfer record.
         if insufficient_balance {
@@ -210,8 +210,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let gas_specified = geth_step.stack.last()?;
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
-        // There are 3 branches from here.
-        // TODO: add fail case for insufficient balance.
+        // There are 4 branches from here.
+        // add fail case for insufficient balance or error depth in the future.
         match (
             insufficient_balance,
             state.is_precompiled(&call.address),
