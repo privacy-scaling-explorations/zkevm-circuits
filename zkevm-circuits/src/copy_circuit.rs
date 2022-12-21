@@ -657,9 +657,20 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 }
 
-/// Dev helpers
 #[cfg(any(feature = "test", test))]
-pub mod dev {
+mod tests {
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+        evm::{gen_sha3_code, MemoryKind},
+        mock::BlockData,
+    };
+    use eth_types::{bytecode, geth_types::GethData, Word};
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
+    use mock::TestContext;
+
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::evm_circuit::witness::block_convert;
+
     use super::*;
     use eth_types::Field;
     use halo2_proofs::{
@@ -738,27 +749,11 @@ pub mod dev {
     }
 
     /// Test copy circuit with the provided block witness
-    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+    fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let circuit = CopyCircuit::<F>::new(4, block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_par()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::dev::test_copy_circuit;
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-        mock::BlockData,
-    };
-    use eth_types::{bytecode, geth_types::GethData, Word};
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
-
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let length = 0x0fffusize;
