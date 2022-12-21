@@ -402,6 +402,16 @@ pub(crate) fn extend_rand<F: FieldExt>(r: &[Expression<F>]) -> Vec<Expression<F>
     .concat()
 }
 
+pub(crate) fn accumulate_rand<F: FieldExt>(rs: &[Expression<F>]) -> Vec<Expression<F>> {
+    let mut r = Vec::new();
+    let mut acc = 1.expr();
+    for rs in rs.iter() {
+        acc = acc.expr() * rs.expr();
+        r.push(acc.expr());
+    }
+    r
+}
+
 pub(crate) fn generate_keccak_lookups<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     keccak_table: KeccakTable,
@@ -775,6 +785,17 @@ macro_rules! constraints {
                 $when_false
                 $cb.pop_condition();
             }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
+
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+
+                $cb.push_condition(not::expr(condition.expr()));
+                $when_false
+                $cb.pop_condition();
+            }};
 
 
             ($condition:expr => $when_true:block) => {{
@@ -790,6 +811,12 @@ macro_rules! constraints {
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
                 $cb.push_condition(condition.expr());
                 $when_true
                 $cb.pop_condition();
