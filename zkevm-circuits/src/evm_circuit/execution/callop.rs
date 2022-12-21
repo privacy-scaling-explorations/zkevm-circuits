@@ -52,6 +52,7 @@ pub(crate) struct CallOpGadget<F> {
     memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
     // adding
+    caller_balance_word: Word<F>,
     callee_balance_word: Word<F>,
     is_insufficient_balance: LtWordGadget<F>,
     // end adding
@@ -96,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let rd_length = cb.query_rlc();
         let is_success = cb.query_bool();
 
-        let callee_balance_word = cb.query_word();
+        let caller_balance_word = cb.query_word();
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
@@ -200,19 +201,19 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        // Verify transfer
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Balance,
-            callee_balance_word.expr(),
+            caller_balance_word.expr(),
         );
-        let is_insufficient_balance = LtWordGadget::construct(cb, &callee_balance_word, &value);
+        let is_insufficient_balance = LtWordGadget::construct(cb, &caller_balance_word, &value);
         
         // stack write is zero when is_insufficient_balance is true
         cb.condition(is_insufficient_balance.expr(), |cb|{
             cb.require_zero("stack write result is zero when is_insufficient_balance is true", is_success.expr());
         });
 
+        // Verify transfer
         let transfer = cb.condition(1.expr() - is_insufficient_balance.expr(), |cb| {
             TransferGadget::construct(
                 cb,
@@ -225,6 +226,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         
         // Verify gas cost 
         let callee_nonce = cb.query_cell();
+        let callee_balance_word = cb.query_word();
+        cb.condition(is_insufficient_balance.expr(), |cb| {
+            cb.account_read(
+                callee_address.expr(),
+                AccountFieldTag::Balance,
+                callee_balance_word.clone().expr(),
+            );
+        });
+
+       let callee_balance = select::expr(is_insufficient_balance.expr(),
+        callee_balance_word.clone().expr(),   
+        transfer.receiver().balance_prev().expr(),
+        );
+        
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Nonce,
@@ -240,8 +255,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb,
             [
                 callee_nonce.expr(),
-                callee_balance_word.expr(),          
-                ],
+                select::expr(
+                    is_insufficient_balance.expr(),
+                    //TODO: check callee_balance_word is correct, seems to use stack pop address
+                                callee_balance_word.expr(),          
+                                callee_balance,                
+                            ) 
+                        ]
         );
         let is_empty_code_hash = IsEqualGadget::construct(
             cb,
@@ -291,7 +311,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             // Both CALL and CALLCODE have an extra stack pop `value`, and
             // opcode DELEGATECALL has two extra call context lookups - current
             // caller address and current value.
-            let rw_counter_delta = 23.expr();
+            let rw_counter_delta = 24.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
@@ -435,6 +455,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             memory_expansion,
             transfer,
             // new to add
+            caller_balance_word: caller_balance_word,
             callee_balance_word,
             is_insufficient_balance,
             callee_nonce,
@@ -503,11 +524,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         ]
         .map(|idx| block.rws[idx].call_context_value());
         // handling new fields
-        let (callee_balance, _) = block.rws[step.rw_indices[16 + rw_offset]].account_value_pair();
-        self.callee_balance_word.assign(region, offset, Some(callee_balance.to_le_bytes()))?;
-        self.is_insufficient_balance.assign(region, offset, callee_balance, value)?;
+        let (caller_balance, _) = block.rws[step.rw_indices[16 + rw_offset]].account_value_pair();
+        self.caller_balance_word.assign(region, offset, Some(caller_balance.to_le_bytes()))?;
+        self.is_insufficient_balance.assign(region, offset, caller_balance, value)?;
         
-        let is_insufficient = value > callee_balance;
+        let is_insufficient = value > caller_balance;
         let mut caller_balance_pair = (U256::zero(), U256::zero());
         let mut callee_balance_pair = (U256::zero(), U256::zero());
 
@@ -519,6 +540,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             ]
             .map(|idx| block.rws[idx].account_value_pair());
             rw_offset = rw_offset + 2;
+        }else {
+            callee_balance_pair =  block.rws[step.rw_indices[17 + rw_offset]].account_value_pair();
+            rw_offset = rw_offset + 1;
         }
 
         //  read callee_nonce， callee_code_hash for gas cost
@@ -635,6 +659,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 callee_balance_pair,
                 value,
             )?;
+        }else {
+            self.callee_balance_word.assign(region, offset, Some(callee_balance_pair.1.to_le_bytes()))?;
         }
        
         self.callee_nonce.assign(
@@ -659,7 +685,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             offset,
             [
                 F::from(callee_nonce.low_u64()),
-                Word::random_linear_combine(callee_balance.to_le_bytes(), block.randomness),
+                Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
             ],
         )?;
         let is_empty_code_hash = self.is_empty_code_hash.assign(
@@ -720,9 +746,9 @@ mod test {
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
         OpcodeId::CALL,
-        //OpcodeId::CALLCODE,
-        //OpcodeId::DELEGATECALL,
-        //OpcodeId::STATICCALL,
+        OpcodeId::CALLCODE,
+        OpcodeId::DELEGATECALL,
+        OpcodeId::STATICCALL,
     ];
 
     #[test]
@@ -735,8 +761,10 @@ mod test {
 
         //let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
         let callees = [callee(bytecode! {})];
+        // only call, callcode will encounter insufficient balance, static call& delegate call
+        // won't so exclude them.
         let test_opcodes: &[OpcodeId] = &[
-            OpcodeId::CALL,
+            OpcodeId::CALL, OpcodeId::CALLCODE,
         ];
         for ((opcode, stack), callee) in test_opcodes
             .iter()
@@ -765,46 +793,46 @@ mod test {
     fn callop_simple() {
         let stacks = [
             // With nothing
-            // Stack::default(),
+            Stack::default(),
             // With value
              Stack {
                 value: Word::from(10).pow(18.into()),
                 ..Default::default()
             },
             // With gas
-            // Stack {
-            //     gas: 100,
-            //     ..Default::default()
-            // },
-            // Stack {
-            //     gas: 100000,
-            //     ..Default::default()
-            // },
+            Stack {
+                gas: 100,
+                ..Default::default()
+            },
+            Stack {
+                gas: 100000,
+                ..Default::default()
+            },
             // With memory expansion
-            // Stack {
-            //     cd_offset: 64,
-            //     cd_length: 320,
-            //     rd_offset: 0,
-            //     rd_length: 32,
-            //     ..Default::default()
-            // },
-            // Stack {
-            //     cd_offset: 0,
-            //     cd_length: 32,
-            //     rd_offset: 64,
-            //     rd_length: 320,
-            //     ..Default::default()
-            // },
-            // Stack {
-            //     cd_offset: 0xFFFFFF,
-            //     cd_length: 0,
-            //     rd_offset: 0xFFFFFF,
-            //     rd_length: 0,
-            //     ..Default::default()
-            // },
+            Stack {
+                cd_offset: 64,
+                cd_length: 320,
+                rd_offset: 0,
+                rd_length: 32,
+                ..Default::default()
+            },
+            Stack {
+                cd_offset: 0,
+                cd_length: 32,
+                rd_offset: 64,
+                rd_length: 320,
+                ..Default::default()
+            },
+            Stack {
+                cd_offset: 0xFFFFFF,
+                cd_length: 0,
+                rd_offset: 0xFFFFFF,
+                rd_length: 0,
+                ..Default::default()
+            },
         ];
-        //let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
-        let callees = [callee(bytecode! {})];
+        let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
+        //let callees = [callee(bytecode! {})];
 
         for ((opcode, stack), callee) in TEST_CALL_OPCODES
             .iter()

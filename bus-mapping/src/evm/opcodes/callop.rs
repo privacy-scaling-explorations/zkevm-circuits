@@ -147,6 +147,18 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (found, callee_account) = state.sdb.get_account(&call.address);
         let is_empty_account = callee_account.is_empty();
         let callee_nonce = callee_account.nonce;
+        let callee_balance = callee_account.balance;
+
+        if insufficient_balance {
+            // read callee balance
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::Balance,
+                callee_balance,
+                callee_balance,
+            )?;
+        }
        
         state.account_read(
             &mut exec_step,
