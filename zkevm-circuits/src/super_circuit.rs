@@ -410,7 +410,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
 // - evm_rows padding
 
 #[cfg(test)]
-mod super_circuit_tests {
+pub(crate) mod super_circuit_tests {
     use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;
@@ -436,6 +436,18 @@ mod super_circuit_tests {
     #[ignore]
     #[test]
     fn serial_test_super_circuit() {
+        let (k, circuit, instance, _) =
+            SuperCircuit::<_, 1, 32, 256>::build(sampl_block()).unwrap();
+        let prover = MockProver::run(k, &circuit, instance).unwrap();
+        let res = prover.verify_par();
+        if let Err(err) = res {
+            error!("Verification failures: {:#?}", err);
+            panic!("Failed verification");
+        }
+    }
+
+    /// Create a sample block for testing purpose.
+    pub fn sampl_block() -> GethData {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
@@ -474,13 +486,6 @@ mod super_circuit_tests {
         .into();
 
         block.sign(&wallets);
-
-        let (k, circuit, instance, _) = SuperCircuit::<_, 1, 32, 256>::build(block).unwrap();
-        let prover = MockProver::run(k, &circuit, instance).unwrap();
-        let res = prover.verify_par();
-        if let Err(err) = res {
-            error!("Verification failures: {:#?}", err);
-            panic!("Failed verification");
-        }
+        block
     }
 }
