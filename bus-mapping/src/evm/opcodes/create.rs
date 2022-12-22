@@ -10,7 +10,7 @@ use eth_types::{
     evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToBigEndian, ToWord,
     Word, H160, H256,
 };
-use ethers_core::utils::{get_create2_address, keccak256};
+use ethers_core::utils::{get_create2_address, keccak256, rlp};
 
 #[derive(Debug, Copy, Clone)]
 pub struct DummyCreate<const IS_CREATE2: bool>;
@@ -113,15 +113,15 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         );
 
         // Increase caller's nonce
-        let nonce_prev = state.sdb.get_nonce(&call.caller_address);
+        let caller_nonce = state.sdb.get_nonce(&call.caller_address);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             AccountOp {
                 address: call.caller_address,
                 field: AccountField::Nonce,
-                value: (nonce_prev + 1).into(),
-                value_prev: nonce_prev.into(),
+                value: (caller_nonce + 1).into(),
+                value_prev: caller_nonce.into(),
             },
         )?;
 
@@ -220,7 +220,11 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 .chain(keccak256(&initialization_code))
                 .collect::<Vec<_>>()
         } else {
-            panic!()
+            let mut stream = rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&current_call.address);
+            stream.append(&Word::from(caller_nonce));
+            stream.out().to_vec()
         };
 
         assert_eq!(
