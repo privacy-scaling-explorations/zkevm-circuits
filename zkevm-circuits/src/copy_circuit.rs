@@ -657,22 +657,28 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 }
 
-/// Dev helpers
+/// CopyCircuit tests
 #[cfg(any(feature = "test", test))]
-pub mod dev {
-    use super::*;
-    use eth_types::Field;
+pub mod test {
+    pub use super::*;
+    use crate::{
+        evm_circuit::{test::rand_bytes, witness::Block},
+        table::{BytecodeTable, RwTable, TxTable},
+        util::Challenges,
+    };
+    use bus_mapping::{
+        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+        evm::{gen_sha3_code, MemoryKind},
+        mock::BlockData,
+    };
+    use eth_types::{bytecode, geth_types::GethData, Field, Word};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem},
     };
-
-    use crate::{
-        evm_circuit::witness::Block,
-        table::{BytecodeTable, RwTable, TxTable},
-        util::Challenges,
-    };
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
+    use mock::TestContext;
 
     impl<F: Field> Circuit<F> for CopyCircuit<F> {
         type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
@@ -737,28 +743,12 @@ pub mod dev {
         }
     }
 
-    /// Test copy circuit with the provided block witness
-    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+    // Test copy circuit with the provided block witness
+    fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let circuit = CopyCircuit::<F>::new(4, block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_par()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::dev::test_copy_circuit;
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-        mock::BlockData,
-    };
-    use eth_types::{bytecode, geth_types::GethData, Word};
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
-
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let length = 0x0fffusize;
@@ -854,6 +844,7 @@ mod tests {
 
     #[test]
     fn copy_circuit_valid_calldatacopy() {
+        use crate::evm_circuit::witness::block_convert;
         let builder = gen_calldatacopy_data();
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(14, block), Ok(()));
@@ -861,6 +852,7 @@ mod tests {
 
     #[test]
     fn copy_circuit_valid_codecopy() {
+        use crate::evm_circuit::witness::block_convert;
         let builder = gen_codecopy_data();
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
@@ -868,6 +860,7 @@ mod tests {
 
     #[test]
     fn copy_circuit_valid_sha3() {
+        use crate::evm_circuit::witness::block_convert;
         let builder = gen_sha3_data();
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(20, block), Ok(()));
@@ -875,6 +868,7 @@ mod tests {
 
     #[test]
     fn copy_circuit_tx_log() {
+        use crate::evm_circuit::witness::block_convert;
         let builder = gen_tx_log_data();
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
