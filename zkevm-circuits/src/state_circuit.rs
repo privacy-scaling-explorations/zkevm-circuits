@@ -4,6 +4,7 @@ mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
+/// State circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test;
 
@@ -17,10 +18,9 @@ use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };

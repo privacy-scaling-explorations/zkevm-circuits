@@ -1491,7 +1491,7 @@ fn raw_public_inputs_col<F: Field>(
     result
 }
 
-/// pi circuit test
+/// PI circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;
@@ -1501,17 +1501,16 @@ pub mod test {
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    // Test Circuit for PiCircuit
     // We define the PiTestCircuit as a wrapper over PiCircuit extended to take the
     // generic const parameters MAX_TXS and MAX_CALLDATA.  This is necessary because
     // the trait Circuit requires an implementation of `configure` that doesn't take
     // any circuit parameters, and the PiCircuit defines gates that use rotations
     // that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
     // during the configuration.
+    /// Test Circuit for PiCircuit
     #[derive(Default)]
     pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         pub PiCircuit<F>,

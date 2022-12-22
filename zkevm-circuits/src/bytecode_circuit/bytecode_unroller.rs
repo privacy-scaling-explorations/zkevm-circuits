@@ -760,6 +760,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 }
 
+/// Bytecode circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;

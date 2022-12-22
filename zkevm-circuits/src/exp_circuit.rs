@@ -6,8 +6,8 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Selector},
+    circuit::{Layouter, Region, Value},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -431,7 +431,7 @@ pub mod test {
     use crate::table::ExpTable;
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use crate::witness::Block;
-    use eth_types::{Field, ToScalar, U256};
+    use eth_types::Field;
 
     impl<F: Field> Circuit<F> for ExpCircuit<F> {
         type Config = (ExpCircuitConfig<F>, Challenges);

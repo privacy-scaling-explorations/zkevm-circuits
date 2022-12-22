@@ -348,6 +348,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     }
 }
 
+/// tx circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;

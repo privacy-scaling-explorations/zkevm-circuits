@@ -2080,7 +2080,7 @@ fn multi_keccak<F: Field>(
     Ok(rows)
 }
 
-/// keccak test
+/// keccak circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;

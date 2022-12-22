@@ -657,7 +657,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 }
 
-/// CopyCircuit tests
+/// Copy circuit tests
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;
