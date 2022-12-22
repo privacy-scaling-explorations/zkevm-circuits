@@ -55,6 +55,7 @@ mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_static_memory;
 mod error_stack;
+mod error_write_protection;
 mod exp;
 mod extcodehash;
 mod gas;
@@ -116,6 +117,7 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_stack::ErrorStackGadget;
+use error_write_protection::ErrorWriteProtectionGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
 use gas::GasGadget;
@@ -255,6 +257,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
+    error_write_protection: ErrorWriteProtectionGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
@@ -274,7 +277,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
-    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,

@@ -9,6 +9,7 @@ use crate::{
     Error,
 };
 use core::fmt::Debug;
+use std::os::unix::prelude::PermissionsExt;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToAddress, ToWord, Word,
@@ -55,6 +56,7 @@ mod swap;
 
 mod error_invalid_jump;
 mod error_oog_call;
+mod error_write_protection;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -74,6 +76,7 @@ use create::DummyCreate;
 use dup::Dup;
 use error_invalid_jump::ErrorInvalidJump;
 use error_oog_call::OOGCall;
+use error_write_protection::ErrorWriteProtection;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -258,6 +261,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
     match error {
         ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
+        ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         // more future errors place here
         _ => {
             warn!("TODO: error state {:?} not implemented", error);
@@ -294,7 +298,7 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
+        println!(
             "geth error {:?} occurred in  {:?}",
             exec_error,
             geth_step.op
