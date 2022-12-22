@@ -24,7 +24,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
-use ethers_core::utils::keccak256;
+use ethers_core::utils::{keccak256, rlp};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 use std::iter::once;
@@ -411,13 +411,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         self.caller_address
             .assign(region, offset, Some(caller_address_bytes.clone()))?;
 
-        let nonce_bytes = block.rws
+        let caller_nonce = block.rws
             [step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
             .account_value_pair()
             .1
-            .low_u64()
-            .to_le_bytes();
-        self.nonce.assign(region, offset, Some(nonce_bytes))?;
+            .low_u64();
+        self.nonce
+            .assign(region, offset, Some(caller_nonce.to_le_bytes()))?;
 
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11].map(|i| {
             block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
@@ -466,8 +466,12 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (step.gas_left
                 - GasCost::CREATE.as_u64()
                 - u64::try_from(memory_expansion_gas_cost).unwrap()
-                - u64::try_from(initialization_code_word_size).unwrap()
-                    * GasCost::COPY_SHA3.as_u64())
+                - if is_create2 {
+                    u64::try_from(initialization_code_word_size).unwrap()
+                        * GasCost::COPY_SHA3.as_u64()
+                } else {
+                    0
+                })
             .into(),
         )?;
 
@@ -489,7 +493,11 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 .chain(keccak256(&values))
                 .collect()
         } else {
-            panic!()
+            let mut stream = rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&call.callee_address);
+            stream.append(&U256::from(caller_nonce));
+            stream.out().to_vec()
         };
         let mut keccak_output = keccak256(&keccak_input);
         keccak_output.reverse();
@@ -787,6 +795,53 @@ mod test {
             PUSH1(56)                       // salt
 
             CREATE2
+        };
+
+        let caller = Account {
+            address: *CALLER_ADDRESS,
+            code: root_code.into(),
+            nonce: Word::one(),
+            balance: eth(10),
+            ..Default::default()
+        };
+
+        let test_context = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000u64.into());
+            },
+            |block, _| block,
+        )
+        .unwrap();
+
+        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
+    }
+
+    #[test]
+    fn create2_really_create() {
+        // Test the case where the initialization call is successful, but the CREATE
+        // call is reverted.
+        let initializer = callee_bytecode(true, 0, 10).code();
+
+        let root_code = bytecode! {
+            PUSH32(Word::from_big_endian(&initializer))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(initializer.len())        // size
+            PUSH1(32 - initializer.len())   // offset
+            PUSH1(0)                        // value
+
+            CREATE
         };
 
         let caller = Account {
