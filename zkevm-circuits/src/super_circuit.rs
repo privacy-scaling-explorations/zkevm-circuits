@@ -149,163 +149,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
-    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
-{
-    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let tx_table = TxTable::construct(meta);
-        let rw_table = RwTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
-        let bytecode_table = BytecodeTable::construct(meta);
-        let block_table = BlockTable::construct(meta);
-        let q_copy_table = meta.fixed_column();
-        let copy_table = CopyTable::construct(meta, q_copy_table);
-        let exp_table = ExpTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
-
-        let power_of_randomness = array::from_fn(|i| {
-            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
-        });
-
-        let challenges = Challenges::mock(
-            power_of_randomness[0].clone(),
-            power_of_randomness[0].clone(),
-        );
-
-        let keccak_circuit = KeccakCircuitConfig::new(
-            meta,
-            KeccakCircuitConfigArgs {
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-
-        let pi_circuit = PiCircuitConfig::new(
-            meta,
-            PiCircuitConfigArgs {
-                max_txs: MAX_TXS,
-                max_calldata: MAX_CALLDATA,
-                block_table: block_table.clone(),
-                tx_table: tx_table.clone(),
-            },
-        );
-        let tx_circuit = TxCircuitConfig::new(
-            meta,
-            TxCircuitConfigArgs {
-                tx_table: tx_table.clone(),
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-        let bytecode_circuit = BytecodeCircuitConfig::new(
-            meta,
-            BytecodeCircuitConfigArgs {
-                bytecode_table: bytecode_table.clone(),
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-        let copy_circuit = CopyCircuitConfig::new(
-            meta,
-            CopyCircuitConfigArgs {
-                tx_table: tx_table.clone(),
-                rw_table,
-                bytecode_table: bytecode_table.clone(),
-                copy_table,
-                q_enable: q_copy_table,
-                challenges: challenges.clone(),
-            },
-        );
-        let state_circuit = StateCircuitConfig::new(
-            meta,
-            StateCircuitConfigArgs {
-                rw_table,
-                mpt_table,
-                challenges,
-            },
-        );
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
-        let evm_circuit = EvmCircuitConfig::new(
-            meta,
-            EvmCircuitConfigArgs {
-                power_of_randomness,
-                tx_table,
-                rw_table,
-                bytecode_table,
-                block_table: block_table.clone(),
-                copy_table,
-                keccak_table,
-                exp_table,
-            },
-        );
-
-        Self::Config {
-            block_table,
-            mpt_table,
-            evm_circuit,
-            state_circuit,
-            copy_circuit,
-            tx_circuit,
-            bytecode_circuit,
-            keccak_circuit,
-            pi_circuit,
-            exp_circuit,
-        }
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let block = self.evm_circuit.block.as_ref().unwrap();
-        let challenges = Challenges::mock(
-            Value::known(block.randomness),
-            Value::known(block.randomness),
-        );
-        let rws = &self.state_circuit.rows;
-
-        config
-            .block_table
-            .load(&mut layouter, &block.context, block.randomness)?;
-
-        config.mpt_table.load(
-            &mut layouter,
-            &MptUpdates::mock_from(rws),
-            Value::known(block.randomness),
-        )?;
-
-        self.keccak_circuit
-            .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
-        self.bytecode_circuit.synthesize_sub(
-            &config.bytecode_circuit,
-            &challenges,
-            &mut layouter,
-        )?;
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
-        self.state_circuit
-            .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
-        self.copy_circuit
-            .synthesize_sub(&config.copy_circuit, &challenges, &mut layouter)?;
-        self.exp_circuit
-            .synthesize_sub(&config.exp_circuit, &challenges, &mut layouter)?;
-        self.evm_circuit
-            .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
-        self.pi_circuit
-            .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
-        self.evm_circuit.synthesize(config.evm_circuit, layouter)?;
-        Ok(())
-    }
-}
-
 impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
     SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
@@ -409,9 +252,10 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
 // - max_rws padding
 // - evm_rows padding
 
-#[cfg(test)]
-mod super_circuit_tests {
-    use super::*;
+/// super circuit test
+#[cfg(any(feature = "test", test))]
+pub mod test {
+    pub use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;
     use mock::{TestContext, MOCK_CHAIN_ID};
@@ -420,6 +264,166 @@ mod super_circuit_tests {
     use std::collections::HashMap;
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
+
+    impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
+        for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+    {
+        type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let tx_table = TxTable::construct(meta);
+            let rw_table = RwTable::construct(meta);
+            let mpt_table = MptTable::construct(meta);
+            let bytecode_table = BytecodeTable::construct(meta);
+            let block_table = BlockTable::construct(meta);
+            let q_copy_table = meta.fixed_column();
+            let copy_table = CopyTable::construct(meta, q_copy_table);
+            let exp_table = ExpTable::construct(meta);
+            let keccak_table = KeccakTable::construct(meta);
+
+            let power_of_randomness = array::from_fn(|i| {
+                Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
+            });
+
+            let challenges = Challenges::mock(
+                power_of_randomness[0].clone(),
+                power_of_randomness[0].clone(),
+            );
+
+            let keccak_circuit = KeccakCircuitConfig::new(
+                meta,
+                KeccakCircuitConfigArgs {
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges.clone(),
+                },
+            );
+
+            let pi_circuit = PiCircuitConfig::new(
+                meta,
+                PiCircuitConfigArgs {
+                    max_txs: MAX_TXS,
+                    max_calldata: MAX_CALLDATA,
+                    block_table: block_table.clone(),
+                    tx_table: tx_table.clone(),
+                },
+            );
+            let tx_circuit = TxCircuitConfig::new(
+                meta,
+                TxCircuitConfigArgs {
+                    tx_table: tx_table.clone(),
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges.clone(),
+                },
+            );
+            let bytecode_circuit = BytecodeCircuitConfig::new(
+                meta,
+                BytecodeCircuitConfigArgs {
+                    bytecode_table: bytecode_table.clone(),
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges.clone(),
+                },
+            );
+            let copy_circuit = CopyCircuitConfig::new(
+                meta,
+                CopyCircuitConfigArgs {
+                    tx_table: tx_table.clone(),
+                    rw_table,
+                    bytecode_table: bytecode_table.clone(),
+                    copy_table,
+                    q_enable: q_copy_table,
+                    challenges: challenges.clone(),
+                },
+            );
+            let state_circuit = StateCircuitConfig::new(
+                meta,
+                StateCircuitConfigArgs {
+                    rw_table,
+                    mpt_table,
+                    challenges,
+                },
+            );
+            let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
+            let evm_circuit = EvmCircuitConfig::new(
+                meta,
+                EvmCircuitConfigArgs {
+                    power_of_randomness,
+                    tx_table,
+                    rw_table,
+                    bytecode_table,
+                    block_table: block_table.clone(),
+                    copy_table,
+                    keccak_table,
+                    exp_table,
+                },
+            );
+
+            Self::Config {
+                block_table,
+                mpt_table,
+                evm_circuit,
+                state_circuit,
+                copy_circuit,
+                tx_circuit,
+                bytecode_circuit,
+                keccak_circuit,
+                pi_circuit,
+                exp_circuit,
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let block = self.evm_circuit.block.as_ref().unwrap();
+            let challenges = Challenges::mock(
+                Value::known(block.randomness),
+                Value::known(block.randomness),
+            );
+            let rws = &self.state_circuit.rows;
+
+            config
+                .block_table
+                .load(&mut layouter, &block.context, block.randomness)?;
+
+            config.mpt_table.load(
+                &mut layouter,
+                &MptUpdates::mock_from(rws),
+                Value::known(block.randomness),
+            )?;
+
+            self.keccak_circuit.synthesize_sub(
+                &config.keccak_circuit,
+                &challenges,
+                &mut layouter,
+            )?;
+            self.bytecode_circuit.synthesize_sub(
+                &config.bytecode_circuit,
+                &challenges,
+                &mut layouter,
+            )?;
+            self.tx_circuit
+                .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
+            self.state_circuit
+                .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
+            self.copy_circuit
+                .synthesize_sub(&config.copy_circuit, &challenges, &mut layouter)?;
+            self.exp_circuit
+                .synthesize_sub(&config.exp_circuit, &challenges, &mut layouter)?;
+            self.evm_circuit
+                .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
+            self.pi_circuit
+                .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
+            self.evm_circuit.synthesize(config.evm_circuit, layouter)?;
+            Ok(())
+        }
+    }
 
     #[test]
     fn super_circuit_degree() {
