@@ -349,8 +349,8 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 }
 
 #[cfg(any(feature = "test", test))]
-mod tests {
-    use super::*;
+pub mod test {
+    pub use super::*;
     use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},

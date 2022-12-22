@@ -17,7 +17,7 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use zkevm_circuits::tx_circuit::TxCircuit;
+    use zkevm_circuits::tx_circuit::test::TxCircuit;
 
     use crate::bench_params::DEGREE;
 

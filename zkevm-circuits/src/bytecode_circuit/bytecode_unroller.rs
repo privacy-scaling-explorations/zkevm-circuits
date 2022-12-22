@@ -761,8 +761,8 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
 }
 
 #[cfg(any(feature = "test", test))]
-mod tests {
-    use super::*;
+pub mod test {
+    pub use super::*;
     use crate::table::{BytecodeTable, KeccakTable};
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use eth_types::Bytecode;
@@ -840,8 +840,8 @@ mod tests {
         }
     }
 
-    /// Test bytecode circuit with unrolled bytecode
-    pub fn test_bytecode_circuit_unrolled<F: Field>(
+    // Test bytecode circuit with unrolled bytecode
+    fn test_bytecode_circuit_unrolled<F: Field>(
         k: u32,
         bytecodes: Vec<UnrolledBytecode<F>>,
         success: bool,
@@ -862,7 +862,7 @@ mod tests {
         F::from(123456)
     }
 
-    /// Verify unrolling code
+    // Verify unrolling code
     #[test]
     fn bytecode_unrolling() {
         let k = 10;

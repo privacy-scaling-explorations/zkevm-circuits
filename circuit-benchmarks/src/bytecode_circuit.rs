@@ -20,7 +20,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::bytecode_circuit::bytecode_unroller::{
-        unroll, BytecodeCircuit, UnrolledBytecode,
+        test::BytecodeCircuit, unroll, UnrolledBytecode,
     };
 
     #[cfg_attr(not(feature = "benches"), ignore)]

@@ -416,8 +416,10 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 }
 
+/// exp circuit test
 #[cfg(any(feature = "test", test))]
-mod tests {
+pub mod test {
+    pub use super::*;
     use bus_mapping::{circuit_input_builder::CircuitInputBuilder, evm::OpcodeId, mock::BlockData};
     use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
     use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
@@ -426,7 +428,6 @@ mod tests {
     use mock::TestContext;
 
     use crate::evm_circuit::witness::block_convert;
-    use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
     use crate::table::ExpTable;
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use crate::witness::Block;

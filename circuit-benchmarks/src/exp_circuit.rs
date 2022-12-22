@@ -24,7 +24,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
-    use zkevm_circuits::exp_circuit::ExpCircuit;
+    use zkevm_circuits::exp_circuit::test::ExpCircuit;
 
     use crate::bench_params::DEGREE;
 

@@ -2080,9 +2080,10 @@ fn multi_keccak<F: Field>(
     Ok(rows)
 }
 
+/// keccak test
 #[cfg(any(feature = "test", test))]
-mod tests {
-    use super::*;
+pub mod test {
+    pub use super::*;
     use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     impl<F: Field> Circuit<F> for KeccakCircuit<F> {

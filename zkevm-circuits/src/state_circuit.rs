@@ -5,7 +5,7 @@ mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
 #[cfg(any(feature = "test", test))]
-mod test;
+pub mod test;
 
 use crate::{
     evm_circuit::param::N_BYTES_WORD,

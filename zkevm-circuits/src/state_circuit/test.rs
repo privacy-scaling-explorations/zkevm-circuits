@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateCircuitConfig};
+pub use super::{StateCircuit, StateCircuitConfig};
 use crate::state_circuit::StateCircuitConfigArgs;
 use crate::table::{MptTable, RwTable};
 use crate::util::{Challenges, SubCircuitConfig};

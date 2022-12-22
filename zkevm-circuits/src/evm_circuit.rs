@@ -226,9 +226,10 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     }
 }
 
+/// evm circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
-    use super::*;
+    pub use super::*;
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuitConfig},
         exp_circuit::OFFSET_INCREMENT,
@@ -269,8 +270,8 @@ pub mod test {
         Word::from_big_endian(&rand_bytes_array::<32>())
     }
 
-    /// create fixed_table_tags needed given witness block
-    pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+    // create fixed_table_tags needed given witness block
+    fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
         let need_bitwise_lookup = block.txs.iter().any(|tx| {
             tx.steps.iter().any(|step| {
                 matches!(

@@ -23,7 +23,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::copy_circuit::CopyCircuit;
+    use zkevm_circuits::copy_circuit::test::CopyCircuit;
     use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
