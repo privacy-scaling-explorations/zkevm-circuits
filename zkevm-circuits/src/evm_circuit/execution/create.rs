@@ -13,9 +13,9 @@ use crate::{
                 Transition::{Any, Delta, To},
             },
             from_bytes,
-            math_gadget::ConstantDivisionGadget,
+            math_gadget::{ConstantDivisionGadget, IsZeroGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, rlc, select, CachedRegion, Cell, RandomLinearCombination, Word,
+            not, rlc, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -46,6 +46,10 @@ pub(crate) struct CreateGadget<F> {
 
     caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
     nonce: RandomLinearCombination<F, N_BYTES_U64>,
+    // TODO: combine these three and above into RlpU64Gadget
+    // most_significant_nonce_byte: Cell<F>,
+    // most_significant_nonce_byte_is_zero: IsZeroGadget<F>,
+    // most_significant_nonce_byte_selectors: [Cell<F>; N_BYTES_U64],
 
     callee_reversion_info: ReversionInfo<F>,
     callee_is_success: Cell<F>,
@@ -276,7 +280,25 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 (1 + 20 + 32 + 32).expr(),
             );
         });
-        // cb.condition(not::expr(is_create2.expr()), |cb| {()});
+
+        // let most_significant_nonce_byte_is_zero = IsZeroGadget::construct(cb);
+        // let most_significant_nonce_byte_selectors = [(); N_BYTES_U64].map(|()| cb.query_bool());
+        // cb.condition(most_significant_nonce_byte_selectors[0].expr(), |cb| {
+        //     cb.require_zero(
+        //         "caller nonce if highest_nonzero_nonce_byte is 0",
+        //         nonce.expr(),
+        //     );
+        //     cb.require_equal(
+        //         "is zoerasld;fkja;welkfja;sl",
+        //         most_significant_nonce_byte_index.expr(),
+        //         1.expr(),
+        //     )
+        // });
+        // let address_rlp_rlc =
+        //     0x94.expr() * cb.power_of_randomness()[20].clone() + caller_address.expr();
+        //
+        // // cb.condition(not::expr(is_create2.expr()), |cb| {
+        // // });
 
         let keccak_output = cb.query_word();
         cb.keccak_table_lookup(
@@ -319,6 +341,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             keccak_input,
             keccak_input_length,
             initialization_code_word_size,
+            // highest_nonzero_nonce_byte_selectors,
+            // highest_nonzero_nonce_byte_inverse,
         }
     }
 
@@ -515,8 +539,118 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         self.keccak_output
             .assign(region, offset, Some(keccak_output))?;
 
+        // let nonce_le_bytes = caller_nonce.to_le_bytes();
+        // let most_significant_nonce_byte_index =
+        //     (u64::from(u64::BITS + 1 - caller_nonce.leading_zeros()) + 7) / 8;
+        // for i in 0..N_BYTES_U64 {
+        //     self.most_significant_nonce_byte_selectors[i].assign(
+        //         region,
+        //         offset,
+        //         Value::known(
+        //             (u64::try_from(i).unwrap() == most_significant_nonce_byte_index)
+        //                 .to_scalar()
+        //                 .unwrap(),
+        //         ),
+        //     )?;
+        // }
+
         Ok(())
     }
+}
+
+struct RlpU64Gadget<F> {
+    bytes: [Cell<F>; N_BYTES_U64], // make this an RLC
+    is_most_significant_byte: [Cell<F>; N_BYTES_U64],
+    most_significant_byte_is_zero: IsZeroGadget<F>,
+}
+
+impl<F: Field> RlpU64Gadget<F> {
+    fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+        let bytes = cb.query_bytes();
+        let is_most_significant_byte = [(); N_BYTES_U64].map(|()| cb.query_bool());
+        let most_significant_byte = sum::expr(
+            bytes
+                .iter()
+                .zip(&is_most_significant_byte)
+                .map(|(byte, indicator)| byte.expr() * indicator.expr()),
+        );
+        let most_significant_byte_is_zero = IsZeroGadget::construct(cb, most_significant_byte);
+
+        cb.require_boolean(
+            "at most one of is_most_significant_byte is one",
+            sum::expr(&is_most_significant_byte),
+        );
+
+        let value = from_bytes::expr(&bytes);
+        cb.condition(most_significant_byte_is_zero.expr(), |cb| {
+            cb.require_zero(
+                "if most_significant_byte_is_zero is 0, value is 0",
+                value.clone(),
+            );
+        });
+        for i in 0..N_BYTES_U64 {
+            cb.condition(is_most_significant_byte[i].expr(), |cb| {
+                cb.require_equal(
+                    "most significant byte is non-zero",
+                    most_significant_byte_is_zero.expr(),
+                    0.expr(),
+                );
+                cb.require_equal(
+                    "higher bytes are 0",
+                    from_bytes::expr(&bytes[..i]),
+                    value.clone(),
+                );
+            });
+        }
+
+        Self {
+            bytes,
+            is_most_significant_byte,
+            most_significant_byte_is_zero,
+        }
+    }
+
+    fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: u64,
+    ) -> Result<(), Error> {
+        let bytes = value.to_le_bytes();
+        let most_significant_byte_index = bytes
+            .iter()
+            .rev()
+            .position(|byte| *byte != 0)
+            .map(|i| N_BYTES_U64 - i);
+        self.most_significant_byte_is_zero.assign(
+            region,
+            offset,
+            most_significant_byte_index
+                .map(|i| u64::from(bytes[i]).into())
+                .unwrap_or(F::zero()),
+        )?;
+        for i in 0..N_BYTES_U64 {
+            self.bytes[i].assign(region, offset, Value::known(u64::from(bytes[i]).into()))?;
+            self.is_most_significant_byte[i].assign(
+                region,
+                offset,
+                Value::known(
+                    (Some(i) == most_significant_byte_index)
+                        .to_scalar()
+                        .unwrap(),
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    // fn value(&self) -> Expression<F> {
+    //     from_bytes::expr(&self.bytes)
+    // }
+    //
+    // fn value_rlc(&self, cb: &ConstraintBuilder) -> Expression<F> {
+    //     rlc::expr(&self.bytes, cb.power_of_randomness())
+    // }
 }
 
 #[cfg(test)]
