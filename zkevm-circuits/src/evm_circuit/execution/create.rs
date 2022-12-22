@@ -25,7 +25,10 @@ use crate::{
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
 use ethers_core::utils::{keccak256, rlp};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 use keccak256::EMPTY_HASH_LE;
 use std::iter::once;
 
@@ -45,11 +48,7 @@ pub(crate) struct CreateGadget<F> {
     was_warm: Cell<F>,
 
     caller_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
-    nonce: RandomLinearCombination<F, N_BYTES_U64>,
-    // TODO: combine these three and above into RlpU64Gadget
-    // most_significant_nonce_byte: Cell<F>,
-    // most_significant_nonce_byte_is_zero: IsZeroGadget<F>,
-    // most_significant_nonce_byte_selectors: [Cell<F>; N_BYTES_U64],
+    nonce: RlpU64Gadget<F>,
 
     callee_reversion_info: ReversionInfo<F>,
     callee_is_success: Cell<F>,
@@ -153,12 +152,12 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             from_bytes::expr(&caller_address.cells),
         );
 
-        let nonce = cb.query_rlc();
+        let nonce = RlpU64Gadget::construct(cb);
         cb.account_write(
             from_bytes::expr(&caller_address.cells),
             AccountFieldTag::Nonce,
-            from_bytes::expr(&nonce.cells) + 1.expr(),
-            from_bytes::expr(&nonce.cells),
+            nonce.value() + 1.expr(),
+            nonce.value(),
             Some(&mut reversion_info),
         );
 
@@ -282,7 +281,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         });
 
         // let most_significant_nonce_byte_is_zero = IsZeroGadget::construct(cb);
-        // let most_significant_nonce_byte_selectors = [(); N_BYTES_U64].map(|()| cb.query_bool());
+        // let most_significant_nonce_byte_selectors = [(); N_BYTES_U64].map(|()|
+        // cb.query_bool());
         // cb.condition(most_significant_nonce_byte_selectors[0].expr(), |cb| {
         //     cb.require_zero(
         //         "caller nonce if highest_nonzero_nonce_byte is 0",
@@ -295,7 +295,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //     )
         // });
         // let address_rlp_rlc =
-        //     0x94.expr() * cb.power_of_randomness()[20].clone() + caller_address.expr();
+        //     0x94.expr() * cb.power_of_randomness()[20].clone() +
+        // caller_address.expr();
         //
         // // cb.condition(not::expr(is_create2.expr()), |cb| {
         // // });
@@ -440,8 +441,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             .account_value_pair()
             .1
             .low_u64();
-        self.nonce
-            .assign(region, offset, Some(caller_nonce.to_le_bytes()))?;
+        self.nonce.assign(region, offset, caller_nonce)?;
 
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [10, 11].map(|i| {
             block.rws[step.rw_indices[i + usize::from(is_create2) + copy_rw_increase]]
@@ -558,8 +558,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
     }
 }
 
+#[derive(Clone, Debug)]
 struct RlpU64Gadget<F> {
-    bytes: [Cell<F>; N_BYTES_U64], // make this an RLC
+    bytes: [Cell<F>; N_BYTES_U64],
     is_most_significant_byte: [Cell<F>; N_BYTES_U64],
     most_significant_byte_is_zero: IsZeroGadget<F>,
 }
@@ -584,7 +585,7 @@ impl<F: Field> RlpU64Gadget<F> {
         let value = from_bytes::expr(&bytes);
         cb.condition(most_significant_byte_is_zero.expr(), |cb| {
             cb.require_zero(
-                "if most_significant_byte_is_zero is 0, value is 0",
+                "if most significant byte is 0, value is 0",
                 value.clone(),
             );
         });
@@ -597,7 +598,7 @@ impl<F: Field> RlpU64Gadget<F> {
                 );
                 cb.require_equal(
                     "higher bytes are 0",
-                    from_bytes::expr(&bytes[..i]),
+                    from_bytes::expr(&bytes[..i + 1]),
                     value.clone(),
                 );
             });
@@ -616,12 +617,16 @@ impl<F: Field> RlpU64Gadget<F> {
         offset: usize,
         value: u64,
     ) -> Result<(), Error> {
+        dbg!(value);
+
         let bytes = value.to_le_bytes();
+        dbg!(bytes.clone());
         let most_significant_byte_index = bytes
             .iter()
             .rev()
             .position(|byte| *byte != 0)
-            .map(|i| N_BYTES_U64 - i);
+            .map(|i| N_BYTES_U64 - i - 1);
+        dbg!(most_significant_byte_index);
         self.most_significant_byte_is_zero.assign(
             region,
             offset,
@@ -644,13 +649,9 @@ impl<F: Field> RlpU64Gadget<F> {
         Ok(())
     }
 
-    // fn value(&self) -> Expression<F> {
-    //     from_bytes::expr(&self.bytes)
-    // }
-    //
-    // fn value_rlc(&self, cb: &ConstraintBuilder) -> Expression<F> {
-    //     rlc::expr(&self.bytes, cb.power_of_randomness())
-    // }
+    fn value(&self) -> Expression<F> {
+        from_bytes::expr(&self.bytes)
+    }
 }
 
 #[cfg(test)]
