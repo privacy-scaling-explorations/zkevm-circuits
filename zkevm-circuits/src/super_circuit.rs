@@ -261,7 +261,6 @@ pub mod test {
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use std::collections::HashMap;
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
 
@@ -439,6 +438,8 @@ pub mod test {
     #[ignore]
     #[test]
     fn serial_test_super_circuit() {
+        use std::collections::HashMap;
+
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();

@@ -821,8 +821,8 @@ pub mod test {
     }
 
     impl<F: Field> BytecodeCircuit<F> {
-        /// Verify that the selected bytecode fulfills the circuit
-        pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
+        // Verify that the selected bytecode fulfills the circuit
+        fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
             let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll(b.clone())).collect();
             Self::verify(k, unrolled, true);
         }
