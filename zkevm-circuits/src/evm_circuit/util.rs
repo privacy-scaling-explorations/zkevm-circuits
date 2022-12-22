@@ -436,7 +436,6 @@ pub(crate) mod dot {
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(a: &[E], b: &[E]) -> Expression<F> {
-        debug_assert!(a.len() == b.len());
         a.iter()
             .zip(b.iter())
             .fold(0.expr(), |acc, (a, b)| acc + a.expr() * b.expr())

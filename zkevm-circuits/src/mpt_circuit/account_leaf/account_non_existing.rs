@@ -1,3 +1,4 @@
+use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -7,17 +8,22 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
+    constraints,
+    evm_circuit::util::{dot, rlc},
     mpt_circuit::columns::{AccumulatorCols, MainCols},
-    mpt_circuit::helpers::range_lookups,
-    mpt_circuit::param::{
-        ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        RLP_NUM,
-    },
+    mpt_circuit::helpers::{extend_rand, range_lookups},
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
         helpers::key_len_lookup,
         param::{ACCOUNT_LEAF_KEY_C_IND, IS_NON_EXISTING_ACCOUNT_POS},
         FixedTableTag, MPTConfig,
+    },
+    mpt_circuit::{
+        helpers::BaseConstraintBuilder,
+        param::{
+            ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS,
+            IS_BRANCH_C1_POS, RLP_NUM,
+        },
     },
 };
 
@@ -103,7 +109,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         accs: AccumulatorCols<F>,
         sel1: Column<Advice>, /* should be the same as sel2 as both parallel proofs are the same
                                * for non_existing_account_proof */
-        power_of_randomness: [Expression<F>; HASH_WIDTH],
+        r: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         address_rlc: Column<Advice>,
         check_zeros: bool,
@@ -116,284 +122,140 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         // key rlc is in the first branch node
         let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
+        let mut cb = BaseConstraintBuilder::default();
+
         let add_wrong_leaf_constraints =
-            |meta: &mut VirtualCells<F>,
-             constraints: &mut Vec<(&str, Expression<F>)>,
-             q_enable: Expression<F>,
-             c_rlp1_cur: Expression<F>,
-             c_rlp2_cur: Expression<F>,
-             correct_level: Expression<F>,
-             is_wrong_leaf: Expression<F>| {
-                let sum = meta.query_advice(accs.key.rlc, Rotation::cur());
-                let sum_prev = meta.query_advice(accs.key.mult, Rotation::cur());
-                let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+            |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>| {
+                constraints! {[meta, cb], {
+                    let sum = meta.query_advice(accs.key.rlc, Rotation::cur());
+                    let sum_prev = meta.query_advice(accs.key.mult, Rotation::cur());
+                    let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
 
-                let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation::prev());
-                let c_rlp2_prev = meta.query_advice(c_main.rlp2, Rotation::prev());
 
-                let mut sum_check = Expression::Constant(F::zero());
-                let mut sum_prev_check = Expression::Constant(F::zero());
-                let mut mult = power_of_randomness[0].clone();
-                for ind in 1..HASH_WIDTH {
-                    sum_check = sum_check
-                        + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
-                    sum_prev_check = sum_prev_check
-                        + meta.query_advice(s_main.bytes[ind], Rotation::prev()) * mult.clone();
-                    mult = mult * power_of_randomness[0].clone();
-                }
-                sum_check = sum_check + c_rlp1_cur * mult.clone();
-                sum_prev_check = sum_prev_check + c_rlp1_prev * mult.clone();
-                mult = mult * power_of_randomness[0].clone();
-                sum_check = sum_check + c_rlp2_cur * mult.clone();
-                sum_prev_check = sum_prev_check + c_rlp2_prev * mult;
+                    let sum_prev_check = dot::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().map(|&byte| a!(byte, -1)).collect::<Vec<_>>(),
+                        &extend_rand(&r),
+                    );
 
-                /*
-                We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check whether the computed
-                value is the same as the one stored in `accs.key.mult` column.
-                */
-                constraints.push((
-                    "Wrong leaf sum check",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
-                        * (sum.clone() - sum_check),
-                ));
+                    // We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check whether the computed
+                    // value is the same as the one stored in `accs.key.mult` column.
+                    let sum_check = dot::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                        &extend_rand(&r),
+                    );
+                    require!(sum => sum_check);
 
-                /*
-                We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check whether the computed
-                value is the same as the one stored in `accs.key.rlc` column.
-                */
-                constraints.push((
-                    "Wrong leaf sum_prev check",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
-                        * (sum_prev.clone() - sum_prev_check),
-                ));
+                    // We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check whether the computed
+                    // value is the same as the one stored in `accs.key.rlc` column.
+                    require!(sum_prev => sum_prev_check);
 
-                /*
-                The address in the ACCOUNT_LEAF_KEY row and the address in the ACCOUNT_NON_EXISTING row
-                are different.
-                */
-                constraints.push((
-                    "Address of a leaf is different than address being inquired (corresponding to address_rlc)",
-                    q_enable
-                        * correct_level
-                        * is_wrong_leaf
-                        * (one.clone() - (sum - sum_prev) * diff_inv),
-                ));
+                    // TODO(Brecht): what?
+                    // The address in the ACCOUNT_LEAF_KEY row and the address in the ACCOUNT_NON_EXISTING row
+                    // are different.
+                    require!((sum - sum_prev) * diff_inv => 1);
+                }}
             };
 
-        /*
-        Checks that account_non_existing_row contains the nibbles that give address_rlc (after considering
-        modified_node in branches/extension nodes above).
-        Note: currently, for non_existing_account proof S and C proofs are the same, thus there is never
-        a placeholder branch.
-        */
-        meta.create_gate(
-            "Non existing account proof leaf address RLC (leaf not in first level, branch not placeholder)",
-            |meta| {
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
+        // Checks that account_non_existing_row contains the nibbles that give
+        // address_rlc (after considering modified_node in branches/extension
+        // nodes above). Note: currently, for non_existing_account proof S and C
+        // proofs are the same, thus there is never a placeholder branch.
+        meta.create_gate("Non existing account proof",|meta| {
+        constraints!{[meta, cb], {
+            let q_enable = q_enable(meta);
+            let is_leaf_not_in_first_level = a!(not_first_level);
 
-                let is_leaf_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
+            // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
+            // 1. A leaf is returned that is not at the required address (wrong leaf).
+            // 2. A branch is returned as the last element of getProof and there is nil object at address position. Placeholder account leaf is added in this case.
+            let is_wrong_leaf = a!(s_main.rlp1);
+            // is_wrong_leaf is checked to be bool in `account_leaf_nonce_balance.rs` (q_enable in this chip
+            // is true only when non_existing_account_proof).
 
-                // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
-                // 1. A leaf is returned that is not at the required address (wrong leaf).
-                // 2. A branch is returned as the last element of getProof and there is nil object at address position. Placeholder account leaf is added in this case.
-                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-                // is_wrong_leaf is checked to be bool in `account_leaf_nonce_balance.rs` (q_enable in this chip
-                // is true only when non_existing_account_proof).
+            /* Non existing account proof leaf address RLC (leaf not in first level, branch not placeholder) */
+            ifx!{q_enable => {
+                ifx!{is_leaf_not_in_first_level.expr() => {
+                    let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
+                    let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
 
-                let key_rlc_acc_start =
-                    meta.query_advice(accs.key.rlc, Rotation(rot_into_first_branch_child));
-                let key_mult_start =
-                    meta.query_advice(accs.key.mult, Rotation(rot_into_first_branch_child));
+                    // Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
+                    // with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
+                    // The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
+                    // set of nibbles is the same) where we are proving there is no account.
+                    // If there would be an account at the specified address, it would be positioned in the branch where
+                    // the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
+                    // Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
+                    // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
+                    // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
+                    // is different).
+                    ifx!{is_wrong_leaf => {
+                        // sel1, sel2 is in init branch
+                        let is_c16 = a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot_into_first_branch_child - 1);
+                        let is_c1 = a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot_into_first_branch_child - 1);
 
-                // sel1, sel2 is in init branch
-                let c16 = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                    Rotation(rot_into_first_branch_child - 1),
-                );
-                let c1 = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                    Rotation(rot_into_first_branch_child - 1),
-                );
+                        // If c16 = 1, we have nibble+48 in s_main.bytes[0].
+                        // If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
+                        ifx!{is_c1 => {
+                            require!(a!(s_main.bytes[1]) => 32);
+                        }}
 
-                let c48 = Expression::Constant(F::from(48));
+                        // set to key_mult_start * r if is_c16, else key_mult_start
+                        let key_mult = key_mult_start.expr() * selectx!{is_c16 => { r[0].expr() } elsex { 1 }};
+                        // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
+                        let key_rlc_acc = key_rlc_acc_start + rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                                (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                            &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                        );
+                        require!(key_rlc_acc => a!(address_rlc));
 
-                // If c16 = 1, we have nibble+48 in s_main.bytes[0].
-                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                let mut key_rlc_acc = key_rlc_acc_start
-                    + (s_bytes1.clone() - c48) * key_mult_start.clone() * c16.clone();
-                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * c16;
-                key_mult = key_mult + key_mult_start * c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                        // General wrong leaf constraints
+                        add_wrong_leaf_constraints(meta, &mut cb);
+                    } elsex {
+                        // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
+                        // Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
+                        // at `modified_node` position. We check that in case of no wrong leaf in
+                        // the non-existing-account proof, `is_nil_object` is 1.
+                        require!(a!(sel1, rot_into_first_branch_child) => true);
+                    }}
+                } elsex {
+                    ifx!{is_wrong_leaf => {
+                        /* Non existing account proof leaf address RLC (leaf in first level) */
+                        // Ensuring that the account does not exist when there is only one account in the state trie.
+                        // Note 1: The hash of the only account is checked to be the state root in `account_leaf_storage_codehash.rs`.
+                        // Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
+                        // above. That is because when there is a branch (with nil object) in the first level,
+                        // it automatically means the account leaf is not in the first level.
 
-                /*
-                If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
-                */
-                constraints.push((
-                    "Account leaf key acc s_bytes1",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * is_wrong_leaf.clone()
-                        * (s_bytes1 - c32.clone())
-                        * c1,
-                ));
+                        // Note: when leaf is in the first level, the key stored in the leaf is always
+                        // of length 33 - the first byte being 32 (when after branch,
+                        // the information whether there the key is odd or even
+                        // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
+                        require!(a!(s_main.bytes[1]) => 32);
 
-                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + s_bytes2 * key_mult.clone();
+                        // RLC check
+                        let rlc = rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                            &r,
+                        );
+                        require!(a!(address_rlc) => rlc);
 
-                for ind in 3..HASH_WIDTH {
-                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
-                }
+                        // General wrong leaf constraints
+                        add_wrong_leaf_constraints(meta, &mut cb);
+                    }}
+                }}
 
-                let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
-                let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * key_mult.clone() * power_of_randomness[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * key_mult * power_of_randomness[30].clone();
+                ifx!{is_wrong_leaf => {
+                    /* Address of wrong leaf and the enquired address are of the same length */
+                    // This constraint is to prevent the attacker to prove that some account does not exist by setting
+                    // some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
+                    require!(a!(s_main.bytes[0]) => a!(s_main.bytes[0], -1));
+                }}
+            }}
+            }}
 
-                let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
-
-                /*
-                Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
-                with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
-
-                The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
-                set of nibbles is the same) where we are proving there is no account.
-                If there would be an account at the specified address, it would be positioned in the branch where
-                the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
-                Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
-                There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
-                and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
-                is different).
-                */
-                constraints.push((
-                    "Account address RLC",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_level.clone())
-                        * is_wrong_leaf.clone()
-                        * (key_rlc_acc - address_rlc),
-                ));
-
-                add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), c_rlp1_cur,
-                    c_rlp2_cur, one.clone() - is_leaf_in_first_level.clone(), is_wrong_leaf.clone());
-
-                let is_nil_object = meta.query_advice(sel1, Rotation(rot_into_first_branch_child));
-
-                /*
-                In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
-                at `modified_node` position. We check that in case of no wrong leaf in
-                the non-existing-account proof, `is_nil_object` is 1.
-                */
-                constraints.push((
-                    "Nil object in parent branch",
-                    q_enable
-                        * (one.clone() - is_leaf_in_first_level)
-                        * (one.clone() - is_wrong_leaf)
-                        * (one.clone() - is_nil_object),
-                ));
-
-                constraints
-            },
-        );
-
-        /*
-        Ensuring that the account does not exist when there is only one account in the state trie.
-        Note 1: The hash of the only account is checked to be the state root in `account_leaf_storage_codehash.rs`.
-        Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
-        above. That is because when there is a branch (with nil object) in the first level,
-        it automatically means the account leaf is not in the first level.
-        */
-        meta.create_gate(
-            "Non existing account proof leaf address RLC (leaf in first level)",
-            |meta| {
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
-
-                let is_leaf_in_first_level =
-                    one.clone() - meta.query_advice(not_first_level, Rotation::cur());
-
-                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-
-                // Note: when leaf is in the first level, the key stored in the leaf is always
-                // of length 33 - the first byte being 32 (when after branch,
-                // the information whether there the key is odd or even
-                // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
-
-                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                let mut key_rlc_acc = Expression::Constant(F::zero());
-
-                constraints.push((
-                    "Account leaf key acc s_advice1",
-                    q_enable.clone()
-                        * (s_bytes1 - c32)
-                        * is_wrong_leaf.clone()
-                        * is_leaf_in_first_level.clone(),
-                ));
-
-                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-                key_rlc_acc = key_rlc_acc + s_bytes2;
-
-                for ind in 3..HASH_WIDTH {
-                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc = key_rlc_acc + s * power_of_randomness[ind - 3].clone();
-                }
-
-                let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
-                let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc = key_rlc_acc + c_rlp1_cur.clone() * power_of_randomness[29].clone();
-                key_rlc_acc = key_rlc_acc + c_rlp2_cur.clone() * power_of_randomness[30].clone();
-
-                let address_rlc = meta.query_advice(address_rlc, Rotation::cur());
-
-                constraints.push((
-                    "Computed account address RLC same as value in address_rlc column",
-                    q_enable.clone()
-                        * is_leaf_in_first_level.clone()
-                        * is_wrong_leaf.clone()
-                        * (key_rlc_acc - address_rlc),
-                ));
-
-                add_wrong_leaf_constraints(
-                    meta,
-                    &mut constraints,
-                    q_enable,
-                    c_rlp1_cur,
-                    c_rlp2_cur,
-                    is_leaf_in_first_level,
-                    is_wrong_leaf,
-                );
-
-                constraints
-            },
-        );
-
-        meta.create_gate(
-            "Address of wrong leaf and the enquired address are of the same length",
-            |meta| {
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
-
-                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-                let s_bytes0_prev = meta.query_advice(s_main.bytes[0], Rotation::prev());
-                let s_bytes0_cur = meta.query_advice(s_main.bytes[0], Rotation::cur());
-
-                /*
-                This constraint is to prevent the attacker to prove that some account does not exist by setting
-                some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
-                */
-                constraints.push((
-                    "The number of nibbles in the wrong leaf and the enquired address are the same",
-                    q_enable * is_wrong_leaf * (s_bytes0_cur - s_bytes0_prev),
-                ));
-
-                constraints
-            },
-        );
+            cb.gate(1.expr())
+        });
 
         /*
         Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
