@@ -55,6 +55,7 @@ mod error_oog_constant;
 mod error_oog_static_memory;
 mod exp;
 mod extcodehash;
+mod extcodesize;
 mod gas;
 mod gasprice;
 mod is_zero;
@@ -114,6 +115,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
+use extcodesize::ExtcodesizeGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
 use is_zero::IsZeroGadget;
@@ -205,6 +207,7 @@ pub(crate) struct ExecutionConfig<F> {
     dup_gadget: DupGadget<F>,
     exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
+    extcodesize_gadget: ExtcodesizeGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
     iszero_gadget: IsZeroGadget<F>,
@@ -228,7 +231,6 @@ pub(crate) struct ExecutionConfig<F> {
     shl_shr_gadget: ShlShrGadget<F>,
     balance_gadget: DummyGadget<F, 1, 1, { ExecutionState::BALANCE }>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
-    extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
@@ -441,6 +443,7 @@ impl<F: Field> ExecutionConfig<F> {
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
+            extcodesize_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             gasprice_gadget: configure_gadget!(),
             iszero_gadget: configure_gadget!(),
@@ -466,7 +469,6 @@ impl<F: Field> ExecutionConfig<F> {
             blockhash_gadget: configure_gadget!(),
             exp_gadget: configure_gadget!(),
             sar_gadget: configure_gadget!(),
-            extcodesize_gadget: configure_gadget!(),
             extcodecopy_gadget: configure_gadget!(),
             returndatasize_gadget: configure_gadget!(),
             returndatacopy_gadget: configure_gadget!(),
@@ -987,6 +989,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
+            ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
             ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
@@ -1016,7 +1019,6 @@ impl<F: Field> ExecutionConfig<F> {
             // dummy gadgets
             ExecutionState::BALANCE => assign_exec_step!(self.balance_gadget),
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
-            ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
