@@ -482,39 +482,28 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         )?;
 
-        if is_create2 {
-            self.keccak_input.assign(
-                region,
-                offset,
-                Value::known(rlc::value(
-                    once(&0xffu8)
-                        .chain(&call.callee_address.to_fixed_bytes()) // also don't need to be reversed....
-                        .chain(salt.to_be_bytes().iter())
-                        .chain(&keccak256(&values)) // don't need to reverse here???
-                        .rev(),
-                    block.randomness,
-                )),
-            )?;
-            self.keccak_input_length.assign(
-                region,
-                offset,
-                Value::known((1 + 20 + 32 + 32).into()),
-            )?;
-        } else {
-            self.keccak_input
-                .assign(region, offset, Value::known(0.into()))?;
-            self.keccak_input_length
-                .assign(region, offset, Value::known(2.into()))?;
-        }
-
-        let mut keccak_output = keccak256(
-            &once(0xffu8)
-                .chain(call.callee_address.to_fixed_bytes()) // also don't need to be reversed....
+        let keccak_input: Vec<u8> = if is_create2 {
+            once(0xffu8)
+                .chain(call.callee_address.to_fixed_bytes())
                 .chain(salt.to_be_bytes())
                 .chain(keccak256(&values))
-                .collect::<Vec<_>>(),
-        );
+                .collect()
+        } else {
+            panic!()
+        };
+        let mut keccak_output = keccak256(&keccak_input);
         keccak_output.reverse();
+
+        self.keccak_input.assign(
+            region,
+            offset,
+            Value::known(rlc::value(keccak_input.iter().rev(), block.randomness)),
+        )?;
+        self.keccak_input_length.assign(
+            region,
+            offset,
+            Value::known(keccak_input.len().to_scalar().unwrap()),
+        )?;
         self.keccak_output
             .assign(region, offset, Some(keccak_output))?;
 
