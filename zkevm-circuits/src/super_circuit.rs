@@ -262,7 +262,7 @@ pub mod test {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use eth_types::{address, bytecode, Word};
 
     impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
         for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
@@ -457,7 +457,7 @@ pub mod test {
         let mut wallets = HashMap::new();
         wallets.insert(wallet_a.address(), wallet_a);
 
-        let mut block: GethData = TestContext::<2, 1>::new(
+        let mut block = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0]

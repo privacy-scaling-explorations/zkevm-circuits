@@ -457,8 +457,8 @@ pub mod test {
         }
     }
 
-    /// Test exponentiation circuit with the provided block witness
-    pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+    // Test exponentiation circuit with the provided block witness
+    fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let circuit = ExpCircuit::<F>::new(block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify()
