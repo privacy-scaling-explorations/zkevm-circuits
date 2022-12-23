@@ -795,6 +795,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation::cur())
             },
             inter_start_root,
+            inter_final_root,
             position_cols.clone(),
             account_leaf.is_in_added_branch,
             branch.clone(),
@@ -821,6 +822,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::cur())
             },
             inter_start_root,
+            inter_final_root,
             position_cols.clone(),
             account_leaf.is_in_added_branch,
             branch.clone(),

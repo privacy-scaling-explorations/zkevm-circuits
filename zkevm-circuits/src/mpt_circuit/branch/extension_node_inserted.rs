@@ -101,7 +101,8 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Clone,
-        inter_root: Column<Advice>,
+        inter_start_root: Column<Advice>,
+        inter_final_root: Column<Advice>,
         position_cols: PositionCols<F>,
         is_account_leaf_in_added_branch: Column<Advice>,
         branch: BranchCols<F>,
@@ -179,7 +180,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         meta.query_advice(position_cols.not_first_level, Rotation(rot_into_branch));
 
                     let acc_c = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-                    let root = meta.query_advice(inter_root, Rotation::cur());
+
+                    let is_c_inserted = get_is_inserted_extension_node(
+                        meta, c_main.rlp1, c_main.rlp2, rot_into_branch - BRANCH_ROWS_NUM + 1, true);
+                    let root =
+                        meta.query_advice(inter_start_root, Rotation::cur()) * is_c_inserted.clone()
+                        + meta.query_advice(inter_final_root, Rotation::cur()) * (one.clone() - is_c_inserted);
 
                     let selector = q_enable * (one.clone() - not_first_level);
 
@@ -285,10 +291,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
         branch child at `modified_node` position.
 
-        For `is_long` the branch we rotate into is the branch above the last branch (branch before extension node was inserted). This is to
+        TODO: fix the description below, it depends on `is_c_inserted`
+
+        For `is_long` the branch we rotate into the branch above the last branch (branch before extension node was inserted). This is to
         ensure that we know the extension node that existed before the insertion of the new extension node.
 
-        For `!is_long` the branch we rotate into is the last branch (the branch of the inserted extension node). This is to ensure that
+        For `!is_long` the branch we rotate into the last branch (the branch of the inserted extension node). This is to ensure that
         the existing extension node drifted into a branch of the inserted extension node.
 
         Note that the constraints for existing and drifted extension node being different only in the extension node nibbles are written separately.
@@ -298,7 +306,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let mut rot_into_last_leaf_row = - LONG_EXT_NODE_S - 1;
-            if !is_long{
+            if !is_long {
                 rot_into_last_leaf_row = - SHORT_EXT_NODE_S - 1;
             }
 
@@ -319,9 +327,9 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_storage, true);
             let is_c_inserted_ext_node_account = get_is_inserted_extension_node(
                 meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init_account, true);
-            
+             
             /*
-            Placeholder branch stores in `mod_node_hash_rlc` the hash of the drifted extension node.
+            Note: Placeholder branch stores in `mod_node_hash_rlc` the hash of the drifted extension node.
             */
 
             // Rotation into a branch above the last branch:
@@ -332,6 +340,16 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 rot_into_branch_storage = rot_into_branch_init_storage + 1;
                 rot_into_branch_account = rot_into_branch_init_account + 1;
             }
+
+            /*
+            TODO
+
+            When `is_c_inserted`, both (long and short) extension nodes are in the branch above
+            the leaf. When `(1 - is_c_inserted)`, the short extension node is in the branch above the leaf,
+            however, the long extension node is in the branch one level above.
+
+            Note that short extension node is checked to be at `drifted_pos` (IS IT?)
+            */
 
             let mod_node_hash_rlc_cur =
                 is_account_proof.clone() *
