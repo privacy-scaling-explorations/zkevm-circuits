@@ -298,8 +298,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //     0x94.expr() * cb.power_of_randomness()[20].clone() +
         // caller_address.expr();
         //
-        // // cb.condition(not::expr(is_create2.expr()), |cb| {
-        // // });
+        cb.condition(not::expr(is_create2.expr()), |cb| {
+            cb.require_equal(
+                "23452345",
+                keccak_input_length.expr(),
+                (1 + 20).expr() + nonce.rlp_length(),
+            );
+        });
 
         let keccak_output = cb.query_word();
         cb.keccak_table_lookup(
@@ -342,8 +347,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             keccak_input,
             keccak_input_length,
             initialization_code_word_size,
-            // highest_nonzero_nonce_byte_selectors,
-            // highest_nonzero_nonce_byte_inverse,
         }
     }
 
@@ -651,7 +654,15 @@ impl<F: Field> RlpU64Gadget<F> {
         from_bytes::expr(&self.bytes.cells)
     }
 
-    // fn rlp_rlc(&self) -
+    fn rlp_length(&self) -> Expression<F> {
+        1.expr()
+            + sum::expr(
+                self.is_most_significant_byte
+                    .iter()
+                    .enumerate()
+                    .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
+            )
+    }
 }
 
 #[cfg(test)]
