@@ -35,7 +35,7 @@ libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
 rand_chacha = "0.3"
-snark-verifier = { git = "https://github.com/han0110/plonk-verifier.git", branch = "feature/restructure", default-features = false, features = ["loader_halo2", "system_halo2"] }
+snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2022_12_23", default-features = false, features = ["loader_halo2", "system_halo2"] }
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
