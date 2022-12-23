@@ -115,6 +115,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
+        let callee_code_hash = call.code_hash;
+        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
+
         match call.kind {
             CallKind::Call => {
                 // Transfer value only for CALL opcode.
@@ -141,8 +144,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             _ => (),
         }
 
-        let callee_code_hash = call.code_hash;
-        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
         if callee_exists {
             let callee_code_hash_word = callee_code_hash.to_word();
             state.account_read(
