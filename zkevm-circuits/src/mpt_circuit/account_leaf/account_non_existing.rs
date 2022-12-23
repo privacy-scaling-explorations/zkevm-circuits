@@ -114,11 +114,6 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         address_rlc: Column<Advice>,
         check_zeros: bool,
     ) -> Self {
-        let config = AccountNonExistingConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::one());
-        let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
         let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
@@ -127,10 +122,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>| {
                 constraints! {[meta, cb], {
-                    let sum = meta.query_advice(accs.key.rlc, Rotation::cur());
-                    let sum_prev = meta.query_advice(accs.key.mult, Rotation::cur());
-                    let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
-
+                    let sum = a!(accs.key.rlc);
+                    let sum_prev = a!(accs.key.mult);
+                    let diff_inv = a!(accs.acc_s.rlc);
 
                     let sum_prev_check = dot::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().map(|&byte| a!(byte, -1)).collect::<Vec<_>>(),
@@ -324,7 +318,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             fixed_table,
         );
 
-        config
+        AccountNonExistingConfig {
+            _marker: PhantomData,
+        }
     }
 
     pub fn assign(

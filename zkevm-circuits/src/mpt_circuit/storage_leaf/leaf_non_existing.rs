@@ -1,3 +1,4 @@
+use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -7,16 +8,19 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
+    constraints,
+    evm_circuit::util::{dot, rlc},
     mpt_circuit::columns::{AccumulatorCols, MainCols},
-    mpt_circuit::helpers::range_lookups,
-    mpt_circuit::param::{
-        BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM,
-    },
+    mpt_circuit::helpers::{extend_rand, range_lookups},
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
         helpers::key_len_lookup,
         param::{IS_NON_EXISTING_STORAGE_POS, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND, S_START},
         FixedTableTag, MPTConfig, ProofValues,
+    },
+    mpt_circuit::{
+        helpers::BaseConstraintBuilder,
+        param::{BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM},
     },
 };
 
@@ -68,472 +72,224 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                                * for non_existing_storage_proof, but we use C for non-existing
                                * storage */
         is_account_leaf_in_added_branch: Column<Advice>,
-        power_of_randomness: [Expression<F>; HASH_WIDTH],
+        r: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
         check_zeros: bool,
     ) -> Self {
-        let config = StorageNonExistingConfig {
-            _marker: PhantomData,
-        };
-        let one = Expression::Constant(F::one());
-        let c32 = Expression::Constant(F::from(32));
         // key rlc is in the first branch node
         let rot_into_first_branch_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
-        let add_wrong_leaf_constraints =
-            |meta: &mut VirtualCells<F>,
-             constraints: &mut Vec<(&str, Expression<F>)>,
-             q_enable: Expression<F>,
-             is_short: Expression<F>,
-             c_rlp1_cur: Expression<F>,
-             c_rlp2_cur: Expression<F>,
-             correct_level: Expression<F>,
-             is_wrong_leaf: Expression<F>| {
-                let sum = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
-                let sum_prev = meta.query_advice(accs.acc_c.mult, Rotation::cur());
-                let diff_inv = meta.query_advice(accs.acc_s.rlc, Rotation::cur());
+        let mut cb = BaseConstraintBuilder::default();
+
+        let add_wrong_leaf_constraints = |meta: &mut VirtualCells<F>,
+                                          cb: &mut BaseConstraintBuilder<F>,
+                                          is_short: bool| {
+            constraints! {[meta, cb], {
+                let sum = a!(accs.acc_c.rlc);
+                let sum_prev = a!(accs.acc_c.mult);
+                let diff_inv = a!(accs.acc_s.rlc);
 
                 let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
 
-                let c_rlp1_prev = meta.query_advice(c_main.rlp1, Rotation(rot));
-                let c_rlp2_prev = meta.query_advice(c_main.rlp2, Rotation(rot));
+                let start_idx = if is_short {2} else {3};
+                let end_idx = start_idx + 33;
 
-                let mut sum_check_short = Expression::Constant(F::zero());
-                let mut sum_prev_check_short = Expression::Constant(F::zero());
-                let mut mult = power_of_randomness[0].clone();
-                for ind in 0..HASH_WIDTH {
-                    sum_check_short = sum_check_short
-                        + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
-                    sum_prev_check_short = sum_prev_check_short
-                        + meta.query_advice(s_main.bytes[ind], Rotation(rot)) * mult.clone();
-                    mult = mult * power_of_randomness[0].clone();
-                }
-                sum_check_short = sum_check_short + c_rlp1_cur.clone() * mult.clone();
-                sum_prev_check_short = sum_prev_check_short + c_rlp1_prev.clone() * mult;
-
-                /*
-                We compute the RLC of the key bytes in the STORAGE_NON_EXISTING row. We check whether the computed
-                value is the same as the one stored in `accs.acc_c.rlc` column.
-                */
-                constraints.push((
-                    "Wrong leaf sum check (short)",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
-                        * is_short.clone()
-                        * (sum.clone() - sum_check_short),
-                ));
-
-                /*
-                We compute the RLC of the key bytes in the STORAGE_LEAF_KEY row. We check whether the computed
-                value is the same as the one stored in `accs.acc_c.mult` column.
-                */
-                constraints.push((
-                    "Wrong leaf sum_prev check (short)",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
-                        * is_short.clone()
-                        * (sum_prev.clone() - sum_prev_check_short),
-                ));
-
-                let mut sum_check_long = Expression::Constant(F::zero());
-                let mut sum_prev_check_long = Expression::Constant(F::zero());
-                let mut mult = power_of_randomness[0].clone();
-                // When long, the key starts with `s_main.bytes[1]`.
-                for ind in 1..HASH_WIDTH {
-                    sum_check_long = sum_check_long
-                        + meta.query_advice(s_main.bytes[ind], Rotation::cur()) * mult.clone();
-                    sum_prev_check_long = sum_prev_check_long
-                        + meta.query_advice(s_main.bytes[ind], Rotation(rot)) * mult.clone();
-                    mult = mult * power_of_randomness[0].clone();
-                }
-                sum_check_long = sum_check_long + c_rlp1_cur * mult.clone();
-                sum_prev_check_long = sum_prev_check_long + c_rlp1_prev * mult.clone();
-                mult = mult * power_of_randomness[0].clone();
-                sum_check_long = sum_check_long + c_rlp2_cur * mult.clone();
-                sum_prev_check_long = sum_prev_check_long + c_rlp2_prev * mult;
-
-                /*
-                We compute the RLC of the key bytes in the STORAGE_NON_EXISTING row. We check whether the computed
-                value is the same as the one stored in `accs.acc_c.rlc` column.
-                */
-                constraints.push((
-                    "Wrong leaf sum check (long)",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
-                        * (one.clone() - is_short.clone())
-                        * (sum.clone() - sum_check_long),
-                ));
-
-                /*
-                We compute the RLC of the key bytes in the STORAGE_LEAF_KEY row. We check whether the computed
-                value is the same as the one stored in `accs.acc_c.mult` column.
-                */
-                constraints.push((
-                    "Wrong leaf sum_prev check (long)",
-                    q_enable.clone()
-                        * correct_level.clone()
-                        * is_wrong_leaf.clone()
-                        * (one.clone() - is_short)
-                        * (sum_prev.clone() - sum_prev_check_long),
-                ));
-
-                /*
-                The key in the LEAF_KEY row and the key in the LEAF_NON_EXISTING row
-                are different.
-                */
-                constraints.push((
-                    "Key of a leaf is different than key being inquired",
-                    q_enable
-                        * correct_level
-                        * is_wrong_leaf
-                        * (one.clone() - (sum - sum_prev) * diff_inv),
-                ));
-            };
-
-        /*
-        Checks that storage_non_existing_row contains the nibbles that give key_rlc (after considering
-        modified_node in branches/extension nodes above).
-        Note: currently, for non_existing_storage proof S and C proofs are the same, thus there is never
-        a placeholder branch.
-        */
-        meta.create_gate(
-            "Non existing storage proof leaf key RLC (leaf not in first level, branch not placeholder)",
-            |meta| {
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
-
-                // Check if there is an account above the leaf.
-                let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
-                let is_leaf_in_first_storage_level = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_last_account_row),
+                let sum_prev_check = dot::expr(
+                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx].iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
+                    &extend_rand(&r),
                 );
 
-                let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-                let is_long = flag1.clone() * (one.clone() - flag2.clone());
-                let is_short = (one.clone() - flag1) * flag2;
+                // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row. We check whether the computed
+                // value is the same as the one stored in `accs.key.mult` column.
+                let sum_check = dot::expr(
+                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                    &extend_rand(&r),
+                );
+                require!(sum => sum_check);
+
+                // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row. We check whether the computed
+                // value is the same as the one stored in `accs.key.rlc` column.
+                require!(sum_prev => sum_prev_check);
+
+                // TODO(Brecht): what?
+                // The address in the ACCOUNT/STORAGE_NON_EXISTING row and the address in the ACCOUNT/STORAGE_NON_EXISTING row
+                // are different.
+                require!((sum - sum_prev) * diff_inv => 1);
+            }}
+        };
+
+        meta.create_gate("Non existing storage proof leaf", |meta| {
+        constraints!{[meta, cb], {
+            let q_enable = q_enable(meta);
+
+            ifx!{q_enable => {
+                // Check if there is an account above the leaf.
+                let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
+                let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_last_account_row);
+
+                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+                let flag1 = a!(accs.s_mod_node_rlc, rot);
+                let flag2 = a!(accs.c_mod_node_rlc, rot);
+                let is_long = flag1.clone() * not::expr(flag2.clone());
+                let is_short = not::expr(flag1.clone()) * flag2.clone();
 
                 // Wrong leaf has a meaning only for non existing storage proof. For this proof, there are two cases:
                 // 1. A leaf is returned that is not at the required key (wrong leaf).
                 // 2. A branch is returned as the last element of getProof and there is nil object at key position.
                 //    Placeholder leaf is added in this case.
-                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
+                let is_wrong_leaf = a!(s_main.rlp1);
                 // is_wrong_leaf is checked to be bool in `leaf_value.rs` (q_enable in this chip
                 // is true only when non_existing_storage_proof).
 
-                let key_rlc_acc_start =
-                    meta.query_advice(accs.key.rlc, Rotation(rot_into_first_branch_child));
-                let key_mult_start =
-                    meta.query_advice(accs.key.mult, Rotation(rot_into_first_branch_child));
+                let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
+                let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
 
                 // sel1, sel2 is in init branch
-                let is_c16 = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-                    Rotation(rot_into_first_branch_child - 1),
-                );
-                let is_c1 = meta.query_advice(
-                    s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-                    Rotation(rot_into_first_branch_child - 1),
-                );
+                let is_c16 = a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot_into_first_branch_child - 1);
+                let is_c1 = a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot_into_first_branch_child - 1);
 
-                let c48 = Expression::Constant(F::from(48));
+                ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {
+                    /* Non existing storage proof leaf key RLC (leaf not in first level, branch not placeholder) */
+                    // Checks that storage_non_existing_row contains the nibbles that give key_rlc (after considering
+                    // modified_node in branches/extension nodes above).
+                    // Note: currently, for non_existing_storage proof S and C proofs are the same, thus there is never
+                    // a placeholder branch.
+                    ifx!{is_wrong_leaf => {
+                        // Set to key_mult_start * r if is_c16, else key_mult_start
+                        let key_mult = key_mult_start.clone() * selectx!{is_c16 => {
+                            r[0].clone()
+                        } elsex {
+                            1
+                        }};
 
-                // If c16 = 1, we have nibble+48 in s_main.bytes[0].
-                let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                let mut key_rlc_acc_short = key_rlc_acc_start.clone()
-                    + (s_bytes0.clone() - c48.clone()) * key_mult_start.clone() * is_c16.clone();
-                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * is_c16.clone();
-                key_mult = key_mult + key_mult_start.clone() * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                        ifx!{is_short => {
+                            // If there is an even number of nibbles stored in a leaf, `s_bytes0` needs to be 32.
+                            ifx!{is_c1 => {
+                                require!(a!(s_main.bytes[0]) => 32);
+                            }}
 
-                /*
-                If there is an even number of nibbles stored in a leaf, `s_bytes0` needs to be 32.
-                */
-                constraints.push((
-                    "Storage leaf key acc s_bytes0 (short)",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_storage_level.clone())
-                        * is_wrong_leaf.clone()
-                        * is_short.clone()
-                        * (s_bytes0 - c32.clone())
-                        * is_c1.clone(),
-                ));
+                            // Differently as for the other proofs, the storage-non-existing proof compares `key_rlc`
+                            // with the key stored in `STORAGE_NON_EXISTING` row, not in `LEAF_KEY` row.
+                            // The crucial thing is that we have a wrong leaf at the key (not exactly the same, just some starting
+                            // set of nibbles is the same) where we are proving there is no leaf.
+                            // If there would be a leaf at the specified key, it would be positioned in the branch where
+                            // the wrong leaf is positioned. Note that the position is determined by the starting set of nibbles.
+                            // Once we add the remaining nibbles to the starting ones, we need to obtain the enquired key.
+                            // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
+                            // and the non-existing leaf (in the case of wrong leaf, while the case with nil being in branch
+                            // is different).
+                            // If c16 = 1, we have nibble+48 in s_main.bytes[0].
+                            let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
+                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
+                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                            );
+                            require!(a!(accs.key.mult) => key_rlc);
 
-                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone() * key_mult.clone();
+                            // General wrong leaf constraints
+                            add_wrong_leaf_constraints(meta, &mut cb, true);
+                        }}
 
-                for ind in 2..HASH_WIDTH {
-                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc_short = key_rlc_acc_short + s * key_mult.clone() * power_of_randomness[ind - 2].clone();
-                }
+                        ifx!{is_long => {
+                            // If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
+                            ifx!{is_c1 => {
+                                require!(a!(s_main.bytes[1]) => 32);
+                            }}
 
-                let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
+                            // Same as for `Storage key RLC (long)`, but here for the cases when there are two RLP bytes.
+                            let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
+                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                            );
+                            require!(a!(accs.key.mult) => key_rlc);
 
-                key_rlc_acc_short = key_rlc_acc_short + c_rlp1_cur.clone() * key_mult * power_of_randomness[30].clone();
+                            // General wrong leaf constraints
+                            add_wrong_leaf_constraints(meta, &mut cb, false);
+                        }}
+                    } elsex {
+                        // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
+                        // Note that the constraints in `branch.rs` ensure that `sel2` is 1 if and only if there is a nil object
+                        // at `modified_node` position. We check that in case of no wrong leaf in
+                        // the non-existing-storage proof, `is_nil_object` is 1.
+                        let is_nil_object = a!(sel2, rot_into_first_branch_child);
+                        require!(is_nil_object => 1);
+                    }}
+                } elsex {
+                    ifx!{is_wrong_leaf => {
+                        /* Non existing storage proof leaf key RLC (leaf in first level) */
+                        // Ensuring that the storage does not exist when there is only one storage key in the storage trie.
+                        // Note 1: The hash of the only storage is checked to be the storage root in `leaf_value.rs`.
+                        // Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
+                        // above. That is because when there is a branch (with nil object) in the first level,
+                        // it automatically means the leaf is not in the first level.
 
-                // Note: `accs.key.mult` is used for a lookup.
-                let key_rlc = meta.query_advice(accs.key.mult, Rotation::cur());
+                        // Note: when leaf is in the first level, the key stored in the leaf is always
+                        // of length 33 - the first byte being 32 (when after branch,
+                        // the information whether there the key is odd or even
+                        // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
+                        ifx!{is_short => {
+                            require!(a!(s_main.bytes[0]) => 32);
 
-                /*
-                Differently as for the other proofs, the storage-non-existing proof compares `key_rlc`
-                with the key stored in `STORAGE_NON_EXISTING` row, not in `LEAF_KEY` row.
+                            // RLC check
+                            // Note: `accs.key.mult` is used for a lookup.
+                            let rlc = rlc::expr(
+                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                                &r,
+                            );
+                            require!(a!(accs.key.mult) => rlc);
 
-                The crucial thing is that we have a wrong leaf at the key (not exactly the same, just some starting
-                set of nibbles is the same) where we are proving there is no leaf.
-                If there would be a leaf at the specified key, it would be positioned in the branch where
-                the wrong leaf is positioned. Note that the position is determined by the starting set of nibbles.
-                Once we add the remaining nibbles to the starting ones, we need to obtain the enquired key.
-                There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
-                and the non-existing leaf (in the case of wrong leaf, while the case with nil being in branch
-                is different).
-                */
-                constraints.push((
-                    "Storage key RLC (short)",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_storage_level.clone())
-                        * is_wrong_leaf.clone()
-                        * is_short.clone()
-                        * (key_rlc_acc_short - key_rlc.clone()),
-                ));
+                            // General wrong leaf constraints
+                            add_wrong_leaf_constraints(meta, &mut cb, true);
+                        }}
 
-                // Long
+                        ifx!{is_long => {
+                            require!(a!(s_main.bytes[1]) => 32);
 
-                let mut key_rlc_acc_long = key_rlc_acc_start
-                    + (s_bytes1.clone() - c48) * key_mult_start.clone() * is_c16.clone();
-                let mut key_mult = key_mult_start.clone() * power_of_randomness[0].clone() * is_c16;
-                key_mult = key_mult + key_mult_start * is_c1.clone(); // set to key_mult_start if sel2, stays key_mult if sel1
+                            // RLC check
+                            // Note: `accs.key.mult` is used for a lookup.
+                            let rlc = rlc::expr(
+                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                                &r,
+                            );
+                            require!(a!(accs.key.mult) => rlc);
 
-                /*
-                If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
-                */
-                constraints.push((
-                    "Storage leaf key acc s_bytes1 (long)",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_storage_level.clone())
-                        * is_wrong_leaf.clone()
-                        * is_long.clone()
-                        * (s_bytes1 - c32.clone())
-                        * is_c1,
-                ));
+                            // General wrong leaf constraints
+                            add_wrong_leaf_constraints(meta, &mut cb, false);
+                        }}
+                    }}
+                }}
 
-                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-                key_rlc_acc_long = key_rlc_acc_long + s_bytes2 * key_mult.clone();
+                /* Key of wrong leaf and the enquired key are of the same length */
+                ifx!{is_wrong_leaf => {
+                    ifx!{is_short => {
+                        // This constraint is to prevent the attacker to prove that some key does not exist by setting
+                        // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
+                        let len_prev_short = a!(s_main.rlp2, -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND));
+                        let len_cur_short = a!(s_main.rlp2);
+                        require!(len_cur_short => len_prev_short);
+                    }}
 
-                for ind in 3..HASH_WIDTH {
-                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc_long = key_rlc_acc_long + s * key_mult.clone() * power_of_randomness[ind - 3].clone();
-                }
+                    ifx!{is_long => {
+                        // This constraint is to prevent the attacker to prove that some key does not exist by setting
+                        // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
+                        let len_prev_long = a!(s_main.bytes[0], -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND));
+                        let len_cur_long = a!(s_main.bytes[0]);
+                        require!(len_cur_long => len_prev_long);
+                    }}
+                }}
+            }}
+            }}
 
-                let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-
-                key_rlc_acc_long = key_rlc_acc_long + c_rlp1_cur.clone() * key_mult * power_of_randomness[29].clone();
-                key_rlc_acc_long = key_rlc_acc_long + c_rlp2_cur.clone() * power_of_randomness[30].clone();
-
-                /*
-                Same as for `Storage key RLC (long)`, but here for the cases when there are two RLP bytes.
-                */
-                constraints.push((
-                    "Storage key RLC (long)",
-                    q_enable.clone()
-                        * (one.clone() - is_leaf_in_first_storage_level.clone())
-                        * is_wrong_leaf.clone()
-                        * is_long
-                        * (key_rlc_acc_long - key_rlc),
-                ));
-
-                add_wrong_leaf_constraints(meta, &mut constraints, q_enable.clone(), is_short, c_rlp1_cur,
-                    c_rlp2_cur, one.clone() - is_leaf_in_first_storage_level.clone(), is_wrong_leaf.clone());
-
-                let is_nil_object = meta.query_advice(sel2, Rotation(rot_into_first_branch_child));
-
-                /*
-                In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                Note that the constraints in `branch.rs` ensure that `sel2` is 1 if and only if there is a nil object
-                at `modified_node` position. We check that in case of no wrong leaf in
-                the non-existing-storage proof, `is_nil_object` is 1.
-                */
-                constraints.push((
-                    "Nil object in parent branch",
-                    q_enable
-                        * (one.clone() - is_leaf_in_first_storage_level)
-                        * (one.clone() - is_wrong_leaf)
-                        * (one.clone() - is_nil_object),
-                ));
-
-                constraints
-            },
-        );
-
-        /*
-        Ensuring that the storage does not exist when there is only one storage key in the storage trie.
-        Note 1: The hash of the only storage is checked to be the storage root in `leaf_value.rs`.
-        Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
-        above. That is because when there is a branch (with nil object) in the first level,
-        it automatically means the leaf is not in the first level.
-        */
-        meta.create_gate(
-            "Non existing storage proof leaf key RLC (leaf in first level)",
-            |meta| {
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
-
-                // Check if there is an account above the leaf.
-                let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
-                let is_leaf_in_first_storage_level = meta.query_advice(
-                    is_account_leaf_in_added_branch,
-                    Rotation(rot_into_last_account_row),
-                );
-
-                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-                let is_long = flag1.clone() * (one.clone() - flag2.clone());
-                let is_short = (one.clone() - flag1) * flag2;
-
-                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-
-                // Note: when leaf is in the first level, the key stored in the leaf is always
-                // of length 33 - the first byte being 32 (when after branch,
-                // the information whether there the key is odd or even
-                // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
-
-                let s_bytes0 = meta.query_advice(s_main.bytes[0], Rotation::cur());
-                let mut key_rlc_acc_short = Expression::Constant(F::zero());
-
-                constraints.push((
-                    "Storage leaf key acc s_bytes0 (short)",
-                    q_enable.clone()
-                        * (s_bytes0 - c32.clone())
-                        * is_wrong_leaf.clone()
-                        * is_short.clone()
-                        * is_leaf_in_first_storage_level.clone(),
-                ));
-
-                let s_bytes1 = meta.query_advice(s_main.bytes[1], Rotation::cur());
-                key_rlc_acc_short = key_rlc_acc_short + s_bytes1.clone();
-
-                for ind in 2..HASH_WIDTH {
-                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc_short =
-                        key_rlc_acc_short + s * power_of_randomness[ind - 2].clone();
-                }
-
-                let c_rlp1_cur = meta.query_advice(c_main.rlp1, Rotation::cur());
-                key_rlc_acc_short =
-                    key_rlc_acc_short + c_rlp1_cur.clone() * power_of_randomness[30].clone();
-
-                // Note: `accs.key.mult` is used for a lookup.
-                let key_rlc = meta.query_advice(accs.key.mult, Rotation::cur());
-
-                constraints.push((
-                    "Computed key RLC same as value in key_rlc lookup column (short)",
-                    q_enable.clone()
-                        * is_leaf_in_first_storage_level.clone()
-                        * is_wrong_leaf.clone()
-                        * is_short.clone()
-                        * (key_rlc_acc_short - key_rlc.clone()),
-                ));
-
-                let mut key_rlc_acc_long = Expression::Constant(F::zero());
-
-                constraints.push((
-                    "Storage leaf key acc s_bytes1 (long)",
-                    q_enable.clone()
-                        * (s_bytes1 - c32)
-                        * is_wrong_leaf.clone()
-                        * is_long.clone()
-                        * is_leaf_in_first_storage_level.clone(),
-                ));
-
-                let s_bytes2 = meta.query_advice(s_main.bytes[2], Rotation::cur());
-                key_rlc_acc_long = key_rlc_acc_long + s_bytes2;
-
-                for ind in 3..HASH_WIDTH {
-                    let s = meta.query_advice(s_main.bytes[ind], Rotation::cur());
-                    key_rlc_acc_long = key_rlc_acc_long + s * power_of_randomness[ind - 3].clone();
-                }
-
-                let c_rlp2_cur = meta.query_advice(c_main.rlp2, Rotation::cur());
-                key_rlc_acc_long =
-                    key_rlc_acc_long + c_rlp1_cur.clone() * power_of_randomness[29].clone();
-                key_rlc_acc_long =
-                    key_rlc_acc_long + c_rlp2_cur.clone() * power_of_randomness[30].clone();
-
-                constraints.push((
-                    "Computed key RLC same as value in key_rlc lookup column (long)",
-                    q_enable.clone()
-                        * is_leaf_in_first_storage_level.clone()
-                        * is_wrong_leaf.clone()
-                        * is_long
-                        * (key_rlc_acc_long - key_rlc),
-                ));
-
-                add_wrong_leaf_constraints(
-                    meta,
-                    &mut constraints,
-                    q_enable,
-                    is_short,
-                    c_rlp1_cur,
-                    c_rlp2_cur,
-                    is_leaf_in_first_storage_level,
-                    is_wrong_leaf,
-                );
-
-                constraints
-            },
-        );
-
-        meta.create_gate(
-            "Key of wrong leaf and the enquired key are of the same length",
-            |meta| {
-                let q_enable = q_enable(meta);
-                let mut constraints = vec![];
-
-                let rot =  - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-                let is_long = flag1.clone() * (one.clone() - flag2.clone());
-                let is_short = (one.clone() - flag1) * flag2;
-
-                let is_wrong_leaf = meta.query_advice(s_main.rlp1, Rotation::cur());
-                let len_prev_short = meta.query_advice(s_main.rlp2, Rotation(-(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND)));
-                let len_cur_short = meta.query_advice(s_main.rlp2, Rotation::cur());
-
-                /*
-                This constraint is to prevent the attacker to prove that some key does not exist by setting
-                some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
-                */
-                constraints.push((
-                    "The number of nibbles in the wrong leaf and the enquired key are the same (short)",
-                    q_enable.clone() * is_wrong_leaf.clone() * is_short * (len_cur_short - len_prev_short),
-                ));
-
-                let len_prev_long = meta.query_advice(s_main.bytes[0], Rotation(-(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND)));
-                let len_cur_long = meta.query_advice(s_main.bytes[0], Rotation::cur());
-
-                /*
-                This constraint is to prevent the attacker to prove that some key does not exist by setting
-                some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
-                */
-                constraints.push((
-                    "The number of nibbles in the wrong leaf and the enquired key are the same (short)",
-                    q_enable * is_wrong_leaf * is_long * (len_cur_long - len_prev_long),
-                ));
-
-                constraints
-            },
-        );
+            cb.gate(1.expr())
+        });
 
         let sel_short = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
             let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-            let is_short = (one.clone() - flag1) * flag2;
+            let is_short = (1.expr() - flag1) * flag2;
 
             q_enable * is_short
         };
@@ -542,7 +298,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
             let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
             let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-            let is_long = flag1 * (one.clone() - flag2);
+            let is_long = flag1 * (1.expr() - flag2);
 
             q_enable * is_long
         };
@@ -630,7 +386,9 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             fixed_table,
         );
 
-        config
+        StorageNonExistingConfig {
+            _marker: PhantomData,
+        }
     }
 
     pub fn assign(

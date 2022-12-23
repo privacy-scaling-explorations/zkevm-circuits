@@ -127,8 +127,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let is_short = not::expr(flag1.clone()) * flag2.clone();
 
             ifx!{q_enable => {
-
-
                 // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
                 // Example:
                 // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
@@ -140,30 +138,32 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 require!(flag1 => bool);
                 require!(flag2 => bool);
 
-                // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
-                // leaf into a second level) and we do not need to trigger any checks.
-                // Note that in this case `is_branch_placeholder` gets some value from the account rows and we cannot use it.
+                ifx!{not::expr(is_leaf_in_first_storage_level.expr()), is_branch_placeholder => {
+                    // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
+                    // leaf into a second level) and we do not need to trigger any checks.
+                    // Note that in this case `is_branch_placeholder` gets some value from the account rows and we cannot use it.
 
-                // We need to ensure that the RLC of the row is computed properly for `is_short` and
-                // `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                ifx!{is_short.expr() + is_long.expr(), not::expr(is_leaf_in_first_storage_level.expr()), is_branch_placeholder => {
-                    let rlc = rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                        &(extend_rand(&r)),
-                    );
-                    require!(a!(accs.acc_s.rlc) => rlc);
-                }}
+                    // We need to ensure that the RLC of the row is computed properly for `is_short` and
+                    // `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
+                    ifx!{is_short.expr() + is_long.expr() => {
+                        let rlc = rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                            &(extend_rand(&r)),
+                        );
+                        require!(a!(accs.acc_s.rlc) => rlc);
+                    }}
 
-                // We need to ensure that the RLC of the row is computed properly for `last_level` and
-                // `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                // `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
-                // where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
-                ifx!{last_level.expr() + one_nibble.expr(), not::expr(is_leaf_in_first_storage_level.expr()), is_branch_placeholder => {
-                    let rlc_last_level = rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..2].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                        &r,
-                    );
-                    require!(a!(accs.acc_s.rlc) => rlc_last_level);
+                    // We need to ensure that the RLC of the row is computed properly for `last_level` and
+                    // `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
+                    // `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
+                    // where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
+                    ifx!{last_level.expr() + one_nibble.expr() => {
+                        let rlc_last_level = rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..2].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                            &r,
+                        );
+                        require!(a!(accs.acc_s.rlc) => rlc_last_level);
+                    }}
                 }}
             }}
 
