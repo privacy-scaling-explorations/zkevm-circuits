@@ -223,7 +223,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value`.
         let enough_transfer_balance =
-            CmpWordsGadget::construct(cb, &value, &transfer.sender().balance_prev());
+            CmpWordsGadget::construct(cb, &value, transfer.sender().balance_prev());
         cb.condition(is_callcode.expr(), |cb| {
             cb.require_zero(
                 "transfer_value <= caller_balance for CALLCODE opcode",
@@ -634,7 +634,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.callee_code_hash
             .assign(region, offset, Value::known(callee_code_hash))?;
         self.enough_transfer_balance
-            .assign(region, offset, value, caller_balance_pair.0)?;
+            .assign(region, offset, value, caller_balance_pair.1)?;
         self.is_empty_code_hash.assign(
             region,
             offset,
