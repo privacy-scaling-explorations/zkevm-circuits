@@ -560,17 +560,18 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
 #[derive(Clone, Debug)]
 struct RlpU64Gadget<F> {
-    bytes: [Cell<F>; N_BYTES_U64],
+    bytes: RandomLinearCombination<F, N_BYTES_U64>,
     is_most_significant_byte: [Cell<F>; N_BYTES_U64],
     most_significant_byte_is_zero: IsZeroGadget<F>,
 }
 
 impl<F: Field> RlpU64Gadget<F> {
     fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let bytes = cb.query_bytes();
+        let bytes = cb.query_rlc();
         let is_most_significant_byte = [(); N_BYTES_U64].map(|()| cb.query_bool());
         let most_significant_byte = sum::expr(
             bytes
+                .cells
                 .iter()
                 .zip(&is_most_significant_byte)
                 .map(|(byte, indicator)| byte.expr() * indicator.expr()),
@@ -582,12 +583,9 @@ impl<F: Field> RlpU64Gadget<F> {
             sum::expr(&is_most_significant_byte),
         );
 
-        let value = from_bytes::expr(&bytes);
+        let value = from_bytes::expr(&bytes.cells);
         cb.condition(most_significant_byte_is_zero.expr(), |cb| {
-            cb.require_zero(
-                "if most significant byte is 0, value is 0",
-                value.clone(),
-            );
+            cb.require_zero("if most significant byte is 0, value is 0", value.clone());
         });
         for i in 0..N_BYTES_U64 {
             cb.condition(is_most_significant_byte[i].expr(), |cb| {
@@ -598,7 +596,7 @@ impl<F: Field> RlpU64Gadget<F> {
                 );
                 cb.require_equal(
                     "higher bytes are 0",
-                    from_bytes::expr(&bytes[..i + 1]),
+                    from_bytes::expr(&bytes.cells[..i + 1]),
                     value.clone(),
                 );
             });
@@ -634,8 +632,8 @@ impl<F: Field> RlpU64Gadget<F> {
                 .map(|i| u64::from(bytes[i]).into())
                 .unwrap_or(F::zero()),
         )?;
+        self.bytes.assign(region, offset, Some(bytes))?;
         for i in 0..N_BYTES_U64 {
-            self.bytes[i].assign(region, offset, Value::known(u64::from(bytes[i]).into()))?;
             self.is_most_significant_byte[i].assign(
                 region,
                 offset,
@@ -650,8 +648,10 @@ impl<F: Field> RlpU64Gadget<F> {
     }
 
     fn value(&self) -> Expression<F> {
-        from_bytes::expr(&self.bytes)
+        from_bytes::expr(&self.bytes.cells)
     }
+
+    // fn rlp_rlc(&self) -
 }
 
 #[cfg(test)]
