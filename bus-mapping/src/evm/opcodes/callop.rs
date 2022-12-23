@@ -175,7 +175,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         .max()
         .unwrap();
 
-        let has_value = !call.value.is_zero();
+        let has_value = !call.value.is_zero() && !call.is_delegatecall();
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let gas_cost = if is_warm {
@@ -266,15 +266,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         CallContextField::ReturnDataLength,
                         call.return_data_length.into(),
                     ),
-                    (
-                        CallContextField::Value,
-                        // Should set to value of current call for DELEGATECALL.
-                        if call.kind == CallKind::DelegateCall {
-                            current_call.value
-                        } else {
-                            call.value
-                        },
-                    ),
+                    (CallContextField::Value, call.value),
                     (CallContextField::IsSuccess, (call.is_success as u64).into()),
                     (CallContextField::IsStatic, (call.is_static as u64).into()),
                     (CallContextField::LastCalleeId, 0.into()),
