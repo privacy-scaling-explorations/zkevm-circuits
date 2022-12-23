@@ -274,7 +274,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                     + code_hash.expr(),
             );
             cb.require_equal(
-                "23452345",
+                "create2 23452345",
                 keccak_input_length.expr(),
                 (1 + 20 + 32 + 32).expr(),
             );
@@ -300,9 +300,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         //
         cb.condition(not::expr(is_create2.expr()), |cb| {
             cb.require_equal(
-                "23452345",
+                "create 23452345",
                 keccak_input_length.expr(),
-                (1 + 20).expr() + nonce.rlp_length(),
+                (1 + 1 + 20).expr() + nonce.rlp_length(),
             );
         });
 
@@ -534,6 +534,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             offset,
             Value::known(rlc::value(keccak_input.iter().rev(), block.randomness)),
         )?;
+        dbg!(keccak_input.len());
         self.keccak_input_length.assign(
             region,
             offset,
@@ -566,6 +567,7 @@ struct RlpU64Gadget<F> {
     bytes: RandomLinearCombination<F, N_BYTES_U64>,
     is_most_significant_byte: [Cell<F>; N_BYTES_U64],
     most_significant_byte_is_zero: IsZeroGadget<F>,
+    is_less_than_128: Cell<F>,
 }
 
 impl<F: Field> RlpU64Gadget<F> {
@@ -580,6 +582,7 @@ impl<F: Field> RlpU64Gadget<F> {
                 .map(|(byte, indicator)| byte.expr() * indicator.expr()),
         );
         let most_significant_byte_is_zero = IsZeroGadget::construct(cb, most_significant_byte);
+        let is_less_than_128 = cb.query_bool();
 
         cb.require_boolean(
             "at most one of is_most_significant_byte is one",
@@ -605,10 +608,15 @@ impl<F: Field> RlpU64Gadget<F> {
             });
         }
 
+        cb.condition(is_less_than_128.expr(), |cb| {
+            cb.range_lookup(value, 128);
+        });
+
         Self {
             bytes,
             is_most_significant_byte,
             most_significant_byte_is_zero,
+            is_less_than_128,
         }
     }
 
@@ -647,6 +655,11 @@ impl<F: Field> RlpU64Gadget<F> {
                 ),
             )?;
         }
+        self.is_less_than_128.assign(
+            region,
+            offset,
+            Value::known((value < 128).to_scalar().unwrap()),
+        )?;
         Ok(())
     }
 
@@ -655,13 +668,15 @@ impl<F: Field> RlpU64Gadget<F> {
     }
 
     fn rlp_length(&self) -> Expression<F> {
-        1.expr()
-            + sum::expr(
-                self.is_most_significant_byte
-                    .iter()
-                    .enumerate()
-                    .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
-            )
+        self.is_less_than_128.expr()
+            + not::expr(self.is_less_than_128.expr())
+                * (1.expr()
+                    + sum::expr(
+                        self.is_most_significant_byte
+                            .iter()
+                            .enumerate()
+                            .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
+                    ))
     }
 }
 
@@ -672,13 +687,14 @@ mod test {
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
     };
+    use ethers_core::utils::rlp;
     use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
-        static ref CALLER_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
+        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
@@ -974,48 +990,64 @@ mod test {
 
     #[test]
     fn create2_really_create() {
-        // Test the case where the initialization call is successful, but the CREATE
-        // call is reverted.
-        let initializer = callee_bytecode(true, 0, 10).code();
+        for nonce in [0, 1, 127, 128, 255, 256, 0x100] {
+            let mut stream = rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&*CALLER_ADDRESS);
+            stream.append(&Word::from(nonce));
+            let x = stream.out().to_vec();
 
-        let root_code = bytecode! {
-            PUSH32(Word::from_big_endian(&initializer))
-            PUSH1(0)
-            MSTORE
+            dbg!(nonce, x.len(), x);
+        }
 
-            PUSH1(initializer.len())        // size
-            PUSH1(32 - initializer.len())   // offset
-            PUSH1(0)                        // value
+        for nonce in [0, 1, 0xff, 0x100] {
+            dbg!(nonce);
+            let initializer = callee_bytecode(true, 0, 10).code();
 
-            CREATE
-        };
+            let root_code = bytecode! {
+                PUSH32(Word::from_big_endian(&initializer))
+                PUSH1(0)
+                MSTORE
 
-        let caller = Account {
-            address: *CALLER_ADDRESS,
-            code: root_code.into(),
-            nonce: Word::one(),
-            balance: eth(10),
-            ..Default::default()
-        };
+                PUSH1(initializer.len())        // size
+                PUSH1(32 - initializer.len())   // offset
+                PUSH1(0)                        // value
 
-        let test_context = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(eth(10));
-                accs[1].account(&caller);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000u64.into());
-            },
-            |block, _| block,
-        )
-        .unwrap();
+                CREATE
+            };
 
-        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: root_code.into(),
+                nonce: nonce.into(),
+                balance: eth(10),
+                ..Default::default()
+            };
+
+            let test_context = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x000000000000000000000000000000000000cafe"))
+                        .balance(eth(10));
+                    accs[1].account(&caller);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(100000u64.into());
+                },
+                |block, _| block,
+            )
+            .unwrap();
+
+            assert_eq!(
+                run_test_circuits(test_context, None),
+                Ok(()),
+                "nonce = {}",
+                nonce
+            );
+        }
     }
 }
