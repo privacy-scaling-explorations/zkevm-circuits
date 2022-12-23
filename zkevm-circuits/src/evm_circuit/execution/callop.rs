@@ -536,19 +536,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 field_tag: AccountFieldTag::CodeHash,
                 value,
                 ..
-            } => (
-                RandomLinearCombination::random_linear_combine(
-                    value.to_le_bytes(),
-                    block.randomness,
-                ),
-                true,
-            ),
+            } => (value.to_le_bytes(), true),
             Rw::Account {
                 field_tag: AccountFieldTag::NonExisting,
                 ..
-            } => (F::zero(), false),
+            } => (*EMPTY_HASH_LE, false),
             _ => unreachable!(),
         };
+        let callee_code_hash =
+            RandomLinearCombination::random_linear_combine(callee_code_hash, block.randomness);
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -824,7 +820,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if false { 0 } else { 1 }.into(),
+            nonce: if is_empty { 0 } else { 1 }.into(),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }
