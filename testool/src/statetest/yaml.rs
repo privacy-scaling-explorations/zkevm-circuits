@@ -7,6 +7,7 @@ use eth_types::evm_types::OpcodeId;
 use eth_types::{geth_types::Account, Address, Bytes, H256, U256};
 use ethers_core::k256::ecdsa::SigningKey;
 use ethers_core::utils::secret_key_to_address;
+use log::debug;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
@@ -401,7 +402,7 @@ impl<'a> YamlStateTestBuilder<'a> {
         } else if let Some(yul) = tags.get(":yul") {
             self.compiler.yul(yul)?
         } else if let Some(solidity) = tags.get(":solidity") {
-            println!("SOLIDITY: >>>{}<<< => {:?}", solidity, yaml);
+            debug!("SOLIDITY: >>>{}<<< => {:?}", solidity, yaml);
             self.compiler.solidity(solidity)?
         } else {
             bail!("do not know what to do with code(2) '{:?}'", yaml);
