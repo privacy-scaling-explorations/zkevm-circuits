@@ -227,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // For both CALL and CALLCODE opcodes, verify caller balance is greater than or
         // equal to stack `value`.
         let enough_transfer_balance = CmpWordsGadget::construct(cb, &value, &caller_balance);
-        cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
+        cb.condition(is_callcode.expr(), |cb| {
             cb.require_zero(
                 "transfer_value <= caller_balance for both CALL and CALLCODE opcodes",
                 1.expr() - enough_transfer_balance.eq.expr() - enough_transfer_balance.lt.expr(),
