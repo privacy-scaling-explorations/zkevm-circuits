@@ -266,7 +266,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             let randomness_raised_to_84 =
                 randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
             cb.require_equal(
-                "aw3rw3r",
+                "for CREATE2, keccak input is 0xff ++ address ++ salt ++ code_hash",
                 keccak_input.expr(),
                 0xff.expr() * randomness_raised_to_84
                     + caller_address.expr() * randomness_raised_to_64
@@ -274,33 +274,23 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                     + code_hash.expr(),
             );
             cb.require_equal(
-                "create2 23452345",
+                "for CREATE2, keccak input length is 85",
                 keccak_input_length.expr(),
                 (1 + 20 + 32 + 32).expr(),
             );
         });
 
-        // let most_significant_nonce_byte_is_zero = IsZeroGadget::construct(cb);
-        // let most_significant_nonce_byte_selectors = [(); N_BYTES_U64].map(|()|
-        // cb.query_bool());
-        // cb.condition(most_significant_nonce_byte_selectors[0].expr(), |cb| {
-        //     cb.require_zero(
-        //         "caller nonce if highest_nonzero_nonce_byte is 0",
-        //         nonce.expr(),
-        //     );
-        //     cb.require_equal(
-        //         "is zoerasld;fkja;welkfja;sl",
-        //         most_significant_nonce_byte_index.expr(),
-        //         1.expr(),
-        //     )
-        // });
-        // let address_rlp_rlc =
-        //     0x94.expr() * cb.power_of_randomness()[20].clone() +
-        // caller_address.expr();
-        //
         cb.condition(not::expr(is_create2.expr()), |cb| {
+            // let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
+            // cb.require_equal(
+            //     "for CREATE, keccak input is rlp([address, nonce])",
+            //     keccak_input.expr(),
+            //     (0xc2.expr() * randomness_raised_to_20 + caller_address.expr())
+            //         * nonce.randomness_raised_to_rlp_length()
+            //         + nonce.rlp_rlc(),
+            // );
             cb.require_equal(
-                "create 23452345",
+                "for CREATE, keccak input length is rlp([address, nonce]).len()",
                 keccak_input_length.expr(),
                 (1 + 1 + 20).expr() + nonce.rlp_length(),
             );
@@ -667,17 +657,43 @@ impl<F: Field> RlpU64Gadget<F> {
         from_bytes::expr(&self.bytes.cells)
     }
 
-    fn rlp_length(&self) -> Expression<F> {
-        self.is_less_than_128.expr()
-            + not::expr(self.is_less_than_128.expr())
-                * (1.expr()
-                    + sum::expr(
-                        self.is_most_significant_byte
-                            .iter()
-                            .enumerate()
-                            .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
-                    ))
+    fn n_bytes_nonce(&self) -> Expression<F> {
+        sum::expr(
+            self.is_most_significant_byte
+                .iter()
+                .enumerate()
+                .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
+        )
     }
+
+    fn rlp_length(&self) -> Expression<F> {
+        1.expr() + not::expr(self.is_less_than_128.expr()) * self.n_bytes_nonce()
+    }
+
+    // fn rlp_rlc(&self) -> Expression<F> {
+    //     select::expr(
+    //         and::expr(&[
+    //             self.is_less_than_128.expr(),
+    //             not::expr(self.most_significant_byte_is_zero.expr()),
+    //         ]),
+    //         self.value(),
+    //         (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_to_rlp_length()
+    //             + self.bytes.expr(),
+    //     )
+    // }
+
+    // fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    //     let powers_of_randomness = cb.power_of_randomness();
+    //     self.is_less_than_128.expr()
+    //         + not::expr(self.is_less_than_128.expr())
+    //             * (1.expr()
+    //                 + sum::expr(
+    //                     self.is_most_significant_byte
+    //                         .iter()
+    //                         .enumerate()
+    //                         .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
+    //                 ))
+    // }
 }
 
 #[cfg(test)]
