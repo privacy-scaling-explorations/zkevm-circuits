@@ -142,7 +142,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         }
 
         let callee_code_hash = call.code_hash;
-        let (callee_exists, _) = state.sdb.get_account(&callee_address);
+        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
         if callee_exists {
             let callee_code_hash_word = callee_code_hash.to_word();
             state.account_read(
