@@ -52,7 +52,6 @@ pub(crate) struct CallOpGadget<F> {
     rd_address: MemoryAddressGadget<F>,
     memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
-    caller_balance: Word<F>,
     callee_exists: Cell<F>,
     callee_code_hash: Cell<F>,
     enough_transfer_balance: CmpWordsGadget<F>,
@@ -201,21 +200,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         // Verify transfer only for CALL opcode.
-        let caller_balance = cb.query_word();
         let transfer = cb.condition(is_call.expr(), |cb| {
-            let transfer = TransferGadget::construct(
+            TransferGadget::construct(
                 cb,
                 caller_address.expr(),
                 callee_address.expr(),
                 value.clone(),
                 &mut callee_reversion_info,
-            );
-            cb.require_equal(
-                "caller_balance == transfer.sender.balance_prev for CALL opcode",
-                caller_balance.expr(),
-                transfer.sender().balance_prev().expr(),
-            );
-            transfer
+            )
         });
 
         // For CALLCODE opcode, get caller balance to constrain it should be greater or
@@ -224,16 +216,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb.account_read(
                 caller_address.expr(),
                 AccountFieldTag::Balance,
-                caller_balance.expr(),
+                transfer.sender().balance_prev().expr(),
             );
         });
 
-        // For both CALL and CALLCODE opcodes, verify caller balance is greater than or
-        // equal to stack `value`.
-        let enough_transfer_balance = CmpWordsGadget::construct(cb, &value, &caller_balance);
+        // For CALLCODE opcode, verify caller balance is greater than or equal to stack
+        // `value`.
+        let enough_transfer_balance =
+            CmpWordsGadget::construct(cb, &value, &transfer.sender().balance_prev());
         cb.condition(is_callcode.expr(), |cb| {
             cb.require_zero(
-                "transfer_value <= caller_balance for both CALL and CALLCODE opcodes",
+                "transfer_value <= caller_balance for CALLCODE opcode",
                 1.expr() - enough_transfer_balance.eq.expr() - enough_transfer_balance.lt.expr(),
             );
         });
@@ -437,7 +430,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_address,
             memory_expansion,
             transfer,
-            caller_balance,
             callee_exists,
             callee_code_hash,
             enough_transfer_balance,
@@ -504,32 +496,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[15 + rw_offset],
         ]
         .map(|idx| block.rws[idx].call_context_value());
-        let (caller_balance_pair, callee_balance_pair, caller_balance) = if is_call {
+        let (caller_balance_pair, callee_balance_pair) = if is_call {
             rw_offset += 2;
-            let caller_balance_pair =
-                block.rws[step.rw_indices[14 + rw_offset]].account_value_pair();
-            let callee_balance_pair =
-                block.rws[step.rw_indices[15 + rw_offset]].account_value_pair();
             (
-                caller_balance_pair,
-                callee_balance_pair,
-                caller_balance_pair.1,
+                block.rws[step.rw_indices[14 + rw_offset]].account_value_pair(),
+                block.rws[step.rw_indices[15 + rw_offset]].account_value_pair(),
             )
         } else if is_callcode {
             rw_offset += 1;
             (
+                block.rws[step.rw_indices[15 + rw_offset]].account_value_pair(),
                 (U256::zero(), U256::zero()),
-                (U256::zero(), U256::zero()),
-                block.rws[step.rw_indices[15 + rw_offset]]
-                    .account_value_pair()
-                    .0,
             )
         } else {
-            (
-                (U256::zero(), U256::zero()),
-                (U256::zero(), U256::zero()),
-                U256::zero(),
-            )
+            ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
         };
         let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[16 + rw_offset]] {
             Rw::Account {
@@ -649,14 +629,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_balance_pair,
             value,
         )?;
-        self.caller_balance
-            .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
         self.callee_exists
             .assign(region, offset, Value::known(F::from(callee_exists)))?;
         self.callee_code_hash
             .assign(region, offset, Value::known(callee_code_hash))?;
         self.enough_transfer_balance
-            .assign(region, offset, value, caller_balance)?;
+            .assign(region, offset, value, caller_balance_pair.0)?;
         self.is_empty_code_hash.assign(
             region,
             offset,
