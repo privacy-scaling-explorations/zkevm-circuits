@@ -25,9 +25,9 @@ use crate::{
             IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
             IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
             IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
-            RLP_NUM, ACCOUNT_LEAF_ROWS_NUM, LEAF_ROWS_NUM, EXISTING_EXT_NODE_BEFORE_S,
-            EXISTING_EXT_NODE_AFTER_S, EXISTING_EXT_NODE_AFTER_SELECTORS, EXISTING_EXT_NODE_BEFORE_C,
-            EXISTING_EXT_NODE_BEFORE_SELECTORS, EXTENSION_ROWS_NUM,
+            RLP_NUM, ACCOUNT_LEAF_ROWS_NUM, LEAF_ROWS_NUM, LONG_EXT_NODE_S,
+            SHORT_EXT_NODE_S, SHORT_EXT_NODE_SELECTORS, LONG_EXT_NODE_C,
+            LONG_EXT_NODE_SELECTORS, EXTENSION_ROWS_NUM,
         },
     },
     mpt_circuit::{MPTConfig, ProofValues, FixedTableTag},
@@ -40,16 +40,39 @@ use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_se
 /*
 An existing extension node (which gets modified because of an inserted extension node) occupies 6 rows.
 The rows are the following:
-EXISTING_EXT_NODE_BEFORE_SELECTORS
-EXISTING_EXT_NODE_BEFORE_S
-EXISTING_EXT_NODE_BEFORE_C
-EXISTING_EXT_NODE_AFTER_SELECTORS
-EXISTING_EXT_NODE_AFTER_S
-EXISTING_EXT_NODE_AFTER_C
+LONG_EXT_NODE_SELECTORS
+LONG_EXT_NODE_S
+LONG_EXT_NODE_C
+SHORT§_EXT_NODE_SELECTORS
+SHORT_EXT_NODE_S
+SHORT_EXT_NODE_C
 
 This file contains constraints for the existing extension node rows which appear after the leaf rows.
 Some constraints are the same as as for the extension node rows that appear in the branch rows (RLP, RLC),
 some are different (extension node selectors).
+
+TODO: describe differences between insert and delete
+- insert case
+example: we have an extension at 1 2 3 4 5 6
+we add a leaf at 1 2 3 4, the old extension will now only have one nibble (6)
+terminology:
+ext. node with nibbles 1 2 3 4 5 6 is long extension node,
+ext. node with nibble 6 is short extension node
+ext. node with nibbles 1 2 3 4 is middle extension node
+(check all occurences of "existing" and replace with above terminology)
+...
+
+- delete case
+example: we have an extension node with nibbles 1 2 3 4 and inside it an extension at position 5
+with one nibble: 6
+...
+
+In both cases, the rows above the leaf contain the extension node with nibbles 1 2 3 4 (although
+in delete case after deletion this extension node is not in the trie anymore). The long extension
+node in insert case is the extension node before the extension node with nibbles 1 2 3 4 was inserted.
+The long extension node in delete case is the extension node after the extension node with nibbles 1 2 3 4
+was removed.
+...
 
 It needs to be checked that the newly inserted extension node branch only has two elements:
 the leaf that caused a new extension node to be added and the old extension node that drifted into
@@ -63,8 +86,8 @@ extension node as we do not have the underlying branch and other elements down t
 From `extension_node_key.rs` constraints we only need to implement the constraints related
 to the second nibbles.
 
-Note that `S` and `C` hashes (values in `c_main`) in the two `before` rows are the same. Likewise for
-the two `after` rows. So the constraints like RLC and RLP are checked only for `S` rows (`c_main`
+Note that `S` and `C` hashes (values in `c_main`) in the two `long` rows are the same. Likewise for
+the two `short` rows. So the constraints like RLC and RLP are checked only for `S` rows (`c_main`
 in `C` rows is never used, we need `C` rows only for the second nibbles).
 */
 
@@ -88,7 +111,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         keccak_table: KeccakTable,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         fixed_table: [Column<Fixed>; 3],
-        is_before: bool,
+        is_long: bool,
         check_zeros: bool,
     ) -> Self {
         let config = ExtensionNodeInsertedConfig {
@@ -132,7 +155,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             rot_into_ext_node_selectors,
             true,
             true,
-            is_before,
+            is_long,
         );
 
         /*
@@ -144,13 +167,13 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         node rows. So to check whether the existing extension node is in the first level, we need
         to check whether the inserted extension node is in the first level.
         */
-        if is_before {
+        if is_long {
             meta.lookup_any(
                 "Account first level (existing) extension node hash - compared to root",
                 |meta| {
                     let q_enable = q_enable(meta);
 
-                    let rot_into_branch = - EXISTING_EXT_NODE_BEFORE_S - 1 - ACCOUNT_LEAF_ROWS_NUM;
+                    let rot_into_branch = - LONG_EXT_NODE_S - 1 - ACCOUNT_LEAF_ROWS_NUM;
 
                     let not_first_level =
                         meta.query_advice(position_cols.not_first_level, Rotation(rot_into_branch));
@@ -181,7 +204,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             );
         }
         /*
-        Note: else case (!is_before) is not needed here as the `after` extension node 
+        Note: else case (!is_long) is not needed here as the `short` extension node 
         needs to be checked to be the neighbour leaf in the branch (no comparison with trie root).
         */
 
@@ -195,14 +218,17 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         to the existing extension node that was modified due to inserted extension node.
 
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
+
+        TODO: for delete case we need to use
+        Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))
         */
-        if is_before {
+        if is_long {
             meta.lookup_any(
                 "(Existing) extension node in first level of storage trie - hash compared to the storage root",
                 |meta| {
                     let q_enable = q_enable(meta);
 
-                    let rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
+                    let rot_into_last_leaf_row = - LONG_EXT_NODE_S - 1;
                     let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
 
                     // Check if there is an account above the existing extension node rows:
@@ -211,18 +237,18 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         Rotation(rot_into_branch_init - 1),
                     ); 
 
+                    let is_c_inserted = get_is_inserted_extension_node(
+                        meta, c_main.rlp1, c_main.rlp2, rot_into_branch_init, true);
+
                     let acc = meta.query_advice(accs.acc_c.rlc, Rotation::cur());
 
                     let mut sc_hash = vec![];
                     // Note: storage root is always in `s_main.bytes`.
                     for column in s_main.bytes.iter() {
-                        sc_hash.push(meta.query_advice(
-                            *column,
-                            Rotation(
-                                rot_into_branch_init
-                                    - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND),
-                            ),
-                        ));
+                        sc_hash.push(
+                            meta.query_advice(*column, Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND))) * is_c_inserted.clone()
+                            + meta.query_advice(*column, Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))) * (one.clone() - is_c_inserted.clone())
+                        );
                     }
                     let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
@@ -249,7 +275,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             );
         } 
         /*
-        Note: else case (!is_before) is not needed here as the `after` extension node 
+        Note: else case (!is_long) is not needed here as the `short` extension node 
         needs to be checked to be the neighbour leaf in the branch (no comparison with trie root).
         */
 
@@ -259,10 +285,10 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
         branch child at `modified_node` position.
 
-        For `is_before` the branch we rotate into is the branch above the last branch (branch before extension node was inserted). This is to
+        For `is_long` the branch we rotate into is the branch above the last branch (branch before extension node was inserted). This is to
         ensure that we know the extension node that existed before the insertion of the new extension node.
 
-        For `!is_before` the branch we rotate into is the last branch (the branch of the inserted extension node). This is to ensure that
+        For `!is_long` the branch we rotate into is the last branch (the branch of the inserted extension node). This is to ensure that
         the existing extension node drifted into a branch of the inserted extension node.
 
         Note that the constraints for existing and drifted extension node being different only in the extension node nibbles are written separately.
@@ -271,9 +297,9 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             let q_enable = q_enable(meta);
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
-            let mut rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
-            if !is_before{
-                rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+            let mut rot_into_last_leaf_row = - LONG_EXT_NODE_S - 1;
+            if !is_long{
+                rot_into_last_leaf_row = - SHORT_EXT_NODE_S - 1;
             }
 
             let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
@@ -301,7 +327,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             // Rotation into a branch above the last branch:
             let mut rot_into_branch_storage = rot_into_branch_init_storage - 1 - EXTENSION_ROWS_NUM;
             let mut rot_into_branch_account = rot_into_branch_init_account - 1 - EXTENSION_ROWS_NUM;
-            if !is_before {
+            if !is_long {
                 // Rotation into the last branch:
                 rot_into_branch_storage = rot_into_branch_init_storage + 1;
                 rot_into_branch_account = rot_into_branch_init_account + 1;
@@ -348,9 +374,9 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 let q_enable = q_enable(meta);
                 let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
-                let mut rot_into_last_leaf_row = - EXISTING_EXT_NODE_BEFORE_S - 1;
-                if !is_before{
-                    rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                let mut rot_into_last_leaf_row = - LONG_EXT_NODE_S - 1;
+                if !is_long{
+                    rot_into_last_leaf_row = - SHORT_EXT_NODE_S - 1;
                 }
                 let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
                 let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
@@ -375,7 +401,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 // Rotation into a branch above the last branch:
                 let mut rot_into_branch_storage = rot_into_branch_init_storage - 1 - EXTENSION_ROWS_NUM;
                 let mut rot_into_branch_account = rot_into_branch_init_account - 1 - EXTENSION_ROWS_NUM;
-                if !is_before {
+                if !is_long {
                     // Rotation into the last branch:
                     rot_into_branch_storage = rot_into_branch_init_storage + 1;
                     rot_into_branch_account = rot_into_branch_init_account + 1;
@@ -410,7 +436,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
             },
         );
 
-        if !is_before {
+        if !is_long {
             meta.create_gate(
                 "Existing and drifted extension node differ only in nibbles",
                 |meta| {
@@ -419,14 +445,14 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
                     let mut constraints = vec![];
 
-                    let mut before_branch = vec![];
-                    let mut after_branch = vec![];
+                    let mut long_ext_branch = vec![];
+                    let mut short_ext_branch = vec![];
                     for column in c_main.bytes.iter() {
-                        before_branch.push(meta.query_advice(*column, Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S))));
-                        after_branch.push(meta.query_advice(*column, Rotation::cur()));
+                        long_ext_branch.push(meta.query_advice(*column, Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_S))));
+                        short_ext_branch.push(meta.query_advice(*column, Rotation::cur()));
                     }
-                    let before_rlc = bytes_expr_into_rlc(&before_branch, power_of_randomness[0].clone());
-                    let after_rlc = bytes_expr_into_rlc(&after_branch, power_of_randomness[0].clone());
+                    let long_ext_branch_rlc = bytes_expr_into_rlc(&long_ext_branch, power_of_randomness[0].clone());
+                    let short_ext_branch_rlc = bytes_expr_into_rlc(&short_ext_branch, power_of_randomness[0].clone());
 
                     /*
                     Existing and drifted extension node have the same `c_main.bytes` - same underlying branch.
@@ -435,7 +461,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         "Existing and drifted extension node have the same underlying branch",
                         q_not_first.clone()
                             * q_enable.clone()
-                            * (after_rlc - before_rlc),
+                            * (short_ext_branch_rlc - long_ext_branch_rlc),
                     ));
 
                     /*
@@ -443,7 +469,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     to the requested address (account proof) or storage key (storage proof).
                     */
 
-                    let rot_into_last_leaf_row = - EXISTING_EXT_NODE_AFTER_S - 1;
+                    let rot_into_last_leaf_row = - SHORT_EXT_NODE_S - 1;
                     let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
                     let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
                     let rot_into_ext_node_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - 1;
@@ -454,110 +480,109 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         Rotation(rot_into_last_leaf_row),
                     );
 
-                    // inserted extension node:
-                    let is_longer_than_55 = meta.query_advice(
+                    let is_middle_longer_than_55 = meta.query_advice(
                         s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
                         Rotation(rot_into_branch_init_account)) * is_account_proof.clone()
                         + meta.query_advice(
                         s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
                         Rotation(rot_into_branch_init_storage)) * (one.clone() - is_account_proof.clone());
-                    let is_short =
+                    let is_middle_short =
                         get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init_account) * is_account_proof.clone()
                         + get_is_extension_node_one_nibble(meta, s_main.bytes, rot_into_branch_init_storage) * (one.clone() - is_account_proof.clone());
-                    let is_even_nibbles =
+                    let is_middle_even_nibbles =
                         get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init_account) * is_account_proof.clone()
                         + get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_into_branch_init_storage) * (one.clone() - is_account_proof.clone());
-                    let is_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
+                    let is_middle_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
                         meta,s_main.bytes, rot_into_branch_init_account) * is_account_proof.clone()
                         + get_is_extension_node_long_odd_nibbles(
                         meta,s_main.bytes, rot_into_branch_init_storage) * (one.clone() - is_account_proof.clone());
 
-                    let rot_selectors_before = -(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_SELECTORS);
-                    let rot_selectors_after = -(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_AFTER_SELECTORS);
+                    let rot_selectors_long = -(SHORT_EXT_NODE_S - LONG_EXT_NODE_SELECTORS);
+                    let rot_selectors_short = -(SHORT_EXT_NODE_S - SHORT_EXT_NODE_SELECTORS);
 
-                    let is_before_longer_than_55 = meta.query_advice(
+                    let is_long_longer_than_55 = meta.query_advice(
                         s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                        Rotation(rot_selectors_before),
+                        Rotation(rot_selectors_long),
                     );
                     // existing extension node cannot be short, otherwise no extension node could be inserted
-                    let is_before_even_nibbles =
-                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_before);
+                    let is_long_even_nibbles =
+                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_long);
                     let is_before_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
                         meta,
                         s_main.bytes,
-                        rot_selectors_before,
+                        rot_selectors_long,
                     );
 
-                    let is_after_longer_than_55 = meta.query_advice(
+                    let is_short_longer_than_55 = meta.query_advice(
                         s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
-                        Rotation(rot_selectors_after),
+                        Rotation(rot_selectors_short),
                     );
-                    let is_after_short =
-                        get_is_extension_node_one_nibble(meta, s_main.bytes, rot_selectors_after);
-                    let is_after_even_nibbles =
-                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_after);
+                    let is_short_short =
+                        get_is_extension_node_one_nibble(meta, s_main.bytes, rot_selectors_short);
+                    let is_short_even_nibbles =
+                        get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_short);
                     let is_after_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
                         meta,
                         s_main.bytes,
-                        -(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_AFTER_SELECTORS),
+                        -(SHORT_EXT_NODE_S - SHORT_EXT_NODE_SELECTORS),
                     );
 
-                    let s_rlp2 =
+                    let middle_s_rlp2 =
                         meta.query_advice(s_main.rlp2, Rotation(rot_into_ext_node_account)) * is_account_proof.clone()
                         + meta.query_advice(s_main.rlp2, Rotation(rot_into_ext_node_storage)) * (one.clone() - is_account_proof.clone());
-                    let s_main0 =
+                    let middle_s_main0 =
                         meta.query_advice(s_main.bytes[0], Rotation(rot_into_ext_node_account)) * is_account_proof.clone()
                         + meta.query_advice(s_main.bytes[0], Rotation(rot_into_ext_node_storage)) * (one.clone() - is_account_proof.clone());
-                    let s_rlp2_before =
-                        meta.query_advice(s_main.rlp2, Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S)));
-                    let s_main0_before =
-                        meta.query_advice(s_main.bytes[0], Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S)));
+                    let long_s_rlp2 =
+                        meta.query_advice(s_main.rlp2, Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_S)));
+                    let long_s_main0 =
+                        meta.query_advice(s_main.bytes[0], Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_S)));
 
-                    let s_rlp2_after =
+                    let short_s_rlp2 =
                         meta.query_advice(s_main.rlp2, Rotation::cur());
-                    let s_main0_after =
+                    let short_s_main0 =
                         meta.query_advice(s_main.bytes[0], Rotation::cur());
 
                     let c2 = Expression::Constant(F::from(2));
 
-                    let nibbles_num =
-                        (one.clone() - is_longer_than_55.clone()) *
-                        (is_even_nibbles.clone() * (s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
-                        + (one.clone() - is_even_nibbles.clone())
-                        * (((s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_short.clone())
-                        + is_short.clone()))
-                        + is_longer_than_55.clone()
-                        * (is_even_nibbles.clone() * (s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
-                        + (one.clone() - is_even_nibbles.clone())
-                        * (((s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_short.clone())
-                        + is_short.clone()));
+                    let middle_nibbles_num =
+                        (one.clone() - is_middle_longer_than_55.clone()) *
+                        (is_middle_even_nibbles.clone() * (middle_s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_middle_even_nibbles.clone())
+                        * (((middle_s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_middle_short.clone())
+                        + is_middle_short.clone()))
+                        + is_middle_longer_than_55.clone()
+                        * (is_middle_even_nibbles.clone() * (middle_s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_middle_even_nibbles.clone())
+                        * (((middle_s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_middle_short.clone())
+                        + is_middle_short.clone()));
 
-                    // Note: before extension node cannot be short
-                    let before_nibbles_num =
-                        (one.clone() - is_before_longer_than_55.clone())
-                        * (is_before_even_nibbles.clone() * (s_rlp2_before.clone() - c128.clone() - one.clone()) * c2.clone()
-                        + (one.clone() - is_before_even_nibbles.clone()) * ((s_rlp2_before.clone() - c128.clone()) * c2.clone() - one.clone()))
-                        + is_before_longer_than_55
-                        * (is_before_even_nibbles.clone() * (s_main0_before.clone() - c128.clone() - one.clone()) * c2.clone()
-                        + (one.clone() - is_before_even_nibbles.clone()) * ((s_main0_before.clone() - c128.clone()) * c2.clone() - one.clone()));
+                    // Note: long extension node cannot be short (having only one nibble)
+                    let long_nibbles_num =
+                        (one.clone() - is_long_longer_than_55.clone())
+                        * (is_long_even_nibbles.clone() * (long_s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_long_even_nibbles.clone()) * ((long_s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()))
+                        + is_long_longer_than_55
+                        * (is_long_even_nibbles.clone() * (long_s_main0.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_long_even_nibbles.clone()) * ((long_s_main0.clone() - c128.clone()) * c2.clone() - one.clone()));
 
-                    let after_nibbles_num =
-                        (one.clone() - is_after_longer_than_55.clone())
-                        * (is_after_even_nibbles.clone() * (s_rlp2_after.clone() - c128.clone() - one.clone()) * c2.clone()
-                        + (one.clone() - is_after_even_nibbles.clone())
-                        * (((s_rlp2_after.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_after_short.clone())
-                        + is_after_short.clone()))
-                        + is_after_longer_than_55.clone()
-                        * (is_after_even_nibbles.clone() * (s_rlp2_after.clone() - c128.clone() - one.clone()) * c2.clone()
-                        + (one.clone() - is_after_even_nibbles.clone())
-                        * (((s_rlp2_after.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_after_short.clone())
-                        + is_after_short.clone()));
-                    
+                    let short_nibbles_num =
+                        (one.clone() - is_short_longer_than_55.clone())
+                        * (is_short_even_nibbles.clone() * (short_s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_short_even_nibbles.clone())
+                        * (((short_s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_short_short.clone())
+                        + is_short_short.clone()))
+                        + is_short_longer_than_55.clone()
+                        * (is_short_even_nibbles.clone() * (short_s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
+                        + (one.clone() - is_short_even_nibbles.clone())
+                        * (((short_s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_short_short.clone())
+                        + is_short_short.clone()));
+ 
                     constraints.push((
-                        "The number of nibbles of the existing extension node corresponds to the nibbles in the inserted extension node",
+                        "The number of nibbles of the long extension node corresponds to the nibbles in the middle and short extension node",
                         q_not_first.clone()
                             * q_enable.clone()
-                            * (before_nibbles_num - nibbles_num - after_nibbles_num - one.clone()),
+                            * (long_nibbles_num - middle_nibbles_num - short_nibbles_num - one.clone()),
                             // -1 because one nibble is used for the position of the extension node in the branch
                     ));
 
@@ -570,60 +595,60 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
                     // 0 if `is_before_even_nibbles`:
                     // Note: before cannot be short because otherwise no extension node could be inserted
-                    let mut before_nibbles_rlc =
-                        (s_main0_before - c16.clone()) * c16.clone()
-                        * (one.clone() - is_before_even_nibbles.clone());
+                    let mut long_nibbles_rlc =
+                        (long_s_main0 - c16.clone()) * c16.clone()
+                        * (one.clone() - is_long_even_nibbles.clone());
 
                     let first_nibble =
-                        (s_main0_after.clone() - c16.clone()) * (one.clone() - is_after_short.clone())
-                        + (s_rlp2_after.clone() - c16.clone()) * is_after_short.clone();
+                        (short_s_main0.clone() - c16.clone()) * (one.clone() - is_short_short.clone())
+                        + (short_s_rlp2.clone() - c16.clone()) * is_short_short.clone();
                     // 0 if `is_after_even_nibbles`:
-                    let mut after_nibbles_rlc =
-                        (first_nibble.clone() * c16.clone() * (one.clone() - is_even_nibbles.clone()) // `1 - is_even_nibbles` because of `drifted_pos`
-                        + first_nibble * is_even_nibbles.clone())
-                        * (one.clone() - is_after_even_nibbles.clone());
+                    let mut short_nibbles_rlc =
+                        (first_nibble.clone() * c16.clone() * (one.clone() - is_middle_even_nibbles.clone()) // `1 - is_even_nibbles` because of `drifted_pos`
+                        + first_nibble * is_middle_even_nibbles.clone())
+                        * (one.clone() - is_short_even_nibbles.clone());
 
                     // 0 if `is_even_nibbles`:
-                    let mut nibbles_rlc =
-                        ((s_main0 - c16.clone()) * c16.clone() * (one.clone() - is_short.clone()) + (s_rlp2.clone() - c16.clone()) * c16.clone() * is_short.clone())
-                        * (one.clone() - is_even_nibbles.clone());
+                    let mut middle_nibbles_rlc =
+                        ((middle_s_main0 - c16.clone()) * c16.clone() * (one.clone() - is_middle_short.clone()) + (middle_s_rlp2.clone() - c16.clone()) * c16.clone() * is_middle_short.clone())
+                        * (one.clone() - is_middle_even_nibbles.clone());
 
                     let mut mult = Expression::Constant(F::one());
                     for ind in 0..HASH_WIDTH-1 {
-                        let s_before = meta.query_advice(s_main.bytes[1+ind], Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_S)));
-                        let second_nibble_before = meta.query_advice(s_main.bytes[ind], Rotation(-(EXISTING_EXT_NODE_AFTER_S - EXISTING_EXT_NODE_BEFORE_C)));
-                        let first_nibble_before = (s_before.clone() - second_nibble_before.clone()) * c16inv.clone();
+                        let long_s = meta.query_advice(s_main.bytes[1+ind], Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_S)));
+                        let long_second_nibble = meta.query_advice(s_main.bytes[ind], Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_C)));
+                        let long_first_nibble = (long_s.clone() - long_second_nibble.clone()) * c16inv.clone();
     
-                        let s =
+                        let middle_s =
                             meta.query_advice(s_main.bytes[1+ind], Rotation(rot_into_ext_node_account))
                             * is_account_proof.clone()
                             + meta.query_advice(s_main.bytes[1+ind], Rotation(rot_into_ext_node_storage))
                             * (one.clone() - is_account_proof.clone());
-                        let second_nibble =
+                        let middle_second_nibble =
                             meta.query_advice(s_main.bytes[ind], Rotation(rot_into_ext_node_account + 1))
                             * is_account_proof.clone()
                             + meta.query_advice(s_main.bytes[ind], Rotation(rot_into_ext_node_storage + 1))
                             * (one.clone() - is_account_proof.clone());
-                        let first_nibble = (s.clone() - second_nibble.clone()) * c16inv.clone();
+                        let middle_first_nibble = (middle_s.clone() - middle_second_nibble.clone()) * c16inv.clone();
 
-                        let s_after = meta.query_advice(s_main.bytes[1+ind], Rotation::cur());
-                        let second_nibble_after = meta.query_advice(s_main.bytes[ind], Rotation::next());
-                        let first_nibble_after = (s_after.clone() - second_nibble_after.clone()) * c16inv.clone();
+                        let short_s = meta.query_advice(s_main.bytes[1+ind], Rotation::cur());
+                        let short_second_nibble = meta.query_advice(s_main.bytes[ind], Rotation::next());
+                        let short_first_nibble = (short_s.clone() - short_second_nibble.clone()) * c16inv.clone();
                         
-                        before_nibbles_rlc = before_nibbles_rlc
-                            + (first_nibble_before.clone() * c16.clone() + second_nibble_before.clone()) * mult.clone() * is_before_even_nibbles.clone()
-                            + (first_nibble_before + second_nibble_before * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_before_even_nibbles.clone());
+                        long_nibbles_rlc = long_nibbles_rlc
+                            + (long_first_nibble.clone() * c16.clone() + long_second_nibble.clone()) * mult.clone() * is_long_even_nibbles.clone()
+                            + (long_first_nibble + long_second_nibble * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_long_even_nibbles.clone());
 
-                        nibbles_rlc = nibbles_rlc
-                            + (first_nibble.clone() * c16.clone() + second_nibble.clone()) * mult.clone() * is_even_nibbles.clone()
-                            + (first_nibble + second_nibble * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_even_nibbles.clone()); 
+                        middle_nibbles_rlc = middle_nibbles_rlc
+                            + (middle_first_nibble.clone() * c16.clone() + middle_second_nibble.clone()) * mult.clone() * is_middle_even_nibbles.clone()
+                            + (middle_first_nibble + middle_second_nibble * c16.clone() * power_of_randomness[0].clone()) * mult.clone() * (one.clone() - is_middle_even_nibbles.clone()); 
 
-                        // `after_nibbles_rlc` computation depends on whether `nibbles_rlc` has even or odd nibbles
-                        after_nibbles_rlc = after_nibbles_rlc
-                            + (first_nibble_after.clone() * c16.clone() + second_nibble_after.clone()) * mult.clone()
-                            * (is_after_even_nibbles.clone() * (one.clone() - is_even_nibbles.clone()) + (one.clone() - is_after_even_nibbles.clone()) * is_even_nibbles.clone())
-                            + (first_nibble_after.clone() + second_nibble_after.clone() * c16.clone() * power_of_randomness[0].clone()) * mult.clone()
-                            * ((is_after_even_nibbles.clone() * is_even_nibbles.clone() + (one.clone() - is_after_even_nibbles.clone()) * (one.clone() - is_even_nibbles.clone())));
+                        // `short_nibbles_rlc` computation depends on whether `middle_nibbles_rlc` has even or odd nibbles
+                        short_nibbles_rlc = short_nibbles_rlc
+                            + (short_first_nibble.clone() * c16.clone() + short_second_nibble.clone()) * mult.clone()
+                            * (is_short_even_nibbles.clone() * (one.clone() - is_middle_even_nibbles.clone()) + (one.clone() - is_short_even_nibbles.clone()) * is_middle_even_nibbles.clone())
+                            + (short_first_nibble.clone() + short_second_nibble.clone() * c16.clone() * power_of_randomness[0].clone()) * mult.clone()
+                            * ((is_short_even_nibbles.clone() * is_middle_even_nibbles.clone() + (one.clone() - is_short_even_nibbles.clone()) * (one.clone() - is_middle_even_nibbles.clone())));
 
                         mult = mult * power_of_randomness[0].clone();
                     } 
@@ -635,25 +660,15 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         accs.acc_c.mult,
                         Rotation(rot_into_ext_node_storage)) * (one.clone() - is_account_proof.clone());
 
-                    /*
-                    let foo = Expression::Constant(F::from(6));
-                    constraints.push((
-                        "foo",
-                        q_not_first
-                            * q_enable
-                            * (after_nibbles_rlc.clone() - foo)
-                    ));
-                    */
-
-                    nibbles_rlc = nibbles_rlc
-                        + (drifted_pos.clone() * c16.clone() + after_nibbles_rlc.clone()) * mult_after.clone() * is_even_nibbles.clone()
-                        + (drifted_pos.clone() + after_nibbles_rlc.clone() * power_of_randomness[0].clone()) * mult_after.clone() * (one.clone() - is_even_nibbles.clone());
+                    middle_nibbles_rlc = middle_nibbles_rlc
+                        + (drifted_pos.clone() * c16.clone() + short_nibbles_rlc.clone()) * mult_after.clone() * is_middle_even_nibbles.clone()
+                        + (drifted_pos.clone() + short_nibbles_rlc.clone() * power_of_randomness[0].clone()) * mult_after.clone() * (one.clone() - is_middle_even_nibbles.clone());
 
                     constraints.push((
                         "Nibbles in before are the same as nibbles in inserted + after",
                         q_not_first
                             * q_enable
-                            * (before_nibbles_rlc - nibbles_rlc)
+                            * (long_nibbles_rlc - middle_nibbles_rlc)
                     ));
 
                     constraints

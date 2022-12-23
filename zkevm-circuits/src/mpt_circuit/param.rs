@@ -131,9 +131,9 @@ pub const ACCOUNT_LEAF_ROWS: i32 = 8;
 pub const ACCOUNT_LEAF_ROWS_NUM: i32 = 9;
 
 // indexes for inserted extension node (at the place of the existing extension node):
-pub const EXISTING_EXT_NODE_BEFORE_SELECTORS: i32 = 0;
-pub const EXISTING_EXT_NODE_BEFORE_S: i32 = 1;
-pub const EXISTING_EXT_NODE_BEFORE_C: i32 = 2;
-pub const EXISTING_EXT_NODE_AFTER_SELECTORS: i32 = 3;
-pub const EXISTING_EXT_NODE_AFTER_S: i32 = 4;
-pub const EXISTING_EXT_NODE_AFTER_C: i32 = 5;
+pub const LONG_EXT_NODE_SELECTORS: i32 = 0;
+pub const LONG_EXT_NODE_S: i32 = 1;
+pub const LONG_EXT_NODE_C: i32 = 2;
+pub const SHORT_EXT_NODE_SELECTORS: i32 = 3;
+pub const SHORT_EXT_NODE_S: i32 = 4;
+pub const SHORT_EXT_NODE_C: i32 = 5;
