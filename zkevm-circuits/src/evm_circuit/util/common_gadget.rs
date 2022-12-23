@@ -412,6 +412,10 @@ impl<F: Field> TransferGadget<F> {
         Self { sender, receiver }
     }
 
+    pub(crate) fn sender(&self) -> &UpdateBalanceGadget<F, 2, false> {
+        &self.sender
+    }
+
     pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
         &self.receiver
     }
