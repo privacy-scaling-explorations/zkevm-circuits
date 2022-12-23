@@ -188,7 +188,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
-        let has_value = 1.expr() - value_is_zero.expr();
+        let has_value = select::expr(
+            is_delegatecall.expr(),
+            0.expr(),
+            1.expr() - value_is_zero.expr(),
+        );
         cb.condition(has_value.clone(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
@@ -656,7 +660,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_code_hash,
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
-        let has_value = !value.is_zero();
+        let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
         } else {
@@ -809,12 +813,12 @@ mod test {
 
     fn callee(code: bytecode::Bytecode) -> Account {
         let code = code.to_vec();
-        let balance = if code.is_empty() { 0 } else { 0xdeadbeefu64 };
+        let is_empty = code.is_empty();
         Account {
             address: Address::repeat_byte(0xff),
-            balance: balance.into(),
             code: code.into(),
-            nonce: 1.into(),
+            nonce: if false { 0 } else { 1 }.into(),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }
     }
