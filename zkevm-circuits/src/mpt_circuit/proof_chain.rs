@@ -1,3 +1,4 @@
+use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression},
@@ -6,10 +7,16 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
+    constraints,
     mpt_circuit::account_leaf::AccountLeafCols,
-    mpt_circuit::columns::{PositionCols, ProofTypeCols},
     mpt_circuit::storage_leaf::StorageLeafCols,
+    mpt_circuit::{
+        columns::{PositionCols, ProofTypeCols},
+        helpers::ColumnTransition,
+    },
 };
+
+use super::helpers::BaseConstraintBuilder;
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -59,245 +66,124 @@ impl<F: FieldExt> ProofChainConfig<F> {
         inter_final_root: Column<Advice>,
         address_rlc: Column<Advice>,
     ) -> Self {
-        let config = ProofChainConfig {
-            _marker: PhantomData,
-        };
-
+        let mut cb = BaseConstraintBuilder::default();
         meta.create_gate("Proof chaining constraints", |meta| {
-            let mut constraints = vec![];
+        constraints!{[meta, cb], {
+            let q_enable = f!(position_cols.q_enable);
+            let q_not_first = f!(position_cols.q_not_first);
+            let not_first_level = ColumnTransition::new(meta, position_cols.not_first_level);
+            let is_branch_init = a!(is_branch_init);
+            let is_account_leaf_key_s = a!(account_leaf.is_key_s);
+            let is_storage_leaf_key_s = a!(storage_leaf.is_s_key);
+            let is_storage_leaf_last_row_prev = a!(storage_leaf.is_non_existing, -1);
+            let is_account_leaf_last_row_prev = a!(account_leaf.is_in_added_branch, -1);
+            let is_non_storage_mod_proof_type_prev = not::expr(a!(proof_type.is_storage_mod, -1));
 
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let not_first_level_prev = meta.query_advice(position_cols.not_first_level, Rotation::prev());
-            let not_first_level_cur = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-            let is_branch_init = meta.query_advice(is_branch_init, Rotation::cur());
-            let is_account_leaf_key_s = meta.query_advice(account_leaf.is_key_s, Rotation::cur());
-            let is_storage_leaf_key_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
-            let is_storage_leaf_last_row_prev = meta.query_advice(storage_leaf.is_non_existing, Rotation::prev());
-            let is_account_leaf_last_row_prev = meta.query_advice(account_leaf.is_in_added_branch, Rotation::prev());
+            let start_root = ColumnTransition::new(meta, inter_start_root);
+            let final_root = ColumnTransition::new(meta, inter_final_root);
+            let address_rlc = ColumnTransition::new(meta, address_rlc);
 
-            let one = Expression::Constant(F::one());
-            let is_non_storage_mod_proof_type_prev = one.clone() - meta.query_advice(proof_type.is_storage_mod, Rotation::prev());
+            let is_branch_or_account_leaf = is_account_leaf_key_s.expr() + is_branch_init.expr();
 
-            let start_root_prev = meta.query_advice(inter_start_root, Rotation::prev());
-            let start_root_cur = meta.query_advice(inter_start_root, Rotation::cur());
-            let final_root_prev = meta.query_advice(inter_final_root, Rotation::prev());
-            let final_root_cur = meta.query_advice(inter_final_root, Rotation::cur());
+            ifx!{q_enable => {
+                ifx!{not::expr(q_not_first.expr()) => {
+                    // In the first row, it needs to be `not_first_level = 0`. The selector `q_not_first`
+                    // is a fixed column, so can rely on it we are really in the first row.
+                    // Two nodes can appear in the first level: account leaf or branch / extension node.
+                    // The storage leaf cannot appear as it requires to have an account leaf above it
+                    // (a separate constraint for this).
+                    // Here, we check for the case when the account leaf / branch/extension node is in the first level.
+                    ifx!{is_branch_or_account_leaf => {
+                        require!(not_first_level => 0);
+                    }}
+                } elsex {
+                    // When there is a last storage leaf row in the previous row, in the current row it needs
+                    // to be `not_first_level = 1` (we are in account leaf/branch init).
+                    ifx!{is_branch_or_account_leaf, not::expr(is_storage_leaf_last_row_prev.expr()) => {
+                        require!(not_first_level => 1);
+                    }}
 
-            let address_rlc_prev = meta.query_advice(address_rlc, Rotation::prev());
-            let address_rlc_cur = meta.query_advice(address_rlc, Rotation::cur());
+                    // When there is a last account leaf row in the previous row and the proof is about
+                    // non storage modification (proof ends with account leaf),
+                    // in the current row it needs to be `not_first_level = 1` (we are in account leaf/branch init).
+                    ifx!{is_branch_or_account_leaf, is_non_storage_mod_proof_type_prev, not::expr(is_account_leaf_last_row_prev.expr()) => {
+                        require!(not_first_level => 1);
+                    }}
 
-            /*
-            In the first row, it needs to be `not_first_level = 0`. The selector `q_not_first`
-            is a fixed column, so can rely on it we are really in the first row.
+                    // `not_first_level` can change only in `is_branch_init` or `is_account_leaf_key_s` or
+                    // `is__leaf_key_s`.
+                    // Note that the change `not_first_level = 1` to `not_first_level = 0` (going to the first level)
+                    // is covered by the constraints above which constrain when such a change can occur.
+                    // On the other hand, this constraint ensured that `not_first_level` is changed in the middle
+                    // of the node rows.
+                    ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()), not::expr(is_storage_leaf_key_s.expr()) => {
+                        require!(not_first_level.cur() => not_first_level.prev());
+                    }}
 
-            Two nodes can appear in the first level: account leaf or branch / extension node.
-            The storage leaf cannot appear as it requires to have an account leaf above it
-            (a separate constraint for this).
-            Here, we check for the case when the account leaf is in the first level.
-            */
-            constraints.push((
-                "First row needs to have not_first_level = 0 (account leaf key)",
-                q_enable.clone() * is_account_leaf_key_s.clone() * (one.clone() - q_not_first.clone()) * not_first_level_cur.clone(),
-            ));
+                    // `start_root`/`final_root` can change only in the first row of the first level.
+                    // We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
+                    // that means when `not_first_level` goes from 1 to 0.
+                    ifx!{not_first_level.prev() - (not_first_level.cur() + 1.expr())  => {
+                        require!(start_root.cur() => start_root.prev());
+                        require!(final_root.cur() => final_root.prev());
+                    }}
 
-            /*
-            In the first row, it needs to be `not_first_level = 0`. The selector `q_not_first`
-            is a fixed column, so can rely on it we are really in the first row.
+                    // When we go from one modification to another, the previous `final_root` needs to be
+                    // the same as the current `start_root`.
+                    ifx!{not_first_level.prev(), not::expr(not_first_level.cur())  => {
+                        require!(final_root.prev() => start_root.cur());
+                    }}
 
-            Two nodes can appear in the first level: account leaf or branch / extension node.
-            The storage leaf cannot appear as it requires to have an account leaf above it
-            (a separate constraint for this).
-            Here, we check for the case when the branch / extension node is in the first level.
-            */
-            constraints.push((
-                "First row needs to have not_first_level = 0 (branch init)",
-                q_enable * (one.clone() - q_not_first.clone()) * is_branch_init.clone() * not_first_level_cur.clone(),
-            ));
+                    // If `not_first_level` is 0 in a previous row (being in branch init),
+                    // then `not_first_level` needs to be 1 in the current row (preventing two consecutive
+                    // blocks to be `not_first_level = 0`).
+                    ifx!{is_branch_init, not::expr(not_first_level.prev())  => {
+                        require!(not_first_level => 1);
+                    }}
 
-            /*
-            When there is a last storage leaf row in the previous row, in the current row it needs
-            to be `not_first_level = 0` (we are in account leaf).
-            */
-            constraints.push((
-                "not_first_level = 0 follows the last storage leaf row (account leaf)",
-                q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
-                    * is_account_leaf_key_s.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * (one.clone() - is_storage_leaf_last_row_prev.clone()),
-            ));
+                    // It needs to be ensured there is an account proof before the
+                    // storage proof. Otherwise the attacker could use only a storage proof with a properly
+                    // set `address_rlc` (storage mod lookup row contains `val_prev`, `val_cur`, `key_rlc`,
+                    // `address_rlc`) and it would not be detected that the account proof has not validated
+                    // (was not there).
+                    // We make sure `address_rlc = 0` at the beginning of the proof (except if it is
+                    // the account leaf which already have set the proper `address_rlc`). This makes sure
+                    // that there is a step where `address_rlc` is set to the proper value. This step
+                    // should happen in the account leaf first row (there is a separate constraint that
+                    // allows `address_rlc` to be changed only in the account leaf first row).
+                    // So to have the proper `address_rlc` we have to have an account leaf (and thus an account proof).
+                    // If the attacker would try to use a storage proof without an account proof, the first
+                    // storage proof node would need to be denoted by `not_first_level = 0` (otherwise
+                    // constraints related to `not_first_level` would fail - there needs to be `not_firstl_level = 0`
+                    // after the end of the previous proof). But then if this node is a branch, this constraint
+                    // would make sure that `address_rlc = 0`. As `address_rlc` cannot be changed later on
+                    // in the storage proof, the lookup will fail (except for the negligible probability that
+                    // the lookup really requires `address_rlc = 0`). If the first node is a storage leaf, we
+                    // need to ensure in a separate constraint that `address_rlc = 0` in this case too.
+                    // First row of first level can be (besides `branch_init`) also `is_account_leaf_key_s`,
+                    // but in this case `address_rlc` needs to be set.
+                    // Ensuring that the storage proof cannot be used without the account proof - in case the storage
+                    // proof would consist only of a storage leaf.
+                    ifx!{is_branch_init.expr() + is_storage_leaf_key_s.expr(), not::expr(not_first_level.cur())  => {
+                        require!(address_rlc => 0);
+                    }}
 
-            /*
-            When there is a last storage leaf row in the previous row, in the current row it needs
-            to be `not_first_level = 0` (we are in branch init).
-            */
-            constraints.push((
-                "not_first_level = 0 follows the last storage leaf row (branch init)",
-                q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
-                    * is_branch_init.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * (one.clone() - is_storage_leaf_last_row_prev),
-            ));
+                    // It needs to be ensured that `address_rlc` changes only at the first row of the account leaf
+                    // or in the branch init row if it is in the first level.
+                    ifx!{not::expr(is_account_leaf_key_s.expr()), is_branch_init.expr() - (not_first_level.cur() + 1.expr()) => {
+                        require!(address_rlc.cur() => address_rlc.prev());
+                    }}
+                }}
 
-            /*
-            When there is a last account leaf row in the previous row and the proof is about
-            non storage modification (proof ends with account leaf),
-            in the current row it needs to be `not_first_level = 0` (we are in account leaf).
-            */
-            constraints.push((
-                "not_first_level = 0 follows the last account leaf row when non storage mod proof (account leaf)",
-                q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
-                    * is_account_leaf_key_s.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * is_non_storage_mod_proof_type_prev.clone()
-                    * (one.clone() - is_account_leaf_last_row_prev.clone()),
-            ));
+                // TODO: check public roots to match with first and last inter roots
+            }}
+            }}
 
-            /*
-            When there is a last account leaf row in the previous row and the proof is about
-            non storage modification (proof ends with account leaf),
-            in the current row it needs to be `not_first_level = 0` (we are in branch init).
-            */
-            constraints.push((
-                "not_first_level = 0 follows the last account leaf row when non storage mod proof (branch init)",
-                q_not_first.clone() // for the first row, we already have a constraint for not_first_level = 0
-                    * is_branch_init.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * is_non_storage_mod_proof_type_prev
-                    * (one.clone() - is_account_leaf_last_row_prev),
-            ));
-
-            /*
-            `not_first_level` can change only in `is_branch_init` or `is_account_leaf_key_s` or
-            `is__leaf_key_s`.
-
-            Note that the change `not_first_level = 1` to `not_first_level = 0` (going to the first level)
-            is covered by the constraints above which constrain when such a change can occur.
-            On the other hand, this constraint ensured that `not_first_level` is changed in the middle
-            of the node rows.
-            */
-            constraints.push((
-                "not_first_level does not change except at is_branch_init or is_account_leaf_key_s or is_storage_leaf_key_s",
-                q_not_first.clone()
-                    * (one.clone() - is_branch_init.clone())
-                    * (one.clone() - is_account_leaf_key_s.clone())
-                    * (one.clone() - is_storage_leaf_key_s.clone())
-                    * (not_first_level_cur.clone() - not_first_level_prev.clone()),
-            ));
-
-            /*
-            `start_root` can change only in the first row of the first level.
-            We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
-            that means when `not_first_level` goes from 1 to 0.
-            */
-            constraints.push((
-                "start_root can change only when in the first row of the first level",
-                q_not_first.clone()
-                    * (not_first_level_prev.clone() - not_first_level_cur.clone() - one.clone())
-                    * (start_root_cur.clone() - start_root_prev),
-            ));
-
-            /*
-            `final_root` can change only in the first row of the first level.
-            We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
-            that means when `not_first_level` goes from 1 to 0.
-            */
-            constraints.push((
-                "final_root can change only when in the first row of the first level",
-                q_not_first.clone()
-                    * (not_first_level_prev.clone() - not_first_level_cur.clone() - one.clone())
-                    * (final_root_cur - final_root_prev.clone()),
-            ));
-
-            /*
-            When we go from one modification to another, the previous `final_root` needs to be
-            the same as the current `start_root`.
-            */
-            constraints.push((
-                "final_root_prev = start_root_cur when not_first_level = 1 -> not_first_level = 0",
-                q_not_first.clone()
-                    * not_first_level_prev.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * (final_root_prev - start_root_cur),
-            ));
-
-            /*
-            If `not_first_level` is 0 in a previous row (being in branch init),
-            then `not_first_level` needs to be 1 in the current row (preventing two consecutive
-            blocks to be `not_first_level = 0`).
-            */
-            constraints.push((
-                "not_first_level 0 -> 1 in branch init after the first level",
-                q_not_first.clone()
-                    * is_branch_init.clone()
-                    * (one.clone() - not_first_level_prev)
-                    * (not_first_level_cur.clone() - one.clone()),
-            ));
-
-            /*
-            It needs to be ensured there is an account proof before the
-            storage proof. Otherwise the attacker could use only a storage proof with a properly
-            set `address_rlc` (storage mod lookup row contains `val_prev`, `val_cur`, `key_rlc`,
-            `address_rlc`) and it would not be detected that the account proof has not validated
-            (was not there).
-
-            We make sure `address_rlc = 0` at the beginning of the proof (except if it is
-            the account leaf which already have set the proper `address_rlc`). This makes sure
-            that there is a step where `address_rlc` is set to the proper value. This step
-            should happen in the account leaf first row (there is a separate constraint that
-            allows `address_rlc` to be changed only in the account leaf first row).
-            So to have the proper `address_rlc` we have to have an account leaf (and thus an account proof).
-
-            If the attacker would try to use a storage proof without an account proof, the first
-            storage proof node would need to be denoted by `not_first_level = 0` (otherwise
-            constraints related to `not_first_level` would fail - there needs to be `not_firstl_level = 0`
-            after the end of the previous proof). But then if this node is a branch, this constraint
-            would make sure that `address_rlc = 0`. As `address_rlc` cannot be changed later on
-            in the storage proof, the lookup will fail (except for the negligible probability that
-            the lookup really requires `address_rlc = 0`). If the first node is a storage leaf, we
-            need to ensure in a separate constraint that `address_rlc = 0` in this case too.
-            */
-            constraints.push((
-                /*
-                First row of first level can be (besides `branch_init`) also `is_account_leaf_key_s`,
-                but in this case `address_rlc` needs to be set.
-                */
-                "address_rlc is 0 in first row of first level",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * is_branch_init.clone()
-                    * address_rlc_cur.clone()
-            ));
-
-            /*
-            Ensuring that the storage proof cannot be used without the account proof - in case the storage
-            proof would consist only of a storage leaf.
-            */
-            constraints.push((
-                "address_rlc is 0 in first row of first level when in storage leaf",
-                q_not_first.clone()
-                    * (one.clone() - not_first_level_cur.clone())
-                    * is_storage_leaf_key_s
-                    * address_rlc_cur.clone()
-            ));
-
-            /*
-            It needs to be ensured that `address_rlc` changes only at the first row of the account leaf 
-            or in the branch init row if it is in the first level.
-            */
-            constraints.push((
-                "address_rlc does not change except at is_account_leaf_key_s or branch init in first level",
-                q_not_first
-                    * (one.clone() - is_account_leaf_key_s)
-                    * (is_branch_init - not_first_level_cur - one) // address_rlc goes back to 0 in branch init in first level
-                    * (address_rlc_cur - address_rlc_prev)
-            ));
-
-            // TODO: check public roots to match with first and last inter roots
-
-            constraints
+            cb.gate(1.expr())
         });
 
-        config
+        ProofChainConfig {
+            _marker: PhantomData,
+        }
     }
 }

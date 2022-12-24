@@ -574,7 +574,7 @@ impl<F: FieldExt> MPTConfig<F> {
             value_prev,
             value,
             true,
-            power_of_randomness[0].clone(),
+            power_of_randomness.clone(),
             fixed_table,
             check_zeros,
         );
@@ -592,7 +592,7 @@ impl<F: FieldExt> MPTConfig<F> {
             value_prev,
             value,
             false,
-            power_of_randomness[0].clone(),
+            power_of_randomness.clone(),
             fixed_table,
             check_zeros,
         );

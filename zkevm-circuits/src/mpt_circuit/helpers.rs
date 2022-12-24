@@ -821,6 +821,12 @@ macro_rules! constraints {
                 $when_true
                 $cb.pop_condition();
             }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr => $when_true:block) => {{
+                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr(), $condition_e.expr()]);
+                $cb.push_condition(condition.expr());
+                $when_true
+                $cb.pop_condition();
+            }};
         }
 
         macro_rules! selectx {
