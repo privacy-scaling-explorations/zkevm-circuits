@@ -172,6 +172,15 @@ mod test {
     }
 
     #[test]
+    fn balance_gadget_empty_account() {
+        let account = Some(Account::default());
+
+        test_root_ok(&account, false);
+        test_internal_ok(0x20, 0x00, &account, false);
+        test_internal_ok(0x1010, 0xff, &account, false);
+    }
+
+    #[test]
     fn balance_gadget_cold_account() {
         let account = Some(Account {
             address: *TEST_ADDRESS,
