@@ -129,21 +129,21 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
                 field_tag: AccountFieldTag::Balance,
                 value,
                 ..
-            } => (
-                RandomLinearCombination::random_linear_combine(
-                    value.to_le_bytes(),
-                    block.randomness,
-                ),
-                true,
-            ),
+            } => (value, true),
             Rw::Account {
                 field_tag: AccountFieldTag::NonExisting,
                 ..
-            } => (F::zero(), false),
+            } => (0.into(), false),
             _ => unreachable!(),
         };
-
-        self.balance.assign(region, offset, Value::known(balance))?;
+        self.balance.assign(
+            region,
+            offset,
+            Value::known(RandomLinearCombination::random_linear_combine(
+                balance.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
         self.exists
             .assign(region, offset, Value::known(F::from(exists)))?;
 
