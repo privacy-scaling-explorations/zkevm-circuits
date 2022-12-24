@@ -27,9 +27,9 @@ impl Opcode for Extcodecopy {
         let code_offset = geth_steps[0].stack.nth_last(2)?.as_u64();
         let length = geth_steps[0].stack.nth_last(3)?.as_u64();
 
-        let (exist, account) = state.sdb.get_account(&address);
-        assert!(exist, "target account does not exist");
-        let code = state.code(account.code_hash)?;
+        let (_, account) = state.sdb.get_account(&address);
+        let code_hash = account.code_hash;
+        let code = state.code(code_hash)?;
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
