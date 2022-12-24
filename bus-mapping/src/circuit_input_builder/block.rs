@@ -76,6 +76,8 @@ pub struct Block {
     pub prev_state_root: Word,
     /// Container of operations done in this block.
     pub container: OperationContainer,
+    /// code hashes at address accessed by `EXTCODECOPY` in this block
+    pub ext_code_hashes: Vec<Hash>,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
     /// Block-wise steps
@@ -126,6 +128,7 @@ impl Block {
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             prev_state_root,
             container: OperationContainer::new(),
+            ext_code_hashes: Vec::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
                 end_block_not_last: ExecStep {
