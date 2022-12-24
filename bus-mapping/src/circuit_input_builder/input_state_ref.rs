@@ -20,7 +20,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, Hash,
+    Address, GethExecStep, Hash, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -981,7 +981,8 @@ impl<'a> CircuitInputStateRef<'a> {
         self.block.add_exp_event(event)
     }
 
-    /// Push code hash at an address accessed through `EXTCODECOPY` to the block.
+    /// Push code hash at an address accessed through `EXTCODECOPY` to the
+    /// block.
     pub fn add_ext_code_hash(&mut self, code_hash: Hash) {
         self.block.add_ext_code_hash(code_hash)
     }

@@ -170,7 +170,8 @@ impl Block {
         self.exp_events.push(event);
     }
 
-    /// Push code hash at an address accessed through `EXTCODECOPY` to the block.
+    /// Push code hash at an address accessed through `EXTCODECOPY` to the
+    /// block.
     pub fn add_ext_code_hash(&mut self, code_hash: Hash) {
         self.ext_code_hashes.push(code_hash);
     }
