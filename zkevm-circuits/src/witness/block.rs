@@ -197,8 +197,7 @@ pub fn block_convert<F: Field>(
                 (bytecode.hash, bytecode)
             })
             .chain(block.ext_code_hashes.iter().unique().map(|code_hash| {
-                let bytecode =
-                    Bytecode::new(code_db.0.get(&code_hash).cloned().unwrap_or_default());
+                let bytecode = Bytecode::new(code_db.0.get(code_hash).cloned().unwrap_or_default());
                 (bytecode.hash, bytecode)
             }))
             .collect(),
