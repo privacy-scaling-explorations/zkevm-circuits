@@ -77,11 +77,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         );
         let code_size = cb.bytecode_length(code_hash.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
