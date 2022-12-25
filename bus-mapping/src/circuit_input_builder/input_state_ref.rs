@@ -162,20 +162,19 @@ impl<'a> CircuitInputStateRef<'a> {
     /// This method should be used in `Opcode::gen_associated_ops` instead of
     /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
     /// example, a write [`StorageOp`](crate::operation::StorageOp)).
-    pub fn push_op_reversible<T: Op + std::fmt::Debug>(
+    pub fn push_op_reversible<T: Op>(
         &mut self,
         step: &mut ExecStep,
         rw: RW,
         op: T,
     ) -> Result<(), Error> {
-        dbg!(op.clone());
         if matches!(rw, RW::WRITE) {
             self.apply_op(&op.clone().into_enum());
         }
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
             rw,
-            op.clone(),
+            op,
         ));
         step.bus_mapping_instance.push(op_ref);
 
@@ -184,7 +183,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Add the operation into reversible_ops if this call is not persistent
         if !self.call()?.is_persistent {
-            // dbg!(op.clone());
             self.tx_ctx
                 .reversion_groups
                 .last_mut()
@@ -590,7 +588,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller = self.call()?;
         let caller_ctx = self.call_ctx()?;
 
-        // dbg!(caller.address);
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
                 caller.address,
@@ -658,7 +655,7 @@ impl<'a> CircuitInputStateRef<'a> {
             is_root: false,
             is_persistent: caller.is_persistent && is_success,
             is_success,
-            rw_counter_end_of_reversion: 0, // here????
+            rw_counter_end_of_reversion: 0,
             caller_address,
             address,
             code_source,
