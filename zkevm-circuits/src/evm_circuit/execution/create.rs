@@ -525,13 +525,11 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let mut keccak_output = keccak256(&keccak_input);
         keccak_output.reverse();
 
-        dbg!(keccak_input.clone());
         self.keccak_input.assign(
             region,
             offset,
             Value::known(rlc::value(keccak_input.iter().rev(), block.randomness)),
         )?;
-        dbg!(keccak_input.len());
         self.keccak_input_length.assign(
             region,
             offset,
@@ -539,21 +537,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         )?;
         self.keccak_output
             .assign(region, offset, Some(keccak_output))?;
-
-        // let nonce_le_bytes = caller_nonce.to_le_bytes();
-        // let most_significant_nonce_byte_index =
-        //     (u64::from(u64::BITS + 1 - caller_nonce.leading_zeros()) + 7) / 8;
-        // for i in 0..N_BYTES_U64 {
-        //     self.most_significant_nonce_byte_selectors[i].assign(
-        //         region,
-        //         offset,
-        //         Value::known(
-        //             (u64::try_from(i).unwrap() == most_significant_nonce_byte_index)
-        //                 .to_scalar()
-        //                 .unwrap(),
-        //         ),
-        //     )?;
-        // }
 
         Ok(())
     }
@@ -623,16 +606,12 @@ impl<F: Field> RlpU64Gadget<F> {
         offset: usize,
         value: u64,
     ) -> Result<(), Error> {
-        // dbg!(value);
-
         let bytes = value.to_le_bytes();
-        // dbg!(bytes.clone());
         let most_significant_byte_index = bytes
             .iter()
             .rev()
             .position(|byte| *byte != 0)
             .map(|i| N_BYTES_U64 - i - 1);
-        // dbg!(most_significant_byte_index);
         self.most_significant_byte_is_zero.assign(
             region,
             offset,
@@ -1025,7 +1004,6 @@ mod test {
     #[test]
     fn create2_really_create() {
         for nonce in [1, 0, 1, 0xff, 0x100, 0x1000000] {
-            dbg!(nonce);
             let initializer = callee_bytecode(true, 0, 10).code();
 
             let root_code = bytecode! {

@@ -205,7 +205,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let keccak_input = if IS_CREATE2 {
             let salt = geth_step.stack.nth_last(3)?;
-            dbg!(salt);
             assert_eq!(
                 address,
                 get_create2_address(
