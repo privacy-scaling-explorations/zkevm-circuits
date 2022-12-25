@@ -1,7 +1,6 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::state_db::Account;
 use crate::Error;
 use eth_types::{GethExecStep, ToAddress, ToWord, Word, U256};
 
@@ -54,8 +53,10 @@ impl Opcode for Extcodesize {
         )?;
 
         // Read account code hash and get code length.
-        let (exists, &Account { code_hash, .. }) = state.sdb.get_account(&address);
+        let account = state.sdb.get_account(&address).1;
+        let exists = !account.is_empty();
         let code_size = if exists {
+            let code_hash = account.code_hash;
             let code_hash_word = code_hash.to_word();
             state.account_read(
                 &mut exec_step,
@@ -95,52 +96,59 @@ mod extcodesize_tests {
     use crate::mock::BlockData;
     use crate::operation::{AccountOp, CallContextOp, StackOp};
     use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Bytecode, Bytes, Word, U256};
+    use eth_types::geth_types::{Account, GethData};
+    use eth_types::{address, bytecode, Address, Bytecode, Bytes, Word, U256};
     use ethers_core::utils::keccak256;
+    use lazy_static::lazy_static;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn test_extcodesize_of_non_existing_address() {
-        test_ok(false, false);
+    lazy_static! {
+        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
+        static ref TEST_CODE: Bytes = Bytes::from([34, 54, 56]);
+        static ref TEST_ACCOUNT: Account = Account {
+            address: *TEST_ADDRESS,
+            code: TEST_CODE.clone(),
+            ..Default::default()
+        };
     }
 
     #[test]
-    fn test_extcodesize_of_cold_address() {
-        test_ok(true, false);
+    fn extcodesize_opcode_non_existing_account() {
+        test_ok(None, false);
     }
 
     #[test]
-    fn test_extcodesize_of_warm_address() {
-        test_ok(true, true);
+    fn extcodesize_opcode_empty_account() {
+        test_ok(Some(Account::default()), false);
     }
 
-    fn test_ok(exists: bool, is_warm: bool) {
-        // In each test case, this is the external address we will call EXTCODESIZE on.
-        let address = address!("0xaabbccddee000000000000000000000000000000");
+    #[test]
+    fn extcodesize_opcode_cold_account() {
+        test_ok(Some(TEST_ACCOUNT.clone()), false);
+    }
 
-        let mut code = Bytecode::default();
+    #[test]
+    fn extcodesize_opcode_warm_account() {
+        test_ok(Some(TEST_ACCOUNT.clone()), true);
+    }
+
+    fn test_ok(account: Option<Account>, is_warm: bool) {
+        let account_exists = !account.as_ref().map_or(true, |acc| acc.is_empty());
+
+        let mut bytecode = Bytecode::default();
         if is_warm {
-            code.append(&bytecode! {
-                PUSH20(address.to_word())
+            bytecode.append(&bytecode! {
+                PUSH20(TEST_ADDRESS.to_word())
                 EXTCODESIZE
                 POP
             });
         }
-        code.append(&bytecode! {
-            PUSH20(address.to_word())
+        bytecode.append(&bytecode! {
+            PUSH20(TEST_ADDRESS.to_word())
             EXTCODESIZE
             STOP
         });
-
-        let ext_code = if exists {
-            Bytes::from([34, 54, 56])
-        } else {
-            Bytes::default()
-        };
-        let ext_code_size = ext_code.len();
-        let ext_code_hash = Word::from(keccak256(&ext_code));
 
         // Get the execution steps from the external tracer.
         let block: GethData = TestContext::<3, 1>::new(
@@ -149,12 +157,9 @@ mod extcodesize_tests {
                 accs[0]
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .balance(Word::from(1u64 << 20))
-                    .code(code.clone());
-                if exists {
-                    accs[1]
-                        .address(address)
-                        .balance(Word::from(1u64 << 20))
-                        .code(ext_code);
+                    .code(bytecode);
+                if account_exists {
+                    accs[1].address(*TEST_ADDRESS).code(TEST_CODE.clone());
                 } else {
                     accs[1]
                         .address(address!("0x0000000000000000000000000000000000000020"))
@@ -178,7 +183,7 @@ mod extcodesize_tests {
             .unwrap();
 
         // Check if account address is in access list as a result of bus mapping.
-        assert!(builder.sdb.add_account_to_access_list(address));
+        assert!(builder.sdb.add_account_to_access_list(*TEST_ADDRESS));
 
         let tx_id = 1;
         let transaction = &builder.block.txs()[tx_id - 1];
@@ -200,7 +205,7 @@ mod extcodesize_tests {
             &StackOp {
                 call_id,
                 address: StackAddress::from(1023u32),
-                value: address.to_word()
+                value: TEST_ADDRESS.to_word()
             }
         );
 
@@ -243,7 +248,7 @@ mod extcodesize_tests {
             operation.op(),
             &TxAccessListAccountOp {
                 tx_id,
-                address,
+                address: *TEST_ADDRESS,
                 is_warm: true,
                 is_warm_prev: is_warm
             }
@@ -253,16 +258,17 @@ mod extcodesize_tests {
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
-            &(if exists {
+            &(if account_exists {
+                let code_hash = Word::from(keccak256(TEST_CODE.clone()));
                 AccountOp {
-                    address,
+                    address: *TEST_ADDRESS,
                     field: AccountField::CodeHash,
-                    value: ext_code_hash,
-                    value_prev: ext_code_hash,
+                    value: code_hash,
+                    value_prev: code_hash,
                 }
             } else {
                 AccountOp {
-                    address,
+                    address: *TEST_ADDRESS,
                     field: AccountField::NonExisting,
                     value: Word::zero(),
                     value_prev: Word::zero(),
@@ -277,7 +283,7 @@ mod extcodesize_tests {
             &StackOp {
                 call_id,
                 address: 1023u32.into(),
-                value: ext_code_size.into(),
+                value: (if account_exists { TEST_CODE.len() } else { 0 }).into(),
             }
         );
     }
