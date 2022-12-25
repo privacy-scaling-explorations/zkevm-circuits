@@ -26,6 +26,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
+    OpcodeStack,
 }
 impl_expr!(FixedTableTag);
 
@@ -107,6 +108,18 @@ impl FixedTableTag {
                             F::from(opcode.as_u64()),
                             F::from(opcode.constant_gas_cost().0),
                             F::zero(),
+                        ]
+                    }),
+            ),
+            Self::OpcodeStack => Box::new(
+                OpcodeId::iter()
+                    .filter(move |opcode| opcode.constant_gas_cost().0 > 0)
+                    .map(move |opcode| {
+                        [
+                            tag,
+                            F::from(opcode.as_u64()),
+                            F::from(opcode.valid_stack_ptr_range().0 as u64),
+                            F::from(opcode.valid_stack_ptr_range().1 as u64),
                         ]
                     }),
             ),
