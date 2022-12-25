@@ -197,7 +197,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
         let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost;
         let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
-        let _callee_gas_left = gas_remaining - gas_left.quotient();
+        let callee_gas_left = gas_remaining - gas_left.quotient();
         for (field_tag, value) in [
             (
                 CallContextFieldTag::ProgramCounter,
@@ -250,8 +250,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             is_root: To(false.expr()),
             is_create: To(true.expr()),
             code_hash: To(code_hash.expr()),
-            // gas_left: To(callee_gas_left),
-            gas_left: Any,
+            gas_left: To(callee_gas_left),
             reversible_write_counter: To(3.expr()),
             ..StepStateTransition::new_context()
         });
