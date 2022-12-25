@@ -290,13 +290,11 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 "for CREATE, keccak input is rlp([address, nonce])",
                 keccak_input.expr(),
                 nonce.rlp_rlc(cb)
-                + nonce.randomness_raised_to_rlp_length(cb) * (214.expr() * randomness_raised_to_21
-                + 148.expr() * randomness_raised_to_20)
-                    // + nonce.randomness_raised_to_rlp_length(cb)
-                    //     * ((0xc0.expr() + address_rlp_length + nonce.rlp_length())
-                    //         * randomness_raised_to_21
-                    //         + 0x94.expr() * randomness_raised_to_20
-                    //         + caller_address.expr()),
+                    + nonce.randomness_raised_to_rlp_length(cb)
+                        * (((0xc0.expr() + 21.expr() + nonce.rlp_length())
+                            * randomness_raised_to_21)
+                            + (0x80 + 20).expr() * randomness_raised_to_20
+                            + caller_address.expr()),
             );
             cb.require_equal(
                 "for CREATE, keccak input length is rlp([address, nonce]).len()",
@@ -731,8 +729,7 @@ mod test {
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
-        // static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
-        static ref CALLER_ADDRESS: Address = Address::zero();
+        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
@@ -1028,17 +1025,7 @@ mod test {
 
     #[test]
     fn create2_really_create() {
-        // for nonce in [0, 1, 127, 128, 255, 256, 0x100] {
-        //     let mut stream = rlp::RlpStream::new();
-        //     stream.begin_list(2);
-        //     stream.append(&*CALLER_ADDRESS);
-        //     stream.append(&Word::from(nonce));
-        //     let x = stream.out().to_vec();
-        //
-        //     dbg!(nonce, x.len(), x);
-        // }
-
-        for nonce in [1, 0, 1, 0xff, 0x100] {
+        for nonce in [1, 0, 1, 0xff, 0x100, 0x1000000] {
             dbg!(nonce);
             let initializer = callee_bytecode(true, 0, 10).code();
 
