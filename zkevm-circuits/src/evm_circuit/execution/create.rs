@@ -285,15 +285,18 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
             let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
             let randomness_raised_to_22 = cb.power_of_randomness()[21].clone();
-            let address_rlp_length = 21.expr();
+            // let address_rlp_length = 21.expr();
             cb.require_equal(
                 "for CREATE, keccak input is rlp([address, nonce])",
                 keccak_input.expr(),
-                ((0xc0.expr() + address_rlp_length + nonce.rlp_length()) * randomness_raised_to_21
-                    + 0x94.expr() * randomness_raised_to_20
-                    + caller_address.expr())
-                    * nonce.randomness_raised_to_rlp_length(cb)
-                    + nonce.rlp_rlc(cb),
+                nonce.rlp_rlc(cb)
+                + 214.expr() * randomness_raised_to_22
+                + 148.expr() * randomness_raised_to_21
+                    // + nonce.randomness_raised_to_rlp_length(cb)
+                    //     * ((0xc0.expr() + address_rlp_length + nonce.rlp_length())
+                    //         * randomness_raised_to_21
+                    //         + 0x94.expr() * randomness_raised_to_20
+                    //         + caller_address.expr()),
             );
             cb.require_equal(
                 "for CREATE, keccak input length is rlp([address, nonce]).len()",
@@ -718,7 +721,8 @@ mod test {
 
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     lazy_static! {
-        static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
+        // static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
+        static ref CALLER_ADDRESS: Address = Address::zero();
     }
 
     fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
