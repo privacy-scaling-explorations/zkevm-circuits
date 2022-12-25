@@ -106,11 +106,11 @@ mod extcodesize_tests {
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
         static ref TEST_CODE: Bytes = Bytes::from([34, 54, 56]);
-        static ref TEST_ACCOUNT: Account = Account {
+        static ref TEST_ACCOUNT: Option<Account> = Some(Account {
             address: *TEST_ADDRESS,
             code: TEST_CODE.clone(),
             ..Default::default()
-        };
+        });
     }
 
     #[test]
@@ -125,12 +125,12 @@ mod extcodesize_tests {
 
     #[test]
     fn extcodesize_opcode_cold_account() {
-        test_ok(Some(TEST_ACCOUNT.clone()), false);
+        test_ok(TEST_ACCOUNT.clone(), false);
     }
 
     #[test]
     fn extcodesize_opcode_warm_account() {
-        test_ok(Some(TEST_ACCOUNT.clone()), true);
+        test_ok(TEST_ACCOUNT.clone(), true);
     }
 
     fn test_ok(account: Option<Account>, is_warm: bool) {
