@@ -11,7 +11,7 @@ use crate::{
             common_gadget::TransferGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Any, Delta, To},
+                Transition::{Delta, To},
             },
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget},
@@ -96,7 +96,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.stack_pop(value.expr());
 
         let initialization_code = MemoryAddressGadget::construct_2(cb);
-        cb.stack_pop(initialization_code.offset()); // are these rlc or not?
+        cb.stack_pop(initialization_code.offset());
         cb.stack_pop(initialization_code.length());
 
         let salt = cb.condition(is_create2.expr(), |cb| {
@@ -182,12 +182,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [initialization_code.address()]);
 
-        let stack_pointer_delta = 2.expr() + is_create2.expr();
-
-        // EIP-150: all but one 64th of the caller's gas is sent to the callee.
-        // let caller_gas_left =
-        // (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
-
         let initialization_code_word_size =
             ConstantDivisionGadget::construct(cb, initialization_code.length() + 31.expr(), 32);
         let keccak_gas_cost = GasCost::COPY_SHA3.expr()
@@ -205,7 +199,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
             (
                 CallContextFieldTag::StackPointer,
-                cb.curr.state.stack_pointer.expr() + stack_pointer_delta,
+                cb.curr.state.stack_pointer.expr() + 2.expr() + is_create2.expr(),
             ),
             (CallContextFieldTag::GasLeft, gas_left.quotient()),
             (
@@ -259,7 +253,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let keccak_input_length = cb.query_cell();
         cb.condition(is_create2.expr(), |cb| {
             // TODO: some comments here explaining what's going on....
-            // is the power of randomness in reverse order??? that seems impossible
             let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
             let randomness_raised_to_32 = randomness_raised_to_16.clone().square();
             let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
@@ -283,8 +276,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.condition(not::expr(is_create2.expr()), |cb| {
             let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
             let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
-            let randomness_raised_to_22 = cb.power_of_randomness()[21].clone();
-            // let address_rlp_length = 21.expr();
             cb.require_equal(
                 "for CREATE, keccak input is rlp([address, nonce])",
                 keccak_input.expr(),
@@ -700,7 +691,7 @@ mod test {
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
         Word,
     };
-    use ethers_core::utils::rlp;
+
     use itertools::Itertools;
     use lazy_static::lazy_static;
     use mock::{eth, TestContext};
