@@ -13,9 +13,9 @@ use eth_types::{
 use ethers_core::utils::{get_create2_address, keccak256, rlp};
 
 #[derive(Debug, Copy, Clone)]
-pub struct DummyCreate<const IS_CREATE2: bool>;
+pub struct Create<const IS_CREATE2: bool>;
 
-impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
+impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
