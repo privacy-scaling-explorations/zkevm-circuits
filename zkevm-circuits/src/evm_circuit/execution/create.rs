@@ -290,8 +290,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 "for CREATE, keccak input is rlp([address, nonce])",
                 keccak_input.expr(),
                 nonce.rlp_rlc(cb)
-                + 214.expr() * randomness_raised_to_22
-                + 148.expr() * randomness_raised_to_21
+                + nonce.randomness_raised_to_rlp_length(cb) * (214.expr() * randomness_raised_to_21
+                + 148.expr() * randomness_raised_to_20)
                     // + nonce.randomness_raised_to_rlp_length(cb)
                     //     * ((0xc0.expr() + address_rlp_length + nonce.rlp_length())
                     //         * randomness_raised_to_21
@@ -687,7 +687,7 @@ impl<F: Field> RlpU64Gadget<F> {
                 not::expr(self.most_significant_byte_is_zero.expr()),
             ]),
             self.value(),
-            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_to_rlp_length(cb)
+            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_to_bytes_length(cb)
                 + self.bytes.expr(),
         )
     }
@@ -695,7 +695,19 @@ impl<F: Field> RlpU64Gadget<F> {
     fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
         let powers_of_randomness = cb.power_of_randomness();
         select::expr(
-            self.is_less_than_128.expr(),
+            and::expr(&[
+                self.is_less_than_128.expr(),
+                not::expr(self.most_significant_byte_is_zero.expr()),
+            ]),
+            powers_of_randomness[0].clone(),
+            powers_of_randomness[0].clone() * self.randomness_raised_to_bytes_length(cb),
+        )
+    }
+
+    fn randomness_raised_to_bytes_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+        let powers_of_randomness = cb.power_of_randomness();
+        select::expr(
+            self.most_significant_byte_is_zero.expr(),
             1.expr(),
             sum::expr(
                 self.is_most_significant_byte
