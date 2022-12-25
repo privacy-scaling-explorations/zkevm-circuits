@@ -687,24 +687,22 @@ impl<F: Field> RlpU64Gadget<F> {
                 not::expr(self.most_significant_byte_is_zero.expr()),
             ]),
             self.value(),
-            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_to_bytes_length(cb)
+            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_n_bytes_nonce(cb)
                 + self.bytes.expr(),
         )
     }
 
     fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
         let powers_of_randomness = cb.power_of_randomness();
-        select::expr(
-            and::expr(&[
+        powers_of_randomness[0].clone()
+            * select::expr(
                 self.is_less_than_128.expr(),
-                not::expr(self.most_significant_byte_is_zero.expr()),
-            ]),
-            powers_of_randomness[0].clone(),
-            powers_of_randomness[0].clone() * self.randomness_raised_to_bytes_length(cb),
-        )
+                1.expr(),
+                self.randomness_raised_n_bytes_nonce(cb),
+            )
     }
 
-    fn randomness_raised_to_bytes_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    fn randomness_raised_n_bytes_nonce(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
         let powers_of_randomness = cb.power_of_randomness();
         select::expr(
             self.most_significant_byte_is_zero.expr(),
