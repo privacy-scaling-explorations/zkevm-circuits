@@ -7,6 +7,7 @@ use crate::{
         },
         step::ExecutionState,
         util::{
+            and,
             common_gadget::TransferGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -281,14 +282,19 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         });
 
         cb.condition(not::expr(is_create2.expr()), |cb| {
-            // let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
-            // cb.require_equal(
-            //     "for CREATE, keccak input is rlp([address, nonce])",
-            //     keccak_input.expr(),
-            //     (0xc2.expr() * randomness_raised_to_20 + caller_address.expr())
-            //         * nonce.randomness_raised_to_rlp_length()
-            //         + nonce.rlp_rlc(),
-            // );
+            let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
+            let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
+            let randomness_raised_to_22 = cb.power_of_randomness()[21].clone();
+            let address_rlp_length = 21.expr();
+            cb.require_equal(
+                "for CREATE, keccak input is rlp([address, nonce])",
+                keccak_input.expr(),
+                ((0xc0.expr() + address_rlp_length + nonce.rlp_length()) * randomness_raised_to_21
+                    + 0x94.expr() * randomness_raised_to_20
+                    + caller_address.expr())
+                    * nonce.randomness_raised_to_rlp_length(cb)
+                    + nonce.rlp_rlc(cb),
+            );
             cb.require_equal(
                 "for CREATE, keccak input length is rlp([address, nonce]).len()",
                 keccak_input_length.expr(),
@@ -519,6 +525,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let mut keccak_output = keccak256(&keccak_input);
         keccak_output.reverse();
 
+        dbg!(keccak_input.clone());
         self.keccak_input.assign(
             region,
             offset,
@@ -616,16 +623,16 @@ impl<F: Field> RlpU64Gadget<F> {
         offset: usize,
         value: u64,
     ) -> Result<(), Error> {
-        dbg!(value);
+        // dbg!(value);
 
         let bytes = value.to_le_bytes();
-        dbg!(bytes.clone());
+        // dbg!(bytes.clone());
         let most_significant_byte_index = bytes
             .iter()
             .rev()
             .position(|byte| *byte != 0)
             .map(|i| N_BYTES_U64 - i - 1);
-        dbg!(most_significant_byte_index);
+        // dbg!(most_significant_byte_index);
         self.most_significant_byte_is_zero.assign(
             region,
             offset,
@@ -670,30 +677,31 @@ impl<F: Field> RlpU64Gadget<F> {
         1.expr() + not::expr(self.is_less_than_128.expr()) * self.n_bytes_nonce()
     }
 
-    // fn rlp_rlc(&self) -> Expression<F> {
-    //     select::expr(
-    //         and::expr(&[
-    //             self.is_less_than_128.expr(),
-    //             not::expr(self.most_significant_byte_is_zero.expr()),
-    //         ]),
-    //         self.value(),
-    //         (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_to_rlp_length()
-    //             + self.bytes.expr(),
-    //     )
-    // }
+    fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+        select::expr(
+            and::expr(&[
+                self.is_less_than_128.expr(),
+                not::expr(self.most_significant_byte_is_zero.expr()),
+            ]),
+            self.value(),
+            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_to_rlp_length(cb)
+                + self.bytes.expr(),
+        )
+    }
 
-    // fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-    //     let powers_of_randomness = cb.power_of_randomness();
-    //     self.is_less_than_128.expr()
-    //         + not::expr(self.is_less_than_128.expr())
-    //             * (1.expr()
-    //                 + sum::expr(
-    //                     self.is_most_significant_byte
-    //                         .iter()
-    //                         .enumerate()
-    //                         .map(|(i, indicator)| (1 + i).expr() * indicator.expr()),
-    //                 ))
-    // }
+    fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+        let powers_of_randomness = cb.power_of_randomness();
+        select::expr(
+            self.is_less_than_128.expr(),
+            1.expr(),
+            sum::expr(
+                self.is_most_significant_byte
+                    .iter()
+                    .zip(powers_of_randomness)
+                    .map(|(indicator, power)| indicator.expr() * power.clone()),
+            ),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -1006,17 +1014,17 @@ mod test {
 
     #[test]
     fn create2_really_create() {
-        for nonce in [0, 1, 127, 128, 255, 256, 0x100] {
-            let mut stream = rlp::RlpStream::new();
-            stream.begin_list(2);
-            stream.append(&*CALLER_ADDRESS);
-            stream.append(&Word::from(nonce));
-            let x = stream.out().to_vec();
+        // for nonce in [0, 1, 127, 128, 255, 256, 0x100] {
+        //     let mut stream = rlp::RlpStream::new();
+        //     stream.begin_list(2);
+        //     stream.append(&*CALLER_ADDRESS);
+        //     stream.append(&Word::from(nonce));
+        //     let x = stream.out().to_vec();
+        //
+        //     dbg!(nonce, x.len(), x);
+        // }
 
-            dbg!(nonce, x.len(), x);
-        }
-
-        for nonce in [0, 1, 0xff, 0x100] {
+        for nonce in [1, 0, 1, 0xff, 0x100] {
             dbg!(nonce);
             let initializer = callee_bytecode(true, 0, 10).code();
 
