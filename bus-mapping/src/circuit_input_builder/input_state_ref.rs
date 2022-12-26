@@ -1011,6 +1011,12 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?;
         let call_ctx = self.call_ctx()?;
+        // get value first if call/create
+        let value = match step.op {
+            OpcodeId::CALL | OpcodeId::CALLCODE => step.stack.nth_last(2)?,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
+            _ => Word::zero(),
+        };
 
         // Return from a call with a failure
         if step.depth == next_depth + 1 && next_result.is_zero() {
@@ -1033,6 +1039,10 @@ impl<'a> CircuitInputStateRef<'a> {
                     {
                         Some(ExecError::WriteProtection)
                     }
+                    OpcodeId::CALL if call.is_static && !value.is_zero()  => {  
+                        Some(ExecError::WriteProtection) 
+                    }
+
                     OpcodeId::REVERT => None,
                     _ => {
                         return Err(Error::UnexpectedExecStepError(
@@ -1105,17 +1115,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(Some(ExecError::Depth));
             }
 
-            // Insufficient_balance
-            let value = match step.op {
-                OpcodeId::CALL | OpcodeId::CALLCODE => step.stack.nth_last(2)?,
-                OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
-                _ => Word::zero(),
-            };
-
-            // CALL with value
-            if matches!(step.op, OpcodeId::CALL) && !value.is_zero() && self.call()?.is_static {
-                return Ok(Some(ExecError::WriteProtection));
-            }
 
             let sender = self.call()?.address;
             let (found, account) = self.sdb.get_account(&sender);

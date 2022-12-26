@@ -9,16 +9,15 @@ use crate::{
                 Transition::{Delta, Same},
             },
             from_bytes,
-            sum,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
+            sum, CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, Word, word};
+use eth_types::{evm_types::OpcodeId, word, Field, ToLittleEndian, Word};
 
 use ethers_core::utils::__serde_json::value;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -41,12 +40,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());        
+        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
         let gas_word = cb.query_word();
         let code_address_word = cb.query_word();
         let value = cb.query_word();
         let is_value_zero = IsZeroGadget::construct(cb, value.expr());
-
 
         cb.require_in_set(
             "ErrorWriteProtection only happend in [call, SSTORE, ]",
@@ -54,13 +52,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             vec![OpcodeId::CALL.expr(), OpcodeId::SSTORE.expr()],
         );
 
-          // Lookup values from stack if opcode is call
-          cb.condition(is_call.expr() , |cb| {
-              cb.stack_pop(gas_word.expr());
-              cb.stack_pop(code_address_word.expr());
-              cb.stack_pop(value.expr());
-              cb.require_zero("value of call is not zero", is_value_zero.expr());
-          });
+        // Lookup values from stack if opcode is call
+        cb.condition(is_call.expr(), |cb| {
+            cb.stack_pop(gas_word.expr());
+            cb.stack_pop(code_address_word.expr());
+            cb.stack_pop(value.expr());
+            cb.require_zero("value of call is not zero", is_value_zero.expr());
+        });
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
@@ -71,9 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(
-                    2.expr() + cb.curr.state.reversible_write_counter.expr(),
-                ),
+                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
@@ -117,15 +113,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let is_call = opcode == OpcodeId::CALL;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        let [mut gas , mut code_address, mut value] = [Word::zero(), Word::zero(), Word::zero()];
+        let [mut gas, mut code_address, mut value] = [Word::zero(), Word::zero(), Word::zero()];
 
         if is_call {
-            [gas, code_address, value] = [
-                step.rw_indices[0],
-                step.rw_indices[1],
-                step.rw_indices[2],
-            ]
-            .map(|idx| block.rws[idx].stack_value());
+            [gas, code_address, value] =
+                [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
+                    .map(|idx| block.rws[idx].stack_value());
 
             self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
             self.code_address
@@ -134,10 +127,21 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
                 .assign(region, offset, Some(value.to_le_bytes()))?;
         }
 
-        self.is_call.assign(region, offset, F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()))?; 
-        self.is_value_zero.assign(region, offset, sum::value(&value.to_le_bytes()))?;
-        self.restore_context
-            .assign(region, offset, block, call, step, 1 + (is_call as usize * 3))?;
+        self.is_call.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()),
+        )?;
+        self.is_value_zero
+            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
+        self.restore_context.assign(
+            region,
+            offset,
+            block,
+            call,
+            step,
+            1 + (is_call as usize * 3),
+        )?;
         Ok(())
     }
 }
@@ -222,9 +226,14 @@ mod test {
         }
     }
 
-    // ErrorWriteProtection error happen in internal call
     #[test]
-    fn test_internal_write_protection() {
+    fn test_write_protection() {
+        //test_internal_write_protection(false)
+        test_internal_write_protection(true)
+    }
+
+    // ErrorWriteProtection error happen in internal call
+    fn test_internal_write_protection(is_call: bool) {
         let mut caller_bytecode = bytecode! {
             PUSH1(0)
             PUSH1(0)
@@ -241,22 +250,25 @@ mod test {
         });
 
         let mut callee_bytecode = bytecode! {
-            PUSH1(42) // 
+            PUSH1(42) //
             PUSH1(02)
-            SSTORE
+            // SSTORE TODO: add if
             PUSH1(0)
             PUSH1(0)
-            PUSH1(0)
-            PUSH1(200)
+            PUSH1(10)
         };
 
-        // callee_bytecode.append(&bytecode! {
-        //     PUSH20(Address::repeat_byte(0xff).to_word())
-        //     PUSH2(10000)  // gas
-        //     CALL //this call got error: ErrorWriteProtection
-        //     JUMPDEST
-        //     STOP
-        // });
+        if is_call {
+            callee_bytecode.append(&bytecode! {
+                PUSH1(200)  // non zero value
+                PUSH20(Address::repeat_byte(0xff).to_word())
+                PUSH2(10000)  // gas
+                CALL //this call got error: ErrorWriteProtection
+                RETURN
+                STOP
+            });
+        }
+
         test_ok(
             Account {
                 address: Address::repeat_byte(0xfe),
@@ -304,5 +316,4 @@ mod test {
         let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(run_test_circuit(block), Ok(()));
     }
-
 }

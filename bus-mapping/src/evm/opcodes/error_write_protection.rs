@@ -20,11 +20,24 @@ impl Opcode for ErrorWriteProtection {
         };
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
         // assert op code can only be following codes
-       assert!([OpcodeId::SSTORE, OpcodeId::CREATE, OpcodeId::CREATE2, OpcodeId::CALL, OpcodeId::SELFDESTRUCT,
-        OpcodeId::LOG0,  OpcodeId::LOG1,  OpcodeId::LOG2,  OpcodeId::LOG3,  OpcodeId::LOG4].contains(&geth_step.op) );
+        assert!([
+            OpcodeId::SSTORE,
+            OpcodeId::CREATE,
+            OpcodeId::CREATE2,
+            OpcodeId::CALL,
+            OpcodeId::SELFDESTRUCT,
+            OpcodeId::LOG0,
+            OpcodeId::LOG1,
+            OpcodeId::LOG2,
+            OpcodeId::LOG3,
+            OpcodeId::LOG4
+        ]
+        .contains(&geth_step.op));
 
         if geth_step.op == OpcodeId::CALL {
-            // get only the third stack elements since the third one is the value we want to check.
+            //let call = state.parse_call(geth_step)?;
+            // get only the third stack elements since the third one is the value we want to
+            // check.
             for i in 0..3 {
                 state.stack_read(
                     &mut exec_step,
@@ -32,8 +45,9 @@ impl Opcode for ErrorWriteProtection {
                     geth_step.stack.nth_last(i)?,
                 )?;
             }
+            //state.push_call(call);
         }
-        
+
         // `IsSuccess` call context operation is added in gen_restore_context_ops
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;

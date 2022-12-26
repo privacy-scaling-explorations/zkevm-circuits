@@ -9,13 +9,13 @@ use crate::{
     Error,
 };
 use core::fmt::Debug;
-use std::os::unix::prelude::PermissionsExt;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     GethExecStep, ToAddress, ToWord, Word,
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
+use std::os::unix::prelude::PermissionsExt;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -300,8 +300,7 @@ pub fn gen_associated_ops(
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         println!(
             "geth error {:?} occurred in  {:?}",
-            exec_error,
-            geth_step.op
+            exec_error, geth_step.op
         );
 
         exec_step.error = Some(exec_error.clone());
