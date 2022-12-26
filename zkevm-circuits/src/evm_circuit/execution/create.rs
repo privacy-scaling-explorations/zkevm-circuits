@@ -41,9 +41,7 @@ pub(crate) struct CreateGadget<F> {
 
     value: Word<F>,
     salt: Word<F>,
-    new_address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
 
-    // tx access list for new address
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     was_warm: Cell<F>,
@@ -104,9 +102,17 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.stack_pop(salt.expr());
             salt
         });
-        let new_address = cb.query_rlc();
+
+        let keccak_output = cb.query_word();
+        let new_address_rlc = rlc::expr(
+            &keccak_output.cells[..20]
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>(),
+            cb.power_of_randomness(),
+        );
         let callee_is_success = cb.query_bool();
-        cb.stack_push(callee_is_success.expr() * new_address.expr());
+        cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
         let code_hash = cb.query_cell();
         cb.condition(initialization_code.has_length(), |cb| {
@@ -135,11 +141,12 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         });
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
+        let new_address = from_bytes::expr(&keccak_output.cells[..20]);
         let mut reversion_info = cb.reversion_info_read(None);
         let was_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            from_bytes::expr(&new_address.cells),
+            new_address.clone(),
             1.expr(),
             was_warm.expr(),
             Some(&mut reversion_info),
@@ -164,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.account_write(
-            from_bytes::expr(&new_address.cells),
+            new_address.clone(),
             AccountFieldTag::Nonce,
             1.expr(),
             0.expr(),
@@ -174,7 +181,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let transfer = TransferGadget::construct(
             cb,
             from_bytes::expr(&caller_address.cells),
-            from_bytes::expr(&new_address.cells),
+            new_address.clone(),
             value.clone(),
             &mut callee_reversion_info,
         );
@@ -226,10 +233,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 CallContextFieldTag::CallerAddress,
                 from_bytes::expr(&caller_address.cells),
             ),
-            (
-                CallContextFieldTag::CalleeAddress,
-                from_bytes::expr(&new_address.cells),
-            ),
+            (CallContextFieldTag::CalleeAddress, new_address),
             (
                 CallContextFieldTag::RwCounterEndOfReversion,
                 callee_reversion_info.rw_counter_end_of_reversion(),
@@ -293,23 +297,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             );
         });
 
-        let keccak_output = cb.query_word();
         cb.keccak_table_lookup(
             keccak_input.expr(),
             keccak_input_length.expr(),
             keccak_output.expr(),
-        );
-
-        cb.require_equal(
-            "324124asfr",
-            new_address.expr(),
-            rlc::expr(
-                &keccak_output.cells[..20]
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<_>>(),
-                cb.power_of_randomness(),
-            ),
         );
 
         Self {
@@ -320,7 +311,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             was_warm,
             value,
             salt,
-            new_address,
             caller_address,
             nonce,
             callee_reversion_info,
@@ -365,9 +355,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             U256::zero()
         };
 
-        let copy_rw_increase = initialization_code_length.as_usize();
-        // dopy lookup here advances rw_counter by initialization_code_length;
-
         let values: Vec<_> = (4 + usize::from(is_create2)
             ..4 + usize::from(is_create2) + initialization_code_length.as_usize())
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
@@ -378,11 +365,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             RandomLinearCombination::random_linear_combine(code_hash.clone(), block.randomness);
         self.code_hash
             .assign(region, offset, Value::known(code_hash_rlc))?;
-
-        let tx_access_rw =
-            block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
-
-        let new_address = tx_access_rw.address().expect("asdfawefasdf");
 
         for (word, assignment) in [(&self.value, value), (&self.salt, salt)] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;
@@ -395,10 +377,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             block.randomness,
         )?;
 
-        let mut bytes = new_address.to_fixed_bytes();
-        bytes.reverse();
-        self.new_address.assign(region, offset, Some(bytes))?;
-
         self.tx_id
             .assign(region, offset, Value::known(tx.id.to_scalar().unwrap()))?;
 
@@ -409,6 +387,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             call.is_persistent,
         )?;
 
+        let copy_rw_increase = initialization_code_length.as_usize();
+        let tx_access_rw =
+            block.rws[step.rw_indices[7 + usize::from(is_create2) + copy_rw_increase]];
         self.was_warm.assign(
             region,
             offset,
