@@ -1,3 +1,4 @@
+use ethers_core::types::Signature;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
@@ -25,6 +26,8 @@ pub struct Block<F> {
     pub randomness: F,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
+    /// Signatures in the block
+    pub sigs: Vec<Signature>,
     /// EndBlock step that is repeated after the last transaction and before
     /// reaching the last EVM row.
     pub end_block_not_last: ExecStep,
@@ -226,6 +229,14 @@ pub fn block_convert(
         .next()
         .map(|(k, _)| *k)
         .unwrap_or_default();
+    let chain_id = block
+        .headers
+        .values()
+        .into_iter()
+        .next()
+        .map(|header| header.chain_id.as_u64())
+        .unwrap_or(1);
+
     Ok(Block {
         randomness: Fr::from_u128(DEFAULT_RAND),
         context: block.into(),
@@ -240,9 +251,10 @@ pub fn block_convert(
                 } else {
                     None
                 };
-                tx_convert(tx, idx + 1, next_tx)
+                tx_convert(tx, idx + 1, chain_id, next_tx)
             })
             .collect(),
+        sigs: block.txs().iter().map(|tx| tx.signature).collect(),
         end_block_not_last: step_convert(&block.block_steps.end_block_not_last, last_block_num),
         end_block_last: step_convert(&block.block_steps.end_block_last, last_block_num),
         bytecodes: block

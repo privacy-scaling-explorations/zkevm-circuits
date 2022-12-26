@@ -55,7 +55,7 @@ impl<F: Field, const N_BYTES: usize> LtConfig<F, N_BYTES> {
 /// Chip that compares lhs < rhs.
 #[derive(Clone, Debug)]
 pub struct LtChip<F, const N_BYTES: usize> {
-    config: LtConfig<F, N_BYTES>,
+    pub(crate) config: LtConfig<F, N_BYTES>,
 }
 
 impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {

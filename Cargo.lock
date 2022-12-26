@@ -4643,6 +4643,7 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
+ "rlp",
  "sha3 0.10.6",
  "strum",
  "strum_macros",

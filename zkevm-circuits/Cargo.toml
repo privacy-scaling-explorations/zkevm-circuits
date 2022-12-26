@@ -33,6 +33,7 @@ maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
+rlp = "0.5.1"
 subtle = "2.4"
 rand_chacha = "0.3"
 

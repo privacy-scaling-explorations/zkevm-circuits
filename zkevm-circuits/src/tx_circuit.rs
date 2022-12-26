@@ -6,9 +6,11 @@
 
 pub mod sign_verify;
 
+use crate::table::RlpTable;
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
+use crate::witness::signed_tx_from_geth_tx;
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
@@ -40,6 +42,7 @@ pub struct TxCircuitConfig<F: Field> {
     index: Column<Advice>,
     value: Column<Advice>,
     sign_verify: SignVerifyConfig,
+    rlp_table: RlpTable,
     _marker: PhantomData<F>,
     // External tables
     keccak_table: KeccakTable,
@@ -51,6 +54,8 @@ pub struct TxCircuitConfigArgs<F: Field> {
     pub tx_table: TxTable,
     /// KeccakTable
     pub keccak_table: KeccakTable,
+    /// RlpTable
+    pub rlp_table: RlpTable,
     /// Challenges
     pub challenges: Challenges<Expression<F>>,
 }
@@ -64,6 +69,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         Self::ConfigArgs {
             tx_table,
             keccak_table,
+            rlp_table,
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
@@ -82,6 +88,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             value,
             sign_verify,
             keccak_table,
+            rlp_table,
             _marker: PhantomData,
         }
     }
@@ -362,6 +369,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
+        let rlp_table = RlpTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {
@@ -371,6 +379,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
                 TxCircuitConfigArgs {
                     tx_table,
                     keccak_table,
+                    rlp_table,
                     challenges,
                 },
             )
@@ -392,6 +401,11 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
                 error!("keccak_inputs_tx_circuit error: {:?}", e);
                 Error::Synthesis
             })?,
+            &challenges,
+        )?;
+        config.rlp_table.dev_load(
+            &mut layouter,
+            signed_tx_from_geth_tx(self.txs.as_slice(), self.chain_id),
             &challenges,
         )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)

@@ -7,7 +7,8 @@ use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
-    Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+    Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw, RwMap, RwRow,
+    SignedTransaction, Transaction,
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
@@ -58,7 +59,7 @@ impl<F: Field, C: Into<Column<Any>> + Clone, const W: usize> LookupTable<F> for 
 
 /// Tag used to identify each field in the transaction in a row of the
 /// transaction table.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum TxFieldTag {
     /// Unused tag
     Null = 0,
@@ -80,15 +81,29 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
+    /// Signature field V.
+    SigV,
+    /// Signature field R.
+    SigR,
+    /// Signature field S.
+    SigS,
     /// TxSignHash: Hash of the transaction without the signature, used for
     /// signing.
     TxSignHash,
+    /// TxHash: Hash of the transaction with the signature
+    TxHash,
     /// CallData
     CallData,
     /// The block number in which this tx is included.
     BlockNumber,
 }
 impl_expr!(TxFieldTag);
+
+impl From<TxFieldTag> for usize {
+    fn from(t: TxFieldTag) -> Self {
+        t as usize
+    }
+}
 
 /// Alias for TxFieldTag used by EVM Circuit
 pub type TxContextFieldTag = TxFieldTag;
@@ -113,7 +128,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column(),
+            value: meta.advice_column_in(SecondPhase),
         }
     }
 
@@ -1325,5 +1340,117 @@ impl<F: Field> LookupTable<F> for ExpTable {
             meta.query_advice(self.exponentiation_lo_hi, Rotation::cur()),
             meta.query_advice(self.exponentiation_lo_hi, Rotation::next()),
         ]
+    }
+}
+
+/// Lookup table embedded in the RLP circuit.
+#[derive(Clone, Copy, Debug)]
+pub struct RlpTable {
+    /// Transaction ID of the transaction. This is not the transaction hash, but
+    /// an incremental ID starting from 1 to indicate the position of the
+    /// transaction within the L2 block.
+    pub tx_id: Column<Advice>,
+    /// Denotes the field/tag that this row represents. Example: nonce, gas,
+    /// gas_price, and so on.
+    pub tag: Column<Advice>,
+    /// Denotes the decrementing index specific to this tag. The final value of
+    /// the field is accumulated in `value_acc` at `tag_index == 1`.
+    pub tag_rindex: Column<Advice>,
+    /// Denotes the accumulator value for this field, which is a linear
+    /// combination or random linear combination of the field's bytes.
+    pub value_acc: Column<Advice>,
+    /// Denotes the type of input assigned in this row. Type can either be
+    /// `TxSign` (transaction data that needs to be signed) or `TxHash`
+    /// (signed transaction's data).
+    pub data_type: Column<Advice>,
+}
+
+impl DynamicTableColumns for RlpTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.tx_id,
+            self.tag,
+            self.tag_rindex,
+            self.value_acc,
+            self.data_type,
+        ]
+    }
+}
+
+impl RlpTable {
+    /// Construct the RLP table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            tag: meta.advice_column(),
+            tag_rindex: meta.advice_column(),
+            value_acc: meta.advice_column_in(SecondPhase),
+            data_type: meta.advice_column(),
+        }
+    }
+
+    /// Get assignments to the RLP table. Meant to be used for dev purposes.
+    pub fn dev_assignments<F: Field>(
+        txs: Vec<SignedTransaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 5]> {
+        let mut assignments = vec![];
+        for signed_tx in txs {
+            for row in signed_tx
+                .gen_witness(challenges)
+                .iter()
+                .chain(signed_tx.rlp_rows(challenges.keccak_input()).iter())
+                .chain(signed_tx.tx.gen_witness(challenges).iter())
+                .chain(signed_tx.tx.rlp_rows(challenges.keccak_input()).iter())
+            {
+                assignments.push([
+                    Value::known(F::from(row.tx_id as u64)),
+                    Value::known(F::from(row.tag as u64)),
+                    Value::known(F::from(row.tag_rindex as u64)),
+                    row.value_acc,
+                    Value::known(F::from(row.data_type as u64)),
+                ]);
+            }
+        }
+        assignments
+    }
+}
+
+impl RlpTable {
+    /// Load witness into RLP table. Meant to be used for dev purposes.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        txs: Vec<SignedTransaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "rlp table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || format!("empty row: {}", offset),
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+
+                for row in Self::dev_assignments(txs.clone(), challenges) {
+                    offset += 1;
+                    for (column, value) in self.columns().iter().zip(row) {
+                        region.assign_advice(
+                            || format!("row: {}", offset),
+                            *column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }

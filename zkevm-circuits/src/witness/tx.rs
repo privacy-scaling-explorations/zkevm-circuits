@@ -1,12 +1,13 @@
+use crate::evm_circuit::step::ExecutionState;
 use crate::util::Challenges;
 use crate::{evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag};
 use bus_mapping::circuit_input_builder;
-use eth_types::H256;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{Address, Field, Signature, ToLittleEndian, ToScalar, ToWord, Word, H256};
 use halo2_proofs::circuit::Value;
+use mock::MockTransaction;
+use rlp::Encodable;
 
 use super::{step::step_convert, Call, ExecStep};
-use crate::evm_circuit::step::ExecutionState;
 
 /// Transaction in a witness block
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -37,6 +38,8 @@ pub struct Transaction {
     pub call_data_length: usize,
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
+    /// Chain ID as per EIP-155.
+    pub chain_id: u64,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -139,9 +142,79 @@ impl Transaction {
     }
 }
 
+impl Encodable for Transaction {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.begin_list(9);
+        s.append(&Word::from(self.nonce));
+        s.append(&self.gas_price);
+        s.append(&Word::from(self.gas));
+        s.append(&self.callee_address);
+        s.append(&self.value);
+        s.append(&self.call_data);
+        s.append(&Word::from(self.chain_id));
+        s.append(&Word::zero());
+        s.append(&Word::zero());
+    }
+}
+
+/// Signed transaction in a witness block
+#[derive(Debug, Clone)]
+pub struct SignedTransaction {
+    /// Transaction data.
+    pub tx: Transaction,
+    /// ECDSA signature on the transaction.
+    pub signature: Signature,
+}
+
+impl Encodable for SignedTransaction {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.begin_list(9);
+        s.append(&Word::from(self.tx.nonce));
+        s.append(&self.tx.gas_price);
+        s.append(&Word::from(self.tx.gas));
+        s.append(&self.tx.callee_address);
+        s.append(&self.tx.value);
+        s.append(&self.tx.call_data);
+        s.append(&self.signature.v);
+        s.append(&self.signature.r);
+        s.append(&self.signature.s);
+    }
+}
+
+impl From<MockTransaction> for SignedTransaction {
+    fn from(mock_tx: MockTransaction) -> Self {
+        let is_create = mock_tx.to.is_none();
+        Self {
+            tx: Transaction {
+                id: mock_tx.transaction_index.as_usize(),
+                nonce: mock_tx.nonce.as_u64(),
+                gas: mock_tx.gas.as_u64(),
+                gas_price: mock_tx.gas_price,
+                caller_address: mock_tx.from.address(),
+                callee_address: match mock_tx.to {
+                    Some(to) => to.address(),
+                    None => Address::zero(),
+                },
+                is_create,
+                value: mock_tx.value,
+                call_data: mock_tx.input.to_vec(),
+                call_data_length: mock_tx.input.len(),
+                // chain_id: mock_tx.chain_id.as_u64(),
+                ..Default::default()
+            },
+            signature: Signature {
+                r: mock_tx.r.expect("tx expected to be signed"),
+                s: mock_tx.s.expect("tx expected to be signed"),
+                v: mock_tx.v.expect("tx expected to be signed").as_u64(),
+            },
+        }
+    }
+}
+
 pub(super) fn tx_convert(
     tx: &circuit_input_builder::Transaction,
     id: usize,
+    chain_id: u64,
     next_tx: Option<&circuit_input_builder::Transaction>,
 ) -> Transaction {
     Transaction {
@@ -161,6 +234,7 @@ pub(super) fn tx_convert(
             .input
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+        chain_id,
         calls: tx
             .calls()
             .iter()
@@ -221,4 +295,41 @@ pub(super) fn tx_convert(
             })
             .collect(),
     }
+}
+
+/// Convert eth_types::geth_types::Transaction to SignedTransaction that can be
+/// used as witness in TxCircuit and RLP Circuit.
+pub fn signed_tx_from_geth_tx(
+    txs: &[eth_types::geth_types::Transaction],
+    chain_id: u64,
+) -> Vec<SignedTransaction> {
+    let mut signed_txs = Vec::with_capacity(txs.len());
+    for (i, geth_tx) in txs.iter().enumerate() {
+        signed_txs.push(SignedTransaction {
+            tx: Transaction {
+                id: i + 1,
+                nonce: geth_tx.nonce.as_u64(),
+                gas: geth_tx.gas_limit.as_u64(),
+                gas_price: geth_tx.gas_price,
+                caller_address: geth_tx.from,
+                callee_address: geth_tx.to.unwrap_or(Address::zero()),
+                is_create: geth_tx.to.is_none(),
+                value: geth_tx.value,
+                call_data: geth_tx.call_data.to_vec(),
+                call_data_length: geth_tx.call_data.len(),
+                call_data_gas_cost: geth_tx
+                    .call_data
+                    .iter()
+                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+                chain_id,
+                ..Default::default()
+            },
+            signature: Signature {
+                r: geth_tx.r,
+                s: geth_tx.s,
+                v: geth_tx.v,
+            },
+        });
+    }
+    signed_txs
 }
