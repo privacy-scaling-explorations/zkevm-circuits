@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_PROGRAM_COUNTER,
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -10,6 +9,7 @@ use crate::{
                 Transition::{Delta, Same},
             },
             from_bytes,
+            sum,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
         },
@@ -18,14 +18,19 @@ use crate::{
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, Word};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, Word, word};
 
+use ethers_core::utils::__serde_json::value;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorWriteProtectionGadget<F> {
     opcode: Cell<F>,
-    //is_condition_zero: IsZeroGadget<F>,
+    is_call: IsZeroGadget<F>,
+    gas: RLCWord<F>,
+    code_address: RLCWord<F>,
+    value: RLCWord<F>,
+    is_value_zero: IsZeroGadget<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -36,22 +41,30 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());        
+        let gas_word = cb.query_word();
+        let code_address_word = cb.query_word();
+        let value = cb.query_word();
+        let is_value_zero = IsZeroGadget::construct(cb, value.expr());
+
 
         cb.require_in_set(
-            "ErrorInvalidJump only happend in call or SSTORE",
+            "ErrorWriteProtection only happend in [call, SSTORE, ]",
             opcode.expr(),
             vec![OpcodeId::CALL.expr(), OpcodeId::SSTORE.expr()],
         );
 
+          // Lookup values from stack if opcode is call
+          cb.condition(is_call.expr() , |cb| {
+              cb.stack_pop(gas_word.expr());
+              cb.stack_pop(code_address_word.expr());
+              cb.stack_pop(value.expr());
+              cb.require_zero("value of call is not zero", is_value_zero.expr());
+          });
+
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
-        // Go to EndTx only when is_root
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-        cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
-        );
+        // TODO: constrain not root call.
 
         // When it's a root call
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
@@ -82,6 +95,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
         Self {
             opcode,
+            is_call,
+            gas: gas_word,
+            code_address: code_address_word,
+            value,
+            is_value_zero,
             restore_context,
         }
     }
@@ -96,11 +114,30 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        let is_call = opcode == OpcodeId::CALL;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        let [mut gas , mut code_address, mut value] = [Word::zero(), Word::zero(), Word::zero()];
 
+        if is_call {
+            [gas, code_address, value] = [
+                step.rw_indices[0],
+                step.rw_indices[1],
+                step.rw_indices[2],
+            ]
+            .map(|idx| block.rws[idx].stack_value());
+
+            self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
+            self.code_address
+                .assign(region, offset, Some(code_address.to_le_bytes()))?;
+            self.value
+                .assign(region, offset, Some(value.to_le_bytes()))?;
+        }
+
+        self.is_call.assign(region, offset, F::from(opcode.as_u64()) - F::from(OpcodeId::CALL.as_u64()))?; 
+        self.is_value_zero.assign(region, offset, sum::value(&value.to_le_bytes()))?;
         self.restore_context
-            .assign(region, offset, block, call, step, 1)?;
+            .assign(region, offset, block, call, step, 1 + (is_call as usize * 3))?;
         Ok(())
     }
 }
@@ -115,11 +152,6 @@ mod test {
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
     use mock::TestContext;
-
-    #[test]
-    fn invalid_jump_err() {
-        //test_invalid_jump(34, false);
-    }
 
     // internal call test
     struct Stack {
@@ -190,7 +222,7 @@ mod test {
         }
     }
 
-    // jump error happen in internal call
+    // ErrorWriteProtection error happen in internal call
     #[test]
     fn test_internal_write_protection() {
         let mut caller_bytecode = bytecode! {
