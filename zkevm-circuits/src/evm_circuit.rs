@@ -441,16 +441,20 @@ pub mod test {
         .unwrap();
 
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
-        dbg!([
-            num_rows_required_for_rw_table,
-            num_rows_required_for_fixed_table,
-            num_rows_required_for_bytecode_table,
-            num_rows_required_for_copy_table,
-            num_rows_required_for_keccak_table,
-            num_rows_required_for_tx_table,
-            num_rows_required_for_exp_table
-        ]);
+        log::debug!(
+            "{:?}",
+            [
+                num_rows_required_for_rw_table,
+                num_rows_required_for_fixed_table,
+                num_rows_required_for_bytecode_table,
+                num_rows_required_for_copy_table,
+                num_rows_required_for_keccak_table,
+                num_rows_required_for_tx_table,
+                num_rows_required_for_exp_table
+            ]
+        );
         log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+
         k
     }
 

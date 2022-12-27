@@ -53,6 +53,8 @@ pub struct StateCircuitConfig<F> {
     // For Rw::AccountStorage, identify non-existing if both committed value and
     // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
     // non-existing, otherwise do lookup for ProofType::StorageChanged.
+    // TODO: use BatchedIsZeroGadget here, once it doesn't depend on the evm circuit constraint
+    // builder.
     is_non_exist: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,

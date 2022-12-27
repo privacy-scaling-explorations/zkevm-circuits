@@ -2,6 +2,7 @@
 *.png
 .DS_Store
 .vscode
+.idea
 *.log
 *.json
 *.sh

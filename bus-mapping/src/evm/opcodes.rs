@@ -324,27 +324,24 @@ pub fn gen_associated_ops(
         exec_step.error = Some(exec_error.clone());
         // TODO: after more error state handled, refactor all error handling in
         // fn_gen_error_state_associated_ops method
-        if exec_step.oog_or_stack_error() && !geth_step.op.is_call_or_create() {
-            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        // For exceptions that have been implemented
+        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
+            return fn_gen_error_ops(state, geth_steps);
         } else {
-            let fn_gen_error_associated_ops = fn_gen_error_state_associated_ops(&exec_error);
-            // if fn_gen_error_associated_ops handles the target error, return the handled
-            // result
-            if let Some(fn_gen_error_ops) = fn_gen_error_associated_ops {
-                return fn_gen_error_ops(state, geth_steps);
-            }
+            // For exceptions that already enter next call context, but fail immediately
+            // (e.g. Depth, InsufficientBalance), we still need to parse the call.
 
-            // here for some errors which fn_gen_error_associated_ops don't handle now,
-            // continue to use dummy handling until all errors implemented in
-            // fn_gen_error_associated_ops
             if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
                 let call = state.parse_call(geth_step)?;
-                // Switch to callee's call context
                 state.push_call(call);
+            // For exceptions that fail to enter next call context, we need
+            // to restore call context of current caller
+            } else {
+                state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
             }
+            state.handle_return(geth_step)?;
+            return Ok(vec![exec_step]);
         }
-        state.handle_return(geth_step)?;
-        return Ok(vec![exec_step]);
     }
     // if no errors, continue as normal
     fn_gen_associated_ops(state, geth_steps)
