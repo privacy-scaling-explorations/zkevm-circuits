@@ -3,23 +3,15 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
-            from_bytes,
-            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            sum, CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
+            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+            math_gadget::IsZeroGadget, sum, CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, word, Field, ToLittleEndian, Word};
-
-use ethers_core::utils::__serde_json::value;
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -46,10 +38,24 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let value = cb.query_word();
         let is_value_zero = IsZeroGadget::construct(cb, value.expr());
 
+        // require_in_set method will spilit into more low degree expressions if exceed
+        // max_degree. otherwise need to do fixed lookup for these opcodes
+        // checking.
         cb.require_in_set(
             "ErrorWriteProtection only happend in [call, SSTORE, ]",
             opcode.expr(),
-            vec![OpcodeId::CALL.expr(), OpcodeId::SSTORE.expr()],
+            vec![
+                OpcodeId::CALL.expr(),
+                OpcodeId::SSTORE.expr(),
+                OpcodeId::CREATE.expr(),
+                OpcodeId::CREATE2.expr(),
+                OpcodeId::SELFDESTRUCT.expr(),
+                OpcodeId::LOG0.expr(),
+                OpcodeId::LOG1.expr(),
+                OpcodeId::LOG2.expr(),
+                OpcodeId::LOG3.expr(),
+                OpcodeId::LOG4.expr(),
+            ],
         );
 
         // Lookup values from stack if opcode is call
@@ -62,32 +68,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
-        // TODO: constrain not root call.
+        // constrain not root call as at least one previous staticcall preset.
+        cb.require_zero(
+            "ErrorWriteProtection only happen in internal call",
+            cb.curr.state.is_root.expr(),
+        );
 
-        // When it's a root call
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
-
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
+        // Restore caller state to next StepState
+        let restore_context = RestoreContextGadget::construct(
+            cb,
+            0.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
+            0.expr(),
+        );
 
         Self {
             opcode,
@@ -113,19 +109,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         let is_call = opcode == OpcodeId::CALL;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        let [mut gas, mut code_address, mut value] = [Word::zero(), Word::zero(), Word::zero()];
+        let [mut gas, mut code_address, mut value] = [U256::zero(), U256::zero(), U256::zero()];
 
         if is_call {
             [gas, code_address, value] =
                 [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
                     .map(|idx| block.rws[idx].stack_value());
-
-            self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
-            self.code_address
-                .assign(region, offset, Some(code_address.to_le_bytes()))?;
-            self.value
-                .assign(region, offset, Some(value.to_le_bytes()))?;
         }
+
+        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
+        self.code_address
+            .assign(region, offset, Some(code_address.to_le_bytes()))?;
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
 
         self.is_call.assign(
             region,
@@ -150,7 +146,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 mod test {
     use crate::evm_circuit::test::run_test_circuit;
     use crate::evm_circuit::witness::block_convert;
-    use crate::test_util::run_test_circuits;
     use eth_types::bytecode::Bytecode;
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
@@ -187,7 +182,6 @@ mod test {
             OpcodeId::REVERT
         };
 
-        // Call twice for testing both cold and warm access
         let mut bytecode = bytecode! {
             PUSH32(Word::from(stack.rd_length))
             PUSH32(Word::from(stack.rd_offset))
@@ -228,8 +222,10 @@ mod test {
 
     #[test]
     fn test_write_protection() {
-        //test_internal_write_protection(false)
-        test_internal_write_protection(true)
+        // test sstore with write protection error
+        test_internal_write_protection(false);
+        // test call with write protection error
+        test_internal_write_protection(true);
     }
 
     // ErrorWriteProtection error happen in internal call
@@ -250,22 +246,29 @@ mod test {
         });
 
         let mut callee_bytecode = bytecode! {
-            PUSH1(42) //
-            PUSH1(02)
-            // SSTORE TODO: add if
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(10)
+            PUSH1(42)
+            PUSH1(0x02)
         };
 
         if is_call {
             callee_bytecode.append(&bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(10)
                 PUSH1(200)  // non zero value
                 PUSH20(Address::repeat_byte(0xff).to_word())
                 PUSH2(10000)  // gas
-                CALL //this call got error: ErrorWriteProtection
+                //this call got error: ErrorWriteProtection
+                CALL
                 RETURN
                 STOP
+            });
+        } else {
+            callee_bytecode.append(&bytecode! {
+                SSTORE
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(10)
             });
         }
 

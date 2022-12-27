@@ -1,7 +1,8 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::error::ExecError;
 use crate::evm::{Opcode, OpcodeId};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word};
+use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ErrorWriteProtection;
@@ -19,6 +20,9 @@ impl Opcode for ErrorWriteProtection {
             None
         };
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
+        // assert error is targeting ExecError::WriteProtection.
+        assert_eq!(exec_step.clone().error.unwrap(), ExecError::WriteProtection);
+
         // assert op code can only be following codes
         assert!([
             OpcodeId::SSTORE,
@@ -35,9 +39,8 @@ impl Opcode for ErrorWriteProtection {
         .contains(&geth_step.op));
 
         if geth_step.op == OpcodeId::CALL {
-            //let call = state.parse_call(geth_step)?;
-            // get only the third stack elements since the third one is the value we want to
-            // check.
+            // get only the frist three stack elements since the third one is the value we
+            // want to check.
             for i in 0..3 {
                 state.stack_read(
                     &mut exec_step,
@@ -45,7 +48,6 @@ impl Opcode for ErrorWriteProtection {
                     geth_step.stack.nth_last(i)?,
                 )?;
             }
-            //state.push_call(call);
         }
 
         // `IsSuccess` call context operation is added in gen_restore_context_ops

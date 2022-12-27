@@ -15,7 +15,6 @@ use eth_types::{
 };
 use keccak256::EMPTY_HASH;
 use log::warn;
-use std::os::unix::prelude::PermissionsExt;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -298,9 +297,10 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        println!(
+        log::warn!(
             "geth error {:?} occurred in  {:?}",
-            exec_error, geth_step.op
+            exec_error,
+            geth_step.op
         );
 
         exec_step.error = Some(exec_error.clone());

@@ -1039,8 +1039,8 @@ impl<'a> CircuitInputStateRef<'a> {
                     {
                         Some(ExecError::WriteProtection)
                     }
-                    OpcodeId::CALL if call.is_static && !value.is_zero()  => {  
-                        Some(ExecError::WriteProtection) 
+                    OpcodeId::CALL if call.is_static && !value.is_zero() => {
+                        Some(ExecError::WriteProtection)
                     }
 
                     OpcodeId::REVERT => None,
@@ -1114,7 +1114,6 @@ impl<'a> CircuitInputStateRef<'a> {
             if step.depth == 1025 {
                 return Ok(Some(ExecError::Depth));
             }
-
 
             let sender = self.call()?.address;
             let (found, account) = self.sdb.get_account(&sender);
