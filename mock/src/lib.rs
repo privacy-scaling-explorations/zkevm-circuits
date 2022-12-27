@@ -21,8 +21,14 @@ lazy_static! {
         address!("0x00000000000000000000000000000000c014ba5e");
     /// Mock gasprice value
     pub static ref MOCK_GASPRICE: Word = Word::from(1u8);
+    /// Mock BASEFEE value
+    pub static ref MOCK_BASEFEE: Word = Word::zero();
+     /// Mock GASLIMIT value
+    pub static ref MOCK_GASLIMIT: Word = Word::from(0x2386f26fc10000u64);
     /// Mock chain ID value
     pub static ref MOCK_CHAIN_ID: Word = Word::from(1338u64);
+    /// Mock DIFFICULTY value
+    pub static ref MOCK_DIFFICULTY: Word = Word::from(0x200000u64);
     /// Mock accounts loaded with ETH to use for test cases.
     pub static ref MOCK_ACCOUNTS: Vec<Address> = vec![
         address!("0x000000000000000000000000000000000cafe111"),

@@ -168,7 +168,7 @@ pub fn block_convert(
 ) -> Result<Block<Fr>, Error> {
     Ok(Block {
         // randomness: Fr::from(0xcafeu64), // TODO: Uncomment
-        randomness: Fr::from(0x100), // Special value to reveal elements after RLC
+        randomness: Fr::from(0x10000), // Special value to reveal elements after RLC
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

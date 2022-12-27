@@ -527,6 +527,22 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    // look up opcode's min and max stack pointer
+    pub(crate) fn opcode_stack_lookup(
+        &mut self,
+        opcode: Expression<F>,
+        min_stack: Expression<F>,
+        max_stack: Expression<F>,
+    ) {
+        self.add_lookup(
+            "op code stack info",
+            Lookup::Fixed {
+                tag: FixedTableTag::OpcodeStack.expr(),
+                values: [opcode, min_stack, max_stack],
+            },
+        );
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
@@ -987,6 +1003,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         let cell = self.query_cell();
         self.call_context_lookup(false.expr(), call_id, field_tag, cell.expr());
         cell
+    }
+
+    pub(crate) fn call_context_as_word(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> Word<F> {
+        let word = self.query_word();
+        self.call_context_lookup(false.expr(), call_id, field_tag, word.expr());
+        word
     }
 
     pub(crate) fn call_context_lookup(
