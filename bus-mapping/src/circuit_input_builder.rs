@@ -24,7 +24,7 @@ use core::fmt::Debug;
 use eth_types::evm_types::GasCost;
 use eth_types::geth_types;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256, U256};
+use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256};
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
