@@ -36,12 +36,12 @@ pub(crate) struct CallOpGadget<F> {
     reversion_info: ReversionInfo<F>,
     current_callee_address: Cell<F>,
     current_caller_address: Cell<F>,
+    current_value: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
     code_address: Word<F>,
     value: Word<F>,
-    current_value: Word<F>,
     is_success: Cell<F>,
     gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
@@ -53,7 +53,6 @@ pub(crate) struct CallOpGadget<F> {
     memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
     callee_exists: Cell<F>,
-    callee_balance: Cell<F>,
     callee_code_hash: Cell<F>,
     enough_transfer_balance: CmpWordsGadget<F>,
     is_empty_code_hash: IsEqualGadget<F>,
@@ -212,7 +211,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )
         });
 
-
         // For CALLCODE opcode, get caller balance to constrain it should be greater or
         // equal to stack `value`.
         cb.condition(is_callcode.expr(), |cb| {
@@ -284,8 +282,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let gas_cost_cell = cb.query_cell();
         cb.condition(is_empty_code_hash.expr(), |cb| {
-            //cb.require_equal("gas cost when empty code", gas_cost_cell.expr(),
-            // gas_cost.clone() - has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr());
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -309,7 +305,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 + is_call.expr() * 3.expr()
                 + is_callcode.expr() * 2.expr()
                 + is_delegatecall.expr() * 2.expr();
-                + is_staticcall.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
@@ -396,7 +391,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 + is_call.expr() * 3.expr()
                 + is_callcode.expr() * 2.expr()
                 + is_delegatecall.expr() * 2.expr();
-                + is_staticcall.expr();
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 call_id: To(callee_call_id.expr()),
@@ -420,12 +414,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             reversion_info,
             current_callee_address,
             current_caller_address,
+            current_value,
             is_static,
             depth,
             gas: gas_word,
             code_address: code_address_word,
             value,
-            current_value,
             is_success,
             gas_is_u64,
             is_warm,
@@ -437,7 +431,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             memory_expansion,
             transfer,
             callee_exists,
-            callee_balance,
             callee_code_hash,
             enough_transfer_balance,
             is_empty_code_hash,
@@ -581,8 +574,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.current_value
-            .assign(region, offset, Some(current_value.to_le_bytes()))?;
+        self.current_value.assign(
+            region,
+            offset,
+            Value::known(
+                current_value
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth
@@ -629,14 +629,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             caller_balance_pair,
             callee_balance_pair,
             value,
-        )?;
-        self.callee_balance.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                callee_balance.to_le_bytes(),
-                block.randomness,
-            )),
         )?;
         self.callee_exists
             .assign(region, offset, Value::known(F::from(callee_exists)))?;

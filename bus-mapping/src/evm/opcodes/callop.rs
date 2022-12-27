@@ -4,7 +4,7 @@ use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
-use eth_types::{evm_types::OpcodeId, H256};
+use eth_types::evm_types::OpcodeId;
 use eth_types::{GethExecStep, ToWord, Word};
 use keccak256::EMPTY_HASH;
 use log::warn;
@@ -121,7 +121,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         match call.kind {
             CallKind::Call => {
                 // Transfer value only for CALL opcode.
-            
+
                 state.transfer(
                     &mut exec_step,
                     call.caller_address,
@@ -134,7 +134,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // equal to stack `value`.
                 let (_, caller_account) = state.sdb.get_account(&call.caller_address);
                 let caller_balance = caller_account.balance;
-                
+
                 state.account_read(
                     &mut exec_step,
                     call.caller_address,
@@ -210,8 +210,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             && geth_steps[1].gas.0 != callee_gas_left + if has_value { 2300 } else { 0 }
         {
             // panic with full info
-            let info1 = format!("callee_gas_left {} gas_specified {} gas_cost {} is_warm {} has_value {} is_empty_account {} current_memory_word_size {} next_memory_word_size {}, memory_expansion_gas_cost {}",
-                    callee_gas_left, gas_specified, gas_cost, is_warm, has_value, is_empty_account, curr_memory_word_size, next_memory_word_size, memory_expansion_gas_cost);
+            let info1 = format!("callee_gas_left {} gas_specified {} gas_cost {} is_warm {} has_value {} current_memory_word_size {} next_memory_word_size {}, memory_expansion_gas_cost {}",
+                    callee_gas_left, gas_specified, gas_cost, is_warm, has_value, curr_memory_word_size, next_memory_word_size, memory_expansion_gas_cost);
             let info2 = format!("args gas:{:?} addr:{:?} value:{:?} cd_pos:{:?} cd_len:{:?} rd_pos:{:?} rd_len:{:?}",
                         geth_step.stack.nth_last(0),
                         geth_step.stack.nth_last(1),
