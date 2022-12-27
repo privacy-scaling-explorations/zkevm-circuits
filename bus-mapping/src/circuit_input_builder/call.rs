@@ -102,6 +102,10 @@ impl Call {
         self.kind.is_create()
     }
 
+    /// This call is call with op DELEGATECALL
+    pub fn is_delegatecall(&self) -> bool {
+        matches!(self.kind, CallKind::DelegateCall)
+    }
     /// Get the code address if possible
     pub fn code_address(&self) -> Option<Address> {
         match self.kind {

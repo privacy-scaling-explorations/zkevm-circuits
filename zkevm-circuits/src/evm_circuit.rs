@@ -451,6 +451,8 @@ pub mod test {
             num_rows_required_for_exp_table
         ]);
         log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+
+        
         k
     }
 

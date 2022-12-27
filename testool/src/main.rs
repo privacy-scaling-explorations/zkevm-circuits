@@ -10,6 +10,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
+use log::{debug, error, info};
 use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
@@ -71,11 +72,11 @@ struct Args {
 const RESULT_CACHE: &str = "result.cache";
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    println!("{}", &test);
+    debug!("{}", &test);
 
     let trace = geth_trace(test.clone())?;
     crate::utils::print_trace(trace)?;
-    println!(
+    debug!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );
@@ -115,7 +116,7 @@ fn go() -> Result<()> {
         let mut list: Vec<_> = state_tests.into_iter().map(|t| t.id).collect();
         list.sort();
         for test in list {
-            println!("{}", test);
+            info!("{}", test);
         }
         return Ok(());
     }
@@ -126,12 +127,12 @@ fn go() -> Result<()> {
             state_tests.iter().filter(|t| t.id == test_id).collect();
 
         if state_tests_filtered.is_empty() {
-            println!(
+            info!(
                 "Test '{}' not found but found some that partially matches:",
                 test_id
             );
             for test in state_tests.iter().filter(|t| t.id.contains(&test_id)) {
-                println!("{}", test.id);
+                info!("{}", test.id);
             }
             bail!("test '{}' not found", test_id);
         }
@@ -180,7 +181,7 @@ fn go() -> Result<()> {
         let previous = if !files.is_empty() {
             let file = files.remove(0);
             let path = format!("{}/{}", REPORT_FOLDER, file);
-            println!("Comparing with previous results in {}", path);
+            info!("Comparing with previous results in {}", path);
             Some((file, Results::from_file(PathBuf::from(path))?))
         } else {
             None
@@ -189,7 +190,7 @@ fn go() -> Result<()> {
         std::fs::write(&html_filename, report.gen_html()?)?;
 
         report.print_tty()?;
-        println!("{}", html_filename);
+        info!("{}", html_filename);
     } else {
         let mut results = if args.cache {
             Results::with_cache(PathBuf::from(RESULT_CACHE))?
@@ -214,6 +215,6 @@ fn go() -> Result<()> {
 
 fn main() {
     if let Err(err) = go() {
-        eprintln!("{}", err);
+        error!("{}", err);
     }
 }

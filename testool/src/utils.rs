@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
+use log::{error, info};
 use prettytable::Table;
 use std::process::Command;
 
@@ -136,8 +137,8 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
         ]);
     }
 
-    println!("FAILED: {:?}", trace.failed);
-    println!("GAS: {:?}", trace.gas);
+    error!("FAILED: {:?}", trace.failed);
+    info!("GAS: {:?}", trace.gas);
     table.printstd();
 
     Ok(())
@@ -158,12 +159,12 @@ pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {
         match Bytecode::try_from(bytes.clone()) {
             Ok(bytecode) => {
                 for op in bytecode.iter() {
-                    println!("{}", op.to_string());
+                    info!("{}", op.to_string());
                 }
                 bytecode
             }
             Err(err) => {
-                println!("Failed to parse bytecode {:?}", err);
+                error!("Failed to parse bytecode {:?}", err);
                 Bytecode::from_raw_unchecked(bytes)
             }
         }
