@@ -85,7 +85,7 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::sha3::Sha3Gadget;
+use self::{logs::LogGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -212,7 +212,7 @@ pub(crate) struct ExecutionConfig<F> {
     jump_gadget: JumpGadget<F>,
     jumpdest_gadget: JumpdestGadget<F>,
     jumpi_gadget: JumpiGadget<F>,
-    log_gadget: DummyGadget<F, 0, 0, { ExecutionState::LOG }>,
+    log_gadget: LogGadget<F>,
     memory_gadget: MemoryGadget<F>,
     msize_gadget: MsizeGadget<F>,
     mul_div_mod_gadget: MulDivModGadget<F>,

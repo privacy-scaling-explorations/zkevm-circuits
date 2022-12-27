@@ -14,10 +14,10 @@ use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::{Challenges, SubCircuit};
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
-    max_rws: 0,
-    max_txs: 10,
-    max_calldata: 4000,
-    max_bytecode: 4000,
+    max_rws: 30000,
+    max_txs: 20,
+    max_calldata: 30000,
+    max_bytecode: 30000,
     keccak_padding: None,
 };
 

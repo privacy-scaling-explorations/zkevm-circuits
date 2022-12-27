@@ -112,6 +112,7 @@ async fn main() {
 
         contracts.insert(name.to_string(), compiled_contract);
     }
+    info!("Compiling contracts done...");
 
     let prov = get_provider();
 

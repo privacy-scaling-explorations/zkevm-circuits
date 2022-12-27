@@ -225,38 +225,7 @@ impl<'a> CircuitInputBuilder {
                 continue;
             }
             let geth_trace = &geth_traces[tx_index];
-            if geth_trace.struct_logs.is_empty() {
-                // only update state
-                self.sdb.increase_nonce(&tx.from);
-                let (_, to_acc) = self.sdb.get_account_mut(&tx.to.unwrap());
-                to_acc.balance += tx.value;
-                let (_, from_acc) = self.sdb.get_account_mut(&tx.from);
-                from_acc.balance -= tx.value;
-                let gas_cost = U256::from(geth_trace.gas.0) * tx.gas_price.unwrap();
-                debug_assert!(
-                    from_acc.balance >= gas_cost,
-                    "pay gas failed. tx {:?}, from_acc {:?}",
-                    tx,
-                    from_acc
-                );
-                from_acc.balance -= gas_cost;
-                log::trace!(
-                    "native transfer: from {} to {}, value {} fee {}",
-                    tx.from,
-                    tx.to.unwrap(),
-                    tx.value,
-                    gas_cost
-                );
-                continue;
-            }
-            log::info!(
-                "handling {}th(inner idx: {}) tx {:?}",
-                tx.transaction_index.unwrap_or_default(),
-                self.block.txs.len(),
-                tx.hash
-            );
-            let mut tx = tx.clone();
-            tx.transaction_index = Some(self.block.txs.len().into());
+            log::info!("handling {}th tx {:?}", self.block.txs.len(), tx.hash);
             self.handle_tx(
                 &tx,
                 geth_trace,
@@ -353,7 +322,11 @@ impl<'a> CircuitInputBuilder {
         // - op: None
         // Generate BeginTx step
         let mut begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
-        begin_tx_step.gas_cost = GasCost(tx.gas - geth_trace.struct_logs[0].gas.0);
+        begin_tx_step.gas_cost = if geth_trace.struct_logs.is_empty() {
+            GasCost(geth_trace.gas.0)
+        } else {
+            GasCost(tx.gas - geth_trace.struct_logs[0].gas.0)
+        };
         log::trace!("begin_tx_step {:?}", begin_tx_step);
         tx.steps_mut().push(begin_tx_step);
 

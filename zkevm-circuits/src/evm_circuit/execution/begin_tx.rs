@@ -331,7 +331,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
 
-        let _call_data_length = block.rws[step.rw_indices[14]].call_context_value().as_u64();
         self.tx_call_data_length.assign(
             region,
             offset,
