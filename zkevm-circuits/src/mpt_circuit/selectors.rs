@@ -1,4 +1,7 @@
-use super::helpers::{BaseConstraintBuilder, ColumnTransition};
+use super::{
+    helpers::{BaseConstraintBuilder, ColumnTransition},
+    MPTContext,
+};
 use crate::{
     constraints,
     mpt_circuit::account_leaf::AccountLeafCols,
@@ -8,7 +11,7 @@ use crate::{
     util::Expr,
 };
 use gadgets::util::{and, not, or, sum};
-use halo2_proofs::{arithmetic::FieldExt, plonk::ConstraintSystem, poly::Rotation};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -18,22 +21,22 @@ pub(crate) struct SelectorsConfig<F> {
 
 impl<F: FieldExt> SelectorsConfig<F> {
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols<F>,
-        position_cols: PositionCols<F>,
-        branch: BranchCols<F>,
-        account_leaf: AccountLeafCols<F>,
-        storage_leaf: StorageLeafCols<F>,
-        denoter: DenoteCols<F>,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
+        let proof_type = ctx.proof_type;
+        let position_cols = ctx.position_cols;
+        let branch = ctx.branch;
+        let account_leaf = ctx.account_leaf;
+        let storage_leaf = ctx.storage_leaf;
+        let denoter = ctx.denoter;
         // It needs to be ensured that:
         // - The selectors denoting the row type are boolean values.
         // - For sets of selectors that are mutually exclusive, it needs to be ensured
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
-        meta.create_gate("Selectors", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            constraints!{[meta, cb], {
+        constraints! {[meta, cb], {
             let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
             let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
@@ -343,13 +346,10 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     }};
                 }
             }}
-            }}
+        }}
 
-            // Internal branch selectors (`is_init`, `is_last_child`) are checked in
-            // `branch.rs`.
-
-            cb.gate(1.expr())
-        });
+        // Internal branch selectors (`is_init`, `is_last_child`) are checked in
+        // `branch.rs`.
 
         SelectorsConfig {
             _marker: PhantomData,

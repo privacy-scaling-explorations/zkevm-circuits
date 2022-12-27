@@ -1,6 +1,6 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
-use gadgets::util::Expr;
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -10,7 +10,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::{convert::TryInto, marker::PhantomData};
+use std::{convert::TryInto, env::var, marker::PhantomData};
 
 mod account_leaf;
 mod branch;
@@ -48,6 +48,10 @@ use param::HASH_WIDTH;
 use selectors::SelectorsConfig;
 
 use crate::{
+    constraints,
+    mpt_circuit::helpers::{
+        generate_fixed_lookups, generate_keccak_lookups, BaseConstraintBuilder,
+    },
     table::KeccakTable,
     util::{power_of_randomness_from_instance, Challenges},
 };
@@ -80,6 +84,49 @@ use self::{columns::MPTTable, storage_leaf::leaf_non_existing::StorageNonExistin
     We start with top level branch and then we follow branches (could be also extension
     nodes) down to the leaf.
 */
+
+/// Merkle Patricia Trie config.
+#[derive(Clone, Debug, Default)]
+pub struct RowConfig<F> {
+    account_leaf_key_s: AccountLeafKeyConfig<F>,
+    account_leaf_key_c: AccountLeafKeyConfig<F>,
+    account_leaf_nonce_balance_s: AccountLeafNonceBalanceConfig<F>,
+    account_leaf_nonce_balance_c: AccountLeafNonceBalanceConfig<F>,
+    account_leaf_storage_codehash_s: AccountLeafStorageCodehashConfig<F>,
+    account_leaf_storage_codehash_c: AccountLeafStorageCodehashConfig<F>,
+    account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
+    account_non_existing: AccountNonExistingConfig<F>,
+    branch_config: BranchConfig<F>,
+    ext_node_config_s: ExtensionNodeConfig<F>,
+    ext_node_config_c: ExtensionNodeConfig<F>,
+    storage_leaf_key_s: LeafKeyConfig<F>,
+    storage_leaf_key_c: LeafKeyConfig<F>,
+    storage_leaf_value_s: LeafValueConfig<F>,
+    storage_leaf_value_c: LeafValueConfig<F>,
+    storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
+    storage_non_existing: StorageNonExistingConfig<F>,
+}
+
+/// Merkle Patricia Trie context
+#[derive(Clone, Debug)]
+pub struct MPTContext<F> {
+    pub(crate) proof_type: ProofTypeCols<F>,
+    pub(crate) position_cols: PositionCols<F>,
+    pub(crate) inter_start_root: Column<Advice>,
+    pub(crate) inter_final_root: Column<Advice>,
+    pub(crate) value_prev: Column<Advice>,
+    pub(crate) value: Column<Advice>,
+    pub(crate) accumulators: AccumulatorCols<F>,
+    pub(crate) branch: BranchCols<F>,
+    pub(crate) s_main: MainCols<F>,
+    pub(crate) c_main: MainCols<F>,
+    pub(crate) account_leaf: AccountLeafCols<F>,
+    pub(crate) storage_leaf: StorageLeafCols<F>,
+    pub(crate) denoter: DenoteCols<F>,
+    pub(crate) address_rlc: Column<Advice>,
+    pub(crate) r: [Expression<F>; HASH_WIDTH],
+    pub(crate) check_zeros: bool,
+}
 
 /// Merkle Patricia Trie config.
 #[derive(Clone, Debug)]
@@ -288,502 +335,177 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let address_rlc = meta.advice_column();
 
-        SelectorsConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            position_cols.clone(),
-            branch.clone(),
-            account_leaf.clone(),
-            storage_leaf.clone(),
-            denoter.clone(),
-        );
-
-        ProofChainConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            position_cols.clone(),
-            branch.is_init,
-            account_leaf.clone(),
-            storage_leaf.clone(),
-            inter_start_root,
-            inter_final_root,
-            address_rlc,
-        );
-
-        let branch_config = BranchConfig::<F>::configure(
-            meta,
-            position_cols.clone(),
-            account_leaf.is_in_added_branch,
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            branch.clone(),
-            denoter.clone(),
-            fixed_table,
-            power_of_randomness[0].clone(),
-        );
-
-        BranchKeyConfig::<F>::configure(
-            meta,
-            position_cols.clone(),
-            branch.clone(),
-            account_leaf.is_in_added_branch,
-            s_main.clone(),
-            accumulators.key.clone(),
-            power_of_randomness[0].clone(),
-        );
-
-        BranchParallelConfig::<F>::configure(
-            meta,
-            position_cols.clone(),
-            branch.clone(),
-            accumulators.s_mod_node_rlc,
-            s_main.clone(),
-            denoter.sel1,
-            denoter.is_node_hashed_s,
-            fixed_table,
+        let ctx = MPTContext {
+            proof_type: proof_type.clone(),
+            position_cols: position_cols.clone(),
+            inter_start_root: inter_start_root.clone(),
+            inter_final_root: inter_final_root.clone(),
+            value_prev: value_prev.clone(),
+            value: value.clone(),
+            branch: branch.clone(),
+            s_main: s_main.clone(),
+            c_main: c_main.clone(),
+            account_leaf: account_leaf.clone(),
+            storage_leaf: storage_leaf.clone(),
+            accumulators: accumulators.clone(),
+            denoter: denoter.clone(),
+            address_rlc: address_rlc.clone(),
+            r: power_of_randomness.clone(),
             check_zeros,
-        );
+        };
 
-        BranchParallelConfig::<F>::configure(
-            meta,
-            position_cols.clone(),
-            branch.clone(),
-            accumulators.c_mod_node_rlc,
-            c_main.clone(),
-            denoter.sel2,
-            denoter.is_node_hashed_c,
-            fixed_table,
-            check_zeros,
-        );
+        let mut row_config: RowConfig<F> = RowConfig::default();
 
-        BranchHashInParentConfig::<F>::configure(
-            meta,
-            inter_start_root,
-            position_cols.clone(),
-            account_leaf.is_in_added_branch,
-            branch.is_last_child,
-            s_main.clone(),
-            accumulators.clone(),
-            keccak_table.clone(),
-            power_of_randomness.clone(),
-            true,
-        );
+        let mut cb = BaseConstraintBuilder::default();
+        meta.create_gate("MPT", |meta| {
+            constraints!{[meta, cb], {
+                SelectorsConfig::configure(meta, &mut cb, ctx.clone());
+                ProofChainConfig::configure(meta, &mut cb, ctx.clone());
+                let branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
+                BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
+                BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), true);
+                BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), false);
+                BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), true);
+                BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), false);
 
-        BranchHashInParentConfig::<F>::configure(
-            meta,
-            inter_final_root,
-            position_cols.clone(),
-            account_leaf.is_in_added_branch,
-            branch.is_last_child,
-            s_main.clone(),
-            accumulators.clone(),
-            keccak_table.clone(),
-            power_of_randomness.clone(),
-            false,
-        );
-
-        let ext_node_config_s = ExtensionNodeConfig::<F>::configure(
-            meta,
-            |meta| {
-                let is_extension_node_s =
-                    meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-                // is_extension_node is in branch init row
+                let ext_node_config_s;
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -17);
-
-                is_extension_node_s * is_extension_node
-            },
-            inter_start_root,
-            position_cols.clone(),
-            account_leaf.is_in_added_branch,
-            branch.clone(),
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            keccak_table.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-            true,
-            check_zeros,
-        );
-
-        let ext_node_config_c = ExtensionNodeConfig::<F>::configure(
-            meta,
-            |meta| {
-                let is_extension_node_c =
-                    meta.query_advice(branch.is_extension_node_c, Rotation::cur());
-                // is_extension_node is in branch init row
+                let is_extension_node_s = a!(branch.is_extension_node_s);
+                ifx!{is_extension_node, is_extension_node_s => {
+                    ext_node_config_s = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), true);
+                }}
+                let ext_node_config_c;
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -18);
+                let is_extension_node_c = a!(branch.is_extension_node_c);
+                ifx!{is_extension_node, is_extension_node_c => {
+                    ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);
+                }}
 
-                is_extension_node_c * is_extension_node
-            },
-            inter_final_root,
-            position_cols.clone(),
-            account_leaf.is_in_added_branch,
-            branch.clone(),
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            keccak_table.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-            false,
-            check_zeros,
-        );
+                ExtensionNodeKeyConfig::configure(meta, &mut cb, ctx.clone());
 
-        ExtensionNodeKeyConfig::<F>::configure(
-            meta,
-            position_cols.clone(),
-            branch.clone(),
-            account_leaf.is_in_added_branch,
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            fixed_table,
-            power_of_randomness.clone(),
-            check_zeros,
-        );
+                ifx!{f!(position_cols.q_enable), a!(branch.is_init) => {
+                    BranchInitConfig::<F>::configure(meta, &mut cb, ctx.clone());
+                }}
 
-        BranchInitConfig::<F>::configure(
-            meta,
-            |meta| {
-                meta.query_advice(branch.is_init, Rotation::cur())
-                    * meta.query_fixed(position_cols.q_enable, Rotation::cur())
-            },
-            s_main.clone(),
-            accumulators.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-        );
-
-        BranchRLCConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
-
-                q_not_first * is_branch_child
-            },
-            s_main.clone(),
-            accumulators.acc_s.clone(),
-            denoter.is_node_hashed_s,
-            accumulators.node_mult_diff_s,
-            power_of_randomness.clone(),
-            fixed_table,
-        );
-
-        BranchRLCConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
-
-                q_not_first * is_branch_child
-            },
-            c_main.clone(),
-            accumulators.acc_c.clone(),
-            denoter.is_node_hashed_c,
-            accumulators.node_mult_diff_c,
-            power_of_randomness.clone(),
-            fixed_table,
-        );
-
-        let storage_leaf_key_s = LeafKeyConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
-                let is_leaf_s = meta.query_advice(storage_leaf.is_s_key, Rotation::cur());
+                ifx!{f!(position_cols.q_not_first), a!(branch.is_child) => {
+                    BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
+                }}
 
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
                 // be changed as currently the first row is not checked (and
                 // leaf key can appear in the first row if there is no account
                 // proof). See how it is done for account_leaf_key.rs which can appear in the
                 // first row. q_not_first is needed to avoid PoisenedConstraint.
-                q_not_first * not_first_level * is_leaf_s
-            },
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            account_leaf.is_in_added_branch,
-            denoter.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-            true,
-            check_zeros,
-        );
+                let storage_leaf_key_s;
+                let storage_leaf_key_c;
+                ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
+                    ifx!{a!(storage_leaf.is_s_key) => {
+                        storage_leaf_key_s = LeafKeyConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    }}
+                    ifx!{a!(storage_leaf.is_c_key) => {
+                        storage_leaf_key_c = LeafKeyConfig::configure(meta, &mut cb, ctx.clone(), false);
+                    }}
+                }}
 
-        let storage_leaf_key_c = LeafKeyConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
-                let is_leaf_c = meta.query_advice(storage_leaf.is_c_key, Rotation::cur());
+                let storage_leaf_key_in_added_branch;
+                ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level), a!(storage_leaf.is_in_added_branch) => {
+                    storage_leaf_key_in_added_branch = LeafKeyInAddedBranchConfig::configure(meta, &mut cb, ctx.clone());
+                }}
 
-                // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
-                // be changed as currently the first row is not checked (and
-                // leaf key can appear in the first row if there is no account
-                // proof). See how it is done for account_leaf_key.rs which can appear in the
-                // first row. q_not_first is needed to avoid PoisenedConstraint.
-                q_not_first * not_first_level * is_leaf_c
-            },
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            account_leaf.is_in_added_branch,
-            denoter.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-            false,
-            check_zeros,
-        );
+                let storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), true);
+                let storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), false);
 
-        let storage_leaf_key_in_added_branch = LeafKeyInAddedBranchConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
-                let is_leaf = meta.query_advice(storage_leaf.is_in_added_branch, Rotation::cur());
+                let storage_non_existing;
+                ifx!{f!(position_cols.q_enable), a!(storage_leaf.is_non_existing), a!(proof_type.is_non_existing_storage_proof) => {
+                    storage_non_existing = StorageNonExistingConfig::<F>::configure(meta, &mut cb, ctx.clone());
+                }}
 
-                q_not_first * not_first_level * is_leaf
-            },
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            branch.drifted_pos,
-            account_leaf.is_in_added_branch,
-            power_of_randomness.clone(),
-            fixed_table,
-            keccak_table.clone(),
-            check_zeros,
-        );
+                let account_leaf_key_s;
+                let account_leaf_key_c;
+                ifx!{f!(position_cols.q_enable) => {
+                    ifx!{a!(account_leaf.is_key_s) => {
+                        account_leaf_key_s = AccountLeafKeyConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    }}
+                    ifx!{a!(account_leaf.is_key_c) => {
+                        account_leaf_key_c = AccountLeafKeyConfig::configure(meta, &mut cb, ctx.clone(), false);
+                    }}
+                }}
 
-        let storage_leaf_value_s = LeafValueConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            position_cols.clone(),
-            storage_leaf.is_s_value,
-            s_main.clone(),
-            keccak_table.clone(),
-            accumulators.clone(),
-            denoter.clone(),
-            account_leaf.is_in_added_branch,
-            value_prev,
-            value,
-            true,
-            power_of_randomness.clone(),
-            fixed_table,
-            check_zeros,
-        );
+                let account_non_existing;
+                ifx!{f!(position_cols.q_enable), a!(account_leaf.is_non_existing_account_row), a!(proof_type.is_non_existing_account_proof) => {
+                    account_non_existing = AccountNonExistingConfig::configure(meta, &mut cb, ctx.clone());
+                }}
 
-        let storage_leaf_value_c = LeafValueConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            position_cols.clone(),
-            storage_leaf.is_c_value,
-            s_main.clone(),
-            keccak_table.clone(),
-            accumulators.clone(),
-            denoter.clone(),
-            account_leaf.is_in_added_branch,
-            value_prev,
-            value,
-            false,
-            power_of_randomness.clone(),
-            fixed_table,
-            check_zeros,
-        );
 
-        let storage_non_existing = StorageNonExistingConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-                let is_leaf_non_existing_row =
-                    meta.query_advice(storage_leaf.is_non_existing, Rotation::cur());
-                let is_storage_non_existing_proof =
-                    meta.query_advice(proof_type.is_non_existing_storage_proof, Rotation::cur());
+                let account_leaf_nonce_balance_s;
+                let account_leaf_nonce_balance_c;
+                ifx!{f!(position_cols.q_not_first) => {
+                    ifx!{a!(account_leaf.is_nonce_balance_s) => {
+                        account_leaf_nonce_balance_s = AccountLeafNonceBalanceConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    }}
+                    ifx!{a!(account_leaf.is_nonce_balance_c) => {
+                        account_leaf_nonce_balance_c = AccountLeafNonceBalanceConfig::configure(meta, &mut cb, ctx.clone(), false);
+                    }}
+                }}
 
-                q_enable * is_leaf_non_existing_row * is_storage_non_existing_proof
-            },
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            denoter.sel2,
-            account_leaf.is_in_added_branch,
-            power_of_randomness.clone(),
-            fixed_table,
-            check_zeros,
-        );
+                let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::configure(meta, &mut cb, ctx.clone(), true);
+                let account_leaf_storage_codehash_c = AccountLeafStorageCodehashConfig::configure(meta, &mut cb, ctx.clone(), false);
 
-        let account_leaf_key_s = AccountLeafKeyConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            |meta| {
-                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-                let is_account_leaf_key_s =
-                    meta.query_advice(account_leaf.is_key_s, Rotation::cur());
+                let account_leaf_key_in_added_branch;
+                ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level), a!(account_leaf.is_in_added_branch) => {
+                    account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::configure(meta, &mut cb, ctx.clone());
+                }}
 
-                q_enable * is_account_leaf_key_s
-            },
-            position_cols.clone(),
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-            address_rlc,
-            denoter.sel2,
-            true,
-            check_zeros,
-        );
+                // These range checks ensure that the value in the RLP columns are all bytes
+                // (between 0 - 255).
+                // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for rlp1
+                // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**16
+                for byte in s_main.rlp_bytes().iter().skip(1).chain(c_main.rlp_bytes().iter().skip(1)) {
+                    require!((FixedTableTag::Range256, a!(byte)) => @fixed);
+                }
+                ifx!{not::expr(a!(branch.is_child)) => {
+                    for byte in [s_main.rlp1, c_main.rlp1] {
+                        require!((FixedTableTag::Range256, a!(byte)) => @fixed);
+                    }
+                }}
 
-        let account_leaf_key_c = AccountLeafKeyConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            |meta| {
-                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-                let is_account_leaf_key_c =
-                    meta.query_advice(account_leaf.is_key_c, Rotation::cur());
+                row_config = RowConfig {
+                    account_leaf_key_s,
+                    account_leaf_key_c,
+                    account_leaf_nonce_balance_s,
+                    account_leaf_nonce_balance_c,
+                    account_leaf_storage_codehash_s,
+                    account_leaf_storage_codehash_c,
+                    account_leaf_key_in_added_branch,
+                    account_non_existing,
+                    branch_config,
+                    ext_node_config_s,
+                    ext_node_config_c,
+                    storage_leaf_key_s,
+                    storage_leaf_key_c,
+                    storage_leaf_value_s,
+                    storage_leaf_value_c,
+                    storage_leaf_key_in_added_branch,
+                    storage_non_existing,
+                };
+            }}
 
-                q_enable * is_account_leaf_key_c
-            },
-            position_cols.clone(),
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            power_of_randomness.clone(),
-            fixed_table,
-            address_rlc,
-            denoter.sel2,
-            false,
-            check_zeros,
-        );
+            cb.gate(1.expr())
+        });
 
-        let account_non_existing = AccountNonExistingConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-                let is_account_non_existing_row =
-                    meta.query_advice(account_leaf.is_non_existing_account_row, Rotation::cur());
-                let is_account_non_existing_proof =
-                    meta.query_advice(proof_type.is_non_existing_account_proof, Rotation::cur());
+        let disable_lookups: usize = var("DISABLE_LOOKUPS")
+            .unwrap_or_else(|_| "0".to_string())
+            .parse()
+            .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
+        if disable_lookups == 0 {
+            generate_keccak_lookups(meta, keccak_table.clone(), cb.keccak_lookups);
+            generate_fixed_lookups(meta, fixed_table.clone(), cb.fixed_lookups);
+        }
 
-                q_enable * is_account_non_existing_row * is_account_non_existing_proof
-            },
-            position_cols.not_first_level,
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            denoter.sel1,
-            power_of_randomness.clone(),
-            fixed_table,
-            address_rlc,
-            check_zeros,
-        );
-
-        let account_leaf_nonce_balance_s = AccountLeafNonceBalanceConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let is_account_leaf_nonce_balance_s =
-                    meta.query_advice(account_leaf.is_nonce_balance_s, Rotation::cur());
-                q_not_first * is_account_leaf_nonce_balance_s
-            },
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            value_prev,
-            value,
-            power_of_randomness.clone(),
-            denoter.clone(),
-            fixed_table,
-            true,
-            check_zeros,
-        );
-
-        let account_leaf_nonce_balance_c = AccountLeafNonceBalanceConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let is_account_leaf_nonce_balance_c =
-                    meta.query_advice(account_leaf.is_nonce_balance_c, Rotation::cur());
-                q_not_first * is_account_leaf_nonce_balance_c
-            },
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            value_prev,
-            value,
-            power_of_randomness.clone(),
-            denoter.clone(),
-            fixed_table,
-            false,
-            check_zeros,
-        );
-
-        let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            inter_start_root,
-            position_cols.clone(),
-            account_leaf.is_storage_codehash_s,
-            s_main.clone(),
-            c_main.clone(),
-            power_of_randomness.clone(),
-            accumulators.clone(),
-            value_prev,
-            value,
-            fixed_table,
-            denoter.clone(),
-            keccak_table.clone(),
-            true,
-        );
-
-        let account_leaf_storage_codehash_c = AccountLeafStorageCodehashConfig::<F>::configure(
-            meta,
-            proof_type.clone(),
-            inter_final_root,
-            position_cols.clone(),
-            account_leaf.is_storage_codehash_c,
-            s_main.clone(),
-            c_main.clone(),
-            power_of_randomness.clone(),
-            accumulators.clone(),
-            value_prev,
-            value,
-            fixed_table,
-            denoter.clone(),
-            keccak_table.clone(),
-            false,
-        );
-
-        let account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::<F>::configure(
-            meta,
-            |meta| {
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-                let not_first_level =
-                    meta.query_advice(position_cols.not_first_level, Rotation::cur());
-                let is_account_leaf_in_added_branch =
-                    meta.query_advice(account_leaf.is_in_added_branch, Rotation::cur());
-
-                q_not_first * not_first_level * is_account_leaf_in_added_branch
-            },
-            position_cols.not_first_level,
-            s_main.clone(),
-            c_main.clone(),
-            accumulators.clone(),
-            branch.drifted_pos,
-            denoter.clone(),
-            power_of_randomness,
-            fixed_table,
-            keccak_table.clone(),
-            check_zeros,
-        );
+        println!("num lookups: {}", meta.lookups().len());
+        println!("num advices: {}", meta.num_advice_columns());
+        println!("num fixed: {}", meta.num_fixed_columns());
 
         let mpt_table = MPTTable {
             address_rlc,
@@ -813,23 +535,23 @@ impl<F: FieldExt> MPTConfig<F> {
             keccak_table,
             fixed_table,
             address_rlc,
-            account_leaf_key_s,
-            account_leaf_key_c,
-            account_leaf_nonce_balance_s,
-            account_leaf_nonce_balance_c,
-            account_leaf_storage_codehash_s,
-            account_leaf_storage_codehash_c,
-            account_leaf_key_in_added_branch,
-            account_non_existing,
-            branch_config,
-            ext_node_config_s,
-            ext_node_config_c,
-            storage_leaf_key_s,
-            storage_leaf_key_c,
-            storage_leaf_value_s,
-            storage_leaf_value_c,
-            storage_leaf_key_in_added_branch,
-            storage_non_existing,
+            account_leaf_key_s: row_config.account_leaf_key_s,
+            account_leaf_key_c: row_config.account_leaf_key_c,
+            account_leaf_nonce_balance_s: row_config.account_leaf_nonce_balance_s,
+            account_leaf_nonce_balance_c: row_config.account_leaf_nonce_balance_c,
+            account_leaf_storage_codehash_s: row_config.account_leaf_storage_codehash_s,
+            account_leaf_storage_codehash_c: row_config.account_leaf_storage_codehash_c,
+            account_leaf_key_in_added_branch: row_config.account_leaf_key_in_added_branch,
+            account_non_existing: row_config.account_non_existing,
+            branch_config: row_config.branch_config,
+            ext_node_config_s: row_config.ext_node_config_s,
+            ext_node_config_c: row_config.ext_node_config_c,
+            storage_leaf_key_s: row_config.storage_leaf_key_s,
+            storage_leaf_key_c: row_config.storage_leaf_key_c,
+            storage_leaf_value_s: row_config.storage_leaf_value_s,
+            storage_leaf_value_c: row_config.storage_leaf_value_c,
+            storage_leaf_key_in_added_branch: row_config.storage_leaf_key_in_added_branch,
+            storage_non_existing: row_config.storage_non_existing,
             randomness,
             check_zeros,
             mpt_table,

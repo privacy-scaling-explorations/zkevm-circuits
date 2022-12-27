@@ -1,18 +1,14 @@
-use gadgets::util::{and, not, sum, Expr};
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use itertools::Itertools;
 use std::marker::PhantomData;
 
 use crate::{
     constraints,
-    evm_circuit::util::{dot, rlc},
-    mpt_circuit::helpers::{
-        compute_rlc, generate_fixed_lookups, get_is_extension_node, key_len_lookup, range_lookups,
-    },
+    evm_circuit::util::rlc,
     mpt_circuit::param::{
         BRANCH_ROWS_NUM, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
@@ -22,6 +18,10 @@ use crate::{
     mpt_circuit::{
         columns::{AccumulatorCols, MainCols, PositionCols},
         helpers::BaseConstraintBuilder,
+    },
+    mpt_circuit::{
+        helpers::{get_is_extension_node, key_len_lookup},
+        MPTContext,
     },
 };
 
@@ -103,52 +103,44 @@ Using this approach we do not need to store C RLP & key, but it will increase th
 */
 
 impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        position_cols: PositionCols<F>, /* `not_first_level` to avoid rotating back when in the
-                                         * first branch (for
-                                         * key rlc) */
-        branch: BranchCols<F>,
-        is_account_leaf_in_added_branch: Column<Advice>,
-        s_main: MainCols<F>,
-        c_main: MainCols<F>,
-        accs: AccumulatorCols<F>, // accs.key used first for account address, then for storage key
-        fixed_table: [Column<Fixed>; 3],
-        r: [Expression<F>; HASH_WIDTH],
-        check_zeros: bool,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
+        // `not_first_level` to avoid rotating back when in the first branch (for key
+        // rlc)
+        let position_cols = ctx.position_cols;
+        let branch = ctx.branch;
+        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
+        let s_main = ctx.s_main;
+        let c_main = ctx.c_main;
+        // accs.key used first for account address, then for storage key
+        let accs = ctx.accumulators;
+        let r = ctx.r;
+
         let c16inv = Expression::Constant(F::from(16).invert().unwrap());
         let rot_into_branch_init = -BRANCH_ROWS_NUM + 1;
-
-        let mut cb = BaseConstraintBuilder::default();
-
         // When we have a regular branch (not in extension node), the key RLC is simple
         // to compute: key_rlc = key_rlc_prev + modified_node *
         // key_rlc_mult_prev * selMult
-
         // The multiplier `selMult` being 16 or 1 depending on the number (even or odd)
         // number of nibbles used in the levels above.
-
         // Extension node makes it more complicated because we need to take into account
         // its nibbles too. If there are for example two nibbles in the
         // extension node `n1` and `n2` and if we assume that there have been
         // even nibbles in the levels above, then: key_rlc = key_rlc_prev + n1 *
         // key_rlc_mult_prev * 16 + n2 * key_rlc_mult_prev * 1 +
         //     modified_node * key_rlc_mult_prev * r * 16
-        meta.create_gate("Extension node key RLC", |meta| {
-            constraints! {[meta, cb], {
+        constraints! {[meta, cb], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
 
             let rot_into_prev_branch = rot_into_branch_init - EXTENSION_ROWS_NUM - 1;
 
-            /*
-            To reduce the expression degree, we pack together multiple information.
-            Constraints on the selectors (like being boolean) are in extension_node.rs.
-
-            Note: even and odd refers to the number of nibbles that are compactly encoded.
-            */
+            // To reduce the expression degree, we pack together multiple information.
+            // Constraints on the selectors (like being boolean) are in extension_node.rs.
+            // Note: even and odd refers to the number of nibbles that are compactly encoded.
             let is_ext_short_c16 = meta.query_advice(
                 s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
                 Rotation(rot_into_branch_init),
@@ -402,7 +394,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                     // and sel2 (branch `modified_node` needs to be multiplied by 1).
                     // Note that for the computation of the intermediate RLC we need `first_nibbles` and
                     // `second_nibbles` mentioned in the constraint above.
-                    let rlc = calc_rlc(meta, &mut cb, s_main.clone(), r.clone(), mult_prev.expr(), c16inv.expr());
+                    let rlc = calc_rlc(meta, cb, s_main.clone(), r.clone(), mult_prev.expr(), c16inv.expr());
                     require!(key_rlc_ext_node_cur => long_odd_sel2_rlc.clone() + rlc);
 
                     // Once we have extension node key RLC computed we need to take into account also the nibble
@@ -471,7 +463,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 // Note that we added a factor `r` because we moved to a new pair of nibbles (a new byte).
 
                 // Note: this cannot appear in the first level because it is sel2.
-                let rlc = calc_rlc(meta, &mut cb, s_main.clone(), r.clone(), mult_prev.expr(), c16inv.expr());
+                let rlc = calc_rlc(meta, cb, s_main.clone(), r.clone(), mult_prev.expr(), c16inv.expr());
                 require!(key_rlc_ext_node_cur => key_rlc_prev_branch.expr() + rlc);
 
                 // Once we have extension node key RLC computed we need to take into account also the nibble
@@ -577,121 +569,59 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 }}
             }}
 
-            }}
+            /*let sel_long = |meta: &mut VirtualCells<F>| {
+                let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
 
-            cb.gate(1.expr())
-        });
+                let is_ext_long_even_c16 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                let is_ext_long_even_c1 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                let is_ext_long_odd_c16 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                let is_ext_long_odd_c1 = meta.query_advice(
+                    s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
+                    Rotation(rot_into_branch_init),
+                );
+                let is_long = is_ext_long_even_c16
+                    + is_ext_long_even_c1
+                    + is_ext_long_odd_c16
+                    + is_ext_long_odd_c1;
 
-        let sel_long = |meta: &mut VirtualCells<F>| {
-            let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-
-            let is_ext_long_even_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_even_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_odd_c16 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_ext_long_odd_c1 = meta.query_advice(
-                s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-                Rotation(rot_into_branch_init),
-            );
-            let is_long = is_ext_long_even_c16
-                + is_ext_long_even_c1
-                + is_ext_long_odd_c16
-                + is_ext_long_odd_c1;
-
-            is_extension_s_row * is_long
-        };
-
-        /*
-        `s_main.bytes[i] = 0` after last extension node nibble.
-
-        Note that for a short version (only one nibble), all
-        `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
-        separately.
-        */
-        if check_zeros {
-            for ind in 1..HASH_WIDTH {
+                is_extension_s_row * is_long
+            };
+            // `s_main.bytes[i] = 0` after last extension node nibble.
+            // Note that for a short version (only one nibble), all
+            // `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
+            // separately.
+            if check_zeros {
+                for ind in 1..HASH_WIDTH {
+                    key_len_lookup(
+                        meta,
+                        sel_long,
+                        ind,
+                        s_main.bytes[0],
+                        s_main.bytes[ind],
+                        128,
+                        fixed_table,
+                    )
+                }
                 key_len_lookup(
                     meta,
                     sel_long,
-                    ind,
+                    32,
                     s_main.bytes[0],
-                    s_main.bytes[ind],
+                    c_main.rlp1,
                     128,
                     fixed_table,
-                )
-            }
-            key_len_lookup(
-                meta,
-                sel_long,
-                32,
-                s_main.bytes[0],
-                c_main.rlp1,
-                128,
-                fixed_table,
-            );
-        }
-
-        let sel_s = |meta: &mut VirtualCells<F>| {
-            let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-
-            get_is_extension_node(meta, s_main.bytes, rot_into_branch_init + 1) * is_extension_s_row
-        };
-        let sel_c = |meta: &mut VirtualCells<F>| {
-            let is_extension_c_row = meta.query_advice(branch.is_extension_node_c, Rotation::cur());
-
-            get_is_extension_node(meta, s_main.bytes, rot_into_branch_init) * is_extension_c_row
-        };
-
-        range_lookups(
-            meta,
-            sel_s,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel_s,
-            c_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel_s,
-            [s_main.rlp1, s_main.rlp2, c_main.rlp1].to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-
-        /*
-        There is no need to check s_main.bytes in C row as these bytes are checked
-        to be nibbles.
-        */
-        range_lookups(
-            meta,
-            sel_c,
-            c_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel_c,
-            [s_main.rlp1, s_main.rlp2, c_main.rlp1].to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-
-        generate_fixed_lookups(meta, fixed_table, cb.fixed_lookups);
+                );
+            }*/
+        }}
 
         ExtensionNodeKeyConfig {
             _marker: PhantomData,

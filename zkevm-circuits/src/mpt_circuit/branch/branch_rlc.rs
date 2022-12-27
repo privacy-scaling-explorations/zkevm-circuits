@@ -1,17 +1,23 @@
-use gadgets::util::{not, Expr};
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
 
 use crate::{
-    constraints, cs,
+    constraints,
     evm_circuit::util::{dot, rlc},
-    mpt_circuit::columns::{AccumulatorPair, MainCols},
-    mpt_circuit::helpers::{mult_diff_lookup, BaseConstraintBuilder, ColumnTransition},
     mpt_circuit::param::{HASH_WIDTH, POWER_OF_RANDOMNESS_LEN},
+    mpt_circuit::{
+        columns::{AccumulatorPair, MainCols},
+        FixedTableTag,
+    },
+    mpt_circuit::{
+        helpers::{BaseConstraintBuilder, ColumnTransition},
+        MPTContext,
+    },
 };
 
 /*
@@ -59,22 +65,30 @@ pub(crate) struct BranchRLCConfig<F> {
 }
 
 impl<F: FieldExt> BranchRLCConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-        main: MainCols<F>,
-        branch_acc: AccumulatorPair<F>,
-        is_node_hashed: Column<Advice>,
-        node_mult_diff: Column<Advice>,
-        r: [Expression<F>; HASH_WIDTH],
-        fixed_table: [Column<Fixed>; 3],
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+        is_s: bool,
     ) -> Self {
-        meta.create_gate("Branch RLC", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            constraints!{[meta, cb], {
-
-            let q_enable = q_enable(meta);
+        let main = if is_s { ctx.s_main } else { ctx.c_main };
+        let branch_acc = if is_s {
+            ctx.accumulators.acc_s
+        } else {
+            ctx.accumulators.acc_c
+        };
+        let is_node_hashed = if is_s {
+            ctx.denoter.is_node_hashed_s
+        } else {
+            ctx.denoter.is_node_hashed_c
+        };
+        let node_mult_diff = if is_s {
+            ctx.accumulators.node_mult_diff_s
+        } else {
+            ctx.accumulators.node_mult_diff_c
+        };
+        let r = ctx.r;
+        constraints! {[meta, cb], {
             let rlp2 = a!(main.rlp2);
             let is_node_hashed = a!(is_node_hashed);
             let node_mult_diff = a!(node_mult_diff);
@@ -82,82 +96,60 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             let branch_rlc = ColumnTransition::new(meta, branch_acc.rlc);
 
             // TODO(Brecht): comments hashed/non-hashed don't seem to match `is_node_hashed`.
-            ifx!{q_enable.expr() => {
-                ifx!{is_node_hashed.expr() => {
-                    // When a branch child is non-hashed, we have `bytes[0] - 192` bytes in a row.
-                    // We need to add these bytes to the RLC. Note that we add all `bytes` to the RLC, but
-                    // we rely that there are 0s after the last non-hashed byte (see constraints in `branch.rs`).
-                    // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
-                    let rlc = branch_rlc.prev() + rlc::expr(
+            ifx!{is_node_hashed => {
+                // When a branch child is non-hashed, we have `bytes[0] - 192` bytes in a row.
+                // We need to add these bytes to the RLC. Note that we add all `bytes` to the RLC, but
+                // we rely that there are 0s after the last non-hashed byte (see constraints in `branch.rs`).
+                // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
+                let rlc = branch_rlc.prev() + rlc::expr(
+                    &main.bytes.iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
+                    &r,
+                );
+                require!(branch_rlc.cur() => rlc.expr());
+
+                // When a branch child is non-hashed, we have `f = bytes[0] - 192` bytes in a row.
+                // The multiplier changes by factor `r^{f+1}`. `+1` is for the byte that specifies the length.
+                // We do not know in advance the factor `f`, so we use the lookup table that it corresponds
+                // to the length specified at `rlp2` position. See mult diff lookup constraint below.
+                // We have to multiply with r[0] because of the first (length) byte.
+                require!(branch_mult.cur() => branch_mult.prev() * r[0].expr() * node_mult_diff.expr());
+            } elsex {
+                ifx!{rlp2.expr() - 160.expr() => {
+                    // When a branch child is empty, we only have one byte (128 at `bytes[0]`)
+                    // that needs to be added to the RLC.
+                    // `branch_mult_prev` is the value that is to be used when multiplying the byte to be added
+                    // to the RLC. Note that `branch_mult_prev` is stored in the previous row.
+                    require!(branch_rlc.cur() => branch_rlc.prev() + 128.expr() * branch_mult.prev());
+
+                    // When a branch child is empty, we only have one byte in a row and the multiplier only
+                    // changes by factor `r`.
+                    require!(branch_mult.cur() => branch_mult.prev() * r[0].expr());
+                }}
+
+                ifx!{rlp2 => {
+                    // When a branch child is non-empty and hashed, we have 33 bytes in a row.
+                    // We need to add these 33 bytes to the RLC.
+                    let rlc = 160.expr() * branch_mult.prev() + dot::expr(
                         &main.bytes.iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
                         &r,
                     );
-                    require!(branch_rlc.cur() => rlc.expr());
+                    require!(branch_rlc.cur() => branch_rlc.prev() + rlc.expr());
 
-                    // When a branch child is non-hashed, we have `f = bytes[0] - 192` bytes in a row.
-                    // The multiplier changes by factor `r^{f+1}`. `+1` is for the byte that specifies the length.
-                    // We do not know in advance the factor `f`, so we use the lookup table that it corresponds
-                    // to the length specified at `rlp2` position. See `mult_diff_lookup` constraint below.
-                    // We have to multiply with r[0] because of the first (length) byte.
-                    require!(branch_mult.cur() => branch_mult.prev() * r[0].expr() * node_mult_diff.expr());
-                } elsex {
-                    ifx!{rlp2.expr() - 160.expr() => {
-                        // When a branch child is empty, we only have one byte (128 at `bytes[0]`)
-                        // that needs to be added to the RLC.
-                        // `branch_mult_prev` is the value that is to be used when multiplying the byte to be added
-                        // to the RLC. Note that `branch_mult_prev` is stored in the previous row.
-                        require!(branch_rlc.cur() => branch_rlc.prev() + 128.expr() * branch_mult.prev());
-
-                        // When a branch child is empty, we only have one byte in a row and the multiplier only
-                        // changes by factor `r`.
-                        require!(branch_mult.cur() => branch_mult.prev() * r[0].expr());
-                    }}
-
-                    ifx!{rlp2.expr() => {
-                        // When a branch child is non-empty and hashed, we have 33 bytes in a row.
-                        // We need to add these 33 bytes to the RLC.
-                        let rlc = 160.expr() * branch_mult.prev() + dot::expr(
-                            &main.bytes.iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(branch_rlc.cur() => branch_rlc.prev() + rlc.expr());
-
-                        // When a branch child is non-empty and hashed, we have 33 bytes in a row.
-                        // The multiplier changes by factor `r^33`.
-                        require!(branch_mult.cur() => branch_mult.prev() * r[0].expr() * r[POWER_OF_RANDOMNESS_LEN - 1].expr());
-                    }}
+                    // When a branch child is non-empty and hashed, we have 33 bytes in a row.
+                    // The multiplier changes by factor `r^33`.
+                    require!(branch_mult.cur() => branch_mult.prev() * r[0].expr() * r[POWER_OF_RANDOMNESS_LEN - 1].expr());
                 }}
             }}
+
+            // We need to check that the multiplier in non-hashed nodes changes according to the non-hashed
+            // node length.
+            ifx!{is_node_hashed => {
+                require!((FixedTableTag::RMult, a!(main.bytes[0]) - 192.expr(), node_mult_diff) => @fixed);
             }}
+        }}
 
-            cb.gate(1.expr())
-        });
-
-        let sel = |meta: &mut VirtualCells<F>| {
-            let q_enable = q_enable(meta);
-            let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
-
-            q_enable * is_node_hashed
-        };
-
-        /*
-        We need to check that the multiplier in non-hashed nodes changes according to the non-hashed
-        node length.
-        */
-        mult_diff_lookup(
-            meta,
-            sel,
-            0,
-            main.bytes[0],
-            node_mult_diff,
-            192,
-            fixed_table,
-        );
-
-        /*
-        Note: the constraints for there being 0s after the non-hashed child last byte are in
-        branch_parallel.rs.
-        */
+        // Note: the constraints for there being 0s after the non-hashed child last byte
+        // are in branch_parallel.rs.
 
         BranchRLCConfig {
             _marker: PhantomData,

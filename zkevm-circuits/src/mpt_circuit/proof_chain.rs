@@ -1,7 +1,7 @@
 use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-use super::helpers::BaseConstraintBuilder;
+use super::{helpers::BaseConstraintBuilder, MPTContext};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -54,21 +54,20 @@ pub(crate) struct ProofChainConfig<F> {
 }
 
 impl<F: FieldExt> ProofChainConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols<F>,
-        position_cols: PositionCols<F>,
-        is_branch_init: Column<Advice>,
-        account_leaf: AccountLeafCols<F>,
-        storage_leaf: StorageLeafCols<F>,
-        inter_start_root: Column<Advice>,
-        inter_final_root: Column<Advice>,
-        address_rlc: Column<Advice>,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
-        let mut cb = BaseConstraintBuilder::default();
-        meta.create_gate("Proof chaining constraints", |meta| {
-        constraints!{[meta, cb], {
+        let proof_type = ctx.proof_type;
+        let position_cols = ctx.position_cols;
+        let is_branch_init = ctx.branch.is_init;
+        let account_leaf = ctx.account_leaf;
+        let storage_leaf = ctx.storage_leaf;
+        let inter_start_root = ctx.inter_start_root;
+        let inter_final_root = ctx.inter_final_root;
+        let address_rlc = ctx.address_rlc;
+        constraints! {[meta, cb], {
             let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = ColumnTransition::new(meta, position_cols.not_first_level);
@@ -102,14 +101,18 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     ifx!{is_branch_or_account_leaf, not::expr(is_storage_leaf_last_row_prev.expr()) => {
                         require!(not_first_level => 1);
                     }}
-
                     // When there is a last account leaf row in the previous row and the proof is about
                     // non storage modification (proof ends with account leaf),
                     // in the current row it needs to be `not_first_level = 1` (we are in account leaf/branch init).
                     ifx!{is_branch_or_account_leaf, is_non_storage_mod_proof_type_prev, not::expr(is_account_leaf_last_row_prev.expr()) => {
                         require!(not_first_level => 1);
                     }}
-
+                    // If `not_first_level` is 0 in a previous row (being in branch init),
+                    // then `not_first_level` needs to be 1 in the current row (preventing two consecutive
+                    // blocks to be `not_first_level = 0`).
+                    ifx!{is_branch_init, not::expr(not_first_level.prev())  => {
+                        require!(not_first_level => 1);
+                    }}
                     // `not_first_level` can change only in `is_branch_init` or `is_account_leaf_key_s` or
                     // `is__leaf_key_s`.
                     // Note that the change `not_first_level = 1` to `not_first_level = 0` (going to the first level)
@@ -127,18 +130,10 @@ impl<F: FieldExt> ProofChainConfig<F> {
                         require!(start_root.cur() => start_root.prev());
                         require!(final_root.cur() => final_root.prev());
                     }}
-
                     // When we go from one modification to another, the previous `final_root` needs to be
                     // the same as the current `start_root`.
                     ifx!{not_first_level.prev(), not::expr(not_first_level.cur())  => {
                         require!(final_root.prev() => start_root.cur());
-                    }}
-
-                    // If `not_first_level` is 0 in a previous row (being in branch init),
-                    // then `not_first_level` needs to be 1 in the current row (preventing two consecutive
-                    // blocks to be `not_first_level = 0`).
-                    ifx!{is_branch_init, not::expr(not_first_level.prev())  => {
-                        require!(not_first_level => 1);
                     }}
 
                     // It needs to be ensured there is an account proof before the
@@ -167,7 +162,6 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     ifx!{is_branch_init.expr() + is_storage_leaf_key_s.expr(), not::expr(not_first_level.cur())  => {
                         require!(address_rlc => 0);
                     }}
-
                     // It needs to be ensured that `address_rlc` changes only at the first row of the account leaf
                     // or in the branch init row if it is in the first level.
                     ifx!{not::expr(is_account_leaf_key_s.expr()), is_branch_init.expr() - (not_first_level.cur() + 1.expr()) => {
@@ -177,10 +171,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
 
                 // TODO: check public roots to match with first and last inter roots
             }}
-            }}
-
-            cb.gate(1.expr())
-        });
+        }}
 
         ProofChainConfig {
             _marker: PhantomData,

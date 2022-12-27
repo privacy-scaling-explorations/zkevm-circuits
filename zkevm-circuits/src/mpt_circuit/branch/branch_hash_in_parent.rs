@@ -1,17 +1,18 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression},
+    plonk::{Advice, Column, Expression, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
 
 use crate::{
-    constraints, cs,
+    constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::{bytes_expr_into_rlc, generate_keccak_lookups, get_is_extension_node},
+    mpt_circuit::helpers::get_is_extension_node,
     mpt_circuit::{
         columns::{AccumulatorCols, MainCols, PositionCols},
         param::HASH_WIDTH,
+        MPTContext,
     },
     mpt_circuit::{
         helpers::{get_branch_len, BaseConstraintBuilder},
@@ -22,9 +23,9 @@ use crate::{
             RLP_NUM,
         },
     },
-    table::{DynamicTableColumns, KeccakTable},
+    table::KeccakTable,
 };
-use gadgets::util::{and, not, select, sum, Expr};
+use gadgets::util::{and, not, Expr};
 
 /*
 A branch occupies 19 rows:
@@ -85,24 +86,26 @@ pub(crate) struct BranchHashInParentConfig<F> {
 }
 
 impl<F: FieldExt> BranchHashInParentConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        inter_root: Column<Advice>,
-        position_cols: PositionCols<F>,
-        is_account_leaf_in_added_branch: Column<Advice>,
-        is_last_branch_child: Column<Advice>,
-        s_main: MainCols<F>,
-        accs: AccumulatorCols<F>,
-        keccak_table: KeccakTable,
-        r: [Expression<F>; HASH_WIDTH],
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
-        let rot_into_branch_init = -16;
-        let mut cb = BaseConstraintBuilder::default();
-        meta.create_gate("Branch hash in parent", |meta| {
-            constraints!{[meta, cb], {
+        let inter_root = if is_s {
+            ctx.inter_start_root
+        } else {
+            ctx.inter_final_root
+        };
+        let position_cols = ctx.position_cols;
+        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
+        let is_last_branch_child = ctx.branch.is_last_child;
+        let s_main = ctx.s_main;
+        let accs = ctx.accumulators;
+        let r = ctx.r;
 
+        let rot_into_branch_init = -16;
+        constraints! {[meta, cb], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
             let is_last_branch_child = a!(is_last_branch_child);
@@ -170,14 +173,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     }}
                 }}
             }}
-            }}
-
-            cb.gate(1.expr())
-        });
-
-        // Hash lookups
-        // TODO(Brecht): merge
-        generate_keccak_lookups(meta, keccak_table, cb.keccak_lookups);
+        }}
 
         BranchHashInParentConfig {
             _marker: PhantomData,

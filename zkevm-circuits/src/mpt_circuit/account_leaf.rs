@@ -39,7 +39,7 @@ impl<F: FieldExt> AccountLeafCols<F> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct AccountLeaf {
     pub(crate) is_key_s: bool,
     pub(crate) is_key_c: bool,

@@ -2,7 +2,7 @@ use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -11,14 +11,8 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::columns::{AccumulatorCols, MainCols},
-    mpt_circuit::helpers::{
-        compute_rlc, get_bool_constraint, get_is_extension_node, get_is_extension_node_one_nibble,
-        mult_diff_lookup, range_lookups,
-    },
-    mpt_circuit::{
-        helpers::{extend_rand, generate_keccak_lookups},
-        witness_row::MptWitnessRow,
-    },
+    mpt_circuit::helpers::{get_is_extension_node, get_is_extension_node_one_nibble},
+    mpt_circuit::{helpers::extend_rand, witness_row::MptWitnessRow, FixedTableTag, MPTContext},
     mpt_circuit::{
         helpers::{get_leaf_len, key_len_lookup, BaseConstraintBuilder},
         param::{
@@ -26,13 +20,12 @@ use crate::{
             LEAF_KEY_S_IND,
         },
     },
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, ProofValues},
     table::KeccakTable,
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, POWER_OF_RANDOMNESS_LEN,
-    RLP_NUM,
+    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
 };
 
 /*
@@ -65,26 +58,24 @@ the first level of the trie. Also, when computing the leaf RLC, we need to take 
 the leaf value for the drifted leaf is stored in a parallel proof.
 */
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct LeafKeyInAddedBranchConfig<F> {
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_main: MainCols<F>,
-        c_main: MainCols<F>,
-        accs: AccumulatorCols<F>,
-        drifted_pos: Column<Advice>,
-        is_account_leaf_in_added_branch: Column<Advice>,
-        r: [Expression<F>; HASH_WIDTH],
-        fixed_table: [Column<Fixed>; 3],
-        keccak_table: KeccakTable,
-        check_zeros: bool,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
+        let s_main = ctx.s_main;
+        let c_main = ctx.c_main;
+        let accs = ctx.accumulators;
+        let drifted_pos = ctx.branch.drifted_pos;
+        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
+        let r = ctx.r;
+
         let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
         let rot_into_account = -LEAF_DRIFTED_IND - 1;
 
@@ -93,19 +84,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         // retrieve it from the row of a leaf before a drift. We need the leaf value to
         // build the leaf RLC to check that the hash of a drifted leaf is in the
         // new branch.
-
         // It needs to be ensured that the leaf intermediate RLC (containing the leaf
         // key bytes) is properly computed. The intermediate RLC is then used to
         // compute the final leaf RLC (containing the leaf value bytes too).
         // Finally, the lookup is used to check that the hash that
         // corresponds to the leaf RLC is in the parent branch at `drifted_pos`
         // position.
-
-        let mut cb = BaseConstraintBuilder::default();
-        meta.create_gate("Storage leaf in added branch RLC", |meta| {
-        constraints!{[meta, cb], {
-            let q_enable = q_enable(meta);
-
+        constraints! {[meta, cb], {
             // drifted leaf appears only when there is a placeholder branch
             let is_branch_s_placeholder = meta.query_advice(
                 s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
@@ -115,55 +100,53 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
                 Rotation(rot_branch_init),
             );
-            let is_branch_placeholder = is_branch_s_placeholder.clone() + is_branch_c_placeholder.clone();
+            let is_branch_placeholder = is_branch_s_placeholder.expr() + is_branch_c_placeholder.expr();
 
             let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_account);
 
             let flag1 = a!(accs.s_mod_node_rlc);
             let flag2 = a!(accs.c_mod_node_rlc);
-            let last_level = flag1.clone() * flag2.clone();
-            let one_nibble = not::expr(flag1.clone()) * not::expr(flag2.clone());
-            let is_long = flag1.clone() * not::expr(flag2.clone());
-            let is_short = not::expr(flag1.clone()) * flag2.clone();
+            let last_level = flag1.expr() * flag2.expr();
+            let one_nibble = not::expr(flag1.expr()) * not::expr(flag2.expr());
+            let is_long = flag1.expr() * not::expr(flag2.expr());
+            let is_short = not::expr(flag1.expr()) * flag2.expr();
 
-            ifx!{q_enable => {
-                // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
-                // Example:
-                // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
-                ifx!{is_long => {
-                    require!(a!(s_main.rlp1) => 248);
+            // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
+            // Example:
+            // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+            ifx!{is_long => {
+                require!(a!(s_main.rlp1) => 248);
+            }}
+
+            // The two values that store the information about what kind of case we have need to be boolean.
+            require!(flag1 => bool);
+            require!(flag2 => bool);
+
+            ifx!{not::expr(is_leaf_in_first_storage_level.expr()), is_branch_placeholder => {
+                // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
+                // leaf into a second level) and we do not need to trigger any checks.
+                // Note that in this case `is_branch_placeholder` gets some value from the account rows and we cannot use it.
+
+                // We need to ensure that the RLC of the row is computed properly for `is_short` and
+                // `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
+                ifx!{is_short.expr() + is_long.expr() => {
+                    let rlc = rlc::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                        &(extend_rand(&r)),
+                    );
+                    require!(a!(accs.acc_s.rlc) => rlc);
                 }}
 
-                // The two values that store the information about what kind of case we have need to be boolean.
-                require!(flag1 => bool);
-                require!(flag2 => bool);
-
-                ifx!{not::expr(is_leaf_in_first_storage_level.expr()), is_branch_placeholder => {
-                    // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
-                    // leaf into a second level) and we do not need to trigger any checks.
-                    // Note that in this case `is_branch_placeholder` gets some value from the account rows and we cannot use it.
-
-                    // We need to ensure that the RLC of the row is computed properly for `is_short` and
-                    // `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                    ifx!{is_short.expr() + is_long.expr() => {
-                        let rlc = rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &(extend_rand(&r)),
-                        );
-                        require!(a!(accs.acc_s.rlc) => rlc);
-                    }}
-
-                    // We need to ensure that the RLC of the row is computed properly for `last_level` and
-                    // `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                    // `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
-                    // where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
-                    ifx!{last_level.expr() + one_nibble.expr() => {
-                        let rlc_last_level = rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..2].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(a!(accs.acc_s.rlc) => rlc_last_level);
-                    }}
+                // We need to ensure that the RLC of the row is computed properly for `last_level` and
+                // `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
+                // `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
+                // where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
+                ifx!{last_level.expr() + one_nibble.expr() => {
+                    let rlc_last_level = rlc::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..2].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                        &r,
+                    );
+                    require!(a!(accs.acc_s.rlc) => rlc_last_level);
                 }}
             }}
 
@@ -260,7 +243,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let leaf_key_s_rlc = a!(accs.key.rlc, (-(LEAF_DRIFTED_IND - LEAF_KEY_S_IND)));
             let leaf_key_c_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_C_IND));
 
-            ifx!{q_enable, not::expr(is_leaf_in_first_storage_level.expr()) => {
+            ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {
                 let drifted_pos_mult = key_rlc_mult.clone() * 16.expr() * is_c16.clone() + key_rlc_mult.clone() * is_c1.clone();
                 // Any rotation that lands into branch children can be used.
                 let key_rlc_start = key_rlc_cur + a!(drifted_pos, -17) * drifted_pos_mult;
@@ -386,7 +369,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             let acc_mult = a!(accs.acc_s.mult);
             let len = get_leaf_len(meta, s_main.clone(), accs.clone(), 0);
-            ifx!{q_enable, not::expr(is_leaf_in_first_storage_level.expr()) => {
+            ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {
                 ifx!{is_branch_s_placeholder => {
                     /* Leaf key in added branch: neighbour leaf in the added branch (S) */
                     // It needs to be ensured that the hash of the drifted leaf is in the parent branch
@@ -468,142 +451,61 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     require!((rlc, len, c_mod_node_hash_rlc) => @keccak);
                 }}
             }}
-            }}
 
-            cb.gate(1.expr())
-        });
-
-        let sel_short = |meta: &mut VirtualCells<F>| {
-            let q_enable = q_enable(meta);
-            let is_branch_s_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(rot_branch_init),
-            );
-            let is_branch_c_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(rot_branch_init),
-            );
-            let is_leaf_in_first_storage_level =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-
-            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let is_short = (1.expr() - flag1) * flag2;
-
-            q_enable
-                * is_short
-                * (is_branch_s_placeholder + is_branch_c_placeholder)
-                * (1.expr() - is_leaf_in_first_storage_level)
-        };
-        let sel_long = |meta: &mut VirtualCells<F>| {
-            let q_enable = q_enable(meta);
-            let is_branch_s_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(rot_branch_init),
-            );
-            let is_branch_c_placeholder = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(rot_branch_init),
-            );
-            let is_leaf_in_first_storage_level =
-                meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_account));
-
-            let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation::cur());
-            let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation::cur());
-            let is_long = flag1 * (1.expr() - flag2);
-
-            q_enable
-                * is_long
-                * (is_branch_s_placeholder + is_branch_c_placeholder)
-                * (1.expr() - is_leaf_in_first_storage_level)
-        };
-
-        // There are 0s in `s_main.bytes` after the last key nibble (this does not need
-        // to be checked for `last_level` and `one_nibble` as in these cases
-        // `s_main.bytes` are not used).
-        if check_zeros {
-            for ind in 0..HASH_WIDTH {
-                key_len_lookup(
-                    meta,
-                    sel_short,
-                    ind + 1,
-                    s_main.rlp2,
-                    s_main.bytes[ind],
-                    128,
-                    fixed_table,
-                )
-            }
-            for ind in 1..HASH_WIDTH {
+            // There are 0s in `s_main.bytes` after the last key nibble (this does not need
+            // to be checked for `last_level` and `one_nibble` as in these cases
+            // `s_main.bytes` are not used).
+            /*if check_zeros {
+                for ind in 0..HASH_WIDTH {
+                    key_len_lookup(
+                        meta,
+                        sel_short,
+                        ind + 1,
+                        s_main.rlp2,
+                        s_main.bytes[ind],
+                        128,
+                        fixed_table,
+                    )
+                }
+                for ind in 1..HASH_WIDTH {
+                    key_len_lookup(
+                        meta,
+                        sel_long,
+                        ind,
+                        s_main.bytes[0],
+                        s_main.bytes[ind],
+                        128,
+                        fixed_table,
+                    )
+                }
                 key_len_lookup(
                     meta,
                     sel_long,
-                    ind,
+                    32,
                     s_main.bytes[0],
-                    s_main.bytes[ind],
+                    c_main.rlp1,
                     128,
                     fixed_table,
-                )
-            }
-            key_len_lookup(
-                meta,
-                sel_long,
-                32,
-                s_main.bytes[0],
-                c_main.rlp1,
-                128,
-                fixed_table,
-            );
-        }
+                );
+            }*/
 
-        /*
-        The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.
-        To compute the final leaf RLC in `LEAF_VALUE` row, we need to know the multiplier to be used
-        for the first byte in the leaf value row (which is in a parallel proof).
-        The multiplier is stored in `accumulators.acc_s.mult`.
-        We check that the multiplier corresponds to the length of the key that is stored in `s_main.rlp2`
-        for `is_short` and in `s_main.bytes[0]` for `is_long`.
-
-        Note: `last_level` and `one_nibble` have fixed multiplier because the length of the nibbles
-        in these cases is fixed.
-        */
-        mult_diff_lookup(
-            meta,
-            sel_short,
-            2,
-            s_main.rlp2,
-            accs.acc_s.mult,
-            128,
-            fixed_table,
-        );
-        mult_diff_lookup(
-            meta,
-            sel_long,
-            3,
-            s_main.bytes[0],
-            accs.acc_s.mult,
-            128,
-            fixed_table,
-        );
-
-        /*
-        Range lookups ensure that `s_main`, `c_main.rlp1`, `c_main.rlp2` columns are all bytes (between 0 - 255).
-        */
-        range_lookups(
-            meta,
-            q_enable,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            q_enable,
-            [s_main.rlp1, s_main.rlp2, c_main.rlp1, c_main.rlp2].to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-
-        generate_keccak_lookups(meta, keccak_table, cb.keccak_lookups);
+            // The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.
+            // To compute the final leaf RLC in `LEAF_VALUE` row, we need to know the multiplier to be used
+            // for the first byte in the leaf value row (which is in a parallel proof).
+            // The multiplier is stored in `accumulators.acc_s.mult`.
+            // We check that the multiplier corresponds to the length of the key that is stored in `s_main.rlp2`
+            // for `is_short` and in `s_main.bytes[0]` for `is_long`.
+            // Note: `last_level` and `one_nibble` have fixed multiplier because the length of the nibbles
+            // in these cases is fixed.
+            ifx!{is_branch_placeholder, not::expr(is_leaf_in_first_storage_level) => {
+                ifx!{is_short => {
+                    require!((FixedTableTag::RMult, a!(s_main.rlp2) - 128.expr() + 2.expr(), a!(accs.acc_s.mult)) => @fixed);
+                }}
+                ifx!{is_long => {
+                    require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 3.expr(), a!(accs.acc_s.mult)) => @fixed);
+                }}
+            }}
+        }}
 
         LeafKeyInAddedBranchConfig {
             _marker: PhantomData,

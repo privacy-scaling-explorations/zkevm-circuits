@@ -40,7 +40,7 @@ impl<F: FieldExt> StorageLeafCols<F> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct StorageLeaf {
     pub(crate) is_s_key: bool,
     pub(crate) is_s_value: bool,

@@ -12,6 +12,7 @@ use crate::{
         columns::{MainCols, PositionCols},
         helpers::{key_len_lookup, BaseConstraintBuilder, ColumnTransition},
         param::HASH_WIDTH,
+        MPTContext,
     },
 };
 
@@ -84,22 +85,31 @@ pub(crate) struct BranchParallelConfig<F> {
 }
 
 impl<F: FieldExt> BranchParallelConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        position_cols: PositionCols<F>,
-        branch: BranchCols<F>,
-        mod_node_hash_rlc: Column<Advice>,
-        main: MainCols<F>,
-        sel: Column<Advice>,
-        is_node_hashed: Column<Advice>,
-        fixed_table: [Column<Fixed>; 3],
-        check_zeros: bool,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+        is_s: bool,
     ) -> Self {
-        meta.create_gate("Empty and non-empty branch children", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            constraints! {[meta, cb], {
-
+        let position_cols = ctx.position_cols;
+        let branch = ctx.branch;
+        let mod_node_hash_rlc = if is_s {
+            ctx.accumulators.s_mod_node_rlc
+        } else {
+            ctx.accumulators.c_mod_node_rlc
+        };
+        let main = if is_s { ctx.s_main } else { ctx.c_main };
+        let sel = if is_s {
+            ctx.denoter.sel1
+        } else {
+            ctx.denoter.sel2
+        };
+        let is_node_hashed = if is_s {
+            ctx.denoter.is_node_hashed_s
+        } else {
+            ctx.denoter.is_node_hashed_c
+        };
+        constraints! {[meta, cb], {
             let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let is_branch_child = a!(branch.is_child);
@@ -188,37 +198,32 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                     }}
                 }}
             }}
-            }}
 
-            cb.gate(1.expr())
-        });
+            /*let sel = |meta: &mut VirtualCells<F>| {
+                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
+                let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
+                let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
 
-        let sel = |meta: &mut VirtualCells<F>| {
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-            let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
+                q_enable * is_branch_child_cur * is_node_hashed
+            };
 
-            q_enable * is_branch_child_cur * is_node_hashed
-        };
-
-        /*
-        When branch child is shorter than 32 bytes it does not get hashed, that means some positions
-        in `main.bytes` stay unused. But we need to ensure there are 0s at unused positions to avoid
-        attacks on the RLC which is computed taking into account all `main.bytes`.
-        */
-        if check_zeros {
-            for ind in 1..HASH_WIDTH {
-                key_len_lookup(
-                    meta,
-                    sel,
-                    ind,
-                    main.bytes[0],
-                    main.bytes[ind],
-                    192,
-                    fixed_table,
-                )
-            }
-        }
+            // When branch child is shorter than 32 bytes it does not get hashed, that means some positions
+            // in `main.bytes` stay unused. But we need to ensure there are 0s at unused positions to avoid
+            // attacks on the RLC which is computed taking into account all `main.bytes`.
+            if check_zeros {
+                for ind in 1..HASH_WIDTH {
+                    key_len_lookup(
+                        meta,
+                        sel,
+                        ind,
+                        main.bytes[0],
+                        main.bytes[ind],
+                        192,
+                        fixed_table,
+                    )
+                }
+            }*/
+        }}
 
         BranchParallelConfig {
             _marker: PhantomData,

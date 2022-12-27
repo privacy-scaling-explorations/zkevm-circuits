@@ -16,11 +16,10 @@ use std::{iter, marker::PhantomData};
 
 use crate::{
     constraints,
+    evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
-    mpt_circuit::helpers::{
-        bytes_expr_into_rlc, bytes_into_rlc, get_is_extension_node, range_lookups,
-    },
+    mpt_circuit::helpers::{bytes_into_rlc, get_is_extension_node},
     mpt_circuit::param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
         C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
@@ -30,7 +29,7 @@ use crate::{
     },
     mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, ProofValues},
     util::Expr,
 };
 use gadgets::util::{and, not, or, select};
@@ -38,6 +37,7 @@ use gadgets::util::{and, not, or, select};
 use super::{
     helpers::{BaseConstraintBuilder, ColumnTransition},
     param::ARITY,
+    MPTContext,
 };
 
 /*
@@ -75,7 +75,7 @@ Note that when `BRANCH.IS_CHILD` row presents a nil node, there is only one byte
 128 at `s_main.bytes[0] / c_main.bytes[0]`.
 */
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct Branch {
     pub(crate) is_branch_init: bool,
     pub(crate) is_branch_child: bool,
@@ -126,32 +126,31 @@ impl<F: FieldExt> BranchCols<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct BranchConfig<F> {
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> BranchConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        position_cols: PositionCols<F>,
-        is_account_leaf_in_added_branch: Column<Advice>,
-        s_main: MainCols<F>,
-        c_main: MainCols<F>,
-        accs: AccumulatorCols<F>,
-        branch: BranchCols<F>,
-        denoter: DenoteCols<F>,
-        fixed_table: [Column<Fixed>; 3],
-        randomness: Expression<F>,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
+        let position_cols = ctx.position_cols;
+        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
+        let s_main = ctx.s_main;
+        let c_main = ctx.c_main;
+        let accs = ctx.accumulators;
+        let branch = ctx.branch;
+        let denoter = ctx.denoter;
+        let r = ctx.r;
+
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-        meta.create_gate("Branch", |meta| {
-        let mut cb = BaseConstraintBuilder::default();
-        constraints!{[meta, cb], {
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+        constraints! {[meta, cb], {
+            let q_enable = f!(position_cols.q_enable);
+            let q_not_first = f!(position_cols.q_not_first);
+            let not_first_level = a!(position_cols.not_first_level);
 
             let drifted_pos = ColumnTransition::new(meta, branch.drifted_pos);
             let node_index = ColumnTransition::new(meta, branch.node_index);
@@ -165,12 +164,12 @@ impl<F: FieldExt> BranchConfig<F> {
             let s1 = ColumnTransition::new(meta, s_main.rlp1);
             let s2 = ColumnTransition::new(meta, s_main.rlp2);
             let c1 = ColumnTransition::from(
-                meta.query_advice(s_main.bytes[0], Rotation::prev()),
-                meta.query_advice(c_main.rlp1, Rotation::cur()),
+                a!(s_main.bytes[0], -1),
+                a!(c_main.rlp1),
             );
             let c2 = ColumnTransition::from(
-                meta.query_advice(s_main.bytes[1], Rotation::prev()),
-                meta.query_advice(c_main.rlp2, Rotation::cur()),
+                a!(s_main.bytes[1], -1),
+                a!(c_main.rlp2),
             );
 
             let is_branch_placeholder_s = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
@@ -179,18 +178,12 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_branch_non_hashed_c = ColumnTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
 
             let nibbles_count = ColumnTransition::from(
-                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation(-BRANCH_ROWS_NUM)),
-                meta.query_advice(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], Rotation::cur()),
+                a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], -BRANCH_ROWS_NUM),
+                a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]),
             );
 
-            let is_branch_placeholder_s_from_last = meta.query_advice(
-                s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-16),
-            );
-            let is_branch_placeholder_c_from_last = meta.query_advice(
-                s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM],
-                Rotation(-16),
-            );
+            let is_branch_placeholder_s_from_last = a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], -16);
+            let is_branch_placeholder_c_from_last = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], -16);
 
             ifx!{q_enable => {
                 // These selectors are only stored in branch init rows
@@ -199,14 +192,12 @@ impl<F: FieldExt> BranchConfig<F> {
                     for selector in [is_branch_placeholder_s.expr(), is_branch_placeholder_c.expr(), is_branch_non_hashed_s.expr(), is_branch_non_hashed_c.expr()] {
                         require!(selector => bool);
                     }
-
                     // The cell `s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]` in branch init row stores the number of
                     // nibbles used up to this point (up to this branch). If a regular branch, the counter increases only
                     // by 1 as only one nibble is used to determine the position of `modified_node` in a branch.
                     // On the contrary, when it is an extension node the counter increases by the number of nibbles
                     // in the extension key and the additional nibble for the position in a branch (this constraint
                     // is in `extension_node.rs` though).
-
                     // extension node counterpart constraint is in extension_node.rs
                     let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
                     ifx!{not::expr(is_extension_node.expr()) => {
@@ -224,7 +215,6 @@ impl<F: FieldExt> BranchConfig<F> {
                 // The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
                 // * `S` and `C` proof occur at `modified_node` (denoting which child of the branch is changed) position.
                 // This is needed because the circuit allows only one change at at time.
-
                 // We check `s_main.rlp = c_main.rlp` everywhere except at `modified_node`.
                 // Note: We do not compare `s_main.rlp1 = c_main.rlp1` because there is no
                 // information about branch. We use `rlp1` to store information
@@ -296,7 +286,6 @@ impl<F: FieldExt> BranchConfig<F> {
                     (c1, c2, BRANCH_0_C_START, denoter.is_node_hashed_c, &c_main),
                 ] {
                     let rlp_bytes = (0..3).map(|idx| a!(s_main.bytes[branch_start - RLP_NUM + idx], -1)).collect::<Vec<_>>();
-
                     // [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                     // 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
                     // [0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165
@@ -320,7 +309,6 @@ impl<F: FieldExt> BranchConfig<F> {
                         // There should never be `rlp1, rlp2: 0, 0` for `S` and `C`
                         // (we only have three cases, there is no case with both being 0).
                         require!(or::expr([rlp1.prev(), rlp2.prev()]) => true);
-
                         // We check that the first branch children has properly stored the number of
                         // the remaining bytes. For example, if there are 81
                         // bytes in the branch and the first branch child
@@ -356,9 +344,13 @@ impl<F: FieldExt> BranchConfig<F> {
                 }
 
                 ifx!{is_branch_child.cur() => {
+                    // modified_node = drifted_pos when NOT placeholder.
+                    // We check modified_node = drifted_pos in first branch node and then check
+                    // in each branch node: modified_node_prev = modified_node_cur and
+                    // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
+
                     // If we have branch child, we can only have branch child or branch init in the previous row.
                     require!(or::expr([is_branch_child.prev(), is_branch_init.prev()]) => true);
-
                     // When `node_index` != 0
                     ifx!{node_index.cur() => {
                         // `node_index` is increased by 1 for each is_branch_child node.
@@ -367,19 +359,12 @@ impl<F: FieldExt> BranchConfig<F> {
                         // needs to be the same for all branch nodes.
                         require!(modified_node.cur() => modified_node.prev());
                     }}
-
-                    // modified_node = drifted_pos when NOT placeholder.
-                    // We check modified_node = drifted_pos in first branch node and then check
-                    // in each branch node: modified_node_prev = modified_node_cur and
-                    // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
-
                     // `is_modified` is boolean (booleanity is checked in `selectors.rs`):
                     // - 0 when `node_index != modified_node`
                     // - 1 when `node_index == modified_node`
                     ifx!{is_modified => {
                         require!(node_index => modified_node);
                     }}
-
                     // `is_at_drifted_pos` is boolean (booleanity is checked in `selectors.rs`):
                     // - 0 when `node_index != drifted_pos`
                     // - 1 when `node_index == drifted_pos`
@@ -391,7 +376,6 @@ impl<F: FieldExt> BranchConfig<F> {
                 ifx!{is_branch_init.prev() => {
                     // If we have `is_branch_init` in the previous row, we have `is_branch_child = 1` in the current row.
                     require!(is_branch_child.cur() => true);
-
                     // We could have only one constraint using sum, but then we would need
                     // to limit `node_index` (to prevent values like -1). Now, `node_index` is
                     // limited by ensuring its first value is 0, its last value is 15,
@@ -415,25 +399,8 @@ impl<F: FieldExt> BranchConfig<F> {
                     // When `node_index` is not 15, `is_last_child` needs to be 0.
                     // For this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
                     require!(node_index.cur() => 15);
-
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
                     for ind in 0..16 {
-                        let mut s_hash = vec![];
-                        let mut c_hash = vec![];
-                        for column in s_main.bytes.iter() {
-                            s_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
-                        }
-                        for column in c_main.bytes.iter() {
-                            c_hash.push(meta.query_advice(*column, Rotation(-15+ind)));
-                        }
-                        let s_hash_rlc = bytes_expr_into_rlc(&s_hash, randomness.clone());
-                        let c_hash_rlc = bytes_expr_into_rlc(&c_hash, randomness.clone());
-
-                        let is_modified = meta.query_advice(branch.is_modified, Rotation(-15+ind));
-                        let is_at_drifted_pos = meta.query_advice(branch.is_at_drifted_pos, Rotation(-15+ind));
-                        let s_mod_node_hash_rlc_cur = meta.query_advice(accs.s_mod_node_rlc, Rotation(-15+ind));
-                        let c_mod_node_hash_rlc_cur = meta.query_advice(accs.c_mod_node_rlc, Rotation(-15+ind));
-
                         // For a branch placeholder we do not have any constraints. However, in the parallel
                         // (regular) branch we have an additional constraint (besides `is_modified` row
                         // corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
@@ -444,19 +411,30 @@ impl<F: FieldExt> BranchConfig<F> {
                         // That means we simply use `mod_node_hash_rlc` column (because it is not occupied)
                         // in the placeholder branch for `is_at_drifted_pos main.bytes RLC` of
                         // the regular parallel branch.
-
                         // When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
                         // stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
-
                         // Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
                         // child is not hashed (shorter than 32 bytes), but in this case we need to compute
                         // the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
                         // we check in `branch_parallel` that the non-hashed child is of the appropriate length
                         // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
                         // The same applies for `c_hash_rlc`.
+                        let rot = -15 + ind;
+                        let s_hash_rlc = rlc::expr(
+                            &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
+                            &r,
+                        );
+                        let c_hash_rlc = rlc::expr(
+                            &c_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
+                            &r,
+                        );
+                        let is_modified = a!(branch.is_modified, rot);
+                        let is_at_drifted_pos = a!(branch.is_at_drifted_pos, rot);
+                        let s_mod_node_hash_rlc_cur = a!(accs.s_mod_node_rlc, rot);
+                        let c_mod_node_hash_rlc_cur = a!(accs.c_mod_node_rlc, rot);
                         for (is_branch_placeholder_from_last, hash_rlc_a, hash_rlc_b, mod_node_hash_rlc) in [
-                            (is_branch_placeholder_s_from_last.clone(), s_hash_rlc.clone(), c_hash_rlc.clone(), s_mod_node_hash_rlc_cur),
-                            (is_branch_placeholder_c_from_last.clone(), c_hash_rlc, s_hash_rlc, c_mod_node_hash_rlc_cur)
+                            (is_branch_placeholder_s_from_last.expr(), s_hash_rlc.expr(), c_hash_rlc.expr(), s_mod_node_hash_rlc_cur),
+                            (is_branch_placeholder_c_from_last.expr(), c_hash_rlc, s_hash_rlc, c_mod_node_hash_rlc_cur)
                         ] {
                             ifx!{is_branch_placeholder_from_last => {
                                 // When branch is a placeholder, `main.bytes RLC` corresponds to the value
@@ -483,38 +461,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     }}
                 }}
             }}
-            }}
-
-            cb.gate(1.expr())
-        });
-
-        // Range lookups ensure that `s_main.bytes` and `c_main.bytes` columns are all
-        // bytes (between 0 - 255). Note: We do not check this for branch init
-        // row here. Branch init row contains selectors related to drifted_pos,
-        // modified_node, branch placeholders, extension node selectors. The constraints
-        // for these selectors are in `branch_init.rs`.
-        // Range lookups for extension node rows are in `extension_node_key.rs`.
-        let sel = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let is_branch_init = meta.query_advice(branch.is_init, Rotation::cur());
-            let is_branch_child = meta.query_advice(branch.is_child, Rotation::cur());
-
-            q_not_first * not::expr(is_branch_init) * is_branch_child
-        };
-        range_lookups(
-            meta,
-            sel,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel,
-            c_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
+        }}
 
         BranchConfig {
             _marker: PhantomData,

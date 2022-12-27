@@ -1,5 +1,4 @@
 use crate::{
-    evm_circuit::{table::Lookup, util::dot},
     table::{DynamicTableColumns, KeccakTable},
     util::Expr,
 };
@@ -13,8 +12,7 @@ use halo2_proofs::{
 use crate::{
     mpt_circuit::param::{
         HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, POWER_OF_RANDOMNESS_LEN,
-        RLP_NUM,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
     },
     mpt_circuit::FixedTableTag,
 };
@@ -23,80 +21,6 @@ use super::{
     columns::{AccumulatorCols, MainCols},
     param::{BRANCH_0_C_START, BRANCH_0_S_START},
 };
-
-// Turn 32 hash cells into 4 cells containing keccak words.
-pub(crate) fn into_words_expr<F: FieldExt>(hash: Vec<Expression<F>>) -> Vec<Expression<F>> {
-    let mut words = vec![];
-    for i in 0..4 {
-        let mut word = Expression::Constant(F::zero());
-        let mut exp = Expression::Constant(F::one());
-        for j in 0..8 {
-            word = word + hash[i * 8 + j].clone() * exp.clone();
-            exp = exp * Expression::Constant(F::from(256));
-        }
-        words.push(word)
-    }
-
-    words
-}
-
-pub(crate) fn compute_rlc<F: FieldExt>(
-    meta: &mut VirtualCells<F>,
-    advices: Vec<Column<Advice>>,
-    mut rind: usize,
-    mult: Expression<F>,
-    rotation: i32,
-    power_of_randomness: [Expression<F>; HASH_WIDTH],
-) -> Expression<F> {
-    let mut r_wrapped = false;
-    let mut rlc = Expression::Constant(F::zero());
-    for col in advices.iter() {
-        let s = meta.query_advice(*col, Rotation(rotation));
-        if !r_wrapped {
-            rlc = rlc + s * power_of_randomness[rind].clone() * mult.clone();
-        } else {
-            rlc = rlc
-                + s * power_of_randomness[rind].clone()
-                    * power_of_randomness[POWER_OF_RANDOMNESS_LEN - 1].clone()
-                    * mult.clone();
-        }
-        if rind == POWER_OF_RANDOMNESS_LEN - 1 {
-            rind = 0;
-            r_wrapped = true;
-        } else {
-            rind += 1;
-        }
-    }
-
-    rlc
-}
-
-pub(crate) fn range_lookups<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-    columns: Vec<Column<Advice>>,
-    tag: FixedTableTag,
-    fixed_table: [Column<Fixed>; 3],
-) {
-    for col in columns {
-        meta.lookup_any("range_lookup", |meta| {
-            let q_enable = q_enable(meta);
-            let mut constraints = vec![];
-
-            let s = meta.query_advice(col, Rotation::cur());
-            constraints.push((
-                Expression::Constant(F::from(tag as u64)),
-                meta.query_fixed(fixed_table[0], Rotation::cur()),
-            ));
-            constraints.push((
-                q_enable * s,
-                meta.query_fixed(fixed_table[1], Rotation::cur()),
-            ));
-
-            constraints
-        });
-    }
-}
 
 // The columns after the key stops have to be 0 to prevent attacks on RLC using
 // bytes that should be 0.
@@ -140,49 +64,6 @@ pub(crate) fn key_len_lookup<F: FieldExt>(
 
         constraints
     });
-}
-
-pub(crate) fn mult_diff_lookup<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-    addition: usize,
-    key_len_col: Column<Advice>,
-    mult_diff_col: Column<Advice>,
-    key_len_offset: usize,
-    fixed_table: [Column<Fixed>; 3],
-) {
-    meta.lookup_any("mult_diff_lookup", |meta| {
-        let q_enable = q_enable(meta);
-        let mut constraints = vec![];
-
-        let offset = Expression::Constant(F::from(key_len_offset as u64));
-        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
-        let mult_diff = meta.query_advice(mult_diff_col, Rotation::cur());
-        let add_expr = Expression::Constant(F::from(addition as u64));
-
-        constraints.push((
-            Expression::Constant(F::from(FixedTableTag::RMult as u64)),
-            meta.query_fixed(fixed_table[0], Rotation::cur()),
-        ));
-        constraints.push((
-            q_enable.clone() * (key_len + add_expr),
-            meta.query_fixed(fixed_table[1], Rotation::cur()),
-        ));
-        constraints.push((
-            q_enable * mult_diff,
-            meta.query_fixed(fixed_table[2], Rotation::cur()),
-        ));
-
-        constraints
-    });
-}
-
-pub(crate) fn get_bool_constraint<F: FieldExt>(
-    q_enable: Expression<F>,
-    expr: Expression<F>,
-) -> Expression<F> {
-    let one = Expression::Constant(F::from(1_u64));
-    q_enable * expr.clone() * (one - expr)
 }
 
 pub(crate) fn get_is_extension_node<F: FieldExt>(
@@ -248,20 +129,6 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
     for expr in expressions.iter() {
         rlc += F::from(*expr as u64) * mult;
         mult *= r;
-    }
-
-    rlc
-}
-
-pub(crate) fn bytes_expr_into_rlc<F: FieldExt>(
-    expressions: &[Expression<F>],
-    r: Expression<F>,
-) -> Expression<F> {
-    let mut rlc = Expression::Constant(F::zero());
-    let mut mult = Expression::Constant(F::one());
-    for expr in expressions.iter() {
-        rlc = rlc + expr.clone() * mult.clone();
-        mult = mult * r.clone();
     }
 
     rlc

@@ -1,8 +1,8 @@
-use gadgets::util::{and, not, select, Expr};
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -11,7 +11,6 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
-    mpt_circuit::helpers::{bytes_expr_into_rlc, get_bool_constraint, range_lookups},
     mpt_circuit::{
         columns::ProofTypeCols,
         helpers::{get_leaf_len, key_len_lookup, BaseConstraintBuilder},
@@ -21,12 +20,13 @@ use crate::{
             IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_STORAGE_MOD_POS,
             LEAF_NON_EXISTING_IND, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, RLP_NUM,
         },
+        MPTContext,
     },
     mpt_circuit::{
-        helpers::{extend_rand, generate_keccak_lookups},
+        helpers::extend_rand,
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, ProofValues},
     table::KeccakTable,
 };
 
@@ -108,31 +108,35 @@ and the constraints to ensure the lookup roots correspond to the roots of the tr
 level nodes (`account_leaf_storage_codehash.rs` or `branch_hash_in_parent.rs`).
 */
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct LeafValueConfig<F> {
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> LeafValueConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols<F>,
-        position_cols: PositionCols<F>,
-        is_leaf_value: Column<Advice>,
-        s_main: MainCols<F>,
-        keccak_table: KeccakTable,
-        // - key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable lookup)
-        accs: AccumulatorCols<F>,
-        denoter: DenoteCols<F>,
-        is_account_leaf_in_added_branch: Column<Advice>,
-        value_prev: Column<Advice>,
-        value: Column<Advice>,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
         is_s: bool,
-        r: [Expression<F>; HASH_WIDTH],
-        fixed_table: [Column<Fixed>; 3],
-        check_zeros: bool,
     ) -> Self {
+        let proof_type = ctx.proof_type;
+        let position_cols = ctx.position_cols;
+        let is_leaf_value = if is_s {
+            ctx.storage_leaf.is_s_value
+        } else {
+            ctx.storage_leaf.is_c_value
+        };
+        let s_main = ctx.s_main;
+        // key_rlc_mult (accs.key.mult) to store key_rlc from previous row (to enable
+        // lookup)
+        let accs = ctx.accumulators;
+        let denoter = ctx.denoter;
+        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
+        let value_prev = ctx.value_prev;
+        let value = ctx.value;
+        let r = ctx.r;
+
         // A rotation into any branch child is ok as `s_mod_node_hash_rlc` and
         // `c_mod_node_hash_rlc` are the same in all branch children.
         let rot_into_branch = -6;
@@ -143,10 +147,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             -LEAF_VALUE_C_IND
         } - 1;
 
-        let mut cb = BaseConstraintBuilder::default();
-
-        meta.create_gate("Leaf & leaf value RLC", |meta| {
-        constraints!{[meta, cb], {
+        constraints! {[meta, cb], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
             let is_leaf = a!(is_leaf_value);
@@ -323,130 +324,128 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         require!(is_wrong_leaf => 0);
                     }}
                 }
+            }}
 
-                }}
+            let rot_into_storage_root = if is_s {
+                -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
+            } else {
+                -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND)
+            };
+            // rot_into_leaf_key = -1
+            let len = get_leaf_len(meta, s_main.clone(), accs.clone(), -1);
+            let is_branch_placeholder = a!(
+                s_main.bytes[if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS} - RLP_NUM],
+                rot_into_init
+            );
+            let not_hashed = a!(accs.acc_c.rlc, -1);
+            let mod_node_hash_rlc_cur = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_branch);
+            let is_account_leaf_in_added_branch_placeholder = a!(
+                is_account_leaf_in_added_branch,
+                rot_into_account - BRANCH_ROWS_NUM
+            );
 
-                let rot_into_storage_root = if is_s {
-                    -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
-                } else {
-                    -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND)
-                };
-                // rot_into_leaf_key = -1
-                let len = get_leaf_len(meta, s_main.clone(), accs.clone(), -1);
-                let is_branch_placeholder = a!(
-                    s_main.bytes[if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS} - RLP_NUM],
-                    rot_into_init
-                );
-                let not_hashed = a!(accs.acc_c.rlc, -1);
-                let mod_node_hash_rlc_cur = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_branch);
-                let is_account_leaf_in_added_branch_placeholder = a!(
-                    is_account_leaf_in_added_branch,
-                    rot_into_account - BRANCH_ROWS_NUM
-                );
-
-                ifx!{is_leaf => {
-                    ifx!{not_first_level => {
-                        ifx!{is_account_leaf_above => {
-                            /* Hash of the only storage leaf is storage trie root */
-                            // If there is no branch or extension node in the storage trie (just a leaf), it needs
-                            // to be ensured that the hash of the (only) leaf is the storage root.
-                            // Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).
-                            // Note: if leaf is a placeholder, the root in the account leaf needs to be the empty trie hash
-                            // (see the gate below).
-                            ifx!{not::expr(is_placeholder_without_branch.expr()) => {
-                                // Note: storage root is always in `s_main.bytes`.
-                                let hash_rlc = rlc::expr(
-                                    &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
-                                    &r,
-                                );
-                                require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
-                            }}
-                        } elsex {
-                            /* Hash of the only storage leaf which is after a placeholder is storage trie root */
-                            // If there is no branch or extension node in the storage trie (just a leaf)
-                            // and the only leaf appears after branch placeholder, it needs
-                            // to be ensured that the hash of the (only) leaf is the storage root.
-                            // This appears when there is only one leaf in the storage trie and we add another leaf which
-                            // means the only leaf in a trie is replaced by a branch or extension node (in delete scenario
-                            // we have two leaves and one is deleted) - that means we have a branch placeholder in `S` proof
-                            // and the leaf after it.
-                            // Note: Branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                            // Check in leaf value row.
-                            // Only check if there is an account above the leaf.
-                            // if account is directly above storage leaf, there is no placeholder branch
-                            ifx!{is_account_leaf_in_added_branch_placeholder, is_branch_placeholder => {
-                                // Note: storage root is always in `s_main.bytes`.
-                                let hash_rlc = rlc::expr(
-                                    &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root - BRANCH_ROWS_NUM)).collect::<Vec<_>>(),
-                                    &r,
-                                );
-                                require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
-                            }}
+            ifx!{is_leaf => {
+                ifx!{not_first_level => {
+                    ifx!{is_account_leaf_above => {
+                        /* Hash of the only storage leaf is storage trie root */
+                        // If there is no branch or extension node in the storage trie (just a leaf), it needs
+                        // to be ensured that the hash of the (only) leaf is the storage root.
+                        // Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).
+                        // Note: if leaf is a placeholder, the root in the account leaf needs to be the empty trie hash
+                        // (see the gate below).
+                        ifx!{not::expr(is_placeholder_without_branch.expr()) => {
+                            // Note: storage root is always in `s_main.bytes`.
+                            let hash_rlc = rlc::expr(
+                                &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
+                                &r,
+                            );
+                            require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
+                        }}
+                    } elsex {
+                        /* Hash of the only storage leaf which is after a placeholder is storage trie root */
+                        // If there is no branch or extension node in the storage trie (just a leaf)
+                        // and the only leaf appears after branch placeholder, it needs
+                        // to be ensured that the hash of the (only) leaf is the storage root.
+                        // This appears when there is only one leaf in the storage trie and we add another leaf which
+                        // means the only leaf in a trie is replaced by a branch or extension node (in delete scenario
+                        // we have two leaves and one is deleted) - that means we have a branch placeholder in `S` proof
+                        // and the leaf after it.
+                        // Note: Branch in the first level cannot be shorter than 32 bytes (it is always hashed).
+                        // Check in leaf value row.
+                        // Only check if there is an account above the leaf.
+                        // if account is directly above storage leaf, there is no placeholder branch
+                        ifx!{is_account_leaf_in_added_branch_placeholder, is_branch_placeholder => {
+                            // Note: storage root is always in `s_main.bytes`.
+                            let hash_rlc = rlc::expr(
+                                &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root - BRANCH_ROWS_NUM)).collect::<Vec<_>>(),
+                                &r,
+                            );
+                            require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
                         }}
                     }}
+                }}
 
-                    ifx!{q_not_first => {
-                        ifx!{is_account_leaf_above => {
-                            /* Hash of the only storage leaf which is placeholder requires empty storage root */
-                            // When there is only one leaf in a storage trie and it is a placeholder, the trie needs to
-                            // be empty - the storage root is hash of an empty trie.
-                            // This occurs when the storage trie is empty and the first leaf is added (or reversed when
-                            // there is only one leaf and it is deleted) - in this case we have a placeholder leaf in
-                            // `S` proof and only one leaf in `C` proof. We need to check that in `S` proof we have an
-                            // empty trie.
-                            let empty_trie_hash: Vec<u8> = vec![
-                                86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91,
-                                72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
-                            ];
-                            // Only check if there is an account above the leaf.
-                            ifx!{is_placeholder_without_branch => {
-                                for (byte, empty_byte) in s_main.bytes.iter().zip(empty_trie_hash.iter()) {
-                                    require!(a!(*byte, rot_into_storage_root) => empty_byte.expr());
-                                }
-                            }}
-                        } elsex {
-                            ifx!{not_first_level, not::expr(sel.expr()) => {
-                                ifx!{not::expr(is_branch_placeholder.expr()) => {
-                                    ifx!{not_hashed => {
-                                        /* Non-hashed leaf in parent */
-                                        // When the leaf is not hashed (shorter than 32 bytes), it needs to be checked that its RLC
-                                        // is the same as the RLC of the modified node in the parent branch.
-                                        // When leaf is not hashed, the `mod_node_hash_rlc` stores the RLC of the leaf bytes
-                                        // (instead of the RLC of leaf hash). So we take the leaf RLC and compare it to the value
-                                        // stored in `mod_node_hash_rlc` in the parent branch.
-                                        // Note: `branch_parallel.rs` checks that there are 0s in `*_bytes` after the last
-                                        // byte of the non-hashed branch child (otherwise some corrupted RLC could be provided).
-                                        // For leaf without branch, the constraints are in storage_root_in_account_leaf.
-                                        require!(a!(accs.acc_s.rlc) => mod_node_hash_rlc_cur);
-                                    } elsex {
-                                        /* Leaf hash in parent */
-                                        // It needs to be checked that the hash of a leaf is in the parent node. We do this by a lookup
-                                        // into keccak table: `lookup(leaf_hash_rlc, parent_node_mod_child_rlc)`.
-                                        // For leaf without branch, the constraints are in `storage_root_in_account_leaf.rs`.
-                                        // If `sel = 1`, the leaf is only a placeholder (the leaf is being added or deleted)
-                                        // and we do not check the hash of it.
-                                        require!((a!(accs.acc_s.rlc), len, mod_node_hash_rlc_cur) => @keccak);
-                                    }}
-                                } elsex {
-                                    /* Leaf hash in parent (branch placeholder) */
-                                    // Lookup for case when there is a placeholder branch - in this case we need to
-                                    // check the hash to correspond to the modified node of the branch above the placeholder branch.
+                ifx!{q_not_first => {
+                    ifx!{is_account_leaf_above => {
+                        /* Hash of the only storage leaf which is placeholder requires empty storage root */
+                        // When there is only one leaf in a storage trie and it is a placeholder, the trie needs to
+                        // be empty - the storage root is hash of an empty trie.
+                        // This occurs when the storage trie is empty and the first leaf is added (or reversed when
+                        // there is only one leaf and it is deleted) - in this case we have a placeholder leaf in
+                        // `S` proof and only one leaf in `C` proof. We need to check that in `S` proof we have an
+                        // empty trie.
+                        let empty_trie_hash: Vec<u8> = vec![
+                            86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91,
+                            72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+                        ];
+                        // Only check if there is an account above the leaf.
+                        ifx!{is_placeholder_without_branch => {
+                            for (byte, empty_byte) in s_main.bytes.iter().zip(empty_trie_hash.iter()) {
+                                require!(a!(*byte, rot_into_storage_root) => empty_byte.expr());
+                            }
+                        }}
+                    } elsex {
+                        ifx!{not_first_level, not::expr(sel.expr()) => {
+                            ifx!{not::expr(is_branch_placeholder.expr()) => {
+                                ifx!{not_hashed => {
+                                    /* Non-hashed leaf in parent */
+                                    // When the leaf is not hashed (shorter than 32 bytes), it needs to be checked that its RLC
+                                    // is the same as the RLC of the modified node in the parent branch.
+                                    // When leaf is not hashed, the `mod_node_hash_rlc` stores the RLC of the leaf bytes
+                                    // (instead of the RLC of leaf hash). So we take the leaf RLC and compare it to the value
+                                    // stored in `mod_node_hash_rlc` in the parent branch.
+                                    // Note: `branch_parallel.rs` checks that there are 0s in `*_bytes` after the last
+                                    // byte of the non-hashed branch child (otherwise some corrupted RLC could be provided).
                                     // For leaf without branch, the constraints are in storage_root_in_account_leaf.
-                                    // Note: `sel1` and `sel2` in branch children: denote whether there is no leaf at
-                                    // `is_modified` (when value is added or deleted from trie).
-                                    // If `sel = 1`, there is no leaf at this position (value is being added or
-                                    // deleted) and we do not check the hash of it.
-                                    ifx!{not::expr(is_account_leaf_in_added_branch_placeholder.expr()) => {
-                                        let mult = a!(accs.acc_s.mult, -1);
-                                        let rlc = a!(accs.acc_s.rlc, -1) + rlc::expr(
-                                            &s_main.rlp_bytes().iter().map(|&byte| a!(byte) * mult.expr()).collect::<Vec<_>>(),
-                                            &extend_rand(&r),
-                                        );
-                                        // -3 to get from init branch into the previous branch (last row), note that -2 is needed
-                                        // because of extension nodes.
-                                        let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_init - 3);
-                                        require!((rlc, len, mod_node_hash_rlc) => @keccak);
-                                    }}
+                                    require!(a!(accs.acc_s.rlc) => mod_node_hash_rlc_cur);
+                                } elsex {
+                                    /* Leaf hash in parent */
+                                    // It needs to be checked that the hash of a leaf is in the parent node. We do this by a lookup
+                                    // into keccak table: `lookup(leaf_hash_rlc, parent_node_mod_child_rlc)`.
+                                    // For leaf without branch, the constraints are in `storage_root_in_account_leaf.rs`.
+                                    // If `sel = 1`, the leaf is only a placeholder (the leaf is being added or deleted)
+                                    // and we do not check the hash of it.
+                                    require!((a!(accs.acc_s.rlc), len, mod_node_hash_rlc_cur) => @keccak);
+                                }}
+                            } elsex {
+                                /* Leaf hash in parent (branch placeholder) */
+                                // Lookup for case when there is a placeholder branch - in this case we need to
+                                // check the hash to correspond to the modified node of the branch above the placeholder branch.
+                                // For leaf without branch, the constraints are in storage_root_in_account_leaf.
+                                // Note: `sel1` and `sel2` in branch children: denote whether there is no leaf at
+                                // `is_modified` (when value is added or deleted from trie).
+                                // If `sel = 1`, there is no leaf at this position (value is being added or
+                                // deleted) and we do not check the hash of it.
+                                ifx!{not::expr(is_account_leaf_in_added_branch_placeholder.expr()) => {
+                                    let mult = a!(accs.acc_s.mult, -1);
+                                    let rlc = a!(accs.acc_s.rlc, -1) + rlc::expr(
+                                        &s_main.rlp_bytes().iter().map(|&byte| a!(byte) * mult.expr()).collect::<Vec<_>>(),
+                                        &extend_rand(&r),
+                                    );
+                                    // -3 to get from init branch into the previous branch (last row), note that -2 is needed
+                                    // because of extension nodes.
+                                    let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_init - 3);
+                                    require!((rlc, len, mod_node_hash_rlc) => @keccak);
                                 }}
                             }}
                         }}
@@ -454,58 +453,30 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }}
             }}
 
-            cb.gate(1.expr())
-        });
+            /*let sel = |meta: &mut VirtualCells<F>| {
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
+                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
+                not_first_level * is_leaf
+            };
 
-        /*
-        Note: For cases when storage leaf is in the first storage level, the
-        constraints are in `storage_root_in_account_leaf.rs`.
-        */
+            // There are 0s in `s_main.bytes` after the last value byte.
+            if check_zeros {
+                for ind in 0..HASH_WIDTH {
+                    key_len_lookup(
+                        meta,
+                        sel,
+                        ind + 1,
+                        s_main.rlp2,
+                        s_main.bytes[ind],
+                        128,
+                        fixed_table,
+                    )
+                }
+            }*/
+        }}
 
-        let sel = |meta: &mut VirtualCells<F>| {
-            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-            let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
-            not_first_level * is_leaf
-        };
-
-        /*
-        Range lookups ensure that `s_main`, `s_main.rlp1`, `s_main.rlp2` columns are all bytes (between 0 - 255).
-        */
-        range_lookups(
-            meta,
-            sel,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel,
-            [s_main.rlp1, s_main.rlp2].to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-
-        /*
-        There are 0s in `s_main.bytes` after the last value byte.
-        */
-        if check_zeros {
-            for ind in 0..HASH_WIDTH {
-                key_len_lookup(
-                    meta,
-                    sel,
-                    ind + 1,
-                    s_main.rlp2,
-                    s_main.bytes[ind],
-                    128,
-                    fixed_table,
-                )
-            }
-        }
-
-        // Hash lookups
-        // TODO(Brecht): merge
-        generate_keccak_lookups(meta, keccak_table, cb.keccak_lookups);
+        // Note: For cases when storage leaf is in the first storage level, the
+        // constraints are in `storage_root_in_account_leaf.rs`.
 
         LeafValueConfig {
             _marker: PhantomData,

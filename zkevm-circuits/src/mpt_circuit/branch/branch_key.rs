@@ -1,7 +1,7 @@
 use gadgets::util::{and, not, sum, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -11,6 +11,7 @@ use crate::{
     mpt_circuit::{
         columns::{AccumulatorPair, MainCols, PositionCols},
         helpers::ColumnTransition,
+        MPTContext,
     },
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
@@ -116,18 +117,20 @@ pub(crate) struct BranchKeyConfig<F> {
 
 impl<F: FieldExt> BranchKeyConfig<F> {
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        position_cols: PositionCols<F>,
-        /* `not_first_level` to avoid rotating back when in the first branch (for key rlc) */
-        branch: BranchCols<F>,
-        is_account_leaf_in_added_branch: Column<Advice>,
-        s_main: MainCols<F>,
-        acc_pair: AccumulatorPair<F>, // used first for account address, then for storage key
-        randomness: Expression<F>,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
-        meta.create_gate("Branch key RLC", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            constraints!{[meta, cb], {
+        let position_cols = ctx.position_cols;
+        // `not_first_level` to avoid rotating back when in the first branch (for key
+        // rlc)
+        let branch = ctx.branch;
+        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
+        let s_main = ctx.s_main;
+        // used first for account address, then for storage key
+        let acc_pair = ctx.accumulators.key;
+        let r = ctx.r;
+        constraints! {[meta, cb], {
             // For the first branch node (node_index = 0), the key rlc needs to be:
             // key_rlc = key_rlc::Rotation(-19) + modified_node * key_rlc_mult
             // Note: we check this in the first branch node (after branch init),
@@ -229,7 +232,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                             // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
                             // be multiplied by `r` - `modified_node` in the next branch will be multiplied
                             // by `mult * r`.
-                            require!(key_rlc_mult.cur() => key_rlc_mult.prev() * randomness.expr());
+                            require!(key_rlc_mult.cur() => key_rlc_mult.prev() * r[0].expr());
                         }}
                     }}
 
@@ -281,10 +284,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     }}
                 }
             }}
-            }}
-
-            cb.gate(1.expr())
-        });
+        }}
 
         BranchKeyConfig {
             _marker: PhantomData,

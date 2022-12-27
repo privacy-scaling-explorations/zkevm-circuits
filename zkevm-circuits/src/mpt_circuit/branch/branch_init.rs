@@ -7,16 +7,15 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints, cs,
+    constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::{get_bool_constraint, range_lookups},
     mpt_circuit::{
         columns::{AccumulatorCols, MainCols},
         helpers::{
             get_num_rlp_bytes, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
         },
     },
-    mpt_circuit::{param::HASH_WIDTH, FixedTableTag},
+    mpt_circuit::{param::HASH_WIDTH, MPTContext},
 };
 
 /*
@@ -93,88 +92,45 @@ pub(crate) struct BranchInitConfig<F> {
 
 impl<F: FieldExt> BranchInitConfig<F> {
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F> + Copy,
-        s_main: MainCols<F>,
-        accs: AccumulatorCols<F>,
-        r: [Expression<F>; HASH_WIDTH],
-        fixed_table: [Column<Fixed>; 3],
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
     ) -> Self {
-        // Short RLP, meta data contains two bytes: 248, 81
+        let s_main = ctx.s_main;
+        let accs = ctx.accumulators;
+        let r = ctx.r;
+        // - Short RLP, meta data contains two bytes: 248, 81
         // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
         // The length of RLP stream is: 81.
-
-        // Long RLP, meta data contains three bytes: 249, 2, 17
+        // - Long RLP, meta data contains three bytes: 249, 2, 17
         // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
         // The length of RLP stream is: 2 * 256 + 17.
-
-        // The RLC of the init branch comprises 1, 2, or 3 bytes. This gate ensures the
-        // RLC is computed properly in each of the three cases. It also ensures
+        // - The RLC of the init branch comprises 1, 2, or 3 bytes. This gate ensures
+        // the RLC is computed properly in each of the three cases. It also ensures
         // that the values that specify the case are boolean.
-        meta.create_gate("Branch init RLC", |meta| {
-            let rot = Rotation::cur();
-            let q_enable = q_enable(meta);
-            let mut cb = BaseConstraintBuilder::default();
-            constraints!{[meta, cb], {
-            ifx!{q_enable => {
-                for (accumulators, is_s) in [
-                    (accs.acc_s, true),
-                    (accs.acc_c, false)
-                ] {
-                    let rlp_meta = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
-                    let (one_rlp_byte, two_rlp_bytes, three_rlp_bytes) = get_num_rlp_bytes(meta, s_main.clone(), is_s, rot);
-                    let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
-
-                    // Check branch accumulator in row 0
-                    let acc = meta.query_advice(accumulators.rlc, rot);
-                    let mult = meta.query_advice(accumulators.mult, rot);
-
-                    // Boolean checks
-                    for selector in rlp_meta {
-                        require!(selector => bool);
-                    }
-
-                    // Branch RLC checks
-                    // 1 RLP byte
-                    ifx!{one_rlp_byte => {
-                        require!(acc => rlc::expr(&rlp[..1], &r));
-                        require!(mult => r[0]);
-                    }}
-                    // 2 RLP bytes
-                    ifx!{two_rlp_bytes => {
-                        require!(acc => rlc::expr(&rlp[..2], &r));
-                        require!(mult => r[1]);
-                    }}
-                    // 3 RLP bytes
-                    ifx!{three_rlp_bytes => {
-                        require!(acc => rlc::expr(&rlp[..3], &r));
-                        require!(mult => r[2]);
+        let rot = Rotation::cur();
+        constraints! {[meta, cb], {
+            for (accumulators, is_s) in [
+                (accs.acc_s, true),
+                (accs.acc_c, false)
+            ] {
+                // Boolean checks
+                let rlp_meta = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
+                for selector in rlp_meta {
+                    require!(selector => bool);
+                }
+                // 1/2/3 RLP bytes RLC checks
+                let (one_rlp_byte, two_rlp_bytes, three_rlp_bytes) = get_num_rlp_bytes(meta, s_main.clone(), is_s, rot);
+                let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
+                for (idx, selector) in [one_rlp_byte, two_rlp_bytes, three_rlp_bytes].into_iter().enumerate() {
+                    ifx!{selector => {
+                        // Check branch accumulator in row 0
+                        require!(a!(accumulators.rlc) => rlc::expr(&rlp[..idx+1], &r));
+                        require!(a!(accumulators.mult) => r[idx]);
                     }}
                 }
-            }}
-            }}
-
-            cb.gate(1.expr())
-        });
-
-        /*
-        Range lookups ensure that the values in the used columns are all bytes (between 0 - 255).
-        Note: range lookups for extension node rows are in `extension_node_key.rs`.
-        */
-        range_lookups(
-            meta,
-            q_enable,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            q_enable,
-            [s_main.rlp1, s_main.rlp2].to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
+            }
+        }}
 
         BranchInitConfig {
             _marker: PhantomData,

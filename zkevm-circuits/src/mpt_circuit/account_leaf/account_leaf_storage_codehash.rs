@@ -2,7 +2,7 @@ use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -11,21 +11,21 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols},
-    mpt_circuit::helpers::range_lookups,
     mpt_circuit::{
-        helpers::BaseConstraintBuilder,
-        witness_row::{MptWitnessRow, MptWitnessRowType},
-    },
-    mpt_circuit::{
-        helpers::{accumulate_rand, generate_keccak_lookups},
+        helpers::accumulate_rand,
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
             C_START, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
             IS_BRANCH_S_PLACEHOLDER_POS, IS_CODEHASH_MOD_POS, RLP_NUM, S_START,
         },
+        MPTContext,
     },
-    mpt_circuit::{FixedTableTag, MPTConfig, ProofValues},
+    mpt_circuit::{
+        helpers::BaseConstraintBuilder,
+        witness_row::{MptWitnessRow, MptWitnessRowType},
+    },
+    mpt_circuit::{MPTConfig, ProofValues},
     table::KeccakTable,
 };
 
@@ -71,38 +71,44 @@ Lookups:
 The `is_codehash_mod` lookup is enabled in `ACCOUNT_LEAF_STORAGE_CODEHASH_C` row.
 */
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafStorageCodehashConfig<F> {
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        proof_type: ProofTypeCols<F>,
-        inter_root: Column<Advice>,
-        position_cols: PositionCols<F>,
-        is_account_leaf_storage_codehash: Column<Advice>,
-        s_main: MainCols<F>,
-        c_main: MainCols<F>,
-        r: [Expression<F>; HASH_WIDTH],
-        accs: AccumulatorCols<F>,
-        value_prev: Column<Advice>,
-        value: Column<Advice>,
-        fixed_table: [Column<Fixed>; 3],
-        denoter: DenoteCols<F>,
-        keccak_table: KeccakTable,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut BaseConstraintBuilder<F>,
+        ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
+        let proof_type = ctx.proof_type;
+        let inter_root = if is_s {
+            ctx.inter_start_root
+        } else {
+            ctx.inter_final_root
+        };
+        let position_cols = ctx.position_cols;
+        let is_account_leaf_storage_codehash = if is_s {
+            ctx.account_leaf.is_storage_codehash_s
+        } else {
+            ctx.account_leaf.is_storage_codehash_c
+        };
+        let s_main = ctx.s_main;
+        let c_main = ctx.c_main;
+        let r = ctx.r;
+        let accs = ctx.accumulators;
+        let value_prev = ctx.value_prev;
+        let value = ctx.value;
+        let denoter = ctx.denoter;
+
         // Note: We do not need to check `acc_mult` because it is not used after this
         // row.
         // Note: differently as in storage leaf value (see empty_trie there), the
         // placeholder leaf never appears in the first level here, because there
         // is always at least a genesis account.
-        let mut cb = BaseConstraintBuilder::default();
-        meta.create_gate("Account leaf storage codehash", |meta| {
-        constraints!{[meta, cb], {
+        constraints! {[meta, cb], {
             let q_not_first = f!(position_cols.q_not_first);
             let q_enable = q_not_first * a!(is_account_leaf_storage_codehash);
 
@@ -293,44 +299,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     }}
                 }}
             }}
-            }}
-
-            cb.gate(1.expr())
-        });
-
-        let sel = |meta: &mut VirtualCells<F>| {
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            q_not_first * meta.query_advice(is_account_leaf_storage_codehash, Rotation::cur())
-        };
-
-        /*
-        Range lookups ensure that `s_main` and `c_main` columns are all bytes (between 0 - 255).
-
-        Note: `s_main.rlp1` and `c_main.rlp1` are not used.
-         */
-        range_lookups(
-            meta,
-            sel,
-            s_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel,
-            c_main.bytes.to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-        range_lookups(
-            meta,
-            sel,
-            [s_main.rlp2, c_main.rlp2].to_vec(),
-            FixedTableTag::Range256,
-            fixed_table,
-        );
-
-        generate_keccak_lookups(meta, keccak_table, cb.keccak_lookups);
+        }}
 
         AccountLeafStorageCodehashConfig {
             _marker: PhantomData,
