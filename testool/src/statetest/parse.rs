@@ -7,6 +7,7 @@ use anyhow::Context;
 use anyhow::Result;
 use eth_types::evm_types::OpcodeId;
 use eth_types::{Address, Bytes, H256, U256};
+use log::debug;
 
 type Label = String;
 
@@ -135,7 +136,7 @@ pub fn parse_code<'a>(compiler: &'a mut Compiler, as_str: &str) -> Result<Bytes>
     } else if let Some(yul) = tags.get(":yul") {
         compiler.yul(yul)?
     } else if let Some(solidity) = tags.get(":solidity") {
-        println!("SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
+        debug!("SOLIDITY: >>>{}<<< => {:?}", solidity, as_str);
         compiler.solidity(solidity)?
     } else if let Some(asm) = tags.get(":asm") {
         compiler.asm(asm)?
