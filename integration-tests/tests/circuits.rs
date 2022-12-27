@@ -5,7 +5,7 @@ use halo2_proofs::circuit::Value;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
 use integration_tests::{get_client, log_init};
-use integration_tests::{END_BLOCK, START_BLOCK, TX_ID};
+use integration_tests::{END_BLOCK, START_BLOCK, TX_ID, CIRCUIT};
 use zkevm_circuits::evm_circuit::EvmCircuit;
 use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
 use zkevm_circuits::keccak_circuit::keccak_packed_multi::multi_keccak;
@@ -25,7 +25,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
 async fn test_mock_prove_tx() {
     log_init();
     let tx_id: &str = &TX_ID;
-    log::info!("test evm circuit, tx: {}", tx_id);
+    log::info!("test {} circuit, tx: {}", *CIRCUIT, tx_id);
     if tx_id.is_empty() {
         return;
     }
@@ -47,7 +47,30 @@ async fn test_mock_prove_tx() {
     }
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    run_test_circuit(block).unwrap();
+    let mock_prover = match &*CIRCUIT {
+        "evm" => {
+            let k = get_test_degree(&block);
+            let circuit = get_test_cicuit_from_block(block);
+            let instance = vec![];
+            MockProver::<F>::run(k, &circuit, instance).unwrap()
+        },
+        "rlp" => {
+            let k = 18;
+            let circuit = RlpCircuit::new_from_block(&block);
+            let instance = vec![];
+            MockProver::<F>::run(k, &circuit, instance).unwrap()
+        },
+        _ => unimplemented!()
+    };
+
+    let err = prover.verify_par();
+    if let Some(e) = err.err() {
+        for s in e.iter() {
+            println!("ERR {}", s);
+        }
+    }
+    
+    
     log::info!("prove done");
 }
 
@@ -82,9 +105,9 @@ async fn test_super_circuit_all_block() {
         let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         let result = prover.verify_par();
         log::info!(
-            "test super circuit, block number: {} result {:?}",
+            "test super circuit, block number: {} err len {:?}",
             block_num,
-            result
+            result.map_err(|e| e.len())
         );
         if let Err(errs) = result {
             for err in errs {

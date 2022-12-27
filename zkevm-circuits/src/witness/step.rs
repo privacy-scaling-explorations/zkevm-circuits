@@ -119,7 +119,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::debug!("{:?} is implemented with DummyGadget", $name);
+                        log::trace!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
