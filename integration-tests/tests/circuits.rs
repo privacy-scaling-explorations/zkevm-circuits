@@ -1,14 +1,16 @@
-#![cfg(feature = "circuits")]
-
 use bus_mapping::circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
 use integration_tests::{get_client, log_init};
-use integration_tests::{END_BLOCK, START_BLOCK, TX_ID, CIRCUIT};
+use integration_tests::{CIRCUIT, END_BLOCK, START_BLOCK, TX_ID};
 use zkevm_circuits::evm_circuit::EvmCircuit;
-use zkevm_circuits::evm_circuit::{test::run_test_circuit, witness::block_convert};
+use zkevm_circuits::evm_circuit::{
+    test::get_test_cicuit_from_block, test::get_test_degree, test::run_test_circuit,
+    witness::block_convert,
+};
 use zkevm_circuits::keccak_circuit::keccak_packed_multi::multi_keccak;
+use zkevm_circuits::rlp_circuit::RlpCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::{Challenges, SubCircuit};
@@ -47,30 +49,27 @@ async fn test_mock_prove_tx() {
     }
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let mock_prover = match &*CIRCUIT {
-        "evm" => {
-            let k = get_test_degree(&block);
-            let circuit = get_test_cicuit_from_block(block);
-            let instance = vec![];
-            MockProver::<F>::run(k, &circuit, instance).unwrap()
-        },
-        "rlp" => {
-            let k = 18;
-            let circuit = RlpCircuit::new_from_block(&block);
-            let instance = vec![];
-            MockProver::<F>::run(k, &circuit, instance).unwrap()
-        },
-        _ => unimplemented!()
+    let prover = if *CIRCUIT == "evm".to_string() {
+        let k = get_test_degree(&block);
+        let circuit = get_test_cicuit_from_block(block);
+        let instance = vec![];
+        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+    } else if *CIRCUIT == "rlp".to_string() {
+        let k = 18;
+        let circuit = RlpCircuit::new_from_block(&block);
+        let instance = vec![];
+        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+    } else {
+        unimplemented!()
     };
 
-    let err = prover.verify_par();
-    if let Some(e) = err.err() {
-        for s in e.iter() {
-            println!("ERR {}", s);
-        }
+    let result = prover.verify_par();
+    let errs = result.err().unwrap_or_default();
+    for err in &errs {
+        log::error!("ERR: {}", err);
     }
-    
-    
+    println!("err num: {}", errs.len());
+
     log::info!("prove done");
 }
 
@@ -85,10 +84,10 @@ async fn test_super_circuit_all_block() {
         let cli = get_client();
         // target k = 19
         let params = CircuitsParams {
-            max_rws: 500_000,
-            max_txs: 15,
-            max_calldata: 500_000,
-            max_bytecode: 500_000,
+            max_rws: 4000_000,
+            max_txs: 500,
+            max_calldata: 2000_000,
+            max_bytecode: 2000_000,
             keccak_padding: None,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -100,19 +99,18 @@ async fn test_super_circuit_all_block() {
         }
 
         let (k, circuit, instance) =
-            SuperCircuit::<Fr, 15, 500_000, 500_000>::build_from_circuit_input_builder(&builder)
+            SuperCircuit::<Fr, 500, 2000_000, 2000_000>::build_from_circuit_input_builder(&builder)
                 .unwrap();
         let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         let result = prover.verify_par();
+        let errs = result.err().unwrap_or_default();
         log::info!(
-            "test super circuit, block number: {} err len {:?}",
+            "test super circuit, block number: {} err num {:?}",
             block_num,
-            result.map_err(|e| e.len())
+            errs.len(),
         );
-        if let Err(errs) = result {
-            for err in errs {
-                log::error!("circuit err: {}", err);
-            }
+        for err in errs {
+            log::error!("circuit err: {}", err);
         }
     }
 }
