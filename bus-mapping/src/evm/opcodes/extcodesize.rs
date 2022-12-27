@@ -114,22 +114,14 @@ mod extcodesize_tests {
     }
 
     #[test]
-    fn extcodesize_opcode_non_existing_account() {
+    fn test_extcodesize_opcode() {
+        // Test for non existing account.
         test_ok(None, false);
-    }
-
-    #[test]
-    fn extcodesize_opcode_empty_account() {
+        // Test for empty account.
         test_ok(Some(Account::default()), false);
-    }
-
-    #[test]
-    fn extcodesize_opcode_cold_account() {
+        // Test for cold account.
         test_ok(TEST_ACCOUNT.clone(), false);
-    }
-
-    #[test]
-    fn extcodesize_opcode_warm_account() {
+        // Test for warm account.
         test_ok(TEST_ACCOUNT.clone(), true);
     }
 
