@@ -227,7 +227,7 @@ impl<'a> CircuitInputBuilder {
             let geth_trace = &geth_traces[tx_index];
             log::info!("handling {}th tx {:?}", self.block.txs.len(), tx.hash);
             self.handle_tx(
-                &tx,
+                tx,
                 geth_trace,
                 check_last_tx && tx_index + 1 == eth_block.transactions.len(),
             )?;

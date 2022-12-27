@@ -49,12 +49,12 @@ async fn test_mock_prove_tx() {
     }
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let prover = if *CIRCUIT == "evm".to_string() {
+    let prover = if *CIRCUIT == "evm" {
         let k = get_test_degree(&block);
         let circuit = get_test_cicuit_from_block(block);
         let instance = vec![];
         MockProver::<Fr>::run(k, &circuit, instance).unwrap()
-    } else if *CIRCUIT == "rlp".to_string() {
+    } else if *CIRCUIT == "rlp" {
         let k = 18;
         let circuit = RlpCircuit::new_from_block(&block);
         let instance = vec![];
@@ -84,10 +84,10 @@ async fn test_super_circuit_all_block() {
         let cli = get_client();
         // target k = 19
         let params = CircuitsParams {
-            max_rws: 4000_000,
+            max_rws: 4_000_000,
             max_txs: 500,
-            max_calldata: 2000_000,
-            max_bytecode: 2000_000,
+            max_calldata: 2_000_000,
+            max_bytecode: 2_000_000,
             keccak_padding: None,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
@@ -99,7 +99,7 @@ async fn test_super_circuit_all_block() {
         }
 
         let (k, circuit, instance) =
-            SuperCircuit::<Fr, 500, 2000_000, 2000_000>::build_from_circuit_input_builder(&builder)
+            SuperCircuit::<Fr, 500, 2_000_000, 2_000_000>::build_from_circuit_input_builder(&builder)
                 .unwrap();
         let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         let result = prover.verify_par();
