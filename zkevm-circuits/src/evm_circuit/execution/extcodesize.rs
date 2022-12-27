@@ -179,87 +179,18 @@ mod test {
     }
 
     #[test]
-    fn extcodesize_gadget_non_existing_account() {
-        test_root_ok(&None, false);
-        test_internal_ok(0x20, 0x00, &None, false);
-        test_internal_ok(0x1010, 0xff, &None, false);
+    fn test_extcodesize_gadget() {
+        // Test for non existing account.
+        test_ok(None, false);
+        // Test for empty account.
+        test_ok(Some(Account::default()), false);
+        // Test for cold account.
+        test_ok(TEST_ACCOUNT.clone(), false);
+        // Test for warm account.
+        test_ok(TEST_ACCOUNT.clone(), true);
     }
 
-    #[test]
-    fn extcodesize_gadget_empty_account() {
-        let account = Some(Account::default());
-
-        test_root_ok(&account, false);
-        test_internal_ok(0x20, 0x00, &account, false);
-        test_internal_ok(0x1010, 0xff, &account, false);
-    }
-
-    #[test]
-    fn extcodesize_gadget_cold_account() {
-        test_root_ok(&TEST_ACCOUNT, false);
-        test_internal_ok(0x20, 0x00, &TEST_ACCOUNT, false);
-        test_internal_ok(0x1010, 0xff, &TEST_ACCOUNT, false);
-    }
-
-    #[test]
-    fn extcodesize_gadget_warm_account() {
-        test_root_ok(&TEST_ACCOUNT, true);
-        test_internal_ok(0x20, 0x00, &TEST_ACCOUNT, true);
-        test_internal_ok(0x1010, 0xff, &TEST_ACCOUNT, true);
-    }
-
-    fn test_root_ok(account: &Option<Account>, is_warm: bool) {
-        let account_exists = !account.as_ref().map_or(true, |acc| acc.is_empty());
-
-        let mut bytecode = Bytecode::default();
-        if is_warm {
-            bytecode.append(&bytecode! {
-                PUSH20(TEST_ADDRESS.to_word())
-                EXTCODESIZE
-                POP
-            });
-        }
-        bytecode.append(&bytecode! {
-            PUSH20(TEST_ADDRESS.to_word())
-            EXTCODESIZE
-            STOP
-        });
-
-        let ctx = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(Word::from(1u64 << 20))
-                    .code(bytecode);
-                // Set code if account exists.
-                if account_exists {
-                    accs[1].address(*TEST_ADDRESS).code(TEST_CODE.clone());
-                } else {
-                    accs[1]
-                        .address(address!("0x0000000000000000000000000000000000000010"))
-                        .balance(Word::from(1u64 << 20));
-                }
-                accs[2]
-                    .address(address!("0x0000000000000000000000000000000000000020"))
-                    .balance(Word::from(1u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[2].address);
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
-    }
-
-    fn test_internal_ok(
-        call_data_offset: usize,
-        call_data_length: usize,
-        account: &Option<Account>,
-        is_warm: bool,
-    ) {
+    fn test_ok(account: Option<Account>, is_warm: bool) {
         let account_exists = !account.as_ref().map_or(true, |acc| acc.is_empty());
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
@@ -288,8 +219,8 @@ mod test {
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
+            PUSH32(0xff) // argsLength
+            PUSH32(0x1010) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
