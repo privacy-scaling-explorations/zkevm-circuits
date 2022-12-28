@@ -33,7 +33,7 @@ impl Opcode for Extcodesize {
             ),
             (
                 CallContextField::IsPersistent,
-                U256::from(state.call()?.is_persistent as u64),
+                state.call()?.is_persistent.to_word(),
             ),
         ] {
             state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
