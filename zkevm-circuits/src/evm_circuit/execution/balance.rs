@@ -129,21 +129,21 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
                 field_tag: AccountFieldTag::Balance,
                 value,
                 ..
-            } => (
-                RandomLinearCombination::random_linear_combine(
-                    value.to_le_bytes(),
-                    block.randomness,
-                ),
-                true,
-            ),
+            } => (value, true),
             Rw::Account {
                 field_tag: AccountFieldTag::NonExisting,
                 ..
-            } => (F::zero(), false),
+            } => (0.into(), false),
             _ => unreachable!(),
         };
-
-        self.balance.assign(region, offset, Value::known(balance))?;
+        self.balance.assign(
+            region,
+            offset,
+            Value::known(RandomLinearCombination::random_linear_combine(
+                balance.to_le_bytes(),
+                block.randomness,
+            )),
+        )?;
         self.exists
             .assign(region, offset, Value::known(F::from(exists)))?;
 
@@ -169,6 +169,15 @@ mod test {
         test_root_ok(&None, false);
         test_internal_ok(0x20, 0x00, &None, false);
         test_internal_ok(0x1010, 0xff, &None, false);
+    }
+
+    #[test]
+    fn balance_gadget_empty_account() {
+        let account = Some(Account::default());
+
+        test_root_ok(&account, false);
+        test_internal_ok(0x20, 0x00, &account, false);
+        test_internal_ok(0x1010, 0xff, &account, false);
     }
 
     #[test]
