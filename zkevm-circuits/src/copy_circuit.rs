@@ -747,7 +747,7 @@ pub mod dev {
 
 #[cfg(test)]
 mod tests {
-    use crate::copy_circuit::dev::test_copy_circuit;
+    use super::dev::test_copy_circuit;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
