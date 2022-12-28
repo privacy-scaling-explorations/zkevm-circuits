@@ -29,7 +29,7 @@ impl Opcode for Extcodesize {
             (CallContextField::TxId, state.tx_ctx.id().to_word()),
             (
                 CallContextField::RwCounterEndOfReversion,
-                U256::from(state.call()?.rw_counter_end_of_reversion as u64),
+                state.call()?.rw_counter_end_of_reversion.to_word(),
             ),
             (
                 CallContextField::IsPersistent,
