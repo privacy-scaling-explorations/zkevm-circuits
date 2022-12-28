@@ -130,6 +130,9 @@ impl Stack {
 
     /// Returns the n-th last [`Word`] allocated in the `Stack`.
     pub fn nth_last(&self, nth: usize) -> Result<Word, Error> {
+        if self.0.len() < (nth + 1) {
+            return Err(Error::InvalidStackPointer);
+        }
         self.0
             .get(self.0.len() - (nth + 1))
             .cloned()

@@ -11,6 +11,7 @@ use zkevm_circuits::evm_circuit::{
 };
 use zkevm_circuits::keccak_circuit::keccak_packed_multi::multi_keccak;
 use zkevm_circuits::rlp_circuit::RlpCircuit;
+use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::{Challenges, SubCircuit};
@@ -33,7 +34,7 @@ async fn test_mock_prove_tx() {
     }
     let cli = get_client();
     let params = CircuitsParams {
-        max_rws: 50000,
+        max_rws: 100000,
         max_txs: 10,
         max_calldata: 40000,
         max_bytecode: 40000,
@@ -57,6 +58,11 @@ async fn test_mock_prove_tx() {
     } else if *CIRCUIT == "rlp" {
         let k = 18;
         let circuit = RlpCircuit::new_from_block(&block);
+        let instance = vec![];
+        MockProver::<Fr>::run(k, &circuit, instance).unwrap()
+    } else if *CIRCUIT == "state" {
+        let k = 18;
+        let circuit = StateCircuit::new_from_block(&block);
         let instance = vec![];
         MockProver::<Fr>::run(k, &circuit, instance).unwrap()
     } else {
@@ -99,8 +105,10 @@ async fn test_super_circuit_all_block() {
         }
 
         let (k, circuit, instance) =
-            SuperCircuit::<Fr, 500, 2_000_000, 2_000_000>::build_from_circuit_input_builder(&builder)
-                .unwrap();
+            SuperCircuit::<Fr, 500, 2_000_000, 2_000_000>::build_from_circuit_input_builder(
+                &builder,
+            )
+            .unwrap();
         let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         let result = prover.verify_par();
         let errs = result.err().unwrap_or_default();

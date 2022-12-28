@@ -157,7 +157,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             num_rows_evm_circuit,
             num_rows_tx_circuit
         );
-        num_rows_evm_circuit.max(num_rows_tx_circuit)
+        num_rows_evm_circuit
+            .max(num_rows_tx_circuit)
+            .max(block.circuits_params.max_rws)
     }
 }
 

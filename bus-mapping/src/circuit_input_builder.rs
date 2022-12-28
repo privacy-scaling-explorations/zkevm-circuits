@@ -21,7 +21,7 @@ pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::evm_types::GasCost;
+use eth_types::evm_types::{GasCost, OpcodeId};
 use eth_types::geth_types;
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256};
@@ -333,7 +333,7 @@ impl<'a> CircuitInputBuilder {
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!(
-                "handle {}th tx depth {} {}th opcode {:?} pc: {} gas_left: {} rwc: {} call_id: {} args: {}",
+                "handle {}th tx depth {} {}th opcode {:?} pc: {} gas_left: {} rwc: {} call_id: {} msize: {} args: {}",
                 eth_tx.transaction_index.unwrap_or_default(),
                 geth_step.depth,
                 index,
@@ -342,6 +342,7 @@ impl<'a> CircuitInputBuilder {
                 geth_step.gas.0,
                 state_ref.block_ctx.rwc.0,
                 state_ref.call().map(|c| c.call_id).unwrap_or(0),
+                state_ref.call_ctx()?.memory.len(),
                 if geth_step.op.is_push() {
                     match geth_step.stack.last() {
                         Ok(w) => format!("{:?}", w),
@@ -367,6 +368,17 @@ impl<'a> CircuitInputBuilder {
                         geth_step.stack.nth_last(4),
                         geth_step.stack.nth_last(5),
                         geth_step.stack.nth_last(6),
+                    )
+                } else if matches!(geth_step.op, OpcodeId::MLOAD) {
+                    format!(
+                        "{:?}", 
+                        geth_step.stack.nth_last(0),
+                    )
+                } else if matches!(geth_step.op, OpcodeId::MSTORE | OpcodeId::MSTORE8) {
+                    format!(
+                        "{:?} {:?}", 
+                        geth_step.stack.nth_last(0),
+                        geth_step.stack.nth_last(1),
                     )
                 } else {
                     "".to_string()
