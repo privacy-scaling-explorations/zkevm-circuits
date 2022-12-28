@@ -15,7 +15,7 @@ use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::
 use eth_types::Field;
 use gadgets::util::{and, select, sum};
 use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::plonk::VirtualCells;
+use halo2_proofs::plonk::{FirstPhase, Phase, SecondPhase, VirtualCells};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
@@ -236,7 +236,16 @@ impl<F: FieldExt> CellManager<F> {
 
     pub(crate) fn query_cell(&mut self, meta: &mut ConstraintSystem<F>) -> Cell<F> {
         let (row_idx, column_idx) = self.get_position();
-        self.query_cell_at_pos(meta, row_idx as i32, column_idx)
+        self.query_cell_at_pos(meta, row_idx as i32, column_idx, FirstPhase)
+    }
+
+    pub(crate) fn query_cell_in<P: Phase>(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        phase: P,
+    ) -> Cell<F> {
+        let (row_idx, column_idx) = self.get_position();
+        self.query_cell_at_pos(meta, row_idx as i32, column_idx, phase)
     }
 
     pub(crate) fn query_cell_at_row(
@@ -246,19 +255,20 @@ impl<F: FieldExt> CellManager<F> {
     ) -> Cell<F> {
         let column_idx = self.rows[row_idx as usize];
         self.rows[row_idx as usize] += 1;
-        self.query_cell_at_pos(meta, row_idx, column_idx)
+        self.query_cell_at_pos(meta, row_idx, column_idx, FirstPhase)
     }
 
-    pub(crate) fn query_cell_at_pos(
+    pub(crate) fn query_cell_at_pos<P: Phase>(
         &mut self,
         meta: &mut ConstraintSystem<F>,
         row_idx: i32,
         column_idx: usize,
+        phase: P,
     ) -> Cell<F> {
         let column = if column_idx < self.columns.len() {
             self.columns[column_idx].advice
         } else {
-            let advice = meta.advice_column();
+            let advice = meta.advice_column_in(phase);
             let mut expr = 0.expr();
             meta.create_gate("Query column", |meta| {
                 expr = meta.query_advice(advice, Rotation::cur());
@@ -988,7 +998,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let mut data_rlcs = Vec::new();
         for _ in input_bytes.iter() {
             is_paddings.push(cell_manager.query_cell(meta));
-            data_rlcs.push(cell_manager.query_cell(meta));
+            data_rlcs.push(cell_manager.query_cell_in(meta, SecondPhase));
         }
         info!("- Post padding:");
         info!("Lookups: {}", lookup_counter);
