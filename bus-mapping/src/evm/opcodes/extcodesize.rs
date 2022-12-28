@@ -54,8 +54,7 @@ impl Opcode for Extcodesize {
 
         // Read account code hash and get code length.
         let account = state.sdb.get_account(&address).1;
-        let exists = !account.is_empty();
-        let code_size = if exists {
+        let code_size = if !account.is_empty() {
             let code_hash = account.code_hash;
             let code_hash_word = code_hash.to_word();
             state.account_read(
