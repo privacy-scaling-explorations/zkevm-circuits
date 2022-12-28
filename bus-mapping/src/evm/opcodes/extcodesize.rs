@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, Word};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodesize;
