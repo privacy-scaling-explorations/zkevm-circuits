@@ -169,28 +169,22 @@ mod test {
 
     #[test]
     fn test_extcodesize_gadget() {
-        let account = Some(Account {
+        let account = Account {
             address: MOCK_ACCOUNTS[4],
             code: MOCK_CODES[4].clone(),
             ..Default::default()
-        });
+        };
 
-        // Test for non existing account.
-        test_ok(&None, false);
         // Test for empty account.
-        test_ok(&Some(Account::default()), false);
+        test_ok(&Account::default(), false);
         // Test for cold account.
         test_ok(&account, false);
         // Test for warm account.
         test_ok(&account, true);
     }
 
-    fn test_ok(account: &Option<Account>, is_warm: bool) {
-        let (exists, address, code) = account
-            .as_ref()
-            .map_or((false, MOCK_ACCOUNTS[4], MOCK_CODES[4].clone()), |acc| {
-                (!acc.is_empty(), acc.address, acc.code.clone())
-            });
+    fn test_ok(account: &Account, is_warm: bool) {
+        let account_exists = !account.is_empty();
 
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
@@ -198,13 +192,13 @@ mod test {
         let mut bytecode_b = Bytecode::default();
         if is_warm {
             bytecode_b.append(&bytecode! {
-                PUSH20(address.to_word())
+                PUSH20(account.address.to_word())
                 EXTCODESIZE
                 POP
             });
         }
         bytecode_b.append(&bytecode! {
-            PUSH20(address.to_word())
+            PUSH20(account.address.to_word())
             EXTCODESIZE
             POP
         });
@@ -234,8 +228,8 @@ mod test {
                 accs[0].address(addr_b).code(bytecode_b);
                 accs[1].address(addr_a).code(bytecode_a);
                 // Set code if account exists.
-                if exists {
-                    accs[2].address(address).code(code);
+                if account_exists {
+                    accs[2].address(account.address).code(account.code.clone());
                 } else {
                     accs[2].address(mock::MOCK_ACCOUNTS[2]).balance(*MOCK_1_ETH);
                 }

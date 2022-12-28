@@ -103,40 +103,33 @@ mod extcodesize_tests {
 
     #[test]
     fn test_extcodesize_opcode() {
-        let account = Some(Account {
+        let account = Account {
             address: MOCK_ACCOUNTS[4],
             code: MOCK_CODES[4].clone(),
             ..Default::default()
-        });
+        };
 
-        // Test for non existing account.
-        test_ok(&None, false);
         // Test for empty account.
-        test_ok(&Some(Account::default()), false);
+        test_ok(&Account::default(), false);
         // Test for cold account.
         test_ok(&account, false);
         // Test for warm account.
         test_ok(&account, true);
     }
 
-    fn test_ok(account: &Option<Account>, is_warm: bool) {
-        let (exists, address, code) = account
-            .as_ref()
-            .map_or((false, MOCK_ACCOUNTS[4], MOCK_CODES[4].clone()), |acc| {
-                (!acc.is_empty(), acc.address, acc.code.clone())
-            });
-        let code_size = code.len();
+    fn test_ok(account: &Account, is_warm: bool) {
+        let account_exists = !account.is_empty();
 
         let mut bytecode = Bytecode::default();
         if is_warm {
             bytecode.append(&bytecode! {
-                PUSH20(address.to_word())
+                PUSH20(account.address.to_word())
                 EXTCODESIZE
                 POP
             });
         }
         bytecode.append(&bytecode! {
-            PUSH20(address.to_word())
+            PUSH20(account.address.to_word())
             EXTCODESIZE
             STOP
         });
@@ -149,8 +142,8 @@ mod extcodesize_tests {
                     .address(MOCK_ACCOUNTS[0])
                     .balance(*MOCK_1_ETH)
                     .code(bytecode);
-                if exists {
-                    accs[1].address(address).code(code.clone());
+                if account_exists {
+                    accs[1].address(account.address).code(account.code.clone());
                 } else {
                     accs[1].address(MOCK_ACCOUNTS[1]).balance(*MOCK_1_ETH);
                 }
@@ -170,7 +163,7 @@ mod extcodesize_tests {
             .unwrap();
 
         // Check if account address is in access list as a result of bus mapping.
-        assert!(builder.sdb.add_account_to_access_list(address));
+        assert!(builder.sdb.add_account_to_access_list(account.address));
 
         let tx_id = 1;
         let transaction = &builder.block.txs()[tx_id - 1];
@@ -192,7 +185,7 @@ mod extcodesize_tests {
             &StackOp {
                 call_id,
                 address: StackAddress::from(1023u32),
-                value: address.to_word()
+                value: account.address.to_word()
             }
         );
 
@@ -235,7 +228,7 @@ mod extcodesize_tests {
             operation.op(),
             &TxAccessListAccountOp {
                 tx_id,
-                address,
+                address: account.address,
                 is_warm: true,
                 is_warm_prev: is_warm
             }
@@ -245,17 +238,17 @@ mod extcodesize_tests {
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
-            &(if exists {
-                let code_hash = Word::from(keccak256(code));
+            &(if account_exists {
+                let code_hash = Word::from(keccak256(account.code.clone()));
                 AccountOp {
-                    address,
+                    address: account.address,
                     field: AccountField::CodeHash,
                     value: code_hash,
                     value_prev: code_hash,
                 }
             } else {
                 AccountOp {
-                    address,
+                    address: account.address,
                     field: AccountField::NonExisting,
                     value: Word::zero(),
                     value_prev: Word::zero(),
@@ -270,7 +263,12 @@ mod extcodesize_tests {
             &StackOp {
                 call_id,
                 address: 1023u32.into(),
-                value: (if exists { code_size } else { 0 }).into(),
+                value: (if account_exists {
+                    account.code.len()
+                } else {
+                    0
+                })
+                .into(),
             }
         );
     }
