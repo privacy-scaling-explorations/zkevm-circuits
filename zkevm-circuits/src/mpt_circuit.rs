@@ -4,13 +4,11 @@ use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Instance, Selector,
-    },
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var, marker::PhantomData};
+use std::{convert::TryInto, env::var};
 
 mod account_leaf;
 mod branch;
@@ -49,10 +47,8 @@ use selectors::SelectorsConfig;
 
 use crate::{
     constraints,
-    mpt_circuit::helpers::{
-        generate_fixed_lookups, generate_keccak_lookups, BaseConstraintBuilder,
-    },
-    table::KeccakTable,
+    mpt_circuit::helpers::BaseConstraintBuilder,
+    table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
 
@@ -261,6 +257,69 @@ impl<F: FieldExt> ProofValues<F> {
             before_account_leaf: true,
             ..Default::default()
         }
+    }
+}
+
+fn generate_lookups<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    cb: &BaseConstraintBuilder<F>,
+    keccak_table: KeccakTable,
+    fixed_table: [Column<Fixed>; 3],
+) {
+    /*meta.lookup_any("Hash lookup", |meta| {
+        let selector = sum::expr(lookups.iter().map(|lookup| lookup.selector.expr()));
+        let input_rlc = sum::expr(
+            lookups
+                .iter()
+                .map(|lookup| lookup.selector.expr() * lookup.input_rlc.expr()),
+        );
+        let input_len = sum::expr(
+            lookups
+                .iter()
+                .map(|lookup| lookup.selector.expr() * lookup.input_len.expr()),
+        );
+        let output_rlc = sum::expr(
+            lookups
+                .iter()
+                .map(|lookup| lookup.selector.expr() * lookup.output_rlc.expr()),
+        );
+        let values = [selector, input_rlc, input_len, output_rlc];
+        keccak_table.columns().iter().zip(values.iter()).map(|(&table, value)| {
+            (
+                value.expr(),
+                meta.query_advice(table, Rotation::cur()),
+            )
+        }).collect()
+    });*/
+
+    for (name, lookup) in cb.keccak_lookups.iter() {
+        meta.lookup_any(name, |meta| {
+            let selector = lookup.selector.expr();
+            let input_rlc = lookup.selector.expr() * lookup.input_rlc.expr();
+            let input_len = lookup.selector.expr() * lookup.input_len.expr();
+            let output_rlc = lookup.selector.expr() * lookup.output_rlc.expr();
+            let values = [selector, input_rlc, input_len, output_rlc];
+            keccak_table
+                .columns()
+                .iter()
+                .zip(values.iter())
+                .map(|(&table, value)| (value.expr(), meta.query_advice(table, Rotation::cur())))
+                .collect()
+        });
+    }
+
+    for (name, lookup) in cb.fixed_lookups.iter() {
+        meta.lookup_any(name, |meta| {
+            let tag = lookup.tag.expr();
+            let lhs = lookup.selector.expr() * lookup.lhs.expr();
+            let rhs = lookup.selector.expr() * lookup.rhs.expr();
+            let values = [tag, lhs, rhs];
+            fixed_table
+                .iter()
+                .zip(values.iter())
+                .map(|(&table, value)| (value.expr(), meta.query_fixed(table, Rotation::cur())))
+                .collect()
+        });
     }
 }
 
@@ -499,8 +558,7 @@ impl<F: FieldExt> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            generate_keccak_lookups(meta, keccak_table.clone(), cb.keccak_lookups);
-            generate_fixed_lookups(meta, fixed_table.clone(), cb.fixed_lookups);
+            generate_lookups(meta, &cb, keccak_table.clone(), fixed_table.clone());
         }
 
         println!("num lookups: {}", meta.lookups().len());

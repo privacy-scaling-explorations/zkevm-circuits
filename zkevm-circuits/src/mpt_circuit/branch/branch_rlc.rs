@@ -1,19 +1,12 @@
 use gadgets::util::{and, not, Expr};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     constraints,
     evm_circuit::util::{dot, rlc},
-    mpt_circuit::param::{HASH_WIDTH, POWER_OF_RANDOMNESS_LEN},
-    mpt_circuit::{
-        columns::{AccumulatorPair, MainCols},
-        FixedTableTag,
-    },
+    mpt_circuit::param::POWER_OF_RANDOMNESS_LEN,
+    mpt_circuit::FixedTableTag,
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, ColumnTransition},
         MPTContext,

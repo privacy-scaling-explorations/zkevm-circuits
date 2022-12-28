@@ -1,7 +1,7 @@
 use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::{Expression, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -15,17 +15,9 @@ use crate::{
         IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
     },
     mpt_circuit::FixedTableTag,
-    mpt_circuit::{
-        columns::{AccumulatorCols, MainCols, PositionCols},
-        helpers::BaseConstraintBuilder,
-    },
-    mpt_circuit::{
-        helpers::{get_is_extension_node, key_len_lookup},
-        MPTContext,
-    },
+    mpt_circuit::{columns::MainCols, helpers::BaseConstraintBuilder},
+    mpt_circuit::{helpers::get_is_extension_node, MPTContext},
 };
-
-use super::BranchCols;
 
 /*
 A branch occupies 19 rows:
@@ -569,58 +561,16 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 }}
             }}
 
-            /*let sel_long = |meta: &mut VirtualCells<F>| {
-                let is_extension_s_row = meta.query_advice(branch.is_extension_node_s, Rotation::cur());
-
-                let is_ext_long_even_c16 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                let is_ext_long_even_c1 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                let is_ext_long_odd_c16 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                let is_ext_long_odd_c1 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
-                let is_long = is_ext_long_even_c16
-                    + is_ext_long_even_c1
-                    + is_ext_long_odd_c16
-                    + is_ext_long_odd_c1;
-
-                is_extension_s_row * is_long
-            };
+            // RLC bytes zero check
             // `s_main.bytes[i] = 0` after last extension node nibble.
             // Note that for a short version (only one nibble), all
             // `s_main.bytes` need to be 0 (the only nibble is in `s_main.rlp2`) - this is checked
             // separately.
-            if check_zeros {
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel_long,
-                        ind,
-                        s_main.bytes[0],
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
+            ifx!{is_extension_s_row, is_long => {
+                for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].into_iter().enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
                 }
-                key_len_lookup(
-                    meta,
-                    sel_long,
-                    32,
-                    s_main.bytes[0],
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-            }*/
+            }}
         }}
 
         ExtensionNodeKeyConfig {

@@ -2,7 +2,7 @@ use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::VirtualCells,
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols},
     mpt_circuit::{
         helpers::accumulate_rand,
         param::{
@@ -26,7 +25,6 @@ use crate::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{MPTConfig, ProofValues},
-    table::KeccakTable,
 };
 
 /*

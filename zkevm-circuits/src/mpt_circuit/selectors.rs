@@ -2,14 +2,7 @@ use super::{
     helpers::{BaseConstraintBuilder, ColumnTransition},
     MPTContext,
 };
-use crate::{
-    constraints,
-    mpt_circuit::account_leaf::AccountLeafCols,
-    mpt_circuit::branch::BranchCols,
-    mpt_circuit::columns::{DenoteCols, PositionCols, ProofTypeCols},
-    mpt_circuit::storage_leaf::StorageLeafCols,
-    util::Expr,
-};
+use crate::{constraints, util::Expr};
 use gadgets::util::{and, not, or, sum};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;

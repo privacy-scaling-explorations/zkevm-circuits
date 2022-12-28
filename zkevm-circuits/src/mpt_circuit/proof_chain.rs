@@ -1,20 +1,8 @@
 use gadgets::util::{and, not, select, Expr};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
-use crate::{
-    constraints,
-    mpt_circuit::account_leaf::AccountLeafCols,
-    mpt_circuit::storage_leaf::StorageLeafCols,
-    mpt_circuit::{
-        columns::{PositionCols, ProofTypeCols},
-        helpers::ColumnTransition,
-    },
-};
+use crate::{constraints, mpt_circuit::helpers::ColumnTransition};
 
 use super::{helpers::BaseConstraintBuilder, MPTContext};
 

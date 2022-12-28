@@ -2,7 +2,7 @@ use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::VirtualCells,
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -12,15 +12,7 @@ use crate::{
     evm_circuit::util::rlc,
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
     mpt_circuit::FixedTableTag,
-    mpt_circuit::{
-        columns::{AccumulatorCols, DenoteCols, MainCols, ProofTypeCols},
-        MPTContext,
-    },
-    mpt_circuit::{
-        helpers::key_len_lookup,
-        param::{IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS},
-        MPTConfig, ProofValues,
-    },
+    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
         param::{
@@ -28,6 +20,10 @@ use crate::{
             ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH,
             S_START,
         },
+    },
+    mpt_circuit::{
+        param::{IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS},
+        MPTConfig, ProofValues,
     },
 };
 
@@ -380,7 +376,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // RLP:
                 // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
                 // 184     80      248     78      nonce         balance
-
                 // Or:
                 // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes                         c_main.bytes
                 // 248     109     157     (this is key row, 157 means key of length 29)
@@ -456,26 +451,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 5.expr(), a!(accs.acc_c.rlc)) => @fixed);
             }}
 
-            // There are zeros in s_main.bytes after nonce length:
-
-            // Nonce RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
-            // the nonce length in advance. To prevent changing the nonce and setting `s_main.bytes[i]` for
-            // `i > nonce_len + 1` to get the correct nonce RLC, we need to ensure that
-            // `s_main.bytes[i] = 0` for `i > nonce_len + 1`.
-            /*if check_zeros {
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        q_enable,
-                        ind,
-                        s_main.bytes[0],
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-            }*/
-
             ifx!{is_balance_long => {
                 // `mult_diff_balance` needs to correspond to balance length + 1 byte for byte that contains balance length.
                 // That means `mult_diff_balance` needs to be `r^{balance_len+1}` where `balance_len = c_main.bytes[0] - 128`.
@@ -484,23 +459,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!((FixedTableTag::RMult, a!(c_main.bytes[0]) - 128.expr() + 1.expr(), a!(accs.key.mult)) => @fixed);
             }}
 
-            // Balance RLC is computed over `c_main.bytes[1]`, ..., `c_main.bytes[31]` because we do not know
-            // the balance length in advance. To prevent changing the balance and setting `c_main.bytes[i]` for
-            // `i > balance_len + 1` to get the correct balance RLC, we need to ensure that
-            // `c_main.bytes[i] = 0` for `i > balance_len + 1`.
-            /*if check_zeros {
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        q_enable,
-                        ind,
-                        c_main.bytes[0],
-                        c_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
+            // RLC bytes zero check
+            for main in [s_main, c_main].iter() {
+                for (idx, &byte) in main.bytes.iter().skip(1).enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
                 }
-            }*/
+            }
+
         }}
 
         AccountLeafNonceBalanceConfig {

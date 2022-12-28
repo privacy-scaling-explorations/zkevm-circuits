@@ -1,17 +1,10 @@
 use gadgets::util::{and, not, select, Expr};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::Region,
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols},
-    mpt_circuit::{helpers::key_len_lookup, MPTConfig, MPTContext, ProofValues},
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
         param::{
@@ -27,11 +20,11 @@ use crate::{
         },
         FixedTableTag,
     },
-    table::KeccakTable,
+    mpt_circuit::{MPTConfig, MPTContext, ProofValues},
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
+    IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
 };
 
 /*
@@ -318,54 +311,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 }}
             }
 
-            // Similarly as in account_leaf_key.rs,
-            // key RLC is computed over `s_main.bytes[1]`, ..., `s_main.bytes[31]` because we do not know
-            // the key length in advance. To prevent changing the key and setting `s_main.bytes[i]` for
-            // `i > nonce_len + 1` to get the desired nonce RLC, we need to ensure that
-            // `s_main.bytes[i] = 0` for `i > key_len + 1`.
-            // The key can also appear in `c_main.rlp1` and `c_main.rlp2`, so we need to check these two columns too.
-            /*if check_zeros {
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        q_enable,
-                        ind,
-                        s_main.bytes[0],
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-                key_len_lookup(
-                    meta,
-                    sel,
-                    32,
-                    s_main.bytes[0],
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-                key_len_lookup(
-                    meta,
-                    sel,
-                    33,
-                    s_main.bytes[0],
-                    c_main.rlp2,
-                    128,
-                    fixed_table,
-                );
-                /*for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
-                    key_len_lookup(
-                        meta,
-                        sel,
-                        idx,
-                        s_main.bytes[0],
-                        byte,
-                        128,
-                        fixed_table,
-                    );
-                }*/
-            }*/
+            // RLC bytes zero check
+            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
+                require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
+            }
 
             // When the full account RLC is computed (see add_constraints below), we need to know
             // the intermediate RLC and the randomness multiplier (`r` to some power) from the key row.

@@ -1,8 +1,5 @@
-use crate::{
-    table::{DynamicTableColumns, KeccakTable},
-    util::Expr,
-};
-use gadgets::util::{and, not, select, sum};
+use crate::util::Expr;
+use gadgets::util::{and, not, select};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
@@ -21,50 +18,6 @@ use super::{
     columns::{AccumulatorCols, MainCols},
     param::{BRANCH_0_C_START, BRANCH_0_S_START},
 };
-
-// The columns after the key stops have to be 0 to prevent attacks on RLC using
-// bytes that should be 0.
-// Let's say we have a key of length 3, then: [248,112,131,59,158,123,0,0,0,...
-// 131 - 128 = 3 presents key length. We need to prove all bytes after key ends
-// are 0 (after 59, 158, 123).
-// We prove the following (33 is max key length):
-// (key_len - 1) * 59 < 33 * 255
-// (key_len - 2) * 158 < 33 * 255
-// (key_len - 3) * 123 < 33 * 255
-// From now on, key_len < 0:
-// (key_len - 4) * byte < 33 * 255 (Note that this will be true only if byte =
-// 0) (key_len - 5) * byte < 33 * 255 (Note that this will be true only if byte
-// = 0) (key_len - 6) * byte < 33 * 255 (Note that this will be true only if
-// byte = 0) ...
-pub(crate) fn key_len_lookup<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
-    ind: usize,
-    key_len_col: Column<Advice>,
-    column: Column<Advice>,
-    len_offset: usize,
-    fixed_table: [Column<Fixed>; 3],
-) {
-    meta.lookup_any("key_len_lookup", |meta| {
-        let mut constraints = vec![];
-        let q_enable = q_enable(meta);
-
-        let s = meta.query_advice(column, Rotation::cur());
-        let offset = Expression::Constant(F::from(len_offset as u64));
-        let key_len = meta.query_advice(key_len_col, Rotation::cur()) - offset;
-        let key_len_rem = key_len - Expression::Constant(F::from(ind as u64));
-        constraints.push((
-            Expression::Constant(F::from(FixedTableTag::RangeKeyLen256 as u64)),
-            meta.query_fixed(fixed_table[0], Rotation::cur()),
-        ));
-        constraints.push((
-            q_enable * s * key_len_rem,
-            meta.query_fixed(fixed_table[1], Rotation::cur()),
-        ));
-
-        constraints
-    });
-}
 
 pub(crate) fn get_is_extension_node<F: FieldExt>(
     meta: &mut VirtualCells<F>,
@@ -279,74 +232,6 @@ pub(crate) fn accumulate_rand<F: FieldExt>(rs: &[Expression<F>]) -> Vec<Expressi
     r
 }
 
-pub(crate) fn generate_keccak_lookups<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    keccak_table: KeccakTable,
-    lookups: Vec<KeccakLookup<F>>,
-) {
-    /*meta.lookup_any("Hash lookup", |meta| {
-        let selector = sum::expr(lookups.iter().map(|lookup| lookup.selector.expr()));
-        let input_rlc = sum::expr(
-            lookups
-                .iter()
-                .map(|lookup| lookup.selector.expr() * lookup.input_rlc.expr()),
-        );
-        let input_len = sum::expr(
-            lookups
-                .iter()
-                .map(|lookup| lookup.selector.expr() * lookup.input_len.expr()),
-        );
-        let output_rlc = sum::expr(
-            lookups
-                .iter()
-                .map(|lookup| lookup.selector.expr() * lookup.output_rlc.expr()),
-        );
-        let values = [selector, input_rlc, input_len, output_rlc];
-        keccak_table.columns().iter().zip(values.iter()).map(|(&table, value)| {
-            (
-                value.expr(),
-                meta.query_advice(table, Rotation::cur()),
-            )
-        }).collect()
-    });*/
-
-    for lookup in lookups.iter() {
-        meta.lookup_any("Hash lookup", |meta| {
-            let selector = lookup.selector.expr();
-            let input_rlc = lookup.selector.expr() * lookup.input_rlc.expr();
-            let input_len = lookup.selector.expr() * lookup.input_len.expr();
-            let output_rlc = lookup.selector.expr() * lookup.output_rlc.expr();
-            let values = [selector, input_rlc, input_len, output_rlc];
-            keccak_table
-                .columns()
-                .iter()
-                .zip(values.iter())
-                .map(|(&table, value)| (value.expr(), meta.query_advice(table, Rotation::cur())))
-                .collect()
-        });
-    }
-}
-
-pub(crate) fn generate_fixed_lookups<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    fixed_table: [Column<Fixed>; 3],
-    lookups: Vec<FixedLookup<F>>,
-) {
-    for lookup in lookups.iter() {
-        meta.lookup_any("Fixed lookup", |meta| {
-            let tag = lookup.tag.expr();
-            let lhs = lookup.selector.expr() * lookup.lhs.expr();
-            let rhs = lookup.selector.expr() * lookup.rhs.expr();
-            let values = [tag, lhs, rhs];
-            fixed_table
-                .iter()
-                .zip(values.iter())
-                .map(|(&table, value)| (value.expr(), meta.query_fixed(table, Rotation::cur())))
-                .collect()
-        });
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct ColumnTransition<F> {
     prev: Expression<F>,
@@ -415,8 +300,8 @@ pub struct BaseConstraintBuilder<F> {
     pub constraints: Vec<(&'static str, Expression<F>)>,
     pub max_degree: usize,
     pub conditions: Vec<Expression<F>>,
-    pub keccak_lookups: Vec<KeccakLookup<F>>,
-    pub fixed_lookups: Vec<FixedLookup<F>>,
+    pub keccak_lookups: Vec<(&'static str, KeccakLookup<F>)>,
+    pub fixed_lookups: Vec<(&'static str, FixedLookup<F>)>,
 }
 
 impl<F: FieldExt> BaseConstraintBuilder<F> {
@@ -554,30 +439,38 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
 
     pub(crate) fn keccak_table_lookup(
         &mut self,
+        name: &'static str,
         input_rlc: Expression<F>,
         input_len: Expression<F>,
         output_rlc: Expression<F>,
     ) {
-        self.keccak_lookups.push(KeccakLookup {
-            selector: self.get_condition().unwrap_or_else(|| 1.expr()),
-            input_rlc,
-            input_len,
-            output_rlc,
-        });
+        self.keccak_lookups.push((
+            name,
+            KeccakLookup {
+                selector: self.get_condition().unwrap_or_else(|| 1.expr()),
+                input_rlc,
+                input_len,
+                output_rlc,
+            },
+        ));
     }
 
     pub(crate) fn fixed_table_lookup(
         &mut self,
+        name: &'static str,
         tag: Expression<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) {
-        self.fixed_lookups.push(FixedLookup {
-            selector: self.get_condition().unwrap_or_else(|| 1.expr()),
-            tag,
-            lhs,
-            rhs,
-        });
+        self.fixed_lookups.push((
+            name,
+            FixedLookup {
+                selector: self.get_condition().unwrap_or_else(|| 1.expr()),
+                tag,
+                lhs,
+                rhs,
+            },
+        ));
     }
 }
 
@@ -745,7 +638,7 @@ macro_rules! constraints {
                         ": ",
                         stringify!($lhs),
                         " in ",
-                        stringify!($rhs)
+                        stringify!($rhs),
                     ),
                     $lhs.expr(),
                     $rhs.to_vec(),
@@ -769,7 +662,7 @@ macro_rules! constraints {
                         ": ",
                         stringify!($lhs),
                         " in ",
-                        stringify!($rhs)
+                        stringify!($rhs),
                     ),
                     $lhs.expr(),
                 );
@@ -777,6 +670,18 @@ macro_rules! constraints {
 
             (($input_rlc:expr, $input_len:expr, $output_rlc:expr) => @keccak) => {{
                 $cb.keccak_table_lookup(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": (",
+                        stringify!($input_rlc),
+                        ", ",
+                        stringify!($input_len),
+                        ", ",
+                        stringify!($output_rlc),
+                        ") => @keccak",
+                    ),
                     $input_rlc.expr(),
                     $input_len.expr(),
                     $output_rlc.expr(),
@@ -785,6 +690,18 @@ macro_rules! constraints {
 
             (($tag:expr, $lhs:expr, $rhs:expr) => @fixed) => {{
                 $cb.fixed_table_lookup(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": (",
+                        stringify!($tag),
+                        ", ",
+                        stringify!($lhs),
+                        ", ",
+                        stringify!($rhs),
+                        ") => @fixed",
+                    ),
                     ($tag as u64).expr(),
                     $lhs.expr(),
                     $rhs.expr(),
@@ -792,6 +709,16 @@ macro_rules! constraints {
             }};
             (($tag:expr, $lhs:expr) => @fixed) => {{
                 $cb.fixed_table_lookup(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": (",
+                        stringify!($tag),
+                        ", ",
+                        stringify!($lhs),
+                        ") => @fixed",
+                    ),
                     ($tag as u64).expr(),
                     $lhs.expr(),
                     0.expr(),
@@ -824,23 +751,5 @@ macro_rules! constraints {
         }
 
         $content
-    }};
-}
-
-/// Constraint builder macros
-#[macro_export]
-macro_rules! gate {
-    ([$meta:ident, $cb:ident], $name:expr, $content:block) => {{
-        $meta.create_gate($name, |meta| {
-            constraints! {[meta, $cb], {
-                macro_rules! get_meta {
-                    () => {{
-                        meta
-                    }};
-                }
-                $content
-            }}
-            $cb.gate(1.expr())
-        });
     }};
 }

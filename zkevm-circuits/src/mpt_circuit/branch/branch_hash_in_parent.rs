@@ -1,19 +1,11 @@
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, Expression, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::get_is_extension_node,
-    mpt_circuit::{
-        columns::{AccumulatorCols, MainCols, PositionCols},
-        param::HASH_WIDTH,
-        MPTContext,
-    },
+    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::{get_branch_len, BaseConstraintBuilder},
         param::{
@@ -23,7 +15,6 @@ use crate::{
             RLP_NUM,
         },
     },
-    table::KeccakTable,
 };
 use gadgets::util::{and, not, Expr};
 

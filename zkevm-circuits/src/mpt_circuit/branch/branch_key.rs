@@ -1,18 +1,9 @@
 use gadgets::util::{and, not, sum, Expr};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
-    constraints, cs,
-    mpt_circuit::{
-        columns::{AccumulatorPair, MainCols, PositionCols},
-        helpers::ColumnTransition,
-        MPTContext,
-    },
+    constraints,
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
         param::{
@@ -21,9 +12,8 @@ use crate::{
             IS_EXT_SHORT_C1_POS, RLP_NUM,
         },
     },
+    mpt_circuit::{helpers::ColumnTransition, MPTContext},
 };
-
-use super::BranchCols;
 
 /*
 A branch occupies 19 rows:

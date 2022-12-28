@@ -1,22 +1,14 @@
 use gadgets::util::{and, not, Expr};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
-    constraints, cs,
+    constraints,
     mpt_circuit::{
-        columns::{MainCols, PositionCols},
-        helpers::{key_len_lookup, BaseConstraintBuilder, ColumnTransition},
-        param::HASH_WIDTH,
-        MPTContext,
+        helpers::{BaseConstraintBuilder, ColumnTransition},
+        FixedTableTag, MPTContext,
     },
 };
-
-use super::BranchCols;
 
 /*
 A branch occupies 19 rows:
@@ -129,9 +121,9 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 // [0, 160, a0, ..., a31].
                 // Note: `s_rlp1` and `c_rlp1` store the number of RLP still left in the in the branch rows.
                 // The constraints are in `branch.rs`, see `RLP length` gate.
-                ifx!{q_enable.expr(), not::expr(is_node_hashed.expr()) => {
+                ifx!{q_enable, not::expr(is_node_hashed.expr()) => {
                     // Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
-                    require!(rlp2.expr() => {[0.expr(), 160.expr()]});
+                    require!(rlp2 => {[0.expr(), 160.expr()]});
 
                     // For empty nodes
                     ifx!{rlp2.expr() - 160.expr() => {
@@ -139,10 +131,10 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                             if idx == 0 {
                                 // When an empty node (0 at `rlp2`), `bytes[0] = 128`.
                                 // Note that `rlp2` can be only 0 or 128.
-                                require!(byte => 128.expr());
+                                require!(byte => 128);
                             } else {
                                 // When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
-                                require!(byte => 0.expr());
+                                require!(byte => 0);
                             }
                         }
                     }}
@@ -161,7 +153,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                 }}
 
                 // Branch child RLC & selector for specifying whether the modified node is empty
-                ifx!{q_not_first.expr() => {
+                ifx!{q_not_first => {
                     // `mod_node_hash_rlc` is the same for all `is_branch_child` rows.
                     // Having the values stored in all 16 rows makes it easier to check whether it is really the value that
                     // corresponds to the `modified_node`. This is used in `branch.rs` constraints like:
@@ -171,7 +163,7 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                     // ```
                     // `hash_rlc` is computed in each row as: `bytes[0] + bytes[1] * r + ... + bytes[31] * r^31`.
                     // Note that `hash_rlc` is somehow misleading name because the branch child can be non-hashed too.
-                    ifx!{node_index.expr() => { // ignore if node_index = 0 (there is no previous)
+                    ifx!{node_index => { // ignore if node_index = 0 (there is no previous)
                         // mod_node_hash_rlc the same for all branch children
                         require!(mod_node_hash_rlc.cur() => mod_node_hash_rlc.prev());
                         // Selector for the modified child being empty the same for all branch children
@@ -184,45 +176,27 @@ impl<F: FieldExt> BranchParallelConfig<F> {
                     // That means we have empty node in `S` proof at `modified_node`.
                     // When this happens, we denote this situation by having `sel = 1`.
                     // In this case we need to check that `main.bytes = [128, 0, ..., 0]`.
-                    ifx!{is_modified.expr(), sel.expr() => {
+                    ifx!{is_modified, sel => {
                         for (idx, byte) in main.bytes.iter().map(|&byte| a!(byte)).enumerate() {
                             if idx == 0 {
                                 // We first check `bytes[0] = 128`.
-                                require!(byte => 128.expr());
+                                require!(byte => 128);
                             } else {
                                 // The remaining constraints for `main.bytes = [128, 0, ..., 0]`:
                                 // `bytes[i] = 0` for `i > 0`.
-                                require!(byte => 0.expr());
+                                require!(byte => 0);
                             }
                         }
                     }}
                 }}
             }}
 
-            /*let sel = |meta: &mut VirtualCells<F>| {
-                let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-                let is_branch_child_cur = meta.query_advice(branch.is_child, Rotation::cur());
-                let is_node_hashed = meta.query_advice(is_node_hashed, Rotation::cur());
-
-                q_enable * is_branch_child_cur * is_node_hashed
-            };
-
-            // When branch child is shorter than 32 bytes it does not get hashed, that means some positions
-            // in `main.bytes` stay unused. But we need to ensure there are 0s at unused positions to avoid
-            // attacks on the RLC which is computed taking into account all `main.bytes`.
-            if check_zeros {
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel,
-                        ind,
-                        main.bytes[0],
-                        main.bytes[ind],
-                        192,
-                        fixed_table,
-                    )
+            // RLC bytes zero check
+            ifx!{q_enable, is_branch_child, is_node_hashed => {
+                for (idx, &byte) in main.bytes.iter().skip(1).enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(main.bytes[0]) - 192.expr() - (idx + 1).expr())) => @fixed);
                 }
-            }*/
+            }}
         }}
 
         BranchParallelConfig {

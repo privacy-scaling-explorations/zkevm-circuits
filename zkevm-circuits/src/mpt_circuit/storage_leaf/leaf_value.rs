@@ -2,7 +2,7 @@ use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::VirtualCells,
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -10,24 +10,21 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
     mpt_circuit::{
-        columns::ProofTypeCols,
-        helpers::{get_leaf_len, key_len_lookup, BaseConstraintBuilder},
+        helpers::extend_rand,
+        witness_row::{MptWitnessRow, MptWitnessRowType},
+    },
+    mpt_circuit::{
+        helpers::{get_leaf_len, BaseConstraintBuilder},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
             IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_STORAGE_MOD_POS,
             LEAF_NON_EXISTING_IND, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, RLP_NUM,
         },
-        MPTContext,
-    },
-    mpt_circuit::{
-        helpers::extend_rand,
-        witness_row::{MptWitnessRow, MptWitnessRowType},
+        FixedTableTag, MPTContext,
     },
     mpt_circuit::{MPTConfig, ProofValues},
-    table::KeccakTable,
 };
 
 /*
@@ -453,26 +450,12 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 }}
             }}
 
-            /*let sel = |meta: &mut VirtualCells<F>| {
-                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-                let is_leaf = meta.query_advice(is_leaf_value, Rotation::cur());
-                not_first_level * is_leaf
-            };
-
-            // There are 0s in `s_main.bytes` after the last value byte.
-            if check_zeros {
-                for ind in 0..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel,
-                        ind + 1,
-                        s_main.rlp2,
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
+            // RLC bytes zero check
+            ifx!{not_first_level, is_leaf => {
+                for (idx, &byte) in s_main.bytes.iter().enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.rlp2) - 128.expr() - (idx + 1).expr())) => @fixed);
                 }
-            }*/
+            }}
         }}
 
         // Note: For cases when storage leaf is in the first storage level, the

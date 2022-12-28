@@ -9,7 +9,7 @@ pub mod extension_node_key;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 use std::{iter, marker::PhantomData};
@@ -18,7 +18,6 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
-    mpt_circuit::columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols},
     mpt_circuit::helpers::{bytes_into_rlc, get_is_extension_node},
     mpt_circuit::param::{
         BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,

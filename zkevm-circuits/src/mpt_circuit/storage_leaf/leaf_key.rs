@@ -2,7 +2,7 @@ use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::VirtualCells,
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -10,21 +10,19 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::columns::{AccumulatorCols, MainCols},
-    mpt_circuit::{columns::DenoteCols, helpers::key_len_lookup, MPTConfig, ProofValues},
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
         param::{
-            BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-            IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM,
-            S_START,
+            BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
+            IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_START,
         },
     },
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
         MPTContext,
     },
+    mpt_circuit::{MPTConfig, ProofValues},
 };
 
 /*
@@ -478,73 +476,22 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 }}
             }}
 
+            // RLC bytes zero check
             // There are 0s in `s_main.bytes` after the last key nibble (this does not need to be checked
             // for `last_level` and `one_nibble` as in these cases `s_main.bytes` are not used).
-            /*if check_zeros {
-                for ind in 0..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel_short,
-                        ind + 1,
-                        s_main.rlp2,
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-                key_len_lookup(
-                    meta,
-                    sel_short,
-                    32,
-                    s_main.rlp2,
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel_long,
-                        ind,
-                        s_main.bytes[0],
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-                key_len_lookup(
-                    meta,
-                    sel_long,
-                    32,
-                    s_main.bytes[0],
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-                key_len_lookup(
-                    meta,
-                    sel_long,
-                    33,
-                    s_main.bytes[0],
-                    c_main.rlp2,
-                    128,
-                    fixed_table,
-                );
-            }*/
-
-            // The intermediate RLC value of this row is stored in `accumulators.acc_s.rlc`.
-            // To compute the final leaf RLC in `LEAF_VALUE` row, we need to know the multiplier to be used
-            // for the first byte in `LEAF_VALUE` row too. The multiplier is stored in `accumulators.acc_s.mult`.
-            // We check that the multiplier corresponds to the length of the key that is stored in `s_main.rlp2`
-            // for `is_short` and in `s_main.bytes[0]` for `is_long`.
-            // Note: `last_level` and `one_nibble` have fixed multiplier because the length of the nibbles
-            // in these cases is fixed.
             ifx!{is_short => {
                 require!((FixedTableTag::RMult, a!(s_main.rlp2) - 128.expr() + 2.expr(), a!(accs.acc_s.mult)) => @fixed);
+
+                for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].into_iter().enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.rlp2) - 128.expr() - (idx + 1).expr())) => @fixed);
+                }
             }}
             ifx!{is_long => {
                 require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 3.expr(), a!(accs.acc_s.mult)) => @fixed);
+
+                for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
+                }
             }}
         }}
 

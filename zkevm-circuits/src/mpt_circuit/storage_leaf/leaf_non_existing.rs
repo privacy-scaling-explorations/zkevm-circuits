@@ -2,7 +2,7 @@ use gadgets::util::{and, not, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::VirtualCells,
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -10,18 +10,16 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::{dot, rlc},
-    mpt_circuit::columns::{AccumulatorCols, MainCols},
-    mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{helpers::extend_rand, MPTContext},
     mpt_circuit::{
-        helpers::key_len_lookup,
+        helpers::BaseConstraintBuilder,
+        param::{BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM},
+    },
+    mpt_circuit::{
         param::{IS_NON_EXISTING_STORAGE_POS, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND, S_START},
         MPTConfig, ProofValues,
     },
-    mpt_circuit::{
-        helpers::BaseConstraintBuilder,
-        param::{BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, RLP_NUM},
-    },
+    mpt_circuit::{witness_row::MptWitnessRow, FixedTableTag},
 };
 
 /*
@@ -262,6 +260,11 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     let len_prev_short = a!(s_main.rlp2, -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND));
                     let len_cur_short = a!(s_main.rlp2);
                     require!(len_cur_short => len_prev_short);
+
+                    // RLC bytes zero check
+                    for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].into_iter().enumerate() {
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.rlp2) - 128.expr() - (idx + 1).expr())) => @fixed);
+                    }
                 }}
 
                 ifx!{is_long => {
@@ -270,87 +273,13 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     let len_prev_long = a!(s_main.bytes[0], -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND));
                     let len_cur_long = a!(s_main.bytes[0]);
                     require!(len_cur_long => len_prev_long);
+
+                    // RLC bytes zero check
+                    for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
+                    }
                 }}
             }}
-
-            /*let sel_short = |meta: &mut VirtualCells<F>| {
-                let q_enable = q_enable(meta);
-                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-                let is_short = (1.expr() - flag1) * flag2;
-
-                q_enable * is_short
-            };
-            let sel_long = |meta: &mut VirtualCells<F>| {
-                let q_enable = q_enable(meta);
-                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-                let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot));
-                let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot));
-                let is_long = flag1 * (1.expr() - flag2);
-
-                q_enable * is_long
-            };
-            // Key RLC is computed over all of `(s_main.bytes[0]), s_main.bytes[1], ..., s_main.bytes[31],
-            // c_main.rlp1, c_main.rlp2`
-            // because we do not know the key length in advance.
-            // To prevent changing the key and setting `s_main.bytes[i]` (or `c_main.rlp1/c_main.rlp2`) for
-            // `i > key_len + 1` to get the desired key RLC, we need to ensure that
-            // `s_main.bytes[i] = 0` for `i > key_len + 1`.
-            // Note that the number of the key bytes in the `LEAF_NON_EXISTING` row needs to be the same as
-            // the number of the key bytes in the `LEAF_KEY` row.
-            if check_zeros {
-                for ind in 0..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel_short,
-                        ind + 1,
-                        s_main.rlp2,
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-                key_len_lookup(
-                    meta,
-                    sel_short,
-                    32,
-                    s_main.rlp2,
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        sel_long,
-                        ind,
-                        s_main.bytes[0],
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-                key_len_lookup(
-                    meta,
-                    sel_long,
-                    32,
-                    s_main.bytes[0],
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-                key_len_lookup(
-                    meta,
-                    sel_long,
-                    33,
-                    s_main.bytes[0],
-                    c_main.rlp2,
-                    128,
-                    fixed_table,
-                );
-            }*/
         }}
 
         StorageNonExistingConfig {

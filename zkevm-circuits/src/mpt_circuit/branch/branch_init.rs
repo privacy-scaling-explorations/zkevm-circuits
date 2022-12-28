@@ -1,21 +1,14 @@
 use gadgets::util::Expr;
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Column, ConstraintSystem, Expression, Fixed, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::{
-        columns::{AccumulatorCols, MainCols},
-        helpers::{
-            get_num_rlp_bytes, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
-        },
+    mpt_circuit::helpers::{
+        get_num_rlp_bytes, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
     },
-    mpt_circuit::{param::HASH_WIDTH, MPTContext},
+    mpt_circuit::MPTContext,
 };
 
 /*

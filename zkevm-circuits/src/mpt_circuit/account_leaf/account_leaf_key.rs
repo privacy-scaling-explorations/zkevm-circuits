@@ -2,7 +2,7 @@ use gadgets::util::{and, not, or, select, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, Expression, Fixed, VirtualCells},
+    plonk::VirtualCells,
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -10,20 +10,17 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::columns::{AccumulatorCols, MainCols, PositionCols, ProofTypeCols},
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
-    mpt_circuit::{
-        helpers::key_len_lookup, param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues,
-    },
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
         param::{
-            BRANCH_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-            IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS,
-            IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
-            IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_START,
+            BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
+            IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
+            IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
+            IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_START,
         },
     },
+    mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
         MPTContext,
@@ -420,47 +417,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 }}
             }
 
-            // Key RLC is computed over all of `s_main.bytes[1], ..., s_main.bytes[31], c_main.rlp1, c_main.rlp2`
-            // because we do not know the key length in advance.
-            // To prevent changing the key and setting `s_main.bytes[i]` (or `c_main.rlp1/c_main.rlp2`) for
-            // `i > key_len + 1` to get the desired key RLC, we need to ensure that
-            // `s_main.bytes[i] = 0` for `i > key_len + 1`.
-            // Note: the key length is always in s_main.bytes[0] here as opposed to storage
-            // key leaf where it can appear in s_rlp2 too. This is because the account
-            // leaf contains nonce, balance, ... which makes it always longer than 55 bytes,
-            // which makes a RLP to start with 248 (s_rlp1) and having one byte (in s_rlp2)
-            // for the length of the remaining stream.
-            /*if check_zeros {
-                for ind in 1..HASH_WIDTH {
-                    key_len_lookup(
-                        meta,
-                        q_enable,
-                        ind,
-                        s_main.bytes[0],
-                        s_main.bytes[ind],
-                        128,
-                        fixed_table,
-                    )
-                }
-                key_len_lookup(
-                    meta,
-                    q_enable,
-                    32,
-                    s_main.bytes[0],
-                    c_main.rlp1,
-                    128,
-                    fixed_table,
-                );
-                key_len_lookup(
-                    meta,
-                    q_enable,
-                    33,
-                    s_main.bytes[0],
-                    c_main.rlp2,
-                    128,
-                    fixed_table,
-                );
-            }*/
+            // RLC bytes zero check
+            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
+                require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
+            }
 
             // When the account intermediate RLC is computed in the next row (nonce balance row), we need
             // to know the intermediate RLC from the current row and the randomness multiplier (`r` to some power).
