@@ -225,9 +225,17 @@ impl<'a> CircuitInputBuilder {
                 continue;
             }
             let geth_trace = &geth_traces[tx_index];
-            log::info!("handling {}th tx {:?}", self.block.txs.len(), tx.hash);
+            log::info!(
+                "handling {}th(inner idx: {}) tx {:?}",
+                tx.transaction_index.unwrap_or_default(),
+                self.block.txs.len(),
+                tx.hash
+            );
+            let mut tx = tx.clone();
+            // needed for multi block feature
+            tx.transaction_index = Some(self.block.txs.len().into());
             self.handle_tx(
-                tx,
+                &tx,
                 geth_trace,
                 check_last_tx && tx_index + 1 == eth_block.transactions.len(),
             )?;
