@@ -13,15 +13,10 @@ type Label = String;
 
 /// returns the element as an address
 pub fn parse_address(as_str: &str) -> Result<Address> {
-    if let Some(hex) = as_str.strip_prefix("0x") {
-        Ok(Address::from_slice(
-            &hex::decode(hex).context("parse_address")?,
-        ))
-    } else {
-        Ok(Address::from_slice(
-            &hex::decode(as_str).context("parse_address")?,
-        ))
-    }
+    let hex = as_str.strip_prefix("0x").unwrap_or(as_str);
+    Ok(Address::from_slice(
+        &hex::decode(hex).context("parse_address")?,
+    ))
 }
 
 /// returns the element as a to address
@@ -34,11 +29,8 @@ pub fn parse_to_address(as_str: &str) -> Result<Option<Address>> {
 
 /// returns the element as an array of bytes
 pub fn parse_bytes(as_str: &str) -> Result<Bytes> {
-    if let Some(hex) = as_str.strip_prefix("0x") {
-        Ok(Bytes::from(hex::decode(hex).context("parse_bytes")?))
-    } else {
-        Ok(Bytes::from(hex::decode(as_str).context("parse_bytes")?))
-    }
+    let hex = as_str.strip_prefix("0x").unwrap_or(as_str);
+    Ok(Bytes::from(hex::decode(hex).context("parse_bytes")?))
 }
 
 /// converts list of tagged values string into a map
@@ -72,10 +64,7 @@ fn decompose_tags(expr: &str) -> HashMap<String, String> {
 
 /// returns the element as calldata bytes, supports 0x, :raw, :abi, :yul and
 /// { LLL }
-pub fn parse_calldata<'a>(
-    compiler: &'a mut Compiler,
-    as_str: &str,
-) -> Result<(Bytes, Option<Label>)> {
+pub fn parse_calldata(compiler: &mut Compiler, as_str: &str) -> Result<(Bytes, Option<Label>)> {
     let tags = decompose_tags(as_str);
     let label = tags.get(":label").cloned();
 
@@ -110,7 +99,7 @@ pub fn parse_calldata<'a>(
 }
 
 /// parse entry as code, can be 0x, :raw or { LLL }
-pub fn parse_code<'a>(compiler: &'a mut Compiler, as_str: &str) -> Result<Bytes> {
+pub fn parse_code(compiler: &mut Compiler, as_str: &str) -> Result<Bytes> {
     let tags = decompose_tags(as_str);
 
     let mut code = if let Some(notag) = tags.get("") {
@@ -157,11 +146,8 @@ pub fn parse_code<'a>(compiler: &'a mut Compiler, as_str: &str) -> Result<Bytes>
 
 /// parse a hash entry
 pub fn parse_hash(value: &str) -> Result<H256> {
-    if let Some(hex) = value.strip_prefix("0x") {
-        Ok(H256::from_slice(&hex::decode(hex).context("parse_hash")?))
-    } else {
-        Ok(H256::from_slice(&hex::decode(value).context("parse_hash")?))
-    }
+    let hex = value.strip_prefix("0x").unwrap_or(value);
+    Ok(H256::from_slice(&hex::decode(hex).context("parse_hash")?))
 }
 
 /// parse an uint256 entry
