@@ -11,7 +11,7 @@ is used like this:
 $ ./run.sh --help                
         Usage: ./run.sh [OPTIONS]
         Options:
-          --sudo         Use sudo for docker-compoes commands.
+          --sudo         Use sudo for docker-compose commands.
           --steps ARG    Space separated list of steps to do.
                          Default: "setup gendata tests cleanup".
           --tests ARG    Space separated list of tests to run.

@@ -1,27 +1,18 @@
-use super::bytecode_unroller::{unroll, Config, UnrolledBytecode};
+use super::bytecode_unroller::{
+    unroll, BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs, UnrolledBytecode,
+};
 use crate::table::{BytecodeTable, KeccakTable};
-use crate::util::power_of_randomness_from_instance;
+use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::Layouter,
     plonk::{ConstraintSystem, Error},
 };
 use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-use std::vec;
+use log::error;
 
-#[derive(Default)]
-pub(crate) struct BytecodeCircuitTester<F: Field> {
-    bytecodes: Vec<UnrolledBytecode<F>>,
-    size: usize,
-    randomness: F,
-}
-
-fn get_randomness<F: Field>() -> F {
-    F::from(123456)
-}
-
-impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
-    type Config = Config<F>;
+impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
+    type Config = (BytecodeCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -30,95 +21,75 @@ impl<F: Field> Circuit<F> for BytecodeCircuitTester<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let bytecode_table = BytecodeTable::construct(meta);
-
-        let randomness = power_of_randomness_from_instance::<_, 1>(meta);
         let keccak_table = KeccakTable::construct(meta);
+        let challenges = Challenges::construct(meta);
 
-        Config::configure(meta, randomness[0].clone(), bytecode_table, keccak_table)
+        let config = {
+            let challenges = challenges.exprs(meta);
+            BytecodeCircuitConfig::new(
+                meta,
+                BytecodeCircuitConfigArgs {
+                    bytecode_table,
+                    keccak_table,
+                    challenges,
+                },
+            )
+        };
+
+        (config, challenges)
     }
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.load(&mut layouter)?;
-        config.keccak_table.load(
+        let challenges = challenges.values(&mut layouter);
+
+        config.keccak_table.dev_load(
             &mut layouter,
             self.bytecodes.iter().map(|b| &b.bytes),
-            self.randomness,
+            &challenges,
         )?;
-        config.assign(&mut layouter, self.size, &self.bytecodes, self.randomness)?;
+        self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }
 }
 
-impl<F: Field> BytecodeCircuitTester<F> {
+impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
-    pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>, randomness: F) {
-        let unrolled: Vec<_> = bytecodes
-            .iter()
-            .map(|b| unroll(b.clone(), randomness))
-            .collect();
-        Self::verify(k, unrolled, randomness, true);
+    pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
+        let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll(b.clone())).collect();
+        Self::verify(k, unrolled, true);
     }
 
-    pub(crate) fn verify(
-        k: u32,
-        bytecodes: Vec<UnrolledBytecode<F>>,
-        randomness: F,
-        success: bool,
-    ) {
-        let circuit = BytecodeCircuitTester::<F> {
-            bytecodes,
-            size: 2usize.pow(k),
-            randomness,
-        };
+    pub(crate) fn verify(k: u32, bytecodes: Vec<UnrolledBytecode<F>>, success: bool) {
+        let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
 
-        let num_rows = 1 << k;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
-        let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
-        let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
         let result = prover.verify();
         if let Err(failures) = &result {
             for failure in failures.iter() {
-                println!("{}", failure);
+                error!("{}", failure);
             }
         }
         assert_eq!(result.is_ok(), success);
     }
 }
 
-/// Test bytecode circuit with raw bytecode
-pub fn test_bytecode_circuit<F: Field>(k: u32, bytecodes: Vec<Vec<u8>>, randomness: F) {
-    let unrolled: Vec<_> = bytecodes
-        .iter()
-        .map(|b| unroll(b.clone(), randomness))
-        .collect();
-    test_bytecode_circuit_unrolled(k, unrolled, randomness, true);
-}
-
 /// Test bytecode circuit with unrolled bytecode
 pub fn test_bytecode_circuit_unrolled<F: Field>(
     k: u32,
     bytecodes: Vec<UnrolledBytecode<F>>,
-    randomness: F,
     success: bool,
 ) {
-    let circuit = BytecodeCircuitTester::<F> {
-        bytecodes,
-        size: 2usize.pow(k),
-        randomness,
-    };
+    let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
 
-    let num_rows = 1 << k;
-    const NUM_BLINDING_ROWS: usize = 7 - 1;
-    let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
-    let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
-    let result = prover.verify();
+    let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
+    let result = prover.verify_par();
     if let Err(failures) = &result {
         for failure in failures.iter() {
-            println!("{}", failure);
+            error!("{}", failure);
         }
     }
     assert_eq!(result.is_ok(), success);

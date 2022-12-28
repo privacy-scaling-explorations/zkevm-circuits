@@ -59,7 +59,6 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
                 memory_address.length(),
                 rlc_acc.expr(),
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -69,11 +68,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -81,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(1.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -158,17 +153,23 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
+    use crate::test_util::run_test_circuits_with_params;
+    use bus_mapping::{
+        circuit_input_builder::CircuitsParams,
+        evm::{gen_sha3_code, MemoryKind},
+    };
     use mock::TestContext;
-
-    use crate::test_util::run_test_circuits;
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, _) = gen_sha3_code(offset, size, mem_kind);
         assert_eq!(
-            run_test_circuits(
+            run_test_circuits_with_params(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None
+                None,
+                CircuitsParams {
+                    max_rws: 5500,
+                    ..Default::default()
+                }
             ),
             Ok(())
         );

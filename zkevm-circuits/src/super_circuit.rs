@@ -13,14 +13,17 @@
 //! - [x] Tx Circuit
 //! - [x] Bytecode Circuit
 //! - [x] Copy Circuit
+//! - [x] Exponentiation Circuit
 //! - [ ] Keccak Circuit
 //! - [ ] MPT Circuit
-//! - [ ] PublicInputs Circuit
+//! - [x] PublicInputs Circuit
 //!
 //! And the following shared tables, with the circuits that use them:
 //!
 //! - [x] Copy Table
 //!   - [x] Copy Circuit
+//!   - [x] EVM Circuit
+//! - [x] Exponentiation Table
 //!   - [x] EVM Circuit
 //! - [ ] Rw Table
 //!   - [ ] State Circuit
@@ -30,14 +33,14 @@
 //!   - [x] Tx Circuit
 //!   - [x] EVM Circuit
 //!   - [x] Copy Circuit
-//!   - [ ] PublicInputs Circuit
+//!   - [x] PublicInputs Circuit
 //! - [x] Bytecode Table
 //!   - [x] Bytecode Circuit
 //!   - [x] EVM Circuit
 //!   - [x] Copy Circuit
 //! - [ ] Block Table
 //!   - [ ] EVM Circuit
-//!   - [ ] PublicInputs Circuit
+//!   - [x] PublicInputs Circuit
 //! - [ ] MPT Table
 //!   - [ ] MPT Circuit
 //!   - [ ] State Circuit
@@ -48,87 +51,108 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::state_circuit::StateCircuitConfig;
-use crate::tx_circuit::{TxCircuit, TxCircuitConfig};
-
 use crate::bytecode_circuit::bytecode_unroller::{
-    unroll, Config as BytecodeConfig, UnrolledBytecode,
+    BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
 };
-
-use crate::evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuit};
-use crate::table::{BlockTable, BytecodeTable, CopyTable, KeccakTable, RwTable, TxTable};
-use crate::util::power_of_randomness_from_instance;
-use eth_types::Field;
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Circuit, ConstraintSystem, Error},
+use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
+use crate::evm_circuit::{
+    table::FixedTableTag, EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs,
 };
-
-use super::copy_circuit::CopyCircuit;
-use crate::{evm_circuit::witness::block_convert, tx_circuit::sign_verify::POW_RAND_SIZE};
+use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
+use crate::keccak_circuit::keccak_packed_multi::{
+    KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
+};
+use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
+use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
+use crate::table::{
+    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
+};
+use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
+use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+use crate::witness::{block_convert, Block, MptUpdates};
+use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
-use eth_types::geth_types::{self, GethData};
-use halo2_proofs::arithmetic::{CurveAffine, Field as Halo2Field};
-use halo2_proofs::halo2curves::{
-    bn256::Fr,
-    group::{Curve, Group},
-    secp256k1::Secp256k1Affine,
+use eth_types::geth_types::GethData;
+use eth_types::Field;
+use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
-use rand::RngCore;
+
+use std::array;
 use strum::IntoEnumIterator;
+
+/// Mock randomness used for `SuperCircuit`.
+pub const MOCK_RANDOMNESS: u64 = 0x100;
+// TODO: Figure out if we can remove MAX_TXS, MAX_CALLDATA and MAX_RWS from the
+// struct.
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
-pub struct SuperCircuitConfig<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
-    tx_table: TxTable,
-    rw_table: RwTable,
-    bytecode_table: BytecodeTable,
+pub struct SuperCircuitConfig<
+    F: Field,
+    const MAX_TXS: usize,
+    const MAX_CALLDATA: usize,
+    const MAX_RWS: usize,
+> {
     block_table: BlockTable,
-    keccak_table: KeccakTable,
-    copy_table: CopyTable,
-    evm_circuit: EvmCircuit<F>,
+    mpt_table: MptTable,
+    evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
     tx_circuit: TxCircuitConfig<F>,
-    bytecode_circuit: BytecodeConfig<F>,
-    copy_circuit: CopyCircuit<F>,
+    bytecode_circuit: BytecodeCircuitConfig<F>,
+    copy_circuit: CopyCircuitConfig<F>,
+    keccak_circuit: KeccakCircuitConfig<F>,
+    pi_circuit: PiCircuitConfig<F>,
+    exp_circuit: ExpCircuitConfig<F>,
 }
 
 /// The Super Circuit contains all the zkEVM circuits
-#[derive(Default, Debug)]
-pub struct SuperCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> {
-    // EVM Circuit
-    /// Block witness. Usually derived via
-    /// `evm_circuit::witness::block_convert`.
-    pub block: Block<F>,
-    /// Inputs for the keccak circuit
-    pub keccak_inputs: Vec<Vec<u8>>,
-    /// Passed down to the evm_circuit. Usually that will be
-    /// `FixedTableTag::iter().collect()`.
-    pub fixed_table_tags: Vec<FixedTableTag>,
-    // Tx Circuit
+#[derive(Clone, Default, Debug)]
+pub struct SuperCircuit<
+    F: Field,
+    const MAX_TXS: usize,
+    const MAX_CALLDATA: usize,
+    const MAX_RWS: usize,
+> {
+    /// EVM Circuit
+    pub evm_circuit: EvmCircuit<F>,
+    /// State Circuit
+    pub state_circuit: StateCircuit<F>,
     /// The transaction circuit that will be used in the `synthesize` step.
-    pub tx_circuit: TxCircuit<F, MAX_TXS, MAX_CALLDATA>,
-    // Bytecode Circuit
-    // bytecodes: Vec<UnrolledBytecode<F>>,
-    /// The maximium size for the underlying bytecode circuit.
-    pub bytecode_size: usize,
+    pub tx_circuit: TxCircuit<F>,
+    /// Public Input Circuit
+    pub pi_circuit: PiCircuit<F>,
+    /// Bytecode Circuit
+    pub bytecode_circuit: BytecodeCircuit<F>,
+    /// Copy Circuit
+    pub copy_circuit: CopyCircuit<F>,
+    /// Exp Circuit
+    pub exp_circuit: ExpCircuit<F>,
+    /// Keccak Circuit
+    pub keccak_circuit: KeccakCircuit<F>,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
+    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let mut cs = ConstraintSystem::default();
-        let config = Self::configure(&mut cs);
-        config.evm_circuit.get_num_rows_required(block)
+        let num_rows_evm_circuit = {
+            let mut cs = ConstraintSystem::default();
+            let config = Self::configure(&mut cs);
+            config.evm_circuit.get_num_rows_required(block)
+        };
+        let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
+        num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
+    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
-    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA>;
+    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -138,59 +162,101 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let tx_table = TxTable::construct(meta);
         let rw_table = RwTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
         let q_copy_table = meta.fixed_column();
         let copy_table = CopyTable::construct(meta, q_copy_table);
+        let exp_table = ExpTable::construct(meta);
+        let keccak_table = KeccakTable::construct(meta);
 
-        let power_of_randomness = power_of_randomness_from_instance(meta);
-        let evm_circuit = EvmCircuit::configure(
-            meta,
-            power_of_randomness[..31].to_vec().try_into().unwrap(),
-            &tx_table,
-            &rw_table,
-            &bytecode_table,
-            &block_table,
-            &copy_table,
-            &keccak_table,
+        let power_of_randomness = array::from_fn(|i| {
+            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
+        });
+
+        let challenges = Challenges::mock(
+            power_of_randomness[0].clone(),
+            power_of_randomness[0].clone(),
         );
-        let state_circuit = StateCircuitConfig::configure(
+
+        let keccak_circuit = KeccakCircuitConfig::new(
             meta,
-            power_of_randomness[..31].to_vec().try_into().unwrap(),
-            &rw_table,
+            KeccakCircuitConfigArgs {
+                keccak_table: keccak_table.clone(),
+                challenges: challenges.clone(),
+            },
+        );
+
+        let pi_circuit = PiCircuitConfig::new(
+            meta,
+            PiCircuitConfigArgs {
+                max_txs: MAX_TXS,
+                max_calldata: MAX_CALLDATA,
+                block_table: block_table.clone(),
+                tx_table: tx_table.clone(),
+            },
+        );
+        let tx_circuit = TxCircuitConfig::new(
+            meta,
+            TxCircuitConfigArgs {
+                tx_table: tx_table.clone(),
+                keccak_table: keccak_table.clone(),
+                challenges: challenges.clone(),
+            },
+        );
+        let bytecode_circuit = BytecodeCircuitConfig::new(
+            meta,
+            BytecodeCircuitConfigArgs {
+                bytecode_table: bytecode_table.clone(),
+                keccak_table: keccak_table.clone(),
+                challenges: challenges.clone(),
+            },
+        );
+        let copy_circuit = CopyCircuitConfig::new(
+            meta,
+            CopyCircuitConfigArgs {
+                tx_table: tx_table.clone(),
+                rw_table,
+                bytecode_table: bytecode_table.clone(),
+                copy_table,
+                q_enable: q_copy_table,
+                challenges: challenges.clone(),
+            },
+        );
+        let state_circuit = StateCircuitConfig::new(
+            meta,
+            StateCircuitConfigArgs {
+                rw_table,
+                mpt_table,
+                challenges,
+            },
+        );
+        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
+        let evm_circuit = EvmCircuitConfig::new(
+            meta,
+            EvmCircuitConfigArgs {
+                power_of_randomness,
+                tx_table,
+                rw_table,
+                bytecode_table,
+                block_table: block_table.clone(),
+                copy_table,
+                keccak_table,
+                exp_table,
+            },
         );
 
         Self::Config {
-            tx_table: tx_table.clone(),
-            rw_table,
-            bytecode_table: bytecode_table.clone(),
             block_table,
-            keccak_table: keccak_table.clone(),
-            copy_table,
+            mpt_table,
             evm_circuit,
             state_circuit,
-            copy_circuit: CopyCircuit::configure(
-                meta,
-                &tx_table,
-                &rw_table,
-                &bytecode_table,
-                copy_table,
-                q_copy_table,
-                power_of_randomness[0].clone(),
-            ),
-            tx_circuit: TxCircuitConfig::new(
-                meta,
-                power_of_randomness.clone(),
-                tx_table,
-                keccak_table.clone(),
-            ),
-            bytecode_circuit: BytecodeConfig::configure(
-                meta,
-                power_of_randomness[0].clone(),
-                bytecode_table,
-                keccak_table,
-            ),
+            copy_circuit,
+            tx_circuit,
+            bytecode_circuit,
+            keccak_circuit,
+            pi_circuit,
+            exp_circuit,
         }
     }
 
@@ -199,95 +265,94 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        // --- EVM Circuit ---
-        config
-            .evm_circuit
-            .load_fixed_table(&mut layouter, self.fixed_table_tags.clone())?;
-        config.evm_circuit.load_byte_table(&mut layouter)?;
-        config.rw_table.load(
-            &mut layouter,
-            &self.block.rws.table_assignments(),
-            self.block.state_circuit_pad_to,
-            self.block.randomness,
-        )?;
-        config.state_circuit.load(&mut layouter)?;
+        let block = self.evm_circuit.block.as_ref().unwrap();
+        let challenges = Challenges::mock(
+            Value::known(block.randomness),
+            Value::known(block.randomness),
+        );
+        let rws = &self.state_circuit.rows;
+
         config
             .block_table
-            .load(&mut layouter, &self.block.context, self.block.randomness)?;
-        config
-            .copy_table
-            .load(&mut layouter, &self.block, self.block.randomness)?;
-        config
-            .evm_circuit
-            .assign_block(&mut layouter, &self.block)?;
-        config.state_circuit.assign(
+            .load(&mut layouter, &block.context, block.randomness)?;
+
+        config.mpt_table.load(
             &mut layouter,
-            &self.block.rws.table_assignments(),
-            self.block.state_circuit_pad_to,
-            self.block.randomness,
+            &MptUpdates::mock_from(rws),
+            Value::known(block.randomness),
         )?;
-        // --- Tx Circuit ---
-        self.tx_circuit.assign(&config.tx_circuit, &mut layouter)?;
-        // --- Bytecode Circuit ---
-        let bytecodes: Vec<UnrolledBytecode<F>> = self
-            .block
-            .bytecodes
-            .iter()
-            .map(|(_, b)| unroll(b.bytes.clone(), self.block.randomness))
-            .collect();
-        config.bytecode_circuit.load(&mut layouter)?;
-        config.bytecode_circuit.assign(
+
+        self.keccak_circuit
+            .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
+        self.bytecode_circuit.synthesize_sub(
+            &config.bytecode_circuit,
+            &challenges,
             &mut layouter,
-            self.bytecode_size,
-            &bytecodes,
-            self.block.randomness,
         )?;
-        // --- Keccak Table ---
-        config
-            .keccak_table
-            .load(&mut layouter, &self.keccak_inputs, self.block.randomness)?;
-        // --- Copy Circuit ---
-        config
-            .copy_circuit
-            .assign_block(&mut layouter, &self.block, self.block.randomness)?;
+        self.tx_circuit
+            .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
+        self.state_circuit
+            .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
+        self.copy_circuit
+            .synthesize_sub(&config.copy_circuit, &challenges, &mut layouter)?;
+        self.exp_circuit
+            .synthesize_sub(&config.exp_circuit, &challenges, &mut layouter)?;
+        self.evm_circuit
+            .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
+        self.pi_circuit
+            .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
+        self.evm_circuit.synthesize(config.evm_circuit, layouter)?;
         Ok(())
     }
 }
 
-impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA> {
+impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
+    SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+{
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
     ///
-    /// Also, return with it the minimum required SRS degree for the circuit and
-    /// the Public Inputs needed.
+    /// Also, return with it the minimum required SRS degree for the
+    /// circuit and the Public Inputs needed.
+    #[allow(clippy::type_complexity)]
     pub fn build(
         geth_data: GethData,
-        rng: &mut (impl RngCore + Clone),
-    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
-        let txs = geth_data
-            .eth_block
-            .transactions
-            .iter()
-            .map(geth_types::Transaction::from)
-            .collect();
-
-        let mut builder =
-            BlockData::new_from_geth_data(geth_data.clone()).new_circuit_input_builder();
-
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>, CircuitInputBuilder), bus_mapping::Error> {
+        let block_data = BlockData::new_from_geth_data_with_params(
+            geth_data.clone(),
+            CircuitsParams {
+                max_txs: MAX_TXS,
+                max_calldata: MAX_CALLDATA,
+                max_rws: MAX_RWS,
+                max_bytecode: 512,
+                keccak_padding: None,
+            },
+        );
+        let mut builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&geth_data.eth_block, &geth_data.geth_traces)
             .expect("could not handle block tx");
-        let keccak_inputs = builder.keccak_inputs()?;
-        let mut block = block_convert(&builder.block, &builder.code_db);
 
-        block.randomness = Fr::random(rng.clone());
-        let aux_generator = <Secp256k1Affine as CurveAffine>::CurveExt::random(rng).to_affine();
+        let ret = Self::build_from_circuit_input_builder(&builder)?;
+        Ok((ret.0, ret.1, ret.2, builder))
+    }
+
+    /// From CircuitInputBuilder, generate a SuperCircuit instance with all of
+    /// the sub-circuits filled with their corresponding witnesses.
+    ///
+    /// Also, return with it the minimum required SRS degree for the circuit and
+    /// the Public Inputs needed.
+    pub fn build_from_circuit_input_builder(
+        builder: &CircuitInputBuilder,
+    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
+        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        block.randomness = Fr::from(MOCK_RANDOMNESS);
 
         let fixed_table_tags: Vec<FixedTableTag> = FixedTableTag::iter().collect();
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
-        let num_rows_required_for_steps =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA>::get_num_rows_required(&block);
+        let num_rows_required =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -301,38 +366,55 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> SuperCircuit<Fr, MAX_TXS, 
             .map(|(_, bytecode)| bytecode.bytes.len())
             .sum::<usize>();
         let k = k.max(log2_ceil(64 + bytecodes_len));
-        let k = k.max(log2_ceil(64 + num_rows_required_for_steps));
-        let k = k + 1;
+        let k = k.max(log2_ceil(64 + num_rows_required));
         log::debug!("super circuit uses k = {}", k);
 
-        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
-            .map(|exp| vec![block.randomness.pow_vartime(&[exp as u64, 0, 0, 0]); (1 << k) - 64])
-            .collect();
-        // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        instance.push(vec![]);
+        let evm_circuit = EvmCircuit::new_from_block(&block);
+        let state_circuit = StateCircuit::new_from_block(&block);
+        let tx_circuit = TxCircuit::new_from_block(&block);
+        let pi_circuit = PiCircuit::new_from_block(&block);
+        let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
+        let copy_circuit = CopyCircuit::new_from_block(&block);
+        let exp_circuit = ExpCircuit::new_from_block(&block);
+        let keccak_circuit = KeccakCircuit::new_from_block(&block);
 
-        let chain_id = block.context.chain_id;
-        let tx_circuit = TxCircuit::new(aux_generator, block.randomness, chain_id.as_u64(), txs);
-
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA> {
-            block,
-            fixed_table_tags,
+        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS> {
+            evm_circuit,
+            state_circuit,
             tx_circuit,
-            keccak_inputs,
-            // Instead of using 1 << k - NUM_BLINDING_ROWS, we use a much smaller number of enabled
-            // rows for the Bytecode Circuit because otherwise it penalizes significantly the
-            // MockProver verification time.
-            bytecode_size: bytecodes_len + 64,
+            pi_circuit,
+            bytecode_circuit,
+            copy_circuit,
+            exp_circuit,
+            keccak_circuit,
         };
+
+        let instance = circuit.instance();
         Ok((k, circuit, instance))
     }
+
+    /// Returns suitable inputs for the SuperCircuit.
+    pub fn instance(&self) -> Vec<Vec<Fr>> {
+        // SignVerifyChip -> ECDSAChip -> MainGate instance column
+        let pi_instance = self.pi_circuit.instance();
+        let instance = vec![pi_instance[0].clone(), vec![]];
+
+        instance
+    }
 }
+
+// TODO: Add tests
+// - multiple txs == MAX_TXS
+// - multiple txs < MAX_TXS
+// - max_rws padding
+// - evm_rows padding
 
 #[cfg(test)]
 mod super_circuit_tests {
     use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;
+    use log::error;
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -340,13 +422,20 @@ mod super_circuit_tests {
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
 
+    #[test]
+    fn super_circuit_degree() {
+        let mut cs = ConstraintSystem::<Fr>::default();
+        SuperCircuit::<_, 1, 32, 256>::configure(&mut cs);
+        log::info!("super circuit degree: {}", cs.degree());
+        log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
+        assert!(cs.degree() <= 9);
+    }
+
     // High memory usage test.  Run in serial with:
-    // `cargo test [...] skip_ -- --ignored --test-threads 1`
-    // NOTE: This test is not run as part of CI because it requires more memory than
-    // is available in github workers and so it gets killed before completion.
+    // `cargo test [...] serial_ -- --ignored --test-threads 1`
     #[ignore]
     #[test]
-    fn skip_test_super_circuit() {
+    fn serial_test_super_circuit() {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
@@ -386,13 +475,11 @@ mod super_circuit_tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, &mut ChaCha20Rng::seed_from_u64(2)).unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<_, 1, 32, 256>::build(block).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
-        let res = prover.verify();
+        let res = prover.verify_par();
         if let Err(err) = res {
-            eprintln!("Verification failures:");
-            eprintln!("{:#?}", err);
+            error!("Verification failures: {:#?}", err);
             panic!("Failed verification");
         }
     }

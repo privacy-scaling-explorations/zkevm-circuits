@@ -6,9 +6,10 @@ use regex::Regex;
 use serde::{de, Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+use strum_macros::EnumIter;
 
 /// Opcode enum. One-to-one corresponding to an `u8` value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Hash, EnumIter)]
 pub enum OpcodeId {
     /// `STOP`
     STOP,
@@ -662,6 +663,162 @@ impl OpcodeId {
         }
     }
 
+    /// Returns the constant min & stack pointer of `OpcodeId`
+    pub const fn valid_stack_ptr_range(&self) -> (u32, u32) {
+        match self {
+            // `min_stack_pointer` 0 means stack overflow never happen, for example, `OpcodeId::ADD`
+            // can only encounter underflow error, but never encounter overflow error.
+            // `max_stack_pointer` means max stack poniter for op code normally run. for example,
+            // `OpcodeId::ADD` 's max stack pointer is 1022, when actual sp > 1022, will
+            // encounter underflow error.
+            OpcodeId::STOP => (0, 1024),
+            OpcodeId::ADD => (0, 1022),
+            OpcodeId::MUL => (0, 1022),
+            OpcodeId::SUB => (0, 1022),
+            OpcodeId::DIV => (0, 1022),
+            OpcodeId::SDIV => (0, 1022),
+            OpcodeId::MOD => (0, 1022),
+            OpcodeId::SMOD => (0, 1022),
+            OpcodeId::ADDMOD => (0, 1021),
+            OpcodeId::MULMOD => (0, 1021),
+            OpcodeId::EXP => (0, 1022),
+            OpcodeId::SIGNEXTEND => (0, 1022),
+            OpcodeId::LT => (0, 1022),
+            OpcodeId::GT => (0, 1022),
+            OpcodeId::SLT => (0, 1022),
+            OpcodeId::SGT => (0, 1022),
+            OpcodeId::EQ => (0, 1022),
+            OpcodeId::ISZERO => (0, 1022),
+            OpcodeId::AND => (0, 1022),
+            OpcodeId::OR => (0, 1022),
+            OpcodeId::XOR => (0, 1022),
+            OpcodeId::NOT => (0, 1023),
+            OpcodeId::BYTE => (0, 1022),
+            OpcodeId::SHL => (0, 1022),
+            OpcodeId::SHR => (0, 1022),
+            OpcodeId::SAR => (0, 1022),
+            OpcodeId::SHA3 => (0, 1022),
+            OpcodeId::ADDRESS => (1, 1024),
+            OpcodeId::BALANCE => (0, 1023),
+            OpcodeId::ORIGIN => (1, 1024),
+            OpcodeId::CALLER => (1, 1024),
+            OpcodeId::CALLVALUE => (1, 1024),
+            OpcodeId::CALLDATALOAD => (0, 1023),
+            OpcodeId::CALLDATASIZE => (1, 1024),
+            OpcodeId::CALLDATACOPY => (0, 1021),
+            OpcodeId::CODESIZE => (1, 1024),
+            OpcodeId::CODECOPY => (0, 1021),
+            OpcodeId::GASPRICE => (1, 1024),
+            OpcodeId::EXTCODESIZE => (0, 1023),
+            OpcodeId::EXTCODECOPY => (0, 1020),
+            OpcodeId::RETURNDATASIZE => (1, 1024),
+            OpcodeId::RETURNDATACOPY => (0, 1021),
+            OpcodeId::EXTCODEHASH => (1, 1024),
+            OpcodeId::BLOCKHASH => (0, 1023),
+            OpcodeId::COINBASE => (1, 1024),
+
+            OpcodeId::TIMESTAMP => (1, 1024),
+            OpcodeId::NUMBER => (1, 1024),
+            OpcodeId::DIFFICULTY => (1, 1024),
+            OpcodeId::GASLIMIT => (1, 1024),
+            OpcodeId::CHAINID => (1, 1024),
+            OpcodeId::SELFBALANCE => (1, 1024),
+            OpcodeId::BASEFEE => (1, 1024),
+            OpcodeId::POP => (0, 1023),
+            OpcodeId::MLOAD => (0, 1023),
+            OpcodeId::MSTORE => (0, 1022),
+            OpcodeId::MSTORE8 => (0, 1022),
+            OpcodeId::SLOAD => (0, 1023),
+            OpcodeId::SSTORE => (0, 1022),
+            OpcodeId::JUMP => (0, 1023),
+            OpcodeId::JUMPI => (0, 1022),
+            OpcodeId::PC => (1, 1024),
+            OpcodeId::MSIZE => (1, 1024),
+            OpcodeId::GAS => (1, 1024),
+            OpcodeId::JUMPDEST => (0, 1024),
+            OpcodeId::PUSH1 => (1, 1024),
+            OpcodeId::PUSH2 => (1, 1024),
+            OpcodeId::PUSH3 => (1, 1024),
+            OpcodeId::PUSH4 => (1, 1024),
+            OpcodeId::PUSH5 => (1, 1024),
+            OpcodeId::PUSH6 => (1, 1024),
+            OpcodeId::PUSH7 => (1, 1024),
+            OpcodeId::PUSH8 => (1, 1024),
+            OpcodeId::PUSH9 => (1, 1024),
+            OpcodeId::PUSH10 => (1, 1024),
+            OpcodeId::PUSH11 => (1, 1024),
+            OpcodeId::PUSH12 => (1, 1024),
+            OpcodeId::PUSH13 => (1, 1024),
+            OpcodeId::PUSH14 => (1, 1024),
+            OpcodeId::PUSH15 => (1, 1024),
+            OpcodeId::PUSH16 => (1, 1024),
+            OpcodeId::PUSH17 => (1, 1024),
+            OpcodeId::PUSH18 => (1, 1024),
+            OpcodeId::PUSH19 => (1, 1024),
+            OpcodeId::PUSH20 => (1, 1024),
+            OpcodeId::PUSH21 => (1, 1024),
+            OpcodeId::PUSH22 => (1, 1024),
+            OpcodeId::PUSH23 => (1, 1024),
+            OpcodeId::PUSH24 => (1, 1024),
+            OpcodeId::PUSH25 => (1, 1024),
+            OpcodeId::PUSH26 => (1, 1024),
+            OpcodeId::PUSH27 => (1, 1024),
+            OpcodeId::PUSH28 => (1, 1024),
+            OpcodeId::PUSH29 => (1, 1024),
+            OpcodeId::PUSH30 => (1, 1024),
+            OpcodeId::PUSH31 => (1, 1024),
+            OpcodeId::PUSH32 => (1, 1024),
+            OpcodeId::DUP1 => (1, 1023),
+            OpcodeId::DUP2 => (1, 1022),
+            OpcodeId::DUP3 => (1, 1021),
+            OpcodeId::DUP4 => (1, 1020),
+            OpcodeId::DUP5 => (1, 1019),
+            OpcodeId::DUP6 => (1, 1018),
+            OpcodeId::DUP7 => (1, 1017),
+            OpcodeId::DUP8 => (1, 1016),
+            OpcodeId::DUP9 => (1, 1015),
+            OpcodeId::DUP10 => (1, 1014),
+            OpcodeId::DUP11 => (1, 1013),
+            OpcodeId::DUP12 => (1, 1012),
+            OpcodeId::DUP13 => (1, 1011),
+            OpcodeId::DUP14 => (1, 1010),
+            OpcodeId::DUP15 => (1, 1009),
+            OpcodeId::DUP16 => (1, 1008),
+            OpcodeId::SWAP1 => (0, 1022),
+            OpcodeId::SWAP2 => (0, 1021),
+            OpcodeId::SWAP3 => (0, 1020),
+            OpcodeId::SWAP4 => (0, 1019),
+            OpcodeId::SWAP5 => (0, 1018),
+            OpcodeId::SWAP6 => (0, 1017),
+            OpcodeId::SWAP7 => (0, 1016),
+            OpcodeId::SWAP8 => (0, 1015),
+            OpcodeId::SWAP9 => (0, 1014),
+
+            OpcodeId::SWAP10 => (0, 1013),
+            OpcodeId::SWAP11 => (0, 1012),
+            OpcodeId::SWAP12 => (0, 1011),
+            OpcodeId::SWAP13 => (0, 1010),
+            OpcodeId::SWAP14 => (0, 1009),
+            OpcodeId::SWAP15 => (0, 1008),
+            OpcodeId::SWAP16 => (0, 1007),
+            OpcodeId::LOG0 => (0, 1022),
+            OpcodeId::LOG1 => (0, 1021),
+            OpcodeId::LOG2 => (0, 1020),
+            OpcodeId::LOG3 => (0, 1019),
+            OpcodeId::LOG4 => (0, 1018),
+            OpcodeId::CREATE => (0, 1021),
+            OpcodeId::CALL => (0, 1017),
+            OpcodeId::CALLCODE => (0, 1017),
+            OpcodeId::RETURN => (0, 1022),
+            OpcodeId::DELEGATECALL => (0, 1018),
+            OpcodeId::CREATE2 => (0, 1020),
+            OpcodeId::STATICCALL => (0, 1018),
+            OpcodeId::REVERT => (0, 1022),
+            OpcodeId::SELFDESTRUCT => (0, 1023),
+            _ => (0, 0),
+        }
+    }
+
     /// Returns `true` if the `OpcodeId` has memory access
     pub const fn has_memory_access(&self) -> bool {
         matches!(
@@ -675,13 +832,45 @@ impl OpcodeId {
                 | OpcodeId::EXTCODECOPY
         )
     }
+
+    /// Returns PUSHn opcode from parameter n.
+    pub fn push_n(n: u8) -> Result<Self, Error> {
+        if (1..=32).contains(&n) {
+            Ok(OpcodeId::from(OpcodeId::PUSH1.as_u8() + n - 1))
+        } else {
+            Err(Error::InvalidOpConversion)
+        }
+    }
+
+    /// If operation has postfix returns it, otherwise None.
+    pub fn postfix(&self) -> Option<u8> {
+        if self.is_push() {
+            Some(self.as_u8() - OpcodeId::PUSH1.as_u8() + 1)
+        } else if self.is_dup() {
+            Some(self.as_u8() - OpcodeId::DUP1.as_u8() + 1)
+        } else if self.is_swap() {
+            Some(self.as_u8() - OpcodeId::SWAP1.as_u8() + 1)
+        } else if self.is_log() {
+            Some(self.as_u8() - OpcodeId::LOG0.as_u8())
+        } else {
+            None
+        }
+    }
+
+    /// Returns number of bytes used by immediate data. This is > 0 only for
+    /// push opcodes.
+    pub fn data_len(&self) -> usize {
+        if self.is_push() {
+            (self.as_u8() - OpcodeId::PUSH1.as_u8() + 1) as usize
+        } else {
+            0
+        }
+    }
 }
 
-impl TryFrom<u8> for OpcodeId {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
+impl From<u8> for OpcodeId {
+    fn from(value: u8) -> Self {
+        match value {
             0x00u8 => OpcodeId::STOP,
             0x01u8 => OpcodeId::ADD,
             0x02u8 => OpcodeId::MUL,
@@ -825,8 +1014,8 @@ impl TryFrom<u8> for OpcodeId {
             0xf4u8 => OpcodeId::DELEGATECALL,
             0xfau8 => OpcodeId::STATICCALL,
             0xffu8 => OpcodeId::SELFDESTRUCT,
-            b => return Err(Error::InvalidOpcodeIdByte(b)),
-        })
+            b => OpcodeId::INVALID(b),
+        }
     }
 }
 
@@ -942,6 +1131,7 @@ impl FromStr for OpcodeId {
             "RETURN" => OpcodeId::RETURN,
             "REVERT" => OpcodeId::REVERT,
             "INVALID" => OpcodeId::INVALID(0xfe),
+            "PUSH0" => OpcodeId::INVALID(0x5f),
             "SHA3" | "KECCAK256" => OpcodeId::SHA3,
             "ADDRESS" => OpcodeId::ADDRESS,
             "BALANCE" => OpcodeId::BALANCE,
@@ -991,7 +1181,7 @@ impl FromStr for OpcodeId {
                         ));
                     }
                 }
-                return Err(Error::OpcodeParsing);
+                return Err(Error::OpcodeParsing(s.to_string()));
             }
         })
     }
@@ -1010,5 +1200,40 @@ impl<'de> Deserialize<'de> for OpcodeId {
 impl fmt::Display for OpcodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+#[cfg(test)]
+mod opcode_ids_tests {
+    use super::*;
+
+    #[test]
+    fn push_n() {
+        assert!(matches!(OpcodeId::push_n(1), Ok(OpcodeId::PUSH1)));
+        assert!(matches!(OpcodeId::push_n(10), Ok(OpcodeId::PUSH10)));
+        assert!(matches!(
+            OpcodeId::push_n(100),
+            Err(Error::InvalidOpConversion)
+        ));
+        assert!(matches!(
+            OpcodeId::push_n(0),
+            Err(Error::InvalidOpConversion)
+        ));
+    }
+
+    #[test]
+    fn postfix() {
+        assert_eq!(OpcodeId::PUSH1.postfix(), Some(1));
+        assert_eq!(OpcodeId::PUSH10.postfix(), Some(10));
+        assert_eq!(OpcodeId::LOG2.postfix(), Some(2));
+        assert_eq!(OpcodeId::CALLCODE.postfix(), None);
+    }
+
+    #[test]
+    fn data_len() {
+        assert_eq!(OpcodeId::PUSH1.data_len(), 1);
+        assert_eq!(OpcodeId::PUSH10.data_len(), 10);
+        assert_eq!(OpcodeId::LOG2.data_len(), 0);
+        assert_eq!(OpcodeId::CALLCODE.data_len(), 0);
     }
 }

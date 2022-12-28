@@ -18,12 +18,20 @@ pub mod super_circuit;
 
 #[cfg(test)]
 #[cfg(feature = "benches")]
-pub mod bit_keccak;
-
-#[cfg(test)]
-#[cfg(feature = "benches")]
-pub mod packed_keccak;
-
-#[cfg(test)]
-#[cfg(feature = "benches")]
 pub mod packed_multi_keccak;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod bytecode_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod pi_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod copy_circuit;
+
+#[cfg(test)]
+#[cfg(feature = "benches")]
+pub mod exp_circuit;

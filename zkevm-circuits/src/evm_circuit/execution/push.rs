@@ -129,12 +129,12 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 
-        let num_additional_pushed = (opcode.as_u8() - OpcodeId::PUSH1.as_u8()) as usize;
+        let num_additional_pushed = opcode.postfix().expect("opcode with postfix") - 1;
         for (idx, selector) in self.selectors.iter().enumerate() {
             selector.assign(
                 region,
                 offset,
-                Value::known(F::from((idx < num_additional_pushed) as u64)),
+                Value::known(F::from((idx < num_additional_pushed as usize) as u64)),
             )?;
         }
 
@@ -150,7 +150,7 @@ mod test {
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
+        assert!(bytes.len() == opcode.data_len());
 
         let mut bytecode = bytecode! {
             .write_op(opcode)
@@ -231,38 +231,5 @@ mod test {
         {
             test_ok(opcode, &rand_bytes(idx + 1));
         }
-    }
-
-    #[test]
-    fn stack_overflow_simple() {
-        test_stack_overflow(OpcodeId::PUSH1, &[1]);
-    }
-
-    fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() as u8 == opcode.as_u8() - OpcodeId::PUSH1.as_u8() + 1,);
-
-        let mut bytecode = bytecode! {
-            .write_op(opcode)
-        };
-        for b in bytes {
-            bytecode.write(*b, false);
-        }
-        // still add 1024 causes stack overflow
-        for _ in 0..1025 {
-            bytecode.write_op(opcode);
-            for b in bytes {
-                bytecode.write(*b, false);
-            }
-        }
-        // append final stop op code
-        bytecode.write_op(OpcodeId::STOP);
-
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
     }
 }

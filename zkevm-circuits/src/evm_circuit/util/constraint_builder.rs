@@ -9,9 +9,10 @@ use crate::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::Expr,
+    util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
+use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -238,20 +239,41 @@ impl<F: Field> BaseConstraintBuilder<F> {
     }
 }
 
+/// Internal type to select the location where the constraints are enabled
+#[derive(Debug, PartialEq)]
+enum ConstraintLocation {
+    Step,
+    StepFirst,
+    StepLast,
+    NotStepLast,
+}
+
+/// Collection of constraints grouped by which selectors will enable them
+pub(crate) struct Constraints<F> {
+    /// Enabled with q_step
+    pub(crate) step: Vec<(&'static str, Expression<F>)>,
+    /// Enabled with q_step_first
+    pub(crate) step_first: Vec<(&'static str, Expression<F>)>,
+    /// Enabled with q_step * q_step_last
+    pub(crate) step_last: Vec<(&'static str, Expression<F>)>,
+    /// Enabled with q_step * not(q_step_last)
+    pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
+}
+
 pub(crate) struct ConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     power_of_randomness: &'a [Expression<F>; 31],
     execution_state: ExecutionState,
-    constraints: Vec<(&'static str, Expression<F>)>,
-    constraints_first_step: Vec<(&'static str, Expression<F>)>,
+    constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
     program_counter_offset: usize,
-    stack_pointer_offset: i32,
+    stack_pointer_offset: Expression<F>,
     log_id_offset: usize,
     in_next_step: bool,
     condition: Option<Expression<F>>,
+    constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
@@ -268,14 +290,19 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             next,
             power_of_randomness,
             execution_state,
-            constraints: Vec::new(),
-            constraints_first_step: Vec::new(),
+            constraints: Constraints {
+                step: Vec::new(),
+                step_first: Vec::new(),
+                step_last: Vec::new(),
+                not_step_last: Vec::new(),
+            },
             rw_counter_offset: 0.expr(),
             program_counter_offset: 0,
-            stack_pointer_offset: 0,
+            stack_pointer_offset: 0.expr(),
             log_id_offset: 0,
             in_next_step: false,
             condition: None,
+            constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
         }
     }
@@ -283,24 +310,20 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     /// Returns (list of constraints, list of first step constraints, stored
     /// expressions, height used).
     #[allow(clippy::type_complexity)]
-    pub(crate) fn build(
-        self,
-    ) -> (
-        Vec<(&'static str, Expression<F>)>,
-        Vec<(&'static str, Expression<F>)>,
-        Vec<StoredExpression<F>>,
-        usize,
-    ) {
-        let execution_state_selector = self.curr.execution_state_selector([self.execution_state]);
+    pub(crate) fn build(self) -> (Constraints<F>, Vec<StoredExpression<F>>, usize) {
+        let exec_state_sel = self.curr.execution_state_selector([self.execution_state]);
+        let mul_exec_state_sel = |c: Vec<(&'static str, Expression<F>)>| {
+            c.into_iter()
+                .map(|(name, constraint)| (name, exec_state_sel.clone() * constraint))
+                .collect()
+        };
         (
-            self.constraints
-                .into_iter()
-                .map(|(name, constraint)| (name, execution_state_selector.clone() * constraint))
-                .collect(),
-            self.constraints_first_step
-                .into_iter()
-                .map(|(name, constraint)| (name, execution_state_selector.clone() * constraint))
-                .collect(),
+            Constraints {
+                step: mul_exec_state_sel(self.constraints.step),
+                step_first: mul_exec_state_sel(self.constraints.step_first),
+                step_last: mul_exec_state_sel(self.constraints.step_last),
+                not_step_last: mul_exec_state_sel(self.constraints.not_step_last),
+            },
             self.stored_expressions,
             self.curr.cell_manager.get_height(),
         )
@@ -322,8 +345,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.program_counter_offset
     }
 
-    pub(crate) fn stack_pointer_offset(&self) -> i32 {
-        self.stack_pointer_offset
+    pub(crate) fn stack_pointer_offset(&self) -> Expression<F> {
+        self.stack_pointer_offset.clone()
     }
 
     pub(crate) fn log_id_offset(&self) -> usize {
@@ -366,6 +389,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
         self.query_cell_with_type(CellType::Storage)
+    }
+
+    pub(crate) fn query_copy_cell(&mut self) -> Cell<F> {
+        self.query_cell_with_type(CellType::StoragePermutation)
     }
 
     pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
@@ -422,6 +449,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn require_next_state_not(&mut self, execution_state: ExecutionState) {
+        let next_state = self.next.execution_state_selector([execution_state]);
+        self.add_constraint("Constrain next execution state not", next_state.expr());
+    }
+
     pub(crate) fn require_step_state_transition(
         &mut self,
         step_state_transition: StepStateTransition<F>,
@@ -430,17 +462,17 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             ($name:tt) => {
                 match step_state_transition.$name {
                     Transition::Same => self.require_equal(
-                        concat!("State transition constraint of ", stringify!($name)),
+                        concat!("State transition (same) constraint of ", stringify!($name)),
                         self.next.state.$name.expr(),
                         self.curr.state.$name.expr(),
                     ),
                     Transition::Delta(delta) => self.require_equal(
-                        concat!("State transition constraint of ", stringify!($name)),
+                        concat!("State transition (delta) constraint of ", stringify!($name)),
                         self.next.state.$name.expr(),
                         self.curr.state.$name.expr() + delta,
                     ),
                     Transition::To(to) => self.require_equal(
-                        concat!("State transition constraint of ", stringify!($name)),
+                        concat!("State transition (to) constraint of ", stringify!($name)),
                         self.next.state.$name.expr(),
                         to,
                     ),
@@ -484,6 +516,33 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    // constant gas
+    pub(crate) fn constant_gas_lookup(&mut self, opcode: Expression<F>, gas: Expression<F>) {
+        self.add_lookup(
+            "constant gas",
+            Lookup::Fixed {
+                tag: FixedTableTag::ConstantGasCost.expr(),
+                values: [opcode, gas, 0.expr()],
+            },
+        );
+    }
+
+    // look up opcode's min and max stack pointer
+    pub(crate) fn opcode_stack_lookup(
+        &mut self,
+        opcode: Expression<F>,
+        min_stack: Expression<F>,
+        max_stack: Expression<F>,
+    ) {
+        self.add_lookup(
+            "op code stack info",
+            Lookup::Fixed {
+                tag: FixedTableTag::OpcodeStack.expr(),
+                values: [opcode, min_stack, max_stack],
+            },
+        );
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
@@ -502,10 +561,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         is_code: Expression<F>,
     ) {
         let is_root_create = self.curr.state.is_root.expr() * self.curr.state.is_create.expr();
-        self.add_constraint(
-            "The opcode source when is_root and is_create (Root creation transaction) is not determined yet",
-            is_root_create.clone(),
-        );
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {
@@ -683,22 +738,33 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
+        // Revert if is_persistent is 0
         if let Some(reversion_info) = reversion_info {
-            // Revert if is_persistent is 0
-            self.condition(1.expr() - reversion_info.is_persistent(), |cb| {
-                let name = format!("{} with reversion", name);
-                cb.rw_lookup_with_counter(
-                    &name,
-                    reversion_info.rw_counter_of_reversion(),
-                    true.expr(),
-                    tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
-                )
-            });
+            // To allow conditional reversible writes, we extract the pre-existing condition
+            // here if it exists, and then reset it afterwards.
+            let condition = self.condition.clone();
+            self.condition = None;
+            self.condition(
+                and::expr(&[
+                    condition.clone().unwrap_or_else(|| 1.expr()),
+                    not::expr(reversion_info.is_persistent()),
+                ]),
+                |cb| {
+                    let name = format!("{} with reversion", name);
+                    cb.rw_lookup_with_counter(
+                        &name,
+                        reversion_info.rw_counter_of_reversion(),
+                        true.expr(),
+                        tag,
+                        RwValues {
+                            value_prev: values.value,
+                            value: values.value_prev,
+                            ..values
+                        },
+                    )
+                },
+            );
+            self.condition = condition;
         }
     }
 
@@ -726,6 +792,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
             ),
             reversion_info,
+        );
+    }
+
+    pub(crate) fn account_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account access list read",
+            false.expr(),
+            RwTableTag::TxAccessListAccount,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                0.expr(),
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
         );
     }
 
@@ -916,6 +1005,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         cell
     }
 
+    pub(crate) fn call_context_as_word(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> Word<F> {
+        let word = self.query_word();
+        self.call_context_lookup(false.expr(), call_id, field_tag, word.expr());
+        word
+    }
+
     pub(crate) fn call_context_lookup(
         &mut self,
         is_write: Expression<F>,
@@ -940,12 +1039,21 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
-    pub(crate) fn reversion_info(&mut self, call_id: Option<Expression<F>>) -> ReversionInfo<F> {
+    fn reversion_info(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        is_write: bool,
+    ) -> ReversionInfo<F> {
         let [rw_counter_end_of_reversion, is_persistent] = [
             CallContextFieldTag::RwCounterEndOfReversion,
             CallContextFieldTag::IsPersistent,
         ]
-        .map(|field_tag| self.call_context(call_id.clone(), field_tag));
+        .map(|field_tag| {
+            let cell = self.query_cell();
+            self.call_context_lookup(is_write.expr(), call_id.clone(), field_tag, cell.expr());
+            cell
+        });
+
         ReversionInfo {
             rw_counter_end_of_reversion,
             is_persistent,
@@ -957,15 +1065,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         }
     }
 
+    pub(crate) fn reversion_info_read(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        self.reversion_info(call_id, false)
+    }
+
+    pub(crate) fn reversion_info_write(
+        &mut self,
+        call_id: Option<Expression<F>>,
+    ) -> ReversionInfo<F> {
+        self.reversion_info(call_id, true)
+    }
+
     // Stack
 
     pub(crate) fn stack_pop(&mut self, value: Expression<F>) {
-        self.stack_lookup(false.expr(), self.stack_pointer_offset.expr(), value);
-        self.stack_pointer_offset += 1;
+        self.stack_lookup(false.expr(), self.stack_pointer_offset.clone(), value);
+        self.stack_pointer_offset = self.stack_pointer_offset.clone() + self.condition_expr();
     }
 
     pub(crate) fn stack_push(&mut self, value: Expression<F>) {
-        self.stack_pointer_offset -= 1;
+        self.stack_pointer_offset = self.stack_pointer_offset.clone() - self.condition_expr();
         self.stack_lookup(true.expr(), self.stack_pointer_offset.expr(), value);
     }
 
@@ -1032,7 +1154,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             RwTableTag::TxLog,
             RwValues::new(
                 tx_id,
-                index + (1u64 << 32).expr() * field_tag.expr() + (1u64 << 48).expr() * log_id,
+                build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
                 0.expr(),
                 value,
@@ -1069,6 +1191,27 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    // RwTable Padding (Start tag)
+
+    pub(crate) fn rw_table_start_lookup(&mut self, counter: Expression<F>) {
+        self.rw_lookup_with_counter(
+            "Start lookup",
+            counter,
+            0.expr(),
+            RwTableTag::Start,
+            RwValues {
+                id: 0.expr(),
+                address: 0.expr(),
+                field_tag: 0.expr(),
+                storage_key: 0.expr(),
+                value: 0.expr(),
+                value_prev: 0.expr(),
+                aux1: 0.expr(),
+                aux2: 0.expr(),
+            },
+        );
+    }
+
     // Copy Table
 
     #[allow(clippy::too_many_arguments)]
@@ -1083,7 +1226,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         dst_addr: Expression<F>,
         length: Expression<F>,
         rlc_acc: Expression<F>,
-        rw_counter: Expression<F>,
         rwc_inc: Expression<F>,
     ) {
         self.add_lookup(
@@ -1099,8 +1241,32 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 dst_addr,
                 length,
                 rlc_acc,
-                rw_counter,
-                rwc_inc,
+                rw_counter: self.curr.state.rw_counter.expr() + self.rw_counter_offset(),
+                rwc_inc: rwc_inc.clone(),
+            },
+        );
+        self.rw_counter_offset = self.rw_counter_offset.clone() + self.condition_expr() * rwc_inc;
+    }
+
+    // Exponentiation Table
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn exp_table_lookup(
+        &mut self,
+        identifier: Expression<F>,
+        is_last: Expression<F>,
+        base_limbs: [Expression<F>; 4],
+        exponent_lo_hi: [Expression<F>; 2],
+        exponentiation_lo_hi: [Expression<F>; 2],
+    ) {
+        self.add_lookup(
+            "exponentiation lookup",
+            Lookup::ExpTable {
+                identifier,
+                is_last,
+                base_limbs,
+                exponent_lo_hi,
+                exponentiation_lo_hi,
             },
         );
     }
@@ -1188,28 +1354,55 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-
-        let constraint = self.split_expression(name, constraint, MAX_DEGREE - IMPLICIT_DEGREE);
+        let constraint = self.split_expression(
+            name,
+            constraint * self.condition_expr(),
+            MAX_DEGREE - IMPLICIT_DEGREE,
+        );
 
         self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
+        self.push_constraint(name, constraint);
     }
 
-    pub(crate) fn add_constraint_first_step(
+    /// TODO: Doc
+    fn constraint_at_location<R>(
         &mut self,
-        name: &'static str,
-        constraint: Expression<F>,
-    ) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-        self.validate_degree(constraint.degree(), name);
-        self.constraints_first_step.push((name, constraint));
+        location: ConstraintLocation,
+        constraint: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        debug_assert_eq!(
+            self.constraints_location,
+            ConstraintLocation::Step,
+            "ConstraintLocation can't be combined"
+        );
+        self.constraints_location = location;
+        let ret = constraint(self);
+        self.constraints_location = ConstraintLocation::Step;
+        ret
+    }
+    /// TODO: Doc
+    pub(crate) fn step_first<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
+        self.constraint_at_location(ConstraintLocation::StepFirst, constraint)
+    }
+    /// TODO: Doc
+    pub(crate) fn step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
+        self.constraint_at_location(ConstraintLocation::StepLast, constraint)
+    }
+    /// TODO: Doc
+    pub(crate) fn not_step_last<R>(&mut self, constraint: impl FnOnce(&mut Self) -> R) -> R {
+        self.constraint_at_location(ConstraintLocation::NotStepLast, constraint)
+    }
+
+    /// TODO: Doc
+    fn push_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        match self.constraints_location {
+            ConstraintLocation::Step => self.constraints.step.push((name, constraint)),
+            ConstraintLocation::StepFirst => self.constraints.step_first.push((name, constraint)),
+            ConstraintLocation::StepLast => self.constraints.step_last.push((name, constraint)),
+            ConstraintLocation::NotStepLast => {
+                self.constraints.not_step_last.push((name, constraint))
+            }
+        }
     }
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
@@ -1252,10 +1445,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
                 // Require the stored value to equal the value of the expression
                 let name = format!("{} (stored expression)", name);
-                self.constraints.push((
+                self.push_constraint(
                     Box::leak(name.clone().into_boxed_str()),
                     cell.expr() - expr.clone(),
-                ));
+                );
 
                 self.stored_expressions.push(StoredExpression {
                     name,
@@ -1321,6 +1514,13 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             }
         } else {
             expr.clone()
+        }
+    }
+
+    fn condition_expr(&self) -> Expression<F> {
+        match &self.condition {
+            Some(condition) => condition.clone(),
+            None => 1.expr(),
         }
     }
 }

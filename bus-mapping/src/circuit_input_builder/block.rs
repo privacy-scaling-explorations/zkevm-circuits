@@ -1,6 +1,8 @@
 //! Block-related utility module
 
-use super::{transaction::Transaction, CopyEvent};
+use super::{
+    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+};
 use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
@@ -39,6 +41,17 @@ impl BlockContext {
     }
 }
 
+/// Block-wise execution steps that don't belong to any Transaction.
+#[derive(Debug)]
+pub struct BlockSteps {
+    /// EndBlock step that is repeated after the last transaction and before
+    /// reaching the last EVM row.
+    pub end_block_not_last: ExecStep,
+    /// Last EndBlock step that appears in the last EVM row.
+    pub end_block_last: ExecStep,
+}
+
+// TODO: Remove fields that are duplicated in`eth_block`
 /// Circuit Input related to a block.
 #[derive(Debug)]
 pub struct Block {
@@ -59,23 +72,35 @@ pub struct Block {
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
+    /// State root of the previous block
+    pub prev_state_root: Word,
     /// Container of operations done in this block.
     pub container: OperationContainer,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
+    /// Block-wise steps
+    pub block_steps: BlockSteps,
     /// Copy events in this block.
     pub copy_events: Vec<CopyEvent>,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
+    /// Exponentiation events in the block.
+    pub exp_events: Vec<ExpEvent>,
     code: HashMap<Hash, Vec<u8>>,
+    /// Circuits Setup Paramteres
+    pub circuits_params: CircuitsParams,
+    /// Original block from geth
+    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 impl Block {
     /// Create a new block.
-    pub fn new<TX>(
+    pub fn new(
         chain_id: Word,
         history_hashes: Vec<Word>,
-        eth_block: &eth_types::Block<TX>,
+        prev_state_root: Word,
+        eth_block: &eth_types::Block<eth_types::Transaction>,
+        circuits_params: CircuitsParams,
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
@@ -87,7 +112,9 @@ impl Block {
         Ok(Self {
             chain_id,
             history_hashes,
-            coinbase: eth_block.author,
+            coinbase: eth_block
+                .author
+                .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             gas_limit: eth_block.gas_limit.low_u64(),
             number: eth_block
                 .number
@@ -97,11 +124,25 @@ impl Block {
             timestamp: eth_block.timestamp,
             difficulty: eth_block.difficulty,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
+            prev_state_root,
             container: OperationContainer::new(),
             txs: Vec::new(),
+            block_steps: BlockSteps {
+                end_block_not_last: ExecStep {
+                    exec_state: ExecState::EndBlock,
+                    ..ExecStep::default()
+                },
+                end_block_last: ExecStep {
+                    exec_state: ExecState::EndBlock,
+                    ..ExecStep::default()
+                },
+            },
             copy_events: Vec::new(),
+            exp_events: Vec::new(),
             code: HashMap::new(),
             sha3_inputs: Vec::new(),
+            circuits_params,
+            eth_block: eth_block.clone(),
         })
     }
 
@@ -118,7 +159,11 @@ impl Block {
 
 impl Block {
     /// Push a copy event to the block.
-    pub fn add_copy_event(&mut self, copy: CopyEvent) {
-        self.copy_events.push(copy);
+    pub fn add_copy_event(&mut self, event: CopyEvent) {
+        self.copy_events.push(event);
+    }
+    /// Push an exponentiation event to the block.
+    pub fn add_exp_event(&mut self, event: ExpEvent) {
+        self.exp_events.push(event);
     }
 }

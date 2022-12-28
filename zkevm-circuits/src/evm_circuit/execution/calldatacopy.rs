@@ -97,11 +97,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -125,7 +121,6 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                 memory_address.offset(),
                 memory_address.length(),
                 0.expr(), // for CALLDATACOPY rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -139,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // State transition
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
@@ -288,7 +283,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits(ctx, None,), Ok(()));
     }
 
     fn test_ok_internal(
@@ -344,7 +339,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        assert_eq!(run_test_circuits(ctx, None,), Ok(()));
     }
 
     #[test]

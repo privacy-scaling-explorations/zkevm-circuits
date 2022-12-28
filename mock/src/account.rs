@@ -6,7 +6,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Default)]
 /// Mock structure which represents an Account and can be used for tests.
 /// It contains all the builder-pattern methods required to be able to specify
-/// any of it's details.
+/// any of its details.
 pub struct MockAccount {
     /// Address
     pub address: Address,
@@ -63,6 +63,16 @@ impl MockAccount {
         storage.for_each(|pair| {
             assert!(self.storage.insert(pair.0, pair.1).is_none());
         });
+        self
+    }
+
+    /// Set all fields for the MockAccount based on their values in `account`.
+    pub fn account(&mut self, account: &Account) -> &mut Self {
+        self.address(account.address);
+        self.nonce(account.nonce);
+        self.balance(account.balance);
+        self.code(account.code.clone());
+        self.storage(account.storage.iter().map(|(k, v)| (*k, *v)));
         self
     }
 

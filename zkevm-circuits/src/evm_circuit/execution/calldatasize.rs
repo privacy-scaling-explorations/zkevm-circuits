@@ -88,11 +88,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{
-        test::{rand_bytes, run_test_circuit},
-        witness::block_convert,
-    };
+    use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
     use eth_types::{address, bytecode, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use itertools::Itertools;
     use mock::TestContext;
 
@@ -102,76 +100,67 @@ mod test {
             STOP
         };
 
-        let block_data = if is_root {
-            bus_mapping::mock::BlockData::new_from_geth_data(
-                TestContext::<2, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(address!("0x0000000000000000000000000000000000000000"))
-                            .balance(Word::from(1u64 << 30));
-                        accs[1]
-                            .address(address!("0x0000000000000000000000000000000000000010"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .to(accs[1].address)
-                            .input(rand_bytes(call_data_size).into())
-                            .gas(Word::from(40000));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into(),
+        let block = if is_root {
+            TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x0000000000000000000000000000000000000123"))
+                        .balance(Word::from(1u64 << 30));
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000010"))
+                        .balance(Word::from(1u64 << 20))
+                        .code(bytecode);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .input(rand_bytes(call_data_size).into())
+                        .gas(Word::from(40000));
+                },
+                |block, _tx| block.number(0xcafeu64),
             )
+            .unwrap()
+            .into()
         } else {
-            bus_mapping::mock::BlockData::new_from_geth_data(
-                TestContext::<3, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(address!("0x0000000000000000000000000000000000000000"))
-                            .balance(Word::from(1u64 << 30));
-                        accs[1]
-                            .address(address!("0x0000000000000000000000000000000000000010"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH32(call_data_size)
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH1(0x20)
-                                GAS
-                                CALL
-                                STOP
-                            });
-                        accs[2]
-                            .address(address!("0x0000000000000000000000000000000000000020"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .to(accs[1].address)
-                            .gas(Word::from(30000));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into(),
+            TestContext::<3, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x0000000000000000000000000000000000000123"))
+                        .balance(Word::from(1u64 << 30));
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000010"))
+                        .balance(Word::from(1u64 << 20))
+                        .code(bytecode! {
+                            PUSH1(0)
+                            PUSH1(0)
+                            PUSH32(call_data_size)
+                            PUSH1(0)
+                            PUSH1(0)
+                            PUSH1(0x20)
+                            GAS
+                            CALL
+                            STOP
+                        });
+                    accs[2]
+                        .address(address!("0x0000000000000000000000000000000000000020"))
+                        .balance(Word::from(1u64 << 20))
+                        .code(bytecode);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(Word::from(30000));
+                },
+                |block, _tx| block.number(0xcafeu64),
             )
+            .unwrap()
+            .into()
         };
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]

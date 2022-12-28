@@ -1,9 +1,9 @@
 use super::util::{CachedRegion, CellManager, CellType};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, Call, ExecStep},
     },
     util::Expr,
 };
@@ -80,18 +80,13 @@ pub enum ExecutionState {
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
-    CALL,
-    CALLCODE,
-    RETURN,
-    DELEGATECALL,
+    CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
+    RETURN_REVERT, // RETURN, REVERT
     CREATE2,
-    STATICCALL,
-    REVERT,
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
-    ErrorStackOverflow,
-    ErrorStackUnderflow,
+    ErrorStack,
     ErrorWriteProtection,
     ErrorDepth,
     ErrorInsufficientBalance,
@@ -135,16 +130,11 @@ impl ExecutionState {
         Self::iter().count()
     }
 
-    pub(crate) fn halts_in_success(&self) -> bool {
-        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
-    }
-
     pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
             Self::ErrorInvalidOpcode
-                | Self::ErrorStackOverflow
-                | Self::ErrorStackUnderflow
+                | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorDepth
                 | Self::ErrorInsufficientBalance
@@ -175,7 +165,8 @@ impl ExecutionState {
     }
 
     pub(crate) fn halts(&self) -> bool {
-        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
+        matches!(self, Self::STOP | Self::RETURN_REVERT | Self::SELFDESTRUCT)
+            || self.halts_in_exception()
     }
 
     pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
@@ -309,13 +300,14 @@ impl ExecutionState {
                 OpcodeId::LOG4,
             ],
             Self::CREATE => vec![OpcodeId::CREATE],
-            Self::CALL => vec![OpcodeId::CALL],
-            Self::CALLCODE => vec![OpcodeId::CALLCODE],
-            Self::RETURN => vec![OpcodeId::RETURN],
-            Self::DELEGATECALL => vec![OpcodeId::DELEGATECALL],
+            Self::CALL_OP => vec![
+                OpcodeId::CALL,
+                OpcodeId::CALLCODE,
+                OpcodeId::DELEGATECALL,
+                OpcodeId::STATICCALL,
+            ],
+            Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
-            Self::STATICCALL => vec![OpcodeId::STATICCALL],
-            Self::REVERT => vec![OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],
         }
@@ -466,8 +458,14 @@ impl<F: FieldExt> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
+        is_next: bool,
     ) -> Self {
-        let mut cell_manager = CellManager::new(meta, MAX_STEP_HEIGHT, &advices, offset);
+        let height = if is_next {
+            STEP_STATE_HEIGHT // Query only the state of the next step.
+        } else {
+            MAX_STEP_HEIGHT // Query the entire current step.
+        };
+        let mut cell_manager = CellManager::new(meta, height, &advices, offset);
         let state = {
             StepState {
                 execution_state: DynamicSelectorHalf::new(
@@ -507,7 +505,6 @@ impl<F: FieldExt> Step<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        _: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {

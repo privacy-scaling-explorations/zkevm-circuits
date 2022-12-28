@@ -55,6 +55,8 @@ pub struct Call {
     pub call_id: usize,
     /// Caller's id.
     pub caller_id: usize,
+    /// Last Callee's id.
+    pub last_callee_id: usize,
     /// Type of call
     pub kind: CallKind,
     /// This call is being executed without write access (STATIC)
@@ -87,6 +89,10 @@ pub struct Call {
     pub return_data_offset: u64,
     /// Return data length
     pub return_data_length: u64,
+    /// last callee's return data offset
+    pub last_callee_return_data_offset: u64,
+    /// last callee's return data length
+    pub last_callee_return_data_length: u64,
 }
 
 impl Call {
@@ -94,6 +100,11 @@ impl Call {
     /// CREATE2
     pub fn is_create(&self) -> bool {
         self.kind.is_create()
+    }
+
+    /// This call is call with op DELEGATECALL
+    pub fn is_delegatecall(&self) -> bool {
+        matches!(self.kind, CallKind::DelegateCall)
     }
 }
 

@@ -1,16 +1,40 @@
 name: Integration Tests
 
 on:
+  pull_request:
+    types: [synchronize, labeled]
   push:
     branches:
       - main
 
 jobs:
+  consecutiveness:
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: mktcode/consecutive-workflow-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  wakeuprunner:
+    if: github.event.pull_request.draft == false
+
+    needs: [consecutiveness]
+    name: Wake up self-hosted runner
+    runs-on: pse-runner
+
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          .github/integrationTestsScripts/wakeUpRunner.sh
+
   integration-tests:
     if: github.event.pull_request.draft == false
 
+    needs: [wakeuprunner]
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: integration-tests-runner
 
     defaults:
       run:
@@ -20,14 +44,10 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
-      - name: Set PATH
-        run: echo "${HOME}/bin" >> $GITHUB_PATH
-      - name: Install Solc
-        run: |
-          mkdir -p "$HOME/bin"
-          wget -q https://github.com/ethereum/solidity/releases/download/v0.8.10/solc-static-linux -O $HOME/bin/solc
-          chmod u+x "$HOME/bin/solc"
-          solc --version
+      - name: Setup golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: ~1.18
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -52,10 +72,10 @@ jobs:
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
-        run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
+        run: for testname in rpc circuit_input_builder circuits_mock; do cargo test --profile release --test $testname --features $testname --no-run; done
       - run: ./run.sh --steps "setup"
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: ./run.sh --steps "tests" --tests "circuits"
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits_mock"
       - run: ./run.sh --steps "cleanup"

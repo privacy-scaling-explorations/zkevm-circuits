@@ -4,13 +4,11 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use env_logger::Env;
-    use halo2_proofs::halo2curves::CurveAffine;
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
     use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         poly::commitment::ParamsProver,
         transcript::{
@@ -19,12 +17,7 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use std::marker::PhantomData;
-    use zkevm_circuits::tx_circuit::{
-        sign_verify::{SignVerifyChip, POW_RAND_SIZE, VERIF_HEIGHT},
-        Curve, TxCircuit,
-    };
-    use zkevm_circuits::tx_circuit::{Group, Secp256k1Affine};
+    use zkevm_circuits::tx_circuit::TxCircuit;
 
     use crate::bench_params::DEGREE;
 
@@ -40,28 +33,9 @@ mod tests {
 
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
-        let aux_generator =
-            <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
-        let chain_id: u64 = 1337;
-
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-
-        let randomness = Fr::from(0xcafeu64);
-        let mut instance: Vec<Vec<Fr>> = (1..POW_RAND_SIZE + 1)
-            .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); MAX_TXS * VERIF_HEIGHT])
-            .collect();
-        // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        instance.push(vec![]);
-        let circuit = TxCircuit::<Fr, MAX_TXS, MAX_CALLDATA> {
-            sign_verify: SignVerifyChip {
-                aux_generator,
-                window_size: 2,
-                _marker: PhantomData,
-            },
-            randomness,
-            txs,
-            chain_id,
-        };
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
 
         // Bench setup generation
         let setup_message = format!("Setup generation with degree = {}", DEGREE);
@@ -75,10 +49,9 @@ mod tests {
         let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk should not fail");
         // Create a proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-        let instance_slices: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench proof generation time
-        let proof_message = format!("Packed Multi-Keccak Proof generation with {} rows", DEGREE);
+        let proof_message = format!("Tx Circuit Proof generation with degree = {}", DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -86,12 +59,12 @@ mod tests {
             Challenge255<G1Affine>,
             ChaCha20Rng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            TxCircuit<Fr, 2, 1024>,
+            TxCircuit<Fr>,
         >(
             &general_params,
             &pk,
             &[circuit],
-            &[&instance_slices],
+            &[&[&[]]],
             rng,
             &mut transcript,
         )
@@ -100,7 +73,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Packed Multi-Keccak Proof verification");
+        let start3 = start_timer!(|| "Tx Circuit Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
@@ -114,7 +87,7 @@ mod tests {
             &verifier_params,
             pk.get_vk(),
             strategy,
-            &[&instance_slices],
+            &[&[&[]]],
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");

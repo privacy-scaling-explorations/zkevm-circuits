@@ -34,11 +34,11 @@ use halo2_proofs::{
 
 use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
 use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
-pub use ethers_core::abi::ethereum_types::U512;
+pub use ethers_core::abi::ethereum_types::{BigEndianHash, U512};
 use ethers_core::types;
 pub use ethers_core::types::{
     transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, Signature, H160, H256, U256, U64,
+    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
 };
 
 use serde::{de, Deserialize, Serialize};
@@ -185,12 +185,54 @@ impl ToWord for Address {
     }
 }
 
+impl ToWord for bool {
+    fn to_word(&self) -> Word {
+        if *self {
+            Word::one()
+        } else {
+            Word::zero()
+        }
+    }
+}
+
+impl ToWord for u64 {
+    fn to_word(&self) -> Word {
+        Word::from(*self)
+    }
+}
+
+impl ToWord for usize {
+    fn to_word(&self) -> Word {
+        u64::try_from(*self)
+            .expect("usize bigger than u64")
+            .to_word()
+    }
+}
+
 impl<F: Field> ToScalar<F> for Address {
     fn to_scalar(&self) -> Option<F> {
         let mut bytes = [0u8; 32];
         bytes[32 - Self::len_bytes()..].copy_from_slice(self.as_bytes());
         bytes.reverse();
         F::from_repr(bytes).into()
+    }
+}
+
+impl<F: Field> ToScalar<F> for bool {
+    fn to_scalar(&self) -> Option<F> {
+        self.to_word().to_scalar()
+    }
+}
+
+impl<F: Field> ToScalar<F> for u64 {
+    fn to_scalar(&self) -> Option<F> {
+        Some(F::from(*self))
+    }
+}
+
+impl<F: Field> ToScalar<F> for usize {
+    fn to_scalar(&self) -> Option<F> {
+        u64::try_from(*self).ok().map(F::from)
     }
 }
 

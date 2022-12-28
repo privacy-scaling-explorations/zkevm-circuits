@@ -1,0 +1,40 @@
+<HTML>
+<HEAD>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton-framework/1.1.1/skeleton.css">
+</HEAD>
+<BODY>
+<H2>Diffs</H2>
+{{{ diffs }}}
+
+<H2>Results by folder</H2>
+{{{ by_folder }}}
+
+<H2>Results by type</H2>
+{{{ by_result }}}
+
+<H2>All results</H2>
+<table>
+<tr>
+    <th>id</th>
+    <th>level</th>
+    <th>details</th>
+    <th>path</th>
+</tr>
+{{#each all_results as |result|}}
+        <tr>
+            <td>
+                {{@key}}
+            </td>
+            <td>
+                {{this.level}}
+            </td>
+            <td>
+                {{this.details}}
+            </td>
+            <td>
+                {{this.path}}
+            </td>
+        </tr>
+{{/each}}
+</table>
+</BODY>

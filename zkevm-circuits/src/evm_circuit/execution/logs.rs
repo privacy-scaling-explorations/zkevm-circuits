@@ -15,7 +15,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-    util::Expr,
+    util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -119,15 +119,14 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         let copy_rwc_inc = cb.query_cell();
-        let dst_addr = (1u64 << 32).expr() * TxLogFieldTag::Data.expr()
-            + (1u64 << 48).expr() * (cb.curr.state.log_id.expr() + 1.expr());
+        let dst_addr = build_tx_log_expression(
+            0.expr(),
+            TxLogFieldTag::Data.expr(),
+            cb.curr.state.log_id.expr() + 1.expr(),
+        );
         let cond = memory_address.has_length() * is_persistent.expr();
         cb.condition(cond.clone(), |cb| {
             cb.copy_table_lookup(
@@ -140,7 +139,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                 dst_addr,
                 memory_address.length(),
                 0.expr(), // for LOGN, rlc_acc is 0
-                cb.curr.state.rw_counter.expr() + cb.rw_counter_offset().expr(),
                 copy_rwc_inc.expr(),
             );
         });
@@ -158,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         // State transition
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset() + copy_rwc_inc.expr()),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(2.expr() + topic_count),
             memory_word_size: To(memory_expansion.next_memory_word_size()),
@@ -206,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
         let opcode = step.opcode.unwrap();
-        let topic_count = (opcode.as_u8() - OpcodeId::LOG0.as_u8()) as usize;
+        let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
         let is_persistent = call.is_persistent as u64;
@@ -345,7 +343,7 @@ mod test {
         assert_eq!(
             run_test_circuits(
                 TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None,
+                None
             ),
             Ok(()),
         );

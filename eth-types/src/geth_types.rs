@@ -6,17 +6,18 @@ use crate::{
     Word, U64,
 };
 use ethers_core::types::TransactionRequest;
-use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
 use num_bigint::BigUint;
 use serde::{Serialize, Serializer};
+use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
 /// Definition of all of the data related to an account.
-#[derive(Debug, Default, Clone, Serialize)]
+#[serde_as]
+#[derive(PartialEq, Eq, Debug, Default, Clone, Serialize)]
 pub struct Account {
     /// Address
     pub address: Address,
@@ -65,7 +66,7 @@ impl<TX> TryFrom<&Block<TX>> for BlockConstants {
 
     fn try_from(block: &Block<TX>) -> Result<Self, Self::Error> {
         Ok(Self {
-            coinbase: block.author,
+            coinbase: block.author.ok_or(Error::IncompleteBlock)?,
             timestamp: block.timestamp,
             number: block.number.ok_or(Error::IncompleteBlock)?,
             difficulty: block.difficulty,
@@ -199,13 +200,16 @@ impl Transaction {
         )?;
         // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
         let req: TransactionRequest = self.into();
-        let msg = req.rlp(chain_id);
+        let msg = req.chain_id(chain_id).rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
             .try_into()
             .expect("hash length isn't 32 bytes");
-        let v = (self.v - 35 - chain_id * 2) as u8;
+        let v = self
+            .v
+            .checked_sub(35 + chain_id * 2)
+            .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
@@ -247,9 +251,7 @@ impl GethData {
             assert_eq!(Word::from(wallet.chain_id()), self.chain_id);
             let geth_tx: Transaction = (&*tx).into();
             let req: TransactionRequest = (&geth_tx).into();
-            let tx_rlp = req.rlp(self.chain_id.as_u64());
-            let sighash = keccak256(tx_rlp.as_ref()).into();
-            let sig = wallet.sign_hash(sighash, true);
+            let sig = wallet.sign_transaction_sync(&req.chain_id(self.chain_id.as_u64()).into());
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;

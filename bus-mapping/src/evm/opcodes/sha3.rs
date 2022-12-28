@@ -1,8 +1,7 @@
 use crate::{
     circuit_input_builder::{
-        CircuitInputStateRef, CopyDataType, CopyEvent, CopyStep, ExecStep, NumberOrHash,
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    operation::RW,
     Error,
 };
 use eth_types::{GethExecStep, Word, U256};
@@ -53,34 +52,12 @@ impl Opcode for Sha3 {
         )?;
 
         // Memory read operations
-        let mut steps = Vec::with_capacity(2 * size.as_usize());
+        let rw_counter_start = state.block_ctx.rwc;
+        let mut steps = Vec::with_capacity(size.as_usize());
         for (i, byte) in memory.iter().enumerate() {
             // Read step
-            steps.push(CopyStep {
-                addr: offset.as_u64() + (i as u64),
-                tag: CopyDataType::Memory,
-                rw: RW::READ,
-                value: *byte,
-                is_code: None,
-                is_pad: false,
-                rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
-            });
             state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
-            // Write step
-            steps.push(CopyStep {
-                addr: i as u64,
-                tag: CopyDataType::RlcAcc,
-                rw: RW::WRITE,
-                value: *byte,
-                is_code: None,
-                is_pad: false,
-                rwc: state.block_ctx.rwc,
-                rwc_inc_left: 0,
-            })
-        }
-        for cs in steps.iter_mut() {
-            cs.rwc_inc_left = state.block_ctx.rwc.0 as u64 - cs.rwc.0 as u64;
+            steps.push((*byte, false));
         }
         state.block.sha3_inputs.push(memory);
 
@@ -94,8 +71,8 @@ impl Opcode for Sha3 {
             dst_type: CopyDataType::RlcAcc,
             dst_id: NumberOrHash::Number(call_id),
             log_id: None,
-            length: size.as_u64(),
-            steps,
+            rw_counter_start,
+            bytes: steps,
         });
 
         Ok(vec![exec_step])
@@ -113,9 +90,9 @@ pub mod sha3_tests {
     use rand::{random, Rng};
 
     use crate::{
-        circuit_input_builder::{CopyDataType, CopyStep, ExecState},
+        circuit_input_builder::{CircuitsParams, ExecState},
         mock::BlockData,
-        operation::{MemoryOp, RWCounter, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW},
     };
 
     /// Generate bytecode for SHA3 opcode after having populated sufficient
@@ -211,7 +188,14 @@ pub mod sha3_tests {
         .unwrap()
         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 2048,
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
@@ -270,42 +254,11 @@ pub mod sha3_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].steps.len(), 2 * size);
+        assert_eq!(copy_events[0].bytes.len(), size);
 
-        let mut rwc = RWCounter(step.rwc.0 + 3); // 2 stack reads and 1 stack write.
-        for (idx, copy_rw_pair) in copy_events[0].steps.chunks(2).enumerate() {
-            assert_eq!(copy_rw_pair.len(), 2);
-            let value = memory_view[idx];
-            // read
-            let read_step = copy_rw_pair[0].clone();
-            assert_eq!(
-                read_step,
-                CopyStep {
-                    addr: (offset + idx) as u64,
-                    tag: CopyDataType::Memory,
-                    rw: RW::READ,
-                    value,
-                    is_code: None,
-                    is_pad: false,
-                    rwc: rwc.inc_pre(),
-                    rwc_inc_left: (size - idx) as u64,
-                }
-            );
-            // write
-            let write_step = copy_rw_pair[1].clone();
-            assert_eq!(
-                write_step,
-                CopyStep {
-                    addr: idx as u64,
-                    tag: CopyDataType::RlcAcc,
-                    rw: RW::WRITE,
-                    value,
-                    is_code: None,
-                    is_pad: false,
-                    rwc,
-                    rwc_inc_left: (size - idx - 1) as u64,
-                }
-            );
+        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+            assert_eq!(Some(value), memory_view.get(idx));
+            assert!(!is_code);
         }
     }
 

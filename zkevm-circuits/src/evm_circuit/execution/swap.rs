@@ -96,7 +96,7 @@ mod test {
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, lhs: Word, rhs: Word) {
-        let n = (opcode.as_u8() - OpcodeId::SWAP1.as_u8() + 1) as usize;
+        let n = opcode.postfix().expect("opcode with postfix");
 
         let mut bytecode = bytecode! {
             PUSH32(lhs)

@@ -88,6 +88,8 @@ impl RWCounter {
 /// Enum used to differenciate between EVM Stack, Memory and Storage operations.
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum Target {
+    /// Start is a padding operation.
+    Start,
     /// Means the target of the operation is the Memory.
     Memory,
     /// Means the target of the operation is the Stack.
@@ -537,6 +539,8 @@ pub enum AccountField {
     Balance,
     /// Account Code Hash
     CodeHash,
+    /// Account non existing
+    NonExisting,
 }
 
 /// Represents a change in the Account field implied by a `BeginTx`,
@@ -881,6 +885,32 @@ pub enum TxReceiptField {
     LogLength,
 }
 
+/// Represent a Start padding operation
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct StartOp {}
+
+impl PartialOrd for StartOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for StartOp {
+    fn cmp(&self, _other: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
+
+impl Op for StartOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::Start(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("StartOp can't be reverted")
+    }
+}
+
 /// Represents TxReceipt read/write operation.
 #[derive(Clone, PartialEq, Eq)]
 pub struct TxReceiptOp {
@@ -951,6 +981,8 @@ pub enum OpEnum {
     TxReceipt(TxReceiptOp),
     /// TxLog
     TxLog(TxLogOp),
+    /// Start
+    Start(StartOp),
 }
 
 /// Operation is a Wrapper over a type that implements Op with a RWCounter.

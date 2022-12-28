@@ -56,7 +56,6 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         // See `bus-mapping/src/evm/opcodes.rs`
         if step.rw_indices.len() != N_POP + N_PUSH {
             log::warn!("DummyGadget: wrong number of rw indices for {:?}", step);
-            return Ok(());
         }
 
         for i in 0..N_POP {

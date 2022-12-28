@@ -53,7 +53,9 @@ mod stackonlyop_tests {
     };
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{MOCK_BASEFEE, MOCK_DIFFICULTY, MOCK_GASLIMIT};
     use pretty_assertions::assert_eq;
+    use std::ops::{BitOr, BitXor};
 
     fn stack_only_opcode_impl<const N_POP: usize, const N_PUSH: usize>(
         opcode: OpcodeId,
@@ -107,6 +109,235 @@ mod stackonlyop_tests {
     }
 
     #[test]
+    fn sdiv_opcode_impl() {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::SDIV,
+            bytecode! {
+                PUSH1(0x80u64)
+                PUSH1(0x60u64)
+                SDIV
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(0x60)),
+                StackOp::new(1, StackAddress(1023), Word::from(0x80)),
+            ],
+            vec![StackOp::new(
+                1,
+                StackAddress(1023),
+                Word::from(0x60) / Word::from(0x80),
+            )],
+        );
+    }
+
+    #[test]
+    fn mod_opcode_impl() {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::MOD,
+            bytecode! {
+                PUSH1(0x80u64)
+                PUSH1(0x60u64)
+                MOD
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(0x60)),
+                StackOp::new(1, StackAddress(1023), Word::from(0x80)),
+            ],
+            vec![StackOp::new(
+                1,
+                StackAddress(1023),
+                Word::from(0x60) % Word::from(0x80),
+            )],
+        );
+    }
+
+    #[test]
+    fn smod_opcode_impl() {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::SMOD,
+            bytecode! {
+                PUSH1(0x80u64)
+                PUSH1(0x60u64)
+                SMOD
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(0x60)),
+                StackOp::new(1, StackAddress(1023), Word::from(0x80)),
+            ],
+            vec![StackOp::new(
+                1,
+                StackAddress(1023),
+                Word::from(0x60) % Word::from(0x80),
+            )],
+        );
+    }
+
+    fn lt_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::LT,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                LT
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+
+    #[test]
+    fn test_lt_opcode() {
+        lt_opcode_impl(0x01, 0x02, 0x01);
+        lt_opcode_impl(0x01, 0x01, 0x00);
+        lt_opcode_impl(0x02, 0x01, 0x00);
+    }
+
+    fn gt_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::GT,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                GT
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+    #[test]
+    fn test_gt_opcode() {
+        gt_opcode_impl(0x01, 0x02, 0x00);
+        gt_opcode_impl(0x01, 0x01, 0x00);
+        gt_opcode_impl(0x02, 0x01, 0x01);
+    }
+
+    fn slt_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::SLT,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                SLT
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+
+    #[test]
+    fn test_slt_opcode() {
+        slt_opcode_impl(0x01, 0x02, 0x01);
+        slt_opcode_impl(0x01, 0x01, 0x00);
+        slt_opcode_impl(0x02, 0x01, 0x00);
+    }
+
+    fn sgt_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::SGT,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                SGT
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+    #[test]
+    fn test_sgt_opcode() {
+        sgt_opcode_impl(0x01, 0x02, 0x00);
+        sgt_opcode_impl(0x01, 0x01, 0x00);
+        sgt_opcode_impl(0x02, 0x01, 0x01);
+    }
+
+    fn and_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::AND,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                AND
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+    #[test]
+    fn test_and_operate() {
+        and_opcode_impl(0x01, 0x01, 0x01);
+        and_opcode_impl(0x01, 0x00, 0x00);
+        and_opcode_impl(0x00, 0x00, 0x00);
+    }
+
+    fn or_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::OR,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                OR
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+    #[test]
+    fn test_or_operate() {
+        or_opcode_impl(0x01, 0x01, 0x01.bitor(0x01) as usize);
+        or_opcode_impl(0x00, 0x01, 0x00.bitor(0x01) as usize);
+        or_opcode_impl(0x00, 0x00, 0x00.bitor(0x00) as usize);
+    }
+
+    fn xor_opcode_impl(a: usize, b: usize, result: usize) {
+        stack_only_opcode_impl::<2, 1>(
+            OpcodeId::XOR,
+            bytecode! {
+                PUSH1(b)
+                PUSH1(a)
+                XOR
+                STOP
+            },
+            vec![
+                StackOp::new(1, StackAddress(1022), Word::from(a)),
+                StackOp::new(1, StackAddress(1023), Word::from(b)),
+            ],
+            vec![StackOp::new(1, StackAddress(1023), Word::from(result))],
+        );
+    }
+    #[test]
+    fn test_xor_operate() {
+        xor_opcode_impl(0x01, 0x01, 0x01.bitxor(0x01) as usize);
+        xor_opcode_impl(0x01, 0x00, 0x00.bitxor(0x01) as usize);
+        xor_opcode_impl(0x00, 0x00, 0x00.bitxor(0x00) as usize);
+    }
+
+    #[test]
     fn not_opcode_impl() {
         stack_only_opcode_impl::<1, 1>(
             OpcodeId::NOT,
@@ -129,44 +360,41 @@ mod stackonlyop_tests {
     }
 
     #[test]
-    fn add_opcode_impl() {
-        stack_only_opcode_impl::<2, 1>(
-            OpcodeId::ADD,
+    fn difficulty_opcode_impl() {
+        stack_only_opcode_impl::<0, 1>(
+            OpcodeId::DIFFICULTY,
             bytecode! {
-                PUSH1(0x80u64)
-                PUSH1(0x60u64)
-                ADD
+                DIFFICULTY
                 STOP
             },
-            vec![
-                StackOp::new(1, StackAddress(1022), Word::from(0x60)),
-                StackOp::new(1, StackAddress(1023), Word::from(0x80)),
-            ],
-            vec![StackOp::new(
-                1,
-                StackAddress(1023),
-                Word::from(0x60) + Word::from(0x80),
-            )],
+            vec![],
+            vec![StackOp::new(1, StackAddress(1023), *MOCK_DIFFICULTY)],
         );
     }
 
     #[test]
-    fn addmod_opcode_impl() {
-        stack_only_opcode_impl::<3, 1>(
-            OpcodeId::ADDMOD,
+    fn gas_limit_opcode_impl() {
+        stack_only_opcode_impl::<0, 1>(
+            OpcodeId::GASLIMIT,
             bytecode! {
-                PUSH3(0xbcdef)
-                PUSH3(0x6789a)
-                PUSH3(0x12345)
-                ADDMOD
+                GASLIMIT
                 STOP
             },
-            vec![
-                StackOp::new(1, StackAddress(1021), Word::from(0x12345)),
-                StackOp::new(1, StackAddress(1022), Word::from(0x6789a)),
-                StackOp::new(1, StackAddress(1023), Word::from(0xbcdef)),
-            ],
-            vec![StackOp::new(1, StackAddress(1023), Word::from(0x79bdf))],
+            vec![],
+            vec![StackOp::new(1, StackAddress(1023), *MOCK_GASLIMIT)],
+        );
+    }
+
+    #[test]
+    fn basefee_opcode_impl() {
+        stack_only_opcode_impl::<0, 1>(
+            OpcodeId::BASEFEE,
+            bytecode! {
+                BASEFEE
+                STOP
+            },
+            vec![],
+            vec![StackOp::new(1, StackAddress(1023), *MOCK_BASEFEE)],
         );
     }
 }

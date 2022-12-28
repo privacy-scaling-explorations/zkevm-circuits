@@ -1,9 +1,5 @@
 use super::{lookups, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
-use crate::{
-    evm_circuit::{param::N_BYTES_WORD, witness::Rw},
-    impl_expr,
-    util::Expr,
-};
+use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
 use eth_types::{Field, ToBigEndian};
 use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
@@ -195,7 +191,7 @@ impl Config {
         offset: usize,
         cur: &Rw,
         prev: &Rw,
-    ) -> Result<bool, Error> {
+    ) -> Result<LimbIndex, Error> {
         region.assign_fixed(
             || "upper_limb_difference",
             self.selector,
@@ -232,10 +228,7 @@ impl Config {
             || Value::known(limb_difference.invert().unwrap()),
         )?;
 
-        Ok(!matches!(
-            index,
-            LimbIndex::RwCounter0 | LimbIndex::RwCounter1
-        ))
+        Ok(index)
     }
 }
 

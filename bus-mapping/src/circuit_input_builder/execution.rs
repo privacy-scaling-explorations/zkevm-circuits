@@ -2,11 +2,11 @@
 
 use crate::{
     circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
-    operation::RWCounter, operation::RW,
+    operation::RWCounter,
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
-    GethExecStep, H256,
+    GethExecStep, Word, H256,
 };
 use gadgets::impl_expr;
 use halo2_proofs::plonk::Expression;
@@ -62,7 +62,7 @@ impl ExecStep {
             memory_size: call_ctx.memory.len(),
             gas_left: step.gas,
             gas_cost: step.gas_cost,
-            gas_refund: Gas(0),
+            gas_refund: step.refund,
             call_index: call_ctx.index,
             rwc,
             reversible_write_counter,
@@ -110,6 +110,8 @@ pub enum ExecState {
     BeginTx,
     /// Virtual step End Tx
     EndTx,
+    /// Virtual step End Block
+    EndBlock,
 }
 
 impl ExecState {
@@ -185,24 +187,11 @@ impl_expr!(CopyDataType);
 /// source/destination row in the copy table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CopyStep {
-    /// Address (source/destination) for the copy step.
-    pub addr: u64,
-    /// Represents the source/destination's type.
-    pub tag: CopyDataType,
-    /// Whether this step is a read or write step.
-    pub rw: RW,
     /// Byte value copied in this step.
     pub value: u8,
     /// Optional field which is enabled only for the source being `bytecode`,
     /// and represents whether or not the byte is an opcode.
     pub is_code: Option<bool>,
-    /// Represents whether or not the copy step is a padding row.
-    pub is_pad: bool,
-    /// Represents the current RW counter at this copy step.
-    pub rwc: RWCounter,
-    /// A decrementing value representing the RW counters left in the copy event
-    /// including the current step's RW counter.
-    pub rwc_inc_left: u64,
 }
 
 /// Defines an enum type that can hold either a number or a hash value.
@@ -236,8 +225,76 @@ pub struct CopyEvent {
     /// An optional field to hold the log ID in case of the destination being
     /// TxLog.
     pub log_id: Option<u64>,
-    /// Represents the number of bytes copied as a part of this copy event.
-    pub length: u64,
-    /// Represents the list of copy steps in this copy event.
-    pub steps: Vec<CopyStep>,
+    /// Value of rw counter at start of this copy event
+    pub rw_counter_start: RWCounter,
+    /// Represents the list of (bytes, is_code) copied during this copy event
+    pub bytes: Vec<(u8, bool)>,
+}
+
+impl CopyEvent {
+    /// rw counter at step index
+    pub fn rw_counter(&self, step_index: usize) -> u64 {
+        u64::try_from(self.rw_counter_start.0).unwrap() + self.rw_counter_increase(step_index)
+    }
+
+    /// rw counter increase left at step index
+    pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
+        self.rw_counter(self.bytes.len() * 2) - self.rw_counter(step_index)
+    }
+
+    // increase in rw counter from the start of the copy event to step index
+    fn rw_counter_increase(&self, step_index: usize) -> u64 {
+        let source_rw_increase = match self.src_type {
+            CopyDataType::Bytecode | CopyDataType::TxCalldata => 0,
+            CopyDataType::Memory => std::cmp::min(
+                u64::try_from(step_index + 1).unwrap() / 2,
+                self.src_addr_end
+                    .checked_sub(self.src_addr)
+                    .unwrap_or_default(),
+            ),
+            CopyDataType::RlcAcc | CopyDataType::TxLog => unreachable!(),
+        };
+        let destination_rw_increase = match self.dst_type {
+            CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
+            CopyDataType::TxLog | CopyDataType::Memory => u64::try_from(step_index).unwrap() / 2,
+            CopyDataType::TxCalldata => unreachable!(),
+        };
+        source_rw_increase + destination_rw_increase
+    }
+}
+
+/// Intermediary multiplication step, representing `a * b == d (mod 2^256)`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExpStep {
+    /// First multiplicand.
+    pub a: Word,
+    /// Second multiplicand.
+    pub b: Word,
+    /// Multiplication result.
+    pub d: Word,
+}
+
+impl From<(Word, Word, Word)> for ExpStep {
+    fn from(values: (Word, Word, Word)) -> Self {
+        Self {
+            a: values.0,
+            b: values.1,
+            d: values.2,
+        }
+    }
+}
+
+/// Event representating an exponentiation `a ^ b == d (mod 2^256)`.
+#[derive(Clone, Debug)]
+pub struct ExpEvent {
+    /// Identifier for the exponentiation trace.
+    pub identifier: usize,
+    /// Base `a` for the exponentiation.
+    pub base: Word,
+    /// Exponent `b` for the exponentiation.
+    pub exponent: Word,
+    /// Exponentiation result.
+    pub exponentiation: Word,
+    /// Intermediate multiplication results.
+    pub steps: Vec<ExpStep>,
 }

@@ -71,8 +71,7 @@ mod tests {
 
         block.sign(&wallets);
 
-        let (_, circuit, instance) =
-            SuperCircuit::<_, 1, 32>::build(block, &mut ChaChaRng::seed_from_u64(2)).unwrap();
+        let (_, circuit, instance, _) = SuperCircuit::<_, 1, 32, 512>::build(block).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -89,7 +88,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("SuperCircuit Proof generation with {} rows", degree);
+        let proof_message = format!("SuperCircuit Proof generation with degree = {}", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -97,7 +96,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, 1, 32>,
+            SuperCircuit<Fr, 1, 32, 512>,
         >(
             &general_params,
             &pk,

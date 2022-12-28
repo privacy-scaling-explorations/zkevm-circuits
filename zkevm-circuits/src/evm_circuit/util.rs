@@ -1,9 +1,9 @@
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS},
+        param::{LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS},
         table::Table,
     },
-    util::Expr,
+    util::{query_expression, Expr},
 };
 use eth_types::U256;
 use halo2_proofs::{
@@ -136,6 +136,21 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     pub fn get_instance(&self, _row_index: usize, column_index: usize, _rotation: Rotation) -> F {
         self.power_of_randomness[column_index]
     }
+
+    /// Constrains a cell to have a constant value.
+    ///
+    /// Returns an error if the cell is in a column where equality has not been
+    /// enabled.
+    pub fn constrain_constant<VR>(
+        &mut self,
+        cell: AssignedCell<F, F>,
+        constant: VR,
+    ) -> Result<(), Error>
+    where
+        VR: Into<Assigned<F>>,
+    {
+        self.region.constrain_constant(cell.cell(), constant.into())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +184,7 @@ impl<F: FieldExt> StoredExpression<F> {
                     instance_query.rotation(),
                 )
             },
+            &|_| unimplemented!(),
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
@@ -181,6 +197,7 @@ impl<F: FieldExt> StoredExpression<F> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum CellType {
     Storage,
+    StoragePermutation,
     Lookup(Table),
 }
 
@@ -216,8 +233,8 @@ impl<F: FieldExt> CellManager<F> {
         // Setup the columns and query the cells
         let width = advices.len();
         let mut cells = Vec::with_capacity(height * width);
-        let mut columns = Vec::with_capacity(height);
-        meta.create_gate("Query rows for step", |meta| {
+        let mut columns = Vec::with_capacity(width);
+        query_expression(meta, |meta| {
             for c in 0..width {
                 for r in 0..height {
                     cells.push(Cell::new(meta, advices[c], height_offset + r));
@@ -229,7 +246,6 @@ impl<F: FieldExt> CellManager<F> {
                     expr: cells[c * height].expr(),
                 });
             }
-            vec![0.expr()]
         });
 
         // Mark columns used for lookups
@@ -239,6 +255,12 @@ impl<F: FieldExt> CellManager<F> {
                 columns[column_idx].cell_type = CellType::Lookup(table);
                 column_idx += 1;
             }
+        }
+        // Mark columns used for copy constraints
+        for _ in 0..N_COPY_COLUMNS {
+            meta.enable_equality(advices[column_idx]);
+            columns[column_idx].cell_type = CellType::StoragePermutation;
+            column_idx += 1;
         }
 
         Self {
@@ -271,6 +293,16 @@ impl<F: FieldExt> CellManager<F> {
             if column.cell_type == cell_type && column.height < best_height {
                 best_index = Some(column.index);
                 best_height = column.height;
+            }
+        }
+        // Replace a CellType::Storage by CellType::StoragePermutation if the later has
+        // better height
+        if cell_type == CellType::Storage {
+            for column in self.columns.iter() {
+                if column.cell_type == CellType::StoragePermutation && column.height < best_height {
+                    best_index = Some(column.index);
+                    best_height = column.height;
+                }
             }
         }
         match best_index {
@@ -317,7 +349,6 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
-    // TODO: replace `bytes` type by a reference
     pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
         rlc::value(&bytes, randomness)
     }

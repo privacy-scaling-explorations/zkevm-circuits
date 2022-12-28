@@ -6,7 +6,7 @@ use super::{
 use crate::util::Expr;
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
-    table::{AccountFieldTag, RwTableTag},
+    table::{AccountFieldTag, ProofType, RwTableTag},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -31,9 +31,21 @@ pub struct RwTableQueries<F: Field> {
 }
 
 #[derive(Clone)]
+pub struct MptUpdateTableQueries<F: Field> {
+    pub address: Expression<F>,
+    pub storage_key: Expression<F>,
+    pub proof_type: Expression<F>,
+    pub new_root: Expression<F>,
+    pub old_root: Expression<F>,
+    pub new_value: Expression<F>,
+    pub old_value: Expression<F>,
+}
+
+#[derive(Clone)]
 pub struct Queries<F: Field> {
     pub selector: Expression<F>,
     pub rw_table: RwTableQueries<F>,
+    pub mpt_update_table: MptUpdateTableQueries<F>,
     pub lexicographic_ordering_selector: Expression<F>,
     pub rw_counter: MpiQueries<F, N_LIMBS_RW_COUNTER>,
     pub tag_bits: [Expression<F>; 4],
@@ -43,14 +55,18 @@ pub struct Queries<F: Field> {
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub initial_value: Expression<F>,
     pub initial_value_prev: Expression<F>,
+    pub is_non_exist: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    pub first_access: Expression<F>,
+    pub first_different_limb: [Expression<F>; 4],
     pub not_first_access: Expression<F>,
+    pub last_access: Expression<F>,
+    pub state_root: Expression<F>,
+    pub state_root_prev: Expression<F>,
 }
 
 type Constraint<F> = (&'static str, Expression<F>);
-type Lookup<F> = (&'static str, (Expression<F>, Expression<F>));
+type Lookup<F> = (&'static str, Vec<(Expression<F>, Expression<F>)>);
 
 pub struct ConstraintBuilder<F: Field> {
     pub constraints: Vec<Constraint<F>>,
@@ -121,6 +137,17 @@ impl<F: Field> ConstraintBuilder<F> {
         // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
 
+        // 1 if first_different_limb is in the rw counter, 0 otherwise (i.e. any of the
+        // 4 most significant bits are 0)
+        self.require_equal(
+            "not_first_access when first 16 limbs are same",
+            q.not_first_access.clone(),
+            q.first_different_limb[0].clone()
+                * q.first_different_limb[1].clone()
+                * q.first_different_limb[2].clone()
+                * q.first_different_limb[3].clone(),
+        );
+
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
@@ -154,6 +181,13 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         self.require_zero("Start value is 0", q.value());
         self.require_zero("Start initial_value is 0", q.initial_value());
+        self.condition(q.lexicographic_ordering_selector.clone(), |cb| {
+            cb.require_equal(
+                "state_root is unchanged for Start",
+                q.state_root(),
+                q.state_root_prev(),
+            )
+        });
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
@@ -169,9 +203,15 @@ impl<F: Field> ConstraintBuilder<F> {
         }
         self.add_lookup(
             "memory value is a byte",
-            (q.rw_table.value.clone(), q.lookups.u8.clone()),
+            vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
         );
         self.require_zero("initial Memory value is 0", q.initial_value());
+
+        self.require_equal(
+            "state_root is unchanged for Memory",
+            q.state_root(),
+            q.state_root_prev(),
+        );
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
@@ -183,7 +223,7 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         self.add_lookup(
             "stack address fits into 10 bits",
-            (q.rw_table.address.clone(), q.lookups.u10.clone()),
+            vec![(q.rw_table.address.clone(), q.lookups.u10.clone())],
         );
         self.condition(q.is_tag_and_id_unchanged.clone(), |cb| {
             cb.require_boolean(
@@ -193,14 +233,44 @@ impl<F: Field> ConstraintBuilder<F> {
         });
 
         self.require_zero("initial Stack value is 0", q.initial_value.clone());
+
+        self.require_equal(
+            "state_root is unchanged for Stack",
+            q.state_root(),
+            q.state_root_prev(),
+        );
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
 
-        // TODO: add mpt lookup for committed value and final value in an access
-        // group.
+        let is_non_exist = q.is_non_exist();
+
+        self.condition(q.last_access(), |cb| {
+            cb.add_lookup(
+                "mpt_update exists in mpt circuit for AccountStorage last access",
+                vec![
+                    (
+                        q.rw_table.address.clone(),
+                        q.mpt_update_table.address.clone(),
+                    ),
+                    (
+                        q.rw_table.storage_key.clone(),
+                        q.mpt_update_table.storage_key.clone(),
+                    ),
+                    (
+                        is_non_exist.expr() * ProofType::StorageDoesNotExist.expr()
+                            + (1.expr() - is_non_exist) * ProofType::StorageChanged.expr(),
+                        q.mpt_update_table.proof_type.clone(),
+                    ),
+                    (q.state_root(), q.mpt_update_table.new_root.clone()),
+                    (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
+                    (q.value(), q.mpt_update_table.new_value.clone()),
+                    (q.initial_value(), q.mpt_update_table.old_value.clone()),
+                ],
+            );
+        });
     }
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
@@ -212,6 +282,12 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_zero(
             "initial TxAccessListAccount value is false",
             q.initial_value(),
+        );
+
+        self.require_equal(
+            "state_root is unchanged for TxAccessListAccount",
+            q.state_root(),
+            q.state_root_prev(),
         );
     }
 
@@ -225,6 +301,12 @@ impl<F: Field> ConstraintBuilder<F> {
             "initial TxAccessListAccountStorage value is false",
             q.initial_value(),
         );
+
+        self.require_equal(
+            "state_root is unchanged for TxAccessListAccountStorage",
+            q.state_root(),
+            q.state_root_prev(),
+        );
     }
 
     fn build_tx_refund_constraints(&mut self, q: &Queries<F>) {
@@ -235,6 +317,12 @@ impl<F: Field> ConstraintBuilder<F> {
             q.rw_table.storage_key.clone(),
         );
         self.require_zero("initial TxRefund value is 0", q.initial_value());
+
+        self.require_equal(
+            "state_root is unchanged for TxRefund",
+            q.state_root(),
+            q.state_root_prev(),
+        );
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
@@ -249,8 +337,26 @@ impl<F: Field> ConstraintBuilder<F> {
             set::<F, AccountFieldTag>(),
         );
 
-        // TODO: add mpt lookup for committed value and final value in an access
-        // group.
+        self.condition(q.last_access(), |cb| {
+            cb.add_lookup(
+                "mpt_update exists in mpt circuit for Account last access",
+                vec![
+                    (
+                        q.rw_table.address.clone(),
+                        q.mpt_update_table.address.clone(),
+                    ),
+                    (
+                        q.rw_table.storage_key.clone(),
+                        q.mpt_update_table.storage_key.clone(),
+                    ),
+                    (q.field_tag(), q.mpt_update_table.proof_type.clone()),
+                    (q.state_root(), q.mpt_update_table.new_root.clone()),
+                    (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
+                    (q.value(), q.mpt_update_table.new_value.clone()),
+                    (q.initial_value(), q.mpt_update_table.old_value.clone()),
+                ],
+            );
+        });
     }
 
     fn build_account_destructed_constraints(&mut self, q: &Queries<F>) {
@@ -271,9 +377,14 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         self.add_lookup(
             "field_tag in CallContextFieldTag range",
-            (q.field_tag(), q.lookups.call_context_field_tag.clone()),
+            vec![(q.field_tag(), q.lookups.call_context_field_tag.clone())],
         );
-        // TODO: explain why call context doesn't need an initial value.
+        self.require_zero("initial CallContext value is 0", q.initial_value());
+        self.require_equal(
+            "state_root is unchanged for CallContext",
+            q.state_root(),
+            q.state_root_prev(),
+        );
     }
 
     fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
@@ -284,75 +395,22 @@ impl<F: Field> ConstraintBuilder<F> {
         );
         self.require_zero("initial TxLog value is 0", q.initial_value());
 
-        // Comment out the following field_tag-related constraints as it is
-        // duplicated between state circuit and evm circuit. For more information, please refer to https://github.com/privacy-scaling-explorations/zkevm-specs/issues/221
-        // cb.require_zero(
-        //     "reset log_id to one when tx_id increases",
-        //     q.tx_log_id() - 1.expr(),
-        // );
+        self.require_equal(
+            "state_root is unchanged for TxLog",
+            q.state_root(),
+            q.state_root_prev(),
+        );
+    }
 
-        // constrain first field_tag is Address when tx id increases
-        // cb.require_equal(
-        //     "first field_tag is Address when tx changes",
-        //     q.field_tag_matches(TxLogFieldTag::Address),
-        //     1.expr(),
-        // );
+    fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
+        // TODO: implement TxReceipt constraints
+        self.require_equal("TxReceipt rows not implemented", 1.expr(), 0.expr());
 
-        // increase log_id when tag changes to Address within same tx
-        // self.condition(
-        //     q.is_id_unchanged.clone()
-        //         * q.is_tag_unchanged.clone()
-        //         * q.field_tag_matches(TxLogFieldTag::Address),
-        //     |cb| {
-        //         cb.require_equal(
-        //             "log_id = pre_log_id + 1",
-        //             q.tx_log_id(),
-        //             q.tx_log_id_prev() + 1.expr(),
-        //         )
-        //     },
-        // );
-
-        // within same tx, log_id will not change if field_tag != Address
-        // self.condition(
-        //     q.is_id_unchanged.clone()
-        //         * q.is_tag_unchanged.clone()
-        //         * (1.expr() - q.field_tag_matches(TxLogFieldTag::Address)),
-        //     |cb| {
-        //         cb.require_equal(
-        //             "log_id will not change if field_tag != Address within
-        // tx",             q.tx_log_id(),
-        //             q.tx_log_id_prev(),
-        //         )
-        //     },
-        // );
-
-        // constrain index is increasing by 1 when field_tag stay same
-        // self.condition(
-        //     q.is_tag_unchanged.clone() * q.is_field_tag_unchanged.clone(),
-        //     |cb| {
-        //         cb.require_equal(
-        //             "index = pre_index + 1",
-        //             q.tx_log_index(),
-        //             q.tx_log_index_prev() + 1.expr(),
-        //         )
-        //     },
-        // );
-
-        // self.condition(q.field_tag_matches(TxLogFieldTag::Address), |cb| {
-        //     cb.require_zero("index is zero for address ", q.tx_log_index())
-        // });
-
-        // if tag Topic appear, topic_index in range [0,4)
-        // self.condition(q.field_tag_matches(TxLogFieldTag::Topic), |cb| {
-        //     let topic_index = q.tx_log_index();
-        //     cb.require_zero(
-        //         "topic_index in range [0,4) ",
-        //         topic_index.clone()
-        //             * (1.expr() - topic_index.clone())
-        //             * (2.expr() - topic_index.clone())
-        //             * (3.expr() - topic_index),
-        //     )
-        // });
+        self.require_equal(
+            "state_root is unchanged for TxReceipt",
+            q.state_root(),
+            q.state_root_prev(),
+        );
     }
 
     fn require_zero(&mut self, name: &'static str, e: Expression<F>) {
@@ -376,9 +434,11 @@ impl<F: Field> ConstraintBuilder<F> {
         );
     }
 
-    fn add_lookup(&mut self, name: &'static str, lookup: (Expression<F>, Expression<F>)) {
+    fn add_lookup(&mut self, name: &'static str, lookup: Vec<(Expression<F>, Expression<F>)>) {
         let mut lookup = lookup;
-        lookup.0 = lookup.0 * self.condition.clone();
+        for (expression, _) in lookup.iter_mut() {
+            *expression = expression.clone() * self.condition.clone();
+        }
         self.lookups.push((name, lookup));
     }
 
@@ -435,12 +495,16 @@ impl<F: Field> Queries<F> {
         self.initial_value_prev.clone()
     }
 
+    fn is_non_exist(&self) -> Expression<F> {
+        self.is_non_exist.clone()
+    }
+
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
     fn first_access(&self) -> Expression<F> {
-        self.first_access.clone()
+        not::expr(self.not_first_access.clone())
     }
 
     fn address_change(&self) -> Expression<F> {
@@ -465,6 +529,18 @@ impl<F: Field> Queries<F> {
 
     fn tx_log_id_prev(&self) -> Expression<F> {
         from_digits(&self.address.limbs_prev[3..5], (1u64 << 16).expr())
+    }
+
+    fn last_access(&self) -> Expression<F> {
+        self.last_access.clone()
+    }
+
+    fn state_root(&self) -> Expression<F> {
+        self.state_root.clone()
+    }
+
+    fn state_root_prev(&self) -> Expression<F> {
+        self.state_root_prev.clone()
     }
 }
 

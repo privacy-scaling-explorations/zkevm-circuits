@@ -3,7 +3,7 @@ set -e
 
 ARG_DEFAULT_SUDO=
 ARG_DEFAULT_STEPS="setup gendata tests cleanup"
-ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits"
+ARG_DEFAULT_TESTS="rpc circuit_input_builder circuits_mock"
 
 usage() {
     cat >&2 << EOF
@@ -90,7 +90,7 @@ fi
 
 if [ -n "$STEP_GENDATA" ]; then
     echo "+ Gen blockchain data..."
-    git submodule update --init --recursive contracts/vendor
+    git submodule update --init --recursive --checkout contracts/vendor
     rm gendata_output.json > /dev/null 2>&1 || true
     cargo run --bin gen_blockchain_data
 fi

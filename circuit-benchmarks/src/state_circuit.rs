@@ -19,6 +19,7 @@ mod tests {
     use std::env::var;
     use zkevm_circuits::evm_circuit::witness::RwMap;
     use zkevm_circuits::state_circuit::StateCircuit;
+    use zkevm_circuits::util::SubCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -28,7 +29,7 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = StateCircuit::<Fr>::new(Fr::default(), RwMap::default(), 1 << 16);
+        let empty_circuit = StateCircuit::<Fr>::new(RwMap::default(), 1 << 16);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -53,7 +54,7 @@ mod tests {
         let instances: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
 
         // Bench proof generation time
-        let proof_message = format!("State Circuit Proof generation with {} rows", degree);
+        let proof_message = format!("State Circuit Proof generation with degree = {}", degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
