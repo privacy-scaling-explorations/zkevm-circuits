@@ -164,47 +164,47 @@ mod test {
     use crate::evm_circuit::test::rand_bytes;
     use crate::test_util::run_test_circuits;
     use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, Bytecode, Bytes, ToWord, Word};
-    use lazy_static::lazy_static;
-    use mock::TestContext;
-
-    lazy_static! {
-        static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
-        static ref TEST_CODE: Bytes = Bytes::from([34, 54, 56]);
-        static ref TEST_ACCOUNT: Option<Account> = Some(Account {
-            address: *TEST_ADDRESS,
-            code: TEST_CODE.clone(),
-            ..Default::default()
-        });
-    }
+    use eth_types::{bytecode, Bytecode, ToWord, Word};
+    use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
 
     #[test]
     fn test_extcodesize_gadget() {
+        let account = Some(Account {
+            address: MOCK_ACCOUNTS[4],
+            code: MOCK_CODES[4].clone(),
+            ..Default::default()
+        });
+
         // Test for non existing account.
-        test_ok(None, false);
+        test_ok(&None, false);
         // Test for empty account.
-        test_ok(Some(Account::default()), false);
+        test_ok(&Some(Account::default()), false);
         // Test for cold account.
-        test_ok(TEST_ACCOUNT.clone(), false);
+        test_ok(&account, false);
         // Test for warm account.
-        test_ok(TEST_ACCOUNT.clone(), true);
+        test_ok(&account, true);
     }
 
-    fn test_ok(account: Option<Account>, is_warm: bool) {
-        let account_exists = !account.as_ref().map_or(true, |acc| acc.is_empty());
+    fn test_ok(account: &Option<Account>, is_warm: bool) {
+        let (exists, address, code) = account
+            .as_ref()
+            .map_or((false, MOCK_ACCOUNTS[4], MOCK_CODES[4].clone()), |acc| {
+                (!acc.is_empty(), acc.address, acc.code.clone())
+            });
+
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
         let mut bytecode_b = Bytecode::default();
         if is_warm {
             bytecode_b.append(&bytecode! {
-                PUSH20(TEST_ADDRESS.to_word())
+                PUSH20(address.to_word())
                 EXTCODESIZE
                 POP
             });
         }
         bytecode_b.append(&bytecode! {
-            PUSH20(TEST_ADDRESS.to_word())
+            PUSH20(address.to_word())
             EXTCODESIZE
             POP
         });
@@ -234,16 +234,12 @@ mod test {
                 accs[0].address(addr_b).code(bytecode_b);
                 accs[1].address(addr_a).code(bytecode_a);
                 // Set code if account exists.
-                if account_exists {
-                    accs[2].address(*TEST_ADDRESS).code(TEST_CODE.clone());
+                if exists {
+                    accs[2].address(address).code(code);
                 } else {
-                    accs[2]
-                        .address(mock::MOCK_ACCOUNTS[2])
-                        .balance(Word::from(1_u64 << 20));
+                    accs[2].address(mock::MOCK_ACCOUNTS[2]).balance(*MOCK_1_ETH);
                 }
-                accs[3]
-                    .address(mock::MOCK_ACCOUNTS[3])
-                    .balance(Word::from(1_u64 << 20));
+                accs[3].address(mock::MOCK_ACCOUNTS[3]).balance(*MOCK_1_ETH);
             },
             |mut txs, accs| {
                 txs[0].to(accs[1].address).from(accs[3].address);
