@@ -26,7 +26,7 @@ impl Opcode for Extcodesize {
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent from call
         // context.
         for (field, value) in [
-            (CallContextField::TxId, U256::from(state.tx_ctx.id())),
+            (CallContextField::TxId, state.tx_ctx.id().to_word()),
             (
                 CallContextField::RwCounterEndOfReversion,
                 U256::from(state.call()?.rw_counter_end_of_reversion as u64),
