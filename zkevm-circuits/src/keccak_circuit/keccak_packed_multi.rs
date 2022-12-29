@@ -21,7 +21,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
-use log::{debug, info};
+use log::{debug, info, trace};
 use std::{env::var, marker::PhantomData, vec};
 
 const MAX_DEGREE: usize = 9;
@@ -1584,21 +1584,21 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             cb.gate(1.expr())
         });
 
-        info!("Degree: {}", meta.degree());
-        info!("Minimum rows: {}", meta.minimum_rows());
-        info!("Total Lookups: {}", total_lookup_counter);
-        info!("Total Columns: {}", cell_manager.get_width());
-        info!("num unused cells: {}", cell_manager.get_num_unused_cells());
-        info!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
-        info!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
-        info!(
+        debug!("Degree: {}", meta.degree());
+        debug!("Minimum rows: {}", meta.minimum_rows());
+        debug!("Total Lookups: {}", total_lookup_counter);
+        debug!("Total Columns: {}", cell_manager.get_width());
+        debug!("num unused cells: {}", cell_manager.get_num_unused_cells());
+        debug!("part_size absorb: {}", get_num_bits_per_absorb_lookup());
+        debug!("part_size theta: {}", get_num_bits_per_theta_c_lookup());
+        debug!(
             "part_size theta c: {}",
             get_num_bits_per_lookup(THETA_C_LOOKUP_RANGE)
         );
-        info!("part_size theta t: {}", get_num_bits_per_lookup(4));
-        info!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
-        info!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
-        info!(
+        debug!("part_size theta t: {}", get_num_bits_per_lookup(4));
+        debug!("part_size rho/pi: {}", get_num_bits_per_rho_pi_lookup());
+        debug!("part_size chi base: {}", get_num_bits_per_base_chi_lookup());
+        debug!(
             "uniform part sizes: {:?}",
             target_part_sizes(get_num_bits_per_theta_c_lookup())
         );
@@ -2074,8 +2074,8 @@ fn keccak<F: Field>(rows: &mut Vec<KeccakRow<F>>, bytes: &[u8], challenges: Chal
                 .to_vec()
         })
         .collect::<Vec<_>>();
-    debug!("hash: {:x?}", &(hash_bytes[0..4].concat()));
-    debug!("data rlc: {:x?}", data_rlc);
+    trace!("hash: {:x?}", &(hash_bytes[0..4].concat()));
+    trace!("data rlc: {:x?}", data_rlc);
 }
 
 /// ...

@@ -175,14 +175,17 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let log_circuit_info = |meta: &mut ConstraintSystem<F>, tag: &'static str| {
-            log::debug!("circuit info after {}: num_fixed_columns {}, num_advice_columns {}, num_instance_columns {}, num_selectors {}, num_permutation_columns {}, degree {}",
+            log::debug!("circuit info after {}: num_fixed_columns {}, num_advice_columns {}, num_instance_columns {}, num_selectors {}, num_permutation_columns {}, degree {}, num_challenges {}, max_phase {}",
             tag,
             meta.num_fixed_columns,
             meta.num_advice_columns,
             meta.num_instance_columns,
             meta.num_selectors,
             meta.permutation.columns.len(),
-            meta.degree());
+            meta.degree(),
+            meta.num_challenges(),
+            meta.max_phase()
+        );
         };
 
         let tx_table = TxTable::construct(meta);

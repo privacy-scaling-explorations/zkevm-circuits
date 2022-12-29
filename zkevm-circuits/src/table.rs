@@ -15,12 +15,19 @@ use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::util::{split_u256, split_u256_limb64};
+use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
+use halo2_proofs::{circuit::Layouter, poly::Rotation};
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;

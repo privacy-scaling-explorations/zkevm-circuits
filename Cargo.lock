@@ -1932,7 +1932,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-1220#849b7b659dc44e7f20d23f9f90d546d00257d927"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-1220#2739742f0eb5d1f61934f8d0be1d7b055e57261e"
 dependencies = [
  "blake2b_simd",
  "cfg-if 0.1.10",
@@ -3090,7 +3090,7 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/appliedzkp/poseidon.git#5d29df01a95e3df6334080d28e983407f56b5da3"
+source = "git+https://github.com/appliedzkp/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
 dependencies = [
  "group",
  "halo2curves 0.2.1 (git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0)",
