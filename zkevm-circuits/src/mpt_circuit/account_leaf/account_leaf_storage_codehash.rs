@@ -102,135 +102,117 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         let denoter = ctx.denoter;
 
         // Note: We do not need to check `acc_mult` because it is not used after this
-        // row.
-        // Note: differently as in storage leaf value (see empty_trie there), the
-        // placeholder leaf never appears in the first level here, because there
-        // is always at least a genesis account.
+        // row. Note: differently as in storage leaf value (see empty_trie
+        // there), the placeholder leaf never appears in the first level here,
+        // because there is always at least a genesis account.
         constraints! {[meta, cb], {
-            let q_not_first = f!(position_cols.q_not_first);
-            let q_enable = q_not_first * a!(is_account_leaf_storage_codehash);
+            ifx!{a!(is_account_leaf_storage_codehash) => {
+                let q_not_first = f!(position_cols.q_not_first);
+                // We have storage length in `s_rlp2` (which is 160 presenting `128 + 32`).
+                // We have storage hash in `s_main.bytes`.
+                // We have codehash length in `c_rlp2` (which is 160 presenting `128 + 32`).
+                // We have codehash in `c_main.bytes`.
+                let rot_into_non_existing = -(if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND} - ACCOUNT_NON_EXISTING_IND);
+                // When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
+                // and the constraints in this gate are not triggered. In that case it is checked
+                // that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
+                // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
+                // has a nil.
+                // Note: `(is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())`
+                // cannot be 0 when `is_non_existing_account_proof = 0` (see `account_leaf_nonce_balance.rs`).
+                let is_wrong_leaf = a!(s_main.rlp1, rot_into_non_existing);
+                let is_non_existing_account_proof = a!(proof_type.is_non_existing_account_proof);
+                let rot = -2;
+                let acc_prev = a!(accs.acc_s.rlc, rot);
+                let acc_mult_prev = a!(accs.acc_s.mult, rot);
+                let s_rlp2 = a!(s_main.rlp2);
+                let c_rlp2 = a!(c_main.rlp2);
+                ifx!{q_not_first => {
+                    ifx!{is_non_existing_account_proof.expr() - is_wrong_leaf.expr() - 1.expr() => {
+                        // `s_main.rlp2` stores the RLP length of the hash of storage root. The hash output length is 32
+                        // and thus `s_main.rlp2` needs to be `160 = 128 + 32`.
+                        require!(s_rlp2 => 160);
+                        // `c_main.rlp2` stores the RLP length of the codehash. The hash output length is 32
+                        // and thus `c_main.rlp2` needs to be `160 = 128 + 32`.
+                        require!(c_rlp2 => 160);
+                    }}
+                    // `s_main.bytes` contain storage root hash, but to simplify lookups we need to have
+                    // the RLC of storage root hash stored in some column too. The RLC is stored in
+                    // `s_mod_node_hash_rlc`. We need to ensure that this value corresponds to the RLC
+                    // of `s_main.bytes`.
+                    let storage_root_rlc = rlc::expr(
+                        &s_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                        &r,
+                    );
+                    let storage_root_stored = a!(accs.s_mod_node_rlc);
+                    require!(storage_root_rlc => storage_root_stored);
+                    // `c_main.bytes` contain codehash, but to simplify lookups we need to have
+                    // the RLC of the codehash stored in some column too. The RLC is stored in
+                    // `c_mod_node_hash_rlc`. We need to ensure that this value corresponds to the RLC
+                    // of `c_main.bytes`.
+                    let codehash_rlc = rlc::expr(
+                        &c_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                        &r,
+                    );
+                    let codehash_stored = a!(accs.c_mod_node_rlc);
+                    require!(codehash_rlc => codehash_stored);
 
-            // We have storage length in `s_rlp2` (which is 160 presenting `128 + 32`).
-            // We have storage hash in `s_main.bytes`.
-            // We have codehash length in `c_rlp2` (which is 160 presenting `128 + 32`).
-            // We have codehash in `c_main.bytes`.
+                    if !is_s {
+                        let codehash_s_from_prev = a!(accs.c_mod_node_rlc, -1);
+                        let storage_root_s_from_prev = a!(accs.s_mod_node_rlc, -1);
+                        let codehash_s_from_cur = a!(value_prev);
+                        let codehash_c_in_value = a!(value);
+                        // To enable lookup for codehash modification we need to have S codehash
+                        // and C codehash in the same row.
+                        // For this reason, S codehash RLC is copied to `value_prev` column in C row.
+                        require!(codehash_s_from_prev => codehash_s_from_cur);
+                        // To enable lookup for codehash modification we need to have S codehash
+                        // and C codehash in the same row (`value_prev`, `value` columns).
+                        // C codehash RLC is copied to `value` column in C row.
+                        require!(codehash_stored => codehash_c_in_value);
+                        // Note: we do not check whether codehash is copied properly as only one of the
+                        // `S` or `C` proofs are used for a lookup.
+                        // Check there is only one modification at once:
+                        ifx!{not::expr(a!(proof_type.is_account_delete_mod)) => {
+                            let is_storage_mod = a!(proof_type.is_storage_mod);
+                            let is_nonce_mod = a!(proof_type.is_nonce_mod);
+                            let is_balance_mod = a!(proof_type.is_balance_mod);
+                            let is_codehash_mod = a!(proof_type.is_codehash_mod);
+                            // If the modification is nonce or balance modification, the storage root needs to
+                            // stay the same.
+                            // Note: For `is_non_existing_account_proof` we do not need this constraint,
+                            // `S` and `C` proofs are the same and we need to do a lookup into only one
+                            // (the other one could really be whatever).
+                            ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_codehash_mod => {
+                                require!(storage_root_s_from_prev => storage_root_stored);
+                            }}
+                            // If the modification is nonce or balance or storage modification (that means
+                            // always except for `is_account_delete_mod` and `is_non_existing_account_proof`),
+                            // the storage root needs to stay the same.
+                            // Note: For `is_non_existing_account_proof` we do not need this constraint,
+                            // `S` and `C` proofs are the same and we need to do a lookup into only one
+                            // (the other one could really be whatever).
+                            ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_storage_mod => {
+                                require!(codehash_s_from_cur => codehash_stored);
+                            }}
+                        }}
+                    }
 
-            let rot_into_non_existing = -(if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND} - ACCOUNT_NON_EXISTING_IND);
-
-            // When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
-            // and the constraints in this gate are not triggered. In that case it is checked
-            // that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
-            // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
-            // has a nil.
-            // Note: `(is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())`
-            // cannot be 0 when `is_non_existing_account_proof = 0` (see `account_leaf_nonce_balance.rs`).
-
-            let is_wrong_leaf = a!(s_main.rlp1, rot_into_non_existing);
-            let is_non_existing_account_proof = a!(proof_type.is_non_existing_account_proof);
-
-            let rot = -2;
-            let acc_prev = a!(accs.acc_s.rlc, rot);
-            let acc_mult_prev = a!(accs.acc_s.mult, rot);
-            let s_rlp2 = a!(s_main.rlp2);
-            let c_rlp2 = a!(c_main.rlp2);
-
-            ifx!{q_enable => {
-                ifx!{is_non_existing_account_proof.expr() - is_wrong_leaf.expr() - 1.expr() => {
-                    // `s_main.rlp2` stores the RLP length of the hash of storage root. The hash output length is 32
-                    // and thus `s_main.rlp2` needs to be `160 = 128 + 32`.
-                    require!(s_rlp2 => 160);
-
-                    // `c_main.rlp2` stores the RLP length of the codehash. The hash output length is 32
-                    // and thus `c_main.rlp2` needs to be `160 = 128 + 32`.
-                    require!(c_rlp2 => 160);
+                    // The RLC of the account leaf needs to be properly computed. We take the intermediate RLC
+                    // computed in the `ACCOUNT_LEAF_NONCE_BALANCE_*` row and add the bytes from the current row.
+                    // The computed RLC needs to be the same as the stored value in `acc_s` row.
+                    let rlc = acc_prev.expr() + rlc::expr(
+                        &[
+                            s_rlp2.expr(),
+                            storage_root_rlc.expr(),
+                            c_rlp2.expr(),
+                            codehash_rlc.expr(),
+                        ].map(|v| v * acc_mult_prev.expr()),
+                        &accumulate_rand(&[r[0].expr(), r[31].expr(), r[0].expr()]),
+                    );
+                    require!(a!(accs.acc_s.rlc) => rlc);
                 }}
 
-                // `s_main.bytes` contain storage root hash, but to simplify lookups we need to have
-                // the RLC of storage root hash stored in some column too. The RLC is stored in
-                // `s_mod_node_hash_rlc`. We need to ensure that this value corresponds to the RLC
-                // of `s_main.bytes`.
-                let storage_root_rlc = rlc::expr(
-                    &s_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
-                let storage_root_stored = a!(accs.s_mod_node_rlc);
-                require!(storage_root_rlc => storage_root_stored);
-
-                // `c_main.bytes` contain codehash, but to simplify lookups we need to have
-                // the RLC of the codehash stored in some column too. The RLC is stored in
-                // `c_mod_node_hash_rlc`. We need to ensure that this value corresponds to the RLC
-                // of `c_main.bytes`.
-                let codehash_rlc = rlc::expr(
-                    &c_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
-                let codehash_stored = a!(accs.c_mod_node_rlc);
-                require!(codehash_rlc => codehash_stored);
-
-                if !is_s {
-                    let codehash_s_from_prev = a!(accs.c_mod_node_rlc, -1);
-                    let storage_root_s_from_prev = a!(accs.s_mod_node_rlc, -1);
-                    let codehash_s_from_cur = a!(value_prev);
-                    let codehash_c_in_value = a!(value);
-
-                    // To enable lookup for codehash modification we need to have S codehash
-                    // and C codehash in the same row.
-                    // For this reason, S codehash RLC is copied to `value_prev` column in C row.
-                    require!(codehash_s_from_prev => codehash_s_from_cur);
-
-                    // To enable lookup for codehash modification we need to have S codehash
-                    // and C codehash in the same row (`value_prev`, `value` columns).
-                    // C codehash RLC is copied to `value` column in C row.
-                    require!(codehash_stored => codehash_c_in_value);
-
-                    // Note: we do not check whether codehash is copied properly as only one of the
-                    // `S` or `C` proofs are used for a lookup.
-
-                    // Check there is only one modification at once:
-                    let is_storage_mod = a!(proof_type.is_storage_mod);
-                    let is_nonce_mod = a!(proof_type.is_nonce_mod);
-                    let is_balance_mod = a!(proof_type.is_balance_mod);
-                    let is_codehash_mod = a!(proof_type.is_codehash_mod);
-                    let is_account_delete_mod = a!(proof_type.is_account_delete_mod);
-
-                    ifx!{not::expr(is_account_delete_mod.expr()) => {
-                        // If the modification is nonce or balance modification, the storage root needs to
-                        // stay the same.
-                        // Note: For `is_non_existing_account_proof` we do not need this constraint,
-                        // `S` and `C` proofs are the same and we need to do a lookup into only one
-                        // (the other one could really be whatever).
-                        ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_codehash_mod => {
-                            require!(storage_root_s_from_prev => storage_root_stored);
-                        }}
-
-                        // If the modification is nonce or balance or storage modification (that means
-                        // always except for `is_account_delete_mod` and `is_non_existing_account_proof`),
-                        // the storage root needs to stay the same.
-                        // Note: For `is_non_existing_account_proof` we do not need this constraint,
-                        // `S` and `C` proofs are the same and we need to do a lookup into only one
-                        // (the other one could really be whatever).
-                        ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_storage_mod => {
-                            require!(codehash_s_from_cur => codehash_stored);
-                        }}
-                    }}
-                }
-
-                // The RLC of the account leaf needs to be properly computed. We take the intermediate RLC
-                // computed in the `ACCOUNT_LEAF_NONCE_BALANCE_*` row and add the bytes from the current row.
-                // The computed RLC needs to be the same as the stored value in `acc_s` row.
-                let rlc = acc_prev.expr() + rlc::expr(
-                    &[
-                        s_rlp2.expr(),
-                        storage_root_rlc.expr(),
-                        c_rlp2.expr(),
-                        codehash_rlc.expr(),
-                    ].map(|v| v * acc_mult_prev.expr()),
-                    &accumulate_rand(&[r[0].expr(), r[31].expr(), r[0].expr()]),
-                );
-                require!(a!(accs.acc_s.rlc) => rlc);
-            }}
-
-            ifx!{a!(is_account_leaf_storage_codehash) => {
                 let rlc = a!(accs.acc_s.rlc);
                 let root = a!(inter_root);
                 let rot = -if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_KEY_C_IND};
@@ -292,7 +274,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     // is in the first level).
                     // Note: the constraints for the first level branch to be compared to the state root
                     // are in `branch_hash_in_parent`.
-                    ifx!{f!(position_cols.q_not_first) => {
+                    ifx!{q_not_first => {
                         require!((rlc, account_len, root) => @keccak);
                     }}
                 }}

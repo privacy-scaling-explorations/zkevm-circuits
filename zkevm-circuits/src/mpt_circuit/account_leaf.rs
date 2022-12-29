@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 pub(crate) struct AccountLeafCols<F> {
     pub(crate) is_key_s: Column<Advice>,
     pub(crate) is_key_c: Column<Advice>,
-    pub(crate) is_non_existing_account_row: Column<Advice>,
+    pub(crate) is_non_existing: Column<Advice>,
     pub(crate) is_nonce_balance_s: Column<Advice>,
     pub(crate) is_nonce_balance_c: Column<Advice>,
     pub(crate) is_storage_codehash_s: Column<Advice>,
@@ -28,7 +28,7 @@ impl<F: FieldExt> AccountLeafCols<F> {
         Self {
             is_key_s: meta.advice_column(),
             is_key_c: meta.advice_column(),
-            is_non_existing_account_row: meta.advice_column(),
+            is_non_existing: meta.advice_column(),
             is_nonce_balance_s: meta.advice_column(),
             is_nonce_balance_c: meta.advice_column(),
             is_storage_codehash_s: meta.advice_column(),

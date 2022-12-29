@@ -418,21 +418,35 @@ impl<F: FieldExt> MPTConfig<F> {
         let mut cb = BaseConstraintBuilder::default();
         meta.create_gate("MPT", |meta| {
             constraints!{[meta, cb], {
+                /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
+
+                /* Branch node */
                 let branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                 BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
                 BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), true);
                 BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), false);
                 BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), true);
                 BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), false);
-
+                // BRANCH.IS_INIT
+                ifx!{f!(position_cols.q_enable), a!(branch.is_init) => {
+                    BranchInitConfig::<F>::configure(meta, &mut cb, ctx.clone());
+                }}
+                // BRANCH.IS_CHILD
+                ifx!{f!(position_cols.q_not_first), a!(branch.is_child) => {
+                    BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
+                }}
+                // BRANCH.IS_EXTENSION_NODE_S
+                ExtensionNodeKeyConfig::configure(meta, &mut cb, ctx.clone());
                 let ext_node_config_s;
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -17);
                 let is_extension_node_s = a!(branch.is_extension_node_s);
                 ifx!{is_extension_node, is_extension_node_s => {
                     ext_node_config_s = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), true);
                 }}
+                // BRANCH.IS_EXTENSION_NODE_C
                 let ext_node_config_c;
                 let is_extension_node = get_is_extension_node(meta, s_main.bytes, -18);
                 let is_extension_node_c = a!(branch.is_extension_node_c);
@@ -440,22 +454,14 @@ impl<F: FieldExt> MPTConfig<F> {
                     ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
 
-                ExtensionNodeKeyConfig::configure(meta, &mut cb, ctx.clone());
-
-                ifx!{f!(position_cols.q_enable), a!(branch.is_init) => {
-                    BranchInitConfig::<F>::configure(meta, &mut cb, ctx.clone());
-                }}
-
-                ifx!{f!(position_cols.q_not_first), a!(branch.is_child) => {
-                    BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
-                    BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
-                }}
-
+                /* Storage Leaf */
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
                 // be changed as currently the first row is not checked (and
                 // leaf key can appear in the first row if there is no account
                 // proof). See how it is done for account_leaf_key.rs which can appear in the
                 // first row. q_not_first is needed to avoid PoisenedConstraint.
+                // LEAF_KEY_S
+                // LEAF_KEY_C
                 let storage_leaf_key_s;
                 let storage_leaf_key_c;
                 ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
@@ -466,20 +472,24 @@ impl<F: FieldExt> MPTConfig<F> {
                         storage_leaf_key_c = LeafKeyConfig::configure(meta, &mut cb, ctx.clone(), false);
                     }}
                 }}
-
+                // LEAF_VALUE_S
+                // LEAF_VALUE_C
+                let storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), true);
+                let storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), false);
+                // LEAF_DRIFTED
                 let storage_leaf_key_in_added_branch;
                 ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level), a!(storage_leaf.is_in_added_branch) => {
                     storage_leaf_key_in_added_branch = LeafKeyInAddedBranchConfig::configure(meta, &mut cb, ctx.clone());
                 }}
-
-                let storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), true);
-                let storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), false);
-
+                // LEAF_NON_EXISTING
                 let storage_non_existing;
                 ifx!{f!(position_cols.q_enable), a!(storage_leaf.is_non_existing), a!(proof_type.is_non_existing_storage_proof) => {
                     storage_non_existing = StorageNonExistingConfig::<F>::configure(meta, &mut cb, ctx.clone());
                 }}
 
+                /* Account Leaf */
+                // ACCOUNT_LEAF_KEY_S
+                // ACCOUNT_LEAF_KEY_C
                 let account_leaf_key_s;
                 let account_leaf_key_c;
                 ifx!{f!(position_cols.q_enable) => {
@@ -490,13 +500,13 @@ impl<F: FieldExt> MPTConfig<F> {
                         account_leaf_key_c = AccountLeafKeyConfig::configure(meta, &mut cb, ctx.clone(), false);
                     }}
                 }}
-
+                // ACCOUNT_NON_EXISTING
                 let account_non_existing;
-                ifx!{f!(position_cols.q_enable), a!(account_leaf.is_non_existing_account_row), a!(proof_type.is_non_existing_account_proof) => {
+                ifx!{f!(position_cols.q_enable), a!(account_leaf.is_non_existing), a!(proof_type.is_non_existing_account_proof) => {
                     account_non_existing = AccountNonExistingConfig::configure(meta, &mut cb, ctx.clone());
                 }}
-
-
+                // ACCOUNT_LEAF_NONCE_BALANCE_S
+                // ACCOUNT_LEAF_NONCE_BALANCE_C
                 let account_leaf_nonce_balance_s;
                 let account_leaf_nonce_balance_c;
                 ifx!{f!(position_cols.q_not_first) => {
@@ -507,15 +517,17 @@ impl<F: FieldExt> MPTConfig<F> {
                         account_leaf_nonce_balance_c = AccountLeafNonceBalanceConfig::configure(meta, &mut cb, ctx.clone(), false);
                     }}
                 }}
-
+                // ACCOUNT_LEAF_STORAGE_CODEHASH_S
+                // ACCOUNT_LEAF_STORAGE_CODEHASH_C
                 let account_leaf_storage_codehash_s = AccountLeafStorageCodehashConfig::configure(meta, &mut cb, ctx.clone(), true);
                 let account_leaf_storage_codehash_c = AccountLeafStorageCodehashConfig::configure(meta, &mut cb, ctx.clone(), false);
-
+                // ACCOUNT_DRIFTED_LEAF
                 let account_leaf_key_in_added_branch;
                 ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level), a!(account_leaf.is_in_added_branch) => {
                     account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::configure(meta, &mut cb, ctx.clone());
                 }}
 
+                /* Range checks */
                 // These range checks ensure that the value in the RLP columns are all bytes
                 // (between 0 - 255).
                 // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for rlp1

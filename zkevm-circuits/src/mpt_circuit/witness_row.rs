@@ -312,7 +312,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
         )?;
         region.assign_advice(
             || "assign is non existing account row".to_string(),
-            mpt_config.account_leaf.is_non_existing_account_row,
+            mpt_config.account_leaf.is_non_existing,
             offset,
             || Value::known(F::from(account_leaf.is_non_existing_account_row as u64)),
         )?;

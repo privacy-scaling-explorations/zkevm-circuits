@@ -58,7 +58,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_account_leaf_in_added_branch =
                 ColumnTransition::new(meta, account_leaf.is_in_added_branch);
             let is_non_existing_account_row =
-                ColumnTransition::new(meta, account_leaf.is_non_existing_account_row);
+                ColumnTransition::new(meta, account_leaf.is_non_existing);
             let is_extension_node_s = ColumnTransition::new(meta, branch.is_extension_node_s);
             let is_extension_node_c = ColumnTransition::new(meta, branch.is_extension_node_c);
             let is_branch_init = ColumnTransition::new(meta, branch.is_init);

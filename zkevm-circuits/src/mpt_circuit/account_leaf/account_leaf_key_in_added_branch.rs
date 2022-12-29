@@ -84,7 +84,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
 
         constraints! {[meta, cb], {
-            let s_rlp1 = a!(s_main.rlp1);
             let is_branch_s_placeholder = a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], rot_branch_init);
             let is_branch_c_placeholder = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot_branch_init);
             let is_branch_placeholder = is_branch_s_placeholder.expr() + is_branch_c_placeholder.expr();
@@ -94,7 +93,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 /* Account drifted leaf: intermediate leaf RLC after key */
 
                 // `s_rlp1` is always 248 because the account leaf is always longer than 55 bytes.
-                require!(s_rlp1 => 248);
+                require!(a!(s_main.rlp1) => 248);
 
                 // We check that the leaf RLC is properly computed. RLC is then taken and
                 // nonce/balance & storage root / codehash values are added to the RLC (note that nonce/balance
@@ -232,101 +231,99 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 ifx!{is_branch_c_placeholder => {
                     require!(leaf_key_c_rlc => key_rlc);
                 }}
-            }}
 
-            // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
-            // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
-            // the `drifted_pos` in the parent branch - we use a lookup to check that the hash that
-            // corresponds to this RLC is in the parent branch at `drifted_pos` position.
-            for is_s in [false, true] {
-                // Leaf key S
-                // Leaf key C
-                // Nonce balance S
-                // Nonce balance C
-                // Storage codehash S
-                // Storage codehash C
-                // Drifted leaf (leaf in added branch)
+                // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
+                // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
+                // the `drifted_pos` in the parent branch - we use a lookup to check that the hash that
+                // corresponds to this RLC is in the parent branch at `drifted_pos` position.
+                for is_s in [false, true] {
+                    // Leaf key S
+                    // Leaf key C
+                    // Nonce balance S
+                    // Nonce balance C
+                    // Storage codehash S
+                    // Storage codehash C
+                    // Drifted leaf (leaf in added branch)
 
-                let nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_NONCE_BALANCE_S_IND} else {ACCOUNT_LEAF_NONCE_BALANCE_C_IND});
-                let storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND});
+                    let nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_NONCE_BALANCE_S_IND} else {ACCOUNT_LEAF_NONCE_BALANCE_C_IND});
+                    let storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND});
 
-                let mult_diff_nonce = a!(accs.acc_c.rlc, nonce_rot);
-                let s_rlp1_nonce = a!(s_main.rlp1, nonce_rot);
-                let s_rlp2_nonce = a!(s_main.rlp2, nonce_rot);
-                let c_rlp1_nonce = a!(c_main.rlp1, nonce_rot);
-                let c_rlp2_nonce = a!(c_main.rlp2, nonce_rot);
-                let s_rlp2_storage = a!(s_main.rlp2, storage_codehash_rot);
-                let c_rlp2_storage = a!(c_main.rlp2, storage_codehash_rot);
-                let mult_diff_balance = a!(accs.key.mult, nonce_rot);
-                let storage_root_stored = a!(accs.s_mod_node_rlc, storage_codehash_rot);
-                let codehash_stored = a!(accs.c_mod_node_rlc, storage_codehash_rot);
+                    let mult_diff_nonce = a!(accs.acc_c.rlc, nonce_rot);
+                    let s_rlp1_nonce = a!(s_main.rlp1, nonce_rot);
+                    let s_rlp2_nonce = a!(s_main.rlp2, nonce_rot);
+                    let c_rlp1_nonce = a!(c_main.rlp1, nonce_rot);
+                    let c_rlp2_nonce = a!(c_main.rlp2, nonce_rot);
+                    let s_rlp2_storage = a!(s_main.rlp2, storage_codehash_rot);
+                    let c_rlp2_storage = a!(c_main.rlp2, storage_codehash_rot);
+                    let mult_diff_balance = a!(accs.key.mult, nonce_rot);
+                    let storage_root_stored = a!(accs.s_mod_node_rlc, storage_codehash_rot);
+                    let codehash_stored = a!(accs.c_mod_node_rlc, storage_codehash_rot);
 
-                let is_nonce_long = a!(denoter.sel1, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
-                let is_balance_long = a!(denoter.sel2, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
+                    let is_nonce_long = a!(denoter.sel1, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
+                    let is_balance_long = a!(denoter.sel2, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
 
-                let nonce_stored = a!(accs.s_mod_node_rlc, nonce_rot);
-                let nonce_rlc = selectx!{is_nonce_long => {
-                    rlc::expr(&[a!(s_main.bytes[0], nonce_rot), nonce_stored.expr()], &r)
-                } elsex {
-                    nonce_stored
-                }};
+                    let nonce_stored = a!(accs.s_mod_node_rlc, nonce_rot);
+                    let nonce_rlc = selectx!{is_nonce_long => {
+                        rlc::expr(&[a!(s_main.bytes[0], nonce_rot), nonce_stored.expr()], &r)
+                    } elsex {
+                        nonce_stored
+                    }};
 
-                let balance_stored = a!(accs.c_mod_node_rlc, nonce_rot);
-                let balance_rlc = selectx!{is_balance_long => {
-                    rlc::expr(&[a!(c_main.bytes[0], nonce_rot), balance_stored.expr()], &r)
-                } elsex {
-                    balance_stored
-                }};
+                    let balance_stored = a!(accs.c_mod_node_rlc, nonce_rot);
+                    let balance_rlc = selectx!{is_balance_long => {
+                        rlc::expr(&[a!(c_main.bytes[0], nonce_rot), balance_stored.expr()], &r)
+                    } elsex {
+                        balance_stored
+                    }};
 
-                // Calculate rlc
-                let rlc = a!(accs.acc_s.rlc) + rlc::expr(
-                    &[
-                        s_rlp1_nonce,
-                        s_rlp2_nonce,
-                        c_rlp1_nonce,
-                        c_rlp2_nonce,
-                        nonce_rlc,
+                    // Calculate rlc
+                    let rlc = a!(accs.acc_s.rlc) + rlc::expr(
+                        &[
+                            s_rlp1_nonce,
+                            s_rlp2_nonce,
+                            c_rlp1_nonce,
+                            c_rlp2_nonce,
+                            nonce_rlc,
 
-                        balance_rlc,
-                        s_rlp2_storage,
-                        storage_root_stored,
-                        c_rlp2_storage,
-                        codehash_stored,
-                    ].map(|v| v * a!(accs.acc_s.mult)),
-                    &[
-                        r[..4].to_vec(),
-                        accumulate_rand(&[mult_diff_nonce.expr(), mult_diff_balance.expr(), r[0].expr(), r[31].expr(), r[0].expr()]),
-                    ].concat(),
-                );
+                            balance_rlc,
+                            s_rlp2_storage,
+                            storage_root_stored,
+                            c_rlp2_storage,
+                            codehash_stored,
+                        ].map(|v| v * a!(accs.acc_s.mult)),
+                        &[
+                            r[..4].to_vec(),
+                            accumulate_rand(&[mult_diff_nonce.expr(), mult_diff_balance.expr(), r[0].expr(), r[31].expr(), r[0].expr()]),
+                        ].concat(),
+                    );
 
-                // `s(c)_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
-                // (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                // is checked in `branch_parallel.rs`)
-                // Any rotation that lands into branch children can be used.
-                let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17);
-                let is_branch_placeholder = if is_s {is_branch_s_placeholder.expr()} else {is_branch_c_placeholder.expr()};
-                ifx!{is_branch_placeholder => {
-                    let account_len = a!(s_main.rlp2) + 1.expr() + 1.expr();
-                    require!((rlc, account_len, mod_node_hash_rlc) => @keccak);
-                }}
-            }
+                    // `s(c)_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
+                    // (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
+                    // is checked in `branch_parallel.rs`)
+                    // Any rotation that lands into branch children can be used.
+                    let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17);
+                    let is_branch_sc_placeholder = if is_s {is_branch_s_placeholder.expr()} else {is_branch_c_placeholder.expr()};
+                    ifx!{is_branch_sc_placeholder => {
+                        let account_len = a!(s_main.rlp2) + 1.expr() + 1.expr();
+                        require!((rlc, account_len, mod_node_hash_rlc) => @keccak);
+                    }}
+                }
 
-            // RLC bytes zero check
-            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
-                require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
-            }
+                // RLC bytes zero check
+                for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
+                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
+                }
 
-            // When the full account RLC is computed (see add_constraints below), we need to know
-            // the intermediate RLC and the randomness multiplier (`r` to some power) from the key row.
-            // The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
-            // is computed as (key starts in `s_main.bytes[1]`):
-            // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
-            // So the multiplier to be used in the next row is `r^{key_len + 2}`.
-            // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
-            // That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
-            // Note that the key length is different than the on of the leaf before it drifted (by one nibble
-            // if a branch is added, by multiple nibbles if extension node is added).
-            ifx!{is_branch_placeholder => {
+                // When the full account RLC is computed (see add_constraints below), we need to know
+                // the intermediate RLC and the randomness multiplier (`r` to some power) from the key row.
+                // The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
+                // is computed as (key starts in `s_main.bytes[1]`):
+                // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
+                // So the multiplier to be used in the next row is `r^{key_len + 2}`.
+                // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
+                // That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
+                // Note that the key length is different than the on of the leaf before it drifted (by one nibble
+                // if a branch is added, by multiple nibbles if extension node is added).
                 require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 3.expr(), a!(accs.acc_s.mult)) => @fixed);
             }}
         }}

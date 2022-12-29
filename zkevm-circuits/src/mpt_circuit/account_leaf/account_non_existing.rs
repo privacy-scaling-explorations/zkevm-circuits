@@ -111,21 +111,16 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let r = ctx.r;
         let address_rlc = ctx.address_rlc;
 
-        // key rlc is in the first branch node
-        let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
-
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>| {
                 constraints! {[meta, cb], {
                     let sum = a!(accs.key.rlc);
                     let sum_prev = a!(accs.key.mult);
                     let diff_inv = a!(accs.acc_s.rlc);
-
                     let sum_prev_check = dot::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().map(|&byte| a!(byte, -1)).collect::<Vec<_>>(),
                         &extend_rand(&r),
                     );
-
                     // We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check whether the computed
                     // value is the same as the one stored in `accs.key.mult` column.
                     let sum_check = dot::expr(
@@ -133,11 +128,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         &extend_rand(&r),
                     );
                     require!(sum => sum_check);
-
                     // We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check whether the computed
                     // value is the same as the one stored in `accs.key.rlc` column.
                     require!(sum_prev => sum_prev_check);
-
                     // TODO(Brecht): what?
                     // The address in the ACCOUNT_LEAF_KEY row and the address in the ACCOUNT_NON_EXISTING row
                     // are different.
@@ -150,7 +143,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         // nodes above). Note: currently, for non_existing_account proof S and C
         // proofs are the same, thus there is never a placeholder branch.
         constraints! {[meta, cb], {
-            let is_leaf_not_in_first_level = a!(not_first_level);
+            // key rlc is in the first branch node
+            let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
 
             // Wrong leaf has a meaning only for non existing account proof. For this proof, there are two cases:
             // 1. A leaf is returned that is not at the required address (wrong leaf).
@@ -158,23 +152,19 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             let is_wrong_leaf = a!(s_main.rlp1);
             // is_wrong_leaf is checked to be bool in `account_leaf_nonce_balance.rs` (q_enable in this chip
             // is true only when non_existing_account_proof).
+            ifx!{is_wrong_leaf => {
+                ifx!{a!(not_first_level) => {
+                    // Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
+                    // with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
+                    // The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
+                    // set of nibbles is the same) where we are proving there is no account.
+                    // If there would be an account at the specified address, it would be positioned in the branch where
+                    // the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
+                    // Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
+                    // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
+                    // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
+                    // is different).
 
-            /* Non existing account proof leaf address RLC (leaf not in first level, branch not placeholder) */
-            ifx!{is_leaf_not_in_first_level.expr() => {
-                let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
-                let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
-
-                // Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
-                // with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
-                // The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
-                // set of nibbles is the same) where we are proving there is no account.
-                // If there would be an account at the specified address, it would be positioned in the branch where
-                // the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
-                // Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
-                // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
-                // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
-                // is different).
-                ifx!{is_wrong_leaf => {
                     // sel1, sel2 is in init branch
                     let is_c16 = a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot_into_first_branch_child - 1);
                     let is_c1 = a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot_into_first_branch_child - 1);
@@ -185,6 +175,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         require!(a!(s_main.bytes[1]) => 32);
                     }}
 
+                    // RLC check
+                    let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
+                    let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
                     // set to key_mult_start * r if is_c16, else key_mult_start
                     let key_mult = key_mult_start.expr() * selectx!{is_c16 => { r[0].expr() } elsex { 1 }};
                     // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
@@ -194,48 +187,39 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         &[[1.expr()].to_vec(), r.to_vec()].concat(),
                     );
                     require!(key_rlc_acc => a!(address_rlc));
-
-                    // General wrong leaf constraints
-                    add_wrong_leaf_constraints(meta, cb);
                 } elsex {
-                    // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                    // Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
-                    // at `modified_node` position. We check that in case of no wrong leaf in
-                    // the non-existing-account proof, `is_nil_object` is 1.
-                    require!(a!(sel1, rot_into_first_branch_child) => true);
-                }}
-            } elsex {
-                ifx!{is_wrong_leaf => {
                     /* Non existing account proof leaf address RLC (leaf in first level) */
                     // Ensuring that the account does not exist when there is only one account in the state trie.
                     // Note 1: The hash of the only account is checked to be the state root in `account_leaf_storage_codehash.rs`.
                     // Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
                     // above. That is because when there is a branch (with nil object) in the first level,
                     // it automatically means the account leaf is not in the first level.
-
                     // Note: when leaf is in the first level, the key stored in the leaf is always
                     // of length 33 - the first byte being 32 (when after branch,
                     // the information whether there the key is odd or even
                     // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
                     require!(a!(s_main.bytes[1]) => 32);
-
                     // RLC check
                     let rlc = rlc::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                         &r,
                     );
                     require!(a!(address_rlc) => rlc);
-
-                    // General wrong leaf constraints
-                    add_wrong_leaf_constraints(meta, cb);
                 }}
-            }}
 
-            ifx!{is_wrong_leaf => {
+                // General wrong leaf constraints
+                add_wrong_leaf_constraints(meta, cb);
+
                 /* Address of wrong leaf and the enquired address are of the same length */
                 // This constraint is to prevent the attacker to prove that some account does not exist by setting
                 // some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
                 require!(a!(s_main.bytes[0]) => a!(s_main.bytes[0], -1));
+            } elsex {
+                // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
+                // Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
+                // at `modified_node` position. We check that in case of no wrong leaf in
+                // the non-existing-account proof, `is_nil_object` is 1.
+                require!(a!(sel1, rot_into_first_branch_child) => true);
             }}
 
             // RLC bytes zero check
