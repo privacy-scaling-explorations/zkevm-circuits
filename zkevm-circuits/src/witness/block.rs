@@ -7,7 +7,6 @@ use bus_mapping::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::halo2curves::bn256::Fr;
-use itertools::Itertools;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
@@ -180,20 +179,12 @@ pub fn block_convert(
             .collect(),
         end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
         end_block_last: step_convert(&block.block_steps.end_block_last),
-        bytecodes: block
-            .txs()
-            .iter()
-            .flat_map(|tx| {
-                tx.calls()
-                    .iter()
-                    .map(|call| call.code_hash)
-                    .unique()
-                    .into_iter()
-                    .map(|code_hash| {
-                        let bytecode =
-                            Bytecode::new(code_db.0.get(&code_hash).cloned().unwrap_or_default());
-                        (bytecode.hash, bytecode)
-                    })
+        bytecodes: code_db
+            .0
+            .values()
+            .map(|v| {
+                let bytecode = Bytecode::new(v.clone());
+                (bytecode.hash, bytecode)
             })
             .collect(),
         copy_events: block.copy_events.clone(),
