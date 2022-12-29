@@ -258,7 +258,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let p_lo: u128 = 1 << shf_mod64;
         let p_hi: u128 = 1 << (64 - shf_mod64);
         let p_top: u128 = if is_neg {
-            u128::from(u64::MAX) - p_hi + 1
+            u128::from(u64::MAX) + 1 - p_hi
         } else {
             0
         };
@@ -352,7 +352,6 @@ fn is_neg(x: &U256) -> bool {
 mod test {
     use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, U256};
     use mock::TestContext;
     use rand::Rng;
@@ -361,7 +360,6 @@ mod test {
         let bytecode = bytecode! {
             PUSH32(a)
             PUSH32(shift)
-            #[start]
             SAR
             STOP
         };
