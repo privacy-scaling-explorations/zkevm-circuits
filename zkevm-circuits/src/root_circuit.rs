@@ -22,6 +22,7 @@ pub use snark_verifier::system::halo2::{compile, Config};
 pub use aggregation::TestAggregationCircuit;
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
+#[derive(Clone)]
 pub struct RootCircuit<'a, M: MultiMillerLoop> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
@@ -209,9 +210,9 @@ mod application {
         }
 
         pub fn build() -> Result<(u32, Self, Vec<Vec<Fr>>, Vec<Fr>), Error> {
-            let standPlonk = StandardPlonk::rand(OsRng);
-            let instances = standPlonk.instances();
-            return Ok((8, standPlonk, instances, vec![]));
+            let stand_plonk = StandardPlonk::rand(OsRng);
+            let instances = stand_plonk.instances();
+            return Ok((22, stand_plonk, instances, vec![]));
         }
     }
 
@@ -271,15 +272,181 @@ mod test {
     use halo2_proofs::{
         circuit::Value,
         dev::MockProver,
-        halo2curves::bn256::Bn256,
-        plonk::{create_proof, keygen_pk, keygen_vk},
+        halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
+        plonk::{
+            create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
+        },
+        poly::commitment::{Params, ParamsProver},
         poly::kzg::{
             commitment::{KZGCommitmentScheme, ParamsKZG},
-            multiopen::ProverGWC,
+            multiopen::{ProverGWC, VerifierGWC},
+            strategy::AccumulatorStrategy,
         },
+        poly::VerificationStrategy,
+        transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
     };
     use itertools::Itertools;
     use rand::rngs::OsRng;
+    use snark_verifier::{
+        loader::{
+            evm::{self, encode_calldata, Address, EvmLoader, ExecutorBuilder},
+            native::NativeLoader,
+        },
+        pcs::kzg::{Gwc19, KzgAs, LimbsEncoding},
+        pcs::{
+            kzg::{KzgAccumulator, KzgSuccinctVerifyingKey, LimbsEncodingInstructions},
+            AccumulationScheme, AccumulationSchemeProver,
+        },
+        system,
+        system::halo2::transcript::evm::EvmTranscript,
+        util::arithmetic::{fe_to_limbs, FieldExt},
+        verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
+    };
+    use std::{fs, io::Cursor, rc::Rc, time::Instant};
+
+    const LIMBS: usize = 4;
+    const BITS: usize = 68;
+
+    type As = KzgAs<Bn256, Gwc19>;
+    type PlonkSuccinctVerifier =
+        verifier::plonk::PlonkSuccinctVerifier<As, LimbsEncoding<LIMBS, BITS>>;
+    type PlonkVerifier = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
+
+    pub fn write_params(degree: usize, params: &ParamsKZG<Bn256>) -> Result<(), std::io::Error> {
+        let dir = "./generated";
+        fs::create_dir_all(dir).unwrap_or_else(|_| panic!("create {}", dir));
+        let path = format!("{}/srs-{}", dir, degree);
+        let mut file = fs::File::create(&path).unwrap_or_else(|_| panic!("create {}", &path));
+        params.write(&mut file)
+    }
+
+    pub fn read_params(degree: usize) -> Result<ParamsKZG<Bn256>, std::io::Error> {
+        let dir = "./generated";
+        let path = format!("{}/srs-{}", dir, degree);
+        let mut file = fs::File::open(&path)?;
+        ParamsKZG::<Bn256>::read(&mut file)
+    }
+
+    pub fn get_circuit_params<const D: usize>(degree: usize) -> ParamsKZG<Bn256> {
+        let mut params = if let Ok(params) = read_params(degree) {
+            params
+        } else {
+            let params = ParamsKZG::<Bn256>::setup(degree as u32, OsRng);
+            write_params(degree, &params).expect("write srs ok");
+            params
+        };
+
+        if D > 0 {
+            params.downsize(D as u32);
+        }
+        params
+    }
+
+    use std::fs::File;
+    use std::io::Write as fwrite;
+
+    fn gen_aggregation_evm_verifier(
+        params: &ParamsKZG<Bn256>,
+        vk: &VerifyingKey<G1Affine>,
+        num_instance: Vec<usize>,
+        accumulator_indices: Vec<(usize, usize)>,
+    ) -> Vec<u8> {
+        let protocol = compile(
+            params,
+            vk,
+            Config::kzg()
+                .with_num_instance(num_instance.clone())
+                .with_accumulator_indices(Some(accumulator_indices)),
+        );
+        let vk = (params.get_g()[0], params.g2(), params.s_g2()).into();
+
+        let loader = EvmLoader::new::<Fq, Fr>();
+        let protocol = protocol.loaded(&loader);
+        let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
+
+        let instances = transcript.load_instances(num_instance);
+        let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
+        PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
+
+        File::create("./PlonkAggregationVerifier.sol")
+            .expect("PlonkAggregationVerifier.sol")
+            .write_all(&loader.yul_code().as_bytes())
+            .expect("PlonkAggregationVerifier.sol");
+
+        evm::compile_yul(&loader.yul_code())
+    }
+
+    fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
+        let calldata = encode_calldata(&instances, &proof);
+        let success = {
+            let mut evm = ExecutorBuilder::default()
+                .with_gas_limit(u64::MAX.into())
+                .build();
+
+            let caller = Address::from_low_u64_be(0xfe);
+            let verifier = evm
+                .deploy(caller, deployment_code.into(), 0.into())
+                .address
+                .unwrap();
+            let result = evm.call_raw(caller, verifier, calldata.into(), 0.into());
+
+            dbg!(result.gas_used);
+
+            !result.reverted
+        };
+        assert!(success);
+    }
+
+    fn gen_proof<
+        C: Circuit<Fr>,
+        E: EncodedChallenge<G1Affine>,
+        TR: TranscriptReadBuffer<Cursor<Vec<u8>>, G1Affine, E>,
+        TW: TranscriptWriterBuffer<Vec<u8>, G1Affine, E>,
+    >(
+        params: &ParamsKZG<Bn256>,
+        pk: &ProvingKey<G1Affine>,
+        circuit: C,
+        instances: Vec<Vec<Fr>>,
+    ) -> Vec<u8> {
+        MockProver::run(params.k(), &circuit, instances.clone())
+            .unwrap()
+            .assert_satisfied();
+
+        let instances = instances
+            .iter()
+            .map(|instances| instances.as_slice())
+            .collect_vec();
+        let proof = {
+            let mut transcript = TW::init(Vec::new());
+            create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, TW, _>(
+                params,
+                pk,
+                &[circuit],
+                &[instances.as_slice()],
+                OsRng,
+                &mut transcript,
+            )
+            .unwrap();
+            transcript.finalize()
+        };
+
+        let accept = {
+            let mut transcript = TR::init(Cursor::new(proof.clone()));
+            VerificationStrategy::<_, VerifierGWC<_>>::finalize(
+                verify_proof::<_, VerifierGWC<_>, _, TR, _>(
+                    params.verifier_params(),
+                    pk.get_vk(),
+                    AccumulatorStrategy::new(params.verifier_params()),
+                    &[instances.as_slice()],
+                    &mut transcript,
+                )
+                .unwrap(),
+            )
+        };
+        assert!(accept);
+
+        proof
+    }
 
     // #[ignore = "Due to high memory requirement"]
     #[test]
@@ -329,6 +496,116 @@ mod test {
                 .unwrap()
                 .verify_par(),
             Ok(())
+        )
+    }
+
+    #[test]
+    fn test_root_circuit_evm_verifier() {
+        let mut start = Instant::now();
+        let (params_app, params, protocol, proof, instance) = {
+            // Preprocess
+            let (k, circuit, instance, _) =
+                // SuperCircuit::<_, 1, 32, 256>::build(sampl_block()).unwrap();
+                StandardPlonk::build().unwrap();
+
+            // let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+            let params = get_circuit_params::<0>(k as usize);
+            let params_app = get_circuit_params::<10>(k as usize);
+            let pk = keygen_pk(
+                &params_app,
+                keygen_vk(&params_app, &circuit).unwrap(),
+                &circuit,
+            )
+            .unwrap();
+            let protocol = compile(
+                &params_app,
+                pk.get_vk(),
+                Config::kzg()
+                    .with_num_instance(instance.iter().map(|instances| instances.len()).collect()),
+            );
+
+            // Create proof
+            let proof = {
+                let mut transcript = PoseidonTranscript::new(Vec::new());
+                create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
+                    &params_app,
+                    &pk,
+                    &[circuit],
+                    &[&instance.iter().map(Vec::as_slice).collect_vec()],
+                    OsRng,
+                    &mut transcript,
+                )
+                .unwrap();
+                transcript.finalize()
+            };
+
+            (params_app, params, protocol, proof, instance)
+        };
+
+        let duration = start.elapsed();
+        println!(
+            "gen app proof elapsed in expensive_function() is: {:?}",
+            duration
+        );
+
+        start = Instant::now();
+
+        let root_circuit = RootCircuit::new(
+            &params_app,
+            &protocol,
+            Value::known(&instance),
+            Value::known(&proof),
+        )
+        .unwrap();
+
+        let pk = keygen_pk(
+            &params,
+            keygen_vk(&params, &root_circuit).unwrap(),
+            &root_circuit,
+        )
+        .unwrap();
+        let duration = start.elapsed();
+        println!(
+            "root_circuit pk elapsed in expensive_function() is: {:?}",
+            duration
+        );
+
+        start = Instant::now();
+        let deployment_code = gen_aggregation_evm_verifier(
+            &params,
+            pk.get_vk(),
+            root_circuit.num_instance(),
+            root_circuit.accumulator_indices(),
+        );
+
+        let duration = start.elapsed();
+        println!(
+            "deployment_code elapsed in expensive_function() is: {:?}",
+            duration
+        );
+
+        start = Instant::now();
+
+        let proof = gen_proof::<
+            _,
+            _,
+            EvmTranscript<G1Affine, _, _, _>,
+            EvmTranscript<G1Affine, _, _, _>,
+        >(&params, &pk, root_circuit.clone(), root_circuit.instances());
+        let duration = start.elapsed();
+        println!(
+            "gen_proof elapsed in expensive_function() is: {:?}",
+            duration
+        );
+
+        start = Instant::now();
+
+        evm_verify(deployment_code, root_circuit.instances(), proof);
+
+        let duration = start.elapsed();
+        println!(
+            "evm_verify elapsed in expensive_function() is: {:?}",
+            duration
         );
     }
 }
