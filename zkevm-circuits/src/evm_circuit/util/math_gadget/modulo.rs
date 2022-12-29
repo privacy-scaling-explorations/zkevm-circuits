@@ -195,15 +195,20 @@ mod tests {
     #[test]
     fn test_mod_n_unexpected_rem() {
         // test soundness by manipulating k to make a' = k * n + r and a' >=
-        // 2^256 lead to overflow and trigger soundness bug: (a' != a) ^ a' ≡ a
+        // 2^256 cause overflow and trigger soundness bug: (a' != a) ^ a' ≡ a
         // (mod 2^256)
+        // Here, the attacker tries to convince you of a false statement `2 % 3 = 0` by
+        // showing you `2 = ((2^256 + 2) / 3) * 3 + 0`. In the `MulAddWordsGadget`, `k *
+        // n + r = a  (modulo 2**256)` would have been a valid statement. But the gadget
+        // would have the overflow = 1. Since we constrain the overflow to be 0 in the
+        // ModGadget, the statement would be invalid in the ModGadget.
         try_test!(
             ModGadgetTestContainer<Fr>,
             vec![
                 Word::from(2),
                 Word::from(3),
                 Word::from(0),
-                /* magic number (2^256 + 2) / 3, and 2^256 + 2 divisible by 3 */
+                /* magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3 */
                 U256::try_from(U512([2, 0, 0, 0, 1, 0, 0, 0]) / U512::from(3)).unwrap(),
             ],
             false,
