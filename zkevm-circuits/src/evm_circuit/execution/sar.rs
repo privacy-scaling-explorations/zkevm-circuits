@@ -381,8 +381,54 @@ mod test {
     use crate::evm_circuit::test::rand_word;
     use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, U256};
+    use ethers_core::types::I256;
     use mock::TestContext;
     use rand::Rng;
+
+    #[test]
+    fn test_sar_gadget() {
+        // Maximum negative word value of i256 (integer value of -1)
+        let max_neg = U256::MAX;
+        // Maximum positive word value of i256
+        let max_pos = U256::try_from(I256::MAX).unwrap();
+        // Negative sign (the highest bit is 1)
+        let neg_sign = max_pos.checked_add(1.into()).unwrap();
+
+        // Test if `a` is positive.
+        test_ok(8.into(), 0x1234.into());
+        test_ok(17.into(), 0x5678.into());
+        test_ok(0.into(), 0xABCD.into());
+        test_ok(256.into(), 0xFFFF.into());
+        test_ok((256 + 8 + 1).into(), 0x12345.into());
+
+        // Test if `a` is negative.
+        test_ok(8.into(), 0x1234.into());
+        test_ok(8.into(), neg_sign.checked_add(0x1234.into()).unwrap());
+        test_ok(17.into(), neg_sign.checked_add(0x5678.into()).unwrap());
+        test_ok(0.into(), neg_sign.checked_add(0xABCD.into()).unwrap());
+        test_ok(256.into(), neg_sign.checked_add(0xFFFF.into()).unwrap());
+        test_ok(
+            (256 + 8 + 1).into(),
+            neg_sign.checked_add(0x12345.into()).unwrap(),
+        );
+
+        // Test either (or both) `a` or `shift` is a maximum word.
+        test_ok(8.into(), max_neg);
+        test_ok(129.into(), max_neg);
+        test_ok(300.into(), max_neg);
+        test_ok(8.into(), max_pos);
+        test_ok(129.into(), max_pos);
+        test_ok(300.into(), max_pos);
+        test_ok(max_neg, max_neg);
+        test_ok(max_neg, max_pos);
+        test_ok(max_pos, max_neg);
+        test_ok(max_pos, max_pos);
+
+        // Test for random `a` and `shift`.
+        let rand_shift = rand::thread_rng().gen_range(0..=255);
+        test_ok(rand_shift.into(), rand_word());
+        test_ok(rand_word(), rand_word());
+    }
 
     fn test_ok(shift: U256, a: U256) {
         let bytecode = bytecode! {
@@ -398,32 +444,5 @@ mod test {
             ),
             Ok(())
         );
-    }
-
-    #[test]
-    fn sar_gadget_simple() {
-        test_ok(8.into(), 0xABCD.into());
-        test_ok(7.into(), 0x1234.into());
-        test_ok(17.into(), 0x8765.into());
-        test_ok(0.into(), 0x4321.into());
-        test_ok(127.into(), rand_word());
-        test_ok(129.into(), rand_word());
-        let rand_shift = rand::thread_rng().gen_range(0..=255);
-        test_ok(rand_word(), rand_shift.into());
-    }
-
-    #[test]
-    fn sar_gadget_rand_overflow_shift() {
-        test_ok(256.into(), rand_word());
-        test_ok(0x1234.into(), rand_word());
-        test_ok(U256::from_big_endian(&[255_u8; 32]), rand_word());
-    }
-
-    // This case validates if the split is correct.
-    #[test]
-    fn sar_gadget_constant_shift() {
-        let a = rand_word();
-        test_ok(8.into(), a);
-        test_ok(64.into(), a);
     }
 }
