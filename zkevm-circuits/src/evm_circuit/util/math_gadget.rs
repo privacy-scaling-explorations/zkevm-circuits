@@ -20,7 +20,6 @@ mod mul_add_words512;
 mod mul_word_u64;
 mod pair_select;
 mod range_check;
-mod sar_words;
 #[cfg(test)]
 mod test_util;
 
@@ -42,7 +41,6 @@ pub(crate) use mul_add_words512::MulAddWords512Gadget;
 pub(crate) use mul_word_u64::MulWordByU64Gadget;
 pub(crate) use pair_select::PairSelectGadget;
 pub(crate) use range_check::RangeCheckGadget;
-pub(crate) use sar_words::SarWordsGadget;
 
 // This function generates a Lagrange polynomial in the range [start, end) which
 // will be evaluated to 1 when `exp == value`, otherwise 0
