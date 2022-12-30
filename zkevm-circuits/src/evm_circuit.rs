@@ -483,19 +483,39 @@ pub mod test {
 mod evm_circuit_stats {
     use super::test::*;
     use super::*;
-    use crate::evm_circuit::step::ExecutionState;
+    use crate::{evm_circuit::step::ExecutionState, witness::block_convert};
+    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
 
-    #[test]
-    pub fn empty_evm_circuit() {
+    fn get_empty_witness_block() -> Block<Fr> {
         let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
             .unwrap()
             .into();
-        run_test_circuit_geth_data_default::<Fr>(block).unwrap();
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        block_convert(&builder.block, &builder.code_db).unwrap()
+    }
+
+    #[test]
+    pub fn empty_evm_circuit_no_padding() {
+        let block = get_empty_witness_block();
+        run_test_circuit(block).unwrap();
+    }
+
+    #[test]
+    pub fn empty_evm_circuit_with_padding() {
+        let mut block = get_empty_witness_block();
+        block.evm_circuit_pad_to = (1 << 18) - 100;
+        run_test_circuit(block).unwrap();
     }
 
     /// This function prints to stdout a table with all the implemented states

@@ -818,6 +818,7 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
+                log::info!("start execution step assignment");
                 if is_first_time {
                     is_first_time = false;
                     region.assign_advice(
@@ -850,46 +851,52 @@ impl<F: Field> ExecutionConfig<F> {
                             .iter()
                             .map(move |step| (tx, &tx.calls[step.call_index], step))
                     })
+                    .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
 
                 let evm_rows = block.evm_circuit_pad_to;
-                let exact = evm_rows == 0;
-
-                let mut no_next_step = false;
-                let mut get_next = |cur_state: ExecutionState, offset: &usize| match steps.next() {
-                    Some((transaction, _, step)) => Ok(Some((
-                        transaction,
-                        &transaction.calls[step.call_index],
-                        step,
-                    ))),
-                    None => {
-                        if no_next_step {
-                            return Ok(None);
+                let no_padding = evm_rows == 0;
+                let assign_q_step =
+                    |region: &mut Region<'_, F>, offset, height| -> Result<(), Error> {
+                        for idx in 0..height {
+                            let offset = offset + idx;
+                            self.q_usable.enable(region, offset)?;
+                            region.assign_advice(
+                                || "step selector",
+                                self.q_step,
+                                offset,
+                                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+                            )?;
+                            let value = if idx == 0 {
+                                F::zero()
+                            } else {
+                                F::from((height - idx) as u64)
+                            };
+                            region.assign_advice(
+                                || "step height",
+                                self.num_rows_until_next_step,
+                                offset,
+                                || Value::known(value),
+                            )?;
+                            region.assign_advice(
+                                || "step height inv",
+                                self.num_rows_inv,
+                                offset,
+                                || Value::known(value.invert().unwrap_or(F::zero())),
+                            )?;
                         }
+                        Ok(())
+                    };
 
-                        let mut block_step = end_block_not_last;
-                        let cur_state_height = self.get_step_height(cur_state);
-                        if !exact && offset + cur_state_height >= evm_rows {
-                            log::error!(
-                                "evm circuit larger than evm_rows: {} >= {}",
-                                offset + cur_state_height,
-                                evm_rows
-                            );
-                            return Err(Error::Synthesis);
-                        }
-                        if exact || evm_rows - (offset + cur_state_height) == 1 {
-                            block_step = end_block_last;
-                            no_next_step = true;
-                        }
-
-                        Ok(Some((&dummy_tx, &last_call, block_step)))
+                // part1: assign real steps
+                loop {
+                    let (transaction, call, step) = steps.next().expect("should not be empty");
+                    let next = steps.peek();
+                    if next.is_none() {
+                        break;
                     }
-                };
-
-                let mut next = get_next(ExecutionState::BeginTx, &offset)?;
-                while let Some((transaction, call, step)) = next {
-                    next = get_next(step.execution_state, &offset)?;
                     let height = self.get_step_height(step.execution_state);
+
                     // Assign the step witness
                     if step.execution_state == ExecutionState::EndTx {
                         let mut tx = transaction.clone();
@@ -930,40 +937,19 @@ impl<F: Field> ExecutionConfig<F> {
                         call,
                         step,
                         height,
-                        next,
+                        next.copied(),
                         power_of_randomness,
                     )?;
-                    // q_step logic
-                    for idx in 0..height {
-                        let offset = offset + idx;
-                        self.q_usable.enable(&mut region, offset)?;
-                        region.assign_advice(
-                            || "step selector",
-                            self.q_step,
-                            offset,
-                            || Value::known(if idx == 0 { F::one() } else { F::zero() }),
-                        )?;
-                        let value = if idx == 0 {
-                            F::zero()
-                        } else {
-                            F::from((height - idx) as u64)
-                        };
-                        region.assign_advice(
-                            || "step height",
-                            self.num_rows_until_next_step,
-                            offset,
-                            || Value::known(value),
-                        )?;
-                        region.assign_advice(
-                            || "step height inv",
-                            self.num_rows_inv,
-                            offset,
-                            || Value::known(value.invert().unwrap_or(F::zero())),
-                        )?;
-                    }
-                    offset += height;
 
-                    if !exact && offset > evm_rows {
+                    // q_step logic
+                    assign_q_step(&mut region, offset, height)?;
+
+                    offset += height;
+                }
+
+                // part2: assign non-last EndBlock steps when padding needed
+                if !no_padding {
+                    if offset >= evm_rows {
                         log::error!(
                             "evm circuit offset larger than padding: {} > {}",
                             offset,
@@ -971,13 +957,53 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
+                    let height = self.get_step_height(ExecutionState::EndBlock);
+                    debug_assert_eq!(height, 1);
+                    let last_row = evm_rows - 1;
+                    log::trace!(
+                        "assign non-last EndBlock in range [{},{})",
+                        offset,
+                        last_row
+                    );
+                    self.assign_same_exec_step_in_range(
+                        &mut region,
+                        offset,
+                        last_row,
+                        block,
+                        &dummy_tx,
+                        &last_call,
+                        end_block_not_last,
+                        height,
+                        power_of_randomness,
+                    )?;
 
-                    if next.is_none() {
-                        // Assert that EndBlock height is 1
-                        debug_assert_eq!(height, 1);
+                    for row_idx in offset..last_row {
+                        assign_q_step(&mut region, row_idx, height)?;
                     }
+                    offset = last_row;
                 }
 
+                // part3: assign the last EndBlock at offset `evm_rows - 1`
+                let height = self.get_step_height(ExecutionState::EndBlock);
+                debug_assert_eq!(height, 1);
+                log::trace!("assign last EndBlock at offset {}", offset);
+                self.assign_exec_step(
+                    &mut region,
+                    offset,
+                    block,
+                    &dummy_tx,
+                    &last_call,
+                    end_block_last,
+                    height,
+                    None,
+                    power_of_randomness,
+                )?;
+                assign_q_step(&mut region, offset, height)?;
+                // enable q_step_last
+                self.q_step_last.enable(&mut region, offset)?;
+                offset += height;
+
+                // part4:
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
@@ -992,15 +1018,51 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                const END_BLOCK_HEIGHT: usize = 1;
-                self.q_step_last
-                    .enable(&mut region, offset - END_BLOCK_HEIGHT)?;
-
+                log::info!("finish execution step assignment");
                 log::debug!("assign for region done at offset {}", offset);
                 Ok(())
             },
         )?;
         log::debug!("assign_block done");
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_same_exec_step_in_range(
+        &self,
+        region: &mut Region<'_, F>,
+        offset_begin: usize,
+        offset_end: usize,
+        block: &Block<F>,
+        transaction: &Transaction,
+        call: &Call,
+        step: &ExecStep,
+        height: usize,
+        power_of_randomness: [F; 31],
+    ) -> Result<(), Error> {
+        if offset_end <= offset_begin {
+            return Ok(());
+        }
+        assert_eq!(height, 1);
+        assert!(step.rw_indices.is_empty());
+        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+
+        // Disable access to next step deliberately for "repeatable" step
+        let region = &mut CachedRegion::<'_, '_, F>::new(
+            region,
+            power_of_randomness,
+            self.advices.to_vec(),
+            1,
+            offset_begin,
+        );
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+
+        region.replicate_assignment_for_range(
+            || format!("repeat {:?} rows", step.execution_state),
+            offset_begin + 1,
+            offset_end,
+        )?;
+
         Ok(())
     }
 
@@ -1033,9 +1095,8 @@ impl<F: Field> ExecutionConfig<F> {
         let region = &mut CachedRegion::<'_, '_, F>::new(
             region,
             power_of_randomness,
-            STEP_WIDTH,
+            self.advices.to_vec(),
             MAX_STEP_HEIGHT * 3,
-            self.advices[0].index(),
             offset,
         );
 
@@ -1235,18 +1296,20 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug)
-            && !(step.execution_state == ExecutionState::EndBlock && step.rw_indices.is_empty())
-        {
-            // expensive function call
-            Self::check_rw_lookup(
-                &assigned_stored_expressions,
-                offset,
-                step,
-                call,
-                transaction,
-                block,
-            );
+        if log::log_enabled!(log::Level::Debug) {
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    offset,
+                    step,
+                    call,
+                    transaction,
+                    block,
+                );
+            }
         }
         Ok(())
     }
