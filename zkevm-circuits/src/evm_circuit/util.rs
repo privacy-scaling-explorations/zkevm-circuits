@@ -74,6 +74,7 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
 pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
+    advice_columns: Vec<Column<Advice>>,
     power_of_randomness: [F; 31],
     width_start: usize,
     height_start: usize,
@@ -84,18 +85,49 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
         power_of_randomness: [F; 31],
-        width: usize,
+        advice_columns: Vec<Column<Advice>>,
         height: usize,
-        width_start: usize,
         height_start: usize,
     ) -> Self {
         Self {
             region,
-            advice: vec![vec![F::zero(); height]; width],
+            advice: vec![vec![F::zero(); height]; advice_columns.len()],
             power_of_randomness,
-            width_start,
+            width_start: advice_columns[0].index(),
             height_start,
+            advice_columns,
         }
+    }
+
+    /// Repeatedly assign the locally cached witnesses.
+    /// This method can be used as a "quick" path for assignment for repeated
+    /// padding rows
+    pub fn replicate_assignment_for_range<A, AR>(
+        &mut self,
+        annotation: A,
+        offset_begin: usize,
+        offset_end: usize,
+    ) -> Result<(), Error>
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        for (idx, v) in self.advice[0].iter().enumerate() {
+            if v.is_zero_vartime() {
+                continue;
+            }
+            let annotation: &String = &annotation().into();
+            for offset in offset_begin..offset_end {
+                self.region.assign_advice(
+                    || annotation,
+                    self.advice_columns[idx],
+                    offset,
+                    || Value::known(*v),
+                )?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Assign an advice column value (witness).
