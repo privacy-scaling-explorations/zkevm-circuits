@@ -53,7 +53,6 @@ impl Opcode for Extcodecopy {
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
-        state.add_ext_code_hash(code_hash);
         Ok(exec_steps)
     }
 }
