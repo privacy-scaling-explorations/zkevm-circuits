@@ -12,6 +12,7 @@ use halo2_proofs::{
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use std::collections::BTreeMap;
 
 pub(crate) mod common_gadget;
@@ -112,18 +113,19 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         A: Fn() -> AR,
         AR: Into<String>,
     {
-        for (idx, v) in self.advice[0].iter().enumerate() {
+        for (v, column) in self
+            .advice
+            .iter()
+            .map(|values| values[0])
+            .zip_eq(self.advice_columns.iter())
+        {
             if v.is_zero_vartime() {
                 continue;
             }
             let annotation: &String = &annotation().into();
             for offset in offset_begin..offset_end {
-                self.region.assign_advice(
-                    || annotation,
-                    self.advice_columns[idx],
-                    offset,
-                    || Value::known(*v),
-                )?;
+                self.region
+                    .assign_advice(|| annotation, *column, offset, || Value::known(v))?;
             }
         }
 

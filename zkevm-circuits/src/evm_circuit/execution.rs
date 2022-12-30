@@ -859,6 +859,11 @@ impl<F: Field> ExecutionConfig<F> {
                     let height = self.get_step_height(ExecutionState::EndBlock);
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
+                    log::trace!(
+                        "assign non-last EndBlock in range [{},{})",
+                        offset,
+                        last_row
+                    );
                     self.assign_same_exec_step_in_range(
                         &mut region,
                         offset,
@@ -880,6 +885,7 @@ impl<F: Field> ExecutionConfig<F> {
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
                 let height = self.get_step_height(ExecutionState::EndBlock);
                 debug_assert_eq!(height, 1);
+                log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(
                     &mut region,
                     offset,
@@ -1185,8 +1191,12 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            // expensive function call
-            Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+            }
         }
         Ok(())
     }
