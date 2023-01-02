@@ -169,7 +169,7 @@ pub struct StoredExpression<F> {
     cell: Cell<F>,
     cell_type: CellType,
     expr: Expression<F>,
-    expr_id: Vec<u8>,
+    expr_id: String,
 }
 
 use std::hash::{Hash, Hasher};
@@ -246,7 +246,7 @@ impl CellType {
         }
     }
 
-    /// Return the phase of the expression
+    /// Return the phase for the inverse of an the expression
     pub(crate) fn storage_for_inv<F: FieldExt>(value: &Expression<F>) -> CellType {
         match Self::expr_phase(value) {
             0 => CellType::StoragePhase1,

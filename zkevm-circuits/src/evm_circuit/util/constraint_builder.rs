@@ -1444,7 +1444,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                     name,
                     cell: cell.clone(),
                     cell_type,
-                    expr_id: expr.fast_identifier(),
+                    expr_id: expr.identifier(),
                     expr,
                 });
                 cell.expr()
@@ -1457,7 +1457,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         expr: &Expression<F>,
         cell_type: CellType,
     ) -> Option<&StoredExpression<F>> {
-        let expr_id = expr.fast_identifier();
+        let expr_id = expr.identifier();
         self.stored_expressions
             .iter()
             .find(|&e| e.cell_type == cell_type && e.expr_id == expr_id)
@@ -1489,7 +1489,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                             if expr.degree() > max_degree {
                                 self.split_expression(name, expr, max_degree)
                             } else {
-                                self.store_expression(name, expr, CellType::StoragePhase1)
+                                let cell_type = CellType::storage_for(&expr);
+                                self.store_expression(name, expr, cell_type)
                             }
                         };
                         if a.degree() >= b.degree() {
