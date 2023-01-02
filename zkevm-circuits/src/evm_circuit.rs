@@ -231,6 +231,7 @@ pub mod test {
     use super::*;
     use crate::{
         evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuitConfig},
+        exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::Challenges,
         witness::block_convert,
@@ -410,36 +411,76 @@ pub mod test {
         run_test_circuit(block)
     }
 
-    pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let fixed_table_tags = detect_fixed_table_tags(&block);
+    pub fn get_test_degree<F: Field>(block: &Block<F>) -> u32 {
+        let num_rows_required_for_execution_steps: usize =
+            EvmCircuit::<F>::get_num_rows_required(block);
+        let num_rows_required_for_rw_table: usize = block.circuits_params.max_rws;
+        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
+            .iter()
+            .map(|tag| tag.build::<F>().count())
+            .sum();
+        let num_rows_required_for_bytecode_table: usize = block
+            .bytecodes
+            .values()
+            .map(|bytecode| bytecode.bytes.len() + 1)
+            .sum();
+        let num_rows_required_for_copy_table: usize =
+            block.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
+        let num_rows_required_for_keccak_table: usize = block.keccak_inputs.len();
+        let num_rows_required_for_tx_table: usize =
+            block.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+        let num_rows_required_for_exp_table: usize = block
+            .exp_events
+            .iter()
+            .map(|e| e.steps.len() * OFFSET_INCREMENT)
+            .sum();
+
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
-        let num_rows_required_for_steps = EvmCircuit::<F>::get_num_rows_required(&block);
         const NUM_BLINDING_ROWS: usize = 64;
-        let k = log2_ceil(
-            NUM_BLINDING_ROWS
-                + fixed_table_tags
-                    .iter()
-                    .map(|tag| tag.build::<F>().count())
-                    .sum::<usize>(),
-        );
-        let k = k.max(log2_ceil(
-            NUM_BLINDING_ROWS
-                + block
-                    .bytecodes
-                    .values()
-                    .map(|bytecode| bytecode.bytes.len())
-                    .sum::<usize>(),
-        ));
-        let k = k.max(log2_ceil(NUM_BLINDING_ROWS + num_rows_required_for_steps));
-        let k = k.max(log2_ceil(NUM_BLINDING_ROWS + block.circuits_params.max_rws));
-        log::debug!("evm circuit uses k = {}", k);
+
+        let rows_needed: usize = itertools::max([
+            num_rows_required_for_execution_steps,
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table,
+        ])
+        .unwrap();
+
+        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        dbg!([
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table
+        ]);
+        log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+        k
+    }
+
+    pub fn get_test_cicuit_from_block<F: Field>(block: Block<F>) -> EvmCircuit<F> {
+        let fixed_table_tags = detect_fixed_table_tags(&block);
+
+        EvmCircuit::<F>::new_dev(block, fixed_table_tags)
+    }
+
+    pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+        let k = get_test_degree(&block);
 
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<F>::get_active_rows(&block);
-        let circuit = EvmCircuit::<F>::new_dev(block, fixed_table_tags);
+
+        let circuit = get_test_cicuit_from_block(block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
+
 }
 
 #[cfg(test)]

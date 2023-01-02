@@ -1885,7 +1885,9 @@ dependencies = [
 name = "geth-utils"
 version = "0.1.0"
 dependencies = [
+ "env_logger",
  "gobuild",
+ "log",
 ]
 
 [[package]]
@@ -2336,9 +2338,12 @@ dependencies = [
  "halo2_proofs 0.2.0",
  "lazy_static",
  "log",
+ "mock",
  "paste",
  "pretty_assertions",
  "rand_chacha",
+ "rand_core",
+ "rand_xorshift",
  "serde",
  "serde_json",
  "tokio",
@@ -2414,10 +2419,12 @@ dependencies = [
 name = "keccak256"
 version = "0.1.0"
 dependencies = [
+ "env_logger",
  "eth-types",
  "halo2_proofs 0.1.0",
  "itertools",
  "lazy_static",
+ "log",
  "num-bigint",
  "num-traits",
  "plotters",

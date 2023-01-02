@@ -419,6 +419,7 @@ mod super_circuit_tests {
     use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;
+    use log::error;
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -483,8 +484,7 @@ mod super_circuit_tests {
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
-            eprintln!("Verification failures:");
-            eprintln!("{:#?}", err);
+            error!("Verification failures: {:#?}", err);
             panic!("Failed verification");
         }
     }

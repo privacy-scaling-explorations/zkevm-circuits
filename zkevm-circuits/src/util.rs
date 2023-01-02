@@ -4,9 +4,7 @@ use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{
         Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
-    },
-    poly::Rotation,
-};
+    }};
 
 use crate::table::TxLogFieldTag;
 use crate::witness;
@@ -30,22 +28,6 @@ pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomnes
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
-/// Query N instances at current rotation and return their expressions.  This
-/// function is used to get the power of randomness (passed as
-/// instances) in our tests.
-pub fn power_of_randomness_from_instance<F: FieldExt, const N: usize>(
-    meta: &mut ConstraintSystem<F>,
-) -> [Expression<F>; N] {
-    // This gate is used just to get the array of expressions from the power of
-    // randomness instance column, so that later on we don't need to query
-    // columns everywhere, and can pass the power of randomness array
-    // expression everywhere.  The gate itself doesn't add any constraints.
-
-    let columns = [(); N].map(|_| meta.instance_column());
-    query_expression(meta, |meta| {
-        columns.map(|column| meta.query_instance(column, Rotation::cur()))
-    })
-}
 
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]

@@ -6,15 +6,14 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
-use itertools::Itertools;
+use halo2_proofs::{halo2curves::bn256::Fr, circuit::Value};
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
@@ -178,9 +177,8 @@ pub fn block_convert(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<Fr>, Error> {
     Ok(Block {
-        randomness: Fr::from(0xcafeu64), // TODO: Uncomment
         _marker: PhantomData::default(),
-        // randomness: Fr::from(0x100), // Special value to reveal elements after RLC
+        randomness: Fr::from(0x10000), // Special value to reveal elements after RLC
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -191,20 +189,12 @@ pub fn block_convert(
             .collect(),
         end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
         end_block_last: step_convert(&block.block_steps.end_block_last),
-        bytecodes: block
-            .txs()
-            .iter()
-            .flat_map(|tx| {
-                tx.calls()
-                    .iter()
-                    .map(|call| call.code_hash)
-                    .unique()
-                    .into_iter()
-                    .map(|code_hash| {
-                        let bytecode =
-                            Bytecode::new(code_db.0.get(&code_hash).cloned().unwrap_or_default());
-                        (bytecode.hash, bytecode)
-                    })
+        bytecodes: code_db
+            .0
+            .values()
+            .map(|v| {
+                let bytecode = Bytecode::new(v.clone());
+                (bytecode.hash, bytecode)
             })
             .collect(),
         copy_events: block.copy_events.clone(),

@@ -391,7 +391,8 @@ pub struct ExpCircuit<F> {
 }
 
 impl<F: Field> ExpCircuit<F> {
-    pub(crate) fn new(block: Block<F>) -> Self {
+    /// Return a new ExpCircuit
+    pub fn new(block: Block<F>) -> Self {
         Self { block: Some(block) }
     }
 }
