@@ -322,7 +322,6 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
-
         let step_curr = Step::new(meta, advices, 0, false);
         let mut height_map = HashMap::new();
 
@@ -410,11 +409,13 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
 
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let word_powers_of_randomness : [Expression<F>;31] = challenges.evm_word_powers_of_randomness();
-        let lookup_powers_of_randomness : [Expression<F>;31] = challenges.lookup_input_powers_of_randomness();
+        let word_powers_of_randomness: [Expression<F>; 31] =
+            challenges.evm_word_powers_of_randomness();
+        let lookup_powers_of_randomness: [Expression<F>; 31] =
+            challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
-                 Self::configure_gadget(
+                Self::configure_gadget(
                     meta,
                     advices,
                     q_usable,
@@ -578,8 +579,8 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_first: Selector,
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
-        word_powers_of_randomness: &[Expression<F>;31],
-        lookup_powers_of_randomness: &[Expression<F>;31],
+        word_powers_of_randomness: &[Expression<F>; 31],
+        lookup_powers_of_randomness: &[Expression<F>; 31],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
@@ -629,7 +630,7 @@ impl<F: Field> ExecutionConfig<F> {
             !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
-       
+
         height_map.insert(G::EXECUTION_STATE, height);
         debug_assert!(
             !stored_expressions_map.contains_key(&G::EXECUTION_STATE),
@@ -743,7 +744,8 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
-        let powers_of_randomness: [Expression<F>; 31] = challenges.lookup_input_powers_of_randomness();
+        let lookup_powers_of_randomness: [Expression<F>; 31] =
+            challenges.lookup_input_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -762,7 +764,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, &powers_of_randomness),
+                        rlc::expr(&table_expressions, &lookup_powers_of_randomness),
                     )]
                 });
             }

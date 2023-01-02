@@ -284,8 +284,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         curr: Step<F>,
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
-        word_powers_of_randomness: &'a [Expression<F>;31],
-        lookup_powers_of_randomness: &'a [Expression<F>;31],
+        word_powers_of_randomness: &'a [Expression<F>; 31],
+        lookup_powers_of_randomness: &'a [Expression<F>; 31],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
@@ -1414,7 +1414,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         expr: Expression<F>,
         cell_type: CellType,
     ) -> Expression<F> {
-
         // Check if we already stored the expression somewhere
         let stored_expression = self.find_stored_expression(&expr, cell_type);
 

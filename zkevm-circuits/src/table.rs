@@ -816,7 +816,6 @@ impl KeccakTable {
                 let keccak_table_columns = self.columns();
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
-                        dbg!(row);
                         // let mut column_index = 0;
                         for (column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(

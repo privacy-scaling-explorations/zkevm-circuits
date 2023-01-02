@@ -174,7 +174,7 @@ pub struct StoredExpression<F> {
 
 use std::hash::{Hash, Hasher};
 
-impl<F> Hash for StoredExpression<F>{
+impl<F> Hash for StoredExpression<F> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.expr_id.hash(state);
         self.cell_type.hash(state);
@@ -222,7 +222,7 @@ pub(crate) enum CellType {
     StoragePhase3,
     StoragePermutation,
     Lookup(Table),
-    LookupPhase3(Table)
+    LookupPhase3(Table),
 }
 
 impl CellType {

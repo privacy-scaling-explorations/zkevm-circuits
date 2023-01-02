@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
         let copy_rwc_inc = cb.query_cell();
         let rlc_acc = cb.query_cell();
-        
+
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 copy_rwc_inc.expr(),
             );
         });
-        
+
         cb.condition(not::expr(memory_address.has_length()), |cb| {
             cb.require_zero("copy_rwc_inc == 0 for size = 0", copy_rwc_inc.expr());
             cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());

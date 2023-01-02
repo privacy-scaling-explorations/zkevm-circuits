@@ -64,7 +64,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_OP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
- 
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
@@ -359,7 +358,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ..StepStateTransition::new_context()
             });
         });
- 
+
         Self {
             opcode,
             is_call,
@@ -856,7 +855,10 @@ mod test {
 
     #[test]
     fn callop_base() {
-        test_ok(caller(&OpcodeId::CALL, Stack::default(), true), callee(bytecode!{}));
+        test_ok(
+            caller(&OpcodeId::CALL, Stack::default(), true),
+            callee(bytecode! {}),
+        );
         // use crate::evm_circuit::util::print_op_count;
         // print_op_count();
     }

@@ -90,7 +90,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
-        let power_of_randomness : [Expression<F>;31]= challenges.evm_word_powers_of_randomness();
+        let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
@@ -122,7 +122,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             meta,
             sort_keys,
             lookups,
-            power_of_randomness.clone()
+            power_of_randomness.clone(),
         );
 
         let config = Self {
