@@ -813,7 +813,7 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
-        let mut is_first_time = false;
+        let mut is_first_time = true;
 
         layouter.assign_region(
             || "Execution step",

@@ -427,9 +427,36 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
 
+        let mut is_first_time = true;
+
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    self.set_row(
+                        &mut region,
+                        &push_rindex_is_zero_chip,
+                        &length_is_zero_chip,
+                        last_row_offset,
+                        false,
+                        true,
+                        Value::known(F::zero()),
+                        F::from(BytecodeFieldTag::Padding as u64),
+                        F::zero(),
+                        F::one(),
+                        F::zero(),
+                        0,
+                        Value::known(F::zero()),
+                        F::zero(),
+                        F::zero(),
+                        true,
+                        true,
+                        F::zero(),
+                    )?;
+                    return Ok(());
+                }
+
                 let mut offset = 0;
                 let mut push_rindex_prev = 0;
                 for bytecode in witness.iter() {
