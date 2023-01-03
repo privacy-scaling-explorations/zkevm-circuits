@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_PROGRAM_COUNTER,
+        param::{N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -26,15 +26,20 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     opcode: Cell<F>,
     /// Holds the length of the return data.
-    return_data_length: Cell<F>,
-    /// Holds the memory address for the offset in return data from where we
+    // return_data_length: Cell<F>,
     /// read.
-    data_offset:  Cell<F>,
     memory_offset: Cell<F>,
-    end : Cell<F>,
-    is_dataset_overflow: IsZeroGadget<F>,
-    is_end_overflow: IsZeroGadget<F>,
-    is_end_exceed_length: IsZeroGadget<F>,
+    data_offset:  RandomLinearCombination<F, 31>,
+    length: RandomLinearCombination<F, 31>,
+    //end : Cell<F>,
+
+    //return_data_offset: Cell<F>,
+    /// Holds the size of the last callee return data.
+    return_data_size: Cell<F>,
+
+    // is_dataset_overflow: IsZeroGadget<F>,
+    // is_end_overflow: IsZeroGadget<F>,
+    is_end_exceed_length: LtGadget<F, N_BYTES_MEMORY_WORD_SIZE>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -44,47 +49,36 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorReturnDataOutOfBound;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_rlc();
         let opcode = cb.query_cell();
-        let value = cb.query_cell();
-        let is_code = cb.query_cell();
-        let condition = cb.query_cell();
+        let memory_offset = cb.query_cell();
+        let data_offset = cb.query_rlc();
+        let length = cb.query_rlc();
+
+        let return_data_size = cb.query_cell();
 
         cb.require_equal("opcode is RETURNDATACOPY", opcode.expr(), OpcodeId::RETURNDATACOPY.expr());
-        // do stack oeprations
+
+        // 1. Pop dest_offset, offset, length from stack
+        cb.stack_pop(memory_offset.expr());
+        cb.stack_pop(data_offset.expr());
+        cb.stack_pop(length.expr());
 
         // read last callee return data length
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::LastCalleeReturnDataLength,
+            return_data_size.expr(),
+        );
 
-        // check overflows
+        // check overflows 
+        // check data_offset or end is u64 overflow, or 
+        // last_callee_return_data_length < end
+        let is_end_exceed_length = LtGadget::construct(cb,  
+            return_data_size.expr(), from_bytes::expr(&data_offset.cells) + from_bytes::expr(&length.cells));
+        
 
-
-        // initialize is_jump_dest
-        let is_jump_dest = IsEqualGadget::construct(cb, value.expr(), OpcodeId::JUMPDEST.expr());
-
-        // first default this condition, if use will re-construct with real condition
-        // value
-        let is_condition_zero = IsZeroGadget::construct(cb, condition.expr());
-
-        // Pop the value from the stack
-        cb.stack_pop(destination.expr());
-        // look up bytecode length
-
-        let within_range = LtGadget::construct(cb, dest_value.expr(), code_length.expr());
-        //if not out of range, check `dest` is invalid
-        cb.condition(within_range.expr(), |cb| {
-            // if not out of range, Lookup real value
-            cb.bytecode_lookup(
-                cb.curr.state.code_hash.expr(),
-                dest_value.clone(),
-                is_code.expr(),
-                value.expr(),
-            );
-            cb.require_zero(
-                "is_code is false or not JUMPDEST",
-                is_code.expr() * is_jump_dest.expr(),
-            );
-        });
-
+        cb.require_equal("return_data_size < data offset + size", is_end_exceed_length.expr(), 1.expr());
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
         // Go to EndTx only when is_root
@@ -101,7 +95,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(
-                    2.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
+                    0.expr() + cb.curr.state.reversible_write_counter.expr(),
                 ),
 
                 ..StepStateTransition::any()
@@ -124,15 +118,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
         Self {
             opcode,
-            destination,
-            code_length,
-            value,
-            is_code,
-            within_range,
-            is_jump_dest,
-            is_jumpi,
-            condition,
-            is_condition_zero,
+            memory_offset,
+            data_offset,
+            length,
+            is_end_exceed_length,
+            return_data_size,
             restore_context,
         }
     }
@@ -147,275 +137,106 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        let is_jumpi = opcode == OpcodeId::JUMPI;
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
        
-        let condition_rlc =
-            RLCWord::random_linear_combine(condition.to_le_bytes(), block.randomness);
-
-        self.within_range.assign(
-            region,
-            offset,
-            F::from(destination.as_u64()),
-            F::from(code_length),
-        )?;
-
-        self.is_jumpi.assign(
-            region,
-            offset,
-            F::from(opcode.as_u64()),
-            F::from(OpcodeId::JUMPI.as_u64()),
-        )?;
-
+        // let condition_rlc =
+        //     RLCWord::random_linear_combine(condition.to_le_bytes(), block.randomness);
         self.restore_context
-            .assign(region, offset, block, call, step, 2 + is_jumpi as usize)?;
+            .assign(region, offset, block, call, step, 2 as usize)?;
         Ok(())
     }
 }
 
+
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit;
-    use crate::evm_circuit::witness::block_convert;
-    use crate::test_util::run_test_circuits;
-    use eth_types::bytecode::Bytecode;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, ToWord, Word};
-    use mock::TestContext;
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::test_util::run_test_circuits_with_params;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use eth_types::{bytecode, ToWord, Word};
+    use mock::test_ctx::TestContext;
 
-    fn test_return_data_out_of_bound(destination: usize, out_of_range: bool) {
-        let mut bytecode = bytecode! {
-            PUSH32(if out_of_range { destination + 10} else { destination })
-            JUMP
-        };
+    fn test_ok_internal(
+        return_data_offset: usize,
+        return_data_size: usize,
+        dest_offset: usize,
+        offset: usize,
+        size: usize,
+    ) {
+        let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        // incorrect assigning for invalid jump
-        for _ in 0..(destination - 33) {
-            bytecode.write(0, false);
-        }
-        bytecode.append(&bytecode! {
-            JUMPDEST
+        let pushdata = rand_bytes(32);
+        let return_offset =
+            std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
+        let code_b = bytecode! {
+            PUSH32(Word::from_big_endian(&pushdata))
+            PUSH32(return_offset)
+            MSTORE
+
+            PUSH32(return_data_size)
+            PUSH32(return_data_offset)
+            RETURN
             STOP
-        });
-
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
-    }
-
-    #[test]
-    fn invalid_jump_err() {
-        test_invalid_jump(34, false);
-    }
-
-
-    #[test]
-    fn invalid_jump_internal() {
-        // test jump error in internal call
-        test_internal_jump_error(false);
-        // test jumpi error in internal call
-        test_internal_jump_error(true);
-    }
-
-    // internal call test
-    struct Stack {
-        gas: u64,
-        value: Word,
-        cd_offset: u64,
-        cd_length: u64,
-        rd_offset: u64,
-        rd_length: u64,
-    }
-
-    fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
-        let is_empty = code.is_empty();
-        Account {
-            address: Address::repeat_byte(0xff),
-            code: code.into(),
-            nonce: if is_empty { 0 } else { 1 }.into(),
-            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
-            ..Default::default()
-        }
-    }
-
-    fn caller(opcode: OpcodeId, stack: Stack, caller_is_success: bool) -> Account {
-        let is_call = opcode == OpcodeId::CALL;
-        let terminator = if caller_is_success {
-            OpcodeId::RETURN
-        } else {
-            OpcodeId::REVERT
         };
 
-        // Call twice for testing both cold and warm access
-        let mut bytecode = bytecode! {
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        };
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH32(Word::from(stack.rd_length))
-            PUSH32(Word::from(stack.rd_offset))
-            PUSH32(Word::from(stack.cd_length))
-            PUSH32(Word::from(stack.cd_offset))
-        });
-        if is_call {
-            bytecode.push(32, stack.value);
-        }
-        bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH32(Word::from(stack.gas))
-            .write_op(opcode)
-            PUSH1(0)
-            PUSH1(0)
-            .write_op(terminator)
-        });
-
-        Account {
-            address: Address::repeat_byte(0xfe),
-            balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
-            ..Default::default()
-        }
-    }
-
-    // jump or jumpi error happen in internal call
-    fn test_internal_jump_error(is_jumpi: bool) {
-        let mut caller_bytecode = bytecode! {
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(0)
-        };
-
-        caller_bytecode.append(&bytecode! {
-            PUSH32(Address::repeat_byte(0xff).to_word())
-            PUSH2(10000)
+        // code A calls code B.
+        let code_a = bytecode! {
+            // call ADDR_B.
+            PUSH32(return_data_size) // retLength
+            PUSH32(return_data_offset) // retOffset
+            PUSH1(0x00) // argsLength
+            PUSH1(0x00) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(addr_b.to_word()) // addr
+            PUSH32(0x1_0000) // gas
             CALL
+            PUSH32(size) // size
+            PUSH32(offset) // offset
+            PUSH32(dest_offset) // dest_offset
+            RETURNDATACOPY
             STOP
-        });
-
-        let opcode = if is_jumpi {
-            OpcodeId::JUMPI
-        } else {
-            OpcodeId::JUMP
         };
 
-        let mut callee_bytecode = bytecode! {
-            PUSH1(1) //  work as condition if is_jumpi
-            PUSH1(42) // jump dest 45
-            .write_op(opcode)
-
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(0)
-            PUSH1(0)
-        };
-
-        callee_bytecode.append(&bytecode! {
-            PUSH20(Address::repeat_byte(0xff).to_word())
-            PUSH1(132) // gas
-
-            JUMPDEST
-            GAS
-            PUSH1(1)
-            AND
-            PUSH1(56)
-            JUMPI
-
-            PUSH1(0)
-            PUSH1(0)
-            REVERT
-
-            JUMPDEST
-            STOP
-        });
-        test_ok(
-            Account {
-                address: Address::repeat_byte(0xfe),
-                balance: Word::from(10).pow(20.into()),
-                code: caller_bytecode.into(),
-                ..Default::default()
-            },
-            callee(callee_bytecode),
-        );
-    }
-
-    fn test_ok(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(Word::from(10u64.pow(19)));
-                accs[1]
-                    .address(caller.address)
-                    .code(caller.code)
-                    .nonce(caller.nonce)
-                    .balance(caller.balance);
+                accs[0].address(addr_a).code(code_a);
+                accs[1].address(addr_b).code(code_b);
                 accs[2]
-                    .address(callee.address)
-                    .code(callee.code)
-                    .nonce(callee.nonce)
-                    .balance(callee.balance);
+                    .address(mock::MOCK_ACCOUNTS[2])
+                    .balance(Word::from(1u64 << 30));
             },
             |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000.into());
+                txs[0].to(accs[0].address).from(accs[2].address);
             },
-            |block, _tx| block.number(0xcafeu64),
+            |block, _tx| block,
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
-    }
-
-    fn test_invalid_jumpi(destination: usize) {
-        let mut bytecode = bytecode! {
-            PUSH32(destination)
-            PUSH32(100) // condition
-            JUMPI
-        };
-
-        // incorrect assigning for invalid jump
-        for _ in 0..(destination - 33) {
-            bytecode.write(0, false);
-        }
-        bytecode.append(&bytecode! {
-            JUMPDEST
-            STOP
-        });
+        .unwrap();
 
         assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
+            run_test_circuits_with_params(
+                ctx,
+                None,
+                CircuitsParams {
+                    max_rws: 2048,
+                    ..Default::default()
+                }
             ),
             Ok(())
         );
     }
+
+    // TODO: Add negative cases for out-of-bound and out-of-gas
+    #[test]
+    fn returndatacopy_out_of_bound_error() {
+        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10);
+    }
+
+    // #[test]
+    // #[should_panic]
+    // fn returndatacopy_gadget_out_of_gas() {
+    //     test_ok_internal(0x00, 0x10, 0x2000000, 0x00, 0x10);
+    // }
 }

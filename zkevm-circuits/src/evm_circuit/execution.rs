@@ -55,6 +55,7 @@ mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_static_memory;
 mod error_stack;
+mod error_return_data_outofbound;
 mod exp;
 mod extcodehash;
 mod extcodesize;
@@ -117,6 +118,7 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_stack::ErrorStackGadget;
+use error_return_data_outofbound::ErrorReturnDataOutOfBoundGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
 use extcodesize::ExtcodesizeGadget;
@@ -280,8 +282,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
-    error_return_data_out_of_bound:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
     invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
