@@ -221,8 +221,7 @@ pub(crate) enum CellType {
     StoragePhase2,
     StoragePhase3,
     StoragePermutation,
-    Lookup(Table),
-    LookupPhase3(Table),
+    Lookup(Table)
 }
 
 impl CellType {
@@ -311,20 +310,21 @@ impl<F: FieldExt> CellManager<F> {
             column_idx += 1;
         }
 
-        // Mark columns used for Phase2 constraints
-        for _ in 0..N_PHASE2_COLUMNS {
-            columns[column_idx].cell_type = CellType::StoragePhase2;
-            column_idx += 1;
-        }
-
-        // Mark columns used for lookups
+        // Mark columns used for lookups in Phase3
         for &(table, count) in LOOKUP_CONFIG {
             for _ in 0usize..count {
                 columns[column_idx].cell_type = CellType::Lookup(table);
                 column_idx += 1;
             }
         }
-        // Mark columns used for copy constraints
+
+        // Mark columns used for Phase2 constraints
+        for _ in 0..N_PHASE2_COLUMNS {
+            columns[column_idx].cell_type = CellType::StoragePhase2;
+            column_idx += 1;
+        }
+
+       // Mark columns used for copy constraints
         for _ in 0..N_COPY_COLUMNS {
             meta.enable_equality(advices[column_idx]);
             columns[column_idx].cell_type = CellType::StoragePermutation;

@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH, LOOKUP_CONFIG},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -311,13 +311,16 @@ impl<F: Field> ExecutionConfig<F> {
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
+
+        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_,count)| *count).sum();
+        
         let advices = [(); STEP_WIDTH]
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS {
+                if n < N_PHASE3_COLUMNS + lookup_column_count {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + N_PHASE2_COLUMNS {
+                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
