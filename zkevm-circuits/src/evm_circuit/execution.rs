@@ -414,9 +414,9 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
 
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let word_powers_of_randomness: [Expression<F>; 31] =
+        let word_powers_of_randomness =
             challenges.evm_word_powers_of_randomness();
-        let lookup_powers_of_randomness: [Expression<F>; 31] =
+        let lookup_powers_of_randomness =
             challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
@@ -584,7 +584,7 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
         word_powers_of_randomness: &[Expression<F>; 31],
-        lookup_powers_of_randomness: &[Expression<F>; 31],
+        lookup_powers_of_randomness: &[Expression<F>; 12],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,

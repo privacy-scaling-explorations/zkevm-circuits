@@ -266,7 +266,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
     word_powers_of_randomness: &'a [Expression<F>; 31],
-    lookup_powers_of_randomness: &'a [Expression<F>; 31],
+    lookup_powers_of_randomness: &'a [Expression<F>; 12],
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
@@ -285,7 +285,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
         word_powers_of_randomness: &'a [Expression<F>; 31],
-        lookup_powers_of_randomness: &'a [Expression<F>; 31],
+        lookup_powers_of_randomness: &'a [Expression<F>; 12],
         execution_state: ExecutionState,
     ) -> Self {
         Self {
