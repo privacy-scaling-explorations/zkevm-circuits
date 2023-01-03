@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, or, select, Expr};
+use gadgets::util::{and, not, or, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -12,12 +12,10 @@ use crate::{
     evm_circuit::util::rlc,
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
-        helpers::BaseConstraintBuilder,
+        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
         param::{
-            BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
-            IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-            IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
-            IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_START,
+            BRANCH_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+            NIBBLES_COUNTER_POS, RLP_NUM, S_START,
         },
     },
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
@@ -108,10 +106,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let sel_2 = ctx.denoter.sel2;
 
         // key rlc is in the first branch node
-        let rot_into_first_branch_child = if is_s { -18 } else { -19 };
+        let rot_into_first_branch_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
         let rot_into_init = rot_into_first_branch_child - 1;
 
         constraints! {[meta, cb], {
+            let ext = ExtensionNodeInfo::new(meta, s_main, is_s, rot_into_init);
+
             /* Account leaf RLC after key */
             // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,236,246,95,240,224,191,229,27,102,202,231,184,80
             // There are 112 bytes after the first two bytes.
@@ -142,14 +142,8 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // `is_c16`/`is_c1` hold the information whether there is even or odd number of nibbles in the leaf.
                 // `is_c16 = 0, is_c1 = 1` if leaf in first level, because we do not have the branch above
                 // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
-                let is_c16 = selectx!{not::expr(is_leaf_in_first_level.expr()) => {
-                    a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot_into_init)
-                }};
-                let is_c1 = selectx!{not::expr(is_leaf_in_first_level.expr()) => {
-                    a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot_into_init)
-                } elsex {
-                    1
-                }};
+                let is_c16 = selectx!{not::expr(is_leaf_in_first_level.expr()) => { ext.is_c16() }};
+                let is_c1 = selectx!{not::expr(is_leaf_in_first_level.expr()) => { ext.is_c1() } elsex { 1 }};
 
                 // Let us observe a case with even number of nibbles first:
                 // `[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`
@@ -246,46 +240,15 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // an even number of nibbles, it turns around.
                 // Note: _c16 presents the same info as sel1, _c1 presents the same info as sel2 (this information is doubled
                 // to reduce the degree when handling different cases in extension_node_key).
-                let sel1p = a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot_into_init);
-                let sel2p = a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot_into_init);
-
-                let is_ext_short_c16 = meta.query_advice(
-                    s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
-                    Rotation(rot_into_init),
-                );
-                let is_ext_short_c1 = meta.query_advice(
-                    s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
-                    Rotation(rot_into_init),
-                );
-                let is_ext_long_even_c16 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-                    Rotation(rot_into_init),
-                );
-                let is_ext_long_even_c1 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-                    Rotation(rot_into_init),
-                );
-                let is_ext_long_odd_c16 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-                    Rotation(rot_into_init),
-                );
-                let is_ext_long_odd_c1 = meta.query_advice(
-                    s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-                    Rotation(rot_into_init),
-                );
-                let is_extension_node = is_ext_short_c16.clone()
-                    + is_ext_short_c1.clone()
-                    + is_ext_long_even_c16.clone()
-                    + is_ext_long_even_c1.clone()
-                    + is_ext_long_odd_c16.clone()
-                    + is_ext_long_odd_c1.clone();
-                let sel1 = not::expr(is_extension_node) * sel2p.clone()
-                    + is_ext_short_c16 * sel1p.clone()
-                    + is_ext_short_c1 * sel2p.clone()
-                    + is_ext_long_even_c16 * sel2p.clone()
-                    + is_ext_long_even_c1 * sel1p.clone()
-                    + is_ext_long_odd_c16 * sel1p
-                    + is_ext_long_odd_c1 * sel2p;
+                let sel1p = ext.is_c16();
+                let sel2p = ext.is_c1();
+                let sel1 = not::expr(ext.is_extension_node()) * sel2p.expr()
+                    + ext.is_short_c16.expr() * sel1p.expr()
+                    + ext.is_short_c1.expr() * sel2p.expr()
+                    + ext.is_long_even_c16.expr() * sel2p.expr()
+                    + ext.is_long_even_c1.expr() * sel1p.expr()
+                    + ext.is_long_odd_c16.expr() * sel1p
+                    + ext.is_long_odd_c1.expr() * sel2p;
                 let sel2 = not::expr(sel1.expr());
 
                 // If sel2 = 1, we have 32 in s_main.bytes[1].
@@ -336,6 +299,19 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 require!(nibbles_count + leaf_nibbles => 64);
             }}
 
+            let num_bytes = a!(s_main.bytes[0]) - 128.expr();
+            // RLC bytes zero check
+            cb.set_range_length(1.expr() + num_bytes.expr());
+            // When the account intermediate RLC is computed in the next row (nonce balance row), we need
+            // to know the intermediate RLC from the current row and the randomness multiplier (`r` to some power).
+            // The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
+            // is computed as (key starts in `s_main.bytes[1]`):
+            // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
+            // So the multiplier to be used in the next row is `r^{key_len + 2}`.
+            // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
+            // That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
+            require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
+
             /* Account delete */
             // We need to make sure there is no leaf when account is deleted. Two possible cases:
             // 1. Account leaf is deleted and there is a nil object in branch. In this case we have
@@ -358,21 +334,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     require!(or::expr([is_leaf_placeholder, is_branch_c_placeholder]) => true);
                 }}
             }
-
-            // RLC bytes zero check
-            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
-                require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
-            }
-
-            // When the account intermediate RLC is computed in the next row (nonce balance row), we need
-            // to know the intermediate RLC from the current row and the randomness multiplier (`r` to some power).
-            // The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
-            // is computed as (key starts in `s_main.bytes[1]`):
-            // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
-            // So the multiplier to be used in the next row is `r^{key_len + 2}`.
-            // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
-            // That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
-            require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 3.expr(), a!(accs.acc_s.mult)) => @fixed);
         }}
 
         // Note: there is no need to check `key_rlc_mult` as it is not used after this

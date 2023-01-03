@@ -432,11 +432,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                             require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
                         }}
                     }}
-
-                    // RLC bytes zero check
-                    for (idx, &byte) in s_main.bytes.iter().enumerate() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.rlp2) - 128.expr() - (idx + 1).expr())) => @fixed);
-                    }
+                    // RLC bytes zero check for s_main.bytes.iter()
+                    cb.set_range_length_s(a!(s_main.rlp2) - 128.expr());
                 }}
             }}
         }}

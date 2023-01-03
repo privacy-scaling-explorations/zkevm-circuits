@@ -98,8 +98,14 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     &main.bytes.iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
                     &r,
                 );
+                let num_bytes = a!(main.bytes[0]) - 192.expr();
+                // RLC bytes zero check for main.bytes.iter().skip(1)
+                cb.set_range_length_sc(is_s, 1.expr() + num_bytes.expr());
+                // We need to check that the multiplier in non-hashed nodes changes according to the non-hashed
+                // node length.
+                require!((FixedTableTag::RMult, num_bytes.expr(), node_mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
+                // Check the stored value
                 require!(branch_rlc.cur() => rlc.expr());
-
                 // When a branch child is non-hashed, we have `f = bytes[0] - 192` bytes in a row.
                 // The multiplier changes by factor `r^{f+1}`. `+1` is for the byte that specifies the length.
                 // We do not know in advance the factor `f`, so we use the lookup table that it corresponds
@@ -113,12 +119,10 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     // `branch_mult_prev` is the value that is to be used when multiplying the byte to be added
                     // to the RLC. Note that `branch_mult_prev` is stored in the previous row.
                     require!(branch_rlc.cur() => branch_rlc.prev() + 128.expr() * branch_mult.prev());
-
                     // When a branch child is empty, we only have one byte in a row and the multiplier only
                     // changes by factor `r`.
                     require!(branch_mult.cur() => branch_mult.prev() * r[0].expr());
                 }}
-
                 ifx!{rlp2 => {
                     // When a branch child is non-empty and hashed, we have 33 bytes in a row.
                     // We need to add these 33 bytes to the RLC.
@@ -127,17 +131,10 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                         &r,
                     );
                     require!(branch_rlc.cur() => branch_rlc.prev() + rlc.expr());
-
                     // When a branch child is non-empty and hashed, we have 33 bytes in a row.
                     // The multiplier changes by factor `r^33`.
                     require!(branch_mult.cur() => branch_mult.prev() * r[0].expr() * r[POWER_OF_RANDOMNESS_LEN - 1].expr());
                 }}
-            }}
-
-            // We need to check that the multiplier in non-hashed nodes changes according to the non-hashed
-            // node length.
-            ifx!{is_node_hashed => {
-                require!((FixedTableTag::RMult, a!(main.bytes[0]) - 192.expr(), node_mult_diff) => @fixed);
             }}
         }}
 

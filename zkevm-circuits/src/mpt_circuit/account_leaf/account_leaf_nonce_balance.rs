@@ -192,6 +192,16 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             );
             let nonce_stored = a!(accs.s_mod_node_rlc);
             ifx!{is_nonce_long => {
+                let num_bytes = a!(s_main.bytes[0]) - 128.expr();
+                // RLC bytes zero check
+                cb.set_range_length_s(num_bytes.expr() + 1.expr());
+                // `mult_diff_nonce` needs to correspond to nonce length + 5 bytes:
+                // `s_main.rlp1,` `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp1`, 1 for byte with nonce length (`s_main.bytes[0]`).
+                // That means `mult_diff_nonce` needs to be `r^{nonce_len+5}` where `nonce_len = s_main.bytes[0] - 128`.
+                // Note that when nonce is short, `mult_diff_nonce` is not used (see the constraint above).
+                // mult_diff_nonce is acc_r when is_nonce_short (mult_diff doesn't need to be checked as it's not used)
+                // Add 5 because: 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length info
+                require!((FixedTableTag::RMult, num_bytes.expr() + 5.expr(), a!(accs.acc_c.rlc)) => @"mult");
                 // Besides having nonce (its bytes) stored in `s_main.bytes`, we also have the RLC
                 // of nonce bytes stored in `s_mod_node_hash_rlc` column. The value in this column
                 // is to be used by lookups.
@@ -227,6 +237,15 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // `Balance RLP long` constraint ensures the RLC of a balance is computed properly when
             // balance is long.
             ifx!{is_balance_long => {
+                let num_bytes = a!(c_main.bytes[0]) - 128.expr();
+                // RLC bytes zero check
+                cb.set_range_length_c(num_bytes.expr() + 1.expr());
+                // `mult_diff_balance` needs to correspond to balance length + 1 byte for byte that contains balance length.
+                // That means `mult_diff_balance` needs to be `r^{balance_len+1}` where `balance_len = c_main.bytes[0] - 128`.
+                // Note that when balance is short, `mult_diff_balance` is not used (see the constraint above).
+                // Add 1 for byte with length info
+                require!((FixedTableTag::RMult, num_bytes.expr() + 1.expr(), a!(accs.key.mult)) => @"mult2");
+                // This constraint ensures the RLC of a balance is computed properly when nonce is long.
                 require!(balance_stored => balance_value_long_rlc);
             } elsex {
                 // Similarly as in `Balance RLP long` constraint,
@@ -413,32 +432,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 let key_len = a!(s_main.bytes[0], rot) - 128.expr();
                 require!(rlp_len => key_len.expr() + 1.expr() + s_rlp2.expr() + 2.expr());
             }}
-
-            // Mult checks
-            ifx!{is_nonce_long => {
-                // `mult_diff_nonce` needs to correspond to nonce length + 5 bytes:
-                // `s_main.rlp1,` `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp1`, 1 for byte with nonce length (`s_main.bytes[0]`).
-                // That means `mult_diff_nonce` needs to be `r^{nonce_len+5}` where `nonce_len = s_main.bytes[0] - 128`.
-                // Note that when nonce is short, `mult_diff_nonce` is not used (see the constraint above).
-                // mult_diff_nonce is acc_r when is_nonce_short (mult_diff doesn't need to be checked as it's not used)
-                // Add 5 because: 4 for s_rlp1, s_rlp2, c_rlp1, c_rlp1; 1 for byte with length info
-                require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 5.expr(), a!(accs.acc_c.rlc)) => @fixed);
-            }}
-            ifx!{is_balance_long => {
-                // `mult_diff_balance` needs to correspond to balance length + 1 byte for byte that contains balance length.
-                // That means `mult_diff_balance` needs to be `r^{balance_len+1}` where `balance_len = c_main.bytes[0] - 128`.
-                // Note that when balance is short, `mult_diff_balance` is not used (see the constraint above).
-                // Add 1 for byte with length info
-                require!((FixedTableTag::RMult, a!(c_main.bytes[0]) - 128.expr() + 1.expr(), a!(accs.key.mult)) => @fixed);
-            }}
-
-            // RLC bytes zero check
-            for main in [s_main, c_main].iter() {
-                for (idx, &byte) in main.bytes.iter().skip(1).enumerate() {
-                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
-                }
-            }
-
         }}
 
         AccountLeafNonceBalanceConfig {

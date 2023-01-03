@@ -18,20 +18,24 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
-    mpt_circuit::helpers::{bytes_into_rlc, get_is_extension_node},
-    mpt_circuit::param::{
-        BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
-        C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-        IS_C_BRANCH_NON_HASHED_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-        IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
-        IS_S_BRANCH_NON_HASHED_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
-    },
+    mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{
+        helpers::ExtensionNodeInfo,
+        param::{
+            BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
+            C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
+            IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_EXT_LONG_EVEN_C16_POS,
+            IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS,
+            IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_S_BRANCH_NON_HASHED_POS,
+            NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
+        },
+    },
     mpt_circuit::{MPTConfig, ProofValues},
     util::Expr,
 };
-use gadgets::util::{and, not, or, select};
+use gadgets::util::{and, not, or};
 
 use super::{
     helpers::{BaseConstraintBuilder, ColumnTransition},
@@ -147,7 +151,6 @@ impl<F: FieldExt> BranchConfig<F> {
 
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         constraints! {[meta, cb], {
-            let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
 
@@ -184,7 +187,7 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_branch_placeholder_s_from_last = a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], -16);
             let is_branch_placeholder_c_from_last = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], -16);
 
-            ifx!{q_enable => {
+            ifx!{f!(position_cols.q_enable) => {
                 // These selectors are only stored in branch init rows
                 ifx!{is_branch_init => {
                     // Boolean checks
@@ -198,7 +201,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     // in the extension key and the additional nibble for the position in a branch (this constraint
                     // is in `extension_node.rs` though).
                     // extension node counterpart constraint is in extension_node.rs
-                    let is_extension_node = get_is_extension_node(meta, s_main.bytes, 0);
+                    let is_extension_node = ExtensionNodeInfo::new(meta, s_main, true, 0).is_extension_node();
                     ifx!{not::expr(is_extension_node.expr()) => {
                         ifx!{not::expr(is_account_leaf_in_added_branch.prev()), not_first_level.expr() => {
                             // Only check if there is an account above the branch.
@@ -252,10 +255,10 @@ impl<F: FieldExt> BranchConfig<F> {
                     // only in branch init). Another alternative would be to have a column where we
                     // add `rlp2` value from the current row in each of the 16
                     // rows. Both alternative would require additional column.
-                    let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
-                        acc + a!(column, -(idx as i32))
-                    });
                     ifx!{is_last_child, is_branch_placeholder => {
+                        let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
+                            acc + a!(column, -(idx as i32))
+                        });
                         // There are constraints which ensure there is only 0 or 160 at rlp2 for
                         // branch children.
                         require!(sum_rlp2 => 320);
@@ -383,14 +386,11 @@ impl<F: FieldExt> BranchConfig<F> {
                     // `node_index = 0` in the current row.
                     require!(node_index.cur() => 0);
                 } elsex {
-                    // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15.
+                    // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15
+                    // and previous `is_last_child` needs to be 1.
                     ifx!{is_branch_child.delta() => {
                         require!(node_index.prev() => 15);
-                    }}
-                    // TODO(Brecht)
-                    // When node_index is 15, is_last_child needs to be 1.
-                    ifx!{is_last_child.prev() - 1.expr() => {
-                        require!(is_branch_child.prev() => is_branch_child.cur());
+                        require!(is_last_child.prev() => true);
                     }}
                 }}
 
@@ -399,7 +399,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     // For this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
                     require!(node_index.cur() => 15);
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
-                    for ind in 0..16 {
+                    for rot in -(ARITY as i32)+1..=0 {
                         // For a branch placeholder we do not have any constraints. However, in the parallel
                         // (regular) branch we have an additional constraint (besides `is_modified` row
                         // corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
@@ -418,7 +418,6 @@ impl<F: FieldExt> BranchConfig<F> {
                         // we check in `branch_parallel` that the non-hashed child is of the appropriate length
                         // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
                         // The same applies for `c_hash_rlc`.
-                        let rot = -15 + ind;
                         let s_hash_rlc = rlc::expr(
                             &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
                             &r,
@@ -450,14 +449,11 @@ impl<F: FieldExt> BranchConfig<F> {
                     }
                 }}
 
-                // When `node_index` != 0
-                ifx!{node_index.cur() => {
-                    // When not in a placeholder branch
-                    ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()) => {
-                        // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
-                        // needs to be the same for all branch nodes.
-                        require!(drifted_pos.cur() => drifted_pos.prev());
-                    }}
+                // When not in a placeholder branch, and `node_index` != 0
+                ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()), node_index.cur() => {
+                    // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
+                    // needs to be the same for all branch nodes.
+                    require!(drifted_pos.cur() => drifted_pos.prev());
                 }}
             }}
         }}

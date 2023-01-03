@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, select, Expr};
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -12,10 +12,10 @@ use crate::{
     evm_circuit::util::rlc,
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
-        helpers::BaseConstraintBuilder,
+        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
         param::{
-            BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
-            IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_START,
+            BRANCH_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
+            NIBBLES_COUNTER_POS, RLP_NUM, S_START,
         },
     },
     mpt_circuit::{
@@ -112,6 +112,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r;
 
+        // TODO(Brecht): update
         let rot_into_init = if is_s { -19 } else { -21 };
         let rot_into_account = if is_s { -1 } else { -3 };
 
@@ -229,12 +230,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         // had to be multiplied by 16 or by 1 for the computation the key RLC.
                         // `c16 = 0, c1 = 1` if leaf in first storage level, because we do not have the branch above
                         // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
-                        let is_c16 = selectx!{not::expr(is_first_storage_level.expr()) => {a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot - 1)}};
-                        let is_c1 = selectx!{not::expr(is_first_storage_level.expr()) => {
-                            a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot - 1)
-                        } elsex {
-                            1
-                        }};
+                        let ext = ExtensionNodeInfo::new(meta, s_main, is_s, rot - 1);
+                        let is_c16 = selectx!{not::expr(is_first_storage_level.expr()) => { ext.is_c16() }};
+                        let is_c1 = selectx!{not::expr(is_first_storage_level.expr()) => { ext.is_c1() } elsex { 1 }};
                         // Set to key_mult_start * r if is_c16, else key_mult_start
                         let key_mult = key_mult_start.clone() * selectx!{is_c16 => { r[0].clone() } elsex { 1 }};
                         ifx!{is_short => {
@@ -358,21 +356,20 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             }}
 
             // RLC bytes zero check
-            // There are 0s in `s_main.bytes` after the last key nibble (this does not need to be checked
-            // for `last_level` and `one_nibble` as in these cases `s_main.bytes` are not used).
+            // There are 0s in `s_main.bytes` after the last key nibble (this does not need
+            // to be checked for `last_level` and `one_nibble` as in these cases
+            // `s_main.bytes` are not used).
             ifx!{is_short => {
-                require!((FixedTableTag::RMult, a!(s_main.rlp2) - 128.expr() + 2.expr(), a!(accs.acc_s.mult)) => @fixed);
-
-                for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].into_iter().enumerate() {
-                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.rlp2) - 128.expr() - (idx + 1).expr())) => @fixed);
-                }
+                let num_bytes = a!(s_main.rlp2) - 128.expr();
+                require!((FixedTableTag::RMult, num_bytes.expr() + 2.expr(), a!(accs.acc_s.mult)) => @"mult");
+                // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35]
+                cb.set_range_length(num_bytes);
             }}
             ifx!{is_long => {
-                require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 3.expr(), a!(accs.acc_s.mult)) => @fixed);
-
-                for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].into_iter().enumerate() {
-                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
-                }
+                let num_bytes = a!(s_main.bytes[0]) - 128.expr();
+                require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
+                // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
+                cb.set_range_length(num_bytes.expr() + 1.expr());
             }}
         }}
 

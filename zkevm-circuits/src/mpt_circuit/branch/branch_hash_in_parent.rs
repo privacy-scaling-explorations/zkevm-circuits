@@ -4,8 +4,7 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::get_is_extension_node,
-    mpt_circuit::MPTContext,
+    mpt_circuit::{helpers::ExtensionNodeInfo, MPTContext},
     mpt_circuit::{
         helpers::{get_branch_len, BaseConstraintBuilder},
         param::{
@@ -88,36 +87,33 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         } else {
             ctx.inter_final_root
         };
-        let position_cols = ctx.position_cols;
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
-        let is_last_branch_child = ctx.branch.is_last_child;
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
         let r = ctx.r;
 
         let rot_into_branch_init = -16;
+        // Any rotation that lands into branch can be used instead of -19.
+        let rot_into_branch_child = -19;
         constraints! {[meta, cb], {
-            let q_not_first = f!(position_cols.q_not_first);
-            let not_first_level = a!(position_cols.not_first_level);
-            let is_last_branch_child = a!(is_last_branch_child);
+            let not_first_level = a!(ctx.position_cols.not_first_level);
             // When placeholder branch, we don't check its hash in a parent.
             let is_branch_placeholder_pos = if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS};
-            let is_branch_placeholder = a!(s_main.bytes[is_branch_placeholder_pos - RLP_NUM], -16);
+            let is_branch_placeholder = a!(s_main.bytes[is_branch_placeholder_pos - RLP_NUM], rot_into_branch_init);
             // Only check if there is an account above the leaf.
             // -17 because we are in the last branch child (-16 takes us to branch init).
             let is_account_leaf_in_added_branch = a!(is_account_leaf_in_added_branch, rot_into_branch_init - 1);
             let is_branch_non_hashed_pos = if is_s {IS_S_BRANCH_NON_HASHED_POS} else {IS_C_BRANCH_NON_HASHED_POS};
-            let is_branch_non_hashed = a!(s_main.bytes[is_branch_non_hashed_pos - RLP_NUM], -16);
-            let is_extension_node = get_is_extension_node(meta, s_main.bytes, -16);
+            let is_branch_non_hashed = a!(s_main.bytes[is_branch_non_hashed_pos - RLP_NUM], rot_into_branch_init);
+            let is_extension_node = ExtensionNodeInfo::new(meta, s_main.clone(), is_s, rot_into_branch_init).is_extension_node();
             let branch_length = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let acc_pair = if is_s {accs.clone().acc_s} else {accs.clone().acc_c};
             let branch_acc = a!(acc_pair.rlc) + 128.expr() * a!(acc_pair.mult);
             let mod_node_hash_rlc = if is_s { accs.clone().s_mod_node_rlc } else { accs.c_mod_node_rlc };
-            // Any rotation that lands into branch can be used instead of -19.
-            let mod_node_hash_rlc = a!(mod_node_hash_rlc, -19);
+            let mod_node_hash_rlc = a!(mod_node_hash_rlc, rot_into_branch_child);
 
-            ifx!{is_last_branch_child, not::expr(is_extension_node), not::expr(is_branch_placeholder) => {
+            ifx!{not::expr(is_extension_node), not::expr(is_branch_placeholder) => {
                 ifx!{not_first_level => {
                     // Whether to check this in the first storage level
                     ifx!{is_account_leaf_in_added_branch => {
@@ -136,13 +132,11 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         require!((branch_acc.expr(), branch_length.expr(), hash_rlc.expr()) => @keccak);
                     } elsex {
                         ifx!{is_branch_non_hashed => {
-                            ifx!{q_not_first => {
-                                /* NON-HASHED branch hash in parent branch */
-                                // Similar as the gate above, but here the branch is not hashed.
-                                // Instead of checking `hash(branch) = parent_branch_modified_node`, we check whether
-                                // `branch_RLC = parent_branch_modified_node_RLC`.
-                                require!(branch_acc.expr() => mod_node_hash_rlc.expr());
-                            }}
+                            /* NON-HASHED branch hash in parent branch */
+                            // Similar as the gate above, but here the branch is not hashed.
+                            // Instead of checking `hash(branch) = parent_branch_modified_node`, we check whether
+                            // `branch_RLC = parent_branch_modified_node_RLC`.
+                            require!(branch_acc.expr() => mod_node_hash_rlc.expr());
                         } elsex {
                             /* Branch hash in parent branch */
                             // This is the scenario described at the top of the file.
@@ -154,14 +148,12 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         }}
                     }}
                 } elsex {
-                    ifx!{q_not_first => {
-                        /* Branch in first level of account trie - hash compared to root */
-                        // When branch is in the first level of the account trie, we need to check whether
-                        // `hash(branch) = account_trie_root`. We do this by checking whether
-                        // `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
-                        // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                        require!((branch_acc.expr(), branch_length.expr(), a!(inter_root)) => @keccak);
-                    }}
+                    /* Branch in first level of account trie - hash compared to root */
+                    // When branch is in the first level of the account trie, we need to check whether
+                    // `hash(branch) = account_trie_root`. We do this by checking whether
+                    // `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
+                    // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
+                    require!((branch_acc.expr(), branch_length.expr(), a!(inter_root)) => @keccak);
                 }}
             }}
         }}

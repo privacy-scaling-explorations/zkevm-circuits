@@ -1,5 +1,9 @@
 use gadgets::util::{and, not, Expr};
-use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    plonk::{Expression, VirtualCells},
+    poly::Rotation,
+};
 use std::marker::PhantomData;
 
 use crate::{
@@ -83,7 +87,6 @@ impl<F: FieldExt> BranchParallelConfig<F> {
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
-        let position_cols = ctx.position_cols;
         let branch = ctx.branch;
         let mod_node_hash_rlc = if is_s {
             ctx.accumulators.s_mod_node_rlc
@@ -102,100 +105,78 @@ impl<F: FieldExt> BranchParallelConfig<F> {
             ctx.denoter.is_node_hashed_c
         };
         constraints! {[meta, cb], {
-            let q_enable = f!(position_cols.q_enable);
-            let q_not_first = f!(position_cols.q_not_first);
-            let is_branch_child = a!(branch.is_child);
-            let rlp2 = a!(main.rlp2);
-            let is_node_hashed = a!(is_node_hashed);
-            let node_index = a!(branch.node_index);
-            let is_modified = a!(branch.is_modified);
+            // Empty and non-empty branch children
+            // Empty nodes have 0 at `rlp2`, have `128` at `bytes[0]` and 0 everywhere else:
+            // [0, 0, 128, 0, ..., 0].
+            // While non-empty nodes have `160` at `rlp2` and then any byte at `bytes`:
+            // [0, 160, a0, ..., a31].
+            // Note: `s_rlp1` and `c_rlp1` store the number of RLP still left in the in the branch rows.
+            // The constraints are in `branch.rs`, see `RLP length` gate.
+            ifx!{not::expr(a!(is_node_hashed)) => {
+                let rlp2 = a!(main.rlp2);
+                // Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
+                require!(rlp2 => {[0.expr(), 160.expr()]});
 
-            let sel = ColumnTransition::new(meta, sel);
-            let mod_node_hash_rlc = ColumnTransition::new(meta, mod_node_hash_rlc);
-
-            ifx!{is_branch_child.expr() => {
-                // Empty and non-empty branch children
-                // Empty nodes have 0 at `rlp2`, have `128` at `bytes[0]` and 0 everywhere else:
-                // [0, 0, 128, 0, ..., 0].
-                // While non-empty nodes have `160` at `rlp2` and then any byte at `bytes`:
-                // [0, 160, a0, ..., a31].
-                // Note: `s_rlp1` and `c_rlp1` store the number of RLP still left in the in the branch rows.
-                // The constraints are in `branch.rs`, see `RLP length` gate.
-                ifx!{q_enable, not::expr(is_node_hashed.expr()) => {
-                    // Empty nodes have `rlp2 = 0`. Non-empty nodes have: `rlp2 = 160`.
-                    require!(rlp2 => {[0.expr(), 160.expr()]});
-
-                    // For empty nodes
-                    ifx!{rlp2.expr() - 160.expr() => {
-                        for (idx, byte) in main.bytes.iter().map(|&byte| a!(byte)).enumerate() {
-                            if idx == 0 {
-                                // When an empty node (0 at `rlp2`), `bytes[0] = 128`.
-                                // Note that `rlp2` can be only 0 or 128.
-                                require!(byte => 128);
-                            } else {
-                                // When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
-                                require!(byte => 0);
-                            }
+                let c160inv = Expression::Constant(F::from(160).invert().unwrap());
+                let is_empty = (rlp2.expr() - 160.expr()) * c160inv;
+                // For empty nodes
+                ifx!{is_empty => {
+                    // TODO(Brecht): this conflicts with something else...
+                    // When an empty node (0 at `rlp2`), `bytes[0] = 128`.
+                    // Note that `rlp2` can be only be 0 or 128.
+                    //require!(a!(main.bytes[0]) => 128);
+                    // When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
+                    //cb.set_range_length_sc(is_s, 1.expr());
+                    for (idx, byte) in main.bytes.iter().map(|&byte| a!(byte)).enumerate() {
+                        if idx == 0 {
+                            // When an empty node (0 at `rlp2`), `bytes[0] = 128`.
+                            // Note that `rlp2` can be only be 0 or 128.
+                            require!(byte => 128);
+                        } else {
+                            // When an empty node (0 at `rlp2`), `bytes[i] = 0` for `i > 0`.
+                            require!(byte => 0);
                         }
-                    }}
-
-                    // No further constraints needed for non-empty nodes besides `rlp2 = 160`
-                    // and values to be bytes which is constrained by the byte range lookups
-                    // on `s_main.bytes` and `c_main.bytes`.
-
-                    // Note: The attacker could put 160 in an empty node (the constraints
-                    // above does not / cannot prevent this) and thus try to
-                    // modify the branch RLC (used for checking the hash of a branch), like:
-                    // [0, 160, 128, 0, ..., 0]
-                    // But then the constraints related to the branch RLP length would fail -
-                    // the length of RLP bytes in such a row would then be `32 + 1 = 160 - 128 + 1`
-                    // instead of `1` and the RLP length constraint would fail.
+                    }
                 }}
-
-                // Branch child RLC & selector for specifying whether the modified node is empty
-                ifx!{q_not_first => {
-                    // `mod_node_hash_rlc` is the same for all `is_branch_child` rows.
-                    // Having the values stored in all 16 rows makes it easier to check whether it is really the value that
-                    // corresponds to the `modified_node`. This is used in `branch.rs` constraints like:
-                    // ```
-                    // * is_modified.clone()
-                    // * (hash_rlc.clone() - mod_node_hash_rlc_cur.clone()
-                    // ```
-                    // `hash_rlc` is computed in each row as: `bytes[0] + bytes[1] * r + ... + bytes[31] * r^31`.
-                    // Note that `hash_rlc` is somehow misleading name because the branch child can be non-hashed too.
-                    ifx!{node_index => { // ignore if node_index = 0 (there is no previous)
-                        // mod_node_hash_rlc the same for all branch children
-                        require!(mod_node_hash_rlc.cur() => mod_node_hash_rlc.prev());
-                        // Selector for the modified child being empty the same for all branch children
-                        require!(sel.cur() => sel.prev());
-                    }}
-
-                    // When a value is being added (and reverse situation when deleted) to the trie and
-                    // there is no other leaf at the position where it is to be added, we have empty branch child
-                    // in `S` proof and hash of a newly added leaf at the parallel position in `C` proof.
-                    // That means we have empty node in `S` proof at `modified_node`.
-                    // When this happens, we denote this situation by having `sel = 1`.
-                    // In this case we need to check that `main.bytes = [128, 0, ..., 0]`.
-                    ifx!{is_modified, sel => {
-                        for (idx, byte) in main.bytes.iter().map(|&byte| a!(byte)).enumerate() {
-                            if idx == 0 {
-                                // We first check `bytes[0] = 128`.
-                                require!(byte => 128);
-                            } else {
-                                // The remaining constraints for `main.bytes = [128, 0, ..., 0]`:
-                                // `bytes[i] = 0` for `i > 0`.
-                                require!(byte => 0);
-                            }
-                        }
-                    }}
-                }}
+                // No further constraints needed for non-empty nodes besides `rlp2 = 160`
+                // and values to be bytes which is constrained by the byte range lookups
+                // on `s_main.bytes` and `c_main.bytes`.
+                // Note: The attacker could put 160 in an empty node (the constraints
+                // above does not / cannot prevent this) and thus try to
+                // modify the branch RLC (used for checking the hash of a branch), like:
+                // [0, 160, 128, 0, ..., 0]
+                // But then the constraints related to the branch RLP length would fail -
+                // the length of RLP bytes in such a row would then be `32 + 1 = 160 - 128 + 1`
+                // instead of `1` and the RLP length constraint would fail.
             }}
 
-            // RLC bytes zero check
-            ifx!{q_enable, is_branch_child, is_node_hashed => {
-                for (idx, &byte) in main.bytes.iter().skip(1).enumerate() {
-                    require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(main.bytes[0]) - 192.expr() - (idx + 1).expr())) => @fixed);
-                }
+            // Branch child RLC & selector for specifying whether the modified node is empty
+            // `mod_node_hash_rlc` is the same for all `is_branch_child` rows.
+            // Having the values stored in all 16 rows makes it easier to check whether it is really the value that
+            // corresponds to the `modified_node`. This is used in `branch.rs` constraints like:
+            // ```
+            // * is_modified.clone()
+            // * (hash_rlc.clone() - mod_node_hash_rlc_cur.clone()
+            // ```
+            // `hash_rlc` is computed in each row as: `bytes[0] + bytes[1] * r + ... + bytes[31] * r^31`.
+            // Note that `hash_rlc` is somehow misleading name because the branch child can be non-hashed too.
+            ifx!{a!(branch.node_index) => { // ignore if node_index = 0 (there is no previous)
+                // mod_node_hash_rlc the same for all branch children
+                require!(a!(mod_node_hash_rlc) => a!(mod_node_hash_rlc, -1));
+                // Selector for the modified child being empty the same for all branch children
+                require!(a!(sel) => a!(sel, -1));
+            }}
+            // When a value is being added (and reverse situation when deleted) to the trie and
+            // there is no other leaf at the position where it is to be added, we have empty branch child
+            // in `S` proof and hash of a newly added leaf at the parallel position in `C` proof.
+            // That means we have empty node in `S` proof at `modified_node`.
+            // When this happens, we denote this situation by having `sel = 1`.
+            // In this case we need to check that `main.bytes = [128, 0, ..., 0]`.
+            ifx!{a!(branch.is_modified), a!(sel) => {
+                // We check `bytes[0] = 128`.
+                require!(a!(main.bytes[0]) => 128);
+                // The remaining constraints for `main.bytes = [128, 0, ..., 0]` need to be `0`.
+                cb.set_range_length_sc(is_s, 1.expr());
             }}
         }}
 

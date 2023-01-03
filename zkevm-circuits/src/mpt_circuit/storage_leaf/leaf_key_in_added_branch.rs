@@ -1,18 +1,18 @@
-use gadgets::util::{and, not, select, Expr};
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::{get_is_extension_node, get_is_extension_node_one_nibble},
-    mpt_circuit::{helpers::extend_rand, witness_row::MptWitnessRow, FixedTableTag, MPTContext},
+    mpt_circuit::{
+        helpers::{extend_rand, ExtensionNodeInfo},
+        witness_row::MptWitnessRow,
+        FixedTableTag, MPTContext,
+    },
     mpt_circuit::{
         helpers::{get_leaf_len, BaseConstraintBuilder},
-        param::{
-            BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, LEAF_DRIFTED_IND, LEAF_KEY_C_IND,
-            LEAF_KEY_S_IND,
-        },
+        param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -71,6 +71,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
         let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
         let rot_into_account = -LEAF_DRIFTED_IND - 1;
+        let rot_into_branch_child = -BRANCH_ROWS_NUM + 2;
 
         // Note: The leaf value is not stored in this row, but it needs to be the same
         // as the leaf value before it drifted down to the new branch, so we can
@@ -163,7 +164,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // Leaf S (leaf to be deleted)     || Leaf C
                 // Leaf to be drifted one level up ||
 
-                let is_ext_node = get_is_extension_node(meta, s_main.bytes, rot_branch_init);
+                let ext = ExtensionNodeInfo::new(meta, s_main, true, rot_branch_init);
                 let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_init - 1);
 
                 // We obtain the key RLC from the branch / extension node above the placeholder branch.
@@ -177,7 +178,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above,
                 // we take 0).
-                let key_rlc_cur = selectx!{is_ext_node => {
+                let key_rlc_cur = selectx!{ext.is_extension_node() => {
                     a!(accs.key.rlc, -LEAF_DRIFTED_IND - 1)
                 } elsex {
                     selectx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
@@ -193,21 +194,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     a!(accs.key.mult, rot_branch_init - BRANCH_ROWS_NUM + 1)
                 }};
 
-                // When we have only one nibble in the extension node, `mult_diff` is not used
-                // (and set).
-                let is_one_nibble = get_is_extension_node_one_nibble(meta, s_main.bytes, rot_branch_init);
-
-                // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                let is_c16 = a!(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot_branch_init);
-                let is_c1 = a!(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot_branch_init);
-
                 // `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
                 // We need `mult_diff` because there is nothing stored in
                 // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
                 let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                selectx!{is_ext_node => {
-                    selectx!{is_one_nibble => {
-                        selectx!{is_c1 => {
+                selectx!{ext.is_extension_node() => {
+                    // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
+                    selectx!{ext.is_short() => {
+                        // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
+                        selectx!{ext.is_c1() => {
                             1.expr()
                         } elsex { // is_c16 TODO(Brecht): check if !c1 -> c16
                             r[0].expr()
@@ -230,9 +225,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let leaf_key_s_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_S_IND));
                 let leaf_key_c_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_C_IND));
 
-                let drifted_pos_mult = key_rlc_mult.expr() * 16.expr() * is_c16.expr() + key_rlc_mult.expr() * is_c1.expr();
+                let drifted_pos_mult = key_rlc_mult.expr() * 16.expr() * ext.is_c16() + key_rlc_mult.expr() * ext.is_c1();
                 // Any rotation that lands into branch children can be used.
-                let key_rlc_start = key_rlc_cur + a!(drifted_pos, -17) * drifted_pos_mult;
+                let key_rlc_start = key_rlc_cur + a!(drifted_pos, rot_into_branch_child) * drifted_pos_mult;
 
                 ifx!{is_short => {
                     // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
@@ -244,7 +239,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // the leaf in added branch is in this branch (parallel to placeholder branch).
                     // When computing the key RLC, `is_c1` means `drifted_pos` needs to be multiplied by 1, while
                     // `is_c16` means `drifted_pos` needs to be multiplied by 16.
-                    ifx!{is_branch_placeholder, is_c1 => {
+                    ifx!{is_branch_placeholder, ext.is_c1() => {
                         require!(a!(s_main.bytes[0]) => 32);
                     }}
 
@@ -257,7 +252,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
                     // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
                     let key_rlc = key_rlc_start.expr() + rlc::expr(
-                        &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() } else { a!(byte) })).collect::<Vec<_>>(),
+                        &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
                         &r,
                     );
 
@@ -285,13 +280,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // This is because `is_c1` in the branch above means there is an even number of nibbles left
                     // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
                     // specifying the length) of the key is 32.
-                    ifx!{is_branch_placeholder, is_c1 => {
+                    ifx!{is_branch_placeholder, ext.is_c1() => {
                         require!(a!(s_main.bytes[1]) => 32);
                     }}
 
                     // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[1]`.
                     let key_rlc = key_rlc_start.expr() + rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() } else { a!(byte) })).collect::<Vec<_>>(),
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
                         &r,
                     );
 
@@ -381,7 +376,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
                     // is checked in `branch_parallel.rs`.
                     // Any rotation that lands into branch children can be used.
-                    let s_mod_node_hash_rlc = a!(accs.s_mod_node_rlc, -17);
+                    let s_mod_node_hash_rlc = a!(accs.s_mod_node_rlc, rot_into_branch_child);
                     require!((rlc, len, s_mod_node_hash_rlc) => @keccak);
                 }}
                 ifx!{is_branch_c_placeholder => {
@@ -421,7 +416,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     //     Leaf to be drifted one level up ||
                     // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
                     // is checked in `branch_parallel.rs`.
-                    let c_mod_node_hash_rlc = a!(accs.c_mod_node_rlc, -17);
+                    let c_mod_node_hash_rlc = a!(accs.c_mod_node_rlc, rot_into_branch_child);
                     require!((rlc, len, c_mod_node_hash_rlc) => @keccak);
                 }}
 
@@ -431,18 +426,16 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // `s_main.bytes` are not used).
                 ifx!{is_branch_placeholder => {
                     ifx!{is_short => {
-                        require!((FixedTableTag::RMult, a!(s_main.rlp2) - 128.expr() + 2.expr(), a!(accs.acc_s.mult)) => @fixed);
-
-                        for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34].into_iter().enumerate() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.rlp2) - 128.expr() - (idx + 1).expr())) => @fixed);
-                        }
+                        let num_bytes = a!(s_main.rlp2) - 128.expr();
+                        require!((FixedTableTag::RMult, num_bytes.expr() + 2.expr(), a!(accs.acc_s.mult)) => @"mult");
+                        // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34]
+                        cb.set_range_length(num_bytes);
                     }}
                     ifx!{is_long => {
-                        require!((FixedTableTag::RMult, a!(s_main.bytes[0]) - 128.expr() + 3.expr(), a!(accs.acc_s.mult)) => @fixed);
-
-                        for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].into_iter().enumerate() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte) * (a!(s_main.bytes[0]) - 128.expr() - (idx + 1).expr())) => @fixed);
-                        }
+                        let num_bytes = a!(s_main.bytes[0]) - 128.expr();
+                        require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
+                        // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35]
+                        cb.set_range_length(num_bytes.expr() + 1.expr());
                     }}
                 }}
             }}

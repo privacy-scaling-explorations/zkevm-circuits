@@ -1,6 +1,9 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
-use gadgets::util::{and, not, Expr};
+use gadgets::{
+    impl_expr,
+    util::{and, not, sum, Expr},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -34,7 +37,6 @@ use branch::{
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
-use helpers::get_is_extension_node;
 use proof_chain::ProofChainConfig;
 use storage_leaf::{
     leaf_key::LeafKeyConfig, leaf_key_in_added_branch::LeafKeyInAddedBranchConfig,
@@ -47,12 +49,15 @@ use selectors::SelectorsConfig;
 
 use crate::{
     constraints,
-    mpt_circuit::helpers::BaseConstraintBuilder,
+    mpt_circuit::helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
 
-use self::{columns::MPTTable, storage_leaf::leaf_non_existing::StorageNonExistingConfig};
+use self::{
+    columns::MPTTable, param::BRANCH_ROWS_NUM,
+    storage_leaf::leaf_non_existing::StorageNonExistingConfig,
+};
 
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
@@ -121,7 +126,6 @@ pub struct MPTContext<F> {
     pub(crate) denoter: DenoteCols<F>,
     pub(crate) address_rlc: Column<Advice>,
     pub(crate) r: [Expression<F>; HASH_WIDTH],
-    pub(crate) check_zeros: bool,
 }
 
 /// Merkle Patricia Trie config.
@@ -167,7 +171,6 @@ pub struct MPTConfig<F> {
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
     storage_non_existing: StorageNonExistingConfig<F>,
     pub(crate) randomness: F,
-    pub(crate) check_zeros: bool,
     pub(crate) mpt_table: MPTTable,
 }
 
@@ -182,7 +185,11 @@ pub enum FixedTableTag {
     Range256,
     /// For checking there are 0s after the RLP stream ends
     RangeKeyLen256,
+    /// For checking there are 0s after the RLP stream ends
+    RangeKeyLen16,
 }
+
+impl_expr!(FixedTableTag);
 
 #[derive(Default)]
 /*
@@ -329,7 +336,6 @@ impl<F: FieldExt> MPTConfig<F> {
         meta: &mut ConstraintSystem<F>,
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         keccak_table: KeccakTable,
-        check_zeros: bool,
     ) -> Self {
         // let _pub_root = meta.instance_column();
         let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
@@ -410,12 +416,11 @@ impl<F: FieldExt> MPTConfig<F> {
             denoter: denoter.clone(),
             address_rlc: address_rlc.clone(),
             r: power_of_randomness.clone(),
-            check_zeros,
         };
 
         let mut row_config: RowConfig<F> = RowConfig::default();
 
-        let mut cb = BaseConstraintBuilder::default();
+        let mut cb = BaseConstraintBuilder::new(17);
         meta.create_gate("MPT", |meta| {
             constraints!{[meta, cb], {
                 /* General */
@@ -424,11 +429,6 @@ impl<F: FieldExt> MPTConfig<F> {
 
                 /* Branch node */
                 let branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
-                BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
-                BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), true);
-                BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), false);
-                BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), true);
-                BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), false);
                 // BRANCH.IS_INIT
                 ifx!{f!(position_cols.q_enable), a!(branch.is_init) => {
                     BranchInitConfig::<F>::configure(meta, &mut cb, ctx.clone());
@@ -437,20 +437,31 @@ impl<F: FieldExt> MPTConfig<F> {
                 ifx!{f!(position_cols.q_not_first), a!(branch.is_child) => {
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
+                    BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), false);
+                }}
+                // - First child
+                ifx!{f!(position_cols.q_not_first), a!(branch.is_init, -1) => {
+                    BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
+                }}
+                // - Last child
+                ifx!{f!(position_cols.q_not_first), a!(branch.is_last_child) => {
+                    BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
                 // BRANCH.IS_EXTENSION_NODE_S
                 ExtensionNodeKeyConfig::configure(meta, &mut cb, ctx.clone());
                 let ext_node_config_s;
-                let is_extension_node = get_is_extension_node(meta, s_main.bytes, -17);
+                let is_extension_node = ExtensionNodeInfo::new(meta, s_main, true, -BRANCH_ROWS_NUM + 2).is_extension_node();
                 let is_extension_node_s = a!(branch.is_extension_node_s);
-                ifx!{is_extension_node, is_extension_node_s => {
+                ifx!{f!(position_cols.q_not_first_ext_s), is_extension_node, is_extension_node_s => {
                     ext_node_config_s = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), true);
                 }}
                 // BRANCH.IS_EXTENSION_NODE_C
                 let ext_node_config_c;
-                let is_extension_node = get_is_extension_node(meta, s_main.bytes, -18);
+                let is_extension_node = ExtensionNodeInfo::new(meta, s_main, false, -BRANCH_ROWS_NUM + 1).is_extension_node();
                 let is_extension_node_c = a!(branch.is_extension_node_c);
-                ifx!{is_extension_node, is_extension_node_c => {
+                ifx!{f!(position_cols.q_not_first_ext_c), is_extension_node, is_extension_node_c => {
                     ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
 
@@ -531,15 +542,51 @@ impl<F: FieldExt> MPTConfig<F> {
                 // These range checks ensure that the value in the RLP columns are all bytes
                 // (between 0 - 255).
                 // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for rlp1
-                // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**16
-                for byte in s_main.rlp_bytes().iter().skip(1).chain(c_main.rlp_bytes().iter().skip(1)) {
-                    require!((FixedTableTag::Range256, a!(byte)) => @fixed);
-                }
-                ifx!{not::expr(a!(branch.is_child)) => {
-                    for byte in [s_main.rlp1, c_main.rlp1] {
-                        require!((FixedTableTag::Range256, a!(byte)) => @fixed);
+                // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
+                ifx!{f!(position_cols.q_enable) => {
+                    // Sanity checks (can be removed, here for safety)
+                    require!(cb.range_length_s_condition => bool);
+                    require!(cb.range_length_c_condition => bool);
+                    // Range checks
+                    ifx!{not::expr(a!(branch.is_child)) => {
+                        for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..2].into_iter() {
+                            require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @fixed);
+                        }
+                    }}
+                    for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34].into_iter().enumerate() {
+                        require!((cb.get_range_s(), a!(byte), cb.get_range_length_s() - (idx + 1).expr()) => @fixed);
+                    }
+                    ifx!{not::expr(a!(branch.is_child)) => {
+                        ifx!{cb.range_length_sc => {
+                            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[34..36].into_iter().enumerate() {
+                                require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @fixed);
+                            }
+                        }}
+                    }}
+                    for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[36..68].into_iter().enumerate() {
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_c() - (idx + 1).expr()) => @fixed);
                     }
                 }}
+
+                /* Mult checks */
+                for target_tag in ["mult", "mult2"] {
+                    let lookups = cb.lookups.clone();
+                    let lookups = lookups.iter().filter(|(_, tag, _)| tag == target_tag).collect::<Vec<_>>();
+                    let selector = sum::expr(lookups.iter().map(|(_, _, inputs)| inputs[0].expr()));
+                    // Sanity checks (can be removed, here for safety)
+                    require!(selector => bool);
+                    let lhs = sum::expr(
+                        lookups
+                            .iter()
+                            .map(|(_, _, inputs)| inputs[0].expr() * inputs[2].expr()),
+                    );
+                    let rhs = sum::expr(
+                        lookups
+                            .iter()
+                            .map(|(_, _, inputs)| inputs[0].expr() * inputs[3].expr()),
+                    );
+                    require!((FixedTableTag::RMult, lhs, rhs) => @fixed);
+                }
 
                 row_config = RowConfig {
                     account_leaf_key_s,
@@ -623,7 +670,6 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf_key_in_added_branch: row_config.storage_leaf_key_in_added_branch,
             storage_non_existing: row_config.storage_non_existing,
             randomness,
-            check_zeros,
             mpt_table,
         }
     }
@@ -831,6 +877,8 @@ impl<F: FieldExt> MPTConfig<F> {
                             }
                         }
 
+                        //println!("{} -> {:?}", offset, row.get_type());
+
                         region.assign_fixed(
                             || "q_enable",
                             self.position_cols.q_enable,
@@ -849,6 +897,30 @@ impl<F: FieldExt> MPTConfig<F> {
                             self.position_cols.q_not_first,
                             offset,
                             || Value::known(q_not_first),
+                        )?;
+
+                        let q_not_first_ext_s = if offset < (BRANCH_ROWS_NUM as usize) - 2 {
+                            F::zero()
+                        } else {
+                            F::one()
+                        };
+                        region.assign_fixed(
+                            || "not first ext s",
+                            self.position_cols.q_not_first_ext_s,
+                            offset,
+                            || Value::known(q_not_first_ext_s),
+                        )?;
+
+                        let q_not_first_ext_c = if offset < (BRANCH_ROWS_NUM as usize) - 1 {
+                            F::zero()
+                        } else {
+                            F::one()
+                        };
+                        region.assign_fixed(
+                            || "not first ext c",
+                            self.position_cols.q_not_first_ext_c,
+                            offset,
+                            || Value::known(q_not_first_ext_c),
                         )?;
 
                         region.assign_advice(
@@ -1160,23 +1232,39 @@ impl<F: FieldExt> MPTConfig<F> {
                     offset += 1;
                 }
 
-                if self.check_zeros {
-                    for ind in 0..(33 * 255) {
-                        region.assign_fixed(
-                            || "fixed table",
-                            self.fixed_table[0],
-                            offset,
-                            || Value::known(F::from(FixedTableTag::RangeKeyLen256 as u64)),
-                        )?;
+                let max_length = 34i32 + 1;
+                for (tag, range) in [
+                    (FixedTableTag::RangeKeyLen256, 256),
+                    (FixedTableTag::RangeKeyLen16, 16),
+                ] {
+                    for n in /* -192-max_length */ -512..max_length {
+                        let range = if n < 0 { 1 } else { range };
+                        for idx in 0..range {
+                            region.assign_fixed(
+                                || "fixed table[0]",
+                                self.fixed_table[0],
+                                offset,
+                                || Value::known(F::from(tag as u64)),
+                            )?;
 
-                        region.assign_fixed(
-                            || "fixed table",
-                            self.fixed_table[1],
-                            offset,
-                            || Value::known(F::from(ind as u64)),
-                        )?;
+                            region.assign_fixed(
+                                || "fixed table[1]",
+                                self.fixed_table[1],
+                                offset,
+                                || Value::known(F::from(idx as u64)),
+                            )?;
 
-                        offset += 1;
+                            let v = F::from(n.unsigned_abs() as u64)
+                                * if n.is_negative() { -F::one() } else { F::one() };
+                            region.assign_fixed(
+                                || "fixed table[2]",
+                                self.fixed_table[2],
+                                offset,
+                                || Value::known(v),
+                            )?;
+
+                            offset += 1;
+                        }
                     }
                 }
 
@@ -1222,13 +1310,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         let keccak_table = KeccakTable::construct(meta);
         let power_of_randomness: [Expression<F>; HASH_WIDTH] =
             power_of_randomness_from_instance(meta);
-
-        // Some constraints require 2^13 table, for testing purposes these constraints
-        // can be disabled by setting check_zeros to false.
-        // TODO: check_zeros is to be removed once the development is finished
-        let check_zeros = false;
-
-        MPTConfig::configure(meta, power_of_randomness, keccak_table, check_zeros)
+        MPTConfig::configure(meta, power_of_randomness, keccak_table)
     }
 
     fn synthesize(
@@ -1288,7 +1370,8 @@ mod tests {
                     false
                 }
             })
-            .for_each(|f| {
+            .enumerate()
+            .for_each(|(idx, f)| {
                 let path = f.path();
                 let mut parts = path.to_str().unwrap().split('-');
                 parts.next();
@@ -1318,14 +1401,17 @@ mod tests {
                     .collect();
 
                 let circuit = MPTCircuit::<Fr> {
-                    witness: w,
+                    witness: w.clone(),
                     randomness,
                 };
 
-                println!("{:?}", path);
+                println!("{} {:?}", idx, path);
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let prover = MockProver::run(9, &circuit, instance).unwrap();
-                assert_eq!(prover.verify(), Ok(()));
+                let num_rows = w.len();
+                let prover = MockProver::run(14 /* 9 */, &circuit, instance).unwrap();
+                assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
+                //assert_eq!(prover.verify_par(), Ok(()));
+                //prover.assert_satisfied();
             });
     }
 }

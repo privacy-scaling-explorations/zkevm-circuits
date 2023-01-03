@@ -20,7 +20,7 @@ use crate::{
     mpt_circuit::{MPTConfig, ProofValues},
 };
 
-#[derive(Eq, PartialEq, TryFromPrimitive)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 pub(crate) enum MptWitnessRowType {
     InitBranch = 0,

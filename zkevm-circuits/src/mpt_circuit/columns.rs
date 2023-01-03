@@ -53,7 +53,7 @@ impl<F: FieldExt> ProofTypeCols<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct MainCols<F> {
     // Main as opposed to other columns which are selectors and RLC accumulators.
     pub(crate) rlp1: Column<Advice>,
@@ -183,6 +183,8 @@ impl<F: FieldExt> DenoteCols<F> {
 pub(crate) struct PositionCols<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_not_first: Column<Fixed>, // not first row
+    pub(crate) q_not_first_ext_s: Column<Fixed>, // not first ext
+    pub(crate) q_not_first_ext_c: Column<Fixed>, // not first ext
     pub(crate) not_first_level: Column<Advice>,
 
     _marker: PhantomData<F>,
@@ -193,6 +195,8 @@ impl<F: FieldExt> PositionCols<F> {
         Self {
             q_enable: meta.fixed_column(),
             q_not_first: meta.fixed_column(),
+            q_not_first_ext_s: meta.fixed_column(),
+            q_not_first_ext_c: meta.fixed_column(),
             not_first_level: meta.advice_column(),
             _marker: PhantomData,
         }
