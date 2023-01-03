@@ -224,9 +224,6 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         to the existing extension node that was modified due to inserted extension node.
 
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
-
-        TODO: for delete case we need to use
-        Rotation(rot_into_branch_init - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND))
         */
         if is_long {
             meta.lookup_any(
@@ -291,19 +288,17 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
         branch child at `modified_node` position.
 
-        TODO: fix the description below, it depends on `is_c_inserted`
+        For `!is_long`, we rotate into the branch above the leaf. That means we check whether
+        `short` extension node is at `drifted_pos` in the branch of `middle` extension node.
 
-        For `is_long` the branch we rotate into the branch above the last branch (branch before extension node was inserted). This is to
-        ensure that we know the extension node that existed before the insertion of the new extension node.
+        For `is_long`, we go one level further up. That means we check whether `long` extension node
+        is in `S` proof for `is_c_inserted` and in `C` proof for `1 - is_c_inserted`.
 
-        For `!is_long` the branch we rotate into the last branch (the branch of the inserted extension node). This is to ensure that
-        the existing extension node drifted into a branch of the inserted extension node.
-
-        Note that the constraints for existing and drifted extension node being different only in the extension node nibbles are written separately.
+        Note that the constraints for `long` and `short` extension node being different only
+        in the extension node nibbles are written separately.
         */
         meta.lookup_any("Extension node hash in parent branch", |meta| {
             let q_enable = q_enable(meta);
-            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
             let mut rot_into_last_leaf_row = - LONG_EXT_NODE_S - 1;
             if !is_long {
@@ -341,14 +336,20 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 rot_into_branch_account = rot_into_branch_init_account + 1;
             }
 
+            // If we are in an account proof, we check whether the branch above the inserted extension
+            // rows is in first level.
+            // If we are in a storage proof (storage proof in never in the first level), we check
+            // whether there is an account leaf above the branch above the inserted extension rows.
+            let not_first_level =
+                is_account_proof.clone()
+                * meta.query_advice(position_cols.not_first_level, Rotation(rot_into_branch_init_account))
+                + (one.clone() - is_account_proof.clone())
+                * (one.clone() - meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_branch_init_storage - 1)));
+
             /*
-            TODO
-
-            When `is_c_inserted`, both (long and short) extension nodes are in the branch above
-            the leaf. When `(1 - is_c_inserted)`, the short extension node is in the branch above the leaf,
-            however, the long extension node is in the branch one level above.
-
-            Note that short extension node is checked to be at `drifted_pos` (IS IT?)
+            Short extension node is in the branch above the leaf (at `drifted_pos`),
+            while long extension node is in the branch one level above that
+            (see rotation setting `rot_into_branch_storage` and `rot_into_branch_account` above).
             */
 
             let mod_node_hash_rlc_cur =
@@ -425,6 +426,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     rot_into_branch_account = rot_into_branch_init_account + 1;
                 }
 
+                let not_first_level =
+                    is_account_proof.clone()
+                    * meta.query_advice(position_cols.not_first_level, Rotation(rot_into_branch_init_account))
+                    + (one.clone() - is_account_proof.clone())
+                    * (one.clone() - meta.query_advice(is_account_leaf_in_added_branch, Rotation(rot_into_branch_init_storage - 1)));
+
                 let mod_node_hash_rlc_cur =
                     is_account_proof.clone() *
                     (meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_branch_account))
@@ -446,6 +453,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     "Non-hashed extension node in parent branch",
                     q_not_first
                         * q_enable
+                        * not_first_level
                         * is_ext_node_non_hashed
                         * (mod_node_hash_rlc_cur - acc_c),
                 ));
