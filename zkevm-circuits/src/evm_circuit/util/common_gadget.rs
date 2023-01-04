@@ -483,17 +483,21 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(code_address_word.expr());
 
-        // `CALL` opcode has an additional stack pop `value`.
-        cb.condition(is_call_or_is_call_code, |cb| cb.stack_pop(value.expr()));
-
-        [
-            cd_offset.expr(),
-            cd_length.expr(),
-            rd_offset.expr(),
-            rd_length.expr(),
-        ]
-        .map(|expression| cb.stack_pop(expression));
-        cb.stack_push(is_success.expr());
+        if NORMAL {
+            // `CALL` opcode has an additional stack pop `value`.
+            cb.condition(is_call_or_is_call_code, |cb| cb.stack_pop(value.expr()));
+        } else {
+            cb.stack_pop(value.expr());
+        }
+        cb.stack_pop(cd_offset.expr());
+        cb.stack_pop(cd_length.expr());
+        cb.stack_pop(rd_offset.expr());
+        cb.stack_pop(rd_length.expr());
+        if NORMAL {
+            cb.stack_push(is_success.expr());
+        } else {
+            cb.stack_push(0.expr());
+        }
 
         // Recomposition of random linear combination to integer
         // let gas = from_bytes::expr(&gas_word.cells[..N_BYTES_GAS]);
@@ -524,45 +528,45 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         }
     }
 
-    pub fn code_address(&self) -> Word<F> {
-        self.code_address.clone()
+    pub fn code_address(&self) -> &Word<F> {
+        &self.code_address
     }
 
     pub fn code_address_expr(&self) -> Expression<F> {
-        from_bytes::expr(&self.code_address.cells[..N_BYTES_GAS])
+        from_bytes::expr(&self.code_address.cells[..N_BYTES_ACCOUNT_ADDRESS])
     }
 
-    pub fn cd_address(&self) -> MemoryAddressGadget<F> {
-        self.cd_address.clone()
+    pub fn cd_address(&self) -> &MemoryAddressGadget<F> {
+        &self.cd_address
     }
 
-    pub fn rd_address(&self) -> MemoryAddressGadget<F> {
-        self.rd_address.clone()
+    pub fn rd_address(&self) -> &MemoryAddressGadget<F> {
+        &self.rd_address
     }
 
     // TODO: try to return by ref
-    pub fn value(&self) -> Word<F> {
-        self.value.clone()
+    pub fn value(&self) -> &Word<F> {
+        &self.value
     }
 
-    pub fn gas(&self) -> Word<F> {
-        self.gas.clone()
+    pub fn gas(&self) -> &Word<F> {
+        &self.gas
     }
 
     pub fn gas_expr(&self) -> Expression<F> {
         from_bytes::expr(&self.gas.cells[..N_BYTES_GAS])
     }
 
-    pub fn is_success(&self) -> Cell<F> {
-        self.is_success.clone()
+    pub fn is_success(&self) -> &Cell<F> {
+        &self.is_success
     }
 
-    pub fn gas_is_u64(&self) -> IsZeroGadget<F> {
-        self.gas_is_u64.clone()
+    pub fn gas_is_u64(&self) -> &IsZeroGadget<F> {
+        &self.gas_is_u64
     }
 
-    pub fn memory_expansion(&self) -> MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE> {
-        self.memory_expansion.clone()
+    pub fn memory_expansion(&self) -> &MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE> {
+        &self.memory_expansion
     }
 
     // pub fn value_is_zero(&self, cb: &mut ConstraintBuilder<F>) -> IsZeroGadget<F>
@@ -632,13 +636,16 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             .assign(region, offset, Some(code_address.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.is_success
-            .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
-        self.gas_is_u64.assign(
-            region,
-            offset,
-            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
-        )?;
+        if NORMAL {
+            self.is_success
+                .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
+            self.gas_is_u64.assign(
+                region,
+                offset,
+                sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
+            )?;
+        }
+
         let cd_address = self
             .cd_address
             .assign(region, offset, cd_offset, cd_length, randomness)?;
@@ -655,16 +662,15 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         Ok((memory_expansion_gas_cost))
     }
 
-    pub(crate) fn gen_gas_available(
+    pub(crate) fn gen_gas_cost(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory_expansion_gas_cost: u64,
-        gas_left: u64,
         is_warm_prev: bool,
         is_call: bool,
         has_value: bool,
-        callee_exists: bool,
+        is_empty_account: bool,
     ) -> Result<(u64), Error> {
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
@@ -673,7 +679,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         } + if has_value {
             GasCost::CALL_WITH_VALUE.as_u64()
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
-                + if is_call && !callee_exists {
+                + if is_call && is_empty_account {
                     GasCost::NEW_ACCOUNT.as_u64()
                 } else {
                     0
@@ -681,8 +687,8 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         } else {
             0
         } + memory_expansion_gas_cost;
-        let gas_available = gas_left - gas_cost;
-        Ok((gas_available))
+        // let gas_available = gas_left - gas_cost;
+        Ok((gas_cost))
         // self.one_64th_gas
         //     .assign(region, offset, gas_available as u128)?;
         // self.capped_callee_gas_left.assign(
