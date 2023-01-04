@@ -6,7 +6,7 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{extend_rand, ExtensionNodeInfo},
+        helpers::{extend_rand, BranchNodeInfo},
         witness_row::MptWitnessRow,
         FixedTableTag, MPTContext,
     },
@@ -15,10 +15,6 @@ use crate::{
         param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
     },
     mpt_circuit::{MPTConfig, ProofValues},
-};
-
-use crate::mpt_circuit::param::{
-    IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
 };
 
 /*
@@ -86,10 +82,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         // position.
         constraints! {[meta, cb], {
             // drifted leaf appears only when there is a placeholder branch
-            let is_branch_s_placeholder = a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], rot_branch_init);
-            let is_branch_c_placeholder = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot_branch_init);
-            let is_branch_placeholder = is_branch_s_placeholder.expr() + is_branch_c_placeholder.expr();
 
+            let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
+
+            // TODO(Brecht): wrapper
             let flag1 = a!(accs.s_mod_node_rlc);
             let flag2 = a!(accs.c_mod_node_rlc);
             let last_level = flag1.expr() * flag2.expr();
@@ -110,7 +106,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_account);
             ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {
-                ifx!{is_branch_placeholder => {
+                ifx!{branch.is_s_or_c_placeholder() => {
                     // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
                     // leaf into a second level) and we do not need to trigger any checks.
                     // Note that in this case `is_branch_placeholder` gets some value from the account rows and we cannot use it.
@@ -164,7 +160,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // Leaf S (leaf to be deleted)     || Leaf C
                 // Leaf to be drifted one level up ||
 
-                let ext = ExtensionNodeInfo::new(meta, s_main, true, rot_branch_init);
                 let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_init - 1);
 
                 // We obtain the key RLC from the branch / extension node above the placeholder branch.
@@ -178,7 +173,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above,
                 // we take 0).
-                let key_rlc_cur = selectx!{ext.is_extension_node() => {
+                let key_rlc_cur = selectx!{branch.is_extension() => {
                     a!(accs.key.rlc, -LEAF_DRIFTED_IND - 1)
                 } elsex {
                     selectx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
@@ -198,11 +193,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // We need `mult_diff` because there is nothing stored in
                 // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
                 let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                selectx!{ext.is_extension_node() => {
+                selectx!{branch.is_extension() => {
                     // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    selectx!{ext.is_short() => {
+                    selectx!{branch.is_short() => {
                         // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        selectx!{ext.is_c1() => {
+                        selectx!{branch.is_c1() => {
                             1.expr()
                         } elsex { // is_c16 TODO(Brecht): check if !c1 -> c16
                             r[0].expr()
@@ -225,7 +220,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let leaf_key_s_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_S_IND));
                 let leaf_key_c_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_C_IND));
 
-                let drifted_pos_mult = key_rlc_mult.expr() * 16.expr() * ext.is_c16() + key_rlc_mult.expr() * ext.is_c1();
+                let drifted_pos_mult = key_rlc_mult.expr() * 16.expr() * branch.is_c16() + key_rlc_mult.expr() * branch.is_c1();
                 // Any rotation that lands into branch children can be used.
                 let key_rlc_start = key_rlc_cur + a!(drifted_pos, rot_into_branch_child) * drifted_pos_mult;
 
@@ -239,7 +234,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // the leaf in added branch is in this branch (parallel to placeholder branch).
                     // When computing the key RLC, `is_c1` means `drifted_pos` needs to be multiplied by 1, while
                     // `is_c16` means `drifted_pos` needs to be multiplied by 16.
-                    ifx!{is_branch_placeholder, ext.is_c1() => {
+                    ifx!{branch.is_s_or_c_placeholder(), branch.is_c1() => {
                         require!(a!(s_main.bytes[0]) => 32);
                     }}
 
@@ -252,14 +247,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
                     // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
                     let key_rlc = key_rlc_start.expr() + rlc::expr(
-                        &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
+                        &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
                         &r,
                     );
 
                     // When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
                     // in a new branch. We retrieve it from `LEAF_KEY_S` row.
                     // This value needs to be the same as the key RLC of the drifted leaf.
-                    ifx!{is_branch_s_placeholder => {
+                    ifx!{branch.is_branch_s_placeholder => {
                         require!(leaf_key_s_rlc => key_rlc);
                     }}
 
@@ -268,7 +263,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // We retrieve it from `LEAF_KEY_C` row.
                     // This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
                     // the leaf that was deleted) before the leaf was deleted.
-                    ifx!{is_branch_c_placeholder => {
+                    ifx!{branch.is_branch_c_placeholder => {
                         require!(leaf_key_c_rlc => key_rlc);
                     }}
                 }}
@@ -280,20 +275,20 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // This is because `is_c1` in the branch above means there is an even number of nibbles left
                     // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
                     // specifying the length) of the key is 32.
-                    ifx!{is_branch_placeholder, ext.is_c1() => {
+                    ifx!{branch.is_s_or_c_placeholder(), branch.is_c1() => {
                         require!(a!(s_main.bytes[1]) => 32);
                     }}
 
                     // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[1]`.
                     let key_rlc = key_rlc_start.expr() + rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
                         &r,
                     );
 
                     // When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
                     // in a new branch. We retrieve it from `LEAF_KEY_S` row.
                     // This value needs to be the same as the key RLC of the drifted leaf.
-                    ifx!{is_branch_s_placeholder => {
+                    ifx!{branch.is_branch_s_placeholder => {
                         require!(leaf_key_s_rlc => key_rlc);
                     }}
 
@@ -302,7 +297,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // We retrieve it from `LEAF_KEY_C` row.
                     // This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
                     // the leaf that was deleted) before the leaf was deleted.
-                    ifx!{is_branch_c_placeholder => {
+                    ifx!{branch.is_branch_c_placeholder => {
                         require!(leaf_key_c_rlc => key_rlc);
                     }}
                 }}
@@ -310,7 +305,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 ifx!{last_level => {
                     let s_rlp2 = a!(s_main.rlp2);
                     // When the leaf is in the last level there are no nibbles stored in the key and `s_main.rlp2 = 32`.
-                    ifx!{is_branch_placeholder => {
+                    ifx!{branch.is_s_or_c_placeholder() => {
                         require!(s_rlp2 => 32.expr());
                     }}
                     // - When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
@@ -321,8 +316,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // We retrieve it from `LEAF_KEY_C` row. This value needs to be the same as the key RLC of the neighbour leaf
                     // (neighbour of the leaf that was deleted) before the leaf was deleted.
                     for (is_branch_sc_placeholder, leaf_key_sc_rlc) in [
-                        (is_branch_s_placeholder.expr(), leaf_key_s_rlc.expr()),
-                        (is_branch_c_placeholder.expr(), leaf_key_c_rlc.expr()),
+                        (branch.is_branch_s_placeholder.expr(), leaf_key_s_rlc.expr()),
+                        (branch.is_branch_c_placeholder.expr(), leaf_key_c_rlc.expr()),
                         ].iter()
                     {
                         ifx!{is_branch_sc_placeholder => {
@@ -339,7 +334,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
                 let acc_mult = a!(accs.acc_s.mult);
                 let len = get_leaf_len(meta, s_main.clone(), accs.clone(), 0);
-                ifx!{is_branch_s_placeholder => {
+                ifx!{branch.is_branch_s_placeholder => {
                     /* Leaf key in added branch: neighbour leaf in the added branch (S) */
                     // It needs to be ensured that the hash of the drifted leaf is in the parent branch
                     // at `drifted_pos` position.
@@ -379,7 +374,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     let s_mod_node_hash_rlc = a!(accs.s_mod_node_rlc, rot_into_branch_child);
                     require!((rlc, len, s_mod_node_hash_rlc) => @keccak);
                 }}
-                ifx!{is_branch_c_placeholder => {
+                ifx!{branch.is_branch_c_placeholder => {
                     /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
                     // It needs to be ensured that the hash of the drifted leaf is in the parent branch
                     // at `drifted_pos` position.
@@ -424,7 +419,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // There are 0s in `s_main.bytes` after the last key nibble (this does not need
                 // to be checked for `last_level` and `one_nibble` as in these cases
                 // `s_main.bytes` are not used).
-                ifx!{is_branch_placeholder => {
+                ifx!{branch.is_s_or_c_placeholder() => {
                     ifx!{is_short => {
                         let num_bytes = a!(s_main.rlp2) - 128.expr();
                         require!((FixedTableTag::RMult, num_bytes.expr() + 2.expr(), a!(accs.acc_s.mult)) => @"mult");

@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::MPTContext,
     mpt_circuit::{columns::MainCols, helpers::BaseConstraintBuilder},
     mpt_circuit::{
-        helpers::ExtensionNodeInfo,
+        helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, EXTENSION_ROWS_NUM, HASH_WIDTH},
     },
 };
@@ -118,7 +118,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             let is_extension_s_row = a!(branch.is_extension_node_s);
             let is_extension_c_row = a!(branch.is_extension_node_c);
-            let ext = ExtensionNodeInfo::new(meta, s_main.clone(), true, rot_into_branch_init);
+            let ext = BranchNodeInfo::new(meta, s_main.clone(), true, rot_into_branch_init);
 
             // sel1 and sel2 gives the information whether the branch modified_node needs to be
             // multiplied by 16 or not. However, implicitly, sel1 and sel2 determines
@@ -161,7 +161,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
 
             let after_first_level = not_first_level.clone()
             * not::expr(is_first_storage_level.clone())
-            * ext.is_extension_node()
+            * ext.is_extension()
             * is_extension_c_row.clone();
 
             // mult_prev is the multiplier to be used for the first nibble of the extension node.
@@ -216,7 +216,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
                 //     modified_node * key_rlc_mult_prev * r * 16
 
                 ifx!{is_extension_c_row => {
-                    ifx!{ext.is_extension_node() => {
+                    ifx!{ext.is_extension() => {
                         // Currently, the extension node S and extension node C both have the same key RLC -
                         // however, sometimes extension node can be replaced by a shorter extension node
                         // (in terms of nibbles), this is still to be implemented.
@@ -490,7 +490,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             // key_len = s_rlp2 - 128 - 1   if is_ext_long_odd_c1
             // key_len = s_rlp2 - 128       if is_ext_long_odd_c16
             // key_len = 1                  if short
-            ifx!{f!(position_cols.q_not_first_ext_c), is_extension_c_row, not_first_level, ext.is_extension_node() => {
+            ifx!{f!(position_cols.q_not_first_ext_c), is_extension_c_row, not_first_level, ext.is_extension() => {
                 let key_len = selectx!{ext.is_long() => {
                     (a!(s_main.rlp2, -1) - 128.expr()) - ext.is_long_even() - ext.is_long_odd_c1.expr()
                 } elsex {

@@ -38,6 +38,22 @@ impl<F: FieldExt> StorageLeafCols<F> {
             _marker: PhantomData,
         }
     }
+
+    pub(crate) fn is_key(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.is_s_key
+        } else {
+            self.is_c_key
+        }
+    }
+
+    pub(crate) fn is_value(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.is_s_value
+        } else {
+            self.is_c_value
+        }
+    }
 }
 
 #[derive(Default, Debug)]

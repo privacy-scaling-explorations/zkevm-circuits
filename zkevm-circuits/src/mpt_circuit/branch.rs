@@ -19,10 +19,9 @@ use crate::{
     evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
-    mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::ExtensionNodeInfo,
+        helpers::BranchNodeInfo,
         param::{
             BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
             C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
@@ -31,6 +30,10 @@ use crate::{
             IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_S_BRANCH_NON_HASHED_POS,
             NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
         },
+    },
+    mpt_circuit::{
+        helpers::{get_rlp_meta_bytes, get_rlp_value_bytes},
+        storage_leaf::StorageLeaf,
     },
     mpt_circuit::{MPTConfig, ProofValues},
     util::Expr,
@@ -90,7 +93,7 @@ pub(crate) struct Branch {
     pub(crate) is_extension_node_c: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct BranchCols<F> {
     pub(crate) is_init: Column<Advice>,
     pub(crate) is_child: Column<Advice>,
@@ -147,7 +150,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let accs = ctx.accumulators;
         let branch = ctx.branch;
         let denoter = ctx.denoter;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         constraints! {[meta, cb], {
@@ -201,7 +204,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     // in the extension key and the additional nibble for the position in a branch (this constraint
                     // is in `extension_node.rs` though).
                     // extension node counterpart constraint is in extension_node.rs
-                    let is_extension_node = ExtensionNodeInfo::new(meta, s_main, true, 0).is_extension_node();
+                    let is_extension_node = BranchNodeInfo::new(meta, s_main, true, 0).is_extension();
                     ifx!{not::expr(is_extension_node.expr()) => {
                         ifx!{not::expr(is_account_leaf_in_added_branch.prev()), not_first_level.expr() => {
                             // Only check if there is an account above the branch.
@@ -244,7 +247,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 // new leaves at the same time). The non-nil nodes need to be at
                 // `is_modified` and `is_at_drifted_pos`, elsewhere there have
                 // to be zeros. When there is no placeholder branch, this constraint is ignored.
-                for (column, is_branch_placeholder) in [
+                for (rlp2, is_branch_placeholder) in [
                     (s_main.rlp2, is_branch_placeholder_c_from_last.expr()),
                     (c_main.rlp2, is_branch_placeholder_s_from_last.expr()),
                 ] {
@@ -257,7 +260,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     // rows. Both alternative would require additional column.
                     ifx!{is_last_child, is_branch_placeholder => {
                         let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
-                            acc + a!(column, -(idx as i32))
+                            acc + a!(rlp2, -(idx as i32))
                         });
                         // There are constraints which ensure there is only 0 or 160 at rlp2 for
                         // branch children.
@@ -283,11 +286,12 @@ impl<F: FieldExt> BranchConfig<F> {
                 // rlp1, rlp2: 1, 1 means 1 RLP byte
                 // rlp1, rlp2: 1, 0 means 2 RLP bytes
                 // rlp1, rlp2: 0, 1 means 3 RLP bytes
-                for (rlp1, rlp2, branch_start, is_node_hashed, main) in [
-                    (s1, s2, BRANCH_0_S_START, denoter.is_node_hashed_s, &s_main),
-                    (c1, c2, BRANCH_0_C_START, denoter.is_node_hashed_c, &c_main),
+                for (is_s, rlp1, rlp2) in [
+                    (true, s1, s2,),
+                    (false, c1, c2),
                 ] {
-                    let rlp_bytes = (0..3).map(|idx| a!(s_main.bytes[branch_start - RLP_NUM + idx], -1)).collect::<Vec<_>>();
+                    //let rlp_bytes = (0..3).map(|idx| a!(s_main.bytes[branch_start - RLP_NUM + idx], -1)).collect::<Vec<_>>();
+                    let rlp_bytes = get_rlp_value_bytes(meta, s_main, is_s, Rotation::prev());
                     // [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
                     // 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
                     // [0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165
@@ -299,8 +303,8 @@ impl<F: FieldExt> BranchConfig<F> {
                     // non-nil node. The expression `s_rlp2 * c160_inv * c32 +
                     // 1` gives us the number of bytes used in a row (1 or 33
                     // for nil node or non-nil node respectively).
-                    let num_bytes_in_row = selectx!{a!(is_node_hashed) => {
-                        a!(main.bytes[0]) - 192.expr() + 1.expr()
+                    let num_bytes_in_row = selectx!{a!(denoter.is_node_hashed(is_s)) => {
+                        a!(ctx.main(is_s).bytes[0]) - 192.expr() + 1.expr()
                     } elsex {
                         // The following value can be either 1 or 33 (if hashed node),
                         // depending on whether it's empty or non-empty row.
@@ -334,7 +338,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         // the second child contains 33 bytes, then the third child
                         // needs to store the value `81 - 1 - 33`.
                         ifx!{is_branch_child => {
-                            require!(a!(main.rlp1, -1) => num_bytes_in_row.expr() + rlp1.cur());
+                            require!(a!(ctx.main(is_s).rlp1, -1) => num_bytes_in_row.expr() + rlp1.cur());
                         }}
                     }}
                     // In the final branch child `rlp1` needs to be 1 (because RLP length

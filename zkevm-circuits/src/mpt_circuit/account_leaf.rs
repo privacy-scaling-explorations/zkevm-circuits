@@ -37,6 +37,30 @@ impl<F: FieldExt> AccountLeafCols<F> {
             _marker: PhantomData,
         }
     }
+
+    pub(crate) fn is_key(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.is_key_s
+        } else {
+            self.is_key_c
+        }
+    }
+
+    pub(crate) fn is_nonce_balance(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.is_nonce_balance_s
+        } else {
+            self.is_nonce_balance_c
+        }
+    }
+
+    pub(crate) fn is_storage_codehash(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.is_storage_codehash_s
+        } else {
+            self.is_storage_codehash_c
+        }
+    }
 }
 
 #[derive(Default, Debug)]

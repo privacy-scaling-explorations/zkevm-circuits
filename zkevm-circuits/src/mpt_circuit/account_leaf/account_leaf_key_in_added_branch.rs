@@ -10,7 +10,7 @@ use crate::{
         FixedTableTag,
     },
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
+        helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::{
             ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
             ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
@@ -19,10 +19,6 @@ use crate::{
         },
     },
     mpt_circuit::{MPTConfig, MPTContext, ProofValues},
-};
-
-use crate::mpt_circuit::param::{
-    IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, RLP_NUM,
 };
 
 /*
@@ -82,12 +78,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
 
         constraints! {[meta, cb], {
-            let is_branch_s_placeholder = a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], rot_branch_init);
-            let is_branch_c_placeholder = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot_branch_init);
-            let is_branch_placeholder = is_branch_s_placeholder.expr() + is_branch_c_placeholder.expr();
+            let mut branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
 
             // drifted leaf appears only when there is a placeholder branch
-            ifx!{is_branch_placeholder => {
+            ifx!{branch.is_s_or_c_placeholder() => {
                 /* Account drifted leaf: intermediate leaf RLC after key */
 
                 // `s_rlp1` is always 248 because the account leaf is always longer than 55 bytes.
@@ -141,7 +135,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // Drifted leaf in added branch has the same key as it had it before it drifted
                 // down to the new branch.
 
-                let ext = ExtensionNodeInfo::new(meta, s_main, true, rot_branch_init);
                 let is_branch_placeholder_in_first_level = not::expr(a!(not_first_level, rot_branch_init));
 
                 // We obtain the key RLC from the branch / extension node above the placeholder branch.
@@ -157,7 +150,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // is an extension node, we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above, we take 0).
 
-                let key_rlc_cur = selectx!{ext.is_extension_node() => {
+                let key_rlc_cur = selectx!{branch.is_extension() => {
                     a!(accs.key.rlc, -ACCOUNT_DRIFTED_LEAF_IND - 1)
                 } elsex {
                     selectx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
@@ -172,11 +165,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 }};
 
                 let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                selectx!{ext.is_extension_node() => {
+                selectx!{branch.is_extension() => {
                     // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    selectx!{ext.is_short() => {
+                    selectx!{branch.is_short() => {
                         // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        selectx!{ext.is_c1() => {
+                        selectx!{branch.is_c1() => {
                             1.expr()
                         } elsex { // is_c16 TODO(Brecht): check if !c1 -> c16
                             r[0].expr()
@@ -196,10 +189,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 // Any rotation that lands into branch children can be used.
                 let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
-                let drifted_pos_mult = key_rlc_mult.clone() * 16.expr() * ext.is_c16() + key_rlc_mult.clone() * ext.is_c1();
+                let drifted_pos_mult = key_rlc_mult.clone() * 16.expr() * branch.is_c16() + key_rlc_mult.clone() * branch.is_c1();
 
                 // If is_c1 = 1, we have 32 in `s_main.bytes[1]`.
-                ifx!{ext.is_c1() => {
+                ifx!{branch.is_c1() => {
                     require!(a!(s_main.bytes[1]) => 32);
                 }}
                 // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
@@ -211,7 +204,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
                 // position in a branch or/and nibbles of the extension node.
                 let key_rlc = key_rlc_cur + drifted_pos * drifted_pos_mult + rlc::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
+                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
                     &extend_rand(&r),
                 );
                 let num_bytes = a!(s_main.bytes[0]) - 128.expr();
@@ -229,10 +222,10 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // if a branch is added, by multiple nibbles if extension node is added).
                 require!((FixedTableTag::RMult, num_bytes + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
                 // Check stored values
-                ifx!{is_branch_s_placeholder => {
+                ifx!{branch.is_s_placeholder() => {
                     require!(a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)) => key_rlc);
                 }}
-                ifx!{is_branch_c_placeholder => {
+                ifx!{branch.is_c_placeholder() => {
                     require!(a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)) => key_rlc);
                 }}
 
@@ -241,6 +234,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // the `drifted_pos` in the parent branch - we use a lookup to check that the hash that
                 // corresponds to this RLC is in the parent branch at `drifted_pos` position.
                 for is_s in [false, true] {
+                    branch.set_is_s(is_s);
+
                     // Leaf key S
                     // Leaf key C
                     // Nonce balance S
@@ -306,8 +301,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     // is checked in `branch_parallel.rs`)
                     // Any rotation that lands into branch children can be used.
                     let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17);
-                    let is_branch_sc_placeholder = if is_s {is_branch_s_placeholder.expr()} else {is_branch_c_placeholder.expr()};
-                    ifx!{is_branch_sc_placeholder => {
+                    ifx!{branch.is_placeholder() => {
                         let account_len = a!(s_main.rlp2) + 1.expr() + 1.expr();
                         require!((rlc, account_len, mod_node_hash_rlc) => @keccak);
                     }}

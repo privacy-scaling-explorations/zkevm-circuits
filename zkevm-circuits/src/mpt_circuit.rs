@@ -49,7 +49,7 @@ use selectors::SelectorsConfig;
 
 use crate::{
     constraints,
-    mpt_circuit::helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
+    mpt_circuit::helpers::{BaseConstraintBuilder, BranchNodeInfo},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
@@ -126,6 +126,24 @@ pub struct MPTContext<F> {
     pub(crate) denoter: DenoteCols<F>,
     pub(crate) address_rlc: Column<Advice>,
     pub(crate) r: [Expression<F>; HASH_WIDTH],
+}
+
+impl<F: FieldExt> MPTContext<F> {
+    pub(crate) fn main(&self, is_s: bool) -> MainCols<F> {
+        if is_s {
+            self.s_main
+        } else {
+            self.c_main
+        }
+    }
+
+    pub(crate) fn inter_root(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.inter_start_root
+        } else {
+            self.inter_final_root
+        }
+    }
 }
 
 /// Merkle Patricia Trie config.
@@ -452,14 +470,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 // BRANCH.IS_EXTENSION_NODE_S
                 ExtensionNodeKeyConfig::configure(meta, &mut cb, ctx.clone());
                 let ext_node_config_s;
-                let is_extension_node = ExtensionNodeInfo::new(meta, s_main, true, -BRANCH_ROWS_NUM + 2).is_extension_node();
+                let is_extension_node = BranchNodeInfo::new(meta, s_main, true, -BRANCH_ROWS_NUM + 2).is_extension();
                 let is_extension_node_s = a!(branch.is_extension_node_s);
                 ifx!{f!(position_cols.q_not_first_ext_s), is_extension_node, is_extension_node_s => {
                     ext_node_config_s = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), true);
                 }}
                 // BRANCH.IS_EXTENSION_NODE_C
                 let ext_node_config_c;
-                let is_extension_node = ExtensionNodeInfo::new(meta, s_main, false, -BRANCH_ROWS_NUM + 1).is_extension_node();
+                let is_extension_node = BranchNodeInfo::new(meta, s_main, false, -BRANCH_ROWS_NUM + 1).is_extension();
                 let is_extension_node_c = a!(branch.is_extension_node_c);
                 ifx!{f!(position_cols.q_not_first_ext_c), is_extension_node, is_extension_node_c => {
                     ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);

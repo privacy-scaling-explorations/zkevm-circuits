@@ -108,14 +108,14 @@ impl<F: FieldExt> BranchInitConfig<F> {
                 (accs.acc_c, false)
             ] {
                 // Boolean checks
-                let rlp_meta = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
-                for selector in rlp_meta {
+                let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
+                for selector in rlp_meta_bytes.iter() {
                     require!(selector => bool);
                 }
                 // 1/2/3 RLP bytes RLC checks
-                let (one_rlp_byte, two_rlp_bytes, three_rlp_bytes) = get_num_rlp_bytes(meta, s_main.clone(), is_s, rot);
+                let num_rlp_byte_selectors = get_num_rlp_bytes(rlp_meta_bytes);
                 let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
-                for (idx, selector) in [one_rlp_byte, two_rlp_bytes, three_rlp_bytes].into_iter().enumerate() {
+                for (idx, selector) in num_rlp_byte_selectors.into_iter().enumerate() {
                     ifx!{selector => {
                         // Check branch accumulator in row 0
                         require!(a!(accumulators.rlc) => rlc::expr(&rlp[..idx+1], &r));

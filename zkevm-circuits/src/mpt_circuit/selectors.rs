@@ -30,11 +30,11 @@ impl<F: FieldExt> SelectorsConfig<F> {
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
         constraints! {[meta, cb], {
-            let q_enable = meta.query_fixed(position_cols.q_enable, Rotation::cur());
-            let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-            let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
-            let sel1 = meta.query_advice(denoter.sel1, Rotation::cur());
-            let sel2 = meta.query_advice(denoter.sel2, Rotation::cur());
+            let q_enable = f!(position_cols.q_enable);
+            let q_not_first = f!(position_cols.q_not_first);
+            let not_first_level = a!(position_cols.not_first_level);
+            let sel1 = a!(denoter.sel1);
+            let sel2 = a!(denoter.sel2);
 
             let is_leaf_s_key = ColumnTransition::new(meta, storage_leaf.is_s_key);
             let is_leaf_s_value = ColumnTransition::new(meta, storage_leaf.is_s_value);
@@ -114,18 +114,15 @@ impl<F: FieldExt> SelectorsConfig<F> {
 
             // Sanity checks on all rows
             ifx!{q_enable => {
-                // It needs to be ensured that all selectors are boolean. To trigger the
-                // constraints for a specific row the selectors could be of any
-                // nonnegative value, but being booleans it makes it easier to
-                // write the constraints that ensure the subsets of constraints are
-                // mutually exclusive and the constraints to ensure the proper order of rows.
+                // It needs to be ensured that all selectors are boolean.
                 let misc_selectors = vec![
                     not_first_level.expr(),
                     is_last_branch_child.expr(),
-                    is_branch_child.expr() * sel1.expr(),
-                    is_branch_child.expr() * sel2.expr(),
+                    is_branch_child.expr(),
                     is_modified.expr(),
                     is_at_drifted_pos.expr(),
+                    sel1.expr(),
+                    sel2.expr(),
                 ];
                 for selector in misc_selectors
                     .iter()
@@ -157,12 +154,14 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     .zip(proof_type_lookup_row_types.iter())
                     .enumerate()
                 {
-                    // Proof type is 0 everywhere except in the specific lookup row
-                    require!(proof_type_id.expr() * proof_type.expr() * (row_type.expr() - 1.expr()) => 0);
-
-                    ifx!{proof_type_id.expr(), row_type.expr() => {
-                        // Proof type is the expected value on the specific lookup row type
-                        require!(proof_type_id => idx + 1);
+                    // Proof type is the expected value on the specified lookup row type,
+                    // 0 everywhere else
+                    ifx!{proof_type.expr() => {
+                        ifx!{row_type.expr() => {
+                            require!(proof_type_id => idx + 1);
+                        } elsex {
+                            require!(proof_type_id => 0);
+                        }}
                     }}
                 }
             }};
@@ -313,28 +312,22 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 // storage proof - constraints for this are implemented using address_rlc column
                 // to be changed to the proper value only in the account leaf key row.
                 let modifications = [
-                    ("is_nonce_mod", is_nonce_mod),
-                    ("is_balance_mod", is_balance_mod),
-                    ("is_codehash_mod", is_codehash_mod),
-                    (
-                        "is_non_existing_account_proof",
-                        is_non_existing_account_proof,
-                    ),
-                    ("is_account_delete_mod", is_account_delete_mod),
-                    ("is_storage_mod", is_storage_mod),
-                    (
-                        "is_non_existing_storage_proof",
-                        is_non_existing_storage_proof,
-                    ),
+                    is_nonce_mod,
+                    is_balance_mod,
+                    is_codehash_mod,
+                    is_non_existing_account_proof,
+                    is_account_delete_mod,
+                    is_storage_mod,
+                    is_non_existing_storage_proof,
                 ];
-                for (name, data) in modifications {
+                for is_mod in modifications {
                     // Does not change outside first level
                     ifx!{not_first_level => {
-                        require!(name, data.prev() => data.cur());
+                        require!(is_mod.prev() => is_mod.cur());
                     } elsex {
                         // Does not change inside first level except in the first row
                         ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()) => {
-                            require!(name, data.prev() => data.cur());
+                            require!(is_mod.prev() => is_mod.cur());
                         }}
                     }};
                 }

@@ -47,30 +47,22 @@ impl<F: FieldExt> ProofChainConfig<F> {
         cb: &mut BaseConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        let proof_type = ctx.proof_type;
-        let position_cols = ctx.position_cols;
-        let is_branch_init = ctx.branch.is_init;
-        let account_leaf = ctx.account_leaf;
-        let storage_leaf = ctx.storage_leaf;
-        let inter_start_root = ctx.inter_start_root;
-        let inter_final_root = ctx.inter_final_root;
-        let address_rlc = ctx.address_rlc;
         constraints! {[meta, cb], {
-            let q_enable = f!(position_cols.q_enable);
-            let q_not_first = f!(position_cols.q_not_first);
-            let not_first_level = ColumnTransition::new(meta, position_cols.not_first_level);
-            let is_branch_init = a!(is_branch_init);
-            let is_account_leaf_key_s = a!(account_leaf.is_key_s);
-            let is_storage_leaf_key_s = a!(storage_leaf.is_s_key);
-            let is_storage_leaf_last_row_prev = a!(storage_leaf.is_non_existing, -1);
-            let is_account_leaf_last_row_prev = a!(account_leaf.is_in_added_branch, -1);
-            let is_non_storage_mod_proof_type_prev = not::expr(a!(proof_type.is_storage_mod, -1));
+            let q_enable = f!(ctx.position_cols.q_enable);
+            let q_not_first = f!(ctx.position_cols.q_not_first);
+            let not_first_level = ColumnTransition::new(meta, ctx.position_cols.not_first_level);
+            let is_branch_init = a!(ctx.branch.is_init);
+            let is_account_leaf_key_s = a!(ctx.account_leaf.is_key_s);
+            let is_storage_leaf_key_s = a!(ctx.storage_leaf.is_s_key);
+            let is_storage_leaf_last_row_prev = a!(ctx.storage_leaf.is_non_existing, -1);
+            let is_account_leaf_last_row_prev = a!(ctx.account_leaf.is_in_added_branch, -1);
+            let is_non_storage_mod_proof_type_prev = not::expr(a!(ctx.proof_type.is_storage_mod, -1));
 
-            let start_root = ColumnTransition::new(meta, inter_start_root);
-            let final_root = ColumnTransition::new(meta, inter_final_root);
-            let address_rlc = ColumnTransition::new(meta, address_rlc);
+            let start_root = ColumnTransition::new(meta, ctx.inter_start_root);
+            let final_root = ColumnTransition::new(meta, ctx.inter_final_root);
+            let address_rlc = ColumnTransition::new(meta, ctx.address_rlc);
 
-            let is_branch_or_account_leaf = is_account_leaf_key_s.expr() + is_branch_init.expr();
+            let is_branch_or_account = is_account_leaf_key_s.expr() + is_branch_init.expr();
 
             ifx!{q_enable => {
                 ifx!{not::expr(q_not_first.expr()) => {
@@ -80,19 +72,19 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // The storage leaf cannot appear as it requires to have an account leaf above it
                     // (a separate constraint for this).
                     // Here, we check for the case when the account leaf / branch/extension node is in the first level.
-                    ifx!{is_branch_or_account_leaf => {
+                    ifx!{is_branch_or_account => {
                         require!(not_first_level => 0);
                     }}
                 } elsex {
                     // When there is a last storage leaf row in the previous row, in the current row it needs
                     // to be `not_first_level = 1` (we are in account leaf/branch init).
-                    ifx!{is_branch_or_account_leaf, not::expr(is_storage_leaf_last_row_prev.expr()) => {
+                    ifx!{is_branch_or_account, not::expr(is_storage_leaf_last_row_prev.expr()) => {
                         require!(not_first_level => 1);
                     }}
                     // When there is a last account leaf row in the previous row and the proof is about
                     // non storage modification (proof ends with account leaf),
                     // in the current row it needs to be `not_first_level = 1` (we are in account leaf/branch init).
-                    ifx!{is_branch_or_account_leaf, is_non_storage_mod_proof_type_prev, not::expr(is_account_leaf_last_row_prev.expr()) => {
+                    ifx!{is_branch_or_account, is_non_storage_mod_proof_type_prev, not::expr(is_account_leaf_last_row_prev.expr()) => {
                         require!(not_first_level => 1);
                     }}
                     // If `not_first_level` is 0 in a previous row (being in branch init),
@@ -102,7 +94,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                         require!(not_first_level => 1);
                     }}
                     // `not_first_level` can change only in `is_branch_init` or `is_account_leaf_key_s` or
-                    // `is__leaf_key_s`.
+                    // `is_storage_leaf_key_s`.
                     // Note that the change `not_first_level = 1` to `not_first_level = 0` (going to the first level)
                     // is covered by the constraints above which constrain when such a change can occur.
                     // On the other hand, this constraint ensured that `not_first_level` is changed in the middle
@@ -110,6 +102,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()), not::expr(is_storage_leaf_key_s.expr()) => {
                         require!(not_first_level.cur() => not_first_level.prev());
                     }}
+                    // TODO(Brecht): No constraint for transition back to 0 seems a bit dangerous
 
                     // `start_root`/`final_root` can change only in the first row of the first level.
                     // We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,

@@ -11,17 +11,17 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{extend_rand, ExtensionNodeInfo},
-        witness_row::MptWitnessRow,
-        MPTContext,
-    },
-    mpt_circuit::{
-        helpers::{get_branch_len, BaseConstraintBuilder},
+        helpers::BaseConstraintBuilder,
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_RLP_START, C_START, HASH_WIDTH,
-            IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, NIBBLES_COUNTER_POS, RLP_NUM,
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, BRANCH_ROWS_NUM, C_RLP_START, C_START,
+            HASH_WIDTH, NIBBLES_COUNTER_POS, RLP_NUM,
         },
+    },
+    mpt_circuit::{
+        helpers::{extend_rand, BranchNodeInfo},
+        witness_row::MptWitnessRow,
+        MPTContext,
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -153,36 +153,28 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         is_s: bool,
     ) -> Self {
         let position_cols = ctx.position_cols;
-        let branch = ctx.branch;
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
         let accs = ctx.accumulators;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         constraints! {[meta, cb], {
-            let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-
-            let rot_into_branch_init = -BRANCH_ROWS_NUM + if is_s {2} else {1};
             let rot_into_last_branch_child = if is_s { -1 } else { -2 };
-            let rot = if is_s { 0 } else { -1 };
+            let rot_into_branch_init = rot_into_last_branch_child - (ARITY as i32);
 
-            let inter_root = if is_s {
-                ctx.inter_start_root
-            } else {
-                ctx.inter_final_root
-            };
+            let rot = if is_s { 0 } else { -1 };
 
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
             let s_rlp2 = a!(s_main.rlp2);
             let c_rlp2 = a!(c_main.rlp2);
-            let is_branch_init_prev = a!(branch.is_init, -1);
+            let is_branch_init_prev = a!(ctx.branch.is_init, -1);
             let acc_s = a!(accs.acc_s.rlc, rot);
 
             // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.expr() * c160_inv.expr();
+            let is_branch_hashed = c_rlp2.expr() * Expression::Constant(F::from(160).invert().unwrap());
 
-            let ext = ExtensionNodeInfo::new(meta, s_main.clone(), is_s, rot_into_branch_init);
+            let ext = BranchNodeInfo::new(meta, s_main.clone(), is_s, rot_into_branch_init);
 
             // Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
             // non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
@@ -263,7 +255,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
 
                 let misc_selectors = [
                     ext.is_longer_than_55.expr(),
-                    ext.is_node_non_hashed.expr(),
+                    ext.is_ext_non_hashed.expr(),
                 ];
 
                 ifx!{not::expr(is_branch_init_prev.expr()) => {
@@ -298,16 +290,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     // with extension node selectors.
                     require!(ext.is_c1() => sum::expr(type_selectors_c1.clone()));
                     require!(ext.is_c16() => sum::expr(type_selectors_c16.clone()));
-                    /*for (branch_selector, selectors) in [
-                        (ext.is_c16(), [ext.is_short_c16.expr(), ext.is_long_even_c16.expr(), ext.is_long_odd_c16.expr()]),
-                        (ext.is_c1(), [ext.is_short_c1.expr(), ext.is_long_even_c1.expr(), ext.is_long_odd_c1.expr()]),
-                    ] {
-                        for selector in selectors {
-                            ifx!{selector => {
-                                require!(selector => branch_selector);
-                            }
-                        }}
-                    }*/
                 }}
 
                 // In C we have nibbles, we check below only for S.
@@ -454,7 +436,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let acc_pair = if is_s {accs.clone().acc_s} else {accs.clone().acc_c};
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let branch_acc = a!(acc_pair.rlc, rot_into_last_branch_child) + 128.expr() * a!(acc_pair.mult, rot_into_last_branch_child);
-                let branch_len = get_branch_len(meta, s_main.clone(), rot_into_branch_init, is_s);
                 let hash_rlc = rlc::expr(
                     &c_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                     &r,
@@ -466,7 +447,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         // (computed over the first 17 rows) corresponds to the extension node hash stored in
                         // the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
                         // be in a keccak table.
-                        require!((branch_acc.expr(), branch_len.expr(), hash_rlc.expr()) => @keccak);
+                        require!((branch_acc.expr(), ext.len(), hash_rlc.expr()) => @keccak);
                     }}
                 } elsex {
                     /* Extension node branch hash in extension row (non-hashed branch) */
@@ -481,10 +462,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Note: Correspondence between nibbles in C and bytes in S is checked in
                 // extension_node_key.
 
-                let is_branch_placeholder = meta.query_advice(
-                    s_main.bytes[if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS} - RLP_NUM],
-                    Rotation(rot_into_branch_init),
-                );
                 // Only check if there is an account above the leaf.
                 let is_account_leaf_in_added_branch = meta.query_advice(
                     ctx.account_leaf.is_in_added_branch,
@@ -492,7 +469,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 );
                 // We need to do the lookup only if we are in the last branch child.
                 let is_after_last_branch_child =
-                    meta.query_advice(branch.is_last_child, Rotation(rot_into_last_branch_child));
+                    meta.query_advice(ctx.branch.is_last_child, Rotation(rot_into_last_branch_child));
 
 
                 // TODO(Brecht): COPIED(branch_hash_in_parent)
@@ -507,10 +484,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let ext_len = a!(s_main.rlp1, rot) - 192.expr() + 1.expr();
 
                 ifx!{not_first_level => {
-                    ifx!{not::expr(is_branch_placeholder.expr()) => {
+                    ifx!{not::expr(ext.is_placeholder()) => {
                         ifx!{is_account_leaf_in_added_branch => {
-                            ifx!{ext.is_extension_node(), is_after_last_branch_child => {
-                                // TODO(Brecht): Should not be in q_not_first?
+                            ifx!{ext.is_extension(), is_after_last_branch_child => {
                                 /* Extension node in first level of storage trie - hash compared to the storage root */
                                 // When extension node is in the first level of the storage trie, we need to check whether
                                 // `hash(ext_node) = storage_trie_root`. We do this by checking whether
@@ -527,14 +503,13 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                                 require!((ext_acc, ext_len, hash_rlc) => @keccak);
                             }}
                         } elsex {
-                            ifx!{ext.is_node_non_hashed.expr() => {
+                            ifx!{ext.is_ext_non_hashed.expr() => {
                                 /* Extension node in parent branch (non-hashed extension node) */
                                 // When an extension node is not hashed, we do not check whether it is in a parent
                                 // branch using a lookup (see above), instead we need to check whether the branch child
                                 // at `modified_node` position is exactly the same as the extension node.
                                 require!(branch_acc => mod_node_hash_rlc);
                             } elsex {
-                                // TODO(Brecht): Should not be in q_not_first?
                                 /* Extension node hash in parent branch */
                                 // Check whether the extension node hash is in the parent branch.
                                 // That means we check whether
@@ -550,7 +525,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     // When we have an extension node in the first level of the account trie,
                     // its hash needs to be compared to the root of the trie.
                     // Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
-                    require!((ext_acc, ext_len, a!(inter_root)) => @keccak);
+                    require!((ext_acc, ext_len, a!(ctx.inter_root(is_s))) => @keccak);
                 }}
 
                 // We need to make sure the total number of nibbles is 64. This constraint ensures the number

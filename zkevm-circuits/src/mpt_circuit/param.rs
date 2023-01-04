@@ -112,6 +112,7 @@ pub const LEAF_KEY_C_IND: i32 = 2;
 pub const LEAF_VALUE_C_IND: i32 = 3;
 pub const LEAF_DRIFTED_IND: i32 = 4;
 pub const LEAF_NON_EXISTING_IND: i32 = 5;
+pub const STORAGE_LEAF_ROWS: i32 = 6;
 
 // indexes for account leaf:
 pub const ACCOUNT_LEAF_KEY_S_IND: i32 = 0;

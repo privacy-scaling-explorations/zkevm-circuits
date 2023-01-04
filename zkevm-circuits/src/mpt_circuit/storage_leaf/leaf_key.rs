@@ -12,11 +12,8 @@ use crate::{
     evm_circuit::util::rlc,
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
-        param::{
-            BRANCH_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-            NIBBLES_COUNTER_POS, RLP_NUM, S_START,
-        },
+        helpers::{BaseConstraintBuilder, BranchNodeInfo},
+        param::{BRANCH_ROWS_NUM, NIBBLES_COUNTER_POS, RLP_NUM, S_START},
     },
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
@@ -112,11 +109,13 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r;
 
-        // TODO(Brecht): update
-        let rot_into_init = if is_s { -19 } else { -21 };
         let rot_into_account = if is_s { -1 } else { -3 };
+        let rot_into_init = rot_into_account - (BRANCH_ROWS_NUM - 1);
 
         constraints! {[meta, cb], {
+            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
+
+            // TODO(Brecht): wrapper
             let flag1 = a!(accs.s_mod_node_rlc);
             let flag2 = a!(accs.c_mod_node_rlc);
             let last_level = flag1.clone() * flag2.clone();
@@ -185,8 +184,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 // incorporated in `key_rlc`. That means we need to ignore the first nibble here
                 // (in leaf key).
                 // `is_branch_placeholder = 0` when in first level
-                let pos = if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS};
-                let is_branch_placeholder = selectx!{not::expr(is_leaf_in_first_storage_level.expr()) => {a!(s_main.bytes[pos - RLP_NUM], rot_into_init)}};
+                let is_branch_placeholder = selectx!{not::expr(is_leaf_in_first_storage_level.expr()) => {branch.is_placeholder()}};
                 // - We need to ensure that the storage leaf is at the key specified in `key_rlc` column (used
                 // by MPT lookup). To do this we take the key RLC computed in the branches above the leaf
                 // and add the remaining bytes (nibbles) stored in the leaf.
@@ -230,9 +228,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         // had to be multiplied by 16 or by 1 for the computation the key RLC.
                         // `c16 = 0, c1 = 1` if leaf in first storage level, because we do not have the branch above
                         // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
-                        let ext = ExtensionNodeInfo::new(meta, s_main, is_s, rot - 1);
-                        let is_c16 = selectx!{not::expr(is_first_storage_level.expr()) => { ext.is_c16() }};
-                        let is_c1 = selectx!{not::expr(is_first_storage_level.expr()) => { ext.is_c1() } elsex { 1 }};
+                        let branch = BranchNodeInfo::new(meta, s_main, is_s, rot - 1);
+                        let is_c16 = selectx!{not::expr(is_first_storage_level.expr()) => { branch.is_c16() }};
+                        let is_c1 = selectx!{not::expr(is_first_storage_level.expr()) => { branch.is_c1() } elsex { 1 }};
                         // Set to key_mult_start * r if is_c16, else key_mult_start
                         let key_mult = key_mult_start.clone() * selectx!{is_c16 => { r[0].clone() } elsex { 1 }};
                         ifx!{is_short => {

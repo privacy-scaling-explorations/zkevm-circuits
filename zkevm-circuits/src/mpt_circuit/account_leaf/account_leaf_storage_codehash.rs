@@ -11,18 +11,17 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::accumulate_rand,
+        helpers::BaseConstraintBuilder,
+        witness_row::{MptWitnessRow, MptWitnessRowType},
+    },
+    mpt_circuit::{
+        helpers::{accumulate_rand, BranchNodeInfo},
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-            C_START, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
-            IS_BRANCH_S_PLACEHOLDER_POS, IS_CODEHASH_MOD_POS, RLP_NUM, S_START,
+            C_START, EXTENSION_ROWS_NUM, HASH_WIDTH, IS_CODEHASH_MOD_POS, S_START,
         },
         MPTContext,
-    },
-    mpt_circuit::{
-        helpers::BaseConstraintBuilder,
-        witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -82,17 +81,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         is_s: bool,
     ) -> Self {
         let proof_type = ctx.proof_type;
-        let inter_root = if is_s {
-            ctx.inter_start_root
-        } else {
-            ctx.inter_final_root
-        };
+        let inter_root = ctx.inter_root(is_s);
         let position_cols = ctx.position_cols;
-        let is_account_leaf_storage_codehash = if is_s {
-            ctx.account_leaf.is_storage_codehash_s
-        } else {
-            ctx.account_leaf.is_storage_codehash_c
-        };
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
         let r = ctx.r;
@@ -106,7 +96,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         // there), the placeholder leaf never appears in the first level here,
         // because there is always at least a genesis account.
         constraints! {[meta, cb], {
-            ifx!{a!(is_account_leaf_storage_codehash) => {
+            ifx!{a!(ctx.account_leaf.is_storage_codehash(is_s)) => {
                 let q_not_first = f!(position_cols.q_not_first);
                 // We have storage length in `s_rlp2` (which is 160 presenting `128 + 32`).
                 // We have storage hash in `s_main.bytes`.
@@ -220,12 +210,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
                 ifx!{a!(position_cols.not_first_level) => {
                     // Rotate into branch init:
-                    let is_branch_placeholder = if is_s {
-                        a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], -ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - BRANCH_ROWS_NUM)
-                    } else {
-                        a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], -ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - BRANCH_ROWS_NUM)
-                    };
-                    ifx!{is_branch_placeholder => {
+                    let rot_branch_init = if is_s {-ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {-ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND} - BRANCH_ROWS_NUM;
+                    let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
+                    ifx!{branch.is_placeholder() => {
                         // When branch_placeholder_not_in_first_level
                         ifx!{a!(position_cols.not_first_level, -17) => {
                             /* Hash of an account leaf when branch placeholder */
@@ -255,7 +242,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                         // Note: the placeholder leaf appears when a new account is created (in this case there was
                         // no leaf before and we add a placeholder). There are no constraints for
                         // a placeholder leaf, it is added only to maintain the parallel layout.
-                        // Rotate into any of the brach children rows:
+                        // Rotate into any of the branch children rows:
                         let is_placeholder_leaf = if is_s {
                             a!(denoter.sel1, -ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - EXTENSION_ROWS_NUM - 1)
                         } else {

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::util::Expr;
 use gadgets::util::{and, not};
 use halo2_proofs::{
@@ -9,7 +7,7 @@ use halo2_proofs::{
 };
 
 use crate::mpt_circuit::param::{
-    HASH_WIDTH, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+    IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
     IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
 };
 
@@ -17,14 +15,26 @@ use super::{
     columns::{AccumulatorCols, MainCols},
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
-        IS_C_EXT_LONGER_THAN_55_POS, IS_C_EXT_NODE_NON_HASHED_POS, IS_S_EXT_LONGER_THAN_55_POS,
-        IS_S_EXT_NODE_NON_HASHED_POS,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS,
+        IS_C_EXT_LONGER_THAN_55_POS, IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS,
+        IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS,
     },
     FixedTableTag,
 };
 
+pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
+    let mut rlc = F::zero();
+    let mut mult = F::one();
+    for expr in expressions.iter() {
+        rlc += F::from(*expr as u64) * mult;
+        mult *= r;
+    }
+    rlc
+}
+
 #[derive(Clone)]
-pub(crate) struct ExtensionNodeInfo<F> {
+pub(crate) struct BranchNodeInfo<F> {
+    pub(crate) is_s: bool,
     pub(crate) is_short_c16: Expression<F>,
     pub(crate) is_short_c1: Expression<F>,
     pub(crate) is_long_even_c16: Expression<F>,
@@ -32,71 +42,72 @@ pub(crate) struct ExtensionNodeInfo<F> {
     pub(crate) is_long_odd_c16: Expression<F>,
     pub(crate) is_long_odd_c1: Expression<F>,
     pub(crate) is_longer_than_55: Expression<F>,
-    pub(crate) is_node_non_hashed: Expression<F>,
+    pub(crate) is_branch_non_hashed: Expression<F>,
+    pub(crate) is_ext_non_hashed: Expression<F>,
     pub(crate) is_c1: Expression<F>,
     pub(crate) is_c16: Expression<F>,
+    pub(crate) is_branch_s_placeholder: Expression<F>,
+    pub(crate) is_branch_c_placeholder: Expression<F>,
+    pub(crate) len: Expression<F>,
 }
 
 // To reduce the expression degree, we pack together multiple information.
 // Constraints for the selectors are in `extension_node.rs`.
 // Note: even and odd refers to number of nibbles that are compactly encoded.
-impl<F: FieldExt> ExtensionNodeInfo<F> {
+impl<F: FieldExt> BranchNodeInfo<F> {
     pub(crate) fn new(
         meta: &mut VirtualCells<F>,
         s_main: MainCols<F>,
         is_s: bool,
         rot_into_branch_init: i32,
-    ) -> ExtensionNodeInfo<F> {
-        let is_short_c16 = meta.query_advice(
-            s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_short_c1 = meta.query_advice(
-            s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_long_even_c16 = meta.query_advice(
-            s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_long_even_c1 = meta.query_advice(
-            s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_long_odd_c16 = meta.query_advice(
-            s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_long_odd_c1 = meta.query_advice(
-            s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
+    ) -> BranchNodeInfo<F> {
+        let rot = Rotation(rot_into_branch_init);
+        let is_short_c16 = meta.query_advice(s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM], rot);
+        let is_short_c1 = meta.query_advice(s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM], rot);
+        let is_long_even_c16 =
+            meta.query_advice(s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM], rot);
+        let is_long_even_c1 =
+            meta.query_advice(s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM], rot);
+        let is_long_odd_c16 =
+            meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM], rot);
+        let is_long_odd_c1 = meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM], rot);
+
         let is_longer_than_55 = meta.query_advice(
             s_main.bytes[if is_s {
                 IS_S_EXT_LONGER_THAN_55_POS
             } else {
                 IS_C_EXT_LONGER_THAN_55_POS
             } - RLP_NUM],
-            Rotation(rot_into_branch_init),
+            rot,
         );
-        let is_node_non_hashed = meta.query_advice(
+        let is_ext_non_hashed = meta.query_advice(
             s_main.bytes[if is_s {
                 IS_S_EXT_NODE_NON_HASHED_POS
             } else {
                 IS_C_EXT_NODE_NON_HASHED_POS
             } - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_c1 = meta.query_advice(
-            s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        let is_c16 = meta.query_advice(
-            s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM],
-            Rotation(rot_into_branch_init),
+            rot,
         );
 
-        ExtensionNodeInfo {
+        let is_branch_non_hashed = meta.query_advice(
+            s_main.bytes[if is_s {
+                IS_S_BRANCH_NON_HASHED_POS
+            } else {
+                IS_C_BRANCH_NON_HASHED_POS
+            } - RLP_NUM],
+            rot,
+        );
+
+        let is_c1 = meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot);
+        let is_c16 = meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot);
+
+        let is_branch_s_placeholder =
+            meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], rot);
+        let is_branch_c_placeholder =
+            meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot);
+
+        BranchNodeInfo {
+            is_s,
             is_short_c16,
             is_short_c1,
             is_long_even_c16,
@@ -104,13 +115,17 @@ impl<F: FieldExt> ExtensionNodeInfo<F> {
             is_long_odd_c16,
             is_long_odd_c1,
             is_longer_than_55,
-            is_node_non_hashed,
+            is_branch_non_hashed,
+            is_ext_non_hashed,
             is_c1,
             is_c16,
+            is_branch_s_placeholder,
+            is_branch_c_placeholder,
+            len: get_branch_len(meta, s_main, rot, is_s),
         }
     }
 
-    pub(crate) fn is_extension_node(&self) -> Expression<F> {
+    pub(crate) fn is_extension(&self) -> Expression<F> {
         self.is_even() + self.is_odd()
     }
 
@@ -145,89 +160,42 @@ impl<F: FieldExt> ExtensionNodeInfo<F> {
     pub(crate) fn is_c16(&self) -> Expression<F> {
         self.is_c16.expr()
     }
-}
 
-pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
-    let mut rlc = F::zero();
-    let mut mult = F::one();
-    for expr in expressions.iter() {
-        rlc += F::from(*expr as u64) * mult;
-        mult *= r;
+    pub(crate) fn is_s_placeholder(&self) -> Expression<F> {
+        self.is_branch_s_placeholder.expr()
     }
 
-    rlc
-}
-
-pub(crate) fn get_branch_len<F: FieldExt>(
-    meta: &mut VirtualCells<F>,
-    s_main: MainCols<F>,
-    rot_into_branch_init: i32,
-    is_s: bool,
-) -> Expression<F> {
-    let one = Expression::Constant(F::from(1_u64));
-    let c192 = Expression::Constant(F::from(192_u64));
-
-    let mut s1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_branch_init));
-    let mut s2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_branch_init));
-    if !is_s {
-        s1 = meta.query_advice(s_main.bytes[0], Rotation(rot_into_branch_init));
-        s2 = meta.query_advice(s_main.bytes[1], Rotation(rot_into_branch_init));
+    pub(crate) fn is_c_placeholder(&self) -> Expression<F> {
+        self.is_branch_c_placeholder.expr()
     }
 
-    let one_rlp_byte = s1.clone() * s2.clone();
-    let two_rlp_bytes = s1.clone() * (one.clone() - s2.clone());
-    let three_rlp_bytes = (one.clone() - s1) * s2;
-
-    let mut rlp_byte0 = meta.query_advice(
-        s_main.bytes[BRANCH_0_S_START - RLP_NUM],
-        Rotation(rot_into_branch_init),
-    );
-    let mut rlp_byte1 = meta.query_advice(
-        s_main.bytes[BRANCH_0_S_START - RLP_NUM + 1],
-        Rotation(rot_into_branch_init),
-    );
-    let mut rlp_byte2 = meta.query_advice(
-        s_main.bytes[BRANCH_0_S_START - RLP_NUM + 2],
-        Rotation(rot_into_branch_init),
-    );
-
-    if !is_s {
-        rlp_byte0 = meta.query_advice(
-            s_main.bytes[BRANCH_0_C_START - RLP_NUM],
-            Rotation(rot_into_branch_init),
-        );
-        rlp_byte1 = meta.query_advice(
-            s_main.bytes[BRANCH_0_C_START - RLP_NUM + 1],
-            Rotation(rot_into_branch_init),
-        );
-        rlp_byte2 = meta.query_advice(
-            s_main.bytes[BRANCH_0_C_START - RLP_NUM + 2],
-            Rotation(rot_into_branch_init),
-        );
+    pub(crate) fn is_placeholder(&self) -> Expression<F> {
+        if self.is_s {
+            self.is_s_placeholder()
+        } else {
+            self.is_c_placeholder()
+        }
     }
 
-    one_rlp_byte * (rlp_byte0 - c192 + one.clone())
-        + two_rlp_bytes * (rlp_byte1.clone() + one.clone() + one.clone())
-        + three_rlp_bytes * (rlp_byte1 * 256.expr() + rlp_byte2 + one.clone() + one.clone() + one)
-}
+    pub(crate) fn is_s_or_c_placeholder(&self) -> Expression<F> {
+        self.is_s_placeholder() + self.is_c_placeholder()
+    }
 
-pub(crate) fn get_leaf_len<F: FieldExt>(
-    meta: &mut VirtualCells<F>,
-    s_main: MainCols<F>,
-    accs: AccumulatorCols<F>,
-    rot_into_leaf_key: i32,
-) -> Expression<F> {
-    let one = Expression::Constant(F::from(1_u64));
-    let c192 = Expression::Constant(F::from(192_u64));
-    let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_leaf_key));
-    let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_leaf_key));
-    let is_leaf_long = flag1 * (one.clone() - flag2);
+    pub(crate) fn is_branch_non_hashed(&self) -> Expression<F> {
+        self.is_branch_non_hashed.expr()
+    }
 
-    let rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_leaf_key));
-    let rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_leaf_key));
+    pub(crate) fn is_ext_non_hashed(&self) -> Expression<F> {
+        self.is_ext_non_hashed.expr()
+    }
 
-    is_leaf_long.clone() * (rlp2 + one.clone() + one.clone())
-        + (one.clone() - is_leaf_long) * (rlp1 - c192 + one)
+    pub(crate) fn len(&self) -> Expression<F> {
+        self.len.expr()
+    }
+
+    pub(crate) fn set_is_s(&mut self, is_s: bool) {
+        self.is_s = is_s;
+    }
 }
 
 pub(crate) fn get_rlp_meta_bytes<F: FieldExt>(
@@ -248,26 +216,13 @@ pub(crate) fn get_rlp_meta_bytes<F: FieldExt>(
 }
 
 pub(crate) fn get_num_rlp_bytes<F: FieldExt>(
-    meta: &mut VirtualCells<F>,
-    s_main: MainCols<F>,
-    is_s: bool,
-    rot: Rotation,
-) -> (Expression<F>, Expression<F>, Expression<F>) {
-    let (rlp1, rlp2) = if is_s {
-        (
-            meta.query_advice(s_main.rlp1, rot),
-            meta.query_advice(s_main.rlp2, rot),
-        )
-    } else {
-        (
-            meta.query_advice(s_main.bytes[0], rot),
-            meta.query_advice(s_main.bytes[1], rot),
-        )
-    };
-    let one_rlp_byte = and::expr([rlp1.expr(), rlp2.expr()]);
-    let two_rlp_bytes = and::expr([rlp1.expr(), not::expr(rlp2.expr())]);
-    let three_rlp_bytes = and::expr([not::expr(rlp1.expr()), rlp2.expr()]);
-    (one_rlp_byte, two_rlp_bytes, three_rlp_bytes)
+    rlp_meta_bytes: [Expression<F>; 2],
+) -> [Expression<F>; 3] {
+    let rlp = rlp_meta_bytes;
+    let one_rlp_byte = and::expr([rlp[0].expr(), rlp[1].expr()]);
+    let two_rlp_bytes = and::expr([rlp[0].expr(), not::expr(rlp[1].expr())]);
+    let three_rlp_bytes = and::expr([not::expr(rlp[0].expr()), rlp[1].expr()]);
+    [one_rlp_byte, two_rlp_bytes, three_rlp_bytes]
 }
 
 pub(crate) fn get_rlp_value_bytes<F: FieldExt>(
@@ -276,11 +231,51 @@ pub(crate) fn get_rlp_value_bytes<F: FieldExt>(
     is_s: bool,
     rot: Rotation,
 ) -> [Expression<F>; 3] {
-    let rlp_offset = if is_s { 2 } else { 5 };
-    let rlp1 = meta.query_advice(s_main.bytes[rlp_offset + 0], rot);
-    let rlp2 = meta.query_advice(s_main.bytes[rlp_offset + 1], rot);
-    let rlp3 = meta.query_advice(s_main.bytes[rlp_offset + 2], rot);
-    [rlp1, rlp2, rlp3]
+    let offset = if is_s {
+        BRANCH_0_S_START
+    } else {
+        BRANCH_0_C_START
+    } - RLP_NUM;
+    s_main.bytes[offset..offset + 3]
+        .iter()
+        .map(|byte| meta.query_advice(*byte, rot))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
+}
+
+pub(crate) fn get_branch_len<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    rot_into_branch_init: Rotation,
+    is_s: bool,
+) -> Expression<F> {
+    let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot_into_branch_init);
+    let num_rlp_byte_selectors = get_num_rlp_bytes(rlp_meta_bytes);
+    let rlp_bytes = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot_into_branch_init);
+    num_rlp_byte_selectors[0].expr() * (rlp_bytes[0].expr() - 192.expr() + 1.expr())
+        + num_rlp_byte_selectors[1].expr() * (rlp_bytes[1].expr() + 2.expr())
+        + num_rlp_byte_selectors[2].expr()
+            * (rlp_bytes[1].expr() * 256.expr() + rlp_bytes[2].expr() + 3.expr())
+}
+
+pub(crate) fn get_leaf_len<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    s_main: MainCols<F>,
+    accs: AccumulatorCols<F>,
+    rot_into_leaf_key: i32,
+) -> Expression<F> {
+    let one = Expression::Constant(F::from(1_u64));
+    let c192 = Expression::Constant(F::from(192_u64));
+    let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_leaf_key));
+    let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_leaf_key));
+    let is_leaf_long = flag1 * (one.clone() - flag2);
+
+    let rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_leaf_key));
+    let rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_leaf_key));
+
+    is_leaf_long.clone() * (rlp2 + one.clone() + one.clone())
+        + (one.clone() - is_leaf_long) * (rlp1 - c192 + one)
 }
 
 pub(crate) fn extend_rand<F: FieldExt>(r: &[Expression<F>]) -> Vec<Expression<F>> {

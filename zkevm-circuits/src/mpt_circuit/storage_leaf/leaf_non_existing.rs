@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{helpers::extend_rand, MPTContext},
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
+        helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::BRANCH_ROWS_NUM,
     },
     mpt_circuit::{
@@ -134,12 +134,12 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
                     let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
                     // sel1, sel2 is in init branch
-                    let ext = ExtensionNodeInfo::new(meta, s_main, true, rot_into_branch_init);
+                    let branch = BranchNodeInfo::new(meta, s_main, true, rot_into_branch_init);
                     // Set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_start.clone() * selectx!{ext.is_c16() => { r[0].clone() } elsex { 1 }};
+                    let key_mult = key_mult_start.clone() * selectx!{branch.is_c16() => { r[0].clone() } elsex { 1 }};
                     ifx!{is_short => {
                         // If there is an even number of nibbles stored in a leaf, `s_bytes0` needs to be 32.
-                        ifx!{ext.is_c1() => {
+                        ifx!{branch.is_c1() => {
                             require!(a!(s_main.bytes[0]) => 32);
                         }}
                         // Differently as for the other proofs, the storage-non-existing proof compares `key_rlc`
@@ -155,7 +155,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                         // If c16 = 1, we have nibble+48 in s_main.bytes[0].
                         let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
                             &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
-                                (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                                (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                             &[[1.expr()].to_vec(), r.to_vec()].concat(),
                         );
                         require!(a!(accs.key.mult) => key_rlc);
@@ -164,13 +164,13 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     }}
                     ifx!{is_long => {
                         // If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
-                        ifx!{ext.is_c1() => {
+                        ifx!{branch.is_c1() => {
                             require!(a!(s_main.bytes[1]) => 32);
                         }}
                         // Same as for `Storage key RLC (long)`, but here for the cases when there are two RLP bytes.
                         let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
                             &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
-                                (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                                (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                             &[[1.expr()].to_vec(), r.to_vec()].concat(),
                         );
                         require!(a!(accs.key.mult) => key_rlc);

@@ -12,11 +12,8 @@ use crate::{
     evm_circuit::util::rlc,
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
-        param::{
-            BRANCH_ROWS_NUM, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS,
-            NIBBLES_COUNTER_POS, RLP_NUM, S_START,
-        },
+        helpers::{BaseConstraintBuilder, BranchNodeInfo},
+        param::{BRANCH_ROWS_NUM, NIBBLES_COUNTER_POS, RLP_NUM, S_START},
     },
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
     mpt_circuit::{
@@ -110,7 +107,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let rot_into_init = rot_into_first_branch_child - 1;
 
         constraints! {[meta, cb], {
-            let ext = ExtensionNodeInfo::new(meta, s_main, is_s, rot_into_init);
+            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
 
             /* Account leaf RLC after key */
             // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,236,246,95,240,224,191,229,27,102,202,231,184,80
@@ -136,14 +133,14 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let is_leaf_in_first_level = not::expr(a!(position_cols.not_first_level));
             // `is_branch_placeholder = 0` when in first level
             let is_branch_placeholder = selectx!{not::expr(is_leaf_in_first_level.expr()) => {
-                a!(s_main.bytes[if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS} - RLP_NUM], rot_into_init)
+                branch.is_placeholder()
             }};
             ifx!{not::expr(is_branch_placeholder.expr()) => {
                 // `is_c16`/`is_c1` hold the information whether there is even or odd number of nibbles in the leaf.
                 // `is_c16 = 0, is_c1 = 1` if leaf in first level, because we do not have the branch above
                 // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
-                let is_c16 = selectx!{not::expr(is_leaf_in_first_level.expr()) => { ext.is_c16() }};
-                let is_c1 = selectx!{not::expr(is_leaf_in_first_level.expr()) => { ext.is_c1() } elsex { 1 }};
+                let is_c16 = selectx!{not::expr(is_leaf_in_first_level.expr()) => { branch.is_c16() }};
+                let is_c1 = selectx!{not::expr(is_leaf_in_first_level.expr()) => { branch.is_c1() } elsex { 1 }};
 
                 // Let us observe a case with even number of nibbles first:
                 // `[248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`
@@ -240,15 +237,16 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // an even number of nibbles, it turns around.
                 // Note: _c16 presents the same info as sel1, _c1 presents the same info as sel2 (this information is doubled
                 // to reduce the degree when handling different cases in extension_node_key).
-                let sel1p = ext.is_c16();
-                let sel2p = ext.is_c1();
-                let sel1 = not::expr(ext.is_extension_node()) * sel2p.expr()
-                    + ext.is_short_c16.expr() * sel1p.expr()
-                    + ext.is_short_c1.expr() * sel2p.expr()
-                    + ext.is_long_even_c16.expr() * sel2p.expr()
-                    + ext.is_long_even_c1.expr() * sel1p.expr()
-                    + ext.is_long_odd_c16.expr() * sel1p
-                    + ext.is_long_odd_c1.expr() * sel2p;
+                // TODO(Brecht): hmmmm
+                let sel1p = branch.is_c16();
+                let sel2p = branch.is_c1();
+                let sel1 = not::expr(branch.is_extension()) * sel2p.expr()
+                    + branch.is_short_c16.expr() * sel1p.expr()
+                    + branch.is_short_c1.expr() * sel2p.expr()
+                    + branch.is_long_even_c16.expr() * sel2p.expr()
+                    + branch.is_long_even_c1.expr() * sel1p.expr()
+                    + branch.is_long_odd_c16.expr() * sel1p
+                    + branch.is_long_odd_c1.expr() * sel2p;
                 let sel2 = not::expr(sel1.expr());
 
                 // If sel2 = 1, we have 32 in s_main.bytes[1].
@@ -326,12 +324,11 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             if !is_s {
                 // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
                 let is_leaf_placeholder = a!(sel_2, rot_into_first_branch_child);
-                let is_branch_c_placeholder = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot_into_init);
                 // Note: this constraint suffices because the proper transition from branch to a
                 // leaf (2. case) is checked by constraints in
                 // account_leaf_key_in_added_branch.
                 ifx!{a!(proof_type.is_account_delete_mod) => {
-                    require!(or::expr([is_leaf_placeholder, is_branch_c_placeholder]) => true);
+                    require!(or::expr([is_leaf_placeholder, branch.is_placeholder()]) => true);
                 }}
             }
         }}

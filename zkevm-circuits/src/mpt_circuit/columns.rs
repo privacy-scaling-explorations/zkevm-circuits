@@ -21,7 +21,7 @@ AccountDeleteMod = 5
 StorageMod = 6
 NonExistingStorageProof = 7
 */
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ProofTypeCols<F> {
     pub(crate) proof_type: Column<Advice>, /* between 1 and 6, should correspond to the columns
                                             * below (it enables lookups with less columns) */
@@ -83,7 +83,7 @@ impl<F: FieldExt> MainCols<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct AccumulatorPair<F> {
     pub(crate) rlc: Column<Advice>,
     pub(crate) mult: Column<Advice>,
@@ -101,7 +101,7 @@ impl<F: FieldExt> AccumulatorPair<F> {
 }
 
 // Columns that store values that are being accumulated across multiple rows.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct AccumulatorCols<F> {
     pub(crate) acc_s: AccumulatorPair<F>, // accumulating RLC for a node in S proof
     pub(crate) acc_c: AccumulatorPair<F>, // accumulating RLC for a node in C proof
@@ -138,6 +138,30 @@ impl<F: FieldExt> AccumulatorCols<F> {
             _marker: PhantomData,
         }
     }
+
+    pub(crate) fn acc(&self, is_s: bool) -> AccumulatorPair<F> {
+        if is_s {
+            self.acc_s
+        } else {
+            self.acc_c
+        }
+    }
+
+    pub(crate) fn node_mult_diff(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.node_mult_diff_s
+        } else {
+            self.node_mult_diff_c
+        }
+    }
+
+    pub(crate) fn mod_node_rlc(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.s_mod_node_rlc
+        } else {
+            self.c_mod_node_rlc
+        }
+    }
 }
 
 /*
@@ -147,7 +171,7 @@ ensuring the order of rows is corrrect, like branch.is_init appears only once an
 by branch.is_child ... ). For example, columns sel1, sel2 are used for denoting whether
 the branch child is at modified node or whether the storage leaf is in short or long RLP format.
 */
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct DenoteCols<F> {
     // sel1 and sel2 in branch children: denote whether there is no leaf at is_modified (when value
     // is added or deleted from trie - but no branch is added or turned into leaf)
@@ -177,9 +201,25 @@ impl<F: FieldExt> DenoteCols<F> {
             _marker: PhantomData,
         }
     }
+
+    pub(crate) fn sel(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.sel1
+        } else {
+            self.sel2
+        }
+    }
+
+    pub(crate) fn is_node_hashed(&self, is_s: bool) -> Column<Advice> {
+        if is_s {
+            self.is_node_hashed_s
+        } else {
+            self.is_node_hashed_c
+        }
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct PositionCols<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_not_first: Column<Fixed>, // not first row

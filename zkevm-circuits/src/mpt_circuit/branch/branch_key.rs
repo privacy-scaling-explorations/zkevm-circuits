@@ -6,7 +6,7 @@ use crate::{
     constraints,
     mpt_circuit::{helpers::ColumnTransition, MPTContext},
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
+        helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::BRANCH_ROWS_NUM,
     },
 };
@@ -138,9 +138,9 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
 
             // Get extension node selectors
-            let ext = ExtensionNodeInfo::new(meta, s_main.clone(), true, -1);
+            let branch = BranchNodeInfo::new(meta, s_main.clone(), true, -1);
             // `-1 + rot_prev` lands into previous branch init.
-            let ext_prev = ExtensionNodeInfo::new(meta, s_main.clone(), true, -1 + rot_prev);
+            let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, -1 + rot_prev);
 
             let key_rlc = ColumnTransition::new_with_rot(
                 meta, acc_pair.rlc, Rotation(rot_prev), Rotation::cur()
@@ -149,7 +149,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 meta, acc_pair.mult, Rotation(rot_prev), Rotation::cur()
             );
 
-            let selectors = [ext.is_c16(), ext.is_c1()];
+            let selectors = [branch.is_c16(), branch.is_c1()];
             // Selectors need to be boolean.
             for selector in selectors.iter() {
                 require!(selector => bool);
@@ -168,8 +168,8 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             // not key byte length (how many bytes key occupies in RLP).
 
             ifx!{not_first_level, not::expr(is_account_leaf_in_added_branch_prev.expr()) => {
-                ifx!{not::expr(ext.is_extension_node()) => {
-                    ifx!{ext.is_c16() => {
+                ifx!{not::expr(branch.is_extension()) => {
+                    ifx!{branch.is_c16() => {
                         // When we are not in the first level and when sel1, the intermediate key RLC needs to be
                         // computed by adding `modified_node * 16 * mult_prev` to the previous intermediate key RLC.
                         require!(key_rlc.cur() => key_rlc.prev() + modified_node.expr() * 16.expr() * key_rlc_mult.prev());
@@ -178,7 +178,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                         // when computing the intermediate key RLC.
                         require!(key_rlc_mult.cur() => key_rlc_mult.prev());
                     }}
-                    ifx!{ext.is_c1() => {
+                    ifx!{branch.is_c1() => {
                         // When we are not in the first level and when sel2, the intermediate key RLC needs to be
                         // computed by adding `modified_node * mult_prev` to the previous intermediate key RLC.
                         require!(key_rlc.cur() => key_rlc.prev() + modified_node.expr() * key_rlc_mult.prev());
@@ -191,16 +191,16 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
                 // `sel1` alernates between 0 and 1 for regular branches.
                 // Note that `sel2` alternates implicitly because of `sel1 + sel2 = 1`.
-                ifx!{not::expr(ext.is_extension_node()) => {
-                    require!(ext.is_c16() => not::expr(ext_prev.is_c16()));
+                ifx!{not::expr(branch.is_extension()) => {
+                    require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
                 }}
                 // `sel1` alernates between 0 and 1 for extension nodes with even number of nibbles.
-                ifx!{ext.is_even() => {
-                    require!(ext.is_c16() => not::expr(ext_prev.is_c16()));
+                ifx!{branch.is_even() => {
+                    require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
                 }}
                 // `sel1` stays the same for extension nodes with odd number of nibbles.
-                ifx!{ext.is_odd() => {
-                    require!(ext.is_c16() => ext_prev.is_c16());
+                ifx!{branch.is_odd() => {
+                    require!(branch.is_c16() => branch_prev.is_c16());
                 }}
             }}
 
@@ -211,7 +211,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 (not::expr(not_first_level.expr()), is_account.expr()),
                 (not_first_level.expr(), is_storage.expr()),
                 ] {
-                ifx!{pre_condition, condition, not::expr(ext.is_extension_node()) => {
+                ifx!{pre_condition, condition, not::expr(branch.is_extension()) => {
                     // In the first level, address RLC is simply `modified_node * 16`.
                     require!(key_rlc => modified_node.expr() * 16.expr());
                     // In the first level, address RLC mult is simply 1.
@@ -224,15 +224,15 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
                 // `sel1` in the first level is enabled.
                 ifx!{condition => {
-                    ifx!{not::expr(ext.is_extension_node()) => {
-                        require!(ext.is_c16() => true);
+                    ifx!{not::expr(branch.is_extension()) => {
+                        require!(branch.is_c16() => true);
                     }}
-                    ifx!{ext.is_even() => {
-                        require!(ext.is_c16() => true);
+                    ifx!{branch.is_even() => {
+                        require!(branch.is_c16() => true);
                     }}
-                    ifx!{ext.is_odd() => {
+                    ifx!{branch.is_odd() => {
                         // `sel1/sel2` get turned around when odd number of nibbles.
-                        require!(ext.is_c16() => false);
+                        require!(branch.is_c16() => false);
                     }}
                 }}
             }

@@ -11,18 +11,18 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::extend_rand,
+        helpers::{extend_rand, BranchNodeInfo},
+        param::STORAGE_LEAF_ROWS,
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{
         helpers::{get_leaf_len, BaseConstraintBuilder},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH,
-            IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_STORAGE_MOD_POS,
-            LEAF_NON_EXISTING_IND, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND, RLP_NUM,
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_STORAGE_MOD_POS,
+            LEAF_NON_EXISTING_IND, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND,
         },
-        FixedTableTag, MPTContext,
+        MPTContext,
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -134,23 +134,32 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let value = ctx.value;
         let r = ctx.r;
 
-        // A rotation into any branch child is ok as `s_mod_node_hash_rlc` and
-        // `c_mod_node_hash_rlc` are the same in all branch children.
-        let rot_into_branch = -6;
-        let rot_into_init = -LEAF_VALUE_S_IND - BRANCH_ROWS_NUM - if is_s { 0 } else { 2 };
-        let rot_into_account = if is_s {
-            -LEAF_VALUE_S_IND
+        let leaf_value_pos = if is_s {
+            LEAF_VALUE_S_IND
         } else {
-            -LEAF_VALUE_C_IND
-        } - 1;
+            LEAF_VALUE_C_IND
+        };
+        let storage_offset = if is_s {
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND
+        } else {
+            ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND
+        };
+
+        let rot_into_branch = -STORAGE_LEAF_ROWS;
+        let rot_into_init = -leaf_value_pos - BRANCH_ROWS_NUM;
+        let rot_into_account = -leaf_value_pos - 1;
+        // Storage Leaf -> Account Leaf, back to back
+        let rot_into_storage_root = -leaf_value_pos - ACCOUNT_LEAF_ROWS + storage_offset;
 
         constraints! {[meta, cb], {
             ifx!{a!(is_leaf_value) => {
                 let not_first_level = a!(position_cols.not_first_level);
-                let sel = a!(if is_s {denoter.sel1} else {denoter.sel2}, rot_into_branch);
-                let is_placeholder_without_branch = a!(if is_s {denoter.sel1} else {denoter.sel2});
+                let sel = a!(denoter.sel(is_s), rot_into_branch);
+                let is_placeholder_without_branch = a!(denoter.sel(is_s));
                 let is_account_leaf_above = a!(is_account_leaf_in_added_branch, rot_into_account);
                 let is_leaf_placeholder = is_placeholder_without_branch.expr() + not::expr(is_account_leaf_above.expr()) * sel.expr();
+
+                let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
 
                 let is_long = a!(accs.s_mod_node_rlc);
                 let is_short = a!(accs.c_mod_node_rlc);
@@ -161,19 +170,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 let is_leaf_long = flag1.expr() * not::expr(flag2.expr());
                 let is_leaf_short = not::expr(flag1.expr()) * flag2.expr();
 
-                let rot_into_storage_root = if is_s {
-                    -LEAF_VALUE_S_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
-                } else {
-                    -LEAF_VALUE_C_IND - (ACCOUNT_LEAF_ROWS - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND)
-                };
-                // rot_into_leaf_key = -1
                 let len = get_leaf_len(meta, s_main.clone(), accs.clone(), -1);
-                let is_branch_placeholder = a!(
-                    s_main.bytes[if is_s {IS_BRANCH_S_PLACEHOLDER_POS} else {IS_BRANCH_C_PLACEHOLDER_POS} - RLP_NUM],
-                    rot_into_init
-                );
                 let not_hashed = a!(accs.acc_c.rlc, -1);
-                let mod_node_hash_rlc_cur = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_branch);
+                // A rotation into any branch child is ok as `sc_mod_node_hash_rlc`
+                // are the same in all branch children.
+                let mod_node_hash_rlc_cur = a!(accs.mod_node_rlc(is_s), rot_into_branch);
                 let is_account_leaf_in_added_branch_placeholder = a!(
                     is_account_leaf_in_added_branch,
                     rot_into_account - BRANCH_ROWS_NUM
@@ -335,7 +336,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         }}
                     } elsex {
                         ifx!{not_first_level, not::expr(sel.expr()) => {
-                            ifx!{not::expr(is_branch_placeholder.expr()) => {
+                            ifx!{not::expr(branch.is_placeholder()) => {
                                 ifx!{not_hashed => {
                                     /* Non-hashed leaf in parent */
                                     // When the leaf is not hashed (shorter than 32 bytes), it needs to be checked that its RLC
@@ -423,7 +424,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         // Check in leaf value row.
                         // Only check if there is an account above the leaf.
                         // if account is directly above storage leaf, there is no placeholder branch
-                        ifx!{is_account_leaf_in_added_branch_placeholder, is_branch_placeholder => {
+                        ifx!{is_account_leaf_in_added_branch_placeholder, branch.is_placeholder() => {
                             // Note: storage root is always in `s_main.bytes`.
                             let hash_rlc = rlc::expr(
                                 &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root - BRANCH_ROWS_NUM)).collect::<Vec<_>>(),

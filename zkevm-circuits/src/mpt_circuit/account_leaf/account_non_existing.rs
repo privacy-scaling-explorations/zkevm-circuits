@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{helpers::extend_rand, MPTContext},
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ExtensionNodeInfo},
+        helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
     },
     mpt_circuit::{
@@ -163,11 +163,11 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
                     // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
                     // is different).
-                    let ext = ExtensionNodeInfo::new(meta, s_main, true, rot_branch_init);
+                    let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
 
                     // If c16 = 1, we have nibble+48 in s_main.bytes[0].
                     // If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
-                    ifx!{ext.is_c1() => {
+                    ifx!{branch.is_c1() => {
                         require!(a!(s_main.bytes[1]) => 32);
                     }}
 
@@ -175,11 +175,11 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
                     let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
                     // set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_start.expr() * selectx!{ext.is_c16() => { r[0].expr() } elsex { 1 }};
+                    let key_mult = key_mult_start.expr() * selectx!{branch.is_c16() => { r[0].expr() } elsex { 1 }};
                     // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
                     let key_rlc_acc = key_rlc_acc_start + rlc::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
-                            (if idx == 0 { (a!(byte) - 48.expr()) * ext.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                            (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                         &[[1.expr()].to_vec(), r.to_vec()].concat(),
                     );
                     require!(key_rlc_acc => a!(address_rlc));
