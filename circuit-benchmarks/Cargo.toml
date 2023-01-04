@@ -20,6 +20,7 @@ env_logger = "0.9"
 ethers-signers = "0.17.0"
 mock = { path="../mock" }
 rand_chacha = "0.3"
+snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2022_12_23", default-features = false, features = ["loader_evm", "loader_halo2", "system_halo2"] }
 
 [features]
 default = []

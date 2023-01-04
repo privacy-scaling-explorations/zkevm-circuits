@@ -1389,7 +1389,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 // during the configuration.
 /// Test Circuit for PiCircuit
 #[cfg(any(feature = "test", test))]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
     pub PiCircuit<F>,
 );
