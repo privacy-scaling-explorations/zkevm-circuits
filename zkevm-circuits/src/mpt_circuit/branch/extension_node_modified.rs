@@ -155,11 +155,11 @@ in `C` rows is never used, we need `C` rows only for the second nibbles).
 */
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExtensionNodeInsertedConfig<F> {
+pub(crate) struct ExtensionNodeModifiedConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
+impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
     #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -178,7 +178,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         is_long: bool,
         check_zeros: bool,
     ) -> Self {
-        let config = ExtensionNodeInsertedConfig {
+        let config = ExtensionNodeModifiedConfig {
             _marker: PhantomData,
         };
         let one = Expression::Constant(F::from(1_u64));
@@ -226,14 +226,12 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         When we have an extension node in the first level of the account trie,
         its hash needs to be compared to the root of the trie.
 
-        Note that existing extension node never appears in the first level (it can in `getProof`
-        response) because the witness generator puts it after the leaf of the inserted extension
-        node rows. So to check whether the existing extension node is in the first level, we need
-        to check whether the inserted extension node is in the first level.
+        Note that the modified extension node never appears in the first level (it can in `getProof`
+        response) because the witness generator puts it after the leaf rows.
         */
         if is_long {
             meta.lookup_any(
-                "Account first level (existing) extension node hash - compared to root",
+                "Account first level (modified) extension node hash - compared to root",
                 |meta| {
                     let q_enable = q_enable(meta);
 
@@ -284,20 +282,20 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
         Only check for the `before` row as this presents the extension node before the modification.
         The `after` row present the modified extension node which needs to be checked to correspond
-        to the existing extension node that was modified due to inserted extension node.
+        to the extension node that was modified due to inserted extension node.
 
         Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
         */
         if is_long {
             meta.lookup_any(
-                "(Existing) extension node in first level of storage trie - hash compared to the storage root",
+                "(Modified) extension node in first level of storage trie - hash compared to the storage root",
                 |meta| {
                     let q_enable = q_enable(meta);
 
                     let rot_into_last_leaf_row = - LONG_EXT_NODE_S - 1;
                     let rot_into_branch_init = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
 
-                    // Check if there is an account above the existing extension node rows:
+                    // Check if there is an account above the modified extension node rows:
                     let is_account_leaf = meta.query_advice(
                         is_account_leaf_in_added_branch,
                         Rotation(rot_into_branch_init - 1),
@@ -527,7 +525,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
         if !is_long {
             meta.create_gate(
-                "Existing and drifted extension node differ only in nibbles",
+                "Modified and drifted extension node differ only in nibbles",
                 |meta| {
                     let q_enable = q_enable(meta);
                     let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
@@ -544,17 +542,17 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                     let short_ext_branch_rlc = bytes_expr_into_rlc(&short_ext_branch, power_of_randomness[0].clone());
 
                     /*
-                    Existing and drifted extension node have the same `c_main.bytes` - same underlying branch.
+                    Modified and drifted extension node have the same `c_main.bytes` - same underlying branch.
                     */
                     constraints.push((
-                        "Existing and drifted extension node have the same underlying branch",
+                        "Modified and drifted extension node have the same underlying branch",
                         q_not_first.clone()
                             * q_enable.clone()
                             * (short_ext_branch_rlc - long_ext_branch_rlc),
                     ));
 
                     /*
-                    Note: otherwise the existing extension node (corrupted nibbles) might not lead
+                    Note: otherwise the modified extension node (corrupted nibbles) might not lead
                     to the requested address (account proof) or storage key (storage proof).
                     */
 
@@ -593,7 +591,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                         s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
                         Rotation(rot_selectors_long),
                     );
-                    // existing extension node cannot be short, otherwise no extension node could be inserted
+                    // modified extension node cannot be short, otherwise no extension node could be inserted
                     let is_long_even_nibbles =
                         get_is_extension_node_even_nibbles(meta, s_main.bytes, rot_selectors_long);
                     let is_before_long_odd_nibbles = get_is_extension_node_long_odd_nibbles(
@@ -772,7 +770,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         Correspondence between nibbles in C and bytes in S for
         regular extension nodes is ensured in `extension_node_key.rs`.
         */
-        meta.create_gate("Existing node: first nibble / second nibble & s_main bytes are 0 when short extension node", |meta| {
+        meta.create_gate("Modified node: first nibble / second nibble & s_main bytes are 0 when short extension node", |meta| {
             let q_enable = q_enable(meta);
             let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
 
@@ -787,7 +785,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
                 is checked in a lookup below.
                 */
                 constraints.push((
-                    "First_nibble second_nibble (existing extension node)",
+                    "First_nibble second_nibble (modified extension node)",
                     q_enable.clone()
                         * q_not_first.clone()
                         * (s - first_nibble.clone() * c16.clone() - second_nibble.clone())
@@ -823,7 +821,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
         });
 
         for ind in 0..HASH_WIDTH - 1 {
-            meta.lookup_any("(Existing) extension node second_nibble", |meta| {
+            meta.lookup_any("(Modified) extension node second_nibble", |meta| {
                 let q_enable = q_enable(meta);
                 let mut constraints = vec![];
 
@@ -939,7 +937,7 @@ impl<F: FieldExt> ExtensionNodeInsertedConfig<F> {
 
         /*
         Note: range_lookups for regular extension nodes are in `extension_node_key.rs`, but
-        we do not have `_key.rs` for the inserted extension node.
+        we do not have `_key.rs` for the modified extension node.
         */
         range_lookups(
             meta,

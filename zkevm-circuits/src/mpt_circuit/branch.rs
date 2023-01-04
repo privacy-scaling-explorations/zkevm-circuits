@@ -5,7 +5,7 @@ pub mod branch_parallel;
 pub mod branch_rlc;
 pub mod extension;
 pub mod extension_node;
-pub mod extension_node_inserted;
+pub mod extension_node_modified;
 pub mod extension_node_key;
 
 use halo2_proofs::{

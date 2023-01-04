@@ -30,7 +30,7 @@ use branch::{
     branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
     branch_key::BranchKeyConfig, branch_parallel::BranchParallelConfig,
     branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
-    extension_node_inserted::ExtensionNodeInsertedConfig,
+    extension_node_modified::ExtensionNodeModifiedConfig,
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
@@ -121,8 +121,8 @@ pub struct MPTConfig<F> {
     storage_leaf_value_c: LeafValueConfig<F>,
     storage_leaf_key_in_added_branch: LeafKeyInAddedBranchConfig<F>,
     storage_non_existing: StorageNonExistingConfig<F>,
-    ext_node_s_before_mod_config: ExtensionNodeInsertedConfig<F>,
-    ext_node_s_after_mod_config: ExtensionNodeInsertedConfig<F>,
+    ext_node_s_before_mod_config: ExtensionNodeModifiedConfig<F>,
+    ext_node_s_after_mod_config: ExtensionNodeModifiedConfig<F>,
     pub(crate) randomness: F,
     pub(crate) check_zeros: bool,
     pub(crate) mpt_table: MPTTable,
@@ -789,7 +789,7 @@ impl<F: FieldExt> MPTConfig<F> {
             check_zeros,
         );
 
-        let ext_node_s_before_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
+        let ext_node_s_before_mod_config = ExtensionNodeModifiedConfig::<F>::configure(
             meta,
             |meta| {
                 meta.query_advice(branch.is_mod_ext_node_s_before_mod, Rotation::cur())
@@ -816,7 +816,7 @@ impl<F: FieldExt> MPTConfig<F> {
         - `C` is used only the second nibbles.
         */
 
-        let ext_node_s_after_mod_config = ExtensionNodeInsertedConfig::<F>::configure(
+        let ext_node_s_after_mod_config = ExtensionNodeModifiedConfig::<F>::configure(
             meta,
             |meta| {
                 meta.query_advice(branch.is_mod_ext_node_s_after_mod, Rotation::cur())
