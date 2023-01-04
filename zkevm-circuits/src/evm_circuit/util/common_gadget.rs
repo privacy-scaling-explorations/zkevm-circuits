@@ -1,7 +1,12 @@
-use super::CachedRegion;
+use super::{
+    from_bytes,
+    math_gadget::IsZeroGadget,
+    memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+    CachedRegion,
+};
 use crate::{
     evm_circuit::{
-        param::N_BYTES_GAS,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
@@ -17,6 +22,7 @@ use crate::{
     witness::{Block, Call, ExecStep},
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -443,5 +449,247 @@ impl<F: Field> TransferGadget<F> {
             receiver_balance,
         )?;
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CallGadget<F, const NORMAL: bool> {
+    is_success: Cell<F>,
+
+    gas: Word<F>,
+    gas_is_u64: IsZeroGadget<F>,
+    code_address: Word<F>,
+    value: Word<F>,
+    cd_address: MemoryAddressGadget<F>,
+    rd_address: MemoryAddressGadget<F>,
+    memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+}
+
+impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        is_call_or_is_call_code: Expression<F>,
+    ) -> Self {
+        let gas_word = cb.query_word();
+        let code_address_word = cb.query_word();
+        let value = cb.query_word();
+        let cd_offset = cb.query_cell();
+        let cd_length = cb.query_rlc();
+        let rd_offset = cb.query_cell();
+        let rd_length = cb.query_rlc();
+        let is_success = cb.query_bool();
+
+        // Lookup values from stack
+        cb.stack_pop(gas_word.expr());
+        cb.stack_pop(code_address_word.expr());
+
+        // `CALL` opcode has an additional stack pop `value`.
+        cb.condition(is_call_or_is_call_code, |cb| cb.stack_pop(value.expr()));
+
+        [
+            cd_offset.expr(),
+            cd_length.expr(),
+            rd_offset.expr(),
+            rd_length.expr(),
+        ]
+        .map(|expression| cb.stack_pop(expression));
+        cb.stack_push(is_success.expr());
+
+        // Recomposition of random linear combination to integer
+        // let gas = from_bytes::expr(&gas_word.cells[..N_BYTES_GAS]);
+        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
+        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
+        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
+        let memory_expansion =
+            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
+        // `code_address` is poped from stack and used to check if it exists in
+        // access list and get code hash.
+        // For CALLCODE, both caller and callee addresses are `current_callee_address`.
+        // For DELEGATECALL, caller address is `current_caller_address` and
+        // callee address is `current_callee_address`.
+        // For both CALL and STATICCALL, caller address is
+        // `current_callee_address` and callee address is `code_address`.
+        // let code_address =
+        // from_bytes::expr(&code_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+
+        Self {
+            is_success,
+            code_address: code_address_word,
+            gas: gas_word,
+            gas_is_u64,
+            value,
+            cd_address,
+            rd_address,
+            memory_expansion,
+        }
+    }
+
+    pub fn code_address(&self) -> Word<F> {
+        self.code_address.clone()
+    }
+
+    pub fn code_address_expr(&self) -> Expression<F> {
+        from_bytes::expr(&self.code_address.cells[..N_BYTES_GAS])
+    }
+
+    pub fn cd_address(&self) -> MemoryAddressGadget<F> {
+        self.cd_address.clone()
+    }
+
+    pub fn rd_address(&self) -> MemoryAddressGadget<F> {
+        self.rd_address.clone()
+    }
+
+    // TODO: try to return by ref
+    pub fn value(&self) -> Word<F> {
+        self.value.clone()
+    }
+
+    pub fn gas(&self) -> Word<F> {
+        self.gas.clone()
+    }
+
+    pub fn gas_expr(&self) -> Expression<F> {
+        from_bytes::expr(&self.gas.cells[..N_BYTES_GAS])
+    }
+
+    pub fn is_success(&self) -> Cell<F> {
+        self.is_success.clone()
+    }
+
+    pub fn gas_is_u64(&self) -> IsZeroGadget<F> {
+        self.gas_is_u64.clone()
+    }
+
+    pub fn memory_expansion(&self) -> MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE> {
+        self.memory_expansion.clone()
+    }
+
+    // pub fn value_is_zero(&self, cb: &mut ConstraintBuilder<F>) -> IsZeroGadget<F>
+    // {     IsZeroGadget::construct(cb, sum::expr(&self.value.cells))
+    // }
+
+    // pub fn has_value(
+    //     &self,
+    //     cb: &mut ConstraintBuilder<F>,
+    //     is_delegatecall: Expression<F>,
+    // ) -> Expression<F> {
+    //     let value_is_zero = IsZeroGadget::construct(cb,
+    // sum::expr(&self.value.cells));     select::expr(is_delegatecall,
+    // 0.expr(), 1.expr() - value_is_zero.expr()) }
+
+    pub fn gas_cost(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        is_warm_prev: Expression<F>,
+        has_value: Expression<F>,
+        is_call: Expression<F>,
+        is_empty: Expression<F>,
+    ) -> Expression<F> {
+        select::expr(
+            is_warm_prev,
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_ACCOUNT_ACCESS.expr(),
+        ) + has_value.clone()
+            * (GasCost::CALL_WITH_VALUE.expr()
+                // Only CALL opcode could invoke transfer to make empty account into non-empty.
+                + is_call * is_empty * GasCost::NEW_ACCOUNT.expr())
+            + self.memory_expansion.gas_cost()
+    }
+
+    // pub fn callee_gas_left(
+    //     &self,
+    //     cb: &mut ConstraintBuilder<F>,
+    //     gas_cost: Expression<F>,
+    // ) -> (Expression<F>, MinMaxGadget<F, N_BYTES_GAS>) {
+    //     // Apply EIP 150
+    //     let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
+    //     let one_64th_gas = ConstantDivisionGadget::construct(cb,
+    // gas_available.clone(), 64);     let all_but_one_64th_gas = gas_available
+    // - one_64th_gas.quotient();     let capped_callee_gas_left =
+    //   MinMaxGadget::construct(cb, self.gas, all_but_one_64th_gas.clone()); (
+    //   select::expr( self.gas_is_u64.expr(), capped_callee_gas_left.min(),
+    //   all_but_one_64th_gas, ), capped_callee_gas_left, )
+    // }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        gas: U256,
+        code_address: U256,
+        value: U256,
+        is_success: U256,
+        cd_offset: U256,
+        cd_length: U256,
+        rd_offset: U256,
+        rd_length: U256,
+        memory_word_size: u64,
+        randomness: F,
+    ) -> Result<(u64), Error> {
+        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
+        self.code_address
+            .assign(region, offset, Some(code_address.to_le_bytes()))?;
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
+        self.is_success
+            .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
+        self.gas_is_u64.assign(
+            region,
+            offset,
+            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
+        )?;
+        let cd_address = self
+            .cd_address
+            .assign(region, offset, cd_offset, cd_length, randomness)?;
+        let rd_address = self
+            .rd_address
+            .assign(region, offset, rd_offset, rd_length, randomness)?;
+        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
+            region,
+            offset,
+            memory_word_size,
+            [cd_address, rd_address],
+        )?;
+
+        Ok((memory_expansion_gas_cost))
+    }
+
+    pub(crate) fn gen_gas_available(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        memory_expansion_gas_cost: u64,
+        gas_left: u64,
+        is_warm_prev: bool,
+        is_call: bool,
+        has_value: bool,
+        callee_exists: bool,
+    ) -> Result<(u64), Error> {
+        let gas_cost = if is_warm_prev {
+            GasCost::WARM_ACCESS.as_u64()
+        } else {
+            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+        } + if has_value {
+            GasCost::CALL_WITH_VALUE.as_u64()
+                // Only CALL opcode could invoke transfer to make empty account into non-empty.
+                + if is_call && !callee_exists {
+                    GasCost::NEW_ACCOUNT.as_u64()
+                } else {
+                    0
+                }
+        } else {
+            0
+        } + memory_expansion_gas_cost;
+        let gas_available = gas_left - gas_cost;
+        Ok((gas_available))
+        // self.one_64th_gas
+        //     .assign(region, offset, gas_available as u128)?;
+        // self.capped_callee_gas_left.assign(
+        //     region,
+        //     offset,
+        //     F::from(gas.low_u64()),
+        //     F::from(gas_available - gas_available / 64),
+        // )?;
     }
 }

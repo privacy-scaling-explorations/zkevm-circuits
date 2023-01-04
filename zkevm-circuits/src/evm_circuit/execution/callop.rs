@@ -1,7 +1,7 @@
 use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE};
+use crate::evm_circuit::param::N_BYTES_GAS;
 use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::TransferGadget;
+use crate::evm_circuit::util::common_gadget::{CallGadget, TransferGadget};
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, To};
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -9,7 +9,7 @@ use crate::evm_circuit::util::constraint_builder::{
 use crate::evm_circuit::util::math_gadget::{
     CmpWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
 };
-use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
+
 use crate::evm_circuit::util::{
     from_bytes, or, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
 };
@@ -38,19 +38,20 @@ pub(crate) struct CallOpGadget<F> {
     current_caller_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
-    gas: Word<F>,
-    code_address: Word<F>,
-    value: Word<F>,
+    call: CallGadget<F, true>,
+    // gas: Word<F>,
+    // code_address: Word<F>,
+    // value: Word<F>,
     current_value: Word<F>,
-    is_success: Cell<F>,
-    gas_is_u64: IsZeroGadget<F>,
+    // is_success: Cell<F>,
+    // gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     value_is_zero: IsZeroGadget<F>,
-    cd_address: MemoryAddressGadget<F>,
-    rd_address: MemoryAddressGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+    // cd_address: MemoryAddressGadget<F>,
+    // rd_address: MemoryAddressGadget<F>,
+    // memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
     callee_exists: Cell<F>,
     callee_code_hash: Cell<F>,
@@ -84,15 +85,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             1.expr(),
         );
 
-        let gas_word = cb.query_word();
-        let code_address_word = cb.query_word();
-        let value = cb.query_word();
-        let cd_offset = cb.query_cell();
-        let cd_length = cb.query_rlc();
-        let rd_offset = cb.query_cell();
-        let rd_length = cb.query_rlc();
-        let is_success = cb.query_bool();
-
         // Use rw_counter of the step which triggers next call as its call_id.
         let callee_call_id = cb.curr.state.rw_counter.clone();
 
@@ -114,41 +106,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         cb.range_lookup(depth.expr(), 1024);
 
-        // Lookup values from stack
-        cb.stack_pop(gas_word.expr());
-        cb.stack_pop(code_address_word.expr());
-
-        // `CALL` opcode has an additional stack pop `value`.
-        cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
-            cb.stack_pop(value.expr())
-        });
-
-        [
-            cd_offset.expr(),
-            cd_length.expr(),
-            rd_offset.expr(),
-            rd_length.expr(),
-        ]
-        .map(|expression| cb.stack_pop(expression));
-        cb.stack_push(is_success.expr());
-
-        // Recomposition of random linear combination to integer
-        let gas = from_bytes::expr(&gas_word.cells[..N_BYTES_GAS]);
-        let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
-        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
-        let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
-
-        // `code_address` is poped from stack and used to check if it exists in
-        // access list and get code hash.
-        // For CALLCODE, both caller and callee addresses are
-        // `current_callee_address`.
-        // For DELEGATECALL, caller address is `current_caller_address` and
-        // callee address is `current_callee_address`.
-        // For both CALL and STATICCALL, caller address is
-        // `current_callee_address` and callee address is `code_address`.
-        let code_address = from_bytes::expr(&code_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+        let call_gadget = CallGadget::construct(cb, is_call.expr() + is_callcode.expr());
+        // let code_address = call_gadget.code_address_expr();
         let caller_address = select::expr(
             is_delegatecall.expr(),
             current_caller_address.expr(),
@@ -157,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_address = select::expr(
             is_callcode.expr() + is_delegatecall.expr(),
             current_callee_address.expr(),
-            code_address.expr(),
+            call_gadget.code_address_expr(),
         );
 
         // Add callee to access list
@@ -165,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_warm_prev = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            code_address.expr(),
+            call_gadget.code_address_expr(),
             is_warm.expr(),
             is_warm_prev.expr(),
             Some(&mut reversion_info),
@@ -173,12 +132,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // Propagate rw_counter_end_of_reversion and is_persistent
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
+        // let is_success = call_gadget.is_success().expr();
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
-            reversion_info.is_persistent() * is_success.expr(),
+            reversion_info.is_persistent() * call_gadget.is_success().expr(),
         );
-        cb.condition(is_success.expr() * (1.expr() - reversion_info.is_persistent()), |cb| {
+        cb.condition(call_gadget.is_success().expr() * (1.expr() - reversion_info.is_persistent()), |cb| {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
@@ -186,12 +146,15 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
+        let value = call_gadget.value();
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
+        // let value_is_zero = call_gadget.value_is_zero(cb);
         let has_value = select::expr(
             is_delegatecall.expr(),
             0.expr(),
             1.expr() - value_is_zero.expr(),
         );
+        // let has_value = call_gadget.has_value(cb, is_delegatecall.expr());
         cb.condition(has_value.clone(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
@@ -235,13 +198,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_code_hash = cb.query_cell();
         cb.condition(callee_exists.expr(), |cb| {
             cb.account_read(
-                code_address.expr(),
+                call_gadget.code_address_expr(),
                 AccountFieldTag::CodeHash,
                 callee_code_hash.expr(),
             );
         });
         cb.condition(1.expr() - callee_exists.expr(), |cb| {
-            cb.account_read(code_address, AccountFieldTag::NonExisting, 0.expr());
+            cb.account_read(
+                call_gadget.code_address_expr(),
+                AccountFieldTag::NonExisting,
+                0.expr(),
+            );
         });
 
         let is_empty_code_hash = IsEqualGadget::construct(
@@ -254,23 +221,23 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // Sum up and verify gas cost.
-        let gas_cost = select::expr(
+        // Only CALL opcode could invoke transfer to make empty account into non-empty.
+        let gas_cost = call_gadget.gas_cost(
+            cb,
             is_warm_prev.expr(),
-            GasCost::WARM_ACCESS.expr(),
-            GasCost::COLD_ACCOUNT_ACCESS.expr(),
-        ) + has_value.clone()
-            * (GasCost::CALL_WITH_VALUE.expr()
-                // Only CALL opcode could invoke transfer to make empty account into non-empty.
-                + is_call.expr() * (1.expr() - callee_exists.expr()) * GasCost::NEW_ACCOUNT.expr())
-            + memory_expansion.gas_cost();
-
-        // Apply EIP 150
+            has_value.clone(),
+            is_call.expr(),
+            (1.expr() - callee_exists.expr()),
+        );
+        // let (callee_gas_left, capped_callee_gas_left) =
+        // call_gadget.callee_gas_left(cb, gas_cost); Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
-        let capped_callee_gas_left = MinMaxGadget::construct(cb, gas, all_but_one_64th_gas.clone());
+        let capped_callee_gas_left =
+            MinMaxGadget::construct(cb, call_gadget.gas_expr(), all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
-            gas_is_u64.expr(),
+            call_gadget.gas_is_u64().expr(),
             capped_callee_gas_left.min(),
             all_but_one_64th_gas,
         );
@@ -279,6 +246,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
+        let memory_expansion = call_gadget.memory_expansion();
         cb.condition(is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for field_tag in [
@@ -303,6 +271,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 + is_call.expr() * 3.expr()
                 + is_callcode.expr() * 2.expr()
                 + is_delegatecall.expr() * 2.expr();
+
             cb.require_step_state_transition(StepStateTransition {
                 rw_counter: Delta(rw_counter_delta),
                 program_counter: Delta(1.expr()),
@@ -345,6 +314,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             }
 
             // Setup next call's context.
+            let cd_address = call_gadget.cd_address();
+            let rd_address = call_gadget.rd_address();
             for (field_tag, value) in [
                 (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                 (CallContextFieldTag::TxId, tx_id.expr()),
@@ -359,7 +330,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     CallContextFieldTag::Value,
                     select::expr(is_delegatecall.expr(), current_value.expr(), value.expr()),
                 ),
-                (CallContextFieldTag::IsSuccess, is_success.expr()),
+                (
+                    CallContextFieldTag::IsSuccess,
+                    call_gadget.is_success().expr(),
+                ),
                 (
                     CallContextFieldTag::IsStatic,
                     or::expr([is_static.expr(), is_staticcall.expr()]),
@@ -417,18 +391,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             current_value,
             is_static,
             depth,
-            gas: gas_word,
-            code_address: code_address_word,
-            value,
-            is_success,
-            gas_is_u64,
+            call: call_gadget,
             is_warm,
             is_warm_prev,
             callee_reversion_info,
             value_is_zero,
-            cd_address,
-            rd_address,
-            memory_expansion,
             transfer,
             callee_exists,
             callee_code_hash,
@@ -579,18 +546,25 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth
             .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
-        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
-        self.code_address
-            .assign(region, offset, Some(code_address.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.is_success
-            .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
-        self.gas_is_u64.assign(
-            region,
-            offset,
-            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
-        )?;
+        // self.call
+        //     .gas()
+        //     .assign(region, offset, Some(gas.to_le_bytes()))?;
+        // self.call
+        //     .code_address()
+        //     .assign(region, offset, Some(code_address.to_le_bytes()))?;
+        // self.call
+        //     .value()
+        //     .assign(region, offset, Some(value.to_le_bytes()))?;
+        // self.call.is_success().assign(
+        //     region,
+        //     offset,
+        //     Value::known(F::from(is_success.low_u64())),
+        // )?;
+        // self.call.gas_is_u64().assign(
+        //     region,
+        //     offset,
+        //     sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
+        // )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.is_warm_prev
@@ -603,18 +577,40 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         )?;
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
-        let cd_address =
-            self.cd_address
-                .assign(region, offset, cd_offset, cd_length, block.randomness)?;
-        let rd_address =
-            self.rd_address
-                .assign(region, offset, rd_offset, rd_length, block.randomness)?;
-        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
+        let memory_expansion_gas_cost = self.call.assign(
             region,
             offset,
+            gas,
+            code_address,
+            value,
+            is_success,
+            cd_offset,
+            cd_length,
+            rd_offset,
+            rd_length,
             step.memory_word_size(),
-            [cd_address, rd_address],
+            block.randomness,
         )?;
+        // let cd_address = self.call.cd_address().assign(
+        //     region,
+        //     offset,
+        //     cd_offset,
+        //     cd_length,
+        //     block.randomness,
+        // )?;
+        // let rd_address = self.call.rd_address().assign(
+        //     region,
+        //     offset,
+        //     rd_offset,
+        //     rd_length,
+        //     block.randomness,
+        // )?;
+        // let (_, memory_expansion_gas_cost) = self.call.memory_expansion().assign(
+        //     region,
+        //     offset,
+        //     step.memory_word_size(),
+        //     [cd_address, rd_address],
+        // )?;
         self.transfer.assign(
             region,
             offset,
@@ -635,22 +631,32 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
         let has_value = !value.is_zero() && !is_delegatecall;
-        let gas_cost = if is_warm_prev {
-            GasCost::WARM_ACCESS.as_u64()
-        } else {
-            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
-        } + if has_value {
-            GasCost::CALL_WITH_VALUE.as_u64()
-                // Only CALL opcode could invoke transfer to make empty account into non-empty.
-                + if is_call && !callee_exists {
-                    GasCost::NEW_ACCOUNT.as_u64()
-                } else {
-                    0
-                }
-        } else {
-            0
-        } + memory_expansion_gas_cost;
-        let gas_available = step.gas_left - gas_cost;
+        // let gas_cost = if is_warm_prev {
+        //     GasCost::WARM_ACCESS.as_u64()
+        // } else {
+        //     GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+        // } + if has_value {
+        //     GasCost::CALL_WITH_VALUE.as_u64()
+        //         // Only CALL opcode could invoke transfer to make empty account into
+        // non-empty.         + if is_call && !callee_exists {
+        //             GasCost::NEW_ACCOUNT.as_u64()
+        //         } else {
+        //             0
+        //         }
+        // } else {
+        //     0
+        // } + memory_expansion_gas_cost;
+        // let gas_available = step.gas_left - gas_cost;
+        let gas_available = self.call.gen_gas_available(
+            region,
+            offset,
+            memory_expansion_gas_cost,
+            step.gas_left,
+            is_warm_prev,
+            is_call,
+            has_value,
+            callee_exists,
+        )?;
         self.one_64th_gas
             .assign(region, offset, gas_available as u128)?;
         self.capped_callee_gas_left.assign(
