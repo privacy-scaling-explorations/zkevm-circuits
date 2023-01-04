@@ -38,53 +38,116 @@ use super::BranchCols;
 use super::extension::{extension_node_rlp, extension_node_rlc, extension_node_selectors, check_intermediate_mult};
 
 /*
-An existing extension node (which gets modified because of an inserted extension node) occupies 6 rows.
-The rows are the following:
+A modified extension node (which gets modified because of an inserted or deleted extension node)
+occupies 6 rows. The rows are the following:
 LONG_EXT_NODE_SELECTORS
 LONG_EXT_NODE_S
 LONG_EXT_NODE_C
-SHORT§_EXT_NODE_SELECTORS
+SHORT_EXT_NODE_SELECTORS
 SHORT_EXT_NODE_S
 SHORT_EXT_NODE_C
 
-This file contains constraints for the existing extension node rows which appear after the leaf rows.
-Some constraints are the same as as for the extension node rows that appear in the branch rows (RLP, RLC),
-some are different (extension node selectors).
+This file contains constraints for the modified extension node rows which appear after the leaf rows.
+Extension node is positioned after the leaf rows in case when its nibbles get elongated or shortened
+because another extension node is deleted or inserted.
 
-TODO: describe differences between insert and delete
-- insert case
-example: we have an extension at 1 2 3 4 5 6
-we add a leaf at 1 2 3 4, the old extension will now only have one nibble (6)
-terminology:
-ext. node with nibbles 1 2 3 4 5 6 is long extension node,
-ext. node with nibble 6 is short extension node
-ext. node with nibbles 1 2 3 4 is middle extension node
-(check all occurences of "existing" and replace with above terminology)
-...
+Insert case
 
-- delete case
-example: we have an extension node with nibbles 1 2 3 4 and inside it an extension at position 5
-with one nibble: 6
-...
+Example:
+We have four keys set in the trie.
 
-In both cases, the rows above the leaf contain the extension node with nibbles 1 2 3 4 (although
-in delete case after deletion this extension node is not in the trie anymore). The long extension
-node in insert case is the extension node before the extension node with nibbles 1 2 3 4 was inserted.
-The long extension node in delete case is the extension node after the extension node with nibbles 1 2 3 4
-was removed.
-...
+key0 =  0x1000000000000000000000000000000000000000000000000000000000000000
+key00 = 0x0000000000000000000000000000000000000000000000000000000000000000
+key1 =  0x1234561000000000000000000000000000000000000000000000000000000000
+key2 =  0x1234563000000000000000000000000000000000000000000000000000000000
+
+We have a branch in the trie root, we have a leaf at position 0 in this branch, and we have
+a branch (let us denote it by Branch1) at position 1. In this second branch (Branch1) we
+have a leaf at position 0 (key0) and we have an extension node (ExtNode1) at position 2.
+This extension node has nibbles [3, 4, 5, 6].
+
+Now we add another key to the trie:
+key3 = 0x1234400000000000000000000000000000000000000000000000000000000000
+
+The extension node ExtNode1 is now in Branch1 at position 2 replaced by a new
+extension node (ExtNode2) which has nibbles [3, 4]. ExtNode2 has now an extension
+node at 5 - this is where ExtNode1 drifted (and now only has one nibble: 6),
+let us denoted the drifted ExtNode1 by ExtNode3.
+At position 4, ExtNode2 has key3. 
+
+The terminology used for the modified extension node is:
+ExtNode1 (nibbles [3, 4, 5, 6]) is named `long`.
+ExtNode3 (ExtNode1 drifted into a branch of ExtNode2) is named `short` (only has one nibble: 6).
+ExtNode2 (nibbles [3, 4]) is named `middle`.
+
+The nibbles of `middle` extension node ([3, 4]) together with `drifted_pos`
+of the ExtNode1 ([5]) and with drifted ExtNode1 nibbles ([6]) should be the same
+as nibbles of ExtNode1 ([3, 4, 5, 6]).
 
 It needs to be checked that the newly inserted extension node branch only has two elements:
 the leaf that caused a new extension node to be added and the old extension node that drifted into
-a branch of the newly added extension node.
-And it needs to be ensured that the drifted extension node is the same as it was before
-the modification except for the change in its key (otherwise the attacker might hide one modification
-- the modification of the drifted extension node).
+a branch of the newly added extension node (this is checked by branch constraints whenever
+we have a placeholder branch, so in the case of modified extension node too).
 
-The constraints that are implemented in `extension_node_key.rs` are not implemented for an existing
-extension node as we do not have the underlying branch and other elements down to the leaf for it.
+It needs to be ensured that the drifted extension node is the same as it was before
+the modification - except for the change in its nibbles (otherwise the attacker might hide
+a modification - the modification of the drifted extension node).
+
+The two extension node rows in branch rows only support cases where the nibbles of `S` and `C`
+extension nodes are the same. This is why we add rows for the modified extension node after
+the leaf rows (rows after leaf would be needed in any case).
+
+Note that the branch rows above the leaf contain the branch of `middle` extension node
+and a placeholder branch. We do not have `long` extension node and its branch stored anywhere
+above the leaf. Instead, it is stored in `LONG_EXT_NODE_S` row (`LONG_EXT_NODE_C` is used
+only for the second nibbles). We need to ensure that the hash of `long` extension node
+is at `modified_node` position in the branch above `middle` rows in `S` proof.
+`SHORT_EXT_NODE_S` rows contain `short` extension node. We need to ensure that
+its hash is at `drifted_pos` in `middle` branch.
+
+The constraints that are implemented in `extension_node_key.rs` are not implemented for a modified
+extension node as we do not have the underlying branch and other elements down to the leaf.
 From `extension_node_key.rs` constraints we only need to implement the constraints related
 to the second nibbles.
+
+---
+
+Delete case
+
+Example:
+We have five keys set in the trie.
+
+key0 =  0x1000000000000000000000000000000000000000000000000000000000000000
+key00 = 0x0000000000000000000000000000000000000000000000000000000000000000
+key1 =  0x1234561000000000000000000000000000000000000000000000000000000000
+key2 =  0x1234563000000000000000000000000000000000000000000000000000000000
+key3 =  0x1234400000000000000000000000000000000000000000000000000000000000
+
+We have a branch in the trie root, we have a leaf at position 0 in this branch, and we have
+a branch (let us denote it by Branch1) at position 1. In this second branch (Branch1) we
+have a leaf at position 0 (key0) and we have an extension node (ExtNode2) at position 2.
+ExtNode2 has nibbles [3, 4]. ExtNode1 branch has a leaf at position 4 (key3) and
+an extension node ExtNode3 at position 5. ExtNode3 has only one nibble: 6.
+
+Now we add delete key3 from the trie. ExtNode2 is now deleted from the trie, instead,
+ExtNode1 appears with nibbles [3, 4, 5, 6] - ExtNode1 appears when ExtNode3 is lifted
+from ExtNode2 branch for one level.
+
+The terminology used for the modified extension node is:
+ExtNode1 (nibbles [3, 4, 5, 6]) is named `long`.
+ExtNode3 (ExtNode1 drifted into a branch of ExtNode2) is named `short` (only has one nibble: 6).
+ExtNode2 (nibbles [3, 4]) is named `middle`.
+
+Note that the branch rows above the leaf again contain the branch of `middle` extension node
+and a placeholder branch (this extension node is actually deleted, but this way the constraints
+for insert can be reused for delete operation, but not that as opposed to insert case
+the placeholder branch is now in `C` proof).
+We do not have `long` extension node and its branch stored anywhere
+above the leaf. Instead, it is stored in `LONG_EXT_NODE_S` row (`LONG_EXT_NODE_C` is used
+only for the second nibbles). We need to ensure that the hash of `long` extension node
+is at `modified_node` position in the branch above `middle` rows in `S` proof.
+`SHORT_EXT_NODE_S` rows contain `short` extension node. We need to ensure that
+its hash is at `drifted_pos` in `middle` branch.
 
 Note that `S` and `C` hashes (values in `c_main`) in the two `long` rows are the same. Likewise for
 the two `short` rows. So the constraints like RLC and RLP are checked only for `S` rows (`c_main`
