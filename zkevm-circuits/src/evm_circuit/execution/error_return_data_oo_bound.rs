@@ -18,7 +18,7 @@ use crate::{
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, Word};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ToScalar, Word};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -33,7 +33,6 @@ pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     length: RandomLinearCombination<F, 31>,
     //end : Cell<F>,
 
-    //return_data_offset: Cell<F>,
     /// Holds the size of the last callee return data.
     return_data_size: Cell<F>,
 
@@ -45,7 +44,7 @@ pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
 
 impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
     const NAME: &'static str = "ErrorReturnDataOutOfBoundGadget";
-
+ 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorReturnDataOutOfBound;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
@@ -95,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(
-                    0.expr() + cb.curr.state.reversible_write_counter.expr(),
+                    5.expr() + cb.curr.state.reversible_write_counter.expr(),
                 ),
 
                 ..StepStateTransition::any()
@@ -141,10 +140,56 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
        
+        let [dest_offset, data_offset, size] =
+        [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
+
+        self.memory_offset.assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
+        self.data_offset.assign(
+            region,
+            offset,
+            Some(
+                data_offset.to_le_bytes()[..31]
+                    .try_into()
+                    .unwrap(),
+            ),
+        )?;
+        self.length.assign(
+            region,
+            offset,
+            Some(
+                size.to_le_bytes()[..31]
+                    .try_into()
+                    .unwrap(),
+            ),
+        )?;
+
+        let [return_data_size] = [
+            (3, CallContextFieldTag::LastCalleeReturnDataLength),
+        ]
+        .map(|(i, tag)| {
+            let rw = block.rws[step.rw_indices[i as usize]];
+            assert_eq!(rw.field_tag(), Some(tag as u64));
+            rw.call_context_value()
+        });
+
+        self.return_data_size.assign(
+            region,
+            offset,
+            Value::known(
+                return_data_size
+                    .to_scalar()
+                    .expect("unexpected U256 -> Scalar conversion failure"),
+            ),
+        )?;
+        println!("print is root call : {0}", call.is_root);
         // let condition_rlc =
         //     RLCWord::random_linear_combine(condition.to_le_bytes(), block.randomness);
+        let  return_length = return_data_size.to_scalar().unwrap();
+        let end = (data_offset + size).to_scalar().unwrap();
+        self.is_end_exceed_length.assign(region, offset, return_length, end);
+
         self.restore_context
-            .assign(region, offset, block, call, step, 2 as usize)?;
+            .assign(region, offset, block, call, step, 5)?;
         Ok(())
     }
 }
@@ -164,25 +209,42 @@ mod test {
         dest_offset: usize,
         offset: usize,
         size: usize,
+        is_root: bool,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         let pushdata = rand_bytes(32);
         let return_offset =
             std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
-        let code_b = bytecode! {
+        let mut code_b = bytecode! {
             PUSH32(Word::from_big_endian(&pushdata))
             PUSH32(return_offset)
             MSTORE
-
-            PUSH32(return_data_size)
-            PUSH32(return_data_offset)
-            RETURN
-            STOP
         };
 
+        if is_root {
+            code_b.append( & bytecode! {
+                PUSH32(return_data_size)
+                PUSH32(return_data_offset)
+                RETURN
+                STOP
+            });
+        }else {
+            code_b.append( & bytecode! {
+                PUSH32(size) // size
+                PUSH32(offset) // offset
+                PUSH32(dest_offset) // dest_offset
+                RETURNDATACOPY
+                // end for internal
+                PUSH32(return_data_size)
+                PUSH32(return_data_offset)
+                RETURN
+                STOP
+            });
+        }
+
         // code A calls code B.
-        let code_a = bytecode! {
+        let mut code_a = bytecode! {
             // call ADDR_B.
             PUSH32(return_data_size) // retLength
             PUSH32(return_data_offset) // retOffset
@@ -192,12 +254,23 @@ mod test {
             PUSH32(addr_b.to_word()) // addr
             PUSH32(0x1_0000) // gas
             CALL
-            PUSH32(size) // size
-            PUSH32(offset) // offset
-            PUSH32(dest_offset) // dest_offset
-            RETURNDATACOPY
-            STOP
         };
+        
+        if is_root {
+            code_a.append( & bytecode! {
+                PUSH32(size) // size
+                PUSH32(offset) // offset
+                PUSH32(dest_offset) // dest_offset
+                RETURNDATACOPY
+                STOP
+            });
+        }else {
+            code_a.append( & bytecode! {
+                PUSH32(return_data_size)
+                PUSH32(return_data_offset)
+                RETURN
+            });            
+        }
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -228,10 +301,13 @@ mod test {
         );
     }
 
-    // TODO: Add negative cases for out-of-bound and out-of-gas
+    // test root & internal calls
     #[test]
     fn returndatacopy_out_of_bound_error() {
-        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10);
+        // test root call cases
+        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, true);
+        // test internal call case
+        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, false);
     }
 
     // #[test]
