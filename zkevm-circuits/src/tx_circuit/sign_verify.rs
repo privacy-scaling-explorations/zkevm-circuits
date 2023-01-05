@@ -14,14 +14,19 @@ use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Field};
 use halo2_proofs::{
-    arithmetic::FieldExt,
+    arithmetic::{CurveAffine, FieldExt},
     circuit::{AssignedCell, Cell, Layouter, Value},
-    halo2curves::secp256k1,
     halo2curves::secp256k1::Secp256k1Affine,
+    halo2curves::{
+        group::{Curve, Group},
+        secp256k1,
+    },
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
     poly::Rotation,
 };
 use integer::{AssignedInteger, IntegerChip, IntegerConfig, IntegerInstructions, Range};
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
 use itertools::Itertools;
 use keccak256::plain::Keccak;
@@ -35,14 +40,46 @@ use std::{iter, marker::PhantomData};
 
 /// Auxiliary Gadget to verify a that a message hash is signed by the public
 /// key corresponding to an Ethereum Address.
-#[derive(Clone, Default, Debug)]
-pub struct SignVerifyChip<F: Field, const MAX_VERIF: usize> {
+#[derive(Clone, Debug)]
+pub struct SignVerifyChip<F: Field> {
     /// Aux generator for EccChip
     pub aux_generator: Secp256k1Affine,
     /// Window size for EccChip
     pub window_size: usize,
+    /// Max number of verifications
+    pub max_verif: usize,
     /// Marker
     pub _marker: PhantomData<F>,
+}
+
+impl<F: Field> SignVerifyChip<F> {
+    /// Return a new SignVerifyChip
+    pub fn new(max_verif: usize) -> Self {
+        // TODO: Investigate if it is safe to use a random point as aux generator that
+        // is choosen by the prover.  If this is unsafe, we will need to update the
+        // EccChip to calculate an aux generator using the challange API.
+        // https://github.com/privacy-scaling-explorations/halo2wrong/issues/53
+        let mut rng = ChaCha20Rng::seed_from_u64(0);
+        let aux_generator =
+            <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
+        Self {
+            aux_generator,
+            window_size: 2,
+            max_verif,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: Field> Default for SignVerifyChip<F> {
+    fn default() -> Self {
+        Self {
+            aux_generator: Secp256k1Affine::default(),
+            window_size: 1,
+            max_verif: 0,
+            _marker: PhantomData::default(),
+        }
+    }
 }
 
 const NUMBER_OF_LIMBS: usize = 4;
@@ -288,7 +325,7 @@ struct ChipsRef<'a, F: Field, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: 
     ecdsa_chip: &'a EcdsaChip<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
+impl<F: Field> SignVerifyChip<F> {
     fn assign_aux(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -560,11 +597,11 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
         signatures: &[SignData],
         challenges: &Challenges<Value<F>>,
     ) -> Result<Vec<AssignedSignatureVerify<F>>, Error> {
-        if signatures.len() > MAX_VERIF {
+        if signatures.len() > self.max_verif {
             error!(
-                "signatures.len() = {} > MAX_VERIF = {}",
+                "signatures.len() = {} > max_verif = {}",
                 signatures.len(),
-                MAX_VERIF
+                self.max_verif
             );
             return Err(Error::Synthesis);
         }
@@ -596,7 +633,7 @@ impl<F: Field, const MAX_VERIF: usize> SignVerifyChip<F, MAX_VERIF> {
             |region| {
                 let mut assigned_ecdsas = Vec::new();
                 let mut ctx = RegionCtx::new(region, 0);
-                for i in 0..MAX_VERIF {
+                for i in 0..self.max_verif {
                     let signature = if i < signatures.len() {
                         signatures[i].clone()
                     } else {
@@ -684,12 +721,12 @@ mod sign_verify_tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitSignVerify<F: Field, const MAX_VERIF: usize> {
-        sign_verify: SignVerifyChip<F, MAX_VERIF>,
+    struct TestCircuitSignVerify<F: Field> {
+        sign_verify: SignVerifyChip<F>,
         signatures: Vec<SignData>,
     }
 
-    impl<F: Field, const MAX_VERIF: usize> Circuit<F> for TestCircuitSignVerify<F, MAX_VERIF> {
+    impl<F: Field> Circuit<F> for TestCircuitSignVerify<F> {
         type Config = TestCircuitSignVerifyConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -724,16 +761,17 @@ mod sign_verify_tests {
         }
     }
 
-    fn run<F: Field, const MAX_VERIF: usize>(k: u32, signatures: Vec<SignData>) {
+    fn run<F: Field>(k: u32, max_verif: usize, signatures: Vec<SignData>) {
         let mut rng = XorShiftRng::seed_from_u64(2);
         let aux_generator =
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
 
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        let circuit = TestCircuitSignVerify::<F, MAX_VERIF> {
+        let circuit = TestCircuitSignVerify::<F> {
             sign_verify: SignVerifyChip {
                 aux_generator,
                 window_size: 2,
+                max_verif,
                 _marker: PhantomData,
             },
             signatures,
@@ -798,6 +836,6 @@ mod sign_verify_tests {
         }
 
         let k = 19;
-        run::<Fr, MAX_VERIF>(k, signatures);
+        run::<Fr>(k, MAX_VERIF, signatures);
     }
 }

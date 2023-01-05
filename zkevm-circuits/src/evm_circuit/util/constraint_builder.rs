@@ -12,6 +12,7 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use eth_types::Field;
+use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -526,6 +527,22 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    // look up opcode's min and max stack pointer
+    pub(crate) fn opcode_stack_lookup(
+        &mut self,
+        opcode: Expression<F>,
+        min_stack: Expression<F>,
+        max_stack: Expression<F>,
+    ) {
+        self.add_lookup(
+            "op code stack info",
+            Lookup::Fixed {
+                tag: FixedTableTag::OpcodeStack.expr(),
+                values: [opcode, min_stack, max_stack],
+            },
+        );
+    }
+
     // Opcode
 
     pub(crate) fn opcode_lookup(&mut self, opcode: Expression<F>, is_code: Expression<F>) {
@@ -721,22 +738,33 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         self.rw_lookup(name, true.expr(), tag, values.clone());
 
+        // Revert if is_persistent is 0
         if let Some(reversion_info) = reversion_info {
-            // Revert if is_persistent is 0
-            self.condition(1.expr() - reversion_info.is_persistent(), |cb| {
-                let name = format!("{} with reversion", name);
-                cb.rw_lookup_with_counter(
-                    &name,
-                    reversion_info.rw_counter_of_reversion(),
-                    true.expr(),
-                    tag,
-                    RwValues {
-                        value_prev: values.value,
-                        value: values.value_prev,
-                        ..values
-                    },
-                )
-            });
+            // To allow conditional reversible writes, we extract the pre-existing condition
+            // here if it exists, and then reset it afterwards.
+            let condition = self.condition.clone();
+            self.condition = None;
+            self.condition(
+                and::expr(&[
+                    condition.clone().unwrap_or_else(|| 1.expr()),
+                    not::expr(reversion_info.is_persistent()),
+                ]),
+                |cb| {
+                    let name = format!("{} with reversion", name);
+                    cb.rw_lookup_with_counter(
+                        &name,
+                        reversion_info.rw_counter_of_reversion(),
+                        true.expr(),
+                        tag,
+                        RwValues {
+                            value_prev: values.value,
+                            value: values.value_prev,
+                            ..values
+                        },
+                    )
+                },
+            );
+            self.condition = condition;
         }
     }
 
@@ -764,6 +792,29 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
             ),
             reversion_info,
+        );
+    }
+
+    pub(crate) fn account_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "account access list read",
+            false.expr(),
+            RwTableTag::TxAccessListAccount,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                0.expr(),
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
         );
     }
 
@@ -952,6 +1003,16 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         let cell = self.query_cell();
         self.call_context_lookup(false.expr(), call_id, field_tag, cell.expr());
         cell
+    }
+
+    pub(crate) fn call_context_as_word(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+    ) -> Word<F> {
+        let word = self.query_word();
+        self.call_context_lookup(false.expr(), call_id, field_tag, word.expr());
+        word
     }
 
     pub(crate) fn call_context_lookup(

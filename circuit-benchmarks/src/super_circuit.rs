@@ -71,8 +71,7 @@ mod tests {
 
         block.sign(&wallets);
 
-        let (_, circuit, instance) =
-            SuperCircuit::<_, 1, 32, 512>::build(block, &mut ChaChaRng::seed_from_u64(2)).unwrap();
+        let (_, circuit, instance, _) = SuperCircuit::<_, 1, 32, 512>::build(block).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation

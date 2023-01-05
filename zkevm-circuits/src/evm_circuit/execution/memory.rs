@@ -49,14 +49,13 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
         // This is an MSTORE/MSTORE8
         let is_store = not::expr(is_mload.expr());
-        // This in an MSTORE/MLOAD
+        // This is an MSTORE/MLOAD
         let is_not_mstore8 = not::expr(is_mstore8.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_word_size.expr(),
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 

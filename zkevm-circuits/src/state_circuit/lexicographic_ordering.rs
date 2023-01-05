@@ -191,7 +191,7 @@ impl Config {
         offset: usize,
         cur: &Rw,
         prev: &Rw,
-    ) -> Result<bool, Error> {
+    ) -> Result<LimbIndex, Error> {
         region.assign_fixed(
             || "upper_limb_difference",
             self.selector,
@@ -228,10 +228,7 @@ impl Config {
             || Value::known(limb_difference.invert().unwrap()),
         )?;
 
-        Ok(!matches!(
-            index,
-            LimbIndex::RwCounter0 | LimbIndex::RwCounter1
-        ))
+        Ok(index)
     }
 }
 

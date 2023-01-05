@@ -3,7 +3,8 @@ use crate::{
         and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
     table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
-    util::{Challenges, Expr},
+    util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
+    witness,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, Word};
@@ -39,7 +40,7 @@ pub struct UnrolledBytecode<F: Field> {
 
 #[derive(Clone, Debug)]
 /// Bytecode circuit configuration
-pub struct Config<F> {
+pub struct BytecodeCircuitConfig<F> {
     minimum_rows: usize,
     q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
@@ -56,15 +57,31 @@ pub struct Config<F> {
     length_inv: Column<Advice>,
     length_is_zero: IsZeroConfig<F>,
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
+    // External tables
     pub(crate) keccak_table: KeccakTable,
 }
 
-impl<F: Field> Config<F> {
-    pub(crate) fn configure(
+/// Circuit configuration arguments
+pub struct BytecodeCircuitConfigArgs<F: Field> {
+    /// BytecodeTable
+    pub bytecode_table: BytecodeTable,
+    /// KeccakTable
+    pub keccak_table: KeccakTable,
+    /// Challenges
+    pub challenges: Challenges<Expression<F>>,
+}
+
+impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
+    type ConfigArgs = BytecodeCircuitConfigArgs<F>;
+
+    /// Return a new BytecodeCircuitConfig
+    fn new(
         meta: &mut ConstraintSystem<F>,
-        bytecode_table: BytecodeTable,
-        keccak_table: KeccakTable,
-        challenges: Challenges<Expression<F>>,
+        Self::ConfigArgs {
+            bytecode_table,
+            keccak_table,
+            challenges,
+        }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -363,7 +380,7 @@ impl<F: Field> Config<F> {
             constraints
         });
 
-        Config {
+        BytecodeCircuitConfig {
             minimum_rows: meta.minimum_rows(),
             q_enable,
             q_first,
@@ -383,7 +400,9 @@ impl<F: Field> Config<F> {
             keccak_table,
         }
     }
+}
 
+impl<F: Field> BytecodeCircuitConfig<F> {
     pub(crate) fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
@@ -406,6 +425,7 @@ impl<F: Field> Config<F> {
         let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
 
         // Subtract the unusable rows from the size
+        assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
 
         layouter.assign_region(
@@ -594,7 +614,7 @@ impl<F: Field> Config<F> {
     }
 
     /// load fixed tables
-    pub(crate) fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub(crate) fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         // push table: BYTE -> NUM_PUSHED:
         // [0, OpcodeId::PUSH1] -> 0
         // [OpcodeId::PUSH1, OpcodeId::PUSH32] -> [1..32]
@@ -685,6 +705,59 @@ fn into_words(message: &[u8]) -> Vec<u64> {
     }
 
     words
+}
+
+/// BytecodeCircuit
+#[derive(Clone, Default, Debug)]
+pub struct BytecodeCircuit<F: Field> {
+    /// Unrolled bytecodes
+    pub bytecodes: Vec<UnrolledBytecode<F>>,
+    /// Circuit size
+    pub size: usize,
+}
+
+impl<F: Field> BytecodeCircuit<F> {
+    /// new BytecodeCircuitTester
+    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
+        BytecodeCircuit { bytecodes, size }
+    }
+
+    /// Creates bytecode circuit from block and bytecode_size.
+    pub fn new_from_block_sized(block: &witness::Block<F>, bytecode_size: usize) -> Self {
+        let bytecodes: Vec<UnrolledBytecode<F>> = block
+            .bytecodes
+            .iter()
+            .map(|(_, b)| unroll(b.bytes.clone()))
+            .collect();
+        Self::new(bytecodes, bytecode_size)
+    }
+}
+
+impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
+    type Config = BytecodeCircuitConfig<F>;
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        // TODO: Find a nicer way to add the extra `128`.  Is this to account for
+        // unusable rows? Then it could be calculated like this:
+        // fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
+        //     let mut cs = ConstraintSystem::default();
+        //     C::configure(&mut cs);
+        //     cs.blinding_factors()
+        // }
+        let bytecode_size = block.circuits_params.max_bytecode + 128;
+        Self::new_from_block_sized(block, bytecode_size)
+    }
+
+    /// Make the assignments to the TxCircuit
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.load_aux_tables(layouter)?;
+        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
+    }
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 use eth_types::{Field, ToScalar, Word};
 use halo2_proofs::{
     circuit::{Layouter, Value},
+    halo2curves::FieldExt,
     plonk::{Error, TableColumn},
 };
 use itertools::Itertools;
@@ -326,12 +327,12 @@ impl WordParts {
     }
 }
 
-/// Get the degree of the circuit from the DEGREE env variable
+/// Get the degree of the circuit from the KECCAK_DEGREE env variable
 pub fn get_degree() -> usize {
-    var("DEGREE")
+    var("KECCAK_DEGREE")
         .unwrap_or_else(|_| "8".to_string())
         .parse()
-        .expect("Cannot parse DEGREE env var as usize")
+        .expect("Cannot parse KECCAK_DEGREE env var as usize")
 }
 
 /// Returns how many bits we can process in a single lookup given the range of
@@ -451,4 +452,13 @@ pub fn load_lookup_table<F: Field>(
             Ok(())
         },
     )
+}
+
+pub(crate) fn extract_field<F: FieldExt>(value: Value<F>) -> F {
+    let mut field = F::zero();
+    let _ = value.map(|f| {
+        field = f;
+        f
+    });
+    field
 }

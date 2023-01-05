@@ -101,6 +101,11 @@ impl Call {
     pub fn is_create(&self) -> bool {
         self.kind.is_create()
     }
+
+    /// This call is call with op DELEGATECALL
+    pub fn is_delegatecall(&self) -> bool {
+        matches!(self.kind, CallKind::DelegateCall)
+    }
 }
 
 /// Context of a [`Call`].

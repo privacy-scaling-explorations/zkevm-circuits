@@ -55,9 +55,10 @@ pub struct Queries<F: Field> {
     pub storage_key: RlcQueries<F, N_BYTES_WORD>,
     pub initial_value: Expression<F>,
     pub initial_value_prev: Expression<F>,
+    pub is_non_exist: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
-    pub first_access: Expression<F>,
+    pub first_different_limb: [Expression<F>; 4],
     pub not_first_access: Expression<F>,
     pub last_access: Expression<F>,
     pub state_root: Expression<F>,
@@ -135,6 +136,17 @@ impl<F: Field> ConstraintBuilder<F> {
     fn build_general_constraints(&mut self, q: &Queries<F>) {
         // tag value in RwTableTag range is enforced in BinaryNumberChip
         self.require_boolean("is_write is boolean", q.is_write());
+
+        // 1 if first_different_limb is in the rw counter, 0 otherwise (i.e. any of the
+        // 4 most significant bits are 0)
+        self.require_equal(
+            "not_first_access when first 16 limbs are same",
+            q.not_first_access.clone(),
+            q.first_different_limb[0].clone()
+                * q.first_different_limb[1].clone()
+                * q.first_different_limb[2].clone()
+                * q.first_different_limb[3].clone(),
+        );
 
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
@@ -233,6 +245,8 @@ impl<F: Field> ConstraintBuilder<F> {
         // TODO: cold VS warm
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
 
+        let is_non_exist = q.is_non_exist();
+
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
@@ -246,7 +260,8 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.mpt_update_table.storage_key.clone(),
                     ),
                     (
-                        ProofType::StorageChanged.expr(),
+                        is_non_exist.expr() * ProofType::StorageDoesNotExist.expr()
+                            + (1.expr() - is_non_exist) * ProofType::StorageChanged.expr(),
                         q.mpt_update_table.proof_type.clone(),
                     ),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
@@ -480,12 +495,16 @@ impl<F: Field> Queries<F> {
         self.initial_value_prev.clone()
     }
 
+    fn is_non_exist(&self) -> Expression<F> {
+        self.is_non_exist.clone()
+    }
+
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
         BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
     fn first_access(&self) -> Expression<F> {
-        self.first_access.clone()
+        not::expr(self.not_first_access.clone())
     }
 
     fn address_change(&self) -> Expression<F> {

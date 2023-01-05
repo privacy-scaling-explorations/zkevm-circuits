@@ -80,16 +80,13 @@ pub enum ExecutionState {
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
-    CALL_STATICCALL, // CALL, STATICCALL
-    CALLCODE,
+    CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
     RETURN_REVERT, // RETURN, REVERT
-    DELEGATECALL,
     CREATE2,
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
-    ErrorStackOverflow,
-    ErrorStackUnderflow,
+    ErrorStack,
     ErrorWriteProtection,
     ErrorDepth,
     ErrorInsufficientBalance,
@@ -137,8 +134,7 @@ impl ExecutionState {
         matches!(
             self,
             Self::ErrorInvalidOpcode
-                | Self::ErrorStackOverflow
-                | Self::ErrorStackUnderflow
+                | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorDepth
                 | Self::ErrorInsufficientBalance
@@ -304,10 +300,13 @@ impl ExecutionState {
                 OpcodeId::LOG4,
             ],
             Self::CREATE => vec![OpcodeId::CREATE],
-            Self::CALL_STATICCALL => vec![OpcodeId::CALL, OpcodeId::STATICCALL],
-            Self::CALLCODE => vec![OpcodeId::CALLCODE],
+            Self::CALL_OP => vec![
+                OpcodeId::CALL,
+                OpcodeId::CALLCODE,
+                OpcodeId::DELEGATECALL,
+                OpcodeId::STATICCALL,
+            ],
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
-            Self::DELEGATECALL => vec![OpcodeId::DELEGATECALL],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],

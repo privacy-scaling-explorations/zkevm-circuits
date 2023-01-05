@@ -1,8 +1,13 @@
-//! State circuit benchmarks
+//! Exp circuit benchmarks
 
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::mock::BlockData;
+    use env_logger::Env;
+    use eth_types::geth_types::GethData;
+    use eth_types::{bytecode, Word};
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -14,25 +19,26 @@ mod tests {
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     };
+    use mock::test_ctx::helpers::*;
+    use mock::test_ctx::TestContext;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
-    use zkevm_circuits::keccak_circuit::keccak_packed::KeccakPackedCircuit;
+    use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
+    use zkevm_circuits::exp_circuit::ExpCircuit;
+
+    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
-    fn bench_packed_keccak_circuit_prover() {
-        let degree: u32 = var("DEGREE")
-            .expect("No DEGREE env var was provided")
-            .parse()
-            .expect("Cannot parse DEGREE env var as u32");
+    fn bench_exp_circuit_prover() {
+        env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
-        // Create the circuit. Leave last dozens of rows for blinding.
-        let mut circuit = KeccakPackedCircuit::new(2usize.pow(degree) - 64);
+        // Initialize the circuit
 
-        // Use the complete circuit
-        let inputs = vec![(0u8..135).collect::<Vec<_>>(); circuit.capacity()];
-        circuit.generate_witness(&inputs);
+        let base = Word::from(132);
+        let exponent = Word::from(27);
+        let block = generate_full_events_block(DEGREE, base, exponent);
+        let circuit = ExpCircuit::<Fr>::new(block);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -41,9 +47,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -54,7 +60,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Packed Keccak Proof generation with degree = {}", degree);
+        let proof_message = format!("Exp Circuit Proof generation with degree = {}", DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -62,7 +68,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            KeccakPackedCircuit<Fr>,
+            ExpCircuit<Fr>,
         >(
             &general_params,
             &pk,
@@ -76,7 +82,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Packed Keccak Proof verification");
+        let start3 = start_timer!(|| "Exp Circuit Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
@@ -95,5 +101,35 @@ mod tests {
         )
         .expect("failed to verify bench circuit");
         end_timer!(start3);
+    }
+
+    fn generate_full_events_block(degree: usize, base: Word, exponent: Word) -> Block<Fr> {
+        let code = bytecode! {
+            PUSH32(exponent)
+            PUSH32(base)
+            EXP
+            STOP
+        };
+
+        let test_ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |block, _txs| block.number(0xcafeu64),
+        )
+        .unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data_with_params(
+            block.clone(),
+            CircuitsParams {
+                max_rws: 1 << (degree - 1),
+                ..Default::default()
+            },
+        )
+        .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        block_convert(&builder.block, &builder.code_db).unwrap()
     }
 }

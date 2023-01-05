@@ -12,7 +12,10 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
+    plonk::{
+        Advice, Challenge, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
+        Selector,
+    },
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -22,13 +25,18 @@ use crate::{
         util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
         witness::Block,
     },
-    table::{BytecodeFieldTag, CopyTable, LookupTable, RwTableTag, TxContextFieldTag},
+    table::{
+        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
+        TxContextFieldTag, TxTable,
+    },
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+    witness,
 };
 
 /// Encode the type `NumberOrHash` into a field element
-pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
+pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
     match v {
-        NumberOrHash::Number(n) => F::from(*n as u64),
+        NumberOrHash::Number(n) => Value::known(F::from(*n as u64)),
         NumberOrHash::Hash(h) => {
             // since code hash in the bytecode table is represented in
             // the little-endian form, we reverse the big-endian bytes
@@ -38,14 +46,16 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, randomness: F) -> F {
                 b.reverse();
                 b
             };
-            RandomLinearCombination::random_linear_combine(le_bytes, randomness)
+            challenge.map(|challenge| {
+                RandomLinearCombination::random_linear_combine(le_bytes, challenge)
+            })
         }
     }
 }
 
 /// The rw table shared between evm circuit and state circuit
-#[derive(Clone, Copy, Debug)]
-pub struct CopyCircuit<F> {
+#[derive(Clone, Debug)]
+pub struct CopyCircuitConfig<F> {
     /// Whether this row denotes a step. A read row is a step and a write row is
     /// not.
     pub q_step: Selector,
@@ -67,23 +77,50 @@ pub struct CopyCircuit<F> {
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
     pub addr_lt_addr_end: LtConfig<F, 8>,
+    // External tables
+    /// TxTable
+    pub tx_table: TxTable,
+    /// RwTable
+    pub rw_table: RwTable,
+    /// BytecodeTable
+    pub bytecode_table: BytecodeTable,
 }
 
-impl<F: Field> CopyCircuit<F> {
+/// Circuit configuration arguments
+pub struct CopyCircuitConfigArgs<F: Field> {
+    /// TxTable
+    pub tx_table: TxTable,
+    /// RwTable
+    pub rw_table: RwTable,
+    /// BytecodeTable
+    pub bytecode_table: BytecodeTable,
+    /// CopyTable
+    pub copy_table: CopyTable,
+    /// q_enable
+    pub q_enable: Column<Fixed>,
+    /// Challenges
+    pub challenges: Challenges<Expression<F>>,
+}
+
+impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
+    type ConfigArgs = CopyCircuitConfigArgs<F>;
+
     /// Configure the Copy Circuit constraining read-write steps and doing
     /// appropriate lookups to the Tx Table, RW Table and Bytecode Table.
-    pub fn configure(
+    fn new(
         meta: &mut ConstraintSystem<F>,
-        tx_table: &dyn LookupTable<F>,
-        rw_table: &dyn LookupTable<F>,
-        bytecode_table: &dyn LookupTable<F>,
-        copy_table: CopyTable,
-        q_enable: Column<Fixed>,
-        randomness: Expression<F>,
+        Self::ConfigArgs {
+            tx_table,
+            rw_table,
+            bytecode_table,
+            copy_table,
+            q_enable,
+            challenges,
+        }: Self::ConfigArgs,
     ) -> Self {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
-        let value = meta.advice_column();
+        let value = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
@@ -271,7 +308,7 @@ impl<F: Field> CopyCircuit<F> {
             cb.require_equal(
                 "rows[2].value == rows[0].value * r + rows[1].value",
                 meta.query_advice(value, Rotation(2)),
-                meta.query_advice(value, Rotation::cur()) * randomness
+                meta.query_advice(value, Rotation::cur()) * challenges.evm_word()
                     + meta.query_advice(value, Rotation::next()),
             );
 
@@ -371,15 +408,20 @@ impl<F: Field> CopyCircuit<F> {
             q_enable,
             addr_lt_addr_end,
             copy_table,
+            tx_table,
+            rw_table,
+            bytecode_table,
         }
     }
+}
 
+impl<F: Field> CopyCircuitConfig<F> {
     /// Assign a witness block to the Copy Circuit.
     pub fn assign_block(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
-        randomness: F,
+        challenges: Challenges<Value<F>>,
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
@@ -391,7 +433,7 @@ impl<F: Field> CopyCircuit<F> {
                 let mut offset = 0;
                 for copy_event in block.copy_events.iter() {
                     for (step_idx, (tag, table_row, circuit_row)) in
-                        CopyTable::assignments(copy_event, randomness)
+                        CopyTable::assignments(copy_event, challenges)
                             .iter()
                             .enumerate()
                     {
@@ -406,7 +448,7 @@ impl<F: Field> CopyCircuit<F> {
                                     || format!("{} at row: {}", label, offset),
                                     *column,
                                     offset,
-                                    || Value::known(value),
+                                    || value,
                                 )?;
                             }
                         }
@@ -433,7 +475,7 @@ impl<F: Field> CopyCircuit<F> {
                                 || format!("{} at row: {}", label, offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
 
@@ -568,6 +610,53 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
+/// Copy Circuit
+#[derive(Clone, Debug)]
+pub struct CopyCircuit<F: Field> {
+    /// Block
+    pub block: Option<Block<F>>,
+    /// Max number of transactions supported
+    pub max_txs: usize,
+}
+
+impl<F: Field> CopyCircuit<F> {
+    /// Return a new CopyCircuit
+    pub fn new(max_txs: usize, block: Block<F>) -> Self {
+        Self {
+            block: Some(block),
+            max_txs,
+        }
+    }
+}
+
+impl<F: Field> Default for CopyCircuit<F> {
+    fn default() -> Self {
+        Self {
+            block: Some(Block::default()),
+            max_txs: usize::default(),
+        }
+    }
+}
+
+impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
+    type Config = CopyCircuitConfig<F>;
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        Self::new(block.circuits_params.max_txs, block.clone())
+    }
+
+    /// Make the assignments to the CopyCircuit
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let block = self.block.as_ref().unwrap();
+        config.assign_block(layouter, block, *challenges)
+    }
+}
+
 /// Dev helpers
 #[cfg(any(feature = "test", test))]
 pub mod dev {
@@ -582,43 +671,11 @@ pub mod dev {
     use crate::{
         evm_circuit::witness::Block,
         table::{BytecodeTable, RwTable, TxTable},
-        util::{power_of_randomness_from_instance, Challenges},
+        util::Challenges,
     };
 
-    #[derive(Clone)]
-    struct CopyCircuitTesterConfig<F> {
-        tx_table: TxTable,
-        rw_table: RwTable,
-        bytecode_table: BytecodeTable,
-        copy_circuit: CopyCircuit<F>,
-    }
-
-    #[derive(Default)]
-    struct CopyCircuitTester<F> {
-        block: Option<Block<F>>,
-        max_txs: usize,
-        randomness: F,
-    }
-
-    impl<F: Field> CopyCircuitTester<F> {
-        fn get_randomness() -> F {
-            F::random(rand::thread_rng())
-        }
-
-        pub fn new(block: Block<F>, randomness: F) -> Self {
-            Self {
-                block: Some(block),
-                randomness,
-                max_txs: 4,
-            }
-        }
-        pub fn r() -> Expression<F> {
-            123456u64.expr()
-        }
-    }
-
-    impl<F: Field> Circuit<F> for CopyCircuitTester<F> {
-        type Config = CopyCircuitTesterConfig<F>;
+    impl<F: Field> Circuit<F> for CopyCircuit<F> {
+        type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -630,25 +687,24 @@ pub mod dev {
             let rw_table = RwTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
             let q_enable = meta.fixed_column();
-
-            let randomness = power_of_randomness_from_instance::<_, 1>(meta);
             let copy_table = CopyTable::construct(meta, q_enable);
-            let copy_circuit = CopyCircuit::configure(
-                meta,
-                &tx_table,
-                &rw_table,
-                &bytecode_table,
-                copy_table,
-                q_enable,
-                randomness[0].clone(),
-            );
+            let challenges = Challenges::construct(meta);
+            let challenge_exprs = challenges.exprs(meta);
 
-            CopyCircuitTesterConfig {
-                tx_table,
-                rw_table,
-                bytecode_table,
-                copy_circuit,
-            }
+            (
+                CopyCircuitConfig::new(
+                    meta,
+                    CopyCircuitConfigArgs {
+                        tx_table,
+                        rw_table,
+                        bytecode_table,
+                        copy_table,
+                        q_enable,
+                        challenges: challenge_exprs,
+                    },
+                ),
+                challenges,
+            )
         }
 
         fn synthesize(
@@ -657,35 +713,34 @@ pub mod dev {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
             let block = self.block.as_ref().unwrap();
-
-            let challenges = Challenges::mock(Value::known(self.randomness));
+            let challenge_values = config.1.values(&mut layouter);
 
             config
+                .0
                 .tx_table
-                .load(&mut layouter, &block.txs, self.max_txs, self.randomness)?;
-            config.rw_table.load(
+                .load(&mut layouter, &block.txs, self.max_txs, &challenge_values)?;
+
+            // TODO: RW table can't be passed `Challenges<Value<F>>` until the EVM circuit
+            // is not migrated to the challenge API.
+            config.0.rw_table.load(
                 &mut layouter,
                 &block.rws.table_assignments(),
                 block.circuits_params.max_rws,
-                Value::known(self.randomness),
+                challenge_values.evm_word(),
             )?;
-            config
-                .bytecode_table
-                .load(&mut layouter, block.bytecodes.values(), &challenges)?;
-            config
-                .copy_circuit
-                .assign_block(&mut layouter, block, self.randomness)
+            config.0.bytecode_table.load(
+                &mut layouter,
+                block.bytecodes.values(),
+                &challenge_values,
+            )?;
+            self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
         }
     }
 
     /// Test copy circuit with the provided block witness
     pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let randomness = CopyCircuitTester::<F>::get_randomness();
-        let circuit = CopyCircuitTester::<F>::new(block, randomness);
-        let num_rows = 1 << k;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
-        let instance = vec![vec![randomness; num_rows - NUM_BLINDING_ROWS]];
-        let prover = MockProver::<F>::run(k, &circuit, instance).unwrap();
+        let circuit = CopyCircuit::<F>::new(4, block);
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_par()
     }
 }
@@ -800,28 +855,28 @@ mod tests {
     #[test]
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(20, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_tx_log() {
         let builder = gen_tx_log_data();
-        let block = block_convert(&builder.block, &builder.code_db);
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
