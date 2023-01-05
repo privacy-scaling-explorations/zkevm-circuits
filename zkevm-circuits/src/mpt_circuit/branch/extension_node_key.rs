@@ -141,7 +141,7 @@ impl<F: FieldExt> ExtensionNodeKeyConfig<F> {
             );
 
             // Any rotation that lands into branch children can be used:
-            let modified_node_cur = meta.query_advice(branch.modified_node, Rotation(-2));
+            let modified_node_cur = meta.query_advice(branch.modified_node_index, Rotation(-2));
 
             let key_rlc_ext_node_prev = meta.query_advice(accs.key.rlc, Rotation::prev());
             let key_rlc_prev_branch = meta.query_advice(accs.key.rlc, Rotation(rot_into_prev_branch));

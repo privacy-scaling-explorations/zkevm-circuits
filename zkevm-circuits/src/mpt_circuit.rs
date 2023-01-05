@@ -32,8 +32,7 @@ use account_leaf::{
 };
 use branch::{
     branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
-    branch_key::BranchKeyConfig, branch_parallel::BranchParallelConfig,
-    branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
+    branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
     extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
@@ -455,8 +454,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 ifx!{f!(position_cols.q_not_first), a!(branch.is_child) => {
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
-                    BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), true);
-                    BranchParallelConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
                 // - First child
                 ifx!{f!(position_cols.q_not_first), a!(branch.is_init, -1) => {
@@ -567,19 +564,25 @@ impl<F: FieldExt> MPTConfig<F> {
                     require!(cb.range_length_c_condition => bool);
                     // Range checks
                     ifx!{not::expr(a!(branch.is_child)) => {
-                        for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..2].into_iter() {
+                        for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..1].into_iter() {
                             require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @fixed);
                         }
                     }}
+                    for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[1..2].into_iter() {
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @fixed);
+                    }
                     for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34].into_iter().enumerate() {
                         require!((cb.get_range_s(), a!(byte), cb.get_range_length_s() - (idx + 1).expr()) => @fixed);
                     }
-                    ifx!{not::expr(a!(branch.is_child)) => {
-                        ifx!{cb.range_length_sc => {
-                            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[34..36].into_iter().enumerate() {
+                    ifx!{cb.range_length_sc => {
+                        ifx!{not::expr(a!(branch.is_child)) => {
+                            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[34..35].into_iter().enumerate() {
                                 require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @fixed);
                             }
                         }}
+                        for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[35..36].into_iter().enumerate() {
+                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @fixed);
+                        }
                     }}
                     for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[36..68].into_iter().enumerate() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_c() - (idx + 1).expr()) => @fixed);

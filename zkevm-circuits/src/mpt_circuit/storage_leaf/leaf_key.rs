@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, Expr};
+use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, BranchNodeInfo},
-        param::{BRANCH_ROWS_NUM, NIBBLES_COUNTER_POS, RLP_NUM, S_START},
+        param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
@@ -314,9 +314,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         let leaf_nibbles_one_nibble = 1.expr();
                         let leaf_nibbles = leaf_nibbles_long * is_long.expr() + leaf_nibbles_short * is_short.expr()
                             + leaf_nibbles_last_level * last_level.expr() + leaf_nibbles_one_nibble * one_nibble.expr();
-                        let nibbles_count = selectx!{not::expr(is_first_storage_level.expr()) => {
-                            a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], rot - 1)
-                        }};
+                        let nibbles_count = selectx!{not::expr(is_first_storage_level.expr()) => { branch.nibbles_counter().expr() }};
                         require!(nibbles_count + leaf_nibbles => 64);
 
                         // Note: When the leaf is after the placeholder branch, it cannot be in the last level

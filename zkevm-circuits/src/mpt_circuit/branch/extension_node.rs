@@ -14,8 +14,7 @@ use crate::{
         helpers::BaseConstraintBuilder,
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, BRANCH_ROWS_NUM, C_RLP_START, C_START,
-            HASH_WIDTH, NIBBLES_COUNTER_POS, RLP_NUM,
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, C_RLP_START, C_START, HASH_WIDTH,
         },
     },
     mpt_circuit::{
@@ -536,10 +535,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 if is_s {
                     // Note: for regular branches, the constraint that `nibbles_count` increases
                     // by 1 is in `branch.rs`.
-                    let nibbles_count_cur = meta.query_advice(
-                        s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-                        Rotation(rot_into_branch_init),
-                    );
                     // nibbles_count_prev needs to be 0 when in first account level or
                     // in first storage level
                     let is_first_storage_level = meta.query_advice(
@@ -547,14 +542,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         Rotation(rot_into_branch_init - 1),
                     );
                     let nibbles_count_prev = selectx!{not::expr(is_first_storage_level.expr()) * not_first_level.expr() => {
-                        a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], rot_into_branch_init - BRANCH_ROWS_NUM)
+                        ext.nibbles_counter().prev()
                     }};
 
                     // When there is only one nibble in the extension node, `nibbles_count` changes
                     // for 2: one nibble and `modified_node` in a branch.
                     ifx!{ext.is_short() => {
                         // +1 for nibble, +1 is for branch position
-                        require!(nibbles_count_cur => nibbles_count_prev.expr() + 1.expr() + 1.expr());
+                        require!(ext.nibbles_counter() => nibbles_count_prev.expr() + 1.expr() + 1.expr());
                     }}
 
                     ifx!{ext.is_even() => {
@@ -568,7 +563,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // (it is just 0 when even number of nibbles).
                             let num_nibbles = (a!(s_main.bytes[0]) - 128.expr() - 1.expr()) * 2.expr();
                             // +1 is for branch position
-                            require!(nibbles_count_cur => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
+                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
                         } elsex {
                             // When there is an even number of nibbles in the extension node,
                             // we compute the number of nibbles as: `(s_rlp2 - 128 - 1) * 2`.
@@ -579,7 +574,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `[228,130,0,149,160,114,253...`
                             let num_nibbles = (s_rlp2.expr() - 128.expr() - 1.expr()) * 2.expr();
                             // +1 is for branch position
-                            require!(nibbles_count_cur => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
+                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
                         }}
                     }}
 
@@ -596,7 +591,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
                             let num_nibbles = (a!(s_main.bytes[0]) - 128.expr()) * 2.expr() - 1.expr();
                             // +1 is for branch position
-                            require!(nibbles_count_cur => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
+                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
                         } elsex {
                             // When there is an odd number of nibbles in the extension node,
                             // we compute the number of nibbles as: `(s_rlp2 - 128) * 2`.
@@ -605,7 +600,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `s_main.bytes[0]` there is only 1 nibble.
                             let num_nibbles = (s_rlp2.expr() - 128.expr()) * 2.expr() - 1.expr();
                             // +1 is for branch position
-                            require!(nibbles_count_cur => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
+                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
                         }}
                     }}
                 }

@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, or, Expr};
+use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::{helpers::extend_rand, FixedTableTag},
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, BranchNodeInfo},
-        param::{BRANCH_ROWS_NUM, NIBBLES_COUNTER_POS, RLP_NUM, S_START},
+        param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
     mpt_circuit::{
@@ -207,9 +207,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     (a!(s_main.bytes[0]) - 128.expr()) * 2.expr() - 1.expr()
                 }};
                 // nibbles_count = 0 if in first storage level
-                let nibbles_count = selectx!{not::expr(is_leaf_in_first_level.expr()) => {
-                    a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], rot_into_init)
-                }};
+                let nibbles_count = selectx!{not::expr(is_leaf_in_first_level.expr()) => { branch.nibbles_counter() }};
                 require!(nibbles_count + leaf_nibbles => 64);
             } elsex {
                 // The example layout for a branch placeholder looks like (placeholder could be in `C` proof too):
@@ -291,9 +289,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // in the circuit), there is no branch above the placeholder branch from where
                 // `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
                 let is_not_branch_in_first_level = a!(position_cols.not_first_level, rot_into_first_branch_child);
-                let nibbles_count = selectx!{is_not_branch_in_first_level => {
-                    a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], rot_into_init - BRANCH_ROWS_NUM)
-                }};
+                let nibbles_count = selectx!{is_not_branch_in_first_level => { branch.nibbles_counter().prev() }};
                 require!(nibbles_count + leaf_nibbles => 64);
             }}
 

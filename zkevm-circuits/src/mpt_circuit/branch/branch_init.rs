@@ -1,4 +1,4 @@
-use gadgets::util::Expr;
+use gadgets::util::{or, Expr};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -6,7 +6,7 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::{
-        get_num_rlp_bytes, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
+        get_num_rlp_bytes_selectors, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
     },
     mpt_circuit::MPTContext,
 };
@@ -58,7 +58,6 @@ There are three possible cases:
     [1,0,x,x,248,81,0,...]
     The RLC is `248 + 81*r`.
 
-
 3. Branch (length 340) with three bytes of RLP meta data
     [249,1,81,128,16,...
     In this case the init row looks like (specifying only for `S`, we put `x` for `C`):
@@ -92,34 +91,28 @@ impl<F: FieldExt> BranchInitConfig<F> {
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
         let r = ctx.r;
-        // - Short RLP, meta data contains two bytes: 248, 81
-        // [1,0,1,0,248,81,0,248,81,0,3,0,0,0,...
-        // The length of RLP stream is: 81.
-        // - Long RLP, meta data contains three bytes: 249, 2, 17
-        // [0,1,0,1,249,2,17,249,2,17,7,0,0,0,...
-        // The length of RLP stream is: 2 * 256 + 17.
-        // - The RLC of the init branch comprises 1, 2, or 3 bytes. This gate ensures
-        // the RLC is computed properly in each of the three cases. It also ensures
-        // that the values that specify the case are boolean.
+
         let rot = Rotation::cur();
         constraints! {[meta, cb], {
-            for (accumulators, is_s) in [
-                (accs.acc_s, true),
-                (accs.acc_c, false)
-            ] {
+            for is_s in [true, false] {
                 // Boolean checks
                 let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
                 for selector in rlp_meta_bytes.iter() {
                     require!(selector => bool);
                 }
-                // 1/2/3 RLP bytes RLC checks
-                let num_rlp_byte_selectors = get_num_rlp_bytes(rlp_meta_bytes);
+                // There should never be `rlp1, rlp2: 0, 0`
+                // (we only have three cases, there is no case with both being 0).
+                require!(or::expr(rlp_meta_bytes.clone()) => true);
+
+                // The RLC of the init branch comprises 1, 2, or 3 bytes.
+                // Here we check that stored rlc/mult values are correct.
+                let num_rlp_byte_selectors = get_num_rlp_bytes_selectors(rlp_meta_bytes);
                 let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
                 for (idx, selector) in num_rlp_byte_selectors.into_iter().enumerate() {
                     ifx!{selector => {
                         // Check branch accumulator in row 0
-                        require!(a!(accumulators.rlc) => rlc::expr(&rlp[..idx+1], &r));
-                        require!(a!(accumulators.mult) => r[idx]);
+                        require!(a!(accs.acc(is_s).rlc) => rlc::expr(&rlp[..idx+1], &r));
+                        require!(a!(accs.acc(is_s).mult) => r[idx]);
                     }}
                 }
             }

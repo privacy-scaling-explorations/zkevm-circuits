@@ -14,10 +14,10 @@ use crate::mpt_circuit::param::{
 use super::{
     columns::{AccumulatorCols, MainCols},
     param::{
-        BRANCH_0_C_START, BRANCH_0_S_START, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
+        BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS,
         IS_C_EXT_LONGER_THAN_55_POS, IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS,
-        IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS,
+        IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
     },
     FixedTableTag,
 };
@@ -48,7 +48,8 @@ pub(crate) struct BranchNodeInfo<F> {
     pub(crate) is_c16: Expression<F>,
     pub(crate) is_branch_s_placeholder: Expression<F>,
     pub(crate) is_branch_c_placeholder: Expression<F>,
-    pub(crate) len: Expression<F>,
+    pub(crate) len: (Expression<F>, Expression<F>),
+    pub(crate) nibbles_counter: ColumnTransition<F>,
 }
 
 // To reduce the expression degree, we pack together multiple information.
@@ -106,6 +107,15 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         let is_branch_c_placeholder =
             meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot);
 
+        let nibbles_counter = ColumnTransition::new_with_rot(
+            meta,
+            s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
+            Rotation(rot_into_branch_init - BRANCH_ROWS_NUM),
+            Rotation(rot_into_branch_init),
+        );
+
+        let len = get_branch_len(meta, s_main, rot, is_s);
+
         BranchNodeInfo {
             is_s,
             is_short_c16,
@@ -121,7 +131,8 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             is_c16,
             is_branch_s_placeholder,
             is_branch_c_placeholder,
-            len: get_branch_len(meta, s_main, rot, is_s),
+            len,
+            nibbles_counter,
         }
     }
 
@@ -190,7 +201,15 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     }
 
     pub(crate) fn len(&self) -> Expression<F> {
-        self.len.expr()
+        self.len.0.expr() + self.len.1.expr()
+    }
+
+    pub(crate) fn raw_len(&self) -> Expression<F> {
+        self.len.1.expr()
+    }
+
+    pub(crate) fn nibbles_counter(&self) -> ColumnTransition<F> {
+        self.nibbles_counter.clone()
     }
 
     pub(crate) fn set_is_s(&mut self, is_s: bool) {
@@ -204,6 +223,8 @@ pub(crate) fn get_rlp_meta_bytes<F: FieldExt>(
     is_s: bool,
     rot: Rotation,
 ) -> [Expression<F>; 2] {
+    //`s_rlp1, s_rlp2` is used for `S` and `s_main.bytes[0], s_main.bytes[1]` is
+    //`s_rlp1, used for `C`
     let (rlp_column_1, rlp_column_2) = if is_s {
         (s_main.rlp1, s_main.rlp2)
     } else {
@@ -215,9 +236,12 @@ pub(crate) fn get_rlp_meta_bytes<F: FieldExt>(
     ]
 }
 
-pub(crate) fn get_num_rlp_bytes<F: FieldExt>(
+pub(crate) fn get_num_rlp_bytes_selectors<F: FieldExt>(
     rlp_meta_bytes: [Expression<F>; 2],
 ) -> [Expression<F>; 3] {
+    // rlp1, rlp2: 1, 1 means 1 RLP byte
+    // rlp1, rlp2: 1, 0 means 2 RLP bytes
+    // rlp1, rlp2: 0, 1 means 3 RLP bytes
     let rlp = rlp_meta_bytes;
     let one_rlp_byte = and::expr([rlp[0].expr(), rlp[1].expr()]);
     let two_rlp_bytes = and::expr([rlp[0].expr(), not::expr(rlp[1].expr())]);
@@ -249,14 +273,23 @@ pub(crate) fn get_branch_len<F: FieldExt>(
     s_main: MainCols<F>,
     rot_into_branch_init: Rotation,
     is_s: bool,
-) -> Expression<F> {
+) -> (Expression<F>, Expression<F>) {
     let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot_into_branch_init);
-    let num_rlp_byte_selectors = get_num_rlp_bytes(rlp_meta_bytes);
+    let num_rlp_byte_selectors = get_num_rlp_bytes_selectors(rlp_meta_bytes);
     let rlp_bytes = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot_into_branch_init);
-    num_rlp_byte_selectors[0].expr() * (rlp_bytes[0].expr() - 192.expr() + 1.expr())
-        + num_rlp_byte_selectors[1].expr() * (rlp_bytes[1].expr() + 2.expr())
-        + num_rlp_byte_selectors[2].expr()
-            * (rlp_bytes[1].expr() * 256.expr() + rlp_bytes[2].expr() + 3.expr())
+    let num_rlp_bytes = num_rlp_byte_selectors
+        .iter()
+        .enumerate()
+        .fold(0.expr(), |acc, (idx, sel)| {
+            acc.expr() + sel.expr() * (idx + 1).expr()
+        });
+    (
+        num_rlp_bytes,
+        num_rlp_byte_selectors[0].expr() * (rlp_bytes[0].expr() - 192.expr())
+            + num_rlp_byte_selectors[1].expr() * (rlp_bytes[1].expr())
+            + num_rlp_byte_selectors[2].expr()
+                * (rlp_bytes[1].expr() * 256.expr() + rlp_bytes[2].expr()),
+    )
 }
 
 pub(crate) fn get_leaf_len<F: FieldExt>(
@@ -443,7 +476,7 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         ret
     }
 
-    pub(crate) fn if_else<R>(
+    /*pub(crate) fn if_else<R>(
         &mut self,
         condition: Expression<F>,
         when_true: impl FnOnce(&mut Self) -> R,
@@ -459,7 +492,7 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
 
         ret_true
         //select::expr(condition, ret_true, ret_false)
-    }
+    }*/
 
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
         self.conditions.push(condition);
@@ -613,6 +646,7 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
 macro_rules! constraints {
     ([$meta:ident, $cb:ident], $content:block) => {{
         // Nested macro's can't do repitition... (https://github.com/rust-lang/rust/issues/35853)
+        #[allow(unused_macros)]
         macro_rules! ifx {
             ($condition:expr => $when_true:block elsex $when_false:block) => {{
                 $cb.push_condition($condition.expr());
@@ -689,6 +723,7 @@ macro_rules! constraints {
             }};
         }
 
+        #[allow(unused_macros)]
         macro_rules! selectx {
             ($condition:expr => $when_true:block elsex $when_false:block) => {{
                 $cb.push_condition($condition.expr());
@@ -710,6 +745,7 @@ macro_rules! constraints {
             }};
         }
 
+        #[allow(unused_macros)]
         macro_rules! f {
             ($column:expr, $rot:expr) => {{
                 $meta.query_fixed($column.clone(), Rotation($rot as i32))
@@ -719,6 +755,7 @@ macro_rules! constraints {
             }};
         }
 
+        #[allow(unused_macros)]
         macro_rules! a {
             ($column:expr, $rot:expr) => {{
                 $meta.query_advice($column.clone(), Rotation($rot as i32))

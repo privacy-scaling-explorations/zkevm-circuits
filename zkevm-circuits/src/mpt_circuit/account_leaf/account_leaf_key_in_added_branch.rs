@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, Expr};
+use gadgets::util::{not, Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -298,7 +298,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                     // `s(c)_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
                     // (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch_parallel.rs`)
+                    // is checked in `branch_rlc.rs`)
                     // Any rotation that lands into branch children can be used.
                     let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17);
                     ifx!{branch.is_placeholder() => {

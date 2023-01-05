@@ -344,7 +344,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                     // When leaf is not hashed, the `mod_node_hash_rlc` stores the RLC of the leaf bytes
                                     // (instead of the RLC of leaf hash). So we take the leaf RLC and compare it to the value
                                     // stored in `mod_node_hash_rlc` in the parent branch.
-                                    // Note: `branch_parallel.rs` checks that there are 0s in `*_bytes` after the last
+                                    // Note: `branch_rlc.rs` checks that there are 0s in `*_bytes` after the last
                                     // byte of the non-hashed branch child (otherwise some corrupted RLC could be provided).
                                     // For leaf without branch, the constraints are in storage_root_in_account_leaf.
                                     require!(a!(accs.acc_s.rlc) => mod_node_hash_rlc_cur);

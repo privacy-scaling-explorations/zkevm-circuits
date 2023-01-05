@@ -1,7 +1,6 @@
 pub mod branch_hash_in_parent;
 pub mod branch_init;
 pub mod branch_key;
-pub mod branch_parallel;
 pub mod branch_rlc;
 pub mod extension_node;
 pub mod extension_node_key;
@@ -12,13 +11,14 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
-use std::{iter, marker::PhantomData};
+use std::marker::PhantomData;
 
 use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
+    mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
         helpers::BranchNodeInfo,
@@ -30,10 +30,6 @@ use crate::{
             IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_S_BRANCH_NON_HASHED_POS,
             NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
         },
-    },
-    mpt_circuit::{
-        helpers::{get_rlp_meta_bytes, get_rlp_value_bytes},
-        storage_leaf::StorageLeaf,
     },
     mpt_circuit::{MPTConfig, ProofValues},
     util::Expr,
@@ -100,7 +96,7 @@ pub(crate) struct BranchCols<F> {
     pub(crate) is_last_child: Column<Advice>,
     pub(crate) node_index: Column<Advice>,
     pub(crate) is_modified: Column<Advice>, // whether this branch node is modified
-    pub(crate) modified_node: Column<Advice>, // index of the modified node
+    pub(crate) modified_node_index: Column<Advice>, // index of the modified node
     pub(crate) is_at_drifted_pos: Column<Advice>, // needed when leaf is turned into branch
     pub(crate) drifted_pos: Column<Advice>, /* needed when leaf is turned into branch - first
                                              * nibble of
@@ -122,7 +118,7 @@ impl<F: FieldExt> BranchCols<F> {
             is_last_child: meta.advice_column(),
             node_index: meta.advice_column(),
             is_modified: meta.advice_column(),
-            modified_node: meta.advice_column(),
+            modified_node_index: meta.advice_column(),
             is_at_drifted_pos: meta.advice_column(),
             drifted_pos: meta.advice_column(),
             is_extension_node_s: meta.advice_column(),
@@ -144,7 +140,6 @@ impl<F: FieldExt> BranchConfig<F> {
         ctx: MPTContext<F>,
     ) -> Self {
         let position_cols = ctx.position_cols;
-        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
         let accs = ctx.accumulators;
@@ -159,36 +154,17 @@ impl<F: FieldExt> BranchConfig<F> {
 
             let drifted_pos = ColumnTransition::new(meta, branch.drifted_pos);
             let node_index = ColumnTransition::new(meta, branch.node_index);
-            let modified_node = ColumnTransition::new(meta, branch.modified_node);
+            let modified_node_index = ColumnTransition::new(meta, branch.modified_node_index);
             let is_modified = ColumnTransition::new(meta, branch.is_modified);
             let is_branch_init = ColumnTransition::new(meta, branch.is_init);
             let is_branch_child = ColumnTransition::new(meta, branch.is_child);
             let is_last_child = ColumnTransition::new(meta, branch.is_last_child);
             let is_at_drifted_pos = ColumnTransition::new(meta, branch.is_at_drifted_pos);
-            let is_account_leaf_in_added_branch = ColumnTransition::new(meta, is_account_leaf_in_added_branch);
-            let s1 = ColumnTransition::new(meta, s_main.rlp1);
-            let s2 = ColumnTransition::new(meta, s_main.rlp2);
-            let c1 = ColumnTransition::from(
-                a!(s_main.bytes[0], -1),
-                a!(c_main.rlp1),
-            );
-            let c2 = ColumnTransition::from(
-                a!(s_main.bytes[1], -1),
-                a!(c_main.rlp2),
-            );
 
             let is_branch_placeholder_s = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
             let is_branch_placeholder_c = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM]);
             let is_branch_non_hashed_s = ColumnTransition::new(meta, s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM]);
             let is_branch_non_hashed_c = ColumnTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
-
-            let nibbles_count = ColumnTransition::from(
-                a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM], -BRANCH_ROWS_NUM),
-                a!(s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]),
-            );
-
-            let is_branch_placeholder_s_from_last = a!(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], -16);
-            let is_branch_placeholder_c_from_last = a!(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], -16);
 
             ifx!{f!(position_cols.q_enable) => {
                 // These selectors are only stored in branch init rows
@@ -197,198 +173,151 @@ impl<F: FieldExt> BranchConfig<F> {
                     for selector in [is_branch_placeholder_s.expr(), is_branch_placeholder_c.expr(), is_branch_non_hashed_s.expr(), is_branch_non_hashed_c.expr()] {
                         require!(selector => bool);
                     }
-                    // The cell `s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM]` in branch init row stores the number of
+                    // The `nibbles_counter` cell in a branch init row stores the number of
                     // nibbles used up to this point (up to this branch). If a regular branch, the counter increases only
                     // by 1 as only one nibble is used to determine the position of `modified_node` in a branch.
                     // On the contrary, when it is an extension node the counter increases by the number of nibbles
                     // in the extension key and the additional nibble for the position in a branch (this constraint
                     // is in `extension_node.rs` though).
-                    // extension node counterpart constraint is in extension_node.rs
-                    let is_extension_node = BranchNodeInfo::new(meta, s_main, true, 0).is_extension();
-                    ifx!{not::expr(is_extension_node.expr()) => {
-                        ifx!{not::expr(is_account_leaf_in_added_branch.prev()), not_first_level.expr() => {
+                    let branch = BranchNodeInfo::new(meta, s_main, true, 0);
+                    ifx!{not::expr(branch.is_extension()) => {
+                        // TODO(Brecht): Is always 1 for added branches?
+                        ifx!{not::expr(a!(ctx.account_leaf.is_in_added_branch, -1)), not_first_level.expr() => {
                             // Only check if there is an account above the branch.
-                            require!(nibbles_count.cur() => nibbles_count.prev() + 1.expr());
+                            require!(branch.nibbles_counter().cur() => branch.nibbles_counter().prev() + 1.expr());
                         } elsex {
-                            // If we are in the first level of the trie, `nibbles_count` needs to be 1.
                             // If branch is in the first level of the account/storage trie, `nibbles_count` needs to be 1.
-                            require!(nibbles_count.cur() => 1);
+                            require!(branch.nibbles_counter().cur() => 1);
                         }}
                     }}
                 }}
 
-                // The gate `Branch S and C equal at NON modified_node position` ensures that the only change in
-                // * `S` and `C` proof occur at `modified_node` (denoting which child of the branch is changed) position.
-                // This is needed because the circuit allows only one change at at time.
-                // We check `s_main.rlp = c_main.rlp` everywhere except at `modified_node`.
-                // Note: We do not compare `s_main.rlp1 = c_main.rlp1` because there is no
-                // information about branch. We use `rlp1` to store information
-                // about `S` branch and `C` branch RLP length (see the gate
-                // below).
-                let at_modification = node_index.expr() - modified_node.expr();
+                // We need to ensure that the only change in `S` and `C` proof occurs
+                // at `modified_node_index` so that only a single change can be done.
+                // We check `s_main.rlp = c_main.rlp` everywhere except at `modified_node_index`.
+                // (except rlp1, rlp1 is used to keep track of number of bytes processed).
+                let at_modification = node_index.expr() - modified_node_index.expr();
                 ifx!{is_branch_child, at_modification => {
-                    for (lhs, rhs) in iter::once(&s_main.rlp2)
-                        .chain(s_main.bytes.iter())
-                        .zip(iter::once(&c_main.rlp2).chain(c_main.bytes.iter()))
+                    for (s_byte, c_byte) in s_main.rlp_bytes().iter().skip(1)
+                        .zip(c_main.rlp_bytes().iter().skip(1))
                     {
-                        require!(a!(lhs) => a!(rhs));
+                        require!(a!(s_byte) => a!(c_byte));
                     }
                 }}
 
-                // This constraint applies for when we have a placeholder branch.
-                // In this case, both branches are the same - the placeholder branch and its
+                // When in a placeholder branch, both branches are the same - the placeholder branch and its
                 // parallel counterpart, which is not a placeholder, but a regular branch (newly
                 // added branch). The regular branch has only two non-nil nodes,
                 // because the placeholder branch appears only when an existing
                 // leaf drifts down into a newly added branch. Besides an
                 // existing leaf, we have a leaf that was being added and that caused
                 // a new branch to be added. So we need to check that there are exactly two
-                // non-nil nodes (otherwise the attacker could add two or more
+                // non-nil nodes (otherwise the attacker could add more
                 // new leaves at the same time). The non-nil nodes need to be at
                 // `is_modified` and `is_at_drifted_pos`, elsewhere there have
-                // to be zeros. When there is no placeholder branch, this constraint is ignored.
-                for (rlp2, is_branch_placeholder) in [
-                    (s_main.rlp2, is_branch_placeholder_c_from_last.expr()),
-                    (c_main.rlp2, is_branch_placeholder_s_from_last.expr()),
-                ] {
-                    // So many rotation is not optimal, but most of these rotations are used
-                    // elsewhere, so it should not be much of an overhead.
-                    // Alternative approach would be to have a column specifying
-                    // whether there is a placeholder branch or not (we currently have this info
-                    // only in branch init). Another alternative would be to have a column where we
-                    // add `rlp2` value from the current row in each of the 16
-                    // rows. Both alternative would require additional column.
-                    ifx!{is_last_child, is_branch_placeholder => {
-                        let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
-                            acc + a!(rlp2, -(idx as i32))
-                        });
-                        // There are constraints which ensure there is only 0 or 160 at rlp2 for
-                        // branch children.
-                        require!(sum_rlp2 => 320);
+                // to be zeros.
+                ifx!{is_last_child => {
+                    for is_s in [true, false] {
+                        // So many rotation is not optimal, but most of these rotations are used
+                        // elsewhere, so it should not be much of an overhead.
+                        // Alternative approach would be to have a column specifying
+                        // whether there is a placeholder branch or not (we currently have this info
+                        // only in branch init). Another alternative would be to have a column where we
+                        // add `rlp2` value from the current row in each of the 16
+                        // rows. Both alternative would require additional column.
+                        let branch = BranchNodeInfo::new(meta, s_main, is_s, -(ARITY as i32));
+                        ifx!{branch.is_placeholder() => {
+                            let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
+                                acc + a!(ctx.main(is_s).rlp2, -(idx as i32))
+                            });
+                            // There are constraints which ensure there is only 0 or 160 at rlp2 for
+                            // branch children.
+                            require!(sum_rlp2 => 320);
+                        }}
                     }}
                 }
             }}
 
             ifx!{q_not_first => {
-                // We need to check that the length of the branch corresponds to the bytes at
-                // the beginning of the RLP stream that specify the length of
-                // the RLP stream. There are three possible cases:
-                // 1. Branch (length 21 = 213 - 192) with one byte of RLP meta data
-                // [213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,
-                // 128,128]
-                // 2. Branch (length 83) with two bytes of RLP meta data
-                // [248,81,128,128,...
-                // 3. Branch (length 340) with three bytes of RLP meta data
-                // [249,1,81,128,16,...
-                // We specify the case as (note that `S` branch and
-                // `C` branch can be of different length. `s_rlp1, s_rlp2` is used for `S` and
-                // `s_main.bytes[0], s_main.bytes[1]` is used for `C`):
-                // rlp1, rlp2: 1, 1 means 1 RLP byte
-                // rlp1, rlp2: 1, 0 means 2 RLP bytes
-                // rlp1, rlp2: 0, 1 means 3 RLP bytes
-                for (is_s, rlp1, rlp2) in [
-                    (true, s1, s2,),
-                    (false, c1, c2),
-                ] {
-                    //let rlp_bytes = (0..3).map(|idx| a!(s_main.bytes[branch_start - RLP_NUM + idx], -1)).collect::<Vec<_>>();
-                    let rlp_bytes = get_rlp_value_bytes(meta, s_main, is_s, Rotation::prev());
-                    // [0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-                    // 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-                    // [0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165
-                    // 42 222 110 4 252 228 93 243 26 160 241 85 0 160 95 174 59 239 229 74 221 53
-                    // 227 115 207 137 94 29 119 126 56 209 55 198 212 179 38 213 219 36 111 62 46
-                    // 43 176 168 1]
-                    // Calculate the number of bytes on this row
-                    // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
-                    // non-nil node. The expression `s_rlp2 * c160_inv * c32 +
-                    // 1` gives us the number of bytes used in a row (1 or 33
-                    // for nil node or non-nil node respectively).
-                    let num_bytes_in_row = selectx!{a!(denoter.is_node_hashed(is_s)) => {
-                        a!(ctx.main(is_s).bytes[0]) - 192.expr() + 1.expr()
-                    } elsex {
-                        // The following value can be either 1 or 33 (if hashed node),
-                        // depending on whether it's empty or non-empty row.
-                        rlp2.cur() * c160_inv.clone() * 32.expr() + 1.expr()
-                    }};
+                ifx!{is_branch_child => {
+                     // Keep track of how many branch bytes we've processed.
+                    for is_s in [true, false] {
+                        let rlp1 = a!(ctx.main(is_s).rlp1);
+                        let rlp2 = a!(ctx.main(is_s).rlp2);
+                        // Calculate the number of bytes on this row.
+                        let num_bytes = selectx!{a!(denoter.is_node_hashed(is_s)) => {
+                            a!(ctx.main(is_s).bytes[0]) - 192.expr() + 1.expr()
+                        } elsex {
+                            // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
+                            // non-nil node (1 or 33 respectively).
+                            rlp2.expr() * c160_inv.clone() * 32.expr() + 1.expr()
+                        }};
+                        // Fetch the number of bytes left from the previous row.
+                        // TODO(Brecht): just store it in branch init in its own column.
+                        let num_bytes_left = selectx!{is_branch_init.prev() => {
+                            // Length of branch without initial rlp bytes
+                            BranchNodeInfo::new(meta, s_main, is_s, -1).raw_len()
+                        } elsex {
+                            // Simply stored in rlp1 otherwise
+                            a!(ctx.main(is_s).rlp1, -1)
+                        }};
+                        // Update number of bytes left
+                        require!(rlp1 => num_bytes_left - num_bytes.expr());
+                        // In the final branch child `rlp1` needs to be 1 (because RLP length
+                        // specifies also ValueNode which occupies 1 byte).
+                        // TODO: ValueNode
+                        ifx!{is_last_child => {
+                            require!(rlp1 => 1);
+                        }}
+                    }
 
-                    ifx!{is_branch_init.prev() => {
-                        // There should never be `rlp1, rlp2: 0, 0` for `S` and `C`
-                        // (we only have three cases, there is no case with both being 0).
-                        require!(or::expr([rlp1.prev(), rlp2.prev()]) => true);
-                        // We check that the first branch children has properly stored the number of
-                        // the remaining bytes. For example, if there are 81
-                        // bytes in the branch and the first branch child
-                        // contains 1 byte, then it needs to store the value `80 = 81 - 1`.
-                        // 1 RLP byte
-                        ifx!{rlp1.prev(), rlp2.prev() => {
-                            require!(rlp_bytes[0] => 192.expr() + num_bytes_in_row.clone() + rlp1.cur());
-                        }}
-                        // 2 RLP bytes
-                        ifx!{rlp1.prev(), not::expr(rlp2.prev()) => {
-                            require!(rlp_bytes[1]  => num_bytes_in_row.clone() + rlp1.cur());
-                        }}
-                        // 3 RLP bytes
-                        ifx!{not::expr(rlp1.prev()), rlp2.prev() => {
-                            require!(rlp_bytes[1].expr()  * 256.expr() + rlp_bytes[2].expr()  => num_bytes_in_row.expr() + rlp1.cur());
-                        }}
-                    } elsex {
-                        // We check that the non-first branch children has properly stored the number of
-                        // the remaining bytes. For example, if there are 81 bytes
-                        // in the branch, the first branch child contains 1 byte,
-                        // the second child contains 33 bytes, then the third child
-                        // needs to store the value `81 - 1 - 33`.
-                        ifx!{is_branch_child => {
-                            require!(a!(ctx.main(is_s).rlp1, -1) => num_bytes_in_row.expr() + rlp1.cur());
-                        }}
-                    }}
-                    // In the final branch child `rlp1` needs to be 1 (because RLP length
-                    // specifies also ValueNode which occupies 1 byte).
-                    // TODO: ValueNode
-                    ifx!{is_last_child => {
-                        require!(rlp1.cur() => 1);
-                    }}
-                }
-
-                ifx!{is_branch_child.cur() => {
-                    // modified_node = drifted_pos when NOT placeholder.
-                    // We check modified_node = drifted_pos in first branch node and then check
+                    // TODO(Brecht): still to check
+                    // modified_node_index = drifted_pos when NOT placeholder.
+                    // We check modified_node_index = drifted_pos in first branch node and then check
                     // in each branch node: modified_node_prev = modified_node_cur and
                     // drifted_pos_prev = drifted_pos_cur, this way we can use only Rotation(-1).
 
-                    // If we have branch child, we can only have branch child or branch init in the previous row.
-                    require!(or::expr([is_branch_child.prev(), is_branch_init.prev()]) => true);
-                    // When `node_index` != 0
-                    ifx!{node_index.cur() => {
-                        // `node_index` is increased by 1 for each is_branch_child node.
-                        require!(node_index.cur() => node_index.prev() + 1.expr());
-                        // `modified_node` (the index of the branch child that is modified)
-                        // needs to be the same for all branch nodes.
-                        require!(modified_node.cur() => modified_node.prev());
-                    }}
-                    // `is_modified` is boolean (booleanity is checked in `selectors.rs`):
-                    // - 0 when `node_index != modified_node`
-                    // - 1 when `node_index == modified_node`
+                    // Check that `is_modified` is enabled for the correct branch child.
+                    // TODO(Brecht): this does not force `is_modified` to be enabled anywhere
                     ifx!{is_modified => {
-                        require!(node_index => modified_node);
+                        require!(node_index => modified_node_index);
                     }}
-                    // `is_at_drifted_pos` is boolean (booleanity is checked in `selectors.rs`):
-                    // - 0 when `node_index != drifted_pos`
-                    // - 1 when `node_index == drifted_pos`
+                    // Check that `is_at_drifted_pos` is enabled for the correct branch child.
+                    // TODO(Brecht): this does not force `is_at_drifted_pos` to be enabled anywhere
                     ifx!{is_at_drifted_pos => {
                         require!(node_index => drifted_pos);
                     }}
+
+                    // Values that need to remain the same for all branch children:
+                    // - `modified_node_index`
+                    // - `drifted_pos`
+                    // - `mod_node_hash_rlc`
+                    // - `is_modified_child_empty`
+                    ifx!{a!(branch.node_index) => {
+                        // `modified_node_index` needs to be the same for all branch children.
+                        require!(modified_node_index.cur() => modified_node_index.prev());
+                        // When not in a placeholder branch,
+                        // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
+                        // needs to be the same for all branch nodes.
+                        ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()) => {
+                            require!(drifted_pos.cur() => drifted_pos.prev());
+                        }}
+                        for is_s in [true, false] {
+                            let mod_node_hash_rlc = ctx.accumulators.mod_node_rlc(is_s);
+                            let is_modified_child_empty = ctx.denoter.sel(is_s);
+                            // mod_node_hash_rlc the same for all branch children
+                            require!(a!(mod_node_hash_rlc) => a!(mod_node_hash_rlc, -1));
+                            // Selector for the modified child being empty the same for all branch children
+                            require!(a!(is_modified_child_empty) => a!(is_modified_child_empty, -1));
+                        }
+                    }}
                 }}
 
+                // Make sure `is_branch_child`, `node_index` and `is_last_child` are set correctly.
                 ifx!{is_branch_init.prev() => {
-                    // If we have `is_branch_init` in the previous row, we have `is_branch_child = 1` in the current row.
-                    require!(is_branch_child.cur() => true);
-                    // We could have only one constraint using sum, but then we would need
-                    // to limit `node_index` (to prevent values like -1). Now, `node_index` is
-                    // limited by ensuring its first value is 0, its last value is 15,
-                    // and it is being increased by 1.
-                    // If we have `is_branch_init` in the previous row, we have
-                    // `node_index = 0` in the current row.
-                    require!(node_index.cur() => 0);
+                    // First child when previous row is a branch init row
+                    require!(is_branch_child => true);
+                    require!(node_index => 0);
                 } elsex {
                     // When `is_branch_child` changes back to 0, previous `node_index` needs to be 15
                     // and previous `is_last_child` needs to be 1.
@@ -397,67 +326,66 @@ impl<F: FieldExt> BranchConfig<F> {
                         require!(is_last_child.prev() => true);
                     }}
                 }}
-
+                ifx!{is_branch_child.cur() => {
+                    // If we have a branch child, we can only have branch child or branch init in the previous row.
+                    require!(or::expr([is_branch_child.prev(), is_branch_init.prev()]) => true);
+                    // When `node_index` != 0
+                    ifx!{node_index.cur() => {
+                        // `node_index` increases by 1 for each branch child.
+                        require!(node_index.cur() => node_index.prev() + 1.expr());
+                    }}
+                }}
                 ifx!{is_last_child => {
                     // When `node_index` is not 15, `is_last_child` needs to be 0.
-                    // For this to work properly is_last_branch_child needs to have value 1 only when is_branch_child
                     require!(node_index.cur() => 15);
+                }}
+
+                // TODO(Brecht): check `mod_node_rlc` use
+                // - For a branch placeholder we do not have any constraints. However, in the parallel
+                // (regular) branch we have an additional constraint (besides `is_modified` row
+                // corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
+                // is stored in the placeholder `mod_node_hash_rlc`. For example, if there is a placeholder
+                // branch in `S` proof, we have:
+                //   - `is_modified c_main.bytes RLC = c_mod_node_hash_rlc`
+                //   - `is_at_drifted_pos c_main.bytes RLC = s_mod_node_hash_rlc`
+                // That means we simply use `mod_node_hash_rlc` column (because it is not occupied)
+                // in the placeholder branch for `is_at_drifted_pos main.bytes RLC` of
+                // the regular parallel branch.
+                // - When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
+                // stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
+                // Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
+                // child is not hashed (shorter than 32 bytes), but in this case we need to compute
+                // the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
+                // we check in `branch_rlc` that the non-hashed child is of the appropriate length
+                // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
+                // The same applies for `c_hash_rlc`.
+                ifx!{is_last_child => {
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
+                    let mut branch = BranchNodeInfo::new(meta, s_main, true, -(ARITY as i32));
                     for rot in -(ARITY as i32)+1..=0 {
-                        // For a branch placeholder we do not have any constraints. However, in the parallel
-                        // (regular) branch we have an additional constraint (besides `is_modified` row
-                        // corresponding to `mod_nod_hash_rlc`) in this case: `is_at_drifted_pos main.bytes RLC`
-                        // is stored in the placeholder `mod_node_hash_rlc`. For example, if there is a placeholder
-                        // branch in `S` proof, we have:
-                        // - `is_modified c_main.bytes RLC = c_mod_node_hash_rlc`
-                        // - `is_at_drifted_pos c_main.bytes RLC = s_mod_node_hash_rlc`
-                        // That means we simply use `mod_node_hash_rlc` column (because it is not occupied)
-                        // in the placeholder branch for `is_at_drifted_pos main.bytes RLC` of
-                        // the regular parallel branch.
-                        // When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
-                        // stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
-                        // Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
-                        // child is not hashed (shorter than 32 bytes), but in this case we need to compute
-                        // the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
-                        // we check in `branch_parallel` that the non-hashed child is of the appropriate length
-                        // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
-                        // The same applies for `c_hash_rlc`.
-                        let s_hash_rlc = rlc::expr(
-                            &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        let c_hash_rlc = rlc::expr(
-                            &c_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        let is_modified = a!(branch.is_modified, rot);
-                        let is_at_drifted_pos = a!(branch.is_at_drifted_pos, rot);
-                        let s_mod_node_hash_rlc_cur = a!(accs.s_mod_node_rlc, rot);
-                        let c_mod_node_hash_rlc_cur = a!(accs.c_mod_node_rlc, rot);
-                        for (is_branch_placeholder_from_last, hash_rlc_a, hash_rlc_b, mod_node_hash_rlc) in [
-                            (is_branch_placeholder_s_from_last.expr(), s_hash_rlc.expr(), c_hash_rlc.expr(), s_mod_node_hash_rlc_cur),
-                            (is_branch_placeholder_c_from_last.expr(), c_hash_rlc, s_hash_rlc, c_mod_node_hash_rlc_cur)
-                        ] {
-                            ifx!{is_branch_placeholder_from_last => {
+                        for is_s in [true, false] {
+                            branch.set_is_s(is_s);
+                            ifx!{branch.is_placeholder() => {
                                 // When branch is a placeholder, `main.bytes RLC` corresponds to the value
                                 // stored in `accumulators.mod_node_rlc` in `is_at_drifted_pos` row.
-                                ifx!{is_at_drifted_pos => {
-                                    require!(hash_rlc_b => mod_node_hash_rlc);
+                                ifx!{a!(ctx.branch.is_at_drifted_pos, rot) => {
+                                    let hash_rlc = rlc::expr(
+                                        &ctx.main(!is_s).bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
+                                        &r,
+                                    );
+                                    require!(a!(accs.mod_node_rlc(is_s), rot) => hash_rlc);
                                 }}
                             } elsex {
-                                ifx!{is_modified => {
-                                    require!(hash_rlc_a => mod_node_hash_rlc);
+                                ifx!{a!(ctx.branch.is_modified, rot) => {
+                                    let hash_rlc = rlc::expr(
+                                        &ctx.main(is_s).bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
+                                        &r,
+                                    );
+                                    require!(a!(accs.mod_node_rlc(is_s), rot) => hash_rlc);
                                 }}
                             }}
                         }
                     }
-                }}
-
-                // When not in a placeholder branch, and `node_index` != 0
-                ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()), node_index.cur() => {
-                    // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
-                    // needs to be the same for all branch nodes.
-                    require!(drifted_pos.cur() => drifted_pos.prev());
                 }}
             }}
         }}

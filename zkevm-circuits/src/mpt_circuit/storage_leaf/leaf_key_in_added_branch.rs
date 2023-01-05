@@ -369,7 +369,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     //     Leaf S             || Leaf C
                     //                        || Drifted leaf (this is Leaf S drifted into Added branch)
                     // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch_parallel.rs`.
+                    // is checked in `branch_rlc.rs`.
                     // Any rotation that lands into branch children can be used.
                     let s_mod_node_hash_rlc = a!(accs.s_mod_node_rlc, rot_into_branch_child);
                     require!((rlc, len, s_mod_node_hash_rlc) => @keccak);
@@ -410,7 +410,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     //     Leaf S (leaf to be deleted)     || Leaf C
                     //     Leaf to be drifted one level up ||
                     // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch_parallel.rs`.
+                    // is checked in `branch_rlc.rs`.
                     let c_mod_node_hash_rlc = a!(accs.c_mod_node_rlc, rot_into_branch_child);
                     require!((rlc, len, c_mod_node_hash_rlc) => @keccak);
                 }}

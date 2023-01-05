@@ -126,7 +126,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             // by checking whether is_account_leaf_storage_codehash_c is true in the
             // previous row.
             let not_first_level = a!(position_cols.not_first_level);
-            let modified_node = a!(branch.modified_node);
+            let modified_node_index = a!(branch.modified_node_index);
 
             // -2 because we are in the first branch child and -1 is branch init row, -2 is
             // account leaf storage codehash when we are in the first storage proof level
@@ -172,7 +172,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     ifx!{branch.is_c16() => {
                         // When we are not in the first level and when sel1, the intermediate key RLC needs to be
                         // computed by adding `modified_node * 16 * mult_prev` to the previous intermediate key RLC.
-                        require!(key_rlc.cur() => key_rlc.prev() + modified_node.expr() * 16.expr() * key_rlc_mult.prev());
+                        require!(key_rlc.cur() => key_rlc.prev() + modified_node_index.expr() * 16.expr() * key_rlc_mult.prev());
                         // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
                         // stay the same - `modified_node` in the next branch will be multiplied by the same mult
                         // when computing the intermediate key RLC.
@@ -181,7 +181,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     ifx!{branch.is_c1() => {
                         // When we are not in the first level and when sel2, the intermediate key RLC needs to be
                         // computed by adding `modified_node * mult_prev` to the previous intermediate key RLC.
-                        require!(key_rlc.cur() => key_rlc.prev() + modified_node.expr() * key_rlc_mult.prev());
+                        require!(key_rlc.cur() => key_rlc.prev() + modified_node_index.expr() * key_rlc_mult.prev());
                         // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
                         // be multiplied by `r` - `modified_node` in the next branch will be multiplied
                         // by `mult * r`.
@@ -213,7 +213,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 ] {
                 ifx!{pre_condition, condition, not::expr(branch.is_extension()) => {
                     // In the first level, address RLC is simply `modified_node * 16`.
-                    require!(key_rlc => modified_node.expr() * 16.expr());
+                    require!(key_rlc => modified_node_index.expr() * 16.expr());
                     // In the first level, address RLC mult is simply 1.
                     require!(key_rlc_mult => 1);
 
