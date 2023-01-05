@@ -46,6 +46,8 @@ pub(crate) struct SarGadget<F> {
     p_top: Cell<F>,
     // Identify if `a` is a negative word.
     is_neg: LtGadget<F, 1>,
+    // Verify `shf_mod64 < 64`.
+    shf_mod64_lt_64: LtGadget<F, 1>,
     // Identify if higher 128-bit part of `shift` is zero or not.
     shf_hi_is_zero: IsZeroGadget<F>,
     // shf_div64 == 0
@@ -187,6 +189,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
 
         // Shift constraint
+        let shf_mod64_lt_64 = LtGadget::construct(cb, shf_mod64.expr(), 64.expr());
+        cb.require_equal("shf_mod64 < 64", shf_mod64_lt_64.expr(), 1.expr());
         cb.require_equal(
             "shf_lo == shf_mod64 + shf_div64 * 64",
             shf_lo.expr(),
@@ -250,6 +254,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             p_hi,
             p_top,
             is_neg,
+            shf_mod64_lt_64,
             shf_hi_is_zero,
             shf_div64_eq0,
             shf_div64_eq1,
@@ -346,6 +351,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             127.into(),
             u64::from(a.to_le_bytes()[31]).into(),
         )?;
+        self.shf_mod64_lt_64
+            .assign(region, offset, F::from_u128(shf_mod64), 64.into())?;
         self.shf_hi_is_zero
             .assign(region, offset, F::from_u128(shf_hi))?;
         self.shf_div64_eq0
@@ -428,6 +435,25 @@ mod test {
         let rand_shift = rand::thread_rng().gen_range(0..=255);
         test_ok(rand_shift.into(), rand_word());
         test_ok(rand_word(), rand_word());
+
+        // Test cases from eip-145.
+        // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-145.md#sar-arithmetic-shift-right
+        test_ok(0.into(), 1.into());
+        test_ok(1.into(), 1.into());
+        test_ok(1.into(), 0.into());
+        test_ok(1.into(), neg_sign);
+        test_ok(0xFF.into(), neg_sign);
+        test_ok(0x100.into(), neg_sign);
+        test_ok(0x101.into(), neg_sign);
+        test_ok(0.into(), max_neg);
+        test_ok(1.into(), max_neg);
+        test_ok(0xFF.into(), max_neg);
+        test_ok(0x100.into(), max_neg);
+        test_ok(0xFE.into(), U256::from(2).checked_pow(254.into()).unwrap());
+        test_ok(0xF8.into(), max_pos);
+        test_ok(0xFE.into(), max_pos);
+        test_ok(0xFF.into(), max_pos);
+        test_ok(0x100.into(), max_pos);
     }
 
     fn test_ok(shift: U256, a: U256) {
