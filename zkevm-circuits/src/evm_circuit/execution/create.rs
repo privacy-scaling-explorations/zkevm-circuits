@@ -669,8 +669,7 @@ impl<F: Field> RlpU64Gadget<F> {
 mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
-        Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
     };
 
     use itertools::Itertools;
@@ -682,7 +681,8 @@ mod test {
         static ref CALLER_ADDRESS: Address = address!("0x00bbccddee000000000000000000000000002400");
     }
 
-    fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
+    // RETURN or REVERT with data of [0x60; 5]
+    fn initialization_bytecode(is_success: bool) -> Bytecode {
         let memory_bytes = [0x60; 10];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
@@ -690,10 +690,10 @@ mod test {
             PUSH10(memory_value)
             PUSH1(memory_address)
             MSTORE
-            PUSH2(length)
-            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap() + offset)
+            PUSH2(5)
+            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap())
         };
-        code.write_op(if is_return {
+        code.write_op(if is_success {
             OpcodeId::RETURN
         } else {
             OpcodeId::REVERT
@@ -701,40 +701,44 @@ mod test {
         code
     }
 
-    fn caller_bytecode(return_data_offset: u64, return_data_length: u64) -> Bytecode {
-        bytecode! {
-            PUSH32(return_data_length)
-            PUSH32(return_data_offset)
-            PUSH32(0) // call data length
-            PUSH32(0) // call data offset
-            PUSH32(0) // value
-            PUSH32(CALLEE_ADDRESS.to_word())
-            PUSH32(4000) // gas
-            CALL
-            STOP
+    fn creater_bytecode(is_success: bool, is_create2: bool, is_persistent: bool) -> Bytecode {
+        let initialization_bytes = initialization_bytecode(is_success).code();
+        let mut code = bytecode! {
+            PUSH32(Word::from_big_endian(&initialization_bytes))
+            PUSH1(0)
+            MSTORE
+        };
+        if is_create2 {
+            code.append(&bytecode! {PUSH1(45)}); // salt;
         }
+        code.append(&bytecode! {
+            PUSH1(initialization_bytes.len()) // size
+            PUSH1(32 - initialization_bytes.len()) // value
+            PUSH1(10) // value
+        });
+        code.write_op(if is_create2 {
+            OpcodeId::CREATE2
+        } else {
+            OpcodeId::CREATE
+        });
+        if is_persistent {
+            code.append(&bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                REVERT
+            });
+        }
+        code
     }
 
     #[test]
-    fn mason2() {
-        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
-        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[true])
-        // FIX MEEEEEE there's an issue when the init call reverts.
+    fn test_create() {
+        for ((is_success, is_create2), is_persistent) in [true, false]
+            .iter()
+            .cartesian_product(&[true, false])
+            .cartesian_product(&[true, false])
         {
-            let initializer = callee_bytecode(*is_return, *offset, *length).code();
-
-            let root_code = bytecode! {
-                PUSH32(Word::from_big_endian(&initializer))
-                PUSH1(0)
-                MSTORE
-
-                PUSH1(45)                       // salt
-                PUSH1(initializer.len())        // size
-                PUSH1(32 - initializer.len())   // offset
-                PUSH1(0)                        // value
-
-                CREATE2
-            };
+            let root_code = creater_bytecode(*is_success, *is_create2, *is_persistent);
 
             let caller = Account {
                 address: *CALLER_ADDRESS,
@@ -765,262 +769,8 @@ mod test {
             assert_eq!(
                 run_test_circuits(test_context, None),
                 Ok(()),
-                "(offset, length, is_return) = {:?}",
-                (*offset, *length, *is_return),
-            );
-        }
-    }
-
-    #[test]
-    fn test_create2() {
-        let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
-        for ((offset, length), is_return) in test_parameters.iter().cartesian_product(&[true]) {
-            let initializer = callee_bytecode(*is_return, *offset, *length).code();
-
-            let root_code = bytecode! {
-                PUSH32(Word::from_big_endian(&initializer))
-                PUSH1(0)
-                MSTORE
-
-                PUSH1(34)                       // salt
-                PUSH1(initializer.len())        // size
-                PUSH1(32 - initializer.len())   // offset
-                PUSH1(12)                       // value
-
-                CREATE2
-            };
-
-            let caller = Account {
-                address: *CALLER_ADDRESS,
-                code: root_code.into(),
-                nonce: Word::one(),
-                balance: eth(10),
-                ..Default::default()
-            };
-
-            let test_context = TestContext::<2, 1>::new(
-                None,
-                |accs| {
-                    accs[0]
-                        .address(address!("0x000000000000000000000000000000000000cafe"))
-                        .balance(eth(10));
-                    accs[1].account(&caller);
-                },
-                |mut txs, accs| {
-                    txs[0]
-                        .from(accs[0].address)
-                        .to(accs[1].address)
-                        .gas(100000u64.into());
-                },
-                |block, _| block,
-            )
-            .unwrap();
-
-            assert_eq!(
-                run_test_circuits(test_context, None),
-                Ok(()),
-                "(offset, length, is_return) = {:?}",
-                (*offset, *length, *is_return),
-            );
-        }
-    }
-
-    #[test]
-    fn mason() {
-        // Test the case where the initialization call is successful, but the CREATE
-        // call is reverted.
-        let initializer = callee_bytecode(true, 0, 10).code();
-
-        let root_code = bytecode! {
-            PUSH32(Word::from_big_endian(&initializer))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1(initializer.len())        // size
-            PUSH1(32 - initializer.len())   // offset
-            PUSH1(0)                        // value
-
-            CREATE
-            PUSH1(0)
-            PUSH1(0)
-            REVERT
-        };
-
-        let caller = Account {
-            address: *CALLER_ADDRESS,
-            code: root_code.into(),
-            nonce: Word::one(),
-            balance: eth(10),
-            ..Default::default()
-        };
-
-        let test_context = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(eth(10));
-                accs[1].account(&caller);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000u64.into());
-            },
-            |block, _| block,
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
-    }
-
-    #[test]
-    fn create() {
-        // Test the case where the initialization call is successful, but the CREATE
-        // call is reverted.
-        let initializer = callee_bytecode(true, 0, 10).code();
-
-        let root_code = bytecode! {
-            PUSH32(Word::from_big_endian(&initializer))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1(initializer.len())        // size
-            PUSH1(32 - initializer.len())   // offset
-            PUSH1(0)                        // value
-
-            CREATE
-            PUSH1(0)
-            PUSH1(0)
-            REVERT
-        };
-
-        let caller = Account {
-            address: *CALLER_ADDRESS,
-            code: root_code.into(),
-            nonce: Word::one(),
-            balance: eth(10),
-            ..Default::default()
-        };
-
-        let test_context = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(eth(10));
-                accs[1].account(&caller);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000u64.into());
-            },
-            |block, _| block,
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
-    }
-
-    #[test]
-    fn create2() {
-        // Test the case where the initialization call is successful, but the CREATE
-        // call is reverted.
-        let initializer = callee_bytecode(true, 0, 10).code();
-
-        let root_code = bytecode! {
-            PUSH32(Word::from_big_endian(&initializer))
-            PUSH1(0)
-            MSTORE
-
-            PUSH1(initializer.len())        // size
-            PUSH1(32 - initializer.len())   // offset
-            PUSH1(0)                        // value
-            PUSH1(56)                       // salt
-
-            CREATE2
-        };
-
-        let caller = Account {
-            address: *CALLER_ADDRESS,
-            code: root_code.into(),
-            nonce: Word::one(),
-            balance: eth(10),
-            ..Default::default()
-        };
-
-        let test_context = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x000000000000000000000000000000000000cafe"))
-                    .balance(eth(10));
-                accs[1].account(&caller);
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[0].address)
-                    .to(accs[1].address)
-                    .gas(100000u64.into());
-            },
-            |block, _| block,
-        )
-        .unwrap();
-
-        assert_eq!(run_test_circuits(test_context, None), Ok(()),);
-    }
-
-    #[test]
-    fn create2_really_create() {
-        for nonce in [1, 0, 1, 0xff, 0x100, 0x1000000] {
-            let initializer = callee_bytecode(true, 0, 10).code();
-
-            let root_code = bytecode! {
-                PUSH32(Word::from_big_endian(&initializer))
-                PUSH1(0)
-                MSTORE
-
-                PUSH1(initializer.len())        // size
-                PUSH1(32 - initializer.len())   // offset
-                PUSH1(0)                        // value
-
-                CREATE
-            };
-
-            let caller = Account {
-                address: *CALLER_ADDRESS,
-                code: root_code.into(),
-                nonce: nonce.into(),
-                balance: eth(10),
-                ..Default::default()
-            };
-
-            let test_context = TestContext::<2, 1>::new(
-                None,
-                |accs| {
-                    accs[0]
-                        .address(address!("0x000000000000000000000000000000000000cafe"))
-                        .balance(eth(10));
-                    accs[1].account(&caller);
-                },
-                |mut txs, accs| {
-                    txs[0]
-                        .from(accs[0].address)
-                        .to(accs[1].address)
-                        .gas(100000u64.into());
-                },
-                |block, _| block,
-            )
-            .unwrap();
-
-            assert_eq!(
-                run_test_circuits(test_context, None),
-                Ok(()),
-                "nonce = {}",
-                nonce
+                "(is_success, is_create2, is_persistent) = {:?}",
+                (*is_success, *is_create2, *is_persistent),
             );
         }
     }
