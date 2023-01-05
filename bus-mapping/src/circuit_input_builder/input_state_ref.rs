@@ -1192,11 +1192,23 @@ impl<'a> CircuitInputStateRef<'a> {
                 CallContextField::IsSuccess,
                 0u64.into(),
             );
+
             if call.is_root {
                 return Ok(());
             }
         }
 
+        //even call.rw_counter_end_of_reversion is zero for now, it will set in 
+        //set_value_ops_call_context_rwc_eor later
+        if !call.is_success && !call.is_root {
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.into(),
+            );
+        }
+       
         let caller = self.caller()?.clone();
         self.call_context_read(
             exec_step,
