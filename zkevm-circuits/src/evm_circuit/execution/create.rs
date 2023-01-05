@@ -731,6 +731,26 @@ mod test {
         code
     }
 
+    fn test_context(caller: Account) -> TestContext<2, 1> {
+        TestContext::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(eth(10));
+                accs[1].account(&caller);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(100000u64.into());
+            },
+            |block, _| block,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn test_create() {
         for ((is_success, is_create2), is_persistent) in [true, false]
@@ -739,7 +759,6 @@ mod test {
             .cartesian_product(&[true, false])
         {
             let root_code = creater_bytecode(*is_success, *is_create2, *is_persistent);
-
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -747,30 +766,31 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-
-            let test_context = TestContext::<2, 1>::new(
-                None,
-                |accs| {
-                    accs[0]
-                        .address(address!("0x000000000000000000000000000000000000cafe"))
-                        .balance(eth(10));
-                    accs[1].account(&caller);
-                },
-                |mut txs, accs| {
-                    txs[0]
-                        .from(accs[0].address)
-                        .to(accs[1].address)
-                        .gas(100000u64.into());
-                },
-                |block, _| block,
-            )
-            .unwrap();
-
             assert_eq!(
-                run_test_circuits(test_context, None),
+                run_test_circuits(test_context(caller), None),
                 Ok(()),
                 "(is_success, is_create2, is_persistent) = {:?}",
                 (*is_success, *is_create2, *is_persistent),
+            );
+        }
+    }
+
+    #[test]
+    fn test_create_rlp_nonce() {
+        for nonce in [0, 1, 255, 256, 0x10000, u64::MAX - 1] {
+            dbg!(nonce);
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: creater_bytecode(true, false, true).into(),
+                nonce: nonce.into(),
+                balance: eth(10),
+                ..Default::default()
+            };
+            assert_eq!(
+                run_test_circuits(test_context(caller), None),
+                Ok(()),
+                "nonce = {:?}",
+                nonce,
             );
         }
     }
