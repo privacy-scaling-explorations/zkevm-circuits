@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             OpcodeId::RETURNDATACOPY.expr(),
         );
 
-        // 1. Pop memory_offset, offset, length from stack
+        // Pop memory_offset, offset, length from stack
         cb.stack_pop(memory_offset.expr());
         cb.stack_pop(data_offset.expr());
         cb.stack_pop(length.expr());
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             return_data_length.expr(),
         );
 
-        // check `data_offset` or `end` is u64 overflow or not
+        // check `data_offset` u64 overflow
         let data_offset_larger_u64 = from_bytes::expr(&data_offset.cells[8..]);
         let is_data_offset_within_range = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
@@ -139,8 +139,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         Self {
             opcode,
             memory_offset,
-            //data_offset,
-            //length,
             is_data_offset_within_range,
             is_end_within_range,
             is_end_exceed_length,
@@ -327,9 +325,9 @@ mod test {
     // test root & internal calls
     #[test]
     fn returndatacopy_out_of_bound_error() {
-        // test root call cases: `end` exceed return ata size
+        // test root call cases: `end` exceed return data size
         test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, true);
-        // test internal call case: `end` exceed return ata size
+        // test internal call case: `end` exceed return data size
         test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, false);
         // test data offset overflow
         test_ok_internal(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, true);

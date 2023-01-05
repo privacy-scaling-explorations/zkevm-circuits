@@ -297,9 +297,10 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        println!(
+        log::warn!(
             "geth error {:?} occurred in  {:?}",
-            exec_error, geth_step.op
+            exec_error,
+            geth_step.op
         );
 
         exec_step.error = Some(exec_error.clone());
