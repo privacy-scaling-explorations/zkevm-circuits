@@ -389,71 +389,87 @@ mod test {
     use crate::test_util::run_test_circuits;
     use eth_types::{bytecode, U256};
     use ethers_core::types::I256;
+    use lazy_static::lazy_static;
     use mock::TestContext;
     use rand::Rng;
 
-    #[test]
-    fn test_sar_gadget() {
+    lazy_static! {
         // Maximum negative word value of i256 (integer value of -1)
-        let max_neg = U256::MAX;
-        // Maximum positive word value of i256
-        let max_pos = U256::try_from(I256::MAX).unwrap();
-        // Negative sign (the highest bit is 1)
-        let neg_sign = max_pos.checked_add(1.into()).unwrap();
+        static ref MAX_NEG: U256 = U256::MAX;
 
+        // Maximum positive word value of i256
+        static ref MAX_POS: U256 = U256::try_from(I256::MAX).unwrap();
+
+        // Negative sign (the highest bit is 1)
+        static ref NEG_SIGN: U256 = MAX_POS.checked_add(1.into()).unwrap();
+    }
+
+    #[test]
+    fn test_sar_gadget_with_positive_a() {
         // Test if `a` is positive.
         test_ok(8.into(), 0x1234.into());
         test_ok(17.into(), 0x5678.into());
         test_ok(0.into(), 0xABCD.into());
         test_ok(256.into(), 0xFFFF.into());
         test_ok((256 + 8 + 1).into(), 0x12345.into());
+    }
 
+    #[test]
+    fn test_sar_gadget_with_negative_a() {
         // Test if `a` is negative.
-        test_ok(8.into(), 0x1234.into());
-        test_ok(8.into(), neg_sign.checked_add(0x1234.into()).unwrap());
-        test_ok(17.into(), neg_sign.checked_add(0x5678.into()).unwrap());
-        test_ok(0.into(), neg_sign.checked_add(0xABCD.into()).unwrap());
-        test_ok(256.into(), neg_sign.checked_add(0xFFFF.into()).unwrap());
+        test_ok(8.into(), NEG_SIGN.checked_add(0x1234.into()).unwrap());
+        test_ok(17.into(), NEG_SIGN.checked_add(0x5678.into()).unwrap());
+        test_ok(0.into(), NEG_SIGN.checked_add(0xABCD.into()).unwrap());
+        test_ok(256.into(), NEG_SIGN.checked_add(0xFFFF.into()).unwrap());
         test_ok(
             (256 + 8 + 1).into(),
-            neg_sign.checked_add(0x12345.into()).unwrap(),
+            NEG_SIGN.checked_add(0x12345.into()).unwrap(),
         );
+    }
 
+    #[test]
+    fn test_sar_gadget_with_max_values() {
         // Test either (or both) `a` or `shift` is a maximum word.
-        test_ok(8.into(), max_neg);
-        test_ok(129.into(), max_neg);
-        test_ok(300.into(), max_neg);
-        test_ok(8.into(), max_pos);
-        test_ok(129.into(), max_pos);
-        test_ok(300.into(), max_pos);
-        test_ok(max_neg, max_neg);
-        test_ok(max_neg, max_pos);
-        test_ok(max_pos, max_neg);
-        test_ok(max_pos, max_pos);
+        test_ok(8.into(), *MAX_NEG);
+        test_ok(129.into(), *MAX_NEG);
+        test_ok(300.into(), *MAX_NEG);
+        test_ok(8.into(), *MAX_POS);
+        test_ok(129.into(), *MAX_POS);
+        test_ok(300.into(), *MAX_POS);
+        test_ok(*MAX_NEG, *MAX_NEG);
+        test_ok(*MAX_NEG, *MAX_POS);
+        test_ok(*MAX_POS, *MAX_NEG);
+        test_ok(*MAX_POS, *MAX_POS);
+    }
 
+    #[test]
+    fn test_sar_gadget_with_random_values() {
         // Test for random `a` and `shift`.
         let rand_shift = rand::thread_rng().gen_range(0..=255);
         test_ok(rand_shift.into(), rand_word());
         test_ok(rand_word(), rand_word());
+    }
 
+    #[test]
+    fn test_sar_gadget_with_eip_145_cases() {
         // Test cases from eip-145.
         // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-145.md#sar-arithmetic-shift-right
         test_ok(0.into(), 1.into());
         test_ok(1.into(), 1.into());
         test_ok(1.into(), 0.into());
-        test_ok(1.into(), neg_sign);
-        test_ok(0xFF.into(), neg_sign);
-        test_ok(0x100.into(), neg_sign);
-        test_ok(0x101.into(), neg_sign);
-        test_ok(0.into(), max_neg);
-        test_ok(1.into(), max_neg);
-        test_ok(0xFF.into(), max_neg);
-        test_ok(0x100.into(), max_neg);
+        test_ok(1.into(), *NEG_SIGN);
+        test_ok(0xFF.into(), *NEG_SIGN);
+        test_ok(0x100.into(), *NEG_SIGN);
+        test_ok(0x101.into(), *NEG_SIGN);
+        test_ok(0.into(), *MAX_NEG);
+        test_ok(1.into(), *MAX_NEG);
+        test_ok(0xFF.into(), *MAX_NEG);
+        test_ok(0x100.into(), *MAX_NEG);
         test_ok(0xFE.into(), U256::from(2).checked_pow(254.into()).unwrap());
-        test_ok(0xF8.into(), max_pos);
-        test_ok(0xFE.into(), max_pos);
-        test_ok(0xFF.into(), max_pos);
-        test_ok(0x100.into(), max_pos);
+        test_ok(0xF8.into(), *MAX_POS);
+        test_ok(0xFE.into(), *MAX_POS);
+        test_ok(0xFF.into(), *MAX_POS);
+        test_ok(0x100.into(), *MAX_POS);
     }
 
     fn test_ok(shift: U256, a: U256) {
