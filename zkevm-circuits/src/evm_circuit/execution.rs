@@ -741,6 +741,43 @@ impl<F: Field> ExecutionConfig<F> {
         }
     }
 
+    /// Assign columns related to step counter
+    fn assign_q_step(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        height: usize,
+    ) -> Result<(), Error> {
+        for idx in 0..height {
+            let offset = offset + idx;
+            self.q_usable.enable(region, offset)?;
+            region.assign_advice(
+                || "step selector",
+                self.q_step,
+                offset,
+                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+            )?;
+            let value = if idx == 0 {
+                F::zero()
+            } else {
+                F::from((height - idx) as u64)
+            };
+            region.assign_advice(
+                || "step height",
+                self.num_rows_until_next_step,
+                offset,
+                || Value::known(value),
+            )?;
+            region.assign_advice(
+                || "step height inv",
+                self.num_rows_inv,
+                offset,
+                || Value::known(value.invert().unwrap_or(F::zero())),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Assign block
     /// When exact is enabled, assign exact steps in block without padding for
     /// unit test purpose
@@ -786,38 +823,6 @@ impl<F: Field> ExecutionConfig<F> {
                 let evm_rows = block.evm_circuit_pad_to;
                 let no_padding = evm_rows == 0;
 
-                let assign_q_step =
-                    |region: &mut Region<'_, F>, offset, height| -> Result<(), Error> {
-                        for idx in 0..height {
-                            let offset = offset + idx;
-                            self.q_usable.enable(region, offset)?;
-                            region.assign_advice(
-                                || "step selector",
-                                self.q_step,
-                                offset,
-                                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
-                            )?;
-                            let value = if idx == 0 {
-                                F::zero()
-                            } else {
-                                F::from((height - idx) as u64)
-                            };
-                            region.assign_advice(
-                                || "step height",
-                                self.num_rows_until_next_step,
-                                offset,
-                                || Value::known(value),
-                            )?;
-                            region.assign_advice(
-                                || "step height inv",
-                                self.num_rows_inv,
-                                offset,
-                                || Value::known(value.invert().unwrap_or(F::zero())),
-                            )?;
-                        }
-                        Ok(())
-                    };
-
                 // part1: assign real steps
                 loop {
                     let (transaction, call, step) = steps.next().expect("should not be empty");
@@ -841,7 +846,7 @@ impl<F: Field> ExecutionConfig<F> {
                     )?;
 
                     // q_step logic
-                    assign_q_step(&mut region, offset, height)?;
+                    self.assign_q_step(&mut region, offset, height)?;
 
                     offset += height;
                 }
@@ -877,7 +882,7 @@ impl<F: Field> ExecutionConfig<F> {
                     )?;
 
                     for row_idx in offset..last_row {
-                        assign_q_step(&mut region, row_idx, height)?;
+                        self.assign_q_step(&mut region, row_idx, height)?;
                     }
                     offset = last_row;
                 }
@@ -897,7 +902,7 @@ impl<F: Field> ExecutionConfig<F> {
                     None,
                     power_of_randomness,
                 )?;
-                assign_q_step(&mut region, offset, height)?;
+                self.assign_q_step(&mut region, offset, height)?;
                 // enable q_step_last
                 self.q_step_last.enable(&mut region, offset)?;
                 offset += height;
