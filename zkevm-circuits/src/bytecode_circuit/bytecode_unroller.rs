@@ -748,6 +748,15 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         Self::new_from_block_sized(block, bytecode_size)
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        block
+            .bytecodes
+            .values()
+            .map(|bytecode| bytecode.bytes.len() + 1)
+            .sum()
+    }
+
     /// Make the assignments to the TxCircuit
     fn synthesize_sub(
         &self,
@@ -760,18 +769,21 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 }
 
-/// Bytecode circuit test
+/// bytecode circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;
     use crate::table::{BytecodeTable, KeccakTable};
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+    use eth_types::Bytecode;
     use eth_types::Field;
+    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::{
         circuit::Layouter,
         plonk::{ConstraintSystem, Error},
     };
     use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+    use log::error;
 
     impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
         type Config = (BytecodeCircuitConfig<F>, Challenges);
@@ -819,8 +831,8 @@ pub mod test {
     }
 
     impl<F: Field> BytecodeCircuit<F> {
-        // Verify that the selected bytecode fulfills the circuit
-        fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
+        /// Verify that the selected bytecode fulfills the circuit
+        pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
             let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll(b.clone())).collect();
             Self::verify(k, unrolled, true);
         }
@@ -832,15 +844,15 @@ pub mod test {
             let result = prover.verify();
             if let Err(failures) = &result {
                 for failure in failures.iter() {
-                    println!("{}", failure);
+                    error!("{}", failure);
                 }
             }
             assert_eq!(result.is_ok(), success);
         }
     }
 
-    // Test bytecode circuit with unrolled bytecode
-    fn test_bytecode_circuit_unrolled<F: Field>(
+    /// Test bytecode circuit with unrolled bytecode
+    pub fn test_bytecode_circuit_unrolled<F: Field>(
         k: u32,
         bytecodes: Vec<UnrolledBytecode<F>>,
         success: bool,
@@ -851,7 +863,7 @@ pub mod test {
         let result = prover.verify_par();
         if let Err(failures) = &result {
             for failure in failures.iter() {
-                println!("{}", failure);
+                error!("{}", failure);
             }
         }
         assert_eq!(result.is_ok(), success);
@@ -861,12 +873,9 @@ pub mod test {
         F::from(123456)
     }
 
-    // Verify unrolling code
+    /// Verify unrolling code
     #[test]
     fn bytecode_unrolling() {
-        use eth_types::Bytecode;
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 10;
         let mut rows = vec![];
         let mut bytecode = Bytecode::default();
@@ -939,16 +948,12 @@ pub mod test {
     /// Tests a fully empty circuit
     #[test]
     fn bytecode_empty() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![])], true);
     }
 
     #[test]
     fn bytecode_simple() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         let bytecodes = vec![unroll(vec![7u8]), unroll(vec![6u8]), unroll(vec![5u8])];
         test_bytecode_circuit_unrolled::<Fr>(k, bytecodes, true);
@@ -957,8 +962,6 @@ pub mod test {
     /// Tests a fully full circuit
     #[test]
     fn bytecode_full() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7])], true);
     }
@@ -966,8 +969,6 @@ pub mod test {
     /// Tests a circuit with incomplete bytecode
     #[test]
     fn bytecode_incomplete() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) + 1])], false);
     }
@@ -975,8 +976,6 @@ pub mod test {
     /// Tests multiple bytecodes in a single circuit
     #[test]
     fn bytecode_push() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         test_bytecode_circuit_unrolled::<Fr>(
             k,
@@ -998,8 +997,6 @@ pub mod test {
     /// Test invalid code_hash data
     #[test]
     fn bytecode_invalid_hash_data() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode);
@@ -1030,8 +1027,6 @@ pub mod test {
     #[test]
     #[ignore]
     fn bytecode_invalid_index() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode);
@@ -1055,8 +1050,6 @@ pub mod test {
     /// Test invalid byte data
     #[test]
     fn bytecode_invalid_byte_data() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode);
@@ -1084,8 +1077,6 @@ pub mod test {
     /// Test invalid is_code data
     #[test]
     fn bytecode_invalid_is_code() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 9;
         let bytecode = vec![
             OpcodeId::ADD.as_u8(),

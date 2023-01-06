@@ -14,6 +14,7 @@ use halo2_proofs::plonk::Instance;
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
+use crate::tx_circuit::TX_LEN;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use gadgets::is_zero::IsZeroChip;
@@ -25,7 +26,6 @@ use halo2_proofs::{
 };
 
 /// Fixed by the spec
-const TX_LEN: usize = 10;
 const BLOCK_LEN: usize = 7 + 256;
 const EXTRA_LEN: usize = 2;
 const ZERO_BYTE_GAS_COST: u64 = 4;
@@ -1143,6 +1143,15 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         )
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        BLOCK_LEN
+            + 1
+            + EXTRA_LEN
+            + 3 * (TX_LEN * block.circuits_params.max_txs + 1)
+            + block.circuits_params.max_calldata
+    }
+
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
         let rlc_rpi_col = raw_public_inputs_col::<F>(
@@ -1491,12 +1500,16 @@ fn raw_public_inputs_col<F: Field>(
     result
 }
 
-/// PI circuit test
+/// pi circuit test
 #[cfg(any(feature = "test", test))]
-pub mod test {
+mod test {
     pub use super::*;
 
-    use halo2_proofs::dev::{MockProver, VerifyFailure};
+    use crate::test_util::rand_tx;
+    use halo2_proofs::{
+        dev::{MockProver, VerifyFailure},
+        halo2curves::bn256::Fr,
+    };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -1507,11 +1520,13 @@ pub mod test {
     // that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
     // during the configuration.
     /// Test Circuit for PiCircuit
+    #[cfg(any(feature = "test", test))]
     #[derive(Default)]
     pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         pub PiCircuit<F>,
     );
 
+    #[cfg(any(feature = "test", test))]
     impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
     {
@@ -1575,8 +1590,6 @@ pub mod test {
 
     #[test]
     fn test_default_pi() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 8;
         let public_data = PublicData::default();
@@ -1587,9 +1600,6 @@ pub mod test {
 
     #[test]
     fn test_simple_pi() {
-        use crate::test_util::rand_tx;
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 

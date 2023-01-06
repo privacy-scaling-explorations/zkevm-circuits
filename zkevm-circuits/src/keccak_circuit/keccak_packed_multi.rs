@@ -30,7 +30,7 @@ const THETA_C_LOOKUP_RANGE: usize = 6;
 const RHO_PI_LOOKUP_RANGE: usize = 4;
 const CHI_BASE_LOOKUP_RANGE: usize = 5;
 
-fn get_num_rows_per_round() -> usize {
+pub(crate) fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
         .unwrap_or_else(|_| "5".to_string())
         .parse()
@@ -368,6 +368,16 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
             block.circuits_params.keccak_padding,
             block.keccak_inputs.clone(),
         )
+    }
+
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
+        block
+            .keccak_inputs
+            .iter()
+            .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
+            .sum()
     }
 
     /// Make the assignments to the KeccakCircuit
@@ -2082,9 +2092,10 @@ fn multi_keccak<F: Field>(
 
 /// keccak circuit test
 #[cfg(any(feature = "test", test))]
-pub mod test {
+pub mod tests {
     pub use super::*;
-    use halo2_proofs::dev::MockProver;
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use log::error;
 
     impl<F: Field> Circuit<F> for KeccakCircuit<F> {
         type Config = (KeccakCircuitConfig<F>, Challenges);
@@ -2129,7 +2140,7 @@ pub mod test {
         if verify_result.is_ok() != success {
             if let Some(errors) = verify_result.err() {
                 for error in errors.iter() {
-                    println!("{}", error);
+                    error!("{}", error);
                 }
             }
             panic!();
@@ -2138,8 +2149,6 @@ pub mod test {
 
     #[test]
     fn packed_multi_keccak_simple() {
-        use halo2_proofs::halo2curves::bn256::Fr;
-
         let k = 11;
         let inputs = vec![
             vec![],

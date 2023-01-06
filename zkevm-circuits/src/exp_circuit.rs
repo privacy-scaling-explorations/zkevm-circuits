@@ -6,7 +6,7 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
@@ -404,6 +404,15 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         Self::new(block.clone())
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        block
+            .exp_events
+            .iter()
+            .map(|e| e.steps.len() * OFFSET_INCREMENT)
+            .sum()
+    }
+
     /// Make the assignments to the ExpCircuit
     fn synthesize_sub(
         &self,
@@ -416,22 +425,23 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 }
 
-/// exp circuit test
+/// exp_circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
-    pub use super::*;
     use bus_mapping::{circuit_input_builder::CircuitInputBuilder, evm::OpcodeId, mock::BlockData};
     use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
     use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
     use halo2_proofs::dev::{MockProver, VerifyFailure};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::{Circuit, ConstraintSystem};
     use mock::TestContext;
 
     use crate::evm_circuit::witness::block_convert;
+    pub use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
     use crate::table::ExpTable;
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use crate::witness::Block;
-    use eth_types::Field;
+    use eth_types::{Field, ToScalar, U256};
 
     impl<F: Field> Circuit<F> for ExpCircuit<F> {
         type Config = (ExpCircuitConfig<F>, Challenges);
@@ -457,8 +467,8 @@ pub mod test {
         }
     }
 
-    // Test exponentiation circuit with the provided block witness
-    fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
+    /// Test exponentiation circuit with the provided block witness
+    pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let circuit = ExpCircuit::<F>::new(block);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify()
@@ -497,14 +507,14 @@ pub mod test {
     fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
         let code = gen_code_single(base, exponent);
         let builder = gen_data(code);
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
     }
 
     fn test_ok_multiple(args: Vec<(Word, Word)>) {
         let code = gen_code_multiple(args);
         let builder = gen_data(code);
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(20, block), Ok(()));
     }
 

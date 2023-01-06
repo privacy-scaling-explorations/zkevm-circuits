@@ -162,9 +162,8 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 let cached_region = &mut CachedRegion::<'_, '_, F>::new(
                     &mut region,
                     power_of_randomness.try_into().unwrap(),
-                    STEP_WIDTH,
+                    config.advices.to_vec(),
                     MAX_STEP_HEIGHT * 3,
-                    config.advices[0].index(), // TODO
                     offset,
                 );
                 config.step.state.execution_state.assign(

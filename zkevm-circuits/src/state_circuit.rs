@@ -4,7 +4,7 @@ mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
-/// State circuit test
+/// state circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test;
 
@@ -18,7 +18,7 @@ use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
-    circuit::{Layouter, Region, Value},
+    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
         Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
@@ -378,6 +378,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         Self::new(block.rws.clone(), block.circuits_params.max_rws)
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        block.circuits_params.max_rws
+    }
+
     /// Make the assignments to the StateCircuit
     fn synthesize_sub(
         &self,
@@ -401,10 +406,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.n_rows,
                     randomness,
                 )?;
-
-                config
-                    .mpt_table
-                    .load_with_region(&mut region, &self.updates, randomness)?;
 
                 config.assign_with_region(
                     &mut region,
