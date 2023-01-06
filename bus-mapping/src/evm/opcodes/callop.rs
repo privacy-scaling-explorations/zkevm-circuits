@@ -204,7 +204,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 1. Call to precompiled.
             (true, _) => {
                 warn!("Call to precompiled is left unimplemented");
-                Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.
             (_, true) => {
@@ -216,7 +215,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
                 state.handle_return(geth_step)?;
-                Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
             (_, false) => {
@@ -279,9 +277,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
-
-                Ok(vec![exec_step])
             }
         }
+        Ok(vec![exec_step])
     }
 }
