@@ -31,8 +31,8 @@ use strum::IntoEnumIterator;
 const N_ROWS: usize = 1 << 16;
 
 impl<F: Field> Circuit<F> for StateCircuit<F>
-    where
-        F: Field,
+where
+    F: Field,
 {
     type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

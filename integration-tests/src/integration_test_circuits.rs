@@ -23,13 +23,13 @@ use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
-use zkevm_circuits::copy_circuit::CopyCircuit;
+use zkevm_circuits::bytecode_circuit::bytecode_unroller::test::BytecodeCircuit;
+use zkevm_circuits::copy_circuit::test::CopyCircuit;
 use zkevm_circuits::evm_circuit::test::{get_test_degree, get_test_instance};
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
-use zkevm_circuits::state_circuit::StateCircuit;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::TxCircuit;
+use zkevm_circuits::state_circuit::test::StateCircuit;
+use zkevm_circuits::super_circuit::test::SuperCircuit;
+use zkevm_circuits::tx_circuit::test::TxCircuit;
 use zkevm_circuits::util::SubCircuit;
 use zkevm_circuits::witness::Block;
 

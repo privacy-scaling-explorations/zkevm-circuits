@@ -431,8 +431,8 @@ mod tests {
     use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
     use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
     use halo2_proofs::dev::{MockProver, VerifyFailure};
-    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
     use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
     use mock::TestContext;
 
     use crate::evm_circuit::witness::block_convert;

@@ -23,7 +23,7 @@ mod tests {
     use rand_chacha::ChaChaRng;
     use std::collections::HashMap;
     use std::env::var;
-    use zkevm_circuits::super_circuit::SuperCircuit;
+    use zkevm_circuits::super_circuit::test::SuperCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]

@@ -670,9 +670,9 @@ mod tests {
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
-    use halo2_proofs::halo2curves::bn256::Fr;
 
     use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
