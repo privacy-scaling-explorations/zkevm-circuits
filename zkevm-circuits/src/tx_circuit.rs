@@ -9,14 +9,13 @@ pub mod sign_verify;
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
-use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
     {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
+    circuit::{AssignedCell, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
 };
 use itertools::Itertools;
 use log::error;
@@ -352,12 +351,12 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;
-    use eth_types::address;
+    use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
     use halo2_proofs::{
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
+        circuit::{Layouter, SimpleFloorPlanner},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
-    use mock::AddrOrWallet;
 
     impl<F: Field> Circuit<F> for TxCircuit<F> {
         type Config = (TxCircuitConfig<F>, Challenges);
@@ -425,6 +424,8 @@ pub mod test {
 
     #[test]
     fn tx_circuit_2tx() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         const NUM_TXS: usize = 2;
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
@@ -447,6 +448,8 @@ pub mod test {
 
     #[test]
     fn tx_circuit_1tx() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 
@@ -463,6 +466,10 @@ pub mod test {
 
     #[test]
     fn tx_circuit_bad_address() {
+        use eth_types::address;
+        use halo2_proofs::halo2curves::bn256::Fr;
+        use mock::AddrOrWallet;
+
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 

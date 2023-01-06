@@ -1496,11 +1496,7 @@ fn raw_public_inputs_col<F: Field>(
 pub mod test {
     pub use super::*;
 
-    use crate::test_util::rand_tx;
-    use halo2_proofs::{
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
-    };
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -1579,6 +1575,8 @@ pub mod test {
 
     #[test]
     fn test_default_pi() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 8;
         let public_data = PublicData::default();
@@ -1589,6 +1587,9 @@ pub mod test {
 
     #[test]
     fn test_simple_pi() {
+        use crate::test_util::rand_tx;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 

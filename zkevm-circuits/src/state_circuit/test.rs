@@ -3,30 +3,21 @@ use crate::state_circuit::StateCircuitConfigArgs;
 use crate::table::{MptTable, RwTable};
 use crate::util::{Challenges, SubCircuitConfig};
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     util::SubCircuit,
     witness::{MptUpdates, Rw, RwMap},
 };
-use bus_mapping::operation::{
-    MemoryOp, Operation, OperationContainer, RWCounter, StackOp, StorageOp, RW,
-};
-use eth_types::{
-    address,
-    evm_types::{MemoryAddress, StackAddress},
-    Address, Field, ToAddress, Word, U256,
-};
-use gadgets::binary_number::AsBits;
+use eth_types::Field;
+
+use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
+
 use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
 use halo2_proofs::plonk::Error;
-use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
-    halo2curves::bn256::{Bn256, Fr},
-    plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
+    halo2curves::bn256::Fr,
+    plonk::{Advice, Circuit, Column, ConstraintSystem},
 };
-use rand::SeedableRng;
-use std::collections::{BTreeSet, HashMap};
-use strum::IntoEnumIterator;
+use std::collections::HashMap;
 
 const N_ROWS: usize = 1 << 16;
 
@@ -89,11 +80,13 @@ pub(crate) enum AdviceColumn {
     TagBit1,
     TagBit2,
     TagBit3,
-    LimbIndexBit0, // most significant bit
+    LimbIndexBit0,
+    // most significant bit
     LimbIndexBit1,
     LimbIndexBit2,
     LimbIndexBit3,
-    LimbIndexBit4, // least significant bit
+    LimbIndexBit4,
+    // least significant bit
     InitialValue,
 }
 
@@ -155,6 +148,14 @@ fn degree() {
 
 #[test]
 fn verifying_key_independent_of_rw_length() {
+    use bus_mapping::operation::RWCounter;
+    use bus_mapping::operation::RW;
+    use eth_types::evm_types::MemoryAddress;
+    use halo2_proofs::{
+        halo2curves::bn256::Bn256, plonk::keygen_vk, poly::kzg::commitment::ParamsKZG,
+    };
+    use rand::SeedableRng;
+
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
     let no_rows = StateCircuit::<Fr>::new(RwMap::default(), N_ROWS);
@@ -180,6 +181,13 @@ fn verifying_key_independent_of_rw_length() {
 
 #[test]
 fn state_circuit_simple_2() {
+    use bus_mapping::operation::RWCounter;
+    use bus_mapping::operation::RW;
+    use eth_types::{
+        evm_types::{MemoryAddress, StackAddress},
+        ToAddress, Word, U256,
+    };
+
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
@@ -259,6 +267,10 @@ fn state_circuit_simple_2() {
 
 #[test]
 fn state_circuit_simple_6() {
+    use bus_mapping::operation::RWCounter;
+    use bus_mapping::operation::RW;
+    use eth_types::{evm_types::MemoryAddress, ToAddress, Word, U256};
+
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
@@ -286,6 +298,10 @@ fn state_circuit_simple_6() {
 
 #[test]
 fn lexicographic_ordering_test_1() {
+    use bus_mapping::operation::RWCounter;
+    use bus_mapping::operation::RW;
+    use eth_types::{evm_types::MemoryAddress, ToAddress, Word, U256};
+
     let memory_op = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
@@ -308,6 +324,10 @@ fn lexicographic_ordering_test_1() {
 
 #[test]
 fn lexicographic_ordering_test_2() {
+    use bus_mapping::operation::RWCounter;
+    use bus_mapping::operation::RW;
+    use eth_types::evm_types::MemoryAddress;
+
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
         RW::WRITE,
@@ -323,6 +343,8 @@ fn lexicographic_ordering_test_2() {
 
 #[test]
 fn first_access_for_stack_is_write() {
+    use eth_types::U256;
+
     let rows = vec![
         Rw::Stack {
             rw_counter: 24,
@@ -345,6 +367,9 @@ fn first_access_for_stack_is_write() {
 
 #[test]
 fn diff_1_problem_repro() {
+    use crate::table::AccountFieldTag;
+    use eth_types::{Address, U256};
+
     let rows = vec![
         Rw::Account {
             rw_counter: 1,
@@ -369,6 +394,8 @@ fn diff_1_problem_repro() {
 
 #[test]
 fn storage_key_rlc() {
+    use eth_types::{Address, U256};
+
     let rows = vec![Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
@@ -384,6 +411,9 @@ fn storage_key_rlc() {
 
 #[test]
 fn tx_log_ok() {
+    use crate::table::TxLogFieldTag;
+    use eth_types::U256;
+
     let rows = vec![
         Rw::Stack {
             rw_counter: 1,
@@ -444,6 +474,9 @@ fn tx_log_ok() {
 
 #[test]
 fn tx_log_bad() {
+    use crate::table::TxLogFieldTag;
+    use eth_types::U256;
+
     // is_write is false
     let rows = vec![Rw::TxLog {
         rw_counter: 2,
@@ -460,6 +493,9 @@ fn tx_log_bad() {
 
 #[test]
 fn address_limb_mismatch() {
+    use crate::table::AccountFieldTag;
+    use eth_types::{address, U256};
+
     let rows = vec![Rw::Account {
         rw_counter: 1,
         is_write: false,
@@ -477,6 +513,9 @@ fn address_limb_mismatch() {
 
 #[test]
 fn address_limb_out_of_range() {
+    use crate::table::AccountFieldTag;
+    use eth_types::{address, U256};
+
     let rows = vec![Rw::Account {
         rw_counter: 1,
         is_write: false,
@@ -497,6 +536,8 @@ fn address_limb_out_of_range() {
 
 #[test]
 fn storage_key_mismatch() {
+    use eth_types::{Address, U256};
+
     let rows = vec![Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
@@ -516,6 +557,8 @@ fn storage_key_mismatch() {
 
 #[test]
 fn storage_key_byte_out_of_range() {
+    use eth_types::{Address, U256};
+
     let rows = vec![Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
@@ -543,6 +586,9 @@ fn storage_key_byte_out_of_range() {
 
 #[test]
 fn is_write_nonbinary() {
+    use crate::table::CallContextFieldTag;
+    use eth_types::U256;
+
     let rows = vec![Rw::CallContext {
         rw_counter: 1,
         is_write: false,
@@ -559,6 +605,9 @@ fn is_write_nonbinary() {
 
 #[test]
 fn nonlexicographic_order_tag() {
+    use crate::table::CallContextFieldTag;
+    use eth_types::U256;
+
     let first = Rw::Memory {
         rw_counter: 1,
         is_write: true,
@@ -580,6 +629,9 @@ fn nonlexicographic_order_tag() {
 
 #[test]
 fn nonlexicographic_order_field_tag() {
+    use crate::table::CallContextFieldTag;
+    use eth_types::U256;
+
     let first = Rw::CallContext {
         rw_counter: 5,
         is_write: true,
@@ -601,6 +653,9 @@ fn nonlexicographic_order_field_tag() {
 
 #[test]
 fn nonlexicographic_order_id() {
+    use crate::table::CallContextFieldTag;
+    use eth_types::U256;
+
     let first = Rw::CallContext {
         rw_counter: 1,
         is_write: true,
@@ -622,6 +677,9 @@ fn nonlexicographic_order_id() {
 
 #[test]
 fn nonlexicographic_order_address() {
+    use crate::table::AccountFieldTag;
+    use eth_types::{address, U256};
+
     let first = Rw::Account {
         rw_counter: 50,
         is_write: true,
@@ -645,6 +703,8 @@ fn nonlexicographic_order_address() {
 
 #[test]
 fn nonlexicographic_order_storage_key_upper() {
+    use eth_types::{Address, U256};
+
     let first = Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
@@ -672,6 +732,8 @@ fn nonlexicographic_order_storage_key_upper() {
 
 #[test]
 fn nonlexicographic_order_storage_key_lower() {
+    use eth_types::{Address, U256};
+
     let first = Rw::AccountStorage {
         rw_counter: 1,
         is_write: false,
@@ -699,6 +761,9 @@ fn nonlexicographic_order_storage_key_lower() {
 
 #[test]
 fn nonlexicographic_order_rw_counter() {
+    use crate::table::CallContextFieldTag;
+    use eth_types::U256;
+
     let first = Rw::CallContext {
         rw_counter: 1,
         is_write: false,
@@ -720,6 +785,9 @@ fn nonlexicographic_order_rw_counter() {
 
 #[test]
 fn lexicographic_ordering_previous_limb_differences_nonzero() {
+    use crate::table::AccountFieldTag;
+    use eth_types::{address, Word};
+
     let rows = vec![
         Rw::TxRefund {
             rw_counter: 1,
@@ -851,6 +919,8 @@ fn invalid_memory_value() {
 
 #[test]
 fn stack_read_before_write() {
+    use eth_types::U256;
+
     let rows = vec![Rw::Stack {
         rw_counter: 9,
         is_write: false,
@@ -864,6 +934,8 @@ fn stack_read_before_write() {
 
 #[test]
 fn invalid_stack_address() {
+    use eth_types::U256;
+
     let rows = vec![Rw::Stack {
         rw_counter: 9,
         is_write: true,
@@ -877,6 +949,8 @@ fn invalid_stack_address() {
 
 #[test]
 fn invalid_stack_address_change() {
+    use eth_types::U256;
+
     let rows = vec![
         Rw::Stack {
             rw_counter: 9,
@@ -902,6 +976,12 @@ fn invalid_stack_address_change() {
 
 #[test]
 fn invalid_tags() {
+    use crate::table::RwTableTag;
+
+    use gadgets::binary_number::AsBits;
+    use std::collections::BTreeSet;
+    use strum::IntoEnumIterator;
+
     let first_row_offset = -isize::try_from(N_ROWS).unwrap();
     let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
     for i in 0..16 {
@@ -927,6 +1007,8 @@ fn invalid_tags() {
 
 #[test]
 fn bad_initial_stack_value() {
+    use eth_types::Word;
+
     let rows = vec![Rw::Stack {
         rw_counter: 1,
         is_write: true,
@@ -945,6 +1027,8 @@ fn bad_initial_stack_value() {
 
 #[test]
 fn bad_initial_tx_access_list_account_value() {
+    use eth_types::address;
+
     let rows = vec![Rw::TxAccessListAccount {
         rw_counter: 1,
         is_write: true,
@@ -986,6 +1070,9 @@ fn bad_initial_tx_refund_value() {
 
 #[test]
 fn bad_initial_tx_log_value() {
+    use crate::table::TxLogFieldTag;
+    use eth_types::U256;
+
     let rows = vec![Rw::TxLog {
         rw_counter: 1,
         is_write: true,
@@ -1007,6 +1094,8 @@ fn bad_initial_tx_log_value() {
 #[test]
 #[ignore = "TxReceipt constraints not yet implemented"]
 fn bad_initial_tx_receipt_value() {
+    use crate::table::TxReceiptFieldTag;
+
     let rows = vec![Rw::TxReceipt {
         rw_counter: 1,
         is_write: false,
