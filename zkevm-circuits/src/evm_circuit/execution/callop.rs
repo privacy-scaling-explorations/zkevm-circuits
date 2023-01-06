@@ -39,19 +39,11 @@ pub(crate) struct CallOpGadget<F> {
     is_static: Cell<F>,
     depth: Cell<F>,
     call: CallGadget<F, true>,
-    // gas: Word<F>,
-    // code_address: Word<F>,
-    // value: Word<F>,
     current_value: Word<F>,
-    // is_success: Cell<F>,
-    // gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     value_is_zero: IsZeroGadget<F>,
-    // cd_address: MemoryAddressGadget<F>,
-    // rd_address: MemoryAddressGadget<F>,
-    // memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     transfer: TransferGadget<F>,
     callee_exists: Cell<F>,
     callee_code_hash: Cell<F>,
@@ -132,13 +124,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // Propagate rw_counter_end_of_reversion and is_persistent
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
-        // let is_success = call_gadget.is_success().expr();
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
             callee_reversion_info.is_persistent(),
-            reversion_info.is_persistent() * call_gadget.is_success().expr(),
+            reversion_info.is_persistent() * call_gadget.is_success.expr(),
         );
-        cb.condition(call_gadget.is_success().expr() * (1.expr() - reversion_info.is_persistent()), |cb| {
+        cb.condition(call_gadget.is_success.expr() * (1.expr() - reversion_info.is_persistent()), |cb| {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
@@ -146,9 +137,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        // let value = call_gadget.value();
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&call_gadget.value().cells));
-        // let value_is_zero = call_gadget.value_is_zero(cb);
+        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&call_gadget.value.cells));
         let has_value = select::expr(
             is_delegatecall.expr(),
             0.expr(),
@@ -169,7 +158,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb,
                 caller_address.expr(),
                 callee_address.expr(),
-                call_gadget.value().clone(),
+                call_gadget.value.clone(),
                 &mut callee_reversion_info,
             )
         });
@@ -187,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value`.
         let enough_transfer_balance =
-            CmpWordsGadget::construct(cb, call_gadget.value(), transfer.sender().balance_prev());
+            CmpWordsGadget::construct(cb, &call_gadget.value, transfer.sender().balance_prev());
         cb.condition(is_callcode.expr(), |cb| {
             cb.require_zero(
                 "transfer_value <= caller_balance for CALLCODE opcode",
@@ -238,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let capped_callee_gas_left =
             MinMaxGadget::construct(cb, call_gadget.gas_expr(), all_but_one_64th_gas.clone());
         let callee_gas_left = select::expr(
-            call_gadget.gas_is_u64().expr(),
+            call_gadget.gas_is_u64.expr(),
             capped_callee_gas_left.min(),
             all_but_one_64th_gas,
         );
@@ -249,7 +238,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
-        let memory_expansion = call_gadget.memory_expansion();
+        let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for field_tag in [
@@ -317,8 +306,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             }
 
             // Setup next call's context.
-            let cd_address = call_gadget.cd_address();
-            let rd_address = call_gadget.rd_address();
+            let cd_address = call_gadget.cd_address.clone();
+            let rd_address = call_gadget.rd_address.clone();
             for (field_tag, value) in [
                 (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
                 (CallContextFieldTag::TxId, tx_id.expr()),
@@ -334,12 +323,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     select::expr(
                         is_delegatecall.expr(),
                         current_value.expr(),
-                        call_gadget.value().expr(),
+                        call_gadget.value.expr(),
                     ),
                 ),
                 (
                     CallContextFieldTag::IsSuccess,
-                    call_gadget.is_success().expr(),
+                    call_gadget.is_success.expr(),
                 ),
                 (
                     CallContextFieldTag::IsStatic,

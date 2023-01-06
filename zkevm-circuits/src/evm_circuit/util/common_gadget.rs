@@ -454,15 +454,15 @@ impl<F: Field> TransferGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallGadget<F, const NORMAL: bool> {
-    is_success: Cell<F>,
+    pub is_success: Cell<F>,
 
-    gas: Word<F>,
-    gas_is_u64: IsZeroGadget<F>,
-    code_address: Word<F>,
-    value: Word<F>,
-    cd_address: MemoryAddressGadget<F>,
-    rd_address: MemoryAddressGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+    pub gas: Word<F>,
+    pub gas_is_u64: IsZeroGadget<F>,
+    pub callee_address: Word<F>,
+    pub value: Word<F>,
+    pub cd_address: MemoryAddressGadget<F>,
+    pub rd_address: MemoryAddressGadget<F>,
+    pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 }
 
 impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
@@ -471,7 +471,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         is_call_or_is_call_code: Expression<F>,
     ) -> Self {
         let gas_word = cb.query_word();
-        let code_address_word = cb.query_word();
+        let callee_address_word = cb.query_word();
         let value = cb.query_word();
         let cd_offset = cb.query_cell();
         let cd_length = cb.query_rlc();
@@ -481,7 +481,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
 
         // Lookup values from stack
         cb.stack_pop(gas_word.expr());
-        cb.stack_pop(code_address_word.expr());
+        cb.stack_pop(callee_address_word.expr());
 
         if NORMAL {
             // `CALL` opcode has an additional stack pop `value`.
@@ -506,19 +506,19 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
-        // `code_address` is poped from stack and used to check if it exists in
+        // `callee_address` is poped from stack and used to check if it exists in
         // access list and get code hash.
         // For CALLCODE, both caller and callee addresses are `current_callee_address`.
         // For DELEGATECALL, caller address is `current_caller_address` and
         // callee address is `current_callee_address`.
         // For both CALL and STATICCALL, caller address is
-        // `current_callee_address` and callee address is `code_address`.
-        // let code_address =
+        // `current_callee_address` and callee address is `callee_address`.
+        // let callee_address =
         // from_bytes::expr(&code_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
         Self {
             is_success,
-            code_address: code_address_word,
+            callee_address: callee_address_word,
             gas: gas_word,
             gas_is_u64,
             value,
@@ -528,45 +528,12 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         }
     }
 
-    pub fn code_address(&self) -> &Word<F> {
-        &self.code_address
-    }
-
     pub fn code_address_expr(&self) -> Expression<F> {
-        from_bytes::expr(&self.code_address.cells[..N_BYTES_ACCOUNT_ADDRESS])
-    }
-
-    pub fn cd_address(&self) -> &MemoryAddressGadget<F> {
-        &self.cd_address
-    }
-
-    pub fn rd_address(&self) -> &MemoryAddressGadget<F> {
-        &self.rd_address
-    }
-
-    // TODO: try to return by ref
-    pub fn value(&self) -> &Word<F> {
-        &self.value
-    }
-
-    pub fn gas(&self) -> &Word<F> {
-        &self.gas
+        from_bytes::expr(&self.callee_address.cells[..N_BYTES_ACCOUNT_ADDRESS])
     }
 
     pub fn gas_expr(&self) -> Expression<F> {
         from_bytes::expr(&self.gas.cells[..N_BYTES_GAS])
-    }
-
-    pub fn is_success(&self) -> &Cell<F> {
-        &self.is_success
-    }
-
-    pub fn gas_is_u64(&self) -> &IsZeroGadget<F> {
-        &self.gas_is_u64
-    }
-
-    pub fn memory_expansion(&self) -> &MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE> {
-        &self.memory_expansion
     }
 
     // pub fn value_is_zero(&self, cb: &mut ConstraintBuilder<F>) -> IsZeroGadget<F>
@@ -621,7 +588,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         gas: U256,
-        code_address: U256,
+        callee_address: U256,
         value: U256,
         is_success: U256,
         cd_offset: U256,
@@ -632,8 +599,8 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         randomness: F,
     ) -> Result<(u64), Error> {
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
-        self.code_address
-            .assign(region, offset, Some(code_address.to_le_bytes()))?;
+        self.callee_address
+            .assign(region, offset, Some(callee_address.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         if NORMAL {

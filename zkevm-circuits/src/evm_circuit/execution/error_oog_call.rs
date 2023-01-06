@@ -28,14 +28,8 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     tx_id: Cell<F>,
     is_static: Cell<F>,
     call: CallGadget<F, false>,
-    // gas: Word<F>,
-    // callee_address: Word<F>,
-    // value: Word<F>,
     is_warm: Cell<F>,
     value_is_zero: IsZeroGadget<F>,
-    // cd_address: MemoryAddressGadget<F>,
-    // rd_address: MemoryAddressGadget<F>,
-    // memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     balance: Word<F>,
     callee_nonce: Cell<F>,
     callee_code_hash: Cell<F>,
@@ -99,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         );
         let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
 
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&call_gadget.value().cells));
+        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&call_gadget.value.cells));
         let has_value = 1.expr() - value_is_zero.expr();
         let gas_cost =
             call_gadget.gas_cost(cb, is_warm.expr(), has_value, 1.expr(), is_empty_account);
