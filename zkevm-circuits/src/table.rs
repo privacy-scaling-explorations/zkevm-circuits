@@ -385,6 +385,7 @@ impl DynamicTableColumns for RwTable {
         ]
     }
 }
+
 impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
@@ -734,7 +735,8 @@ pub struct KeccakTable {
     /// True when the row is enabled
     pub is_enabled: Column<Advice>,
     /// Byte array input as `RLC(reversed(input))`
-    pub input_rlc: Column<Advice>, // RLC of input bytes
+    pub input_rlc: Column<Advice>,
+    // RLC of input bytes
     /// Byte array input length
     pub input_len: Column<Advice>,
     /// RLC of the hash result
@@ -1257,6 +1259,8 @@ impl ExpTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        pad_column: Vec<Column<Advice>>,
+        pad_size: usize,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "exponentiation table",
@@ -1278,14 +1282,15 @@ impl ExpTable {
                 }
 
                 // pad an empty row
-                let row = [F::from_u128(0); 6];
-                for (column, value) in exp_table_columns.iter().zip_eq(row) {
-                    region.assign_advice(
-                        || format!("exponentiation table row {}", offset),
-                        *column,
-                        offset,
-                        || Value::known(value),
-                    )?;
+                for column in pad_column.iter() {
+                    for i in 0..pad_size {
+                        region.assign_advice(
+                            || format!("exp_table padding steps: {}", offset + i),
+                            *column,
+                            offset + i,
+                            || Value::known(F::zero()),
+                        )?;
+                    }
                 }
 
                 Ok(())
