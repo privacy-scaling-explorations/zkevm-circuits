@@ -705,8 +705,9 @@ fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
         .fold(F::zero(), |acc, b| acc * F::from(256) + F::from(*b as u64))
 }
 
-#[cfg(test)]
-mod sign_verify_tests {
+/// sign_verify circuit test
+#[cfg(any(feature = "test", test))]
+mod test {
     use super::*;
     use crate::util::Challenges;
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
@@ -722,7 +723,6 @@ mod sign_verify_tests {
         },
         plonk::Circuit,
     };
-    use pretty_assertions::assert_eq;
     use rand::{RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 

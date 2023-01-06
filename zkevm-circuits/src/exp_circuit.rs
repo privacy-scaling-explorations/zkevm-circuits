@@ -6,7 +6,7 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };

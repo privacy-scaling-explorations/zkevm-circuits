@@ -1,6 +1,7 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
+
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::*,
@@ -264,28 +265,31 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
+/// evm circuit
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use super::*;
     use crate::{
-        evm_circuit::{witness::Block, EvmCircuitConfig},
+        evm_circuit::{step::ExecutionState, witness::Block, EvmCircuitConfig},
         exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::{power_of_randomness_from_instance, Challenges},
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use eth_types::{geth_types::GethData, Field, Word};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Field, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use mock::test_ctx::{helpers::*, TestContext};
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
+    use strum::IntoEnumIterator;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -498,19 +502,6 @@ pub mod test {
         let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
         prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
-}
-
-#[cfg(test)]
-mod evm_circuit_stats {
-    use super::test::*;
-    use super::*;
-    use crate::{evm_circuit::step::ExecutionState, witness::block_convert};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use mock::test_ctx::{helpers::*, TestContext};
-    use strum::IntoEnumIterator;
 
     fn get_empty_witness_block() -> Block<Fr> {
         let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
