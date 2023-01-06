@@ -29,7 +29,6 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     is_static: Cell<F>,
     call: CallGadget<F, false>,
     is_warm: Cell<F>,
-    value_is_zero: IsZeroGadget<F>,
     balance: Word<F>,
     callee_nonce: Cell<F>,
     callee_code_hash: Cell<F>,
@@ -57,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
-        let call_gadget = CallGadget::construct(cb, 0.expr());
+        let call_gadget = CallGadget::construct(cb, 0.expr(), 0.expr(), 0.expr(), 0.expr());
 
         // Add callee to access list
         let is_warm = cb.query_bool();
@@ -92,11 +91,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             ),
         );
         let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
-
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&call_gadget.value.cells));
-        let has_value = 1.expr() - value_is_zero.expr();
-        let gas_cost =
-            call_gadget.gas_cost(cb, is_warm.expr(), has_value, 1.expr(), is_empty_account);
+        let gas_cost = call_gadget.gas_cost(cb, is_warm.expr(), 1.expr(), is_empty_account);
         // Check if the amount of gas available is less than the amount of gas
         // required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
@@ -148,7 +143,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_static,
             call: call_gadget,
             is_warm,
-            value_is_zero,
             balance,
             callee_nonce,
             callee_code_hash,
@@ -217,9 +211,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-
-        self.value_is_zero
-            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
 
         // new assignment
         self.balance

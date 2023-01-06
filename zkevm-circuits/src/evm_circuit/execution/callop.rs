@@ -43,7 +43,6 @@ pub(crate) struct CallOpGadget<F> {
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
-    value_is_zero: IsZeroGadget<F>,
     transfer: TransferGadget<F>,
     callee_exists: Cell<F>,
     callee_code_hash: Cell<F>,
@@ -98,7 +97,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         cb.range_lookup(depth.expr(), 1024);
 
-        let call_gadget = CallGadget::construct(cb, is_call.expr() + is_callcode.expr());
+        let call_gadget = CallGadget::construct(
+            cb,
+            is_call.expr(),
+            is_callcode.expr(),
+            is_delegatecall.expr(),
+            is_staticcall.expr(),
+        );
         // let code_address = call_gadget.code_address_expr();
         let caller_address = select::expr(
             is_delegatecall.expr(),
@@ -137,15 +142,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&call_gadget.value.cells));
-        let has_value = select::expr(
-            is_delegatecall.expr(),
-            0.expr(),
-            1.expr() - value_is_zero.expr(),
-        );
-
-        // let has_value = call_gadget.has_value(cb, is_delegatecall.expr());
-        cb.condition(has_value.clone(), |cb| {
+        cb.condition(call_gadget.has_value.clone(), |cb| {
             cb.require_zero(
                 "CALL with value must not be in static call stack",
                 is_static.expr(),
@@ -215,7 +212,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_cost = call_gadget.gas_cost(
             cb,
             is_warm_prev.expr(),
-            has_value.clone(),
+            // has_value.clone(),
             is_call.expr(),
             (1.expr() - callee_exists.expr()),
         );
@@ -231,8 +228,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             capped_callee_gas_left.min(),
             all_but_one_64th_gas,
         );
-
-        // println!("{:?}, {:?}, {:?}, {:?}, {:?}, {:?}", gas_cost.fmt());
 
         // TODO: Handle precompiled
 
@@ -269,7 +264,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 program_counter: Delta(1.expr()),
                 stack_pointer: Delta(stack_pointer_delta.expr()),
                 gas_left: Delta(
-                    has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
+                    call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr()
+                        - gas_cost.clone(),
                 ),
                 memory_word_size: To(memory_expansion.next_memory_word_size()),
                 // For CALL opcode, `transfer` invocation has two account write.
@@ -345,7 +341,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             }
 
             // Give gas stipend if value is not zero
-            let callee_gas_left = callee_gas_left + has_value * GAS_STIPEND_CALL_WITH_VALUE.expr();
+            let callee_gas_left = callee_gas_left
+                + call_gadget.has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr();
 
             // For CALL opcode, it has an extra stack pop `value` and two account write for
             // `transfer` call (+3).
@@ -391,7 +388,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_warm,
             is_warm_prev,
             callee_reversion_info,
-            value_is_zero,
             transfer,
             callee_exists,
             callee_code_hash,
@@ -568,8 +564,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_rw_counter_end_of_reversion.low_u64() as usize,
             callee_is_persistent.low_u64() != 0,
         )?;
-        self.value_is_zero
-            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
 
         self.transfer.assign(
             region,
@@ -591,21 +585,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
         )?;
         let has_value = !value.is_zero() && !is_delegatecall;
-        // let gas_cost = if is_warm_prev {
-        //     GasCost::WARM_ACCESS.as_u64()
-        // } else {
-        //     GasCost::COLD_ACCOUNT_ACCESS.as_u64()
-        // } + if has_value {
-        //     GasCost::CALL_WITH_VALUE.as_u64()
-        //         // Only CALL opcode could invoke transfer to make empty account into
-        // non-empty.     + if is_call && !callee_exists {
-        //             GasCost::NEW_ACCOUNT.as_u64()
-        //         } else {
-        //             0
-        //         }
-        // } else {
-        //     0
-        // } + memory_expansion_gas_cost;
         let gas_cost = self.call.gen_gas_cost(
             region,
             offset,

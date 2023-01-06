@@ -463,12 +463,18 @@ pub(crate) struct CallGadget<F, const NORMAL: bool> {
     pub cd_address: MemoryAddressGadget<F>,
     pub rd_address: MemoryAddressGadget<F>,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
+
+    pub value_is_zero: IsZeroGadget<F>,
+    pub has_value: Expression<F>,
 }
 
 impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        is_call_or_is_call_code: Expression<F>,
+        is_call: Expression<F>,
+        is_callcode: Expression<F>,
+        is_delegatecall: Expression<F>,
+        is_staticcall: Expression<F>,
     ) -> Self {
         let gas_word = cb.query_word();
         let callee_address_word = cb.query_word();
@@ -480,12 +486,19 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         let is_success = cb.query_bool();
 
         // Lookup values from stack
+        // `callee_address` is poped from stack and used to check if it exists in
+        // access list and get code hash.
+        // For CALLCODE, both caller and callee addresses are `current_callee_address`.
+        // For DELEGATECALL, caller address is `current_caller_address` and
+        // callee address is `current_callee_address`.
+        // For both CALL and STATICCALL, caller address is
+        // `current_callee_address` and callee address is `callee_address`.
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
 
         if NORMAL {
             // `CALL` opcode has an additional stack pop `value`.
-            cb.condition(is_call_or_is_call_code, |cb| cb.stack_pop(value.expr()));
+            cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
         } else {
             cb.stack_pop(value.expr());
         }
@@ -500,21 +513,23 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         }
 
         // Recomposition of random linear combination to integer
-        // let gas = from_bytes::expr(&gas_word.cells[..N_BYTES_GAS]);
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
         let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
         let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
-        // `callee_address` is poped from stack and used to check if it exists in
-        // access list and get code hash.
-        // For CALLCODE, both caller and callee addresses are `current_callee_address`.
-        // For DELEGATECALL, caller address is `current_caller_address` and
-        // callee address is `current_callee_address`.
-        // For both CALL and STATICCALL, caller address is
-        // `current_callee_address` and callee address is `callee_address`.
-        // let callee_address =
-        // from_bytes::expr(&code_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+
+        //
+        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
+        let has_value = if NORMAL {
+            select::expr(
+                is_delegatecall.expr(),
+                0.expr(),
+                1.expr() - value_is_zero.expr(),
+            )
+        } else {
+            1.expr() - value_is_zero.expr()
+        };
 
         Self {
             is_success,
@@ -525,6 +540,8 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             cd_address,
             rd_address,
             memory_expansion,
+            value_is_zero,
+            has_value,
         }
     }
 
@@ -536,24 +553,10 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         from_bytes::expr(&self.gas.cells[..N_BYTES_GAS])
     }
 
-    // pub fn value_is_zero(&self, cb: &mut ConstraintBuilder<F>) -> IsZeroGadget<F>
-    // {     IsZeroGadget::construct(cb, sum::expr(&self.value.cells))
-    // }
-
-    // pub fn has_value(
-    //     &self,
-    //     cb: &mut ConstraintBuilder<F>,
-    //     is_delegatecall: Expression<F>,
-    // ) -> Expression<F> {
-    //     let value_is_zero = IsZeroGadget::construct(cb,
-    // sum::expr(&self.value.cells));     select::expr(is_delegatecall,
-    // 0.expr(), 1.expr() - value_is_zero.expr()) }
-
     pub fn gas_cost(
         &self,
         cb: &mut ConstraintBuilder<F>,
         is_warm_prev: Expression<F>,
-        has_value: Expression<F>,
         is_call: Expression<F>,
         is_empty: Expression<F>,
     ) -> Expression<F> {
@@ -561,7 +564,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             is_warm_prev,
             GasCost::WARM_ACCESS.expr(),
             GasCost::COLD_ACCOUNT_ACCESS.expr(),
-        ) + has_value.clone()
+        ) + self.has_value.clone()
             * (GasCost::CALL_WITH_VALUE.expr()
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
                 + is_call * is_empty * GasCost::NEW_ACCOUNT.expr())
@@ -625,6 +628,9 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             memory_word_size,
             [cd_address, rd_address],
         )?;
+
+        self.value_is_zero
+            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
 
         Ok((memory_expansion_gas_cost))
     }
