@@ -1564,9 +1564,11 @@ mod tests {
 
     #[test]
     fn test_mpt() {
-        // for debugging:
+        // run from terminal:
         let path = "src/mpt_circuit/tests";
-        // let path = "tests";
+
+        // run from VSCode:
+        // let path = "zkevm-circuits/src/mpt_circuit/tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
