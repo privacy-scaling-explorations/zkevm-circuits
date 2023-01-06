@@ -249,7 +249,7 @@ fn handle_copy(
     length: usize,
 ) -> Result<Vec<u8>, Error> {
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
-    let dst_id = NumberOrHash::Hash(H256(keccak256(&initialization_bytes.clone())));
+    let dst_id = NumberOrHash::Hash(H256(keccak256(&initialization_bytes)));
     let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
         .code
         .iter()
@@ -269,7 +269,7 @@ fn handle_copy(
     state.push_copy(CopyEvent {
         rw_counter_start,
         src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(callee_id.try_into().unwrap()),
+        src_id: NumberOrHash::Number(callee_id),
         src_addr: offset.try_into().unwrap(),
         src_addr_end: (offset + length).try_into().unwrap(),
         dst_type: CopyDataType::Bytecode,

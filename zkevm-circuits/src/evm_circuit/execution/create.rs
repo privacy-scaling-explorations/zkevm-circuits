@@ -271,7 +271,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.condition(is_create2.expr(), |cb| {
             // TODO: some comments here explaining what's going on....
             let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
-            let randomness_raised_to_32 = randomness_raised_to_16.clone().square();
+            let randomness_raised_to_32 = randomness_raised_to_16.square();
             let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
             let randomness_raised_to_84 =
                 randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
@@ -375,7 +375,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let mut code_hash = keccak256(&values);
         code_hash.reverse();
         let code_hash_rlc =
-            RandomLinearCombination::random_linear_combine(code_hash.clone(), block.randomness);
+            RandomLinearCombination::random_linear_combine(code_hash, block.randomness);
         self.code_hash
             .assign(region, offset, Value::known(code_hash_rlc))?;
 
@@ -418,7 +418,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let mut caller_address_bytes = call.callee_address.to_fixed_bytes();
         caller_address_bytes.reverse();
         self.caller_address
-            .assign(region, offset, Some(caller_address_bytes.clone()))?;
+            .assign(region, offset, Some(caller_address_bytes))?;
 
         let caller_nonce = block.rws
             [step.rw_indices[9 + usize::from(is_create2) + copy_rw_increase]]
@@ -473,7 +473,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             offset,
             (step.gas_left
                 - GasCost::CREATE.as_u64()
-                - u64::try_from(memory_expansion_gas_cost).unwrap()
+                - memory_expansion_gas_cost
                 - if is_create2 {
                     u64::try_from(initialization_code_word_size).unwrap()
                         * GasCost::COPY_SHA3.as_u64()
@@ -558,8 +558,8 @@ impl<F: Field> RlpU64Gadget<F> {
         cb.condition(most_significant_byte_is_zero.expr(), |cb| {
             cb.require_zero("if most significant byte is 0, value is 0", value.clone());
         });
-        for i in 0..N_BYTES_U64 {
-            cb.condition(is_most_significant_byte[i].expr(), |cb| {
+        for (i, is_most_significant) in is_most_significant_byte.iter().enumerate() {
+            cb.condition(is_most_significant.expr(), |cb| {
                 cb.require_equal(
                     "most significant byte is non-zero",
                     most_significant_byte_is_zero.expr(),
@@ -602,7 +602,7 @@ impl<F: Field> RlpU64Gadget<F> {
             offset,
             most_significant_byte_index
                 .map(|i| u64::from(bytes[i]).into())
-                .unwrap_or(F::zero()),
+                .unwrap_or_default(),
         )?;
         self.bytes.assign(region, offset, Some(bytes))?;
         for i in 0..N_BYTES_U64 {
@@ -813,7 +813,7 @@ mod test {
     }
 
     #[test]
-    fn test_empty_initialization_code() {
+    fn test_create_empty_initialization_code() {
         for is_create2 in [true, false] {
             let caller = Account {
                 address: *CALLER_ADDRESS,
