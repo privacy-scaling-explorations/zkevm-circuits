@@ -795,7 +795,7 @@ mod test {
 
     #[test]
     fn test_create_rlp_nonce() {
-        for nonce in [0, 1, 255, 256, 0x10000, u64::MAX - 1] {
+        for nonce in [0, 1, 127, 128, 255, 256, 0x10000, u64::MAX - 1] {
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: creater_bytecode(initialization_bytecode(true), false, true).into(),
