@@ -4,7 +4,7 @@ mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
-#[cfg(test)]
+#[cfg(any(feature = "test", test))]
 mod test;
 
 use crate::{
@@ -28,7 +28,7 @@ use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
-#[cfg(test)]
+#[cfg(any(feature = "test", test))]
 use std::collections::HashMap;
 use std::{iter::once, marker::PhantomData};
 
@@ -349,7 +349,7 @@ pub struct StateCircuit<F> {
     pub rows: Vec<Rw>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
-    #[cfg(test)]
+    #[cfg(any(feature = "test", test))]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
 }
@@ -363,7 +363,7 @@ impl<F: Field> StateCircuit<F> {
             rows,
             updates,
             n_rows,
-            #[cfg(test)]
+            #[cfg(any(feature = "test", test))]
             overrides: HashMap::new(),
             _marker: PhantomData::default(),
         }
@@ -439,51 +439,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     /// powers of randomness for instance columns
     fn instance(&self) -> Vec<Vec<F>> {
         vec![]
-    }
-}
-
-#[cfg(any(feature = "test", test))]
-impl<F: Field> Circuit<F> for StateCircuit<F>
-where
-    F: Field,
-{
-    type Config = (StateCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let rw_table = RwTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            StateCircuitConfig::new(
-                meta,
-                StateCircuitConfigArgs {
-                    rw_table,
-                    mpt_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        config
-            .mpt_table
-            .load(&mut layouter, &self.updates, challenges.evm_word())?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
