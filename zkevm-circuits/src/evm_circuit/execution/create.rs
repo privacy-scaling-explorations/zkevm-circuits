@@ -196,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             * initialization_code_word_size.quotient();
 
         let gas_cost = GasCost::CREATE.expr() + memory_expansion.gas_cost() + keccak_gas_cost;
-        let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost;
+        let gas_remaining = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let gas_left = ConstantDivisionGadget::construct(cb, gas_remaining.clone(), 64);
         let callee_gas_left = gas_remaining - gas_left.quotient();
         for (field_tag, value) in [
@@ -242,31 +242,29 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }
 
-        cb.condition(initialization_code.has_length(), |cb| cb.require_step_state_transition(StepStateTransition {
-            rw_counter: Delta(cb.rw_counter_offset()),
-            call_id: To(callee_call_id.expr()),
-            is_root: To(false.expr()),
-            is_create: To(true.expr()),
-            code_hash: To(code_hash.expr()),
-            gas_left: To(callee_gas_left),
-            reversible_write_counter: To(3.expr()),
-            ..StepStateTransition::new_context()
-        }));
+        cb.condition(initialization_code.has_length(), |cb| {
+            cb.require_step_state_transition(StepStateTransition {
+                rw_counter: Delta(cb.rw_counter_offset()),
+                call_id: To(callee_call_id.expr()),
+                is_root: To(false.expr()),
+                is_create: To(true.expr()),
+                code_hash: To(code_hash.expr()),
+                gas_left: To(callee_gas_left),
+                reversible_write_counter: To(3.expr()),
+                ..StepStateTransition::new_context()
+            })
+        });
 
-        // cb.condition(not::expr(initialization_code.has_length()), |cb| cb.require_step_state_transition(StepStateTransition {
-        //     rw_counter: Delta(cb.rw_counter_offset()),
-        //     program_counter: Delta(1.expr()),
-        //     stack_pointer: Delta(1.expr()),
-        //     gas_left: To(callee_gas_left),
-        //     reversible_write_counter: To(3.expr()),
-        //     ..StepStateTransition::default()
-        //
-        //     rw_counter: Delta(3.expr()),
-        //     program_counter: Delta(1.expr()),
-        //     stack_pointer: Delta(1.expr()),
-        //     gas_left: Delta(-OpcodeId::MUL.constant_gas_cost().expr()),
-        //     ..Default::default()
-        // });
+        cb.condition(not::expr(initialization_code.has_length()), |cb| {
+            cb.require_step_state_transition(StepStateTransition {
+                rw_counter: Delta(cb.rw_counter_offset()),
+                program_counter: Delta(1.expr()),
+                stack_pointer: Delta(2.expr() + is_create2.expr()),
+                gas_left: Delta(-gas_cost),
+                reversible_write_counter: Delta(5.expr()),
+                ..Default::default()
+            })
+        });
 
         let keccak_input = cb.query_cell();
         let keccak_input_length = cb.query_cell();
@@ -824,7 +822,12 @@ mod test {
                 balance: eth(10),
                 ..Default::default()
             };
-            assert_eq!(run_test_circuits(test_context(caller), None), Ok(()));
+            assert_eq!(
+                run_test_circuits(test_context(caller), None),
+                Ok(()),
+                "is_create2 = {:?}",
+                is_create2
+            );
         }
     }
 }
