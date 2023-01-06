@@ -140,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
-        // `code_address` is popped from stack and used to check if it exists in
+        // `code_address` is poped from stack and used to check if it exists in
         // access list and get code hash.
         // For CALLCODE, both caller and callee addresses are
         // `current_callee_address`.
