@@ -7,7 +7,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Selector},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -425,8 +425,9 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 }
 
+/// exp_circuit test
 #[cfg(any(feature = "test", test))]
-mod tests {
+pub mod test {
     use bus_mapping::{circuit_input_builder::CircuitInputBuilder, evm::OpcodeId, mock::BlockData};
     use eth_types::{bytecode, geth_types::GethData, Bytecode, Word};
     use halo2_proofs::circuit::{Layouter, SimpleFloorPlanner};
@@ -436,7 +437,7 @@ mod tests {
     use mock::TestContext;
 
     use crate::evm_circuit::witness::block_convert;
-    use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
+    pub use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
     use crate::table::ExpTable;
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use crate::witness::Block;

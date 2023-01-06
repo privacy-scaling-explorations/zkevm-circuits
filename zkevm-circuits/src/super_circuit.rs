@@ -146,7 +146,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
-SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -240,18 +240,14 @@ SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
     }
 }
 
-// TODO: Add tests
-// - multiple txs == MAX_TXS
-// - multiple txs < MAX_TXS
-// - max_rws padding
-// - evm_rows padding
-
 /// super circuit test
 #[cfg(any(feature = "test", test))]
 pub mod test {
     pub use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use log::error;
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -392,8 +388,11 @@ pub mod test {
                 Value::known(block.randomness),
             )?;
 
-            self.keccak_circuit
-                .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
+            self.keccak_circuit.synthesize_sub(
+                &config.keccak_circuit,
+                &challenges,
+                &mut layouter,
+            )?;
             self.bytecode_circuit.synthesize_sub(
                 &config.bytecode_circuit,
                 &challenges,

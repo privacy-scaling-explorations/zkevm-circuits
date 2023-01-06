@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateCircuitConfig};
+pub use super::{StateCircuit, StateCircuitConfig};
 use crate::state_circuit::StateCircuitConfigArgs;
 use crate::table::{MptTable, RwTable};
 use crate::util::{Challenges, SubCircuitConfig};
@@ -75,7 +75,7 @@ where
 }
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum AdviceColumn {
+pub(crate) enum AdviceColumn {
     IsWrite,
     Address,
     AddressLimb0,
@@ -101,7 +101,7 @@ pub enum AdviceColumn {
 }
 
 impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
+    pub(crate) fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
         match self {
             Self::IsWrite => config.rw_table.is_write,
             Self::Address => config.rw_table.address,

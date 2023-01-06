@@ -662,8 +662,9 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 }
 
+/// copy circuit test
 #[cfg(any(feature = "test", test))]
-mod tests {
+pub mod test {
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
         evm::{gen_sha3_code, MemoryKind},
@@ -677,7 +678,7 @@ mod tests {
     use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
 
-    use super::*;
+    pub use super::*;
     use eth_types::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},

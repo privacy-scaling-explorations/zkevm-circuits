@@ -769,9 +769,10 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 }
 
+/// bytecode circuit test
 #[cfg(any(feature = "test", test))]
-mod tests {
-    use super::*;
+pub mod test {
+    pub use super::*;
     use crate::table::{BytecodeTable, KeccakTable};
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use eth_types::Bytecode;

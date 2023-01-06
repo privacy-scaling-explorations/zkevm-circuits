@@ -4,8 +4,9 @@ mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
 mod random_linear_combination;
+/// state circuit test
 #[cfg(any(feature = "test", test))]
-mod test;
+pub mod test;
 
 use crate::{
     evm_circuit::param::N_BYTES_WORD,
@@ -19,8 +20,7 @@ use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };

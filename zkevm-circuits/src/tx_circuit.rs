@@ -370,9 +370,10 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     }
 }
 
+/// tx circuit test
 #[cfg(any(feature = "test", test))]
-mod tests {
-    use super::*;
+pub mod test {
+    pub use super::*;
     use crate::util::log2_ceil;
     use eth_types::address;
     use halo2_proofs::{
