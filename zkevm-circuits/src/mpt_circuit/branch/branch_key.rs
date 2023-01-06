@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, sum, Expr};
+use gadgets::util::{not, sum, Expr};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -83,7 +83,7 @@ The key at which the change occurs is thus: `1 * 16 + 7, 5 * 16 + 11, b_0, ..., 
 The RLC of the key is: `(1 * 16 + 7) + (5 * 16 + 11) * r + b_0 * r^2 + b_29 * r^31`.
 
 In each branch we check whether the intermediate RLC is computed correctly. The intermediate
-values are stored in `accumulators.key`. There is always the actual RLC value and the multiplied
+values are stored in `accumulators.key`. There is always the actual RLC value and the multiplier
 that is to be used when adding the next summand: `accumulators.key.rlc, accumulators.key.mult`.
 
 For example, in `Branch1` we check whether the intermediate RLC is `1 * 16`.
@@ -109,44 +109,22 @@ impl<F: FieldExt> BranchKeyConfig<F> {
     ) -> Self {
         let position_cols = ctx.position_cols;
         let branch = ctx.branch;
-        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let s_main = ctx.s_main;
-        // used first for account address, then for storage key
-        let acc_pair = ctx.accumulators.key;
+        let key = ctx.accumulators.key;
         let r = ctx.r;
+
+        let rot_to_previous_first_child = -BRANCH_ROWS_NUM;
+        let rot_to_init = -1;
+        let rot_to_previous_init = rot_to_previous_first_child + rot_to_init;
         constraints! {[meta, cb], {
-            // For the first branch node (node_index = 0), the key rlc needs to be:
-            // key_rlc = key_rlc::Rotation(-19) + modified_node * key_rlc_mult
-            // Note: we check this in the first branch node (after branch init),
-            // Rotation(-19) lands into the previous first branch node, that's because
-            //  branch has 1 (init) + 16 (children) + 2 (extension nodes for S and C) rows
-            let rot_prev = -BRANCH_ROWS_NUM;
-
-            // We need to check whether we are in the first storage level, we can do this
-            // by checking whether is_account_leaf_storage_codehash_c is true in the
-            // previous row.
-            let not_first_level = a!(position_cols.not_first_level);
             let modified_node_index = a!(branch.modified_node_index);
-
-            // -2 because we are in the first branch child and -1 is branch init row, -2 is
-            // account leaf storage codehash when we are in the first storage proof level
-            let is_account_leaf_in_added_branch_prev = a!(is_account_leaf_in_added_branch, -2);
-
-            // If sel1 = 1, then modified_node is multiplied by 16.
-            // If sel2 = 1, then modified_node is multiplied by 1.
-            // NOTE: modified_node presents nibbles: n0, n1, ...
-            // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
-
-            // Get extension node selectors
-            let branch = BranchNodeInfo::new(meta, s_main.clone(), true, -1);
-            // `-1 + rot_prev` lands into previous branch init.
-            let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, -1 + rot_prev);
-
+            let branch = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_init);
+            let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_previous_init);
             let key_rlc = ColumnTransition::new_with_rot(
-                meta, acc_pair.rlc, Rotation(rot_prev), Rotation::cur()
+                meta, key.rlc, Rotation(rot_to_previous_first_child), Rotation::cur()
             );
-            let key_rlc_mult = ColumnTransition::new_with_rot(
-                meta, acc_pair.mult, Rotation(rot_prev), Rotation::cur()
+            let key_mult = ColumnTransition::new_with_rot(
+                meta, key.mult, Rotation(rot_to_previous_first_child), Rotation::cur()
             );
 
             let selectors = [branch.is_c16(), branch.is_c1()];
@@ -157,85 +135,47 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             // One selector needs to be enabled.
             require!(sum::expr(&selectors) => 1);
 
-            // `sel1/sel2` present with what multiplier (16 or 1) is to be multiplied
-            // the `modified_node` in a branch, so when we have an extension node as a parent of
-            // a branch, we need to take account the nibbles of the extension node.
-
-            // If extension node, `sel1` and `sel2` in the first level depend on the extension key
-            // (whether it is even or odd). If key is even, the constraints stay the same. If key
-            // is odd, the constraints get turned around. Note that even/odd
-            // presents the number of key nibbles (what we actually need here) and
-            // not key byte length (how many bytes key occupies in RLP).
-
-            ifx!{not_first_level, not::expr(is_account_leaf_in_added_branch_prev.expr()) => {
-                ifx!{not::expr(branch.is_extension()) => {
-                    ifx!{branch.is_c16() => {
-                        // When we are not in the first level and when sel1, the intermediate key RLC needs to be
-                        // computed by adding `modified_node * 16 * mult_prev` to the previous intermediate key RLC.
-                        require!(key_rlc.cur() => key_rlc.prev() + modified_node_index.expr() * 16.expr() * key_rlc_mult.prev());
-                        // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
-                        // stay the same - `modified_node` in the next branch will be multiplied by the same mult
-                        // when computing the intermediate key RLC.
-                        require!(key_rlc_mult.cur() => key_rlc_mult.prev());
+            ifx!{a!(position_cols.not_first_level) => {
+                // When not in the first level, and not in added branch
+                // rot_to_init - 1 is the account leaf storage codehash when we are in the first storage proof level
+                ifx!{not::expr(a!(ctx.account_leaf.is_in_added_branch, rot_to_init - 1)) => {
+                    ifx!{not::expr(branch.is_extension()) => {
+                        // Update the key RLC
+                        // If is_c16 = 1, then modified_node_index is multiplied by 16, else it's multiplied by 1.
+                        // NOTE: modified_node_index presents nibbles: n0, n1, ...
+                        // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
+                        ifx!{branch.is_c16() => {
+                            require!(key_rlc.cur() => key_rlc.prev() + modified_node_index.expr() * 16.expr() * key_mult.prev());
+                            // The least significant nibble still needs to be added using the same multiplier
+                            require!(key_mult.cur() => key_mult.prev());
+                        } elsex {
+                            require!(key_rlc.cur() => key_rlc.prev() + modified_node_index.expr() * key_mult.prev());
+                            // The least significant nibble is added, update the multiplier for the next nibble
+                            require!(key_mult.cur() => key_mult.prev() * r[0].expr());
+                        }}
+                        // `is_c16` alernates between 0 and 1 for regular branches.
+                        require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
+                    } elsex {
+                        // For extension nodes we have to take account the nibbles of the extension node.
+                        // `is_c16` alternates when there's an even number of nibbles, remains the same otherwise
+                        ifx!{branch.is_even() => {
+                            require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
+                        } elsex {
+                            require!(branch.is_c16() => branch_prev.is_c16());
+                        }}
                     }}
-                    ifx!{branch.is_c1() => {
-                        // When we are not in the first level and when sel2, the intermediate key RLC needs to be
-                        // computed by adding `modified_node * mult_prev` to the previous intermediate key RLC.
-                        require!(key_rlc.cur() => key_rlc.prev() + modified_node_index.expr() * key_rlc_mult.prev());
-                        // When we are not in the first level and when sel1, the intermediate key RLC mult needs to
-                        // be multiplied by `r` - `modified_node` in the next branch will be multiplied
-                        // by `mult * r`.
-                        require!(key_rlc_mult.cur() => key_rlc_mult.prev() * r[0].expr());
-                    }}
                 }}
-
-                // `sel1` alernates between 0 and 1 for regular branches.
-                // Note that `sel2` alternates implicitly because of `sel1 + sel2 = 1`.
+            } elsex {
+                // In the first level we just have to ensure the initial values are set
                 ifx!{not::expr(branch.is_extension()) => {
-                    require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
-                }}
-                // `sel1` alernates between 0 and 1 for extension nodes with even number of nibbles.
-                ifx!{branch.is_even() => {
-                    require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
-                }}
-                // `sel1` stays the same for extension nodes with odd number of nibbles.
-                ifx!{branch.is_odd() => {
-                    require!(branch.is_c16() => branch_prev.is_c16());
+                    require!(key_rlc => modified_node_index.expr() * 16.expr());
+                    require!(key_mult => 1);
+                    require!(branch.is_c16() => true);
+                } elsex {
+                    // `is_c16` depends on the extension key
+                    require!(branch.is_c16() => branch.is_even());
                 }}
             }}
-
-            let is_account = not::expr(not_first_level.expr());
-            let is_storage = is_account_leaf_in_added_branch_prev.expr();
-            // TODO(Brecht): are the above mutually exclusive? is so can just do is_account + is_storage
-            for (pre_condition, condition) in [
-                (not::expr(not_first_level.expr()), is_account.expr()),
-                (not_first_level.expr(), is_storage.expr()),
-                ] {
-                ifx!{pre_condition, condition, not::expr(branch.is_extension()) => {
-                    // In the first level, address RLC is simply `modified_node * 16`.
-                    require!(key_rlc => modified_node_index.expr() * 16.expr());
-                    // In the first level, address RLC mult is simply 1.
-                    require!(key_rlc_mult => 1);
-
-                    // Key RLC for extension node is checked in `extension_node.rs`,
-                    // however, `sel1` & `sel2` being properly set are checked here
-                    // to avoid additional rotations.
-                }}
-
-                // `sel1` in the first level is enabled.
-                ifx!{condition => {
-                    ifx!{not::expr(branch.is_extension()) => {
-                        require!(branch.is_c16() => true);
-                    }}
-                    ifx!{branch.is_even() => {
-                        require!(branch.is_c16() => true);
-                    }}
-                    ifx!{branch.is_odd() => {
-                        // `sel1/sel2` get turned around when odd number of nibbles.
-                        require!(branch.is_c16() => false);
-                    }}
-                }}
-            }
         }}
 
         BranchKeyConfig {

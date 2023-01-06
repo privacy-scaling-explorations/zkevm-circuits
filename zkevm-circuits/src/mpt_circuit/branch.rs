@@ -184,10 +184,10 @@ impl<F: FieldExt> BranchConfig<F> {
                         // TODO(Brecht): Is always 1 for added branches?
                         ifx!{not::expr(a!(ctx.account_leaf.is_in_added_branch, -1)), not_first_level.expr() => {
                             // Only check if there is an account above the branch.
-                            require!(branch.nibbles_counter().cur() => branch.nibbles_counter().prev() + 1.expr());
+                            require!(branch.nibbles_counter() => branch.nibbles_counter().prev() + 1.expr());
                         } elsex {
                             // If branch is in the first level of the account/storage trie, `nibbles_count` needs to be 1.
-                            require!(branch.nibbles_counter().cur() => 1);
+                            require!(branch.nibbles_counter() => 1);
                         }}
                     }}
                 }}
@@ -245,7 +245,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         let rlp1 = a!(ctx.main(is_s).rlp1);
                         let rlp2 = a!(ctx.main(is_s).rlp2);
                         // Calculate the number of bytes on this row.
-                        let num_bytes = selectx!{a!(denoter.is_node_hashed(is_s)) => {
+                        let num_bytes = selectx!{a!(denoter.is_not_hashed(is_s)) => {
                             a!(ctx.main(is_s).bytes[0]) - 192.expr() + 1.expr()
                         } elsex {
                             // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
@@ -591,8 +591,8 @@ impl<F: FieldExt> BranchConfig<F> {
         if row.get_byte(S_RLP_START + 1) == 160 {
             pv.rlp_len_rem_s -= 33;
         } else if row.get_byte(S_RLP_START + 1) == 0 && row.get_byte(S_START) > 192 {
-            let len = row.get_byte(S_START) as i32 - 192;
-            pv.rlp_len_rem_s -= len + 1;
+            let len = 1 + (row.get_byte(S_START) as i32 - 192);
+            pv.rlp_len_rem_s -= len;
             for _ in 0..len {
                 node_mult_diff_s *= mpt_config.randomness;
             }
@@ -602,8 +602,8 @@ impl<F: FieldExt> BranchConfig<F> {
         if row.get_byte(C_RLP_START + 1) == 160 {
             pv.rlp_len_rem_c -= 33;
         } else if row.get_byte(C_RLP_START + 1) == 0 && row.get_byte(C_START) > 192 {
-            let len = row.get_byte(C_START) as i32 - 192;
-            pv.rlp_len_rem_c -= len + 1;
+            let len = 1 + (row.get_byte(C_START) as i32 - 192);
+            pv.rlp_len_rem_c -= len;
             for _ in 0..len {
                 node_mult_diff_c *= mpt_config.randomness;
             }

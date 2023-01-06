@@ -200,7 +200,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
 
         region.assign_advice(
             || "assign modified node".to_string(),
-            mpt_config.branch.modified_node,
+            mpt_config.branch.modified_node_index,
             offset,
             || Value::known(F::from(branch.modified_node as u64)),
         )?;
@@ -494,8 +494,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         )?;
 
         region.assign_advice(
-            || "is_node_hashed_s",
-            mpt_config.denoter.is_node_hashed_s,
+            || "is_not_hashed_s",
+            mpt_config.denoter.is_not_hashed_s,
             offset,
             || {
                 Value::known(F::from(
@@ -504,8 +504,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
             },
         )?;
         region.assign_advice(
-            || "is_node_hashed_c",
-            mpt_config.denoter.is_node_hashed_c,
+            || "is_not_hashed_c",
+            mpt_config.denoter.is_not_hashed_c,
             offset,
             || {
                 Value::known(F::from(

@@ -11,16 +11,16 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::BaseConstraintBuilder,
+        helpers::{extend_rand, BranchNodeInfo},
+        witness_row::MptWitnessRow,
+        MPTContext,
+    },
+    mpt_circuit::{
+        helpers::{BaseConstraintBuilder, ColumnTransition},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, C_RLP_START, C_START, HASH_WIDTH,
         },
-    },
-    mpt_circuit::{
-        helpers::{extend_rand, BranchNodeInfo},
-        witness_row::MptWitnessRow,
-        MPTContext,
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -157,454 +157,373 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         let accs = ctx.accumulators;
         let r = ctx.r.clone();
 
+        let rot_into_last_branch_child = if is_s { -1 } else { -2 };
+        let rot_into_branch_init = rot_into_last_branch_child - (ARITY as i32);
+        let rot_into_s = if is_s { 0 } else { -1 };
+
         constraints! {[meta, cb], {
-            let rot_into_last_branch_child = if is_s { -1 } else { -2 };
-            let rot_into_branch_init = rot_into_last_branch_child - (ARITY as i32);
-
-            let rot = if is_s { 0 } else { -1 };
-
-            let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
             let s_rlp2 = a!(s_main.rlp2);
-            let c_rlp2 = a!(c_main.rlp2);
-            let is_branch_init_prev = a!(ctx.branch.is_init, -1);
-            let acc_s = a!(accs.acc_s.rlc, rot);
-
-            // c_rlp2 = 160 when branch is hashed (longer than 31) and c_rlp2 = 0 otherwise
-            let is_branch_hashed = c_rlp2.expr() * Expression::Constant(F::from(160).invert().unwrap());
-
             let ext = BranchNodeInfo::new(meta, s_main.clone(), is_s, rot_into_branch_init);
+            let ext_rlc = ColumnTransition::from(a!(accs.acc_s.rlc, rot_into_s), a!(accs.acc_c.rlc));
 
-            // Note: hashed branch has 160 at c_rlp2 and hash in c_advices,
-            // non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
+            // s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
+            // However, to make space for nibble witnesses, we put nibbles in
+            // extension row C s_bytes. So we use s_bytes from S row.
 
-            // Extension node RLC
-            ifx!{q_not_first => {
-                ifx!{not::expr(is_branch_init_prev.expr()) => {
-                    // s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
-                    // However, to make space for nibble witnesses, we put nibbles in
-                    // extension row C s_bytes. So we use s_bytes from S row.
-                    let rlc = rlc::expr(
-                        &s_main.rlp_bytes().iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                        &extend_rand(&r),
-                    );
-                    // The intermediate RLC after `s_main` bytes needs to be properly computed.
-                    require!(rlc => acc_s);
+            // There are two cases:
+            // - hashed branch has 160 at c_rlp2 and hash in c_advices,
+            // - non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
+            require!(a!(c_main.rlp2) => {[0.expr(), 160.expr()]});
+            let is_branch_hashed = a!(c_main.rlp2) * Expression::Constant(F::from(160).invert().unwrap());
 
-                    let acc_c = a!(accs.acc_c.rlc);
-                    let acc_mult_s = a!(accs.acc_s.mult);
-                    ifx!{is_branch_hashed.expr() => {
-                        // Check whether the extension node RLC is properly computed.
-                        // The RLC is used to check whether the extension node is a node at the appropriate position
-                        // in the parent node. That means, it is used in a lookup to check whether
-                        // `(extension_node_RLC, node_hash_RLC)` is in the keccak table.
-                        let rlc_2 = acc_s.expr() + rlc::expr(
-                            &c_main.rlp_bytes()[1..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(acc_c => rlc_2);
-                    } elsex {
-                        // Check whether the extension node (non-hashed) RLC is properly computed.
-                        // The RLC is used to check whether the non-hashed extension node is a node at the appropriate position
-                        // in the parent node. That means, there is a constraint to ensure that
-                        // `extension_node_RLC = node_hash_RLC` for some `node` in parent branch.
-                        let rlc_non_hashed_branch = acc_s.expr() + rlc::expr(
-                            &c_main.rlp_bytes()[2..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        // RLC bytes zero check for c_main.bytes.iter().skip(1)
-                        cb.set_range_length_c(1.expr() + a!(c_main.bytes[0]) - 192.expr());
-                        // Check stored RLC
-                        require!(acc_c => rlc_non_hashed_branch);
-                    }}
-                }}
-                ifx!{is_branch_hashed => {
-                    // When the branch is hashed, we have `c_rlp2 = 160` because it specifies the length of the
-                    // hash: `32 = 160 - 128`.
-                    require!(c_rlp2 => 160);
-                }}
+            // The intermediate RLC after `s_main` bytes needs to be properly computed.
+            let rlc = rlc::expr(
+                &s_main.rlp_bytes().iter().map(|&byte| a!(byte, rot_into_s)).collect::<Vec<_>>(),
+                &extend_rand(&r),
+            );
+            require!(ext_rlc.prev() => rlc);
 
-                // Extension node selectors & RLP
-
-                // NOTE: even and odd is for number of nibbles that are compactly encoded.
-
-                // `short` means there is only one nibble in the extension node, `long` means there
-                // are at least two. `even` means the number of nibbles is even, `odd` means the number
-                // of nibbles is odd. `c16` means that above the branch there are even number of
-                // nibbles (the same as saying that `modified_node` of the branch needs to be
-                // multiplied by 16 in the computation of the key RLC), `c1` means
-                // that above the branch there are odd number of
-                // nibbles (the same as saying that `modified_node` of the branch needs to be
-                // multiplied by 1 in the computation of the key RLC).
-
-                let type_selectors_c1 = [
-                    ext.is_short_c1.expr(),
-                    ext.is_long_even_c1.expr(),
-                    ext.is_long_odd_c1.expr(),
-                ];
-                let type_selectors_c16 = [
-                    ext.is_short_c16.expr(),
-                    ext.is_long_even_c16.expr(),
-                    ext.is_long_odd_c16.expr(),
-                ];
-                let type_selectors = [
-                    type_selectors_c1.clone(),
-                    type_selectors_c16.clone(),
-                ].concat();
-
-                let misc_selectors = [
-                    ext.is_longer_than_55.expr(),
-                    ext.is_ext_non_hashed.expr(),
-                ];
-
-                ifx!{not::expr(is_branch_init_prev.expr()) => {
-                    // We first check that the selectors in branch init row are boolean.
-                    for selector in type_selectors.iter().chain(misc_selectors.iter()) {
-                        require!(selector => bool);
-                    }
-
-                    // Only one of the six options can appear. When we have an extension node it holds:
-                    // `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 1`.
-                    // And when it is a regular branch:
-                    // `is_ext_short_c16 + is_ext_short_c1 + is_ext_long_even_c16 + is_ext_long_even_c1 + is_ext_long_odd_c16 + is_ext_long_odd_c1 = 0`.
-                    // Note that if the attacker sets `is_extension_node = 1`
-                    // for a regular branch (or `is_extension_node = 0` for the extension node),
-                    // the final key RLC check fails because key RLC is computed differently
-                    // for extension nodes and regular branches - a regular branch occupies only one
-                    // key nibble (`modified_node`), while extension node occupies at least one additional
-                    // nibble (the actual extension of the extension node).
-                    // TODO(Brecht): not also misc_selectors?
-                    require!(sum::expr(type_selectors.clone()) => 1);
-
-                    // TODO(Brecht): verify logic
-                    // `is_branch_c16` and `is_branch_c1` information is duplicated with
-                    // extension node selectors when we have an extension node (while in case of a regular
-                    // branch the extension node selectors do not hold this information).
-                    // That means when we have an extension node and `is_branch_c16 = 1`,
-                    // there is `is_ext_short_c16 = 1` or
-                    // `is_ext_long_even_c16 = 1` or `is_ext_long_odd_c16 = 1`.
-                    // We have such a duplication to reduce the expression degree - for example instead of
-                    // using `is_ext_long_even * is_branch_c16` we just use `is_ext_long_even_c16`.
-                    // But we need to check that `is_branch_c16` and `is_branch_c1` are consistent
-                    // with extension node selectors.
-                    require!(ext.is_c1() => sum::expr(type_selectors_c1.clone()));
-                    require!(ext.is_c16() => sum::expr(type_selectors_c16.clone()));
-                }}
-
-                // In C we have nibbles, we check below only for S.
-                if is_s {
-                    // This constraint prevents the attacker to set the number of nibbles to be even
-                    // when it is not even.
-                    // Note that when it is not even it holds `s_bytes0 != 0` (hexToCompact adds 16).
-                    // If the number of nibbles is 1, like in
-                    // `[226,16,160,172,105,12...`
-                    // there is no byte specifying the length.
-                    // If the number of nibbles is bigger than 1 and it is even, like in
-                    // `[228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]`
-                    // the second byte (`s_main.rlp2`) specifies the length (we need to subract 128 to get it),
-                    // the third byte (`s_main.bytes[0]`) is 0.
-
-                    let s_rlp1 = a!(s_main.rlp1);
-                    let s_bytes0 = a!(s_main.bytes[0]);
-                    let c_bytes0 = a!(c_main.bytes[0]);
-
-                    // Long & even implies s_bytes0 = 0
-                    ifx!{ext.is_even() => {
-                        require!(s_bytes0 => 0);
-                    }}
-
-                    ifx!{ext.is_short() => {
-                        ifx!{is_branch_hashed => {
-                            // We need to check that the length specified in `s_main.rlp1` corresponds to the actual
-                            // length of the extension node.
-                            // For example, in
-                            // `[226,16,160,172,105,12...`
-                            // we check that `226 - 192 = 1 + 32 + 1`.
-                            // 1 is for `s_main.rlp2`, 32 is for 32 bytes of the branch hash,
-                            // 1 is for the byte 160 which denotes the length
-                            // of the hash (128 + 32).
-                            require!(s_rlp1 => 192.expr() + 33.expr() + 1.expr());
-                        } elsex {
-                            // We need to check that the length specified in `s_main.rlp1` corresponds to the actual
-                            // length of the extension node.
-                            // For example, in
-                            // `[223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]`
-                            // we check that `223 - 192 = 1 + 29 + 1`.
-                            // 1 is for `s_main.rlp2`,
-                            // 29 is for the branch RLP (which is not hashed because it is shorter than 32 bytes),
-                            // 1 is for `c_main.bytes[0]` which denotes the length of the branch RLP.
-                            // TODO: prepare test
-                            require!(s_rlp1 => 192.expr() + 1.expr() + (c_bytes0.expr() - 192.expr() - 1.expr()));
-                        }}
-                    }}
-
-                    ifx!{not::expr(ext.is_longer_than_55.expr()) => {
-                        ifx!{ext.is_even() + ext.is_long_odd() => {
-                            ifx!{is_branch_hashed => {
-                                // We need to check that the length specified in `s_main.rlp1` corresponds to the actual
-                                // length of the extension node.
-                                // For example, in
-                                // `[228,130,0,149,160,114,253...`
-                                // we check that `228 - 192 = (130 - 128) + 1 + 32 + 1`.
-                                // 1 is for `s_main.rlp2` which specifies the length of the nibbles part,
-                                // 32 is for the branch hash,
-                                // 1 is for the byte 160 which denotes the length
-                                // of the hash (128 + 32).
-                                require!(s_rlp1.expr() - 192.expr() => (s_rlp2.expr() - 128.expr()) + 1.expr() + 32.expr() + 1.expr());
-                            } elsex {
-                                // We need to check that the length specified in `s_main.rlp1` corresponds to the actual
-                                // length of the extension node.
-                                // We check that `s_main.rlp1 - 192` = `s_main.rlp2 - 128 + 1 + c_main.bytes[0] - 192 + 1`.
-                                require!(s_rlp1.expr() - 192.expr() =>  s_rlp2.expr() - 128.expr() + 1.expr() + c_bytes0.expr() - 192.expr() + 1.expr());
-                            }}
-                        }}
-                    } elsex {
-                        // Note: ext longer than 55 RLP cannot appear when there is only one nibble because in this case
-                        // we would have 1 byte for a nibble and at most 32 bytes for branch.
-                        // When extension node RLP is longer than 55 bytes, the RLP has an additional byte
-                        // at second position and the first byte specifies the length of the substream
-                        // that specifies the length of the RLP. The substream is always just one byte: `s_main.rlp2`.
-                        // And `s_main.rlp1 = 248` where `248 = 247 + 1` means the length of 1 byte.
-                        // Example:
-                        // `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
-                        require!(s_rlp1 => 248);
-
-                        ifx!{is_branch_hashed => {
-                            // We need to check that the length specified in `s_main.rlp2` corresponds to the actual
-                            // length of the extension node.
-                            // Example:
-                            // `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
-                            // We check that `s_main.rlp2 = (s_main.bytes[0] - 128) + 1 + 32 + 1`.
-                            // `s_main.bytes[0] - 128` specifies the extension node nibbles part,
-                            // 1 is for `s_main.rlp2` which specifies the length of the RLP stream,
-                            // 32 is for the branch hash,
-                            // 1 is for the byte 160 which denotes the length of the hash (128 + 32).
-                            // TODO: test
-                            require!(s_rlp2 => (s_bytes0.expr() - 248.expr()) + 1.expr() + 32.expr() + 1.expr());
-                        } elsex {
-                            // We need to check that the length specified in `s_main.rlp2` corresponds to the actual
-                            // length of the extension node.
-                            // We check that `s_main.rlp2 = (s_main.bytes[0] - 128) + 1 + c_main.bytes[0] - 192 + 1`.
-                            // `s_main.bytes[0] - 128` specifies the extension node nibbles part,
-                            // 1 is for `s_main.rlp2` which specifies the length of the RLP stream,
-                            // `c_main.bytes[0] - 192` is for the branch RLP (which is not hashed because it is shorter than 32 bytes),
-                            // 1 is for the byte 160 which denotes the length of the hash (128 + 32).
-                            // TODO: test
-                            // TODO(Brecht): changed from s_rlp1
-                            require!(s_rlp2 => (s_bytes0.expr() - 128.expr()) + 1.expr() + (c_bytes0.expr() + 192.expr() - 1.expr()));
-                        }}
-                    }}
-                }
-
-                // Some observations:
-
-                // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
-                // Note that the first element (228 in this case) can go much higher - for example, if there
-                // are 40 nibbles, this would take 20 bytes which would make the first element 248.
-
-                // If only one byte in key:
-                // [226,16,160,172,105,12...
-
-                // Extension node with non-hashed branch:
-                // List contains up to 55 bytes (192 + 55)
-                // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-                // List contains more than 55 bytes
-                // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-
-                // Note that the extension node can be much shorter than the one above - in case when
-                // there are less nibbles, so we cannot say that 226 appears as the first byte only
-                // when there are hashed nodes in the branch and there is only one nibble.
-                // Branch with two non-hashed nodes (that's the shortest possible branch):
-                // [217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
-                // Note: branch contains at least 26 bytes. 192 + 26 = 218
-
-                // If proofEl[0] <= 247 (length at most 55, so proofEl[1] doesn't specify the length of the whole
-                //     remaining stream, only of the next substream)
-                // If proofEl[1] <= 128:
-                //     There is only 1 byte for nibbles (keyLen = 1) and this is proofEl[1].
-                // Else:
-                //     Nibbles are stored in more than 1 byte, proofEl[1] specifies the length of bytes.
-                // Else:
-                // proofEl[1] contains the length of the remaining stream.
-                // proofEl[2] specifies the length of the bytes (for storing nibbles).
-                // Note that we can't have only one nibble in this case.
-
-                // Note: acc_mult is checked in `extension_node_key.rs`.
-
-                let acc_pair = if is_s {accs.clone().acc_s} else {accs.clone().acc_c};
-                // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-                let branch_acc = a!(acc_pair.rlc, rot_into_last_branch_child) + 128.expr() * a!(acc_pair.mult, rot_into_last_branch_child);
-                let hash_rlc = rlc::expr(
-                    &c_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+            let acc_mult_s = a!(accs.acc_s.mult);
+            ifx!{is_branch_hashed.expr() => {
+                // Check whether the extension node RLC is properly computed.
+                // The RLC is used to check whether the extension node is a node at the appropriate position
+                // in the parent node. That means, it is used in a lookup to check whether
+                // `(extension_node_RLC, node_hash_RLC)` is in the keccak table.
+                let rlc = ext_rlc.prev() + rlc::expr(
+                    &c_main.rlp_bytes()[1..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
                     &r,
                 );
-                ifx!{is_branch_hashed => {
-                    ifx!{not::expr(is_branch_init_prev.expr()) => {
-                        /* Extension node branch hash in extension row */
-                        // Check whether branch hash is in the extension node row - we check that the branch hash RLC
-                        // (computed over the first 17 rows) corresponds to the extension node hash stored in
-                        // the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
-                        // be in a keccak table.
-                        require!((branch_acc.expr(), ext.len(), hash_rlc.expr()) => @keccak);
-                    }}
-                } elsex {
-                    /* Extension node branch hash in extension row (non-hashed branch) */
-                    // Check whether branch is in extension node row (non-hashed branch) -
-                    // we check that the branch RLC is the same as the extension node branch part RLC
-                    // (RLC computed over `c_main.bytes`).
-                    // Note: there need to be 0s after branch ends in the extension node `c_main.bytes`
-                    // (see below).
-                    require!(branch_acc => hash_rlc);
+                require!(ext_rlc => rlc);
+            } elsex {
+                // Check whether the extension node (non-hashed) RLC is properly computed.
+                // The RLC is used to check whether the non-hashed extension node is a node at the appropriate position
+                // in the parent node. That means, there is a constraint to ensure that
+                // `extension_node_RLC = node_hash_RLC` for some `node` in parent branch.
+                let rlc = ext_rlc.prev() + rlc::expr(
+                    &c_main.rlp_bytes()[2..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
+                    &r,
+                );
+                require!(ext_rlc => rlc);
+                // RLC bytes zero check for c_main.bytes.iter().skip(1)
+                cb.set_range_length_c(1.expr() + a!(c_main.bytes[0]) - 192.expr());
+            }}
+
+            // Extension node selectors & RLP
+
+            // NOTE: even and odd is for number of nibbles that are compactly encoded.
+
+            // `short` means there is only one nibble in the extension node, `long` means there
+            // are at least two. `even` means the number of nibbles is even, `odd` means the number
+            // of nibbles is odd. `c16` means that above the branch there are even number of
+            // nibbles (the same as saying that `modified_node` of the branch needs to be
+            // multiplied by 16 in the computation of the key RLC), `c1` means
+            // that above the branch there are odd number of
+            // nibbles (the same as saying that `modified_node` of the branch needs to be
+            // multiplied by 1 in the computation of the key RLC).
+
+            let type_selectors_c1 = [
+                ext.is_short_c1.expr(),
+                ext.is_long_even_c1.expr(),
+                ext.is_long_odd_c1.expr(),
+            ];
+            let type_selectors_c16 = [
+                ext.is_short_c16.expr(),
+                ext.is_long_even_c16.expr(),
+                ext.is_long_odd_c16.expr(),
+            ];
+            let type_selectors = [
+                type_selectors_c1.clone(),
+                type_selectors_c16.clone(),
+            ].concat();
+
+            let misc_selectors = [
+                ext.is_longer_than_55.expr(),
+                ext.is_ext_non_hashed.expr(),
+            ];
+
+            ifx!{a!(ctx.branch.is_init) => {
+                // Check that the selectors are boolean
+                for selector in type_selectors.iter().chain(misc_selectors.iter()) {
+                    require!(selector => bool);
+                }
+
+                // For extension nodes exactly 1 type selector needs to be enabled.
+                // Note that if the attacker sets `is_extension_node = 1`
+                // for a regular branch (or `is_extension_node = 0` for the extension node),
+                // the final key RLC check fails because key RLC is computed differently
+                // for extension nodes and regular branches - a regular branch occupies only one
+                // key nibble (`modified_node`), while extension node occupies at least one additional
+                // nibble (the actual extension of the extension node).
+                require!(sum::expr(type_selectors.clone()) => 1);
+
+                // `is_c16` and `is_c1` selectors are set using the extension node type selector data.
+                // (while in case of a regular branch the extension node selectors do not hold this information).
+                require!(ext.is_c1() => sum::expr(type_selectors_c1.clone()));
+                require!(ext.is_c16() => sum::expr(type_selectors_c16.clone()));
+            }}
+
+            // In C we have nibbles, we check below only for S.
+            if is_s {
+                // Even implies long and implies s_main.bytes[0] = 0
+                // This prevents the attacker to set the number of nibbles to be even
+                // when it is not even.
+                // Note that when it is not even it holds `s_bytes0 != 0` (hexToCompact adds 16).
+                // If the number of nibbles is 1, like in
+                // `[226,16,160,172,105,12...`
+                // there is no byte specifying the length.
+                // If the number of nibbles is bigger than 1 and it is even, like in
+                // `[228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]`
+                // the second byte (`s_main.rlp2`) specifies the length (we need to subract 128 to get it),
+                // the third byte (`s_main.bytes[0]`) is 0.
+                ifx!{ext.is_even() => {
+                    require!(a!(s_main.bytes[0]) => 0);
                 }}
 
-                // Note: Correspondence between nibbles in C and bytes in S is checked in
-                // extension_node_key.
+                // We need to check that the length specified in `s_main.rlp1` corresponds to the actual
+                // length of the extension node.
+                let s_rlp1 = a!(s_main.rlp1);
+                ifx!{ext.is_short() => {
+                    ifx!{is_branch_hashed => {
+                        // For example, in `[226,16,160,172,105,12...`
+                        // we check that `226 - 192 = 1 + 32 + 1`.
+                        // 1 is for `s_main.rlp2`, 32 is for 32 bytes of the branch hash,
+                        // 1 is for the byte 160 which denotes the length
+                        // of the hash (128 + 32).
+                        require!(s_rlp1 => 192 + 33 + 1);
+                    } elsex {
+                        // For example, in
+                        // `[223,16,221,198,132,32,0,0,0,1,198,132,32,0,0,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]`
+                        // we check that `223 - 192 = 1 + 29 + 1`.
+                        // 1 is for `s_main.rlp2`,
+                        // 29 is for the branch RLP (which is not hashed because it is shorter than 32 bytes),
+                        // 1 is for `c_main.bytes[0]` which denotes the length of the branch RLP.
+                        // TODO: prepare test
+                        require!(s_rlp1 => 192.expr() + 1.expr() + (a!(c_main.bytes[0]) - 192.expr() - 1.expr()));
+                    }}
+                }}
+                ifx!{not::expr(ext.is_longer_than_55.expr()) => {
+                    ifx!{ext.is_long() => {
+                        ifx!{is_branch_hashed => {
+                            // For example, in
+                            // `[228,130,0,149,160,114,253...`
+                            // we check that `228 - 192 = (130 - 128) + 1 + 32 + 1`.
+                            // 1 is for `s_main.rlp2` which specifies the length of the nibbles part,
+                            // 32 is for the branch hash,
+                            // 1 is for the byte 160 which denotes the length
+                            // of the hash (128 + 32).
+                            require!(s_rlp1.expr() - 192.expr() => (s_rlp2.expr() - 128.expr()) + 1.expr() + 32.expr() + 1.expr());
+                        } elsex {
+                            // We check that `s_main.rlp1 - 192` = `s_main.rlp2 - 128 + 1 + c_main.bytes[0] - 192 + 1`.
+                            require!(s_rlp1.expr() - 192.expr() => s_rlp2.expr() - 128.expr() + 1.expr() + a!(c_main.bytes[0]) - 192.expr() + 1.expr());
+                        }}
+                    }}
+                } elsex {
+                    // Note: ext longer than 55 RLP cannot appear when there is only one nibble because in this case
+                    // we would have 1 byte for a nibble and at most 32 bytes for branch.
+                    // When extension node RLP is longer than 55 bytes, the RLP has an additional byte
+                    // at second position and the first byte specifies the length of the substream
+                    // that specifies the length of the RLP. The substream is always just one byte: `s_main.rlp2`.
+                    // And `s_main.rlp1 = 248` where `248 = 247 + 1` means the length of 1 byte.
+                    // Example:
+                    // `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
+                    require!(s_rlp1 => 248);
 
-                // Only check if there is an account above the leaf.
-                let is_account_leaf_in_added_branch = meta.query_advice(
+                    // We need to check that the length specified in `s_main.rlp2` corresponds to the actual
+                    // length of the extension node.
+                    ifx!{is_branch_hashed => {
+                        // Example:
+                        // `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
+                        // We check that `s_main.rlp2 = (s_main.bytes[0] - 128) + 1 + 32 + 1`.
+                        // `s_main.bytes[0] - 128` specifies the extension node nibbles part,
+                        // 1 is for `s_main.rlp2` which specifies the length of the RLP stream,
+                        // 32 is for the branch hash,
+                        // 1 is for the byte 160 which denotes the length of the hash (128 + 32).
+                        // TODO: test
+                        require!(s_rlp2 => (a!(s_main.bytes[0]) - 248.expr()) + 1.expr() + 32.expr() + 1.expr());
+                    } elsex {
+                        // We check that `s_main.rlp2 = (s_main.bytes[0] - 128) + 1 + c_main.bytes[0] - 192 + 1`.
+                        // `s_main.bytes[0] - 128` specifies the extension node nibbles part,
+                        // 1 is for `s_main.rlp2` which specifies the length of the RLP stream,
+                        // `c_main.bytes[0] - 192` is for the branch RLP (which is not hashed because it is shorter than 32 bytes),
+                        // 1 is for the byte 160 which denotes the length of the hash (128 + 32).
+                        // TODO: test
+                        // TODO(Brecht): changed from s_rlp1
+                        require!(s_rlp2 => (a!(s_main.bytes[0]) - 128.expr()) + 1.expr() + (a!(c_main.bytes[0]) + 192.expr() - 1.expr()));
+                    }}
+                }}
+            }
+
+            // Some observations:
+
+            // [228,130,0,149,160,114,253,150,133,18,192,156,19,241,162,51,210,24,1,151,16,48,7,177,42,60,49,34,230,254,242,79,132,165,90,75,249]
+            // Note that the first element (228 in this case) can go much higher - for example, if there
+            // are 40 nibbles, this would take 20 bytes which would make the first element 248.
+
+            // If only one byte in key:
+            // [226,16,160,172,105,12...
+
+            // Extension node with non-hashed branch:
+            // List contains up to 55 bytes (192 + 55)
+            // [247,160,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,213,128,194,32,1,128,194,32,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+            // List contains more than 55 bytes
+            // [248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+
+            // Note that the extension node can be much shorter than the one above - in case when
+            // there are less nibbles, so we cannot say that 226 appears as the first byte only
+            // when there are hashed nodes in the branch and there is only one nibble.
+            // Branch with two non-hashed nodes (that's the shortest possible branch):
+            // [217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]
+            // Note: branch contains at least 26 bytes. 192 + 26 = 218
+
+            // If proofEl[0] <= 247 (length at most 55, so proofEl[1] doesn't specify the length of the whole
+            //     remaining stream, only of the next substream)
+            // If proofEl[1] <= 128:
+            //     There is only 1 byte for nibbles (keyLen = 1) and this is proofEl[1].
+            // Else:
+            //     Nibbles are stored in more than 1 byte, proofEl[1] specifies the length of bytes.
+            // Else:
+            // proofEl[1] contains the length of the remaining stream.
+            // proofEl[2] specifies the length of the bytes (for storing nibbles).
+            // Note that we can't have only one nibble in this case.
+
+            // Note: acc_mult is checked in `extension_node_key.rs`.
+
+            let rlc = accs.acc(is_s);
+            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+            let branch_rlc = a!(rlc.rlc, rot_into_last_branch_child) + 128.expr() * a!(rlc.mult, rot_into_last_branch_child);
+            let hash_rlc = rlc::expr(
+                &c_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &r,
+            );
+            ifx!{is_branch_hashed => {
+                // Check whether branch hash is in the extension node row - we check that the branch hash RLC
+                // (computed over the first 17 rows) corresponds to the extension node hash stored in
+                // the extension node row. That means `(branch_RLC, extension_node_hash_RLC`) needs to
+                // be in the keccak table.
+                require!((branch_rlc, ext.len(), hash_rlc) => @keccak);
+            } elsex {
+                // Check whether branch is in extension node row (non-hashed branch) -
+                // we check that the branch RLC is the same as the extension node branch part RLC
+                // (RLC computed over `c_main.bytes`).
+                require!(branch_rlc => hash_rlc);
+            }}
+
+            // Note: Correspondence between nibbles in C and bytes in S is checked in
+            // extension_node_key.
+
+            // Only check if there is an account above the leaf.
+            let is_account_leaf_in_added_branch = meta.query_advice(
+                ctx.account_leaf.is_in_added_branch,
+                Rotation(rot_into_branch_init - 1),
+            );
+            // We need to do the lookup only if we are in the last branch child.
+            let is_after_last_branch_child =
+                meta.query_advice(ctx.branch.is_last_child, Rotation(rot_into_last_branch_child));
+
+
+            // TODO(Brecht): COPIED(branch_hash_in_parent)
+            // Modified -19 -> -21
+            let mod_node_hash_rlc = if is_s { accs.clone().s_mod_node_rlc } else { accs.c_mod_node_rlc };
+            // Any rotation that lands into branch can be used instead of -21.
+            let mod_node_hash_rlc = a!(mod_node_hash_rlc, -21);
+
+            // Note: acc_c in both cases.
+            let ext_acc = a!(accs.acc_c.rlc);
+            // Length
+            let ext_len = a!(s_main.rlp1, rot_into_s) - 192.expr() + 1.expr();
+
+            ifx!{not_first_level => {
+                ifx!{not::expr(ext.is_placeholder()) => {
+                    ifx!{is_account_leaf_in_added_branch => {
+                        ifx!{ext.is_extension(), is_after_last_branch_child => {
+                            /* Extension node in first level of storage trie - hash compared to the storage root */
+                            // When extension node is in the first level of the storage trie, we need to check whether
+                            // `hash(ext_node) = storage_trie_root`. We do this by checking whether
+                            // `(ext_node_RLC, storage_trie_root_RLC)` is in the keccak table.
+                            // Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
+                            // TODO(Brecht): COPIED(branch_hash_in_parent)
+                            let storage_index = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
+                            let rot = rot_into_branch_init - (ACCOUNT_LEAF_ROWS - storage_index);
+                            // Note: storage root is always in s_main.bytes.
+                            let hash_rlc = rlc::expr(
+                                &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
+                                &r,
+                            );
+                            require!((ext_acc, ext_len, hash_rlc) => @keccak);
+                        }}
+                    } elsex {
+                        ifx!{ext.is_ext_non_hashed.expr() => {
+                            /* Extension node in parent branch (non-hashed extension node) */
+                            // When an extension node is not hashed, we do not check whether it is in a parent
+                            // branch using a lookup (see above), instead we need to check whether the branch child
+                            // at `modified_node` position is exactly the same as the extension node.
+                            require!(branch_rlc => mod_node_hash_rlc);
+                        } elsex {
+                            /* Extension node hash in parent branch */
+                            // Check whether the extension node hash is in the parent branch.
+                            // That means we check whether
+                            // `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
+                            // branch child at `modified_node` position.
+                            // Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
+                            require!((ext_acc, ext_len, mod_node_hash_rlc) => @keccak);
+                        }}
+                    }}
+                }}
+            } elsex {
+                /* Account first level extension node hash - compared to root */
+                // When we have an extension node in the first level of the account trie,
+                // its hash needs to be compared to the root of the trie.
+                // Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
+                require!((ext_acc, ext_len, a!(ctx.inter_root(is_s))) => @keccak);
+            }}
+
+            // Update the number of nibbles processed up till this point.
+            // Note: for regular branches, the constraint that `nibbles_count` increases
+            // by 1 is in `branch.rs`.
+            if is_s {
+                // nibbles_count_prev needs to be 0 when in first account level or
+                // in first storage level
+                let is_first_storage_level = meta.query_advice(
                     ctx.account_leaf.is_in_added_branch,
                     Rotation(rot_into_branch_init - 1),
                 );
-                // We need to do the lookup only if we are in the last branch child.
-                let is_after_last_branch_child =
-                    meta.query_advice(ctx.branch.is_last_child, Rotation(rot_into_last_branch_child));
-
-
-                // TODO(Brecht): COPIED(branch_hash_in_parent)
-                // Modified -19 -> -21
-                let mod_node_hash_rlc = if is_s { accs.clone().s_mod_node_rlc } else { accs.c_mod_node_rlc };
-                // Any rotation that lands into branch can be used instead of -21.
-                let mod_node_hash_rlc = a!(mod_node_hash_rlc, -21);
-
-                // Note: acc_c in both cases.
-                let ext_acc = a!(accs.acc_c.rlc);
-                // Length
-                let ext_len = a!(s_main.rlp1, rot) - 192.expr() + 1.expr();
-
-                ifx!{not_first_level => {
-                    ifx!{not::expr(ext.is_placeholder()) => {
-                        ifx!{is_account_leaf_in_added_branch => {
-                            ifx!{ext.is_extension(), is_after_last_branch_child => {
-                                /* Extension node in first level of storage trie - hash compared to the storage root */
-                                // When extension node is in the first level of the storage trie, we need to check whether
-                                // `hash(ext_node) = storage_trie_root`. We do this by checking whether
-                                // `(ext_node_RLC, storage_trie_root_RLC)` is in the keccak table.
-                                // Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
-                                // TODO(Brecht): COPIED(branch_hash_in_parent)
-                                let storage_index = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
-                                let rot = rot_into_branch_init - (ACCOUNT_LEAF_ROWS - storage_index);
-                                // Note: storage root is always in s_main.bytes.
-                                let hash_rlc = rlc::expr(
-                                    &s_main.bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                                    &r,
-                                );
-                                require!((ext_acc, ext_len, hash_rlc) => @keccak);
-                            }}
-                        } elsex {
-                            ifx!{ext.is_ext_non_hashed.expr() => {
-                                /* Extension node in parent branch (non-hashed extension node) */
-                                // When an extension node is not hashed, we do not check whether it is in a parent
-                                // branch using a lookup (see above), instead we need to check whether the branch child
-                                // at `modified_node` position is exactly the same as the extension node.
-                                require!(branch_acc => mod_node_hash_rlc);
-                            } elsex {
-                                /* Extension node hash in parent branch */
-                                // Check whether the extension node hash is in the parent branch.
-                                // That means we check whether
-                                // `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
-                                // branch child at `modified_node` position.
-                                // Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
-                                require!((ext_acc, ext_len, mod_node_hash_rlc) => @keccak);
-                            }}
-                        }}
-                    }}
+                let nibbles_count_prev = selectx!{not::expr(is_first_storage_level.expr()) * not_first_level.expr() => {
+                    ext.nibbles_counter().prev()
+                }};
+                // The number of bytes is stored in:
+                // - `s_main.bytes[0]` when the extension node is longer than 55
+                // - `s_rlp2` otherwise
+                let num_bytes_rlp = selectx!{ext.is_longer_than_55 => {
+                    a!(s_main.bytes[0])
                 } elsex {
-                    /* Account first level extension node hash - compared to root */
-                    // When we have an extension node in the first level of the account trie,
-                    // its hash needs to be compared to the root of the trie.
-                    // Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
-                    require!((ext_acc, ext_len, a!(ctx.inter_root(is_s))) => @keccak);
-                }}
-
-                // We need to make sure the total number of nibbles is 64. This constraint ensures the number
-                // of nibbles used (stored in branch init) is correctly computed - nibbles up until this
-                // extension node + nibbles in this extension node.
-                // Once in a leaf, the remaining nibbles stored in a leaf need to be added to the count.
-                // The final count needs to be 64.
-                if is_s {
-                    // Note: for regular branches, the constraint that `nibbles_count` increases
-                    // by 1 is in `branch.rs`.
-                    // nibbles_count_prev needs to be 0 when in first account level or
-                    // in first storage level
-                    let is_first_storage_level = meta.query_advice(
-                        ctx.account_leaf.is_in_added_branch,
-                        Rotation(rot_into_branch_init - 1),
-                    );
-                    let nibbles_count_prev = selectx!{not::expr(is_first_storage_level.expr()) * not_first_level.expr() => {
-                        ext.nibbles_counter().prev()
-                    }};
-
-                    // When there is only one nibble in the extension node, `nibbles_count` changes
-                    // for 2: one nibble and `modified_node` in a branch.
-                    ifx!{ext.is_short() => {
-                        // +1 for nibble, +1 is for branch position
-                        require!(ext.nibbles_counter() => nibbles_count_prev.expr() + 1.expr() + 1.expr());
-                    }}
-
-                    ifx!{ext.is_even() => {
-                        ifx!{ext.is_longer_than_55 => {
-                            // When there is an even number of nibbles in the extension node and the extension
-                            // node is longer than 55 bytes, the number of bytes containing the nibbles
-                            // is given by `s_main.bytes[0]`.
-                            // We compute the number of nibbles as: `(s_bytes0 - 128 - 1) * 2`.
-                            // By `s_bytes0 - 128` we get the number of bytes where nibbles are compressed, but
-                            // then we need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
-                            // (it is just 0 when even number of nibbles).
-                            let num_nibbles = (a!(s_main.bytes[0]) - 128.expr() - 1.expr()) * 2.expr();
-                            // +1 is for branch position
-                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
-                        } elsex {
-                            // When there is an even number of nibbles in the extension node,
-                            // we compute the number of nibbles as: `(s_rlp2 - 128 - 1) * 2`.
-                            // By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed, but
-                            // then we need to subtract 1 because `s_main.bytes[0]` does not contain any nibbles
-                            // (it is just 0 when even number of nibbles).
-                            // In the example below it is: `(130 - 128 - 1) * 2`.
-                            // `[228,130,0,149,160,114,253...`
-                            let num_nibbles = (s_rlp2.expr() - 128.expr() - 1.expr()) * 2.expr();
-                            // +1 is for branch position
-                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
-                        }}
-                    }}
-
-                    ifx!{ext.is_long_odd() => {
-                        ifx!{ext.is_longer_than_55 => {
-                            // When there is an odd number of nibbles in the extension node and the extension,
-                            // node is longer than 55 bytes, the number of bytes containing the nibbles
-                            // is given by `s_main.bytes[0]`.
-                            // We compute the number of nibbles as: `(s_main.bytes[0] - 128) * 2`.
-                            // By `s_main.bytes[0] - 128` we get the number of bytes where nibbles are compressed. We
-                            // multiply by 2 to get the nibbles, but then subtract 1 because in
-                            // `s_main.bytes[1]` there is only 1 nibble.
-                            // Example:
-                            // `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
-                            let num_nibbles = (a!(s_main.bytes[0]) - 128.expr()) * 2.expr() - 1.expr();
-                            // +1 is for branch position
-                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
-                        } elsex {
-                            // When there is an odd number of nibbles in the extension node,
-                            // we compute the number of nibbles as: `(s_rlp2 - 128) * 2`.
-                            // By `s_rlp2 - 128` we get the number of bytes where nibbles are compressed. We
-                            // multiply by 2 to get the nibbles, but then subtract 1 because in
-                            // `s_main.bytes[0]` there is only 1 nibble.
-                            let num_nibbles = (s_rlp2.expr() - 128.expr()) * 2.expr() - 1.expr();
-                            // +1 is for branch position
-                            require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
-                        }}
-                    }}
-                }
-            }}
+                    a!(s_main.rlp2)
+                }};
+                // Calculate the number of nibbles
+                let mut num_nibbles = selectx!{ext.is_short() => {
+                    // Only a single nibble
+                    1.expr()
+                }};
+                num_nibbles = num_nibbles + selectx!{ext.is_even() => {
+                    // With `num_bytes_rlp - 128` we get the number of bytes where nibbles are compressed, but
+                    // then we need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
+                    // (it is just 0 when even number of nibbles).
+                    // In the example below it is: `(130 - 128 - 1) * 2`.
+                    // `[228,130,0,149,160,114,253...`
+                    (num_bytes_rlp.expr() - 128.expr() - 1.expr()) * 2.expr()
+                }};
+                num_nibbles = num_nibbles + selectx!{ext.is_long_odd() => {
+                    // By `num_bytes_rlp - 128` we get the number of bytes where nibbles are compressed. We
+                    // multiply by 2 to get the nibbles, but then subtract 1 because in
+                    // `s_main.bytes[1]` there is only 1 nibble.
+                    // Example:
+                    // `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
+                    (num_bytes_rlp.expr() - 128.expr()) * 2.expr() - 1.expr()
+                }};
+                // Make sure the nibble counter is correctl updated
+                require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());
+            }
         }}
 
         ExtensionNodeConfig {

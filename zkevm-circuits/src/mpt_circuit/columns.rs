@@ -183,8 +183,8 @@ pub(crate) struct DenoteCols<F> {
     pub(crate) sel1: Column<Advice>, /* TODO: check LeafKeyChip where sel1 stores key_rlc_prev,
                                       * sel2 stores key_rlc_mult_prev */
     pub(crate) sel2: Column<Advice>,
-    pub(crate) is_node_hashed_s: Column<Advice>,
-    pub(crate) is_node_hashed_c: Column<Advice>,
+    pub(crate) is_not_hashed_s: Column<Advice>,
+    pub(crate) is_not_hashed_c: Column<Advice>,
     _marker: PhantomData<F>,
 }
 
@@ -196,8 +196,8 @@ impl<F: FieldExt> DenoteCols<F> {
         Self {
             sel1: meta.advice_column(),
             sel2: meta.advice_column(),
-            is_node_hashed_s: meta.advice_column(),
-            is_node_hashed_c: meta.advice_column(),
+            is_not_hashed_s: meta.advice_column(),
+            is_not_hashed_c: meta.advice_column(),
             _marker: PhantomData,
         }
     }
@@ -210,11 +210,11 @@ impl<F: FieldExt> DenoteCols<F> {
         }
     }
 
-    pub(crate) fn is_node_hashed(&self, is_s: bool) -> Column<Advice> {
+    pub(crate) fn is_not_hashed(&self, is_s: bool) -> Column<Advice> {
         if is_s {
-            self.is_node_hashed_s
+            self.is_not_hashed_s
         } else {
-            self.is_node_hashed_c
+            self.is_not_hashed_c
         }
     }
 }

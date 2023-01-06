@@ -100,7 +100,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // On the other hand, this constraint ensured that `not_first_level` is changed in the middle
                     // of the node rows.
                     ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()), not::expr(is_storage_leaf_key_s.expr()) => {
-                        require!(not_first_level.cur() => not_first_level.prev());
+                        require!(not_first_level => not_first_level.prev());
                     }}
                     // TODO(Brecht): No constraint for transition back to 0 seems a bit dangerous
 
@@ -108,13 +108,13 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
                     // that means when `not_first_level` goes from 1 to 0.
                     ifx!{not_first_level.prev() - (not_first_level.cur() + 1.expr())  => {
-                        require!(start_root.cur() => start_root.prev());
-                        require!(final_root.cur() => final_root.prev());
+                        require!(start_root => start_root.prev());
+                        require!(final_root => final_root.prev());
                     }}
                     // When we go from one modification to another, the previous `final_root` needs to be
                     // the same as the current `start_root`.
                     ifx!{not_first_level.prev(), not::expr(not_first_level.cur())  => {
-                        require!(final_root.prev() => start_root.cur());
+                        require!(start_root => final_root.prev());
                     }}
 
                     // It needs to be ensured there is an account proof before the
@@ -146,7 +146,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // It needs to be ensured that `address_rlc` changes only at the first row of the account leaf
                     // or in the branch init row if it is in the first level.
                     ifx!{not::expr(is_account_leaf_key_s.expr()), is_branch_init.expr() - (not_first_level.cur() + 1.expr()) => {
-                        require!(address_rlc.cur() => address_rlc.prev());
+                        require!(address_rlc => address_rlc.prev());
                     }}
                 }}
 
