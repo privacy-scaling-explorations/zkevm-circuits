@@ -109,12 +109,6 @@ impl<F: Field> RestoreContextGadget<F> {
         reversible_write_counter_increase: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
-        // let rw_counter_end_of_reversion = cb.condition(is_success.clone(), |cb| {
-        //     let rw_counter_end_of_reversion = cb.call_context(None, CallContextFieldTag::RwCounterEndOfReversion);
-        //     cb.require_equal("rw_counter_end_of_reversion =  rw_counter + reversible_counter", rw_counter_end_of_reversion.expr(), 
-        //     cb.curr.state.rw_counter.expr() + cb.curr.state.reversible_write_counter.expr());
-        //     rw_counter_end_of_reversion
-        // });
         let rw_counter_end_of_reversion =  cb.call_context(None, CallContextFieldTag::RwCounterEndOfReversion);
 
         
@@ -150,9 +144,9 @@ impl<F: Field> RestoreContextGadget<F> {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
 
-        // adding new
+        // TODO: add is_success check
         cb.require_equal("rw_counter_end_of_reversion =  rw_counter + reversible_counter", rw_counter_end_of_reversion.expr(), 
-        cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() + cb.curr.state.reversible_write_counter.expr());
+        cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() + cb.curr.state.reversible_write_counter.expr() - 1.expr());
 
         let code_deposit_cost = cb.curr.state.is_create.expr()
             * is_success.clone()
