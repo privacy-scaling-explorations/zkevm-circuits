@@ -233,6 +233,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         state.block.sha3_inputs.push(keccak_input);
 
+        if length == 0 {
+            state.handle_return(geth_step)?;
+        }
+
         Ok(vec![exec_step])
     }
 }

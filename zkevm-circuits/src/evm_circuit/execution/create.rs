@@ -94,8 +94,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.stack_pop(value.expr());
 
         let initialization_code = MemoryAddressGadget::construct_2(cb);
-        cb.stack_pop(initialization_code.offset());
-        cb.stack_pop(initialization_code.length());
+        cb.stack_pop(initialization_code.offset_rlc());
+        cb.stack_pop(initialization_code.length_rlc());
 
         let salt = cb.condition(is_create2.expr(), |cb| {
             let salt = cb.query_word();
@@ -242,7 +242,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }
 
-        cb.require_step_state_transition(StepStateTransition {
+        cb.condition(initialization_code.has_length(), |cb| cb.require_step_state_transition(StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
             call_id: To(callee_call_id.expr()),
             is_root: To(false.expr()),
@@ -251,7 +251,22 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             gas_left: To(callee_gas_left),
             reversible_write_counter: To(3.expr()),
             ..StepStateTransition::new_context()
-        });
+        }));
+
+        // cb.condition(not::expr(initialization_code.has_length()), |cb| cb.require_step_state_transition(StepStateTransition {
+        //     rw_counter: Delta(cb.rw_counter_offset()),
+        //     program_counter: Delta(1.expr()),
+        //     stack_pointer: Delta(1.expr()),
+        //     gas_left: To(callee_gas_left),
+        //     reversible_write_counter: To(3.expr()),
+        //     ..StepStateTransition::default()
+        //
+        //     rw_counter: Delta(3.expr()),
+        //     program_counter: Delta(1.expr()),
+        //     stack_pointer: Delta(1.expr()),
+        //     gas_left: Delta(-OpcodeId::MUL.constant_gas_cost().expr()),
+        //     ..Default::default()
+        // });
 
         let keccak_input = cb.query_cell();
         let keccak_input_length = cb.query_cell();
@@ -701,8 +716,12 @@ mod test {
         code
     }
 
-    fn creater_bytecode(is_success: bool, is_create2: bool, is_persistent: bool) -> Bytecode {
-        let initialization_bytes = initialization_bytecode(is_success).code();
+    fn creater_bytecode(
+        initialization_bytecode: Bytecode,
+        is_create2: bool,
+        is_persistent: bool,
+    ) -> Bytecode {
+        let initialization_bytes = initialization_bytecode.code();
         let mut code = bytecode! {
             PUSH32(Word::from_big_endian(&initialization_bytes))
             PUSH1(0)
@@ -721,7 +740,7 @@ mod test {
         } else {
             OpcodeId::CREATE
         });
-        if is_persistent {
+        if !is_persistent {
             code.append(&bytecode! {
                 PUSH1(0)
                 PUSH1(0)
@@ -758,7 +777,8 @@ mod test {
             .cartesian_product(&[true, false])
             .cartesian_product(&[true, false])
         {
-            let root_code = creater_bytecode(*is_success, *is_create2, *is_persistent);
+            let initialization_code = initialization_bytecode(*is_success);
+            let root_code = creater_bytecode(initialization_code, *is_create2, *is_persistent);
             let caller = Account {
                 address: *CALLER_ADDRESS,
                 code: root_code.into(),
@@ -778,10 +798,9 @@ mod test {
     #[test]
     fn test_create_rlp_nonce() {
         for nonce in [0, 1, 255, 256, 0x10000, u64::MAX - 1] {
-            dbg!(nonce);
             let caller = Account {
                 address: *CALLER_ADDRESS,
-                code: creater_bytecode(true, false, true).into(),
+                code: creater_bytecode(initialization_bytecode(true), false, true).into(),
                 nonce: nonce.into(),
                 balance: eth(10),
                 ..Default::default()
@@ -792,6 +811,20 @@ mod test {
                 "nonce = {:?}",
                 nonce,
             );
+        }
+    }
+
+    #[test]
+    fn test_empty_initialization_code() {
+        for is_create2 in [true, false] {
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: creater_bytecode(vec![].into(), is_create2, true).into(),
+                nonce: 10.into(),
+                balance: eth(10),
+                ..Default::default()
+            };
+            assert_eq!(run_test_circuits(test_context(caller), None), Ok(()));
         }
     }
 }
