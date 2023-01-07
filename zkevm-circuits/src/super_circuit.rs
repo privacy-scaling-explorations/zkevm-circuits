@@ -77,7 +77,6 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-
 /// Mock randomness used for `SuperCircuit`.
 pub const MOCK_RANDOMNESS: u64 = 0x100;
 // TODO: Figure out if we can remove MAX_TXS, MAX_CALLDATA and MAX_RWS from the
@@ -231,19 +230,19 @@ pub mod test {
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::Circuit;
     use log::error;
     use mock::{TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use std::collections::HashMap;
-    use halo2_proofs::plonk::Circuit;
     use std::array;
+    use std::collections::HashMap;
 
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
     use crate::util::SubCircuitConfig;
+    use eth_types::{address, bytecode, geth_types::GethData, Word};
 
     impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+        SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
     {
         /// Return the number of rows required to verify a given block
         pub fn get_num_rows_required(block: &Block<F>) -> usize {
