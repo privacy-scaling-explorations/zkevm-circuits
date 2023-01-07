@@ -2092,9 +2092,9 @@ fn multi_keccak<F: Field>(
 
 /// keccak circuit test
 #[cfg(any(feature = "test", test))]
-pub mod tests {
+pub mod test {
     pub use super::*;
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use halo2_proofs::dev::MockProver;
     use log::error;
 
     impl<F: Field> Circuit<F> for KeccakCircuit<F> {
@@ -2149,6 +2149,8 @@ pub mod tests {
 
     #[test]
     fn packed_multi_keccak_simple() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         let k = 11;
         let inputs = vec![
             vec![],

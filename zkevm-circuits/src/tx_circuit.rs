@@ -375,12 +375,10 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
 pub mod test {
     pub use super::*;
     use crate::util::log2_ceil;
-    use eth_types::address;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use mock::AddrOrWallet;
 
     impl<F: Field> Circuit<F> for TxCircuit<F> {
         type Config = (TxCircuitConfig<F>, Challenges);
@@ -494,6 +492,9 @@ pub mod test {
 
     #[test]
     fn tx_circuit_bad_address() {
+        use eth_types::address;
+        use mock::AddrOrWallet;
+
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
 

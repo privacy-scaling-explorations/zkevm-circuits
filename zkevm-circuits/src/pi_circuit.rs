@@ -21,7 +21,7 @@ use gadgets::is_zero::IsZeroChip;
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
 
@@ -39,7 +39,8 @@ pub struct BlockValues {
     number: u64,
     timestamp: u64,
     difficulty: Word,
-    base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
+    base_fee: Word,
+    // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
     chain_id: u64,
     history_hashes: Vec<H256>,
 }
@@ -48,7 +49,8 @@ pub struct BlockValues {
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
     nonce: Word,
-    gas: Word, //gas limit
+    gas: Word,
+    //gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
@@ -95,7 +97,7 @@ impl PublicData {
                 .map(|&hash| H256::from(hash.to_be_bytes()))
                 .collect(),
         ]
-        .concat();
+            .concat();
         BlockValues {
             coinbase: self.block_constants.coinbase,
             gas_limit: self.block_constants.gas_limit.as_u64(),
@@ -1502,13 +1504,11 @@ fn raw_public_inputs_col<F: Field>(
 
 /// pi circuit test
 #[cfg(any(feature = "test", test))]
-mod test {
+pub mod test {
     pub use super::*;
-
-    use crate::test_util::rand_tx;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
+        plonk::Circuit,
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1528,7 +1528,7 @@ mod test {
 
     #[cfg(any(feature = "test", test))]
     impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-        for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
+    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
     {
         type Config = (PiCircuitConfig<F>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
@@ -1590,6 +1590,8 @@ mod test {
 
     #[test]
     fn test_default_pi() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 8;
         let public_data = PublicData::default();
@@ -1600,6 +1602,9 @@ mod test {
 
     #[test]
     fn test_simple_pi() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+        use crate::test_util::rand_tx;
+
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 

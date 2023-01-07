@@ -717,7 +717,6 @@ mod test {
         circuit::SimpleFloorPlanner,
         dev::MockProver,
         halo2curves::{
-            bn256::Fr,
             group::{Curve, Group},
             CurveAffine,
         },
@@ -841,6 +840,8 @@ mod test {
 
     #[test]
     fn sign_verify() {
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         // Vectors using `XorShiftRng::seed_from_u64(1)`
         // sk: 0x771bd7bf6c6414b9370bb8559d46e1cedb479b1836ea3c2e59a54c343b0d0495
         // pk: (

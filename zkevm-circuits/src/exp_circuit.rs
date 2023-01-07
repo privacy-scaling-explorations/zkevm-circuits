@@ -441,7 +441,8 @@ pub mod test {
     use crate::table::ExpTable;
     use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
     use crate::witness::Block;
-    use eth_types::{Field, ToScalar, U256};
+    use eth_types::Field;
+    // use eth_types::{Field, ToScalar, U256};
 
     impl<F: Field> Circuit<F> for ExpCircuit<F> {
         type Config = (ExpCircuitConfig<F>, Challenges);

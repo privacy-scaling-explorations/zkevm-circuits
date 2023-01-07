@@ -671,12 +671,10 @@ pub mod test {
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
 
     use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
 
     pub use super::*;
     use eth_types::Field;
@@ -856,6 +854,9 @@ pub mod test {
 
     #[test]
     fn copy_circuit_valid_calldatacopy() {
+        use crate::evm_circuit::witness::block_convert;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         let builder = gen_calldatacopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(14, block), Ok(()));
@@ -863,6 +864,9 @@ pub mod test {
 
     #[test]
     fn copy_circuit_valid_codecopy() {
+        use crate::evm_circuit::witness::block_convert;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         let builder = gen_codecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
@@ -870,6 +874,9 @@ pub mod test {
 
     #[test]
     fn copy_circuit_valid_sha3() {
+        use crate::evm_circuit::witness::block_convert;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         let builder = gen_sha3_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(20, block), Ok(()));
@@ -877,6 +884,9 @@ pub mod test {
 
     #[test]
     fn copy_circuit_tx_log() {
+        use crate::evm_circuit::witness::block_convert;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         let builder = gen_tx_log_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));

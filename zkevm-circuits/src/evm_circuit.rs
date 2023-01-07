@@ -198,11 +198,10 @@ impl<F: Field> EvmCircuit<F> {
         }
     }
 
-    pub fn new_dev(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
-        Self {
-            block: Some(block),
-            fixed_table_tags,
-        }
+    pub fn get_num_rows_required(block: &Block<F>) -> usize {
+        let mut cs = ConstraintSystem::default();
+        let config = EvmCircuit::<F>::configure(&mut cs);
+        config.get_num_rows_required(block)
     }
 }
 
@@ -268,33 +267,32 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 /// evm circuit
 #[cfg(any(feature = "test", test))]
 pub mod test {
-    use super::*;
+    pub use super::*;
     use crate::{
-        evm_circuit::{step::ExecutionState, witness::Block, EvmCircuitConfig},
+        evm_circuit::{witness::Block, EvmCircuitConfig},
         exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::{power_of_randomness_from_instance, Challenges},
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Field, Word};
+    use eth_types::{geth_types::GethData, Field, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem, Error},
     };
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::test_ctx::TestContext;
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
-    use strum::IntoEnumIterator;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
-    where
-        T: SampleUniform,
-        R: SampleRange<T>,
+        where
+            T: SampleUniform,
+            R: SampleRange<T>,
     {
         thread_rng().gen_range(range)
     }
@@ -386,12 +384,12 @@ pub mod test {
     }
 
     impl<F: Field> EvmCircuit<F> {
-        pub fn get_num_rows_required(block: &Block<F>) -> usize {
-            let mut cs = ConstraintSystem::default();
-            let config = EvmCircuit::<F>::configure(&mut cs);
-            config.get_num_rows_required(block)
+        pub fn new_dev(block: Block<F>, fixed_table_tags: Vec<FixedTableTag>) -> Self {
+            Self {
+                block: Some(block),
+                fixed_table_tags,
+            }
         }
-
         pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
             let mut cs = ConstraintSystem::default();
             let config = EvmCircuit::<F>::configure(&mut cs);
@@ -461,7 +459,7 @@ pub mod test {
             num_rows_required_for_tx_table,
             num_rows_required_for_exp_table,
         ])
-        .unwrap();
+            .unwrap();
 
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
         dbg!([
@@ -542,6 +540,11 @@ pub mod test {
     #[ignore]
     #[test]
     pub fn get_evm_states_stats() {
+        use crate::evm_circuit::step::ExecutionState;
+        use eth_types::bytecode;
+        use mock::test_ctx::helpers::*;
+
+
         let mut meta = ConstraintSystem::<Fr>::default();
         let circuit = EvmCircuit::configure(&mut meta);
 
@@ -573,8 +576,8 @@ pub mod test {
                     tx_from_1_to_0,
                     |block, _tx| block.number(0xcafeu64),
                 )
-                .unwrap()
-                .into();
+                    .unwrap()
+                    .into();
                 let gas_cost = block.geth_traces[0].struct_logs[7].gas_cost.0;
                 stats.push((state, opcode, h, gas_cost));
             }
