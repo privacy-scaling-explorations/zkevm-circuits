@@ -211,6 +211,13 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             },
         );
 
+        // `p_top` constraint
+        cb.require_equal(
+            "p_top == is_neg * (MAX_U64 + 1 - p_hi)",
+            p_top.expr(),
+            is_neg.expr() * (u64::MAX.expr() + 1.expr() - p_hi.expr()),
+        );
+
         // Constrain `p_lo == pow(2, shf_mod64)`.
         cb.add_lookup(
             "Pow2 lookup for p_lo == pow(2, shf_mod64)",
