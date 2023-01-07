@@ -59,6 +59,7 @@ mod error_oog_static_memory;
 mod error_stack;
 mod exp;
 mod extcodehash;
+mod extcodesize;
 mod gas;
 mod gasprice;
 mod is_zero;
@@ -121,6 +122,7 @@ use error_oog_constant::ErrorOOGConstantGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodehash::ExtcodehashGadget;
+use extcodesize::ExtcodesizeGadget;
 use gas::GasGadget;
 use gasprice::GasPriceGadget;
 use is_zero::IsZeroGadget;
@@ -214,6 +216,7 @@ pub(crate) struct ExecutionConfig<F> {
     dup_gadget: DupGadget<F>,
     exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
+    extcodesize_gadget: ExtcodesizeGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
     iszero_gadget: IsZeroGadget<F>,
@@ -236,7 +239,6 @@ pub(crate) struct ExecutionConfig<F> {
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
     sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
-    extcodesize_gadget: DummyGadget<F, 1, 1, { ExecutionState::EXTCODESIZE }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
@@ -450,6 +452,7 @@ impl<F: Field> ExecutionConfig<F> {
             comparator_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
+            extcodesize_gadget: configure_gadget!(),
             gas_gadget: configure_gadget!(),
             gasprice_gadget: configure_gadget!(),
             iszero_gadget: configure_gadget!(),
@@ -475,7 +478,6 @@ impl<F: Field> ExecutionConfig<F> {
             blockhash_gadget: configure_gadget!(),
             exp_gadget: configure_gadget!(),
             sar_gadget: configure_gadget!(),
-            extcodesize_gadget: configure_gadget!(),
             extcodecopy_gadget: configure_gadget!(),
             returndatasize_gadget: configure_gadget!(),
             returndatacopy_gadget: configure_gadget!(),
@@ -802,6 +804,43 @@ impl<F: Field> ExecutionConfig<F> {
         num_rows
     }
 
+    /// Assign columns related to step counter
+    fn assign_q_step(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        height: usize,
+    ) -> Result<(), Error> {
+        for idx in 0..height {
+            let offset = offset + idx;
+            self.q_usable.enable(region, offset)?;
+            region.assign_advice(
+                || "step selector",
+                self.q_step,
+                offset,
+                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+            )?;
+            let value = if idx == 0 {
+                F::zero()
+            } else {
+                F::from((height - idx) as u64)
+            };
+            region.assign_advice(
+                || "step height",
+                self.num_rows_until_next_step,
+                offset,
+                || Value::known(value),
+            )?;
+            region.assign_advice(
+                || "step height inv",
+                self.num_rows_inv,
+                offset,
+                || Value::known(value.invert().unwrap_or(F::zero())),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Assign block
     /// When exact is enabled, assign exact steps in block without padding for
     /// unit test purpose
@@ -859,35 +898,14 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.evm_circuit_pad_to;
                 let no_padding = evm_rows == 0;
-                let assign_q_step =
-                    |region: &mut Region<'_, F>, offset, height| -> Result<(), Error> {
-                        for idx in 0..height {
-                            let offset = offset + idx;
-                            self.q_usable.enable(region, offset)?;
-                            region.assign_advice(
-                                || "step selector",
-                                self.q_step,
-                                offset,
-                                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
-                            )?;
-                            let value = if idx == 0 {
-                                F::zero()
-                            } else {
-                                F::from((height - idx) as u64)
-                            };
-                            region.assign_advice(
-                                || "step height",
-                                self.num_rows_until_next_step,
-                                offset,
-                                || Value::known(value),
-                            )?;
-                            region.assign_advice(
-                                || "step height inv",
-                                self.num_rows_inv,
-                                offset,
-                                || Value::known(value.invert().unwrap_or(F::zero())),
-                            )?;
-                        }
+                // part1: assign real steps
+                loop {
+                    let (transaction, call, step) = steps.next().expect("should not be empty");
+                    let next = steps.peek();
+                    if next.is_none() {
+                        break;
+                    self.assign_q_step(&mut region, offset, height)?;
+
                         Ok(())
                     };
 
@@ -981,7 +999,7 @@ impl<F: Field> ExecutionConfig<F> {
                     )?;
 
                     for row_idx in offset..last_row {
-                        assign_q_step(&mut region, row_idx, height)?;
+                        self.assign_q_step(&mut region, row_idx, height)?;
                     }
                     offset = last_row;
                 }
@@ -1001,7 +1019,7 @@ impl<F: Field> ExecutionConfig<F> {
                     None,
                     power_of_randomness,
                 )?;
-                assign_q_step(&mut region, offset, height)?;
+                self.assign_q_step(&mut region, offset, height)?;
                 // enable q_step_last
                 self.q_step_last.enable(&mut region, offset)?;
                 offset += height;
@@ -1027,6 +1045,45 @@ impl<F: Field> ExecutionConfig<F> {
             },
         )?;
         log::debug!("assign_block done");
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_same_exec_step_in_range(
+        &self,
+        region: &mut Region<'_, F>,
+        offset_begin: usize,
+        offset_end: usize,
+        block: &Block<F>,
+        transaction: &Transaction,
+        call: &Call,
+        step: &ExecStep,
+        height: usize,
+        power_of_randomness: [F; 31],
+    ) -> Result<(), Error> {
+        if offset_end <= offset_begin {
+            return Ok(());
+        }
+        assert_eq!(height, 1);
+        assert!(step.rw_indices.is_empty());
+        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+
+        // Disable access to next step deliberately for "repeatable" step
+        let region = &mut CachedRegion::<'_, '_, F>::new(
+            region,
+            power_of_randomness,
+            self.advices.to_vec(),
+            1,
+            offset_begin,
+        );
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+
+        region.replicate_assignment_for_range(
+            || format!("repeat {:?} rows", step.execution_state),
+            offset_begin + 1,
+            offset_end,
+        )?;
+
         Ok(())
     }
 
@@ -1165,6 +1222,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::DUP => assign_exec_step!(self.dup_gadget),
             ExecutionState::EXP => assign_exec_step!(self.exp_gadget),
             ExecutionState::EXTCODEHASH => assign_exec_step!(self.extcodehash_gadget),
+            ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::GAS => assign_exec_step!(self.gas_gadget),
             ExecutionState::GASPRICE => assign_exec_step!(self.gasprice_gadget),
             ExecutionState::ISZERO => assign_exec_step!(self.iszero_gadget),
@@ -1193,7 +1251,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
-            ExecutionState::EXTCODESIZE => assign_exec_step!(self.extcodesize_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),

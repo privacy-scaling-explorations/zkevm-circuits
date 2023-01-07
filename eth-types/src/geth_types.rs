@@ -32,6 +32,16 @@ pub struct Account {
     pub storage: HashMap<Word, Word>,
 }
 
+impl Account {
+    /// Return if account is empty or not.
+    pub fn is_empty(&self) -> bool {
+        self.nonce.is_zero()
+            && self.balance.is_zero()
+            && self.code.is_empty()
+            && self.storage.is_empty()
+    }
+}
+
 fn serde_account_storage<S: Serializer>(
     to_serialize: &HashMap<Word, Word>,
     serializer: S,

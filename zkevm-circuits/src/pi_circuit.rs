@@ -16,6 +16,8 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
+use crate::tx_circuit::TX_LEN;
+
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{Block, BlockContext, BlockContexts, Transaction};
@@ -863,6 +865,15 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             block.circuits_params.max_inner_blocks,
             block,
         )
+    }
+
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        BLOCK_LEN
+            + 1
+            + EXTRA_LEN
+            + 3 * (TX_LEN * block.circuits_params.max_txs + 1)
+            + block.circuits_params.max_calldata
     }
 
     /// Compute the public inputs for this circuit.
