@@ -97,7 +97,7 @@ impl PublicData {
                 .map(|&hash| H256::from(hash.to_be_bytes()))
                 .collect(),
         ]
-            .concat();
+        .concat();
         BlockValues {
             coinbase: self.block_constants.coinbase,
             gas_limit: self.block_constants.gas_limit.as_u64(),
@@ -1528,7 +1528,7 @@ pub mod test {
 
     #[cfg(any(feature = "test", test))]
     impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
+        for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
     {
         type Config = (PiCircuitConfig<F>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
@@ -1602,8 +1602,8 @@ pub mod test {
 
     #[test]
     fn test_simple_pi() {
-        use halo2_proofs::halo2curves::bn256::Fr;
         use crate::test_util::rand_tx;
+        use halo2_proofs::halo2curves::bn256::Fr;
 
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;

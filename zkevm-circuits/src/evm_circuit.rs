@@ -1,7 +1,6 @@
 //! The EVM circuit implementation.
 
 #![allow(missing_docs)]
-
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::*,
@@ -197,12 +196,6 @@ impl<F: Field> EvmCircuit<F> {
             fixed_table_tags: FixedTableTag::iter().collect(),
         }
     }
-
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let mut cs = ConstraintSystem::default();
-        let config = EvmCircuit::<F>::configure(&mut cs);
-        config.get_num_rows_required(block)
-    }
 }
 
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
@@ -390,6 +383,13 @@ pub mod test {
                 fixed_table_tags,
             }
         }
+
+        pub fn get_num_rows_required(block: &Block<F>) -> usize {
+            let mut cs = ConstraintSystem::default();
+            let config = EvmCircuit::<F>::configure(&mut cs);
+            config.get_num_rows_required(block)
+        }
+
         pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
             let mut cs = ConstraintSystem::default();
             let config = EvmCircuit::<F>::configure(&mut cs);
@@ -458,8 +458,7 @@ pub mod test {
             num_rows_required_for_keccak_table,
             num_rows_required_for_tx_table,
             num_rows_required_for_exp_table,
-        ])
-            .unwrap();
+        ]).unwrap();
 
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
         dbg!([
@@ -543,7 +542,6 @@ pub mod test {
         use crate::evm_circuit::step::ExecutionState;
         use eth_types::bytecode;
         use mock::test_ctx::helpers::*;
-
 
         let mut meta = ConstraintSystem::<Fr>::default();
         let circuit = EvmCircuit::configure(&mut meta);

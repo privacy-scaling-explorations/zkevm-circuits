@@ -66,7 +66,7 @@ use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
 };
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
-use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{log2_ceil, Challenges, SubCircuit};
 use crate::witness::{block_convert, Block, MptUpdates};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
@@ -74,10 +74,9 @@ use eth_types::geth_types::GethData;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    plonk::{ConstraintSystem, Error, Expression},
 };
 
-use std::array;
 
 /// Mock randomness used for `SuperCircuit`.
 pub const MOCK_RANDOMNESS: u64 = 0x100;
@@ -128,21 +127,6 @@ pub struct SuperCircuit<
     pub exp_circuit: ExpCircuit<F>,
     /// Keccak Circuit
     pub keccak_circuit: KeccakCircuit<F>,
-}
-
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
-{
-    /// Return the number of rows required to verify a given block
-    pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = {
-            let mut cs = ConstraintSystem::default();
-            let config = Self::configure(&mut cs);
-            config.evm_circuit.get_num_rows_required(block)
-        };
-        let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
-        num_rows_evm_circuit.max(num_rows_tx_circuit)
-    }
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
@@ -252,8 +236,26 @@ pub mod test {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::collections::HashMap;
+    use halo2_proofs::plonk::Circuit;
+    use std::array;
 
     use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use crate::util::SubCircuitConfig;
+
+    impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
+    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+    {
+        /// Return the number of rows required to verify a given block
+        pub fn get_num_rows_required(block: &Block<F>) -> usize {
+            let num_rows_evm_circuit = {
+                let mut cs = ConstraintSystem::default();
+                let config = Self::configure(&mut cs);
+                config.evm_circuit.get_num_rows_required(block)
+            };
+            let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
+            num_rows_evm_circuit.max(num_rows_tx_circuit)
+        }
+    }
 
     impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
         for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>

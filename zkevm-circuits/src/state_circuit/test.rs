@@ -22,8 +22,8 @@ use std::collections::HashMap;
 const N_ROWS: usize = 1 << 16;
 
 impl<F: Field> Circuit<F> for StateCircuit<F>
-    where
-        F: Field,
+where
+    F: Field,
 {
     type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -152,11 +152,11 @@ fn degree() {
 #[test]
 fn verifying_key_independent_of_rw_length() {
     use bus_mapping::operation::{RWCounter, RW};
+    use eth_types::evm_types::MemoryAddress;
     use halo2_proofs::halo2curves::bn256::Bn256;
     use halo2_proofs::plonk::keygen_vk;
     use halo2_proofs::poly::kzg::commitment::ParamsKZG;
     use rand::SeedableRng;
-    use eth_types::evm_types::MemoryAddress;
 
     let params = ParamsKZG::<Bn256>::setup(17, rand_chacha::ChaCha20Rng::seed_from_u64(2));
 
@@ -184,8 +184,8 @@ fn verifying_key_independent_of_rw_length() {
 #[test]
 fn state_circuit_simple_2() {
     use bus_mapping::operation::{RWCounter, RW};
-    use eth_types::evm_types::{StackAddress, MemoryAddress};
-    use eth_types::{U256, Word, ToAddress};
+    use eth_types::evm_types::{MemoryAddress, StackAddress};
+    use eth_types::{ToAddress, Word, U256};
 
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
@@ -268,7 +268,7 @@ fn state_circuit_simple_2() {
 fn state_circuit_simple_6() {
     use bus_mapping::operation::{RWCounter, RW};
     use eth_types::evm_types::MemoryAddress;
-    use eth_types::{Word, U256, ToAddress};
+    use eth_types::{ToAddress, Word, U256};
 
     let memory_op_0 = Operation::new(
         RWCounter::from(12),
@@ -299,7 +299,7 @@ fn state_circuit_simple_6() {
 fn lexicographic_ordering_test_1() {
     use bus_mapping::operation::{RWCounter, RW};
     use eth_types::evm_types::MemoryAddress;
-    use eth_types::{U256, Word, ToAddress};
+    use eth_types::{ToAddress, Word, U256};
 
     let memory_op = Operation::new(
         RWCounter::from(12),
@@ -492,7 +492,7 @@ fn tx_log_bad() {
 #[test]
 fn address_limb_mismatch() {
     use crate::table::AccountFieldTag;
-    use eth_types::{U256, address};
+    use eth_types::{address, U256};
 
     let rows = vec![Rw::Account {
         rw_counter: 1,
@@ -512,7 +512,7 @@ fn address_limb_mismatch() {
 #[test]
 fn address_limb_out_of_range() {
     use crate::table::AccountFieldTag;
-    use eth_types::{U256, address};
+    use eth_types::{address, U256};
 
     let rows = vec![Rw::Account {
         rw_counter: 1,
@@ -974,10 +974,10 @@ fn invalid_stack_address_change() {
 
 #[test]
 fn invalid_tags() {
+    use crate::table::RwTableTag;
     use gadgets::binary_number::AsBits;
     use std::collections::BTreeSet;
     use strum::IntoEnumIterator;
-    use crate::table::RwTableTag;
 
     let first_row_offset = -isize::try_from(N_ROWS).unwrap();
     let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
