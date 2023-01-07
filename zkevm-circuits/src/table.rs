@@ -7,12 +7,16 @@ use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
-    Block, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw, RwMap, RwRow,
-    SignedTransaction, Transaction,
+    Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
+    RwMap, RwRow, SignedTransaction, Transaction,
 };
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
+use bus_mapping::circuit_input_builder::{
+    get_dummy_tx, CopyDataType, CopyEvent, CopyStep, ExpEvent,
+};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use ethers_core::types::H256;
+use ethers_core::utils::keccak256;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::util::{split_u256, split_u256_limb64};
 use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
@@ -72,10 +76,10 @@ pub enum TxFieldTag {
     Null = 0,
     /// Nonce
     Nonce,
-    /// Gas
-    Gas,
     /// GasPrice
     GasPrice,
+    /// Gas
+    Gas,
     /// CallerAddress
     CallerAddress,
     /// CalleeAddress
@@ -175,14 +179,39 @@ impl TxTable {
                 )?;
                 offset += 1;
 
+                // FIXME: remove this hardcoded default chain_id
+                let chain_id = if !txs.is_empty() { txs[0].chain_id } else { 1 };
+                let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
+                let dummy_tx_hash = keccak256(dummy_tx.rlp_signed(&dummy_sig));
+
                 let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
                     .map(|i| Transaction {
                         id: i + 1,
+                        hash: H256(dummy_tx_hash),
                         ..Default::default()
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    for row in tx.table_assignments(*challenges) {
+                    for row in tx.table_assignments_fixed(*challenges) {
+                        for (index, column) in advice_columns.iter().enumerate() {
+                            region.assign_advice(
+                                || format!("tx table row {}", offset),
+                                *column,
+                                offset,
+                                || row[if index > 0 { index + 1 } else { index }],
+                            )?;
+                        }
+                        region.assign_advice(
+                            || format!("tx table row {}", offset),
+                            self.tag,
+                            offset,
+                            || row[1],
+                        )?;
+                        offset += 1;
+                    }
+                }
+                for tx in txs.iter().chain(padding_txs.iter()) {
+                    for row in tx.table_assignments_dyn(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
                                 || format!("tx table row {}", offset),
@@ -717,7 +746,8 @@ impl BlockTable {
         layouter: &mut impl Layouter<F>,
         block_ctxs: &BlockContexts,
         txs: &[Transaction],
-        randomness: F,
+        max_inner_blocks: usize,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -735,19 +765,23 @@ impl BlockTable {
                 offset += 1;
 
                 let mut cum_num_txs = 0usize;
-                for block_ctx in block_ctxs.ctxs.values() {
+                let padding_blocks = (block_ctxs.ctxs.len()..max_inner_blocks)
+                    .into_iter()
+                    .map(|_| BlockContext::default())
+                    .collect::<Vec<_>>();
+                for block_ctx in block_ctxs.ctxs.values().chain(padding_blocks.iter()) {
                     let num_txs = txs
                         .iter()
                         .filter(|tx| tx.block_number == block_ctx.number.as_u64())
                         .count();
                     cum_num_txs += num_txs;
-                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, randomness) {
+                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
                         for (column, value) in block_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
                                 offset,
-                                || Value::known(value),
+                                || value,
                             )?;
                         }
                         offset += 1;

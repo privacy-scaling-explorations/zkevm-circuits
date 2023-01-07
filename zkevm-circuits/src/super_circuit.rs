@@ -81,6 +81,7 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 
+use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use crate::rlp_circuit::{RlpCircuit, RlpCircuitConfig};
 use std::array;
 use strum::IntoEnumIterator;
@@ -96,6 +97,7 @@ pub struct SuperCircuitConfig<
     F: Field,
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
+    const MAX_INNER_BLOCKS: usize,
     const MAX_RWS: usize,
 > {
     block_table: BlockTable,
@@ -108,7 +110,7 @@ pub struct SuperCircuitConfig<
     bytecode_circuit: BytecodeCircuitConfig<F>,
     copy_circuit: CopyCircuitConfig<F>,
     keccak_circuit: KeccakCircuitConfig<F>,
-    //pi_circuit: PiCircuitConfig<F>,
+    pi_circuit: PiCircuitConfig<F>,
     exp_circuit: ExpCircuitConfig<F>,
     rlp_circuit: RlpCircuitConfig<F>,
 }
@@ -119,6 +121,7 @@ pub struct SuperCircuit<
     F: Field,
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
+    const MAX_INNER_BLOCKS: usize,
     const MAX_RWS: usize,
 > {
     /// EVM Circuit
@@ -128,7 +131,7 @@ pub struct SuperCircuit<
     /// The transaction circuit that will be used in the `synthesize` step.
     //pub tx_circuit: TxCircuit<F>,
     /// Public Input Circuit
-    //pub pi_circuit: PiCircuit<F>,
+    pub pi_circuit: PiCircuit<F>,
     /// Bytecode Circuit
     pub bytecode_circuit: BytecodeCircuit<F>,
     /// Copy Circuit
@@ -141,8 +144,13 @@ pub struct SuperCircuit<
     pub rlp_circuit: RlpCircuit<F, SignedTransaction>,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MAX_INNER_BLOCKS: usize,
+        const MAX_RWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
@@ -163,10 +171,15 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize> Circuit<F>
-    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MAX_INNER_BLOCKS: usize,
+        const MAX_RWS: usize,
+    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
 {
-    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
+    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -229,19 +242,20 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
 
         let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
         log_circuit_info(meta, "rlp");
-        /*
         let pi_circuit = PiCircuitConfig::new(
             meta,
             PiCircuitConfigArgs {
                 max_txs: MAX_TXS,
                 max_calldata: MAX_CALLDATA,
+                max_inner_blocks: MAX_INNER_BLOCKS,
                 block_table: block_table.clone(),
+                keccak_table: keccak_table.clone(),
                 tx_table: tx_table.clone(),
+                challenges: challenges.clone(),
             },
         );
 
         log_circuit_info(meta, "pi");
-        */
         /*
         let tx_circuit = TxCircuitConfig::new(
             meta,
@@ -314,7 +328,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             copy_circuit,
             bytecode_circuit,
             keccak_circuit,
-            //pi_circuit,
+            pi_circuit,
             rlp_circuit,
             exp_circuit,
         }
@@ -332,14 +346,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
         );
         let rws = &self.state_circuit.rows;
 
-        config
-            .block_table
-            .load(&mut layouter, &block.context, &block.txs, block.randomness)?;
-
-        config.mpt_table.load(
+        // PI circuit had the hardcoded constants for RegionIndex of block table
+        // and tx table (which are 0 and 1).
+        // The reason for that is the assignment of block/tx tables are done in
+        // their load() functions which however do not emit the cells.
+        // To set up copy constraints between pi cells and block/tx table cells,
+        // we need to construct them manually.
+        config.block_table.load(
             &mut layouter,
-            &MptUpdates::mock_from(rws),
-            Value::known(block.randomness),
+            &block.context,
+            &block.txs,
+            block.circuits_params.max_inner_blocks,
+            &challenges,
         )?;
 
         config.tx_table.load(
@@ -347,6 +365,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             &block.txs,
             block.circuits_params.max_txs,
             &challenges,
+        )?;
+
+        config.mpt_table.load(
+            &mut layouter,
+            &MptUpdates::mock_from(rws),
+            Value::known(block.randomness),
         )?;
 
         self.keccak_circuit
@@ -366,14 +390,18 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
             .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
         self.rlp_circuit
             .synthesize_sub(&config.rlp_circuit, &challenges, &mut layouter)?;
-        //self.pi_circuit
-        //    .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
+        self.pi_circuit
+            .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())
     }
 }
 
-impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
-    SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>
+impl<
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MAX_INNER_BLOCKS: usize,
+        const MAX_RWS: usize,
+    > SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -389,6 +417,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
             CircuitsParams {
                 max_txs: MAX_TXS,
                 max_calldata: MAX_CALLDATA,
+                max_inner_blocks: 64,
                 max_rws: MAX_RWS,
                 max_bytecode: 512,
                 keccak_padding: None,
@@ -428,7 +457,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         let num_rows_required =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::get_num_rows_required(&block);
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>::get_num_rows_required(&block);
 
         let k = log2_ceil(
             64 + fixed_table_tags
@@ -454,18 +483,18 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
         let evm_circuit = EvmCircuit::new_from_block(&block);
         let state_circuit = StateCircuit::new_from_block(&block);
         //let tx_circuit = TxCircuit::new_from_block(&block);
-        //let pi_circuit = PiCircuit::new_from_block(&block);
+        let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
         let copy_circuit = CopyCircuit::new_from_block(&block);
         let exp_circuit = ExpCircuit::new_from_block(&block);
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
         let rlp_circuit = RlpCircuit::new_from_block(&block);
 
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS> {
+        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
             evm_circuit,
             state_circuit,
             //tx_circuit,
-            //pi_circuit,
+            pi_circuit,
             bytecode_circuit,
             copy_circuit,
             exp_circuit,
@@ -480,12 +509,10 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
     /// Returns suitable inputs for the SuperCircuit.
     pub fn instance(&self) -> Vec<Vec<Fr>> {
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
-        //let pi_instance = self.pi_circuit.instance();
         // FIXME: why two columns??
         //let instance = vec![pi_instance[0].clone()];
 
-        //instance
-        vec![]
+        self.pi_circuit.instance()
     }
 }
 
@@ -511,7 +538,7 @@ mod super_circuit_tests {
     #[test]
     fn super_circuit_degree() {
         let mut cs = ConstraintSystem::<Fr>::default();
-        SuperCircuit::<_, 1, 32, 256>::configure(&mut cs);
+        SuperCircuit::<_, 1, 32, 64, 256>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
         assert!(cs.degree() <= 9);
@@ -561,7 +588,7 @@ mod super_circuit_tests {
 
         block.sign(&wallets);
 
-        let (k, circuit, instance, _) = SuperCircuit::<_, 1, 32, 256>::build(block).unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<_, 1, 32, 64, 256>::build(block).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {

@@ -288,6 +288,8 @@ pub(crate) struct AssignedECDSA<F: Field> {
 #[derive(Debug)]
 pub(crate) struct AssignedSignatureVerify<F: Field> {
     pub(crate) address: AssignedValue<F>,
+    pub(crate) msg_len: usize,
+    pub(crate) msg_rlc: Value<F>,
     pub(crate) msg_hash_rlc: AssignedValue<F>,
 }
 
@@ -345,6 +347,7 @@ impl<F: Field> SignVerifyChip<F> {
         let SignData {
             signature,
             pk,
+            msg: _,
             msg_hash,
         } = sign_data;
         let (sig_r, sig_s) = signature;
@@ -586,6 +589,10 @@ impl<F: Field> SignVerifyChip<F> {
 
         Ok(AssignedSignatureVerify {
             address,
+            msg_len: sign_data.msg.len(),
+            msg_rlc: challenges
+                .keccak_input()
+                .map(|r| rlc::value(sign_data.msg.iter().rev(), r)),
             msg_hash_rlc,
         })
     }
@@ -694,8 +701,9 @@ mod sign_verify_tests {
         plonk::Circuit,
     };
     use pretty_assertions::assert_eq;
-    use rand::{RngCore, SeedableRng};
+    use rand::{Rng, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
+    use sha3::{Digest, Keccak256};
 
     #[derive(Clone, Debug)]
     struct TestCircuitSignVerifyConfig {
@@ -800,6 +808,14 @@ mod sign_verify_tests {
         secp256k1::Fq::random(rng)
     }
 
+    // Generate a test message.
+    fn gen_msg(mut rng: impl RngCore) -> Vec<u8> {
+        let msg_len: usize = rng.gen_range(0..128);
+        let mut msg = vec![0; msg_len];
+        rng.fill_bytes(&mut msg);
+        msg
+    }
+
     // Returns (r, s)
     fn sign_with_rng(
         rng: impl RngCore,
@@ -826,11 +842,18 @@ mod sign_verify_tests {
         let mut signatures = Vec::new();
         for _ in 0..NUM_SIGS {
             let (sk, pk) = gen_key_pair(&mut rng);
-            let msg_hash = gen_msg_hash(&mut rng);
+            let msg = gen_msg(&mut rng);
+            let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+                .as_slice()
+                .to_vec()
+                .try_into()
+                .expect("hash length isn't 32 bytes");
+            let msg_hash = secp256k1::Fq::from_bytes(&msg_hash).unwrap();
             let sig = sign_with_rng(&mut rng, sk, msg_hash);
             signatures.push(SignData {
                 signature: sig,
                 pk,
+                msg: msg.into(),
                 msg_hash,
             });
         }
