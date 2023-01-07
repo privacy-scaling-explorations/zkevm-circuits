@@ -92,21 +92,30 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r;
 
-        constraints! {[meta, cb], {
-            // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,236,246,95,240,224,191,229,27,102,202,231,184,80
-            // There are 112 bytes after the first two bytes.
-            // 157 means the key is 29 (157 - 128) bytes long.
-            // Nonce, balance, storage, codehash are string in RLP: s_rlp1 and s_rlp2
-            // contains the length of this string, for example 184 80 means the second
-            // part is of length 1 (183 + 1 = 184) and there are 80 bytes in this string.
-            // Then there is a list rlp meta data 248 78 where (this is stored in c_rlp1 and
+        constraints!([meta, cb], {
+            // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,
+            // 236,246,95,240,224,191,229,27,102,202,231,184,80 There are 112
+            // bytes after the first two bytes. 157 means the key is 29 (157 -
+            // 128) bytes long. Nonce, balance, storage, codehash are string in
+            // RLP: s_rlp1 and s_rlp2 contains the length of this string, for
+            // example 184 80 means the second part is of length 1 (183 + 1 =
+            // 184) and there are 80 bytes in this string. Then there is a list
+            // rlp meta data 248 78 where (this is stored in c_rlp1 and
             // c_rlp2) 78 = 3 (nonce) + 9 (balance) + 33 (storage) + 33
             // (codehash). We have nonce in s_main.bytes and balance in c_main.bytes.
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
             // 184     80      248     78      nonce      balance
 
-            let rot = if is_s {-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)} else {-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)};
-            let rot_into_non_existing = if is_s {-(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND)} else {-(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND)};
+            let rot = if is_s {
+                -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)
+            } else {
+                -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)
+            };
+            let rot_into_non_existing = if is_s {
+                -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND)
+            } else {
+                -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND)
+            };
 
             let acc_prev = a!(accs.acc_s.rlc, rot);
             let acc_mult_prev = a!(accs.acc_s.mult, rot);
@@ -117,15 +126,16 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let mult_diff_nonce = a!(accs.acc_c.rlc);
             let mult_diff_balance = a!(accs.key.mult);
 
-            // If nonce (same holds for balance) is smaller or equal to 128, then it will occupy only one byte:
-            // `s_main.bytes[0]` (`c_main.bytes[0]` for balance).
-            // For example, the row [184,70,128,0,...,0] holds 128 in bytes[0] which means nonce = 128 - 128 = 0.
-            // For example, the row [184,70,1,0,...,0] holds 1 in bytes[0] which means nonce = 1.
-            // In case nonce (same for balance) is bigger than 128, it will occupy more than 1 byte.
-            // The example row below shows nonce value 142, while 129 means there is a nonce of byte
-            // length `1 = 129 - 128`.
-            // Balance in the example row below is: 28 + 5 * 256 + 107 * 256^2 + ... + 59 * 256^6, while
-            // 135 means there are 7 = 135 - 128 bytes.
+            // If nonce (same holds for balance) is smaller or equal to 128, then it will
+            // occupy only one byte: `s_main.bytes[0]` (`c_main.bytes[0]` for
+            // balance). For example, the row [184,70,128,0,...,0] holds 128 in
+            // bytes[0] which means nonce = 128 - 128 = 0. For example, the row
+            // [184,70,1,0,...,0] holds 1 in bytes[0] which means nonce = 1.
+            // In case nonce (same for balance) is bigger than 128, it will occupy more than
+            // 1 byte. The example row below shows nonce value 142, while 129
+            // means there is a nonce of byte length `1 = 129 - 128`.
+            // Balance in the example row below is: 28 + 5 * 256 + 107 * 256^2 + ... + 59 *
+            // 256^6, while 135 means there are 7 = 135 - 128 bytes.
             // ```
             // [rlp1 rlp2 bytes[0] bytes[1]]           rlp1 rlp2 bytes[0] bytes[1]   ...    ]
             // [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
@@ -138,11 +148,11 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             require!(is_nonce_long => bool);
             require!(is_balance_long => bool);
 
-            // It is important that there are 0s in `s_main.bytes` after the nonce bytes end.
-            // When nonce is short (1 byte), like in `[184,70,1,0,...]`, the constraint is simple:
-            // `s_main.bytes[i] = 0` for all `i > 0`.
-            // When nonce is long, the constraints need to be written differently because we do not
-            // know the length of nonce in advance.
+            // It is important that there are 0s in `s_main.bytes` after the nonce bytes
+            // end. When nonce is short (1 byte), like in `[184,70,1,0,...]`,
+            // the constraint is simple: `s_main.bytes[i] = 0` for all `i > 0`.
+            // When nonce is long, the constraints need to be written differently because we
+            // do not know the length of nonce in advance.
             // The row below holds nonce length specification in `s_main.bytes[0]`.
             // The length in the example below is `1 = 129 - 128`,
             // so the constraint needs to be `s_main.bytes[i] = 0` for
@@ -150,30 +160,34 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // ```
             // [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
             // ```
-            // But instead of 129 we could have 130 or some other value in `s_main.bytes[0]`. For this
-            // reason, the constraints are implemented using `key_len_lookup` (see below).
-            for (nonce_byte, balance_byte) in s_main.bytes.iter().skip(1).zip(c_main.bytes.iter().skip(1)) {
+            // But instead of 129 we could have 130 or some other value in
+            // `s_main.bytes[0]`. For this reason, the constraints are
+            // implemented using `key_len_lookup` (see below).
+            for (nonce_byte, balance_byte) in
+                s_main.bytes.iter().skip(1).zip(c_main.bytes.iter().skip(1))
+            {
                 // s_main.bytes[i] = 0 for i > 0 when is_nonce_short
-                ifx!{not::expr(is_nonce_long.expr()) => {
+                ifx! {not::expr(is_nonce_long.expr()) => {
                     require!(a!(nonce_byte) => 0);
                 }}
                 // c_main.bytes[i] = 0 for i > 0 when is_balance_short
-                ifx!{not::expr(is_balance_long.expr()) => {
+                ifx! {not::expr(is_balance_long.expr()) => {
                     require!(a!(balance_byte) => 0);
                 }}
             }
 
-            // When `non_existing_account_proof` proof type (which can be of two subtypes: with wrong leaf
-            // and without wrong leaf, more about it below), the `is_wrong_leaf` flag specifies whether
-            // the subtype is with wrong leaf or not.
-            // When `non_existing_account_proof` without wrong leaf
+            // When `non_existing_account_proof` proof type (which can be of two subtypes:
+            // with wrong leaf and without wrong leaf, more about it below), the
+            // `is_wrong_leaf` flag specifies whether the subtype is with wrong
+            // leaf or not. When `non_existing_account_proof` without wrong leaf
             // the proof contains only branches and a placeholder account leaf.
             // In this case, it is checked that there is nil in the parent branch
-            // at the proper position (see `account_non_existing`). Note that we need (placeholder) account
-            // leaf for lookups and to know when to check that parent branch has a nil.
+            // at the proper position (see `account_non_existing`). Note that we need
+            // (placeholder) account leaf for lookups and to know when to check
+            // that parent branch has a nil.
 
-            // In `is_wrong_leaf is bool` we only check that `is_wrong_leaf` is a boolean values.
-            // Other wrong leaf related constraints are in other gates.
+            // In `is_wrong_leaf is bool` we only check that `is_wrong_leaf` is a boolean
+            // values. Other wrong leaf related constraints are in other gates.
             let is_wrong_leaf = a!(s_main.rlp1, rot_into_non_existing);
             let is_non_existing_account_proof = a!(proof_type.is_non_existing_account_proof);
             require!(is_wrong_leaf => bool);
@@ -182,16 +196,19 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // account_non_existing config only triggers constraints for
             // non_existing_account proof (see q_enable).
             // is_wrong_leaf needs to be 0 when not in non_existing_account proof
-            ifx!{not::expr(is_non_existing_account_proof.expr()) => {
+            ifx! {not::expr(is_non_existing_account_proof.expr()) => {
                 require!(is_wrong_leaf => false);
             }};
 
             let nonce_value_long_rlc = rlc::expr(
-                &s_main.bytes[1..].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &s_main.bytes[1..]
+                    .iter()
+                    .map(|&byte| a!(byte))
+                    .collect::<Vec<_>>(),
                 &r,
             );
             let nonce_stored = a!(accs.s_mod_node_rlc);
-            ifx!{is_nonce_long => {
+            ifx! {is_nonce_long => {
                 let num_bytes = a!(s_main.bytes[0]) - 128.expr();
                 // RLC bytes zero check
                 cb.set_range_length_s(num_bytes.expr() + 1.expr());
@@ -224,19 +241,23 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let balance_stored = a!(accs.c_mod_node_rlc);
 
             let balance_value_long_rlc = rlc::expr(
-                &c_main.bytes[1..].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &c_main.bytes[1..]
+                    .iter()
+                    .map(|&byte| a!(byte))
+                    .collect::<Vec<_>>(),
                 &r,
             );
-            let balance_rlc = c_bytes0.clone() + selectx!{is_balance_long => {
-                balance_value_long_rlc.clone() * r[0].clone()
-            }};
+            let balance_rlc = c_bytes0.clone()
+                + selectx! {is_balance_long => {
+                    balance_value_long_rlc.clone() * r[0].clone()
+                }};
 
-            // Besides having balance (its bytes) stored in `c_main.bytes`, we also have the RLC
-            // of nonce bytes stored in `c_mod_node_hash_rlc` column. The value in this column
-            // is to be used by lookups.
-            // `Balance RLP long` constraint ensures the RLC of a balance is computed properly when
-            // balance is long.
-            ifx!{is_balance_long => {
+            // Besides having balance (its bytes) stored in `c_main.bytes`, we also have the
+            // RLC of nonce bytes stored in `c_mod_node_hash_rlc` column. The
+            // value in this column is to be used by lookups.
+            // `Balance RLP long` constraint ensures the RLC of a balance is computed
+            // properly when balance is long.
+            ifx! {is_balance_long => {
                 let num_bytes = a!(c_main.bytes[0]) - 128.expr();
                 // RLC bytes zero check
                 cb.set_range_length_c(num_bytes.expr() + 1.expr());
@@ -255,8 +276,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             }}
 
             if is_s {
-                // To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
-                // For this reason, S nonce RLC is copied to `value_prev` column.
+                // To enable lookup for nonce modification we need to have S nonce and C nonce
+                // in the same row. For this reason, S nonce RLC is copied to
+                // `value_prev` column.
                 require!(nonce_stored => a!(value_prev));
             } else {
                 // Note: when nonce or balance is 0, the actual value in the RLP encoding is
@@ -266,18 +288,24 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 let balance_s_from_prev = a!(accs.c_mod_node_rlc, -1);
                 let balance_s_from_cur = a!(value_prev);
                 let balance_c_in_value = a!(value);
-                // To enable lookup for nonce modification we need to have S nonce and C nonce in the same row.
-                // For this reason, C nonce RLC is copied to `value` column in `ACCOUNT_LEAF_NONCE_BALANCE_S` row.
-                let nonce_c_from_lookup_row = a!(value, -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND));
+                // To enable lookup for nonce modification we need to have S nonce and C nonce
+                // in the same row. For this reason, C nonce RLC is copied to
+                // `value` column in `ACCOUNT_LEAF_NONCE_BALANCE_S` row.
+                let nonce_c_from_lookup_row = a!(
+                    value,
+                    -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND)
+                );
                 require!(nonce_stored => nonce_c_from_lookup_row);
-                // To enable lookup for balance modification we need to have S balance and C balance in the same row.
-                // For this reason, S balance RLC is copied to `value_prev` column in C row.
+                // To enable lookup for balance modification we need to have S balance and C
+                // balance in the same row. For this reason, S balance RLC is
+                // copied to `value_prev` column in C row.
                 require!(balance_s_from_prev => balance_s_from_cur);
-                // To enable lookup for balance modification we need to have S balance and C balance in the same row.
-                // For this reason, C balance RLC is copied to `value` column in C row.
+                // To enable lookup for balance modification we need to have S balance and C
+                // balance in the same row. For this reason, C balance RLC is
+                // copied to `value` column in C row.
                 require!(balance_c_in_value => balance_stored);
                 // Check there is only one modification at once:
-                ifx!{not::expr(a!(proof_type.is_account_delete_mod)) => {
+                ifx! {not::expr(a!(proof_type.is_account_delete_mod)) => {
                     let is_storage_mod = a!(proof_type.is_storage_mod);
                     let is_nonce_mod = a!(proof_type.is_nonce_mod);
                     let is_balance_mod = a!(proof_type.is_balance_mod);
@@ -302,48 +330,66 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             }
 
             // Computed RLC after nonce balance row is the same as the stored RLC value.
-            let nonce_rlc = a!(s_main.bytes[0]) + selectx!{is_nonce_long => {
-                nonce_value_long_rlc.expr() * r[0].expr()
-            }};
-            let rlc = acc_prev.expr() + rlc::expr(
-                &[s_rlp1.expr(), s_rlp2.expr(), c_rlp1.expr(), c_rlp2.expr(), nonce_rlc].into_iter().map(|value| value * acc_mult_prev.expr()).collect::<Vec<_>>(),
-                &r,
-            ) + balance_rlc * acc_mult_after_nonce.clone();
+            let nonce_rlc = a!(s_main.bytes[0])
+                + selectx! {is_nonce_long => {
+                    nonce_value_long_rlc.expr() * r[0].expr()
+                }};
+            let rlc = acc_prev.expr()
+                + rlc::expr(
+                    &[
+                        s_rlp1.expr(),
+                        s_rlp2.expr(),
+                        c_rlp1.expr(),
+                        c_rlp2.expr(),
+                        nonce_rlc,
+                    ]
+                    .into_iter()
+                    .map(|value| value * acc_mult_prev.expr())
+                    .collect::<Vec<_>>(),
+                    &r,
+                )
+                + balance_rlc * acc_mult_after_nonce.clone();
             require!(a!(accs.acc_s.rlc) => rlc);
 
             // When adding nonce bytes to the account leaf RLC we do:
-            // `rlc_after_nonce = rlc_tmp + s_main.bytes[0] * mult_tmp + s_main.bytes[1] * mult_tmp * r
-            //     + ... + s_main.bytes[k] * mult_tmp * r^k`
-            // Note that `rlc_tmp` means the RLC after the previous row, while `mult_tmp` means the multiplier
-            // (power of randomness `r`) that needs to be used for the first byte in the current row.
-            // In this case we assumed there are `k + 1` nonce bytes. After this we continue adding bytes:
-            // `rlc_after_nonce + b1 * mult_tmp * r^{k+1} + b2 * mult_tmp * r^{k+1} * r + ...
-            // Note that `b1` and `b2` are the first two bytes that need to used next (balance bytes).
-            // The problem is `k` can be different from case to case. For this reason, we store `r^{k+1}` in
+            // `rlc_after_nonce = rlc_tmp + s_main.bytes[0] * mult_tmp + s_main.bytes[1] *
+            // mult_tmp * r     + ... + s_main.bytes[k] * mult_tmp * r^k`
+            // Note that `rlc_tmp` means the RLC after the previous row, while `mult_tmp`
+            // means the multiplier (power of randomness `r`) that needs to be
+            // used for the first byte in the current row. In this case we
+            // assumed there are `k + 1` nonce bytes. After this we continue adding bytes:
+            // `rlc_after_nonce + b1 * mult_tmp * r^{k+1} + b2 * mult_tmp * r^{k+1} * r +
+            // ... Note that `b1` and `b2` are the first two bytes that need to
+            // used next (balance bytes). The problem is `k` can be different
+            // from case to case. For this reason, we store `r^{k+1}` in
             // `mult_diff_nonce` (which is actually `acc_c`).
             // That means we can compute the expression above as:
-            // `rlc_after_nonce + b1 * mult_tmp * mult_diff_nonce + b2 * mult_tmp * mult_diff_nonce * r + ...
-            // However, we need to ensure that `mult_diff_nonce` corresponds to `s_main.bytes[0]` where the length
+            // `rlc_after_nonce + b1 * mult_tmp * mult_diff_nonce + b2 * mult_tmp *
+            // mult_diff_nonce * r + ... However, we need to ensure that
+            // `mult_diff_nonce` corresponds to `s_main.bytes[0]` where the length
             // of the nonce is specified. This is done using `key_len_lookup` below.
-            // There is one more detail: when computing RLC after nonce, we compute also the bytes that come before
-            // nonce bytes in the row. These are: `s_main.rlp1`, `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp2`.
-            // It is a bit confusing (we are limited with layout), but `c_main.rlp1` and `c_main.rlp2`
-            // are bytes that actually appear in the account leaf RLP stream before `s_main.bytes`.
-            // So we have:
-            // `rlc_after_nonce = rlc_tmp + s_main.rlp1 * mult_tmp + s_main.rlp2 * mult_tmp * r
-            //     + c_main.rlp1 * mult_tmp * r^2 + c_main.rlp2 * mult_tmp * r^3 + s_main.bytes[0] * mult_tmp * r^4 + ...
-            //     + s_main.bytes[k] * mult_tmp * r^4 * r^k`
-            // That means `mult_diff_nonce` needs to store `r^4 * r^{k+1}` and we continue computing the RLC
+            // There is one more detail: when computing RLC after nonce, we compute also the
+            // bytes that come before nonce bytes in the row. These are:
+            // `s_main.rlp1`, `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp2`. It is
+            // a bit confusing (we are limited with layout), but `c_main.rlp1` and
+            // `c_main.rlp2` are bytes that actually appear in the account leaf
+            // RLP stream before `s_main.bytes`. So we have:
+            // `rlc_after_nonce = rlc_tmp + s_main.rlp1 * mult_tmp + s_main.rlp2 * mult_tmp
+            // * r     + c_main.rlp1 * mult_tmp * r^2 + c_main.rlp2 * mult_tmp *
+            // r^3 + s_main.bytes[0] * mult_tmp * r^4 + ...     + s_main.
+            // bytes[k] * mult_tmp * r^4 * r^k` That means `mult_diff_nonce`
+            // needs to store `r^4 * r^{k+1}` and we continue computing the RLC
             // as mentioned above:
-            // `rlc_after_nonce + b1 * mult_tmp * mult_diff_nonce + b2 * mult_tmp * mult_diff_nonce * r + ...
-            // Let us observe the following example.
-            // [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
-            // Here:
-            // `rlc_after_nonce = rlc_tmp + 184 * mult_tmp + 78 * mult_tmp * r + 248 * mult_tmp * r^2
-            //     + 76 * mult_tmp * r^3 + 129 * mult_tmp * r^4 + 142 * mult_tmp * r^5`
-            // And we continue computing the RLC:
-            // `rlc_after_nonce + 135 * mult_tmp * mult_diff_nonce + 28 + mult_tmp * mult_diff_nonce * r + ... `
-            ifx!{is_nonce_long => {
+            // `rlc_after_nonce + b1 * mult_tmp * mult_diff_nonce + b2 * mult_tmp *
+            // mult_diff_nonce * r + ... Let us observe the following example.
+            // [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201
+            // 118 120 59 0 0 ... 0] Here:
+            // `rlc_after_nonce = rlc_tmp + 184 * mult_tmp + 78 * mult_tmp * r + 248 *
+            // mult_tmp * r^2     + 76 * mult_tmp * r^3 + 129 * mult_tmp * r^4 +
+            // 142 * mult_tmp * r^5` And we continue computing the RLC:
+            // `rlc_after_nonce + 135 * mult_tmp * mult_diff_nonce + 28 + mult_tmp *
+            // mult_diff_nonce * r + ... `
+            ifx! {is_nonce_long => {
                 require!(acc_mult_after_nonce => acc_mult_prev.expr() * mult_diff_nonce.expr());
             } elsex {
                 // When nonce is short (occupying only one byte), we know in advance that `mult_diff_nonce = r^5`
@@ -353,18 +399,20 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!(acc_mult_after_nonce => acc_mult_prev.expr() * r[4].expr());
             }}
 
-            // We need to prepare the multiplier that will be needed in the next row: `acc_mult_final`.
-            // We have the multiplier after nonce bytes were added to the RLC: `acc_mult_after_nonce`.
-            // Now, `acc_mult_final` depends on the number of balance bytes.
-            // `rlc_after_balance = rlc_after_nonce + b1 * acc_mult_after_nonce + ...
-            //     + bl * acc_mult_after_nonce * r^{l-1}`
-            // Where `b1,...,bl` are `l` balance bytes. As with nonce, we do not know the length of balance bytes
-            // in advance. For this reason, we store `r^l` in `mult_diff_balance` and check whether:
-            // `acc_mult_final = acc_mult_after_nonce * mult_diff_balance`.
-            // Note that `mult_diff_balance` is not the last multiplier in this row, but the first in
-            // the next row (this is why there is `r^l` instead of `r^{l-1}`).
+            // We need to prepare the multiplier that will be needed in the next row:
+            // `acc_mult_final`. We have the multiplier after nonce bytes were
+            // added to the RLC: `acc_mult_after_nonce`. Now, `acc_mult_final`
+            // depends on the number of balance bytes. `rlc_after_balance =
+            // rlc_after_nonce + b1 * acc_mult_after_nonce + ...     + bl *
+            // acc_mult_after_nonce * r^{l-1}` Where `b1,...,bl` are `l` balance
+            // bytes. As with nonce, we do not know the length of balance bytes
+            // in advance. For this reason, we store `r^l` in `mult_diff_balance` and check
+            // whether: `acc_mult_final = acc_mult_after_nonce *
+            // mult_diff_balance`. Note that `mult_diff_balance` is not the last
+            // multiplier in this row, but the first in the next row (this is
+            // why there is `r^l` instead of `r^{l-1}`).
             let acc_mult_final = a!(accs.acc_s.mult);
-            ifx!{is_balance_long => {
+            ifx! {is_balance_long => {
                 require!(acc_mult_final => acc_mult_after_nonce.expr() * mult_diff_balance.expr());
             } elsex {
                 // When balance is short, there is only one balance byte and we know in advance that the
@@ -373,7 +421,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             }}
 
             // TODO(Brecht): strange condition
-            ifx!{is_non_existing_account_proof.expr() - is_wrong_leaf.expr() - 1.expr() => {
+            ifx! {is_non_existing_account_proof.expr() - is_wrong_leaf.expr() - 1.expr() => {
                 // RLP:
                 // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
                 // 184     80      248     78      nonce         balance
@@ -432,7 +480,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 let key_len = a!(s_main.bytes[0], rot) - 128.expr();
                 require!(rlp_len => key_len.expr() + 1.expr() + s_rlp2.expr() + 2.expr());
             }}
-        }}
+        });
 
         AccountLeafNonceBalanceConfig {
             _marker: PhantomData,

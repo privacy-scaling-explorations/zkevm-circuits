@@ -74,38 +74,45 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let r = ctx.r;
 
-        let add_wrong_leaf_constraints = |meta: &mut VirtualCells<F>,
-                                          cb: &mut BaseConstraintBuilder<F>,
-                                          is_short: bool| {
-            constraints! {[meta, cb], {
-                let sum = a!(accs.acc_c.rlc);
-                let sum_prev = a!(accs.acc_c.mult);
-                let diff_inv = a!(accs.acc_s.rlc);
-                let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-                let start_idx = if is_short {2} else {3};
-                let end_idx = start_idx + 33;
-                let sum_prev_check = dot::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx].iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                    &extend_rand(&r),
-                );
-                // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row. We check whether the computed
-                // value is the same as the one stored in `accs.key.mult` column.
-                let sum_check = dot::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &extend_rand(&r),
-                );
-                require!(sum => sum_check);
-                // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row. We check whether the computed
-                // value is the same as the one stored in `accs.key.rlc` column.
-                require!(sum_prev => sum_prev_check);
-                // TODO(Brecht): what?
-                // The address in the ACCOUNT/STORAGE_NON_EXISTING row and the address in the ACCOUNT/STORAGE_NON_EXISTING row
-                // are different.
-                require!((sum - sum_prev) * diff_inv => 1);
-            }}
-        };
+        let add_wrong_leaf_constraints =
+            |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>, is_short: bool| {
+                constraints!([meta, cb], {
+                    let sum = a!(accs.acc_c.rlc);
+                    let sum_prev = a!(accs.acc_c.mult);
+                    let diff_inv = a!(accs.acc_s.rlc);
+                    let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+                    let start_idx = if is_short { 2 } else { 3 };
+                    let end_idx = start_idx + 33;
+                    let sum_prev_check = dot::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx]
+                            .iter()
+                            .map(|&byte| a!(byte, rot))
+                            .collect::<Vec<_>>(),
+                        &extend_rand(&r),
+                    );
+                    // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
+                    // We check whether the computed value is the same as the
+                    // one stored in `accs.key.mult` column.
+                    let sum_check = dot::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx]
+                            .iter()
+                            .map(|&byte| a!(byte))
+                            .collect::<Vec<_>>(),
+                        &extend_rand(&r),
+                    );
+                    require!(sum => sum_check);
+                    // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
+                    // We check whether the computed value is the same as the
+                    // one stored in `accs.key.rlc` column.
+                    require!(sum_prev => sum_prev_check);
+                    // TODO(Brecht): what?
+                    // The address in the ACCOUNT/STORAGE_NON_EXISTING row and the address in the
+                    // ACCOUNT/STORAGE_NON_EXISTING row are different.
+                    require!((sum - sum_prev) * diff_inv => 1);
+                });
+            };
 
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             // key rlc is in the first branch node
             let rot_into_first_branch_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
             let rot_into_branch_init = rot_into_first_branch_child - 1;
@@ -115,13 +122,14 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             let flag2 = a!(accs.c_mod_node_rlc, rot);
             let is_long = flag1.clone() * not::expr(flag2.clone());
             let is_short = not::expr(flag1.clone()) * flag2.clone();
-            // Wrong leaf has a meaning only for non existing storage proof. For this proof, there are two cases:
-            // 1. A leaf is returned that is not at the required key (wrong leaf).
-            // 2. A branch is returned as the last element of getProof and there is nil object at key position.
+            // Wrong leaf has a meaning only for non existing storage proof. For this proof,
+            // there are two cases: 1. A leaf is returned that is not at the
+            // required key (wrong leaf). 2. A branch is returned as the last
+            // element of getProof and there is nil object at key position.
             //    Placeholder leaf is added in this case.
             let is_wrong_leaf = a!(s_main.rlp1);
             // is_wrong_leaf is checked to be bool in `leaf_value.rs`.
-            ifx!{is_wrong_leaf => {
+            ifx! {is_wrong_leaf => {
                 // Check if there is an account above the leaf.
                 let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
                 let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_last_account_row);
@@ -240,7 +248,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 // the non-existing-storage proof, `is_nil_object` is 1.
                 require!(a!(sel2, rot_into_first_branch_child) => true);
             }}
-        }}
+        });
 
         StorageNonExistingConfig {
             _marker: PhantomData,

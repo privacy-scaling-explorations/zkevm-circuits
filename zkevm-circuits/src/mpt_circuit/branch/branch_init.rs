@@ -93,7 +93,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
         let r = ctx.r;
 
         let rot = Rotation::cur();
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             for is_s in [true, false] {
                 // Boolean checks
                 let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
@@ -109,14 +109,14 @@ impl<F: FieldExt> BranchInitConfig<F> {
                 let num_rlp_byte_selectors = get_num_rlp_bytes_selectors(rlp_meta_bytes);
                 let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
                 for (idx, selector) in num_rlp_byte_selectors.into_iter().enumerate() {
-                    ifx!{selector => {
+                    ifx! {selector => {
                         // Check branch accumulator in row 0
                         require!(a!(accs.acc(is_s).rlc) => rlc::expr(&rlp[..idx+1], &r));
                         require!(a!(accs.acc(is_s).mult) => r[idx]);
                     }}
                 }
             }
-        }}
+        });
 
         BranchInitConfig {
             _marker: PhantomData,

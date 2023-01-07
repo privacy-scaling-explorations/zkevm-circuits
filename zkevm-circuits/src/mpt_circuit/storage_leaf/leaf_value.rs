@@ -151,8 +151,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
         // Storage Leaf -> Account Leaf, back to back
         let rot_into_storage_root = -leaf_value_pos - ACCOUNT_LEAF_ROWS + storage_offset;
 
-        constraints! {[meta, cb], {
-            ifx!{a!(is_leaf_value) => {
+        constraints!([meta, cb], {
+            ifx! {a!(is_leaf_value) => {
                 let not_first_level = a!(position_cols.not_first_level);
                 let sel = a!(denoter.sel(is_s), rot_into_branch);
                 let is_placeholder_without_branch = a!(denoter.sel(is_s));
@@ -437,7 +437,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     cb.set_range_length_s(a!(s_main.rlp2) - 128.expr());
                 }}
             }}
-        }}
+        });
 
         // Note: For cases when storage leaf is in the first storage level, the
         // constraints are in `storage_root_in_account_leaf.rs`.

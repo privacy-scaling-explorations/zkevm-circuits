@@ -83,14 +83,14 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         let rot_into_branch_init = -(ARITY as i32);
         // Any rotation that lands into branch can be used
         let rot_into_prev_branch_child = rot_into_branch_init - EXTENSION_ROWS_NUM - 1;
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let branch = BranchNodeInfo::new(meta, ctx.s_main, is_s, rot_into_branch_init);
             // When placeholder branch, we don't check its hash in a parent.
             // Extension node is handled in `extension_node.rs`.
-            ifx!{not::expr(branch.is_extension()), not::expr(branch.is_placeholder()) => {
+            ifx! {not::expr(branch.is_extension()), not::expr(branch.is_placeholder()) => {
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let acc = ctx.accumulators.acc(is_s);
-                let branch_acc = rlc::expr(
+                let branch_rlc = rlc::expr(
                     &[a!(acc.rlc), 128.expr()],
                     &[a!(acc.mult)],
                 );
@@ -111,7 +111,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                             &ctx.s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
                             &ctx.r,
                         );
-                        require!((branch_acc.expr(), branch.len(), hash_rlc.expr()) => @keccak);
+                        require!((branch_rlc, branch.len(), hash_rlc) => @keccak);
                     } elsex {
                         let mod_node_hash_rlc = a!(ctx.accumulators.mod_node_rlc(is_s), rot_into_prev_branch_child);
                         ifx!{branch.is_branch_non_hashed() => {
@@ -119,15 +119,15 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                             // Similar as the gate above, but here the branch is not hashed.
                             // Instead of checking `hash(branch) = parent_branch_modified_node`, we check whether
                             // `branch_RLC = parent_branch_modified_node_RLC`.
-                            require!(branch_acc.expr() => mod_node_hash_rlc.expr());
+                            require!(branch_rlc => mod_node_hash_rlc);
                         } elsex {
                             /* Branch hash in parent branch */
                             // This is the scenario described at the top of the file.
                             // When branch is in some other branch, we need to check whether
-                            // - `hash(branch) = parent_branch_modified_node`. We do this by checking whether
-                            // - `(branch_RLC, parent_branch_modified_node_RLC)` is in the Keccak table.
+                            // `hash(branch) = parent_branch_modified_node`. We do this by checking whether
+                            // `(branch_RLC, parent_branch_modified_node_RLC)` is in the Keccak table.
                             // When placeholder branch, we don't check its hash in a parent.
-                            require!((branch_acc.expr(), branch.len(), mod_node_hash_rlc.expr()) => @keccak);
+                            require!((branch_rlc, branch.len(), mod_node_hash_rlc) => @keccak);
                         }}
                     }}
                 } elsex {
@@ -136,10 +136,10 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     // `hash(branch) = account_trie_root`. We do this by checking whether
                     // `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
                     // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                    require!((branch_acc.expr(), branch.len(), a!(ctx.inter_root(is_s))) => @keccak);
+                    require!((branch_rlc, branch.len(), a!(ctx.inter_root(is_s))) => @keccak);
                 }}
             }}
-        }}
+        });
 
         BranchHashInParentConfig {
             _marker: PhantomData,

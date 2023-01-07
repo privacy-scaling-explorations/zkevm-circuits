@@ -691,7 +691,6 @@ macro_rules! constraints {
                 $cb.pop_condition();
             }};
 
-
             ($condition:expr => $when_true:block) => {{
                 $cb.push_condition($condition.expr());
                 $when_true

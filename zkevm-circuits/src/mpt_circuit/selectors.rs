@@ -29,7 +29,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
         // - For sets of selectors that are mutually exclusive, it needs to be ensured
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
@@ -113,7 +113,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             ];
 
             // Sanity checks on all rows
-            ifx!{q_enable => {
+            ifx! {q_enable => {
                 // It needs to be ensured that all selectors are boolean.
                 let misc_selectors = vec![
                     not_first_level.expr(),
@@ -167,13 +167,13 @@ impl<F: FieldExt> SelectorsConfig<F> {
             }};
 
             // First row
-            ifx!{q_enable, not::expr(q_not_first.expr()) => {
+            ifx! {q_enable, not::expr(q_not_first.expr()) => {
                 // In the first row only account leaf key S row or branch init row can occur
                 require!(or::expr([is_account_leaf_key_s.cur(), is_branch_init.cur()]) => true);
             }};
 
             // All rows except the first row
-            ifx!{q_not_first => {
+            ifx! {q_not_first => {
                 // State transitions
                 let transitions = [
                     // Branch init can start:
@@ -332,7 +332,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     }};
                 }
             }}
-        }}
+        });
 
         // Internal branch selectors (`is_init`, `is_last_child`) are checked in
         // `branch.rs`.

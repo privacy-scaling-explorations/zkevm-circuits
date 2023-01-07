@@ -95,8 +95,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         // row. Note: differently as in storage leaf value (see empty_trie
         // there), the placeholder leaf never appears in the first level here,
         // because there is always at least a genesis account.
-        constraints! {[meta, cb], {
-            ifx!{a!(ctx.account_leaf.is_storage_codehash(is_s)) => {
+        constraints!([meta, cb], {
+            ifx! {a!(ctx.account_leaf.is_storage_codehash(is_s)) => {
                 let q_not_first = f!(position_cols.q_not_first);
                 // We have storage length in `s_rlp2` (which is 160 presenting `128 + 32`).
                 // We have storage hash in `s_main.bytes`.
@@ -266,7 +266,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     }}
                 }}
             }}
-        }}
+        });
 
         AccountLeafStorageCodehashConfig {
             _marker: PhantomData,

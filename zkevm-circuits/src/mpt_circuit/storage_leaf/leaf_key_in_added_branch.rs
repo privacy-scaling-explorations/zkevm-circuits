@@ -80,7 +80,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         // Finally, the lookup is used to check that the hash that
         // corresponds to the leaf RLC is in the parent branch at `drifted_pos`
         // position.
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             // drifted leaf appears only when there is a placeholder branch
 
             let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
@@ -93,19 +93,23 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let is_long = flag1.expr() * not::expr(flag2.expr());
             let is_short = not::expr(flag1.expr()) * flag2.expr();
 
-            // The two values that store the information about what kind of case we have need to be boolean.
+            // The two values that store the information about what kind of case we have
+            // need to be boolean.
             require!(flag1 => bool);
             require!(flag2 => bool);
 
-            // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
-            // Example:
-            // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
-            ifx!{is_long => {
+            // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to
+            // be 248. Example:
+            // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131
+            // 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+            // 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
+            ifx! {is_long => {
                 require!(a!(s_main.rlp1) => 248);
             }}
 
-            let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_account);
-            ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {
+            let is_leaf_in_first_storage_level =
+                a!(is_account_leaf_in_added_branch, rot_into_account);
+            ifx! {not::expr(is_leaf_in_first_storage_level.expr()) => {
                 ifx!{branch.is_s_or_c_placeholder() => {
                     // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
                     // leaf into a second level) and we do not need to trigger any checks.
@@ -434,7 +438,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     }}
                 }}
             }}
-        }}
+        });
 
         LeafKeyInAddedBranchConfig {
             _marker: PhantomData,

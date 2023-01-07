@@ -148,7 +148,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let r = ctx.r.clone();
 
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
 
@@ -161,12 +161,16 @@ impl<F: FieldExt> BranchConfig<F> {
             let is_last_child = ColumnTransition::new(meta, branch.is_last_child);
             let is_at_drifted_pos = ColumnTransition::new(meta, branch.is_at_drifted_pos);
 
-            let is_branch_placeholder_s = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
-            let is_branch_placeholder_c = ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM]);
-            let is_branch_non_hashed_s = ColumnTransition::new(meta, s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM]);
-            let is_branch_non_hashed_c = ColumnTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
+            let is_branch_placeholder_s =
+                ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
+            let is_branch_placeholder_c =
+                ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM]);
+            let is_branch_non_hashed_s =
+                ColumnTransition::new(meta, s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM]);
+            let is_branch_non_hashed_c =
+                ColumnTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
 
-            ifx!{f!(position_cols.q_enable) => {
+            ifx! {f!(position_cols.q_enable) => {
                 // These selectors are only stored in branch init rows
                 ifx!{is_branch_init => {
                     // Boolean checks
@@ -238,7 +242,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 }
             }}
 
-            ifx!{q_not_first => {
+            ifx! {q_not_first => {
                 ifx!{is_branch_child => {
                      // Keep track of how many branch bytes we've processed.
                     for is_s in [true, false] {
@@ -388,7 +392,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     }
                 }}
             }}
-        }}
+        });
 
         BranchConfig {
             _marker: PhantomData,
@@ -533,6 +537,7 @@ impl<F: FieldExt> BranchConfig<F> {
             + row.get_byte(IS_EXT_SHORT_C1_POS)
             == 1;
         pv.is_short = row.get_byte(IS_EXT_SHORT_C16_POS) + row.get_byte(IS_EXT_SHORT_C1_POS) == 1;
+        pv.is_short_c1 = row.get_byte(IS_EXT_SHORT_C1_POS) == 1;
         pv.is_long = row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
             + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
             + row.get_byte(IS_EXT_LONG_ODD_C16_POS)
@@ -709,7 +714,11 @@ impl<F: FieldExt> BranchConfig<F> {
                         // branch part:
                         pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
                         pv.key_rlc_mult *= mpt_config.randomness;
-                        pv.mult_diff = mpt_config.randomness;
+                        pv.mult_diff = if pv.is_short_c1 {
+                            F::one()
+                        } else {
+                            mpt_config.randomness
+                        };
                     }
                 } else if pv.is_even && pv.is_long {
                     // extension node part:
@@ -774,7 +783,11 @@ impl<F: FieldExt> BranchConfig<F> {
                     pv.key_rlc_mult *= mpt_config.randomness;
                     // branch part:
                     pv.key_rlc += F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
-                    pv.mult_diff = mpt_config.randomness;
+                    pv.mult_diff = if pv.is_short_c1 {
+                        F::one()
+                    } else {
+                        mpt_config.randomness
+                    };
                 }
             } else {
                 if pv.key_rlc_sel {

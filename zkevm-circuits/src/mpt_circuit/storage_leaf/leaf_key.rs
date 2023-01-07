@@ -112,7 +112,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let rot_into_account = if is_s { -1 } else { -3 };
         let rot_into_init = rot_into_account - (BRANCH_ROWS_NUM - 1);
 
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
 
             // TODO(Brecht): wrapper
@@ -123,19 +123,25 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             let is_long = flag1.clone() * not::expr(flag2.clone());
             let is_short = not::expr(flag1.clone()) * flag2.clone();
 
-            // The two values that store the information about what kind of case we have need to be boolean.
+            // The two values that store the information about what kind of case we have
+            // need to be boolean.
             require!(flag1 => bool);
             require!(flag2 => bool);
 
             /* Storage leaf key RLC */
             // Checking the leaf RLC is ok - this value is then taken in the next row, where
-            // leaf value is added to the RLC. Finally, the lookup is used to check the hash that
-            // corresponds to the RLC is in the parent branch.
-            let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_account);
-            let sel = a!(if is_s {denoter.sel1} else {denoter.sel2}, rot_into_init + 1);
-            let is_leaf_in_first_level = a!(if is_s {denoter.sel1} else {denoter.sel2}, 1);
-            let is_leaf_placeholder = is_leaf_in_first_level + selectx!{not::expr(is_leaf_in_first_storage_level.expr()) => {sel}};
-            ifx!{not::expr(is_leaf_placeholder.expr()) => {
+            // leaf value is added to the RLC. Finally, the lookup is used to check the hash
+            // that corresponds to the RLC is in the parent branch.
+            let is_leaf_in_first_storage_level =
+                a!(is_account_leaf_in_added_branch, rot_into_account);
+            let sel = a!(
+                if is_s { denoter.sel1 } else { denoter.sel2 },
+                rot_into_init + 1
+            );
+            let is_leaf_in_first_level = a!(if is_s { denoter.sel1 } else { denoter.sel2 }, 1);
+            let is_leaf_placeholder = is_leaf_in_first_level
+                + selectx! {not::expr(is_leaf_in_first_storage_level.expr()) => {sel}};
+            ifx! {not::expr(is_leaf_placeholder.expr()) => {
                 // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
                 // Example:
                 // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
@@ -355,19 +361,19 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // There are 0s in `s_main.bytes` after the last key nibble (this does not need
             // to be checked for `last_level` and `one_nibble` as in these cases
             // `s_main.bytes` are not used).
-            ifx!{is_short => {
+            ifx! {is_short => {
                 let num_bytes = a!(s_main.rlp2) - 128.expr();
                 require!((FixedTableTag::RMult, num_bytes.expr() + 2.expr(), a!(accs.acc_s.mult)) => @"mult");
                 // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35]
                 cb.set_range_length(num_bytes);
             }}
-            ifx!{is_long => {
+            ifx! {is_long => {
                 let num_bytes = a!(s_main.bytes[0]) - 128.expr();
                 require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
                 // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
                 cb.set_range_length(num_bytes.expr() + 1.expr());
             }}
-        }}
+        });
 
         LeafKeyConfig {
             _marker: PhantomData,

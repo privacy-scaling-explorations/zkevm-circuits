@@ -116,15 +116,21 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         let rot_to_previous_first_child = -BRANCH_ROWS_NUM;
         let rot_to_init = -1;
         let rot_to_previous_init = rot_to_previous_first_child + rot_to_init;
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let modified_node_index = a!(branch.modified_node_index);
             let branch = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_init);
             let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_previous_init);
             let key_rlc = ColumnTransition::new_with_rot(
-                meta, key.rlc, Rotation(rot_to_previous_first_child), Rotation::cur()
+                meta,
+                key.rlc,
+                Rotation(rot_to_previous_first_child),
+                Rotation::cur(),
             );
             let key_mult = ColumnTransition::new_with_rot(
-                meta, key.mult, Rotation(rot_to_previous_first_child), Rotation::cur()
+                meta,
+                key.mult,
+                Rotation(rot_to_previous_first_child),
+                Rotation::cur(),
             );
 
             let selectors = [branch.is_c16(), branch.is_c1()];
@@ -135,7 +141,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             // One selector needs to be enabled.
             require!(sum::expr(&selectors) => 1);
 
-            ifx!{a!(position_cols.not_first_level) => {
+            ifx! {a!(position_cols.not_first_level) => {
                 // When not in the first level, and not in added branch
                 // rot_to_init - 1 is the account leaf storage codehash when we are in the first storage proof level
                 ifx!{not::expr(a!(ctx.account_leaf.is_in_added_branch, rot_to_init - 1)) => {
@@ -176,7 +182,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     require!(branch.is_c16() => branch.is_even());
                 }}
             }}
-        }}
+        });
 
         BranchKeyConfig {
             _marker: PhantomData,

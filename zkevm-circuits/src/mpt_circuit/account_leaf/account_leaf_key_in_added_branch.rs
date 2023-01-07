@@ -77,11 +77,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         // least in the second level (added branch being above it).
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
 
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let mut branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
 
             // drifted leaf appears only when there is a placeholder branch
-            ifx!{branch.is_s_or_c_placeholder() => {
+            ifx! {branch.is_s_or_c_placeholder() => {
                 /* Account drifted leaf: intermediate leaf RLC after key */
 
                 // `s_rlp1` is always 248 because the account leaf is always longer than 55 bytes.
@@ -307,7 +307,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     }}
                 }
             }}
-        }}
+        });
 
         AccountLeafKeyInAddedBranchConfig {
             _marker: PhantomData,

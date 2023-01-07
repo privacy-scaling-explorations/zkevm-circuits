@@ -106,25 +106,31 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let rot_into_first_branch_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
         let rot_into_init = rot_into_first_branch_child - 1;
 
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
 
             /* Account leaf RLC after key */
-            // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,236,246,95,240,224,191,229,27,102,202,231,184,80
-            // There are 112 bytes after the first two bytes.
-            // 157 means the key is 29 (157 - 128) bytes long.
+            // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,
+            // 236,246,95,240,224,191,229,27,102,202,231,184,80 There are 112
+            // bytes after the first two bytes. 157 means the key is 29 (157 -
+            // 128) bytes long.
 
-            // Account leaf always starts with 248 because its length is always longer than 55 bytes due to
-            // containing two hashes - storage root and codehash, which are both of 32 bytes.
-            // 248 is RLP byte which means there is `1 = 248 - 247` byte specifying the length of the remaining
-            // list. For example, in [248,112,157,59,...], there are 112 byte after the second byte.
+            // Account leaf always starts with 248 because its length is always longer than
+            // 55 bytes due to containing two hashes - storage root and
+            // codehash, which are both of 32 bytes. 248 is RLP byte which means
+            // there is `1 = 248 - 247` byte specifying the length of the remaining
+            // list. For example, in [248,112,157,59,...], there are 112 byte after the
+            // second byte.
             require!(a!(s_main.rlp1) => 248);
 
-            // In each row of the account leaf we compute an intermediate RLC of the whole leaf.
-            // The RLC after account leaf key row is stored in `acc` column. We check the stored value
-            // is computed correctly.
+            // In each row of the account leaf we compute an intermediate RLC of the whole
+            // leaf. The RLC after account leaf key row is stored in `acc`
+            // column. We check the stored value is computed correctly.
             let rlc = rlc::expr(
-                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..36]
+                    .iter()
+                    .map(|&byte| a!(byte))
+                    .collect::<Vec<_>>(),
                 &extend_rand(&r),
             );
             require!(a!(accs.acc_s.rlc) => rlc);
@@ -132,10 +138,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // Account leaf address RLC & nibbles count
             let is_leaf_in_first_level = not::expr(a!(position_cols.not_first_level));
             // `is_branch_placeholder = 0` when in first level
-            let is_branch_placeholder = selectx!{not::expr(is_leaf_in_first_level.expr()) => {
+            let is_branch_placeholder = selectx! {not::expr(is_leaf_in_first_level.expr()) => {
                 branch.is_placeholder()
             }};
-            ifx!{not::expr(is_branch_placeholder.expr()) => {
+            ifx! {not::expr(is_branch_placeholder.expr()) => {
                 // `is_c16`/`is_c1` hold the information whether there is even or odd number of nibbles in the leaf.
                 // `is_c16 = 0, is_c1 = 1` if leaf in first level, because we do not have the branch above
                 // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
@@ -296,38 +302,43 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let num_bytes = a!(s_main.bytes[0]) - 128.expr();
             // RLC bytes zero check
             cb.set_range_length(1.expr() + num_bytes.expr());
-            // When the account intermediate RLC is computed in the next row (nonce balance row), we need
-            // to know the intermediate RLC from the current row and the randomness multiplier (`r` to some power).
-            // The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
-            // is computed as (key starts in `s_main.bytes[1]`):
-            // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
+            // When the account intermediate RLC is computed in the next row (nonce balance
+            // row), we need to know the intermediate RLC from the current row
+            // and the randomness multiplier (`r` to some power). The power of
+            // randomness `r` is determined by the key length - the intermediate RLC in the
+            // current row is computed as (key starts in `s_main.bytes[1]`):
+            // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] *
+            // r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
             // So the multiplier to be used in the next row is `r^{key_len + 2}`.
-            // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
-            // That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
+            // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for
+            // byte that contains the key length. That means `mult_diff` needs
+            // to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
             require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
 
             /* Account delete */
-            // We need to make sure there is no leaf when account is deleted. Two possible cases:
-            // 1. Account leaf is deleted and there is a nil object in branch. In this case we have
-            //     a placeholder leaf.
-            // 2. Account leaf is deleted from a branch with two leaves, the remaining leaf moves one level up
-            //     and replaces the branch. In this case we have a branch placeholder.
-            // So we need to check there is a placeholder branch when we have the second case.
-            // Note: we do not need to cover the case when the (only) branch dissapears and only one
+            // We need to make sure there is no leaf when account is deleted. Two possible
+            // cases: 1. Account leaf is deleted and there is a nil object in
+            // branch. In this case we have     a placeholder leaf.
+            // 2. Account leaf is deleted from a branch with two leaves, the remaining leaf
+            // moves one level up     and replaces the branch. In this case we
+            // have a branch placeholder. So we need to check there is a
+            // placeholder branch when we have the second case. Note: we do not
+            // need to cover the case when the (only) branch dissapears and only one
             // leaf remains in the trie because there will always be at least two leaves
             // (the genesis account) when account will be deleted,
-            // so there will always be a branch / extension node (and thus placeholder branch).
+            // so there will always be a branch / extension node (and thus placeholder
+            // branch).
             if !is_s {
                 // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
                 let is_leaf_placeholder = a!(sel_2, rot_into_first_branch_child);
                 // Note: this constraint suffices because the proper transition from branch to a
                 // leaf (2. case) is checked by constraints in
                 // account_leaf_key_in_added_branch.
-                ifx!{a!(proof_type.is_account_delete_mod) => {
+                ifx! {a!(proof_type.is_account_delete_mod) => {
                     require!(or::expr([is_leaf_placeholder, branch.is_placeholder()]) => true);
                 }}
             }
-        }}
+        });
 
         // Note: there is no need to check `key_rlc_mult` as it is not used after this
         // row.

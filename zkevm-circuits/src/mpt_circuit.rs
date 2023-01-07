@@ -262,6 +262,7 @@ pub(crate) struct ProofValues<F> {
     pub(crate) is_even: bool,
     pub(crate) is_odd: bool,
     pub(crate) is_short: bool,
+    pub(crate) is_short_c1: bool,
     pub(crate) is_long: bool,
     pub(crate) rlc1: F,
     pub(crate) rlc2: F,
@@ -439,7 +440,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let mut cb = BaseConstraintBuilder::new(17);
         meta.create_gate("MPT", |meta| {
-            constraints!{[meta, cb], {
+            constraints!([meta, cb], {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
@@ -628,7 +629,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     storage_leaf_key_in_added_branch,
                     storage_non_existing,
                 };
-            }}
+            });
 
             cb.gate(1.expr())
         });
@@ -920,7 +921,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Value::known(q_not_first),
                         )?;
 
-                        let q_not_first_ext_s = if offset < (BRANCH_ROWS_NUM as usize) - 2 {
+                        let q_not_first_ext_s = if offset < (BRANCH_ROWS_NUM as usize) - 1 {
                             F::zero()
                         } else {
                             F::one()
@@ -932,7 +933,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Value::known(q_not_first_ext_s),
                         )?;
 
-                        let q_not_first_ext_c = if offset < (BRANCH_ROWS_NUM as usize) - 1 {
+                        let q_not_first_ext_c = if offset < (BRANCH_ROWS_NUM as usize) - 0 {
                             F::zero()
                         } else {
                             F::one()

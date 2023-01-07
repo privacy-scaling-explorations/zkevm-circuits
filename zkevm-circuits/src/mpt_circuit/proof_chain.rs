@@ -47,7 +47,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
         cb: &mut BaseConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let q_enable = f!(ctx.position_cols.q_enable);
             let q_not_first = f!(ctx.position_cols.q_not_first);
             let not_first_level = ColumnTransition::new(meta, ctx.position_cols.not_first_level);
@@ -56,7 +56,8 @@ impl<F: FieldExt> ProofChainConfig<F> {
             let is_storage_leaf_key_s = a!(ctx.storage_leaf.is_s_key);
             let is_storage_leaf_last_row_prev = a!(ctx.storage_leaf.is_non_existing, -1);
             let is_account_leaf_last_row_prev = a!(ctx.account_leaf.is_in_added_branch, -1);
-            let is_non_storage_mod_proof_type_prev = not::expr(a!(ctx.proof_type.is_storage_mod, -1));
+            let is_non_storage_mod_proof_type_prev =
+                not::expr(a!(ctx.proof_type.is_storage_mod, -1));
 
             let start_root = ColumnTransition::new(meta, ctx.inter_start_root);
             let final_root = ColumnTransition::new(meta, ctx.inter_final_root);
@@ -64,7 +65,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
 
             let is_branch_or_account = is_account_leaf_key_s.expr() + is_branch_init.expr();
 
-            ifx!{q_enable => {
+            ifx! {q_enable => {
                 ifx!{not::expr(q_not_first.expr()) => {
                     // In the first row, it needs to be `not_first_level = 0`. The selector `q_not_first`
                     // is a fixed column, so can rely on it we are really in the first row.
@@ -152,7 +153,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
 
                 // TODO: check public roots to match with first and last inter roots
             }}
-        }}
+        });
 
         ProofChainConfig {
             _marker: PhantomData,

@@ -102,10 +102,10 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         let is_modified_child_empty = ctx.denoter.sel(is_s);
         let node_mult_diff = ctx.accumulators.node_mult_diff(is_s);
         let r = ctx.r;
-        constraints! {[meta, cb], {
+        constraints!([meta, cb], {
             let branch_mult = ColumnTransition::new(meta, branch_acc.mult);
             let branch_rlc = ColumnTransition::new(meta, branch_acc.rlc);
-            ifx!{a!(is_not_hashed) => {
+            ifx! {a!(is_not_hashed) => {
                 // TODO(Brecht): strangely inconsistent RLC calculation, hashed RLC starts at 1 instead of 2.
                 // When a branch child is not empty and is not hashed, a list is stored in the branch and
                 // we have `bytes[0] - 192` bytes in a row. We need to add these bytes to the RLC.
@@ -162,17 +162,18 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 }}
             }}
 
-            // When a value is being added (and reverse situation when deleted) to the trie and
-            // there is no other leaf at the position where it is to be added, we have empty branch child
-            // in `S` proof and hash of a newly added leaf at the parallel position in `C` proof.
+            // When a value is being added (and reverse situation when deleted) to the trie
+            // and there is no other leaf at the position where it is to be
+            // added, we have empty branch child in `S` proof and hash of a
+            // newly added leaf at the parallel position in `C` proof.
             // That means we have empty node in `S` proof at `modified_node`.
             // When this happens, we denote this situation by having `sel = 1`.
             // In this case we need to make sure the node is seen as empty.
-            ifx!{a!(branch.is_modified), a!(is_modified_child_empty) => {
+            ifx! {a!(branch.is_modified), a!(is_modified_child_empty) => {
                 require!(a!(is_not_hashed) => false);
                 require!(a!(main.rlp2) => 0);
             }}
-        }}
+        });
 
         // Note: the constraints for there being 0s after the non-hashed child last byte
         // are in branch_rlc.rs.
