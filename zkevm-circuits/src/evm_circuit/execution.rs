@@ -21,7 +21,10 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
     poly::Rotation,
 };
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{BTreeSet, HashMap},
+    iter,
+};
 
 use strum::{EnumCount, IntoEnumIterator};
 
@@ -1356,12 +1359,23 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        for idx in 0..assigned_rw_values.len() {
+        let rlc_assignments: BTreeSet<_> = step
+            .rw_indices
+            .iter()
+            .map(|rw_idx| block.rws[*rw_idx])
+            .map(|rw| {
+                rw.table_assignment_aux(block.randomness)
+                    .rlc(block.randomness)
+            })
+            .collect();
+
+        for (idx, (_name, value)) in assigned_rw_values.iter().enumerate() {
             let log_ctx = || {
                 log::error!("assigned_rw_values {:?}", assigned_rw_values);
-                for rw_idx in &step.rw_indices {
+                for (idx, rw_idx) in step.rw_indices.iter().enumerate() {
                     log::error!(
-                        "step rw {:?} rlc {:?}",
+                        "{}th rw of step: {:?} rlc {:?}",
+                        idx,
                         block.rws[*rw_idx],
                         block.rws[*rw_idx]
                             .table_assignment_aux(block.randomness)
@@ -1393,7 +1407,8 @@ impl<F: Field> ExecutionConfig<F> {
             let rw = block.rws[rw_idx];
             let table_assignments = rw.table_assignment_aux(block.randomness);
             let rlc = table_assignments.rlc(block.randomness);
-            if rlc != assigned_rw_values[idx].1 {
+
+            if !rlc_assignments.contains(value) {
                 log_ctx();
                 log::error!(
                     "incorrect rw witness. input_value {:?}, name \"{}\". table_value {:?}, table_assignments {:?}, rw {:?}, index {:?}, {}th rw of step",

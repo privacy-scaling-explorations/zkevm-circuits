@@ -9,7 +9,12 @@ use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::H256;
 use eth_types::{Field, ToBigEndian, Word};
 use ethers_core::utils::keccak256;
-use halo2_proofs::plonk::{Expression, Fixed, Instance, SecondPhase};
+use halo2_proofs::plonk::{Expression, Fixed, Instance};
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};

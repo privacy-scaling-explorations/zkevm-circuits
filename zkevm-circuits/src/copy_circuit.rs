@@ -432,10 +432,15 @@ impl<F: Field> CopyCircuitConfig<F> {
                 let mut offset = 0;
                 for (ev_idx, copy_event) in block.copy_events.iter().enumerate() {
                     log::debug!(
-                        "offset is {} before {}th copy event: {:?}",
+                        "offset is {} before {}th copy event(bytes len: {}): {:?}",
                         offset,
                         ev_idx,
-                        copy_event
+                        copy_event.bytes.len(),
+                        {
+                            let mut copy_event = copy_event.clone();
+                            copy_event.bytes.clear();
+                            copy_event
+                        }
                     );
                     for (step_idx, (tag, table_row, circuit_row)) in
                         CopyTable::assignments(copy_event, challenges)

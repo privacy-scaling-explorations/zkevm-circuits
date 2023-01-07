@@ -507,7 +507,7 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
     let (tx, sig) = get_dummy_tx(chain_id);
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    log::debug!("tx hash: {}", hex::encode(tx_hash));
+    log::debug!("dummy tx hash: {}", hex::encode(tx_hash));
 
     H256(tx_hash)
 }
