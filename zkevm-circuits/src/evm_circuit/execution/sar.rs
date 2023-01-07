@@ -51,13 +51,13 @@ pub(crate) struct SarGadget<F> {
     // Identify if higher 128-bit part of `shift` is zero or not.
     shf_hi_is_zero: IsZeroGadget<F>,
     // shf_div64 == 0
-    shf_div64_eq0: IsZeroGadget<F>,
+    shf_lo_div64_eq0: IsZeroGadget<F>,
     // shf_div64 == 1
-    shf_div64_eq1: IsEqualGadget<F>,
+    shf_lo_div64_eq1: IsEqualGadget<F>,
     // shf_div64 == 2
-    shf_div64_eq2: IsEqualGadget<F>,
+    shf_lo_div64_eq2: IsEqualGadget<F>,
     // shf_div64 == 3
-    shf_div64_eq3: IsEqualGadget<F>,
+    shf_lo_div64_eq3: IsEqualGadget<F>,
     // Verify `a64s_lo[idx]` should be less than `p_lo` when idx in `(0, 1, 2, 3)`.
     a64s_lo_lt_p_lo: [LtGadget<F, 16>; 4],
     // Verify `a64s_hi[idx]` should be less than `p_hi` when idx in `(0, 1, 2, 3)`.
@@ -108,12 +108,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
             // b64s constraint
             cb.require_equal(
-                "b64s[idx] should be equal to corresponding part of a",
-                select::expr(
-                    shf_hi_is_zero.expr(),
-                    b64s[idx].expr(),
-                    is_neg.expr() * u64::MAX.expr(),
-                ),
+                "b64s[idx] should be equal to corresponding part of b",
+                b64s[idx].expr(),
                 from_bytes::expr(&b.cells[offset..offset + N_BYTES_U64]),
             );
 
@@ -139,10 +135,14 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         });
 
         // Merge contraints
-        let shf_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
-        let shf_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
-        let shf_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
-        let shf_div64_eq3 = IsEqualGadget::construct(cb, shf_div64.expr(), 3.expr());
+        let shf_lo_div64_eq0 = IsZeroGadget::construct(cb, shf_div64.expr());
+        let shf_lo_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
+        let shf_lo_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
+        let shf_lo_div64_eq3 = IsEqualGadget::construct(cb, shf_div64.expr(), 3.expr());
+        let shf_div64_eq0 = shf_hi_is_zero.expr() * shf_lo_div64_eq0.expr();
+        let shf_div64_eq1 = shf_hi_is_zero.expr() * shf_lo_div64_eq1.expr();
+        let shf_div64_eq2 = shf_hi_is_zero.expr() * shf_lo_div64_eq2.expr();
+        let shf_div64_eq3 = shf_hi_is_zero.expr() * shf_lo_div64_eq3.expr();
 
         cb.require_equal(
             "Constrain merged b64s[0] value",
@@ -256,10 +256,10 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             is_neg,
             shf_mod64_lt_64,
             shf_hi_is_zero,
-            shf_div64_eq0,
-            shf_div64_eq1,
-            shf_div64_eq2,
-            shf_div64_eq3,
+            shf_lo_div64_eq0,
+            shf_lo_div64_eq1,
+            shf_lo_div64_eq2,
+            shf_lo_div64_eq3,
             a64s_lo_lt_p_lo,
             a64s_hi_lt_p_hi,
         }
@@ -308,7 +308,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         } else {
             [0; 4]
         };
-        if shf_div64 < 4 {
+        if shf_hi == 0 && shf_div64 < 4 {
             let idx = shf_div64 as usize;
             b64s[3 - idx] = a64s_hi[3] + p_top;
             for k in 0..3 - idx {
@@ -355,13 +355,13 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             .assign(region, offset, F::from_u128(shf_mod64), 64.into())?;
         self.shf_hi_is_zero
             .assign(region, offset, F::from_u128(shf_hi))?;
-        self.shf_div64_eq0
+        self.shf_lo_div64_eq0
             .assign(region, offset, F::from_u128(shf_div64))?;
-        self.shf_div64_eq1
+        self.shf_lo_div64_eq1
             .assign(region, offset, F::from_u128(shf_div64), F::from(1))?;
-        self.shf_div64_eq2
+        self.shf_lo_div64_eq2
             .assign(region, offset, F::from_u128(shf_div64), F::from(2))?;
-        self.shf_div64_eq3
+        self.shf_lo_div64_eq3
             .assign(region, offset, F::from_u128(shf_div64), F::from(3))?;
         self.a64s_lo_lt_p_lo
             .iter()
@@ -412,6 +412,7 @@ mod test {
         test_ok(0.into(), 0xABCD.into());
         test_ok(256.into(), 0xFFFF.into());
         test_ok((256 + 8 + 1).into(), 0x12345.into());
+        test_ok(NEG_SIGN.checked_add(8.into()).unwrap(), 0x1234.into());
     }
 
     #[test]
@@ -424,6 +425,10 @@ mod test {
         test_ok(
             (256 + 8 + 1).into(),
             NEG_SIGN.checked_add(0x12345.into()).unwrap(),
+        );
+        test_ok(
+            NEG_SIGN.checked_add(8.into()).unwrap(),
+            NEG_SIGN.checked_add(0x1234.into()).unwrap(),
         );
     }
 
