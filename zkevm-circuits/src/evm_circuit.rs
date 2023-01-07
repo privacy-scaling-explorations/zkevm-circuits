@@ -255,7 +255,6 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 pub mod test {
     use super::*;
     use std::convert::TryInto;
-    use strum::IntoEnumIterator;
 
     use crate::{
         evm_circuit::{witness::Block, EvmCircuitConfig},

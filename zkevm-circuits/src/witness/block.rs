@@ -9,9 +9,7 @@ use bus_mapping::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::circuit::Value;
-
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 use crate::util::{Challenges, DEFAULT_RAND};
@@ -246,7 +244,7 @@ pub fn block_convert<F: Field>(
         .unwrap_or(1);
 
     Ok(Block {
-        randomness: Fr::from_u128(DEFAULT_RAND),
+        randomness: F::from_u128(DEFAULT_RAND),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -267,11 +265,10 @@ pub fn block_convert<F: Field>(
         end_block_last: step_convert(&block.block_steps.end_block_last, last_block_num),
         bytecodes: code_db
             .0
-            .values()
-            .map(|v| {
-                let bytecode = Bytecode::new(v.clone());
-                (bytecode.hash, bytecode)
-                           
+            .iter()
+            .map(|(code_hash, bytes)| {
+                let hash = Word::from_big_endian(code_hash.as_bytes());
+                (hash, Bytecode { hash, bytes: bytes.clone() })
             })
             .collect(),
         copy_events: block.copy_events.clone(),

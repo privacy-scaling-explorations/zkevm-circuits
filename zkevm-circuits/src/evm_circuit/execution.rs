@@ -876,7 +876,6 @@ impl<F: Field> ExecutionConfig<F> {
                 self.q_step_first.enable(&mut region, offset)?;
 
                 let dummy_tx = Transaction::default();
-                let _dummy_call = Call::default();
                 let last_call = block
                     .txs
                     .last()
@@ -898,16 +897,6 @@ impl<F: Field> ExecutionConfig<F> {
 
                 let evm_rows = block.evm_circuit_pad_to;
                 let no_padding = evm_rows == 0;
-                // part1: assign real steps
-                loop {
-                    let (transaction, call, step) = steps.next().expect("should not be empty");
-                    let next = steps.peek();
-                    if next.is_none() {
-                        break;
-                    self.assign_q_step(&mut region, offset, height)?;
-
-                        Ok(())
-                    };
 
                 // part1: assign real steps
                 loop {
@@ -963,7 +952,7 @@ impl<F: Field> ExecutionConfig<F> {
                     )?;
 
                     // q_step logic
-                    assign_q_step(&mut region, offset, height)?;
+                    self.assign_q_step(&mut region, offset, height)?;
 
                     offset += height;
                 }
@@ -1045,45 +1034,6 @@ impl<F: Field> ExecutionConfig<F> {
             },
         )?;
         log::debug!("assign_block done");
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn assign_same_exec_step_in_range(
-        &self,
-        region: &mut Region<'_, F>,
-        offset_begin: usize,
-        offset_end: usize,
-        block: &Block<F>,
-        transaction: &Transaction,
-        call: &Call,
-        step: &ExecStep,
-        height: usize,
-        power_of_randomness: [F; 31],
-    ) -> Result<(), Error> {
-        if offset_end <= offset_begin {
-            return Ok(());
-        }
-        assert_eq!(height, 1);
-        assert!(step.rw_indices.is_empty());
-        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
-
-        // Disable access to next step deliberately for "repeatable" step
-        let region = &mut CachedRegion::<'_, '_, F>::new(
-            region,
-            power_of_randomness,
-            self.advices.to_vec(),
-            1,
-            offset_begin,
-        );
-        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
-
-        region.replicate_assignment_for_range(
-            || format!("repeat {:?} rows", step.execution_state),
-            offset_begin + 1,
-            offset_end,
-        )?;
-
         Ok(())
     }
 

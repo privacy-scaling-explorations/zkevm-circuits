@@ -20,7 +20,7 @@ use crate::tx_circuit::TX_LEN;
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{Block, BlockContext, BlockContexts, Transaction};
+use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
 use gadgets::util::{not, select, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{

@@ -67,6 +67,7 @@ use crate::table::{
     TxTable,
 };
 
+use crate::tx_circuit::TxCircuit;
 use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{block_convert, Block, MptUpdates, SignedTransaction};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
@@ -443,8 +444,8 @@ impl<
     }
     /// ..
     pub fn build_from_witness_block(
-        block: Block<Fr>,
-    ) -> Result<(u32, Self, Vec<Vec<Fr>>), bus_mapping::Error> {
+        block: Block<F>,
+    ) -> Result<(u32, Self, Vec<Vec<F>>), bus_mapping::Error> {
         log::debug!(
             "super circuit build_from_witness_block, circuits_params {:?}",
             block.circuits_params
@@ -453,12 +454,6 @@ impl<
         const NUM_BLINDING_ROWS: usize = 64;
         let rows_needed = Self::min_num_rows_block(&block);
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
-        log::debug!("bytecodes len {}", bytecodes_len);
-        let bytecodes_len = std::cmp::max(block.circuits_params.max_bytecode, bytecodes_len);
-        let num_rows_required_for_copy_table: usize =
-            block.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
-        log::debug!("copy table len {}", num_rows_required_for_copy_table);
-        let k = k.max(log2_ceil(64 + num_rows_required_for_copy_table));
         log::debug!("super circuit needs k = {}", k);
 
         let evm_circuit = EvmCircuit::new_from_block(&block);
@@ -534,11 +529,11 @@ mod super_circuit_tests {
         assert!(cs.degree() <= 9);
     }
 
-    fn test_super_circuit<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>(
+    fn test_super_circuit<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize, const MAX_RWS: usize>(
         block: GethData,
     ) {
         let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build(block).unwrap();
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>::build(block).unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
@@ -641,8 +636,9 @@ mod super_circuit_tests {
         let block = block_1tx();
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS>(block);
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
     }
     #[ignore]
     #[test]
@@ -650,8 +646,9 @@ mod super_circuit_tests {
         let block = block_1tx();
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS>(block);
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
     }
     #[ignore]
     #[test]
@@ -659,7 +656,8 @@ mod super_circuit_tests {
         let block = block_2tx();
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS>(block);
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
     }
 }
