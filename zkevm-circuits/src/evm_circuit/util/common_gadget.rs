@@ -454,7 +454,7 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CallGadget<F, const NORMAL: bool> {
+pub(crate) struct CommonCallGadget<F, const CALL_OP: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word<F>,
@@ -467,12 +467,11 @@ pub(crate) struct CallGadget<F, const NORMAL: bool> {
 
     pub value_is_zero: IsZeroGadget<F>,
     pub has_value: Expression<F>,
-
     pub callee_code_hash: Cell<F>,
     pub is_empty_code_hash: IsEqualGadget<F>,
 }
 
-impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
+impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -500,7 +499,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
 
-        if NORMAL {
+        if CALL_OP {
             // `CALL` opcode has an additional stack pop `value`.
             cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
         } else {
@@ -510,7 +509,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
         cb.stack_pop(rd_length.expr());
-        if NORMAL {
+        if CALL_OP {
             cb.stack_push(is_success.expr());
         } else {
             cb.stack_push(0.expr());
@@ -523,9 +522,9 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         let memory_expansion =
             MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
 
-        //
+        // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
-        let has_value = if NORMAL {
+        let has_value = if CALL_OP {
             select::expr(
                 is_delegatecall.expr(),
                 0.expr(),
@@ -535,7 +534,6 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             1.expr() - value_is_zero.expr()
         };
 
-        //
         let callee_code_hash = cb.query_cell();
         let is_empty_code_hash = IsEqualGadget::construct(
             cb,
@@ -562,7 +560,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         }
     }
 
-    pub fn code_address_expr(&self) -> Expression<F> {
+    pub fn callee_address_expr(&self) -> Expression<F> {
         from_bytes::expr(&self.callee_address.cells[..N_BYTES_ACCOUNT_ADDRESS])
     }
 
@@ -570,7 +568,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         from_bytes::expr(&self.gas.cells[..N_BYTES_GAS])
     }
 
-    pub fn gas_cost(
+    pub fn gas_cost_expr(
         &self,
         cb: &mut ConstraintBuilder<F>,
         is_warm_prev: Expression<F>,
@@ -587,21 +585,6 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
                 + is_call * is_empty * GasCost::NEW_ACCOUNT.expr())
             + self.memory_expansion.gas_cost()
     }
-
-    // pub fn callee_gas_left(
-    //     &self,
-    //     cb: &mut ConstraintBuilder<F>,
-    //     gas_cost: Expression<F>,
-    // ) -> (Expression<F>, MinMaxGadget<F, N_BYTES_GAS>) {
-    //     // Apply EIP 150
-    //     let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
-    //     let one_64th_gas = ConstantDivisionGadget::construct(cb,
-    // gas_available.clone(), 64);     let all_but_one_64th_gas = gas_available
-    // - one_64th_gas.quotient();     let capped_callee_gas_left =
-    //   MinMaxGadget::construct(cb, self.gas, all_but_one_64th_gas.clone()); (
-    //   select::expr( self.gas_is_u64.expr(), capped_callee_gas_left.min(),
-    //   all_but_one_64th_gas, ), capped_callee_gas_left, )
-    // }
 
     pub(crate) fn assign(
         &self,
@@ -624,7 +607,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             .assign(region, offset, Some(callee_address.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
-        if NORMAL {
+        if CALL_OP {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
             self.gas_is_u64.assign(
@@ -660,7 +643,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         Ok((memory_expansion_gas_cost, is_empty_code_hash))
     }
 
-    pub(crate) fn gen_gas_cost(
+    pub(crate) fn cal_gas_cost_for_assignment(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
@@ -685,15 +668,7 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         } else {
             0
         } + memory_expansion_gas_cost;
-        // let gas_available = gas_left - gas_cost;
+
         Ok((gas_cost))
-        // self.one_64th_gas
-        //     .assign(region, offset, gas_available as u128)?;
-        // self.capped_callee_gas_left.assign(
-        //     region,
-        //     offset,
-        //     F::from(gas.low_u64()),
-        //     F::from(gas_available - gas_available / 64),
-        // )?;
     }
 }

@@ -1,7 +1,7 @@
 use crate::evm_circuit::execution::ExecutionGadget;
 use crate::evm_circuit::param::N_BYTES_GAS;
 use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::{CallGadget, TransferGadget};
+use crate::evm_circuit::util::common_gadget::{CommonCallGadget, TransferGadget};
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, To};
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -38,7 +38,7 @@ pub(crate) struct CallOpGadget<F> {
     current_caller_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
-    call: CallGadget<F, true>,
+    call: CommonCallGadget<F, true>,
     current_value: Word<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
@@ -95,14 +95,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         cb.range_lookup(depth.expr(), 1024);
 
-        let call_gadget = CallGadget::construct(
+        let call_gadget = CommonCallGadget::construct(
             cb,
             is_call.expr(),
             is_callcode.expr(),
             is_delegatecall.expr(),
             is_staticcall.expr(),
         );
-        // let code_address = call_gadget.code_address_expr();
         let caller_address = select::expr(
             is_delegatecall.expr(),
             current_caller_address.expr(),
@@ -111,7 +110,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_address = select::expr(
             is_callcode.expr() + is_delegatecall.expr(),
             current_callee_address.expr(),
-            call_gadget.code_address_expr(),
+            call_gadget.callee_address_expr(),
         );
 
         // Add callee to access list
@@ -119,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_warm_prev = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            call_gadget.code_address_expr(),
+            call_gadget.callee_address_expr(),
             is_warm.expr(),
             is_warm_prev.expr(),
             Some(&mut reversion_info),
@@ -182,14 +181,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_exists = cb.query_bool();
         cb.condition(callee_exists.expr(), |cb| {
             cb.account_read(
-                call_gadget.code_address_expr(),
+                call_gadget.callee_address_expr(),
                 AccountFieldTag::CodeHash,
                 call_gadget.callee_code_hash.expr(),
             );
         });
         cb.condition(1.expr() - callee_exists.expr(), |cb| {
             cb.account_read(
-                call_gadget.code_address_expr(),
+                call_gadget.callee_address_expr(),
                 AccountFieldTag::NonExisting,
                 0.expr(),
             );
@@ -197,15 +196,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
-        let gas_cost = call_gadget.gas_cost(
+        let gas_cost = call_gadget.gas_cost_expr(
             cb,
             is_warm_prev.expr(),
             // has_value.clone(),
             is_call.expr(),
             (1.expr() - callee_exists.expr()),
         );
-        // let (callee_gas_left, capped_callee_gas_left) =
-        // call_gadget.callee_gas_left(cb, gas_cost); Apply EIP 150
+        // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
         let all_but_one_64th_gas = gas_available - one_64th_gas.quotient();
@@ -407,11 +405,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[5],
         ]
         .map(|idx| block.rws[idx].call_context_value());
+
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current
         // caller address and current value.
-
         let mut rw_offset = 0;
         let [current_caller_address, current_value] = if is_delegatecall {
             rw_offset += 2;
@@ -419,7 +417,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             [U256::zero(), U256::zero()]
         };
-        let [gas, code_address] = [
+        let [gas, callee_address] = [
             step.rw_indices[6 + rw_offset],
             step.rw_indices[7 + rw_offset],
         ]
@@ -533,7 +531,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             region,
             offset,
             gas,
-            code_address,
+            callee_address,
             value,
             is_success,
             cd_offset,
@@ -567,7 +565,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.enough_transfer_balance
             .assign(region, offset, value, caller_balance_pair.1)?;
         let has_value = !value.is_zero() && !is_delegatecall;
-        let gas_cost = self.call.gen_gas_cost(
+        let gas_cost = self.call.cal_gas_cost_for_assignment(
             region,
             offset,
             memory_expansion_gas_cost,
