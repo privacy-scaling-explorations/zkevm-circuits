@@ -31,9 +31,9 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     is_warm: Cell<F>,
     balance: Word<F>,
     callee_nonce: Cell<F>,
-    callee_code_hash: Cell<F>,
+    // callee_code_hash: Cell<F>,
     is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
-    is_empty_code_hash: IsEqualGadget<F>,
+    // is_empty_code_hash: IsEqualGadget<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -74,23 +74,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         );
 
         // Verify gas cost
-        let [callee_nonce, callee_code_hash] = [AccountFieldTag::Nonce, AccountFieldTag::CodeHash]
-            .map(|field_tag| {
-                let v = cb.query_cell();
-                cb.account_read(call_gadget.code_address_expr(), field_tag, v.expr());
-                v
-            });
+        let callee_nonce = cb.query_cell();
+        cb.account_read(
+            call_gadget.code_address_expr(),
+            AccountFieldTag::Nonce,
+            callee_nonce.expr(),
+        );
+        cb.account_read(
+            call_gadget.code_address_expr(),
+            AccountFieldTag::CodeHash,
+            call_gadget.callee_code_hash.expr(),
+        );
         let is_empty_nonce_and_balance =
             BatchedIsZeroGadget::construct(cb, [callee_nonce.expr(), balance.expr()]);
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            callee_code_hash.expr(),
-            Word::random_linear_combine_expr(
-                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                cb.power_of_randomness(),
-            ),
-        );
-        let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
+
+        let is_empty_account =
+            is_empty_nonce_and_balance.expr() * call_gadget.is_empty_code_hash.expr();
         let gas_cost = call_gadget.gas_cost(cb, is_warm.expr(), 1.expr(), is_empty_account);
         // Check if the amount of gas available is less than the amount of gas
         // required
@@ -145,9 +144,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm,
             balance,
             callee_nonce,
-            callee_code_hash,
             is_empty_nonce_and_balance,
-            is_empty_code_hash,
             insufficient_gas,
             restore_context,
         }
@@ -194,7 +191,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
 
-        let memory_expansion_gas_cost = self.call.assign(
+        let callee_code_hash =
+            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness);
+        let (memory_expansion_gas_cost, is_empty_code_hash) = self.call.assign(
             region,
             offset,
             gas,
@@ -207,6 +206,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_length,
             step.memory_word_size(),
             block.randomness,
+            callee_code_hash,
         )?;
 
         self.is_warm
@@ -215,7 +215,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // new assignment
         self.balance
             .assign(region, offset, Some(callee_balance_pair.0.to_le_bytes()))?;
-
         self.callee_nonce.assign(
             region,
             offset,
@@ -225,14 +224,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
-        self.callee_code_hash.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
         let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
             region,
             offset,
@@ -241,12 +232,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
                 Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
             ],
         )?;
-        let is_empty_code_hash = self.is_empty_code_hash.assign(
-            region,
-            offset,
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
-        )?;
+
         let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
         let gas_cost = self.call.gen_gas_cost(

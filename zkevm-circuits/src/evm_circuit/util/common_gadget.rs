@@ -1,6 +1,6 @@
 use super::{
     from_bytes,
-    math_gadget::IsZeroGadget,
+    math_gadget::{IsEqualGadget, IsZeroGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
     CachedRegion,
 };
@@ -27,6 +27,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
+use keccak256::EMPTY_HASH_LE;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
@@ -466,6 +467,9 @@ pub(crate) struct CallGadget<F, const NORMAL: bool> {
 
     pub value_is_zero: IsZeroGadget<F>,
     pub has_value: Expression<F>,
+
+    pub callee_code_hash: Cell<F>,
+    pub is_empty_code_hash: IsEqualGadget<F>,
 }
 
 impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
@@ -531,6 +535,17 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             1.expr() - value_is_zero.expr()
         };
 
+        //
+        let callee_code_hash = cb.query_cell();
+        let is_empty_code_hash = IsEqualGadget::construct(
+            cb,
+            callee_code_hash.expr(),
+            Word::random_linear_combine_expr(
+                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
+                cb.power_of_randomness(),
+            ),
+        );
+
         Self {
             is_success,
             callee_address: callee_address_word,
@@ -542,6 +557,8 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
             memory_expansion,
             value_is_zero,
             has_value,
+            callee_code_hash,
+            is_empty_code_hash,
         }
     }
 
@@ -600,7 +617,8 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         rd_length: U256,
         memory_word_size: u64,
         randomness: F,
-    ) -> Result<(u64), Error> {
+        callee_code_hash: F,
+    ) -> Result<(u64, F), Error> {
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
         self.callee_address
             .assign(region, offset, Some(callee_address.to_le_bytes()))?;
@@ -615,7 +633,6 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
                 sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
             )?;
         }
-
         let cd_address = self
             .cd_address
             .assign(region, offset, cd_offset, cd_length, randomness)?;
@@ -632,7 +649,15 @@ impl<F: Field, const NORMAL: bool> CallGadget<F, NORMAL> {
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
 
-        Ok((memory_expansion_gas_cost))
+        self.callee_code_hash
+            .assign(region, offset, Value::known(callee_code_hash))?;
+        let is_empty_code_hash = self.is_empty_code_hash.assign(
+            region,
+            offset,
+            callee_code_hash,
+            Word::random_linear_combine(*EMPTY_HASH_LE, randomness),
+        )?;
+        Ok((memory_expansion_gas_cost, is_empty_code_hash))
     }
 
     pub(crate) fn gen_gas_cost(

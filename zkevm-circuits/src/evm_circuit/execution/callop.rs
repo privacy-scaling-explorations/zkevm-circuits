@@ -45,9 +45,7 @@ pub(crate) struct CallOpGadget<F> {
     callee_reversion_info: ReversionInfo<F>,
     transfer: TransferGadget<F>,
     callee_exists: Cell<F>,
-    callee_code_hash: Cell<F>,
     enough_transfer_balance: CmpWordsGadget<F>,
-    is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
@@ -182,12 +180,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         let callee_exists = cb.query_bool();
-        let callee_code_hash = cb.query_cell();
         cb.condition(callee_exists.expr(), |cb| {
             cb.account_read(
                 call_gadget.code_address_expr(),
                 AccountFieldTag::CodeHash,
-                callee_code_hash.expr(),
+                call_gadget.callee_code_hash.expr(),
             );
         });
         cb.condition(1.expr() - callee_exists.expr(), |cb| {
@@ -197,15 +194,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 0.expr(),
             );
         });
-
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            callee_code_hash.expr(),
-            Word::random_linear_combine_expr(
-                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                cb.power_of_randomness(),
-            ),
-        );
 
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
@@ -234,7 +222,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
-        cb.condition(is_empty_code_hash.expr(), |cb| {
+        cb.condition(call_gadget.is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -274,7 +262,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             });
         });
 
-        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
+        cb.condition(1.expr() - call_gadget.is_empty_code_hash.expr(), |cb| {
             // Save caller's call state
             for (field_tag, value) in [
                 (
@@ -335,7 +323,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 0.expr()),
                 (CallContextFieldTag::IsCreate, 0.expr()),
-                (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
+                (
+                    CallContextFieldTag::CodeHash,
+                    call_gadget.callee_code_hash.expr(),
+                ),
             ] {
                 cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
@@ -363,7 +354,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(false.expr()),
-                code_hash: To(callee_code_hash.expr()),
+                code_hash: To(call_gadget.callee_code_hash.expr()),
                 gas_left: To(callee_gas_left),
                 // For CALL opcode, `transfer` invocation has two account write.
                 reversible_write_counter: To(is_call.expr() * 2.expr()),
@@ -390,9 +381,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_reversion_info,
             transfer,
             callee_exists,
-            callee_code_hash,
             enough_transfer_balance,
-            is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
         }
@@ -540,7 +529,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.depth
             .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
 
-        let memory_expansion_gas_cost = self.call.assign(
+        let (memory_expansion_gas_cost, _) = self.call.assign(
             region,
             offset,
             gas,
@@ -553,6 +542,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_length,
             step.memory_word_size(),
             block.randomness,
+            callee_code_hash,
         )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
@@ -574,16 +564,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         )?;
         self.callee_exists
             .assign(region, offset, Value::known(F::from(callee_exists)))?;
-        self.callee_code_hash
-            .assign(region, offset, Value::known(callee_code_hash))?;
         self.enough_transfer_balance
             .assign(region, offset, value, caller_balance_pair.1)?;
-        self.is_empty_code_hash.assign(
-            region,
-            offset,
-            callee_code_hash,
-            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
-        )?;
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.gen_gas_cost(
             region,
