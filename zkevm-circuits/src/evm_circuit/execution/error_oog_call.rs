@@ -1,6 +1,6 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
-    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+    param::N_BYTES_GAS,
     step::ExecutionState,
     util::{
         common_gadget::{CommonCallGadget, RestoreContextGadget},
@@ -8,19 +8,16 @@ use crate::evm_circuit::{
             ConstraintBuilder, StepStateTransition,
             Transition::{Delta, Same},
         },
-        from_bytes,
-        math_gadget::{BatchedIsZeroGadget, IsEqualGadget, IsZeroGadget, LtGadget},
-        memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-        select, sum, CachedRegion, Cell, Word,
+        math_gadget::{BatchedIsZeroGadget, LtGadget},
+        CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCallGadget<F> {
@@ -54,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
-        let call_gadget = CommonCallGadget::construct(cb, 0.expr(), 0.expr(), 0.expr(), 0.expr());
+        let call_gadget = CommonCallGadget::construct(cb, 0.expr(), 0.expr(), 0.expr());
 
         // Add callee to access list
         let is_warm = cb.query_bool();
@@ -88,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             BatchedIsZeroGadget::construct(cb, [callee_nonce.expr(), balance.expr()]);
         let is_empty_account =
             is_empty_nonce_and_balance.expr() * call_gadget.is_empty_code_hash.expr();
-        let gas_cost = call_gadget.gas_cost_expr(cb, is_warm.expr(), 1.expr(), is_empty_account);
+        let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), 1.expr(), is_empty_account);
 
         // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
@@ -234,8 +231,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
         let gas_cost = self.call.cal_gas_cost_for_assignment(
-            region,
-            offset,
             memory_expansion_gas_cost,
             is_warm_prev,
             true,

@@ -7,17 +7,15 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::math_gadget::{
-    CmpWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
+    CmpWordsGadget, ConstantDivisionGadget, IsZeroGadget, MinMaxGadget,
 };
 
-use crate::evm_circuit::util::{
-    from_bytes, or, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
-};
+use crate::evm_circuit::util::{or, select, CachedRegion, Cell, RandomLinearCombination, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
-use eth_types::evm_types::{GasCost, GAS_STIPEND_CALL_WITH_VALUE};
+use eth_types::evm_types::GAS_STIPEND_CALL_WITH_VALUE;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
@@ -100,7 +98,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_call.expr(),
             is_callcode.expr(),
             is_delegatecall.expr(),
-            is_staticcall.expr(),
         );
         let caller_address = select::expr(
             is_delegatecall.expr(),
@@ -197,11 +194,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
         let gas_cost = call_gadget.gas_cost_expr(
-            cb,
             is_warm_prev.expr(),
             // has_value.clone(),
             is_call.expr(),
-            (1.expr() - callee_exists.expr()),
+            1.expr() - callee_exists.expr(),
         );
         // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
@@ -566,8 +562,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, value, caller_balance_pair.1)?;
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.cal_gas_cost_for_assignment(
-            region,
-            offset,
             memory_expansion_gas_cost,
             is_warm_prev,
             is_call,

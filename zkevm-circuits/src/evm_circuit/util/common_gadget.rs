@@ -477,7 +477,6 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
         is_call: Expression<F>,
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
-        is_staticcall: Expression<F>,
     ) -> Self {
         let gas_word = cb.query_word();
         let callee_address_word = cb.query_word();
@@ -570,7 +569,6 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
 
     pub fn gas_cost_expr(
         &self,
-        cb: &mut ConstraintBuilder<F>,
         is_warm_prev: Expression<F>,
         is_call: Expression<F>,
         is_empty: Expression<F>,
@@ -645,14 +643,12 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
 
     pub(crate) fn cal_gas_cost_for_assignment(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
         memory_expansion_gas_cost: u64,
         is_warm_prev: bool,
         is_call: bool,
         has_value: bool,
         is_empty_account: bool,
-    ) -> Result<(u64), Error> {
+    ) -> Result<u64, Error> {
         let gas_cost = if is_warm_prev {
             GasCost::WARM_ACCESS.as_u64()
         } else {
@@ -669,6 +665,6 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
             0
         } + memory_expansion_gas_cost;
 
-        Ok((gas_cost))
+        Ok(gas_cost)
     }
 }
