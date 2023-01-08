@@ -10,6 +10,7 @@ use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, RandomLin
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
+use array_init::array_init;
 use eth_types::evm_types::GasCost;
 use eth_types::{Field, ToAddress, ToLittleEndian};
 use halo2_proofs::circuit::Value;
@@ -25,6 +26,7 @@ pub(crate) struct ExtcodesizeGadget<F> {
     exists: Cell<F>,
     code_hash: Cell<F>,
     code_size: Cell<F>,
+    code_size_bytes: [Cell<F>; 8],
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
@@ -64,8 +66,22 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
                 0.expr(),
             );
         });
+        let code_size_bytes = array_init(|_| cb.query_byte());
 
-        cb.stack_push(select::expr(exists.expr(), code_size.expr(), 0.expr()));
+        cb.require_equal(
+            "Constrain bytecode_length lookup == code_size",
+            from_bytes::expr(&code_size_bytes),
+            code_size.expr(),
+        );
+
+        cb.stack_push(select::expr(
+            exists.expr(),
+            RandomLinearCombination::random_linear_combine_expr(
+                code_size_bytes.clone().map(|c| c.expr()),
+                cb.power_of_randomness(),
+            ),
+            0.expr(),
+        ));
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -94,6 +110,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             exists,
             code_hash,
             code_size,
+            code_size_bytes,
         }
     }
 
@@ -154,6 +171,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         )?;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
+        for (c, b) in self
+            .code_size_bytes
+            .iter()
+            .zip(code_size.to_le_bytes().into_iter())
+        {
+            c.assign(region, offset, Value::known(u64::from(b).into()))?;
+        }
 
         Ok(())
     }
@@ -168,7 +192,7 @@ mod test {
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
 
     #[test]
-    fn test_extcodesize_gadget() {
+    fn test_extcodesize_gadget_simple() {
         let account = Account {
             address: MOCK_ACCOUNTS[4],
             code: MOCK_CODES[4].clone(),
@@ -177,6 +201,20 @@ mod test {
 
         // Test for empty account.
         test_ok(&Account::default(), false);
+        // Test for cold account.
+        test_ok(&account, false);
+        // Test for warm account.
+        test_ok(&account, true);
+    }
+
+    #[test]
+    fn test_extcodesize_gadget_with_long_code() {
+        let account = Account {
+            address: MOCK_ACCOUNTS[4],
+            code: MOCK_CODES[5].clone(), // ADDRESS * 256
+            ..Default::default()
+        };
+
         // Test for cold account.
         test_ok(&account, false);
         // Test for warm account.
