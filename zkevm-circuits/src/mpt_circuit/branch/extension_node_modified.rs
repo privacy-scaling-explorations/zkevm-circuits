@@ -524,29 +524,8 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
         );
 
         if !is_long {
-            meta.create_gate("Long and short ext. node have the same branch", |meta| {
-                let q_enable = q_enable(meta);
-                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
-
-                let mut constraints = vec![];
-
-                for ind in 0..HASH_WIDTH-1 {
-                    let short_byte = meta.query_advice(c_main.bytes[ind], Rotation::cur());
-                    let long_byte = meta.query_advice(c_main.bytes[ind], Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_S)));
-                    
-                    constraints.push((
-                        "Branch of long and short extension nodes are the same",
-                        q_enable.clone()
-                            * q_not_first.clone()
-                            * (short_byte - long_byte)
-                    ));
-                }
-
-                constraints
-            });
-
             meta.create_gate(
-                "Long and short ext. node have same nibbles except for middle ext. node nibbles",
+                "Long and short ext. node have the same branch and the same nibbles except for middle ext. node nibbles",
                 |meta| {
                     let q_enable = q_enable(meta);
                     let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
@@ -562,21 +541,6 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
                     let long_ext_branch_rlc = bytes_expr_into_rlc(&long_ext_branch, power_of_randomness[0].clone());
                     let short_ext_branch_rlc = bytes_expr_into_rlc(&short_ext_branch, power_of_randomness[0].clone());
 
-                    /*
-                    Modified and drifted extension node have the same `c_main.bytes` - the same underlying branch.
-                    */
-                    constraints.push((
-                        "Modified and drifted extension node have the same underlying branch",
-                        q_not_first.clone()
-                            * q_enable.clone()
-                            * (short_ext_branch_rlc - long_ext_branch_rlc),
-                    ));
-
-                    /*
-                    Note: otherwise the modified extension node (corrupted nibbles) might not lead
-                    to the requested address (account proof) or storage key (storage proof).
-                    */
-
                     let rot_into_last_leaf_row = - SHORT_EXT_NODE_S - 1;
                     let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
                     let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
@@ -587,6 +551,29 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
                         is_account_leaf_in_added_branch,
                         Rotation(rot_into_last_leaf_row),
                     );
+
+                    let short_is_branch =
+                        meta.query_advice(c_main.bytes[0], Rotation(rot_into_branch_init_account)) * is_account_proof.clone()
+                        + meta.query_advice(c_main.bytes[0], Rotation(rot_into_branch_init_storage)) * (one.clone() - is_account_proof.clone());
+
+                    /*
+                    Modified and drifted extension node have the same `c_main.bytes` - the same underlying branch.
+                    */
+                    constraints.push((
+                        "Modified and drifted extension node have the same underlying branch",
+                        q_not_first.clone()
+                            * q_enable.clone()
+                            * (one.clone() - short_is_branch.clone())
+                            * (short_ext_branch_rlc - long_ext_branch_rlc),
+                    ));
+
+                    // Note: branch of `long` corresponds to the branch in `middle` when `short_is_branch` - ensured
+                    // in a separate gate.
+
+                    /*
+                    Note: otherwise the modified extension node (corrupted nibbles) might not lead
+                    to the requested address (account proof) or storage key (storage proof).
+                    */
 
                     let is_middle_longer_than_55 = meta.query_advice(
                         s_main.bytes[IS_S_EXT_LONGER_THAN_55_POS - RLP_NUM],
@@ -674,7 +661,7 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
                         * (is_long_even_nibbles.clone() * (long_s_main0.clone() - c128.clone() - one.clone()) * c2.clone()
                         + (one.clone() - is_long_even_nibbles.clone()) * ((long_s_main0.clone() - c128.clone()) * c2.clone() - one.clone()));
 
-                    let short_nibbles_num =
+                    let mut short_nibbles_num =
                         (one.clone() - is_short_longer_than_55.clone())
                         * (is_short_even_nibbles.clone() * (short_s_rlp2.clone() - c128.clone() - one.clone()) * c2.clone()
                         + (one.clone() - is_short_even_nibbles.clone())
@@ -685,6 +672,9 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
                         + (one.clone() - is_short_even_nibbles.clone())
                         * (((short_s_rlp2.clone() - c128.clone()) * c2.clone() - one.clone()) * (one.clone() - is_short_short.clone())
                         + is_short_short.clone()));
+
+                    // When `short` is a branch (and not extension node), we set `short_nibbles_num = 0`:
+                    short_nibbles_num = (one.clone() - short_is_branch.clone()) * short_nibbles_num;
                     
                     let middle_is_extension_node =
                         is_account_proof.clone()
@@ -786,6 +776,9 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
                         mult_after * middle_is_extension_node.clone()
                         + (one.clone() - middle_is_extension_node.clone());
 
+                    // If `short` is a branch (not an extension node), we set `short_nibbles_rlc = 0`:
+                    short_nibbles_rlc = short_nibbles_rlc * (one.clone() - short_is_branch.clone());
+
                     middle_nibbles_rlc = middle_nibbles_rlc
                         + (drifted_pos.clone() * c16.clone() + short_nibbles_rlc.clone()) * mult_after.clone() * is_middle_even_nibbles.clone()
                         + (drifted_pos.clone() + short_nibbles_rlc.clone() * power_of_randomness[0].clone()) * mult_after.clone() * (one.clone() - is_middle_even_nibbles.clone());
@@ -801,6 +794,9 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
                 },
             );
         }
+
+
+        // TODO: branch of `long` corresponds to the branch in `middle` when `short_is_branch`
 
         /*
         To know each nibble individually (they come in pairs as bytes), the second nibbles

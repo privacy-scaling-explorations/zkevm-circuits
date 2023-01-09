@@ -73,6 +73,7 @@ pub const NIBBLES_COUNTER_POS: usize = 33;
 
 pub const IS_INSERTED_EXT_NODE_S_POS: usize = 34;
 pub const IS_INSERTED_EXT_NODE_C_POS: usize = 35;
+pub const IS_SHORT_EXT_NODE_BRANCH_POS: usize = 36;
 
 // First level means the rows of the first node in a proof (it can be branch or
 // account leaf). Note that if there are multiple proofs chained (the previous C
