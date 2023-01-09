@@ -248,7 +248,7 @@ impl CellType {
     /// Return the phase for the inverse of an the expression
     pub(crate) fn storage_for_inv<F: FieldExt>(value: &Expression<F>) -> CellType {
         match Self::expr_phase(value) {
-            0 => CellType::StoragePhase1,
+            0 => CellType::StoragePhase2,
             1 => CellType::StoragePhase3,
             2 => unimplemented!(),
             _ => unreachable!(),

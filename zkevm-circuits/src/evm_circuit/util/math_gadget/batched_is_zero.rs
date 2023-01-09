@@ -16,14 +16,18 @@ pub struct BatchedIsZeroGadget<F, const N: usize> {
 
 impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
-        let values_in_phase_1 = values
+        let max_values_phase= values
         .iter()
-        .any(|value| CellType::storage_for(value) == CellType::StoragePhase1);
-    let in_phase = if values_in_phase_1 {
-        CellType::StoragePhase2
-    } else {
-        CellType::StoragePhase1
+        .map(CellType::expr_phase)
+        .max()
+        .expect("BatchedIsZeroGadget needs at least one expression");
+    
+    let in_phase = match max_values_phase {
+        0 => CellType::StoragePhase2,
+        1 => CellType::StoragePhase3,
+        _ => unimplemented!()
     };
+    
     let is_zero = cb.query_bool_with_type(in_phase);
     let nonempty_witness = cb.query_cell_with_type(in_phase);
     
