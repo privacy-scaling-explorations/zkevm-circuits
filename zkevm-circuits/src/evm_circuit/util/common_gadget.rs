@@ -584,6 +584,7 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
             + self.memory_expansion.gas_cost()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
