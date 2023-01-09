@@ -465,7 +465,7 @@ pub(crate) struct CommonCallGadget<F, const CALL_OP: bool> {
     pub rd_address: MemoryAddressGadget<F>,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 
-    pub value_is_zero: IsZeroGadget<F>,
+    value_is_zero: IsZeroGadget<F>,
     pub has_value: Expression<F>,
     pub callee_code_hash: Cell<F>,
     pub is_empty_code_hash: IsEqualGadget<F>,
