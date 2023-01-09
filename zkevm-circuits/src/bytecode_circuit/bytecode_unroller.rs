@@ -483,6 +483,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     ) -> Result<(), Error> {
         // Run over all the bytes
         let mut push_data_left = 0;
+        let mut next_push_data_left = 0;
         let mut push_data_size = 0;
         let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
         let length = F::from(bytecode.bytes.len() as u64);
@@ -514,7 +515,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
                 push_data_size = get_push_size(row.value.get_lower_128() as u8);
 
-                push_data_left = if is_code {
+                next_push_data_left = if is_code {
                     push_data_size
                 } else {
                     push_data_left - 1
@@ -545,6 +546,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     F::from(push_data_size as u64),
                 )?;
                 *offset += 1;
+                push_data_left = next_push_data_left
             }
         }
 
