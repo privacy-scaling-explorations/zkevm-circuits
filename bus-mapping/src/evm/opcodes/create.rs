@@ -162,6 +162,14 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             state.call_context_write(&mut exec_step, caller.call_id, field, value);
         }
 
+        state.call_context_read(
+            &mut exec_step,
+            caller.call_id,
+            CallContextField::Depth,
+            caller.depth.to_word(),
+        );
+
+        let code_hash = keccak256(&initialization_code);
         for (field, value) in [
             (CallContextField::CallerId, caller.call_id.into()),
             (CallContextField::IsSuccess, callee.is_success.to_word()),
@@ -179,6 +187,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 CallContextField::RwCounterEndOfReversion,
                 callee.rw_counter_end_of_reversion.to_word(),
             ),
+            (CallContextField::Depth, callee.depth.to_word()),
+            (CallContextField::IsRoot, false.to_word()),
+            (CallContextField::IsStatic, false.to_word()),
+            (CallContextField::IsCreate, true.to_word()),
+            (CallContextField::CodeHash, Word::from(code_hash)),
         ] {
             state.call_context_write(&mut exec_step, callee.call_id, field, value);
         }
