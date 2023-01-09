@@ -1,9 +1,8 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::state_db::Account;
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word, U256};
+use eth_types::{GethExecStep, ToAddress, Word, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Balance;
@@ -17,12 +16,9 @@ impl Opcode for Balance {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address = geth_step.stack.last()?.to_address();
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            address.to_word(),
-        )?;
+        let address_word = geth_step.stack.last()?;
+        let address = address_word.to_address();
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent
         // from call context.
@@ -59,14 +55,15 @@ impl Opcode for Balance {
         )?;
 
         // Read account balance.
-        let (exists, &Account { balance, .. }) = state.sdb.get_account(&address);
+        let account = state.sdb.get_account(&address).1;
+        let exists = !account.is_empty();
         if exists {
             state.account_read(
                 &mut exec_step,
                 address,
                 AccountField::Balance,
-                balance,
-                balance,
+                account.balance,
+                account.balance,
             )?;
         } else {
             state.account_read(
@@ -97,7 +94,7 @@ mod balance_tests {
     use crate::operation::{AccountOp, CallContextOp, StackOp};
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Bytecode, Word, U256};
+    use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 

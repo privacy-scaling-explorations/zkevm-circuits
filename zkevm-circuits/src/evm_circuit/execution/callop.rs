@@ -36,12 +36,12 @@ pub(crate) struct CallOpGadget<F> {
     reversion_info: ReversionInfo<F>,
     current_callee_address: Cell<F>,
     current_caller_address: Cell<F>,
-    current_value: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
     gas: Word<F>,
     code_address: Word<F>,
     value: Word<F>,
+    current_value: Word<F>,
     is_success: Cell<F>,
     gas_is_u64: IsZeroGadget<F>,
     is_warm: Cell<F>,
@@ -108,7 +108,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
                 cb.call_context(None, CallContextFieldTag::CallerAddress),
-                cb.call_context(None, CallContextFieldTag::Value),
+                cb.call_context_as_word(None, CallContextFieldTag::Value),
             )
         });
 
@@ -573,15 +573,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-        self.current_value.assign(
-            region,
-            offset,
-            Value::known(
-                current_value
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
+        self.current_value
+            .assign(region, offset, Some(current_value.to_le_bytes()))?;
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
         self.depth
