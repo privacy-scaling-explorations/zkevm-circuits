@@ -44,18 +44,14 @@ pub struct BytecodeCircuitConfig<F> {
     minimum_rows: usize,
     q_enable: Column<Fixed>,
     q_first: Column<Fixed>,
-    q_last: Selector,
+    q_last: Column<Fixed>,
     bytecode_table: BytecodeTable,
-    push_rindex: Column<Advice>,
-    hash_input_rlc: Column<Advice>,
-    code_length: Column<Advice>,
-    byte_push_size: Column<Advice>,
-    is_final: Column<Advice>,
-    padding: Column<Advice>,
-    push_rindex_inv: Column<Advice>,
-    push_rindex_is_zero: IsZeroConfig<F>,
-    length_inv: Column<Advice>,
-    length_is_zero: IsZeroConfig<F>,
+    push_data_left: Column<Advice>,
+    value_rlc: Column<Advice>,
+    length: Column<Advice>,
+    push_data_size: Column<Advice>,
+    push_data_left_inv: Column<Advice>,
+    push_data_left_is_zero: IsZeroConfig<F>,
     push_table: [Column<Fixed>; PUSH_TABLE_WIDTH],
     // External tables
     pub(crate) keccak_table: KeccakTable,
@@ -85,146 +81,155 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
     ) -> Self {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
-        let q_last = meta.selector();
+        let q_last = meta.fixed_column();
         let value = bytecode_table.value;
-        let push_rindex = meta.advice_column();
-        let hash_input_rlc = meta.advice_column_in(SecondPhase);
-        let code_length = meta.advice_column();
-        let byte_push_size = meta.advice_column();
-        let is_final = meta.advice_column();
-        let padding = meta.advice_column();
-        let push_rindex_inv = meta.advice_column();
-        let length_inv = meta.advice_column();
+        let push_data_left = meta.advice_column();
+        let value_rlc = meta.advice_column_in(SecondPhase);
+        let length = meta.advice_column();
+        let push_data_size = meta.advice_column();
+        let push_data_left_inv = meta.advice_column();
         let push_table = array_init::array_init(|_| meta.fixed_column());
 
-        // A byte is an opcode when `push_rindex == 0` on the previous row,
-        // else it's push data.
-        let push_rindex_is_zero = IsZeroChip::configure(
-            meta,
-            |meta| {
-                // Conditions:
-                // - Not on the first row
-                meta.query_fixed(q_enable, Rotation::cur())
-                    * not::expr(meta.query_fixed(q_first, Rotation::cur()))
-            },
-            |meta| meta.query_advice(push_rindex, Rotation::prev()),
-            push_rindex_inv,
-        );
-
-        // Does the current row have bytecode field tag == Length?
-        let is_row_tag_length = |meta: &mut VirtualCells<F>| {
+        let is_header_to_header = |meta: &mut VirtualCells<F>| {
             and::expr(vec![
-                not::expr(meta.query_advice(padding, Rotation::cur())),
                 not::expr(meta.query_advice(bytecode_table.tag, Rotation::cur())),
+                not::expr(meta.query_advice(bytecode_table.tag, Rotation::next())),
             ])
         };
 
-        // Does the current row have bytecode field tag == Byte?
-        let is_row_tag_byte = |meta: &mut VirtualCells<F>| {
+        let is_header_to_byte = |meta: &mut VirtualCells<F>| {
             and::expr(vec![
-                not::expr(meta.query_advice(padding, Rotation::cur())),
-                meta.query_advice(bytecode_table.tag, Rotation::cur()),
+                not::expr(meta.query_advice(bytecode_table.tag, Rotation::cur())),
+                meta.query_advice(bytecode_table.tag, Rotation::next()),
             ])
         };
 
-        // For a row tagged Length, is the length (value) zero?
-        let length_is_zero = IsZeroChip::configure(
+        let is_byte_to_header = |meta: &mut VirtualCells<F>| {
+            and::expr(vec![
+                meta.query_advice(bytecode_table.tag, Rotation::cur()),
+                not::expr(meta.query_advice(bytecode_table.tag, Rotation::next())),
+            ])
+        };
+
+        let is_byte_to_byte = |meta: &mut VirtualCells<F>| {
+            and::expr(vec![
+                meta.query_advice(bytecode_table.tag, Rotation::cur()),
+                meta.query_advice(bytecode_table.tag, Rotation::next()),
+            ])
+        };
+
+        let is_header = |meta: &mut VirtualCells<F>| {
+            not::expr(meta.query_advice(bytecode_table.tag, Rotation::cur()))
+        };
+
+        let is_byte =
+            |meta: &mut VirtualCells<F>| meta.query_advice(bytecode_table.tag, Rotation::cur());
+
+        // A byte is an opcode when `push_data_left == 0` on the current row,
+        // else it's push data.
+        let push_data_left_is_zero = IsZeroChip::configure(
             meta,
-            |meta| meta.query_fixed(q_enable, Rotation::cur()) * is_row_tag_length(meta),
-            |meta| meta.query_advice(value, Rotation::cur()),
-            length_inv,
+            |meta| meta.query_fixed(q_enable, Rotation::cur()),
+            |meta| meta.query_advice(push_data_left, Rotation::cur()),
+            push_data_left_inv,
         );
 
-        let q_continue = |meta: &mut VirtualCells<F>| {
-            // When
-            // - Not on the first row
-            // - The previous row did not contain the last byte
-            and::expr(vec![
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                not::expr(meta.query_advice(is_final, Rotation::prev())),
-            ])
-        };
-
-        meta.create_gate("continue", |meta| {
+        // When q_first || q_last ->
+        // assert cur.tag == Header
+        meta.create_gate("first and last row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
-            // Did the previous row have bytecode field tag == Length?
-            let is_prev_row_tag_length = |meta: &mut VirtualCells<F>| {
-                and::expr(vec![
-                    not::expr(meta.query_fixed(q_first, Rotation::cur())),
-                    not::expr(meta.query_advice(padding, Rotation::prev())),
-                    not::expr(meta.query_advice(bytecode_table.tag, Rotation::prev())),
-                ])
-            };
-
-            cb.require_equal(
-                "if prev_row.tag == Length: index == 0 else index == index + 1",
-                meta.query_advice(bytecode_table.index, Rotation::cur()),
-                select::expr(
-                    is_prev_row_tag_length(meta),
-                    0.expr(),
-                    meta.query_advice(bytecode_table.index, Rotation::prev()) + 1.expr(),
-                ),
-            );
-            cb.require_equal(
-                "is_code := push_rindex_prev == 0",
-                meta.query_advice(bytecode_table.is_code, Rotation::cur()),
-                select::expr(
-                    is_prev_row_tag_length(meta),
-                    1.expr(),
-                    push_rindex_is_zero.clone().is_zero_expression,
-                ),
-            );
-            cb.require_equal(
-                "hash_input_rlc := hash_input_rlc_prev * challenges.keccak_input + byte",
-                meta.query_advice(hash_input_rlc, Rotation::cur()),
-                meta.query_advice(hash_input_rlc, Rotation::prev()) * challenges.keccak_input()
-                    + meta.query_advice(value, Rotation::cur()),
-            );
-            cb.require_equal(
-                "code_hash needs to remain the same",
-                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
-                meta.query_advice(bytecode_table.code_hash, Rotation::prev()),
-            );
-            cb.require_equal(
-                "code_length needs to remain the same",
-                meta.query_advice(code_length, Rotation::cur()),
-                meta.query_advice(code_length, Rotation::prev()),
-            );
-            cb.require_equal(
-                "padding needs to remain the same",
-                meta.query_advice(padding, Rotation::cur()),
-                meta.query_advice(padding, Rotation::prev()),
+            cb.require_zero(
+                "cur.tag == Header",
+                meta.query_advice(bytecode_table.tag, Rotation::cur()),
             );
 
-            // Conditions:
-            // - Continuing
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                q_continue(meta),
+                or::expr(vec![
+                    meta.query_fixed(q_first, Rotation::cur()),
+                    meta.query_fixed(q_last, Rotation::cur()),
+                ]),
             ]))
         });
 
-        meta.create_gate("start of bytecode", |meta| {
+        // When is_header ->
+        // assert cur.index == 0
+        // assert cur.value == cur.length
+        meta.create_gate("Header row", |meta| {
             let mut cb = BaseConstraintBuilder::default();
-            cb.require_equal(
-                "next_row.tag == (tag.Length or tag.Padding) if length == 0 else tag.Byte",
-                meta.query_advice(bytecode_table.tag, Rotation::next()),
-                select::expr(
-                    length_is_zero.clone().is_zero_expression,
-                    select::expr(
-                        meta.query_advice(padding, Rotation::next()),
-                        BytecodeFieldTag::Padding.expr(),
-                        BytecodeFieldTag::Length.expr(),
-                    ),
-                    BytecodeFieldTag::Byte.expr(),
-                ),
+
+            cb.require_zero(
+                "cur.index == 0",
+                meta.query_advice(bytecode_table.index, Rotation::cur()),
             );
+
             cb.require_equal(
-                "if row.tag == tag.Length: value == row.code_length",
-                meta.query_advice(value, Rotation::cur()),
-                meta.query_advice(code_length, Rotation::cur()),
+                "cur.value == cur.length",
+                meta.query_advice(bytecode_table.value, Rotation::cur()),
+                meta.query_advice(length, Rotation::cur()),
             );
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                is_header(meta),
+            ]))
+        });
+
+        // When is_byte ->
+        // assert push_data_size_table_lookup(cur.value, cur.push_data_size)
+        // assert cur.is_code == (cur.push_data_left == 0)
+        meta.create_gate("Byte row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "cur.is_code == (cur.push_data_left == 0)",
+                meta.query_advice(bytecode_table.is_code, Rotation::cur()),
+                push_data_left_is_zero.clone().is_zero_expression,
+            );
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                is_byte(meta),
+            ]))
+        });
+        meta.lookup_any(
+            "push_data_size_table_lookup(cur.value, cur.push_data_size)",
+            |meta| {
+                let enable = and::expr(vec![
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                    is_byte(meta),
+                ]);
+
+                let lookup_columns = vec![value, push_data_size];
+
+                let mut constraints = vec![];
+
+                for i in 0..PUSH_TABLE_WIDTH {
+                    constraints.push((
+                        enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
+                        meta.query_fixed(push_table[i], Rotation::cur()),
+                    ))
+                }
+                constraints
+            },
+        );
+
+        // When is_header_to_header or q_last ->
+        // assert cur.length == 0
+        // assert cur.hash == EMPTY_HASH
+        meta.create_gate("Header to header row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_zero(
+                "cur.length == 0",
+                meta.query_advice(length, Rotation::cur()),
+            );
+
+            // TODO: assert cur.hash == EMPTY_HASH
             // FIXME: Since randomness is only known at synthesis time, the RLC of empty
             // code_hash is not constant.  Consider doing a lookup to the empty code_hash
             // value? cb.condition(length_is_zero.clone().is_zero_expression,
@@ -235,150 +240,161 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             //     );
             // });
 
-            // Conditions:
-            // - Not Continuing
-            // - This is the start of a new bytecode
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
-                is_row_tag_length(meta),
-                not::expr(q_continue(meta)),
-            ]))
-        });
-
-        meta.create_gate("start of padding", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            cb.require_equal(
-                "row needs to be marked as padding",
-                meta.query_advice(padding, Rotation::cur()),
-                1.expr(),
-            );
-            // Conditions:
-            // - Not Continuing
-            // - This is not the start of a new bytecode
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(is_row_tag_length(meta)),
-                not::expr(q_continue(meta)),
-            ]))
-        });
-
-        meta.create_gate("length needs to be correct", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            cb.condition(1.expr() - length_is_zero.clone().is_zero_expression, |cb| {
-                cb.require_equal(
-                    "index + 1 needs to equal code_length",
-                    meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(code_length, Rotation::cur()),
-                );
-            });
-            // Conditions:
-            // - On the row with the last byte (`is_final == 1`)
-            // - Of bytecode with length > 0
-            // - Not padding
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(is_final, Rotation::cur()),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
-            ]))
-        });
-
-        meta.create_gate("always", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            cb.require_boolean(
-                "is_final needs to be boolean",
-                meta.query_advice(is_final, Rotation::cur()),
-            );
-            cb.require_boolean(
-                "padding needs to be boolean",
-                meta.query_advice(padding, Rotation::cur()),
-            );
-            cb.condition(is_row_tag_byte(meta), |cb| {
-                cb.require_equal(
-                    "push_rindex := is_code ? byte_push_size : push_rindex_prev - 1",
-                    meta.query_advice(push_rindex, Rotation::cur()),
-                    select::expr(
-                        meta.query_advice(bytecode_table.is_code, Rotation::cur()),
-                        meta.query_advice(byte_push_size, Rotation::cur()),
-                        meta.query_advice(push_rindex, Rotation::prev()) - 1.expr(),
-                    ),
-                );
-            });
-            // Conditions: Always
-            cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
-        });
-
-        meta.create_gate("padding", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            cb.require_boolean(
-                "padding can only go 0 -> 1 once",
-                meta.query_advice(padding, Rotation::cur())
-                    - meta.query_advice(padding, Rotation::prev()),
-            );
-            // Conditions:
-            // - Not on the first row
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                not::expr(meta.query_fixed(q_first, Rotation::cur())),
-            ]))
-        });
-
-        // The code_hash is checked on the latest row because only then have
-        // we accumulated all the bytes. We also have to go through the bytes
-        // in a forward manner because that's the only way we can know which
-        // bytes are op codes and which are push data.
-        meta.create_gate("last row", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-            cb.require_equal(
-                "padding needs to be enabled OR the last row needs to be the last byte",
                 or::expr(vec![
-                    meta.query_advice(padding, Rotation::cur()),
-                    meta.query_advice(is_final, Rotation::cur()),
+                    is_header_to_header(meta),
+                    meta.query_fixed(q_last, Rotation::cur()),
                 ]),
+            ]))
+        });
+
+        // When is_header_to_byte ->
+        // assert next.length == cur.length
+        // assert next.index == 0
+        // assert next.is_code == 1
+        // assert next.hash == cur.hash
+        // assert next.value_rlc == next.value
+        meta.create_gate("Header to byte row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "next.length == cur.length",
+                meta.query_advice(length, Rotation::next()),
+                meta.query_advice(length, Rotation::cur()),
+            );
+
+            cb.require_zero(
+                "next.index == 0",
+                meta.query_advice(bytecode_table.index, Rotation::next()),
+            );
+
+            cb.require_equal(
+                "next.is_code == 1",
+                meta.query_advice(bytecode_table.is_code, Rotation::next()),
                 1.expr(),
             );
-            // Conditions:
-            // - On the last row
-            cb.gate(meta.query_selector(q_last))
+
+            cb.require_equal(
+                "next.hash == cur.hash",
+                meta.query_advice(bytecode_table.code_hash, Rotation::next()),
+                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "next.value_rlc == next.value",
+                meta.query_advice(value_rlc, Rotation::next()),
+                meta.query_advice(bytecode_table.value, Rotation::next()),
+            );
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                is_header_to_byte(meta),
+            ]))
         });
 
-        // Lookup how many bytes the current opcode pushes
-        // (also indirectly range checks `byte` to be in [0, 255])
-        meta.lookup_any("Range bytes", |meta| {
-            // Conditions: Always
-            let q_enable = meta.query_fixed(q_enable, Rotation::cur()) * is_row_tag_byte(meta);
-            let lookup_columns = vec![value, byte_push_size];
-            let mut constraints = vec![];
-            for i in 0..PUSH_TABLE_WIDTH {
-                constraints.push((
-                    q_enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
-                    meta.query_fixed(push_table[i], Rotation::cur()),
-                ))
-            }
-            constraints
+        // When is_byte_to_byte ->
+        // assert next.length == cur.length
+        // assert next.index == cur.index + 1
+        // assert next.hash == cur.hash
+        // assert next.value_rlc == cur.value_rlc * randomness + next.value
+        // if cur.is_code:
+        //     assert next.push_data_left == cur.push_data_size
+        // else:
+        //     assert next.push_data_left == cur.push_data_left - 1
+        meta.create_gate("Byte to Byte row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "next.length == cur.length",
+                meta.query_advice(length, Rotation::next()),
+                meta.query_advice(length, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "next.index == cur.index + 1",
+                meta.query_advice(bytecode_table.index, Rotation::next()),
+                meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
+            );
+
+            cb.require_equal(
+                "next.hash == cur.hash",
+                meta.query_advice(bytecode_table.code_hash, Rotation::next()),
+                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+            );
+
+            // TODO: check this
+            cb.require_equal(
+                "next.value_rlc == cur.value_rlc * randomness + next.value",
+                meta.query_advice(value_rlc, Rotation::next()),
+                meta.query_advice(value_rlc, Rotation::cur()) * challenges.keccak_input()
+                    + meta.query_advice(value, Rotation::cur()),
+            );
+
+            cb.require_equal(
+                "next.push_data_left == cur.is_code ? cur.push_data_size : cur.push_data_left - 1",
+                meta.query_advice(push_data_left, Rotation::next()),
+                select::expr(
+                    meta.query_advice(bytecode_table.is_code, Rotation::cur()),
+                    meta.query_advice(push_data_size, Rotation::cur()),
+                    meta.query_advice(push_data_left, Rotation::cur()) - 1.expr(),
+                ),
+            );
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                is_byte_to_byte(meta),
+            ]))
         });
 
-        // keccak lookup
-        meta.lookup_any("keccak", |meta| {
-            // Conditions:
-            // - On the row with the last byte (`is_final == 1`)
-            // - Not padding
-            let enable = and::expr(vec![
-                meta.query_advice(is_final, Rotation::cur()),
-                not::expr(meta.query_advice(padding, Rotation::cur())),
-            ]);
-            let lookup_columns = vec![hash_input_rlc, code_length, bytecode_table.code_hash];
-            let mut constraints = vec![(
-                enable.clone(),
-                meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-            )];
-            for (i, column) in keccak_table.columns().iter().skip(1).enumerate() {
-                constraints.push((
-                    enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
-                    meta.query_advice(*column, Rotation::cur()),
-                ))
-            }
-            constraints
+        // When is_byte_to_header ->
+        // assert cur.index + 1 == cur.length
+        // assert keccak256_table_lookup(cur.hash, cur.length, cur.value_rlc)
+        meta.create_gate("Byte to Header row", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "cur.index + 1 == cur.length",
+                meta.query_advice(bytecode_table.index, Rotation::next()) + 1.expr(),
+                meta.query_advice(length, Rotation::cur()),
+            );
+
+            cb.gate(and::expr(vec![
+                meta.query_fixed(q_enable, Rotation::cur()),
+                not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                is_byte_to_header(meta),
+            ]))
         });
+        meta.lookup_any(
+            "keccak256_table_lookup(cur.hash, cur.length, cur.value_rlc)",
+            |meta| {
+                let enable = and::expr(vec![
+                    meta.query_fixed(q_enable, Rotation::cur()),
+                    not::expr(meta.query_fixed(q_last, Rotation::cur())),
+                    is_byte_to_header(meta),
+                ]);
+
+                let lookup_columns = vec![value_rlc, length, bytecode_table.code_hash];
+
+                let mut constraints = vec![(
+                    enable.clone(),
+                    meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
+                )];
+
+                // TODO: perhaps write this explicitly so it is more readable the matching
+                // between collumns
+                for (i, column) in keccak_table.columns().iter().skip(1).enumerate() {
+                    constraints.push((
+                        enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
+                        meta.query_advice(*column, Rotation::cur()),
+                    ))
+                }
+
+                constraints
+            },
+        );
 
         BytecodeCircuitConfig {
             minimum_rows: meta.minimum_rows(),
@@ -386,16 +402,12 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             q_first,
             q_last,
             bytecode_table,
-            push_rindex,
-            hash_input_rlc,
-            code_length,
-            byte_push_size,
-            is_final,
-            padding,
-            push_rindex_inv,
-            push_rindex_is_zero,
-            length_inv,
-            length_is_zero,
+            push_data_left,
+            value_rlc,
+            length,
+            push_data_size,
+            push_data_left_inv,
+            push_data_left_is_zero,
             push_table,
             keccak_table,
         }
@@ -421,8 +433,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
-        let push_rindex_is_zero_chip = IsZeroChip::construct(self.push_rindex_is_zero.clone());
-        let length_is_zero_chip = IsZeroChip::construct(self.length_is_zero.clone());
+        let push_data_left_is_zero_chip =
+            IsZeroChip::construct(self.push_data_left_is_zero.clone());
 
         // Subtract the unusable rows from the size
         assert!(size > self.minimum_rows);
@@ -432,98 +444,26 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             || "assign bytecode",
             |mut region| {
                 let mut offset = 0;
-                let mut push_rindex_prev = 0;
                 for bytecode in witness.iter() {
-                    // Run over all the bytes
-                    let mut push_rindex = 0;
-                    let mut byte_push_size = 0;
-                    let mut hash_input_rlc = challenges.keccak_input().map(|_| F::zero());
-                    let code_length = F::from(bytecode.bytes.len() as u64);
-                    for (idx, row) in bytecode.rows.iter().enumerate() {
-                        if fail_fast && offset > last_row_offset {
-                            log::error!(
-                                "Bytecode Circuit: offset={} > last_row_offset={}",
-                                offset,
-                                last_row_offset
-                            );
-                            return Err(Error::Synthesis);
-                        }
-
-                        let code_hash = challenges.evm_word().map(|challenge| {
-                            RandomLinearCombination::<F, 32>::random_linear_combine(
-                                row.code_hash.to_le_bytes(),
-                                challenge,
-                            )
-                        });
-
-                        // Track which byte is an opcode and which is push
-                        // data
-                        let is_code = push_rindex == 0;
-                        if idx > 0 {
-                            byte_push_size = get_push_size(row.value.get_lower_128() as u8);
-                            push_rindex = if is_code {
-                                byte_push_size
-                            } else {
-                                push_rindex - 1
-                            };
-                            hash_input_rlc.as_mut().zip(challenges.keccak_input()).map(
-                                |(hash_input_rlc, challenge)| {
-                                    *hash_input_rlc = *hash_input_rlc * challenge + row.value
-                                },
-                            );
-                        }
-
-                        // Set the data for this row
-                        if offset <= last_row_offset {
-                            self.set_row(
-                                &mut region,
-                                &push_rindex_is_zero_chip,
-                                &length_is_zero_chip,
-                                offset,
-                                true,
-                                offset == last_row_offset,
-                                code_hash,
-                                row.tag,
-                                row.index,
-                                row.is_code,
-                                row.value,
-                                push_rindex,
-                                hash_input_rlc,
-                                code_length,
-                                F::from(byte_push_size as u64),
-                                idx == bytecode.bytes.len(),
-                                false,
-                                F::from(push_rindex_prev),
-                            )?;
-                            push_rindex_prev = push_rindex;
-                            offset += 1;
-                        }
-                    }
+                    self.assign_bytecode(
+                        &mut region,
+                        bytecode,
+                        challenges,
+                        &push_data_left_is_zero_chip,
+                        &mut offset,
+                        last_row_offset,
+                        fail_fast,
+                    )?;
                 }
 
                 // Padding
                 for idx in offset..=last_row_offset {
-                    self.set_row(
+                    self.set_padding_row(
                         &mut region,
-                        &push_rindex_is_zero_chip,
-                        &length_is_zero_chip,
+                        &push_data_left_is_zero_chip,
                         idx,
-                        idx < last_row_offset,
-                        idx == last_row_offset,
-                        Value::known(F::zero()),
-                        F::from(BytecodeFieldTag::Padding as u64),
-                        F::zero(),
-                        F::one(),
-                        F::zero(),
-                        0,
-                        Value::known(F::zero()),
-                        F::zero(),
-                        F::zero(),
-                        true,
-                        true,
-                        F::from(push_rindex_prev),
+                        last_row_offset,
                     )?;
-                    push_rindex_prev = 0;
                 }
                 Ok(())
             },
@@ -531,11 +471,116 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn assign_bytecode(
+        &self,
+        region: &mut Region<'_, F>,
+        bytecode: &UnrolledBytecode<F>,
+        challenges: &Challenges<Value<F>>,
+        push_rindex_is_zero_chip: &IsZeroChip<F>,
+        offset: &mut usize,
+        last_row_offset: usize,
+        fail_fast: bool,
+    ) -> Result<(), Error> {
+        // Run over all the bytes
+        let mut push_data_left = 0;
+        let mut push_data_size = 0;
+        let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
+        let length = F::from(bytecode.bytes.len() as u64);
+
+        for (idx, row) in bytecode.rows.iter().enumerate() {
+            if fail_fast && *offset > last_row_offset {
+                log::error!(
+                    "Bytecode Circuit: offset={} > last_row_offset={}",
+                    offset,
+                    last_row_offset
+                );
+                return Err(Error::Synthesis);
+            }
+
+            // TODO: why different code_hash for each row? Is this going to produce the same
+            // result for every row?
+            let code_hash = challenges.evm_word().map(|challenge| {
+                RandomLinearCombination::<F, 32>::random_linear_combine(
+                    row.code_hash.to_le_bytes(),
+                    challenge,
+                )
+            });
+
+            // Track which byte is an opcode and which is push
+            // data
+            if idx > 0 {
+                let is_code = push_data_left == 0;
+                assert_eq!(F::from(is_code as u64), row.is_code, "is_code must match");
+
+                push_data_size = get_push_size(row.value.get_lower_128() as u8);
+
+                push_data_left = if is_code {
+                    push_data_size
+                } else {
+                    push_data_left - 1
+                };
+
+                value_rlc
+                    .as_mut()
+                    .zip(challenges.keccak_input())
+                    .map(|(value_rlc, challenge)| *value_rlc = *value_rlc * challenge + row.value);
+            }
+
+            // Set the data for this row
+            if *offset <= last_row_offset {
+                self.set_row(
+                    region,
+                    push_rindex_is_zero_chip,
+                    *offset,
+                    true,
+                    *offset == last_row_offset,
+                    code_hash,
+                    row.tag,
+                    row.index,
+                    row.is_code,
+                    row.value,
+                    push_data_left,
+                    value_rlc,
+                    length,
+                    F::from(push_data_size as u64),
+                )?;
+                *offset += 1;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_padding_row(
+        &self,
+        region: &mut Region<'_, F>,
+        push_data_left_is_zero_chip: &IsZeroChip<F>,
+        offset: usize,
+        last_row_offset: usize,
+    ) -> Result<(), Error> {
+        self.set_row(
+            region,
+            push_data_left_is_zero_chip,
+            offset,
+            offset < last_row_offset,
+            offset == last_row_offset,
+            Value::known(F::zero()),
+            F::from(BytecodeFieldTag::Header as u64),
+            F::zero(),
+            F::zero(),
+            F::zero(),
+            0,
+            Value::known(F::zero()),
+            F::zero(),
+            F::zero(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn set_row(
         &self,
         region: &mut Region<'_, F>,
-        push_rindex_is_zero_chip: &IsZeroChip<F>,
-        length_is_zero_chip: &IsZeroChip<F>,
+        push_data_left_is_zero_chip: &IsZeroChip<F>,
         offset: usize,
         enable: bool,
         last: bool,
@@ -544,13 +589,10 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         index: F,
         is_code: F,
         value: F,
-        push_rindex: u64,
-        hash_input_rlc: Value<F>,
-        code_length: F,
-        byte_push_size: F,
-        is_final: bool,
-        padding: bool,
-        push_rindex_prev: F,
+        push_data_left: u64,
+        value_rlc: Value<F>,
+        length: F,
+        push_data_size: F,
     ) -> Result<(), Error> {
         // q_enable
         region.assign_fixed(
@@ -569,9 +611,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         )?;
 
         // q_last
-        if last {
-            self.q_last.enable(region, offset)?;
-        }
+        let q_last_value = if last { F::one() } else { F::zero() };
+        region.assign_fixed(
+            || format!("assign q_first {}", offset),
+            self.q_last,
+            offset,
+            || Value::known(q_last_value),
+        )?;
 
         // Advices
         for (name, column, value) in [
@@ -579,11 +625,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             ("index", self.bytecode_table.index, index),
             ("is_code", self.bytecode_table.is_code, is_code),
             ("value", self.bytecode_table.value, value),
-            ("push_rindex", self.push_rindex, F::from(push_rindex)),
-            ("code_length", self.code_length, code_length),
-            ("byte_push_size", self.byte_push_size, byte_push_size),
-            ("is_final", self.is_final, F::from(is_final as u64)),
-            ("padding", self.padding, F::from(padding as u64)),
+            (
+                "push_data_left",
+                self.push_data_left,
+                F::from(push_data_left),
+            ),
+            ("length", self.length, length),
+            ("push_data_size", self.push_data_size, push_data_size),
         ] {
             region.assign_advice(
                 || format!("assign {} {}", name, offset),
@@ -594,7 +642,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         }
         for (name, column, value) in [
             ("code_hash", self.bytecode_table.code_hash, code_hash),
-            ("hash_input_rlc", self.hash_input_rlc, hash_input_rlc),
+            ("value_rlc", self.value_rlc, value_rlc),
         ] {
             region.assign_advice(
                 || format!("assign {} {}", name, offset),
@@ -604,11 +652,11 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             )?;
         }
 
-        // push_rindex_is_zero_chip
-        push_rindex_is_zero_chip.assign(region, offset, Value::known(push_rindex_prev))?;
-
-        // length_is_zero chip
-        length_is_zero_chip.assign(region, offset, Value::known(code_length))?;
+        push_data_left_is_zero_chip.assign(
+            region,
+            offset,
+            Value::known(F::from(push_data_left)),
+        )?;
 
         Ok(())
     }
@@ -649,7 +697,7 @@ pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
     let code_hash = keccak(&bytes[..]);
     let mut rows = vec![BytecodeRow::<F> {
         code_hash,
-        tag: F::from(BytecodeFieldTag::Length as u64),
+        tag: F::from(BytecodeFieldTag::Header as u64),
         index: F::zero(),
         is_code: F::zero(),
         value: F::from(bytes.len() as u64),
@@ -832,7 +880,7 @@ mod tests {
             0,
             BytecodeRow {
                 code_hash,
-                tag: Fr::from(BytecodeFieldTag::Length as u64),
+                tag: Fr::from(BytecodeFieldTag::Header as u64),
                 index: Fr::zero(),
                 is_code: Fr::zero(),
                 value: Fr::from(bytecode.to_vec().len() as u64),

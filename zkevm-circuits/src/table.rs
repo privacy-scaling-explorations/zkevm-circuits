@@ -545,12 +545,10 @@ impl MptTable {
 /// Tag to identify the field in a Bytecode Table row
 #[derive(Clone, Copy, Debug)]
 pub enum BytecodeFieldTag {
-    /// Length field
-    Length,
+    /// Header field
+    Header,
     /// Byte field
     Byte,
-    /// Padding field
-    Padding,
 }
 impl_expr!(BytecodeFieldTag);
 
