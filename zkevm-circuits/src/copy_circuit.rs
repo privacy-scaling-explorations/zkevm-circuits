@@ -916,7 +916,7 @@ mod tests {
     #[test]
     fn copy_circuit_valid_extcodecopy() {
         let builder = gen_extcodecopy_data();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
