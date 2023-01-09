@@ -592,7 +592,7 @@ impl<F: Field> ExecutionConfig<F> {
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
-        // heightn
+        // height
         let height = {
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
