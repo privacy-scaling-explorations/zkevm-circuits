@@ -199,6 +199,8 @@ pub struct Transaction {
     pub signature: Signature,
     /// Invalid tx
     pub invalid_tx: u64,
+    /// AccessListGasCost
+    pub access_list_gas_cost: u64,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
@@ -240,6 +242,7 @@ impl Transaction {
                 v: 0,
             },
             invalid_tx: 0,
+            access_list_gas_cost: 0,
             calls: Vec::new(),
             steps: Vec::new(),
         }
@@ -318,6 +321,7 @@ impl Transaction {
                 s: eth_tx.s,
             },
             invalid_tx: 0,
+            access_list_gas_cost: 0, // TODO: support (EIP 2930) type TX
         })
     }
 

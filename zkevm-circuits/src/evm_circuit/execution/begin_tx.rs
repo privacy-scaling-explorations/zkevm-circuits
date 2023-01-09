@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             reversion_info.is_persistent(),
         );
 
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, is_tx_invalid] =
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, is_tx_invalid, tx_access_list_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -86,6 +86,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataLength,
                 TxContextFieldTag::CallDataGasCost,
                 TxContextFieldTag::TxInvalid,
+                TxContextFieldTag::AccessListGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
@@ -117,6 +118,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // instruction.constrain_equal(nonce, nonce_prev.expr() + 1 - is_tx_invalid)
         // nonce_prev = tx_nonce.expr()
+        // bump the account nonce if the tx is valid
         cb.require_equal(
             "nonce, nonce_prev and invalid_tx_tx",
             tx_nonce.expr() + 1.expr(),
@@ -126,7 +128,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
         // Calculate transaction gas fee
-
         let mul_gas_fee_by_gas =
             MulWordByU64Gadget::construct(cb, tx_gas_price.clone(), tx_gas.expr());
 
@@ -136,7 +137,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_is_create.expr(),
             GasCost::CREATION_TX.expr(),
             GasCost::TX.expr(),
-        ) + tx_call_data_gas_cost.expr();
+        ) + tx_call_data_gas_cost.expr()
+            + tx_access_list_gas_cost.expr();
 
         // Check gas_left is sufficient
         let gas_left = tx_gas.expr() - intrinsic_gas_cost;

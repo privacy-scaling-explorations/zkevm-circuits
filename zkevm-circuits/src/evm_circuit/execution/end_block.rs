@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         // 1. Constraint total_valid_txs and total_txs witness values depending on the
         // empty block case.
         cb.condition(is_empty_block.expr(), |cb| {
-            // 1a.
+            // 1a. total_valid_txs is 0 in empty block
             cb.require_equal(
                 "total_txs is 0 in empty block",
                 total_valid_txs.expr(),

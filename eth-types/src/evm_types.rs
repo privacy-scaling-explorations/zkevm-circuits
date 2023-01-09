@@ -126,6 +126,10 @@ impl GasCost {
     pub const CALL_WITH_VALUE: Self = Self(9000);
     /// Constant cost for turning empty account into non-empty account
     pub const NEW_ACCOUNT: Self = Self(25000);
+    /// Gas cost of warming up an account with the access list
+    pub const ACCESS_LIST_ADDRESS: Self = Self(2400);
+    /// Gas cost of warming up a storage with the access list
+    pub const ACCESS_LIST_STORAGE: Self = Self(1900);
     /// Cost per byte of deploying a new contract
     pub const CODE_DEPOSIT_BYTE_COST: Self = Self(200);
     /// Denominator of quadratic part of memory expansion gas cost

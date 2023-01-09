@@ -120,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             1.expr(),
             tx_id.expr(),
             TxReceiptFieldTag::PostStateOrStatus,
-            (1.expr() - is_tx_invalid.expr())*is_persistent.expr(),
+            (1.expr() - is_tx_invalid.expr()) * is_persistent.expr(),
         );
         cb.tx_receipt_lookup(
             1.expr(),

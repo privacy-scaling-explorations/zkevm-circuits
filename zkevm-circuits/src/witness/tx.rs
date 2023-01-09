@@ -35,6 +35,8 @@ pub struct Transaction {
     pub call_data_gas_cost: u64,
     /// Invalid tx
     pub invalid_tx: u64,
+    /// AccessListGasCost
+    pub access_list_gas_cost: u64,
     /// The calls made in the transaction
     pub calls: Vec<Call>,
     /// The steps executioned in the transaction
@@ -114,10 +116,16 @@ impl Transaction {
                     Value::known(F::from(self.call_data_gas_cost)),
                 ],
                 [
-                    F::from(self.id as u64),
-                    F::from(TxContextFieldTag::TxInvalid as u64),
-                    F::zero(),
-                    F::from(self.invalid_tx),
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::TxInvalid as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.invalid_tx)),
+                ],
+                [
+                    Value::known(F::from(self.id as u64)),
+                    Value::known(F::from(TxContextFieldTag::AccessListGasCost as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.access_list_gas_cost)),
                 ],
             ],
             self.call_data
@@ -154,6 +162,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
         invalid_tx: tx.invalid_tx,
+        access_list_gas_cost: tx.access_list_gas_cost,
         calls: tx
             .calls()
             .iter()
