@@ -401,6 +401,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[5],
         ]
         .map(|idx| block.rws[idx].call_context_value());
+        let stack_index = 6;
 
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
@@ -414,8 +415,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             [U256::zero(), U256::zero()]
         };
         let [gas, callee_address] = [
-            step.rw_indices[6 + rw_offset],
-            step.rw_indices[7 + rw_offset],
+            step.rw_indices[stack_index + rw_offset],
+            step.rw_indices[stack_index + 1 + rw_offset],
         ]
         .map(|idx| block.rws[idx].stack_value());
         let value = if is_call || is_callcode {
@@ -425,11 +426,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             U256::zero()
         };
         let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [
-            step.rw_indices[8 + rw_offset],
-            step.rw_indices[9 + rw_offset],
-            step.rw_indices[10 + rw_offset],
-            step.rw_indices[11 + rw_offset],
-            step.rw_indices[12 + rw_offset],
+            step.rw_indices[stack_index + 2 + rw_offset],
+            step.rw_indices[stack_index + 3 + rw_offset],
+            step.rw_indices[stack_index + 4 + rw_offset],
+            step.rw_indices[stack_index + 5 + rw_offset],
+            step.rw_indices[stack_index + 6 + rw_offset],
         ]
         .map(|idx| block.rws[idx].stack_value());
         let (is_warm, is_warm_prev) =
