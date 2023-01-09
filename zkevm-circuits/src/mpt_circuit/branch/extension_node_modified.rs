@@ -524,8 +524,29 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
         );
 
         if !is_long {
+            meta.create_gate("Long and short ext. node have the same branch", |meta| {
+                let q_enable = q_enable(meta);
+                let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
+
+                let mut constraints = vec![];
+
+                for ind in 0..HASH_WIDTH-1 {
+                    let short_byte = meta.query_advice(c_main.bytes[ind], Rotation::cur());
+                    let long_byte = meta.query_advice(c_main.bytes[ind], Rotation(-(SHORT_EXT_NODE_S - LONG_EXT_NODE_S)));
+                    
+                    constraints.push((
+                        "Branch of long and short extension nodes are the same",
+                        q_enable.clone()
+                            * q_not_first.clone()
+                            * (short_byte - long_byte)
+                    ));
+                }
+
+                constraints
+            });
+
             meta.create_gate(
-                "Modified and drifted extension node differ only in nibbles",
+                "Long and short ext. node have same nibbles except for middle ext. node nibbles",
                 |meta| {
                     let q_enable = q_enable(meta);
                     let q_not_first = meta.query_fixed(position_cols.q_not_first, Rotation::cur());
