@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH, LOOKUP_CONFIG},
+        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -312,8 +312,8 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
 
-        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_,count)| *count).sum();
-        
+        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
+
         let advices = [(); STEP_WIDTH]
             .iter()
             .enumerate()
@@ -417,10 +417,8 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
 
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let word_powers_of_randomness =
-            challenges.evm_word_powers_of_randomness();
-        let lookup_powers_of_randomness =
-            challenges.lookup_input_powers_of_randomness();
+        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness();
+        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -1220,11 +1218,14 @@ impl<F: Field> ExecutionConfig<F> {
                     .evm_word()
                     .map(|randomness| rw.table_assignment_aux(randomness).rlc(randomness))
             })
-            .collect();
+            .fold(BTreeSet::<F>::new(), |mut set, value| {
+                value.map(|value| set.insert(value));
+                set
+            });
 
         // [TODO] Check this
         for (name, value) in assigned_rw_values.iter() {
-            if !rlc_assignments.contains(&Value::known(*value)) {
+            if !rlc_assignments.contains(value) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
