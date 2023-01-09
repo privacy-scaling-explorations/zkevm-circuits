@@ -315,9 +315,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
                 }
 
-                let rw_counter_delta = 24.expr();
                 cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(rw_counter_delta),
+                    rw_counter: Delta(24.expr()),
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: Delta(
