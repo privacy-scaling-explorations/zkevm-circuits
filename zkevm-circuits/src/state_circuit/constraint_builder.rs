@@ -5,7 +5,10 @@ use super::{
 };
 use crate::util::Expr;
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, util::not},
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{math_gadget::generate_lagrange_base_polynomial, not},
+    },
     table::{AccountFieldTag, ProofType, RwTableTag},
 };
 use eth_types::Field;
@@ -243,10 +246,14 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
+        // ref. spec 4.0. Unused keys are 0
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
 
+        // value = 0 means the leaf doesn't exist. 0->0 transition requires a
+        // non-existing proof.
         let is_non_exist = q.is_non_exist();
 
+        // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
@@ -326,6 +333,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
+        // ref. spec 6.0. Unused keys are 0
         self.require_zero("id is 0 for Account", q.id());
         self.require_zero(
             "storage_key is 0 for Account",
@@ -336,6 +344,15 @@ impl<F: Field> ConstraintBuilder<F> {
             q.field_tag(),
             set::<F, AccountFieldTag>(),
         );
+
+        // We use code_hash = 0 as non-existing account state.  code_hash: 0->0
+        // transition requires a non-existing proof.
+        let is_non_exist = q.is_non_exist()
+            * generate_lagrange_base_polynomial(
+                q.field_tag(),
+                AccountFieldTag::CodeHash as usize,
+                AccountFieldTag::iter().map(|t| t as usize),
+            );
 
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
@@ -349,7 +366,11 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.rw_table.storage_key.clone(),
                         q.mpt_update_table.storage_key.clone(),
                     ),
-                    (q.field_tag(), q.mpt_update_table.proof_type.clone()),
+                    (
+                        is_non_exist.expr() * ProofType::AccountDoesNotExist.expr()
+                            + (1.expr() - is_non_exist) * q.field_tag(),
+                        q.mpt_update_table.proof_type.clone(),
+                    ),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
                     (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
                     (q.value(), q.mpt_update_table.new_value.clone()),

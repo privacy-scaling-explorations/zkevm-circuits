@@ -15,7 +15,10 @@ use crate::{
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use gadgets::{
+    batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
@@ -56,9 +59,7 @@ pub struct StateCircuitConfig<F> {
     // For Rw::AccountStorage, identify non-existing if both committed value and
     // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
     // non-existing, otherwise do lookup for ProofType::StorageChanged.
-    // TODO: use BatchedIsZeroGadget here, once it doesn't depend on the evm circuit constraint
-    // builder.
-    is_non_exist: Column<Advice>,
+    is_non_exist: BatchedIsZeroConfig,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     not_first_access: Column<Advice>,
@@ -108,7 +109,17 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);
-        let is_non_exist = meta.advice_column_in(SecondPhase);
+        let is_non_exist = BatchedIsZeroChip::configure(
+            meta,
+            (SecondPhase, SecondPhase),
+            |meta| meta.query_fixed(selector, Rotation::cur()),
+            |meta| {
+                [
+                    meta.query_advice(initial_value, Rotation::cur()),
+                    meta.query_advice(rw_table.value, Rotation::cur()),
+                ]
+            },
+        );
         let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
@@ -279,20 +290,18 @@ impl<F: Field> StateCircuitConfig<F> {
             )?;
 
             // Identify non-existing if both committed value and new value are zero.
-            let is_non_exist = randomness.map(|randomness| {
-                let (committed_value, new_value) = updates
+            let committed_value_value = randomness.map(|randomness| {
+                let (_, committed_value) = updates
                     .get(row)
                     .map(|u| u.value_assignments(randomness))
                     .unwrap_or_default();
-
-                (F::one() - committed_value * committed_value.invert().unwrap_or(F::zero()))
-                    * (F::one() - new_value * new_value.invert().unwrap_or(F::zero()))
+                let value = row.value_assignment(randomness);
+                [committed_value, value]
             });
-            region.assign_advice(
-                || "is_non_exist",
-                self.is_non_exist,
+            BatchedIsZeroChip::construct(self.is_non_exist.clone()).assign(
+                region,
                 offset,
-                || is_non_exist,
+                committed_value_value,
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -548,7 +557,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
-        is_non_exist: meta.query_advice(c.is_non_exist, Rotation::cur()),
+        is_non_exist: meta.query_advice(c.is_non_exist.is_zero, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
         first_different_limb: [0, 1, 2, 3]
