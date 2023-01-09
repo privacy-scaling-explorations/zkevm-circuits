@@ -1,5 +1,5 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, math_gadget::*, select, CachedRegion,
+    constraint_builder::ConstraintBuilder, math_gadget::*, select, CachedRegion, transpose_val_ret
 };
 use eth_types::Field;
 use halo2_proofs::{plonk::{Error, Expression}, circuit::Value};
@@ -56,9 +56,8 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         lhs: Value<F>,
         rhs: Value<F>,
     ) -> Result<Value<(F, F)>, Error> {
-        lhs.zip(rhs)
-            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs))
-            .transpose()
+        transpose_val_ret(lhs.zip(rhs)
+            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)))
     }    
 }
 

@@ -1,6 +1,6 @@
 use crate::evm_circuit::{
     util::constraint_builder::ConstraintBuilder,
-    util::{math_gadget::*, CachedRegion},
+    util::{math_gadget::*, CachedRegion, transpose_val_ret},
 };
 use eth_types::Field;
 use halo2_proofs::{plonk::{Error, Expression}, circuit::Value};
@@ -43,9 +43,8 @@ impl<F: Field> IsEqualGadget<F> {
         lhs: Value<F>,
         rhs: Value<F>,
     ) -> Result<Value<F>, Error> {
-        lhs.zip(rhs)
-            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs))
-            .transpose()
+        transpose_val_ret(lhs.zip(rhs)
+            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)))
     }
 
 }

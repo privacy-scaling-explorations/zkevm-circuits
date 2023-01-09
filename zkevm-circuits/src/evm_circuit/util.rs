@@ -556,3 +556,12 @@ pub(crate) fn split_u256_limb64(value: &U256) -> [U256; 4] {
         U256([value.0[3], 0, 0, 0]),
     ]
 }
+
+/// Transposes an `Value` of a [`Result`] into a [`Result`] of an `Value`.
+pub(crate) fn transpose_val_ret<F,E>(value: Value<Result<F,E>>) -> Result<Value<F>,E> {
+    let mut ret= Ok(Value::unknown());
+    value.map(|value| {
+        ret = value.map(Value::known);
+   });
+   ret
+} 

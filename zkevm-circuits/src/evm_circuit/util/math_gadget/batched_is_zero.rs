@@ -1,5 +1,5 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, CellType},
+    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, CellType, transpose_val_ret},
     util::Expr,
 };
 use eth_types::Field;
@@ -78,9 +78,8 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
     ) -> Result<Value<F>, Error> {
         let values: Value<[F; N]> =
             Value::<Vec<F>>::from_iter(values).map(|vv| vv.try_into().unwrap());
-        values
-            .map(|values| self.assign(region, offset, values))
-            .transpose()
+            transpose_val_ret(values
+            .map(|values| self.assign(region, offset, values)))
     }
 }
 
