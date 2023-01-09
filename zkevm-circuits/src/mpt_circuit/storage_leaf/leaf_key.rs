@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::{helpers::extend_rand, FixedTableTag},
+    mpt_circuit::FixedTableTag,
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::{BRANCH_ROWS_NUM, S_START},
@@ -140,7 +140,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             );
             let is_leaf_in_first_level = a!(if is_s { denoter.sel1 } else { denoter.sel2 }, 1);
             let is_leaf_placeholder = is_leaf_in_first_level
-                + selectx! {not::expr(is_leaf_in_first_storage_level.expr()) => {sel}};
+                + ifx! {not::expr(is_leaf_in_first_storage_level.expr()) => {sel}};
             ifx! {not::expr(is_leaf_placeholder.expr()) => {
                 // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
                 // Example:
@@ -166,7 +166,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     // c_rlp2 can appear if long and if no branch above leaf
                     let rlc = rlc::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                        &(extend_rand(&r)),
+                        &r,
                     );
                     require!(a!(accs.acc_s.rlc) => rlc);
                 }}
@@ -190,7 +190,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 // incorporated in `key_rlc`. That means we need to ignore the first nibble here
                 // (in leaf key).
                 // `is_branch_placeholder = 0` when in first level
-                let is_branch_placeholder = selectx!{not::expr(is_leaf_in_first_storage_level.expr()) => {branch.is_placeholder()}};
+                let is_branch_placeholder = ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {branch.is_placeholder()}};
                 // - We need to ensure that the storage leaf is at the key specified in `key_rlc` column (used
                 // by MPT lookup). To do this we take the key RLC computed in the branches above the leaf
                 // and add the remaining bytes (nibbles) stored in the leaf.
@@ -224,21 +224,21 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                     ifx!{selector => {
                         // `key_rlc_acc_start = 0` if leaf in first storage level
                         // `key_mult_start = 1` if leaf in first storage level
-                        let key_rlc_acc_start = selectx!{not::expr(is_first_storage_level.expr()) => {a!(accs.key.rlc, rot)}};
-                        let key_mult_start = selectx!{not::expr(is_first_storage_level.expr()) => {
+                        let key_rlc_acc_start = ifx!{not::expr(is_first_storage_level.expr()) => {a!(accs.key.rlc, rot)}};
+                        let key_mult_start = ifx!{not::expr(is_first_storage_level.expr()) => {
                             a!(accs.key.mult, rot)
                         } elsex {
-                            1
+                            1.expr()
                         }};
                         // `c16` and `c1` specify whether in the branch above the leaf the `modified_nibble`
                         // had to be multiplied by 16 or by 1 for the computation the key RLC.
                         // `c16 = 0, c1 = 1` if leaf in first storage level, because we do not have the branch above
                         // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
                         let branch = BranchNodeInfo::new(meta, s_main, is_s, rot - 1);
-                        let is_c16 = selectx!{not::expr(is_first_storage_level.expr()) => { branch.is_c16() }};
-                        let is_c1 = selectx!{not::expr(is_first_storage_level.expr()) => { branch.is_c1() } elsex { 1 }};
+                        let is_c16 = ifx!{not::expr(is_first_storage_level.expr()) => { branch.is_c16() }};
+                        let is_c1 = ifx!{not::expr(is_first_storage_level.expr()) => { branch.is_c1() } elsex { 1.expr() }};
                         // Set to key_mult_start * r if is_c16, else key_mult_start
-                        let key_mult = key_mult_start.clone() * selectx!{is_c16 => { r[0].clone() } elsex { 1 }};
+                        let key_mult = key_mult_start.clone() * ifx!{is_c16 => { r[0].clone() } elsex { 1.expr() }};
                         ifx!{is_short => {
                             // - If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
                             // This is because `is_c1` in the branch above means there is an even number of nibbles left
@@ -306,12 +306,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         // Note that when the leaf is in the first storage level (but positioned after the placeholder
                         // in the circuit), there is no branch above the placeholder branch from where
                         // `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
-                        let leaf_nibbles_long = selectx!{is_c1 => {
+                        let leaf_nibbles_long = ifx!{is_c1 => {
                             (a!(s_main.bytes[0])- 128.expr() - 1.expr()) * 2.expr()
                         } elsex {
                             (a!(s_main.bytes[0])- 128.expr()) * 2.expr() - 1.expr()
                         }};
-                        let leaf_nibbles_short = selectx!{is_c1 => {
+                        let leaf_nibbles_short = ifx!{is_c1 => {
                             (a!(s_main.rlp2) - 128.expr() - 1.expr()) * 2.expr()
                         } elsex {
                             (a!(s_main.rlp2) - 128.expr()) * 2.expr() - 1.expr()
@@ -320,7 +320,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         let leaf_nibbles_one_nibble = 1.expr();
                         let leaf_nibbles = leaf_nibbles_long * is_long.expr() + leaf_nibbles_short * is_short.expr()
                             + leaf_nibbles_last_level * last_level.expr() + leaf_nibbles_one_nibble * one_nibble.expr();
-                        let nibbles_count = selectx!{not::expr(is_first_storage_level.expr()) => { branch.nibbles_counter().expr() }};
+                        let nibbles_count = ifx!{not::expr(is_first_storage_level.expr()) => { branch.nibbles_counter().expr() }};
                         require!(nibbles_count + leaf_nibbles => 64);
 
                         // Note: When the leaf is after the placeholder branch, it cannot be in the last level

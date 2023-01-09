@@ -5,11 +5,7 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::{
-        helpers::{extend_rand, BranchNodeInfo},
-        witness_row::MptWitnessRow,
-        FixedTableTag, MPTContext,
-    },
+    mpt_circuit::{helpers::BranchNodeInfo, witness_row::MptWitnessRow, FixedTableTag, MPTContext},
     mpt_circuit::{
         helpers::{get_leaf_len, BaseConstraintBuilder},
         param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
@@ -120,7 +116,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     ifx!{is_short.expr() + is_long.expr() => {
                         let rlc = rlc::expr(
                             &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &(extend_rand(&r)),
+                            &r,
                         );
                         require!(a!(accs.acc_s.rlc) => rlc);
                     }}
@@ -177,17 +173,17 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above,
                 // we take 0).
-                let key_rlc_cur = selectx!{branch.is_extension() => {
+                let key_rlc_cur = ifx!{branch.is_extension() => {
                     a!(accs.key.rlc, -LEAF_DRIFTED_IND - 1)
                 } elsex {
-                    selectx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
+                    ifx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
                         a!(accs.key.rlc, rot_branch_init - BRANCH_ROWS_NUM + 1)
                     }}
                 }};
 
                 // Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
                 // in the branch above the placeholder branch.
-                let branch_above_placeholder_mult = selectx!{is_branch_placeholder_in_first_level => {
+                let branch_above_placeholder_mult = ifx!{is_branch_placeholder_in_first_level => {
                     1.expr()
                 } elsex {
                     a!(accs.key.mult, rot_branch_init - BRANCH_ROWS_NUM + 1)
@@ -197,11 +193,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // We need `mult_diff` because there is nothing stored in
                 // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
                 let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                selectx!{branch.is_extension() => {
+                ifx!{branch.is_extension() => {
                     // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    selectx!{branch.is_short() => {
+                    ifx!{branch.is_short() => {
                         // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        selectx!{branch.is_c1() => {
+                        ifx!{branch.is_c1() => {
                             1.expr()
                         } elsex { // is_c16 TODO(Brecht): check if !c1 -> c16
                             r[0].expr()
@@ -361,7 +357,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // If branch placeholder in `S`, the leaf value is 3 rows above.
                     let rlc = a!(accs.acc_s.rlc) + rlc::expr(
                         &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -3)).collect::<Vec<_>>(),
-                        &extend_rand(&r),
+                        &r,
                     );
 
                     // `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
@@ -402,7 +398,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // If branch placeholder in C, value is 1 above.
                     let rlc = a!(accs.acc_s.rlc) + rlc::expr(
                         &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -1)).collect::<Vec<_>>(),
-                        &extend_rand(&r),
+                        &r,
                     );
 
                     // `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.

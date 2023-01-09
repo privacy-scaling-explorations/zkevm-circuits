@@ -1,10 +1,11 @@
 use crate::util::Expr;
-use gadgets::util::{and, not};
+use gadgets::util::{and, not, select};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, Expression, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 
 use crate::mpt_circuit::param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
@@ -476,24 +477,6 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         ret
     }
 
-    /*pub(crate) fn if_else<R>(
-        &mut self,
-        condition: Expression<F>,
-        when_true: impl FnOnce(&mut Self) -> R,
-        when_false: impl FnOnce(&mut Self) -> R,
-    ) -> R {
-        self.push_condition(condition.clone());
-        let ret_true = when_true(self);
-        self.pop_condition();
-
-        self.push_condition(not::expr(condition));
-        let ret_false = when_false(self);
-        self.pop_condition();
-
-        ret_true
-        //select::expr(condition, ret_true, ret_false)
-    }*/
-
     pub(crate) fn push_condition(&mut self, condition: Expression<F>) {
         self.conditions.push(condition);
     }
@@ -641,106 +624,239 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
     }
 }
 
+pub(crate) fn select<F: FieldExt>(
+    condition: Expression<F>,
+    when_true: &[Expression<F>],
+    when_false: &[Expression<F>],
+) -> Vec<Expression<F>> {
+    when_true
+        .into_iter()
+        .zip(when_false.into_iter())
+        .map(|(when_true, when_false)| {
+            select::expr(condition.expr(), when_true.expr(), when_false.expr())
+        })
+        .collect()
+}
+
+/// Wrapper around select
+pub trait Selectable<F> {
+    fn select(&self, condition: Expression<F>, other: Self) -> Self;
+    fn conditional(&self, condition: Expression<F>) -> Self;
+    fn to_vec(&self) -> Vec<Expression<F>>;
+}
+
+impl<F: FieldExt> Selectable<F> for () {
+    fn select(&self, _condition: Expression<F>, _when_false: Self) -> Self {
+        ()
+    }
+    fn conditional(&self, _condition: Expression<F>) -> Self {
+        ()
+    }
+    fn to_vec(&self) -> Vec<Expression<F>> {
+        vec![]
+    }
+}
+
+impl<F: FieldExt> Selectable<F> for Expression<F> {
+    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+        gadgets::util::select::expr(condition, self.expr(), when_false.expr())
+    }
+    fn conditional(&self, condition: Expression<F>) -> Self {
+        condition * self.expr()
+    }
+    fn to_vec(&self) -> Vec<Expression<F>> {
+        vec![self.expr()]
+    }
+}
+
+impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>) {
+    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+        select(condition, &self.to_vec(), &when_false.to_vec())
+            .into_iter()
+            .collect_tuple()
+            .unwrap()
+    }
+    fn conditional(&self, condition: Expression<F>) -> Self {
+        self.to_vec()
+            .into_iter()
+            .map(|when_true| condition.expr() * when_true.expr())
+            .collect_tuple()
+            .unwrap()
+    }
+    fn to_vec(&self) -> Vec<Expression<F>> {
+        vec![self.0.expr(), self.1.expr()]
+    }
+}
+
+impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>) {
+    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+        select(condition, &self.to_vec(), &when_false.to_vec())
+            .into_iter()
+            .collect_tuple()
+            .unwrap()
+    }
+    fn conditional(&self, condition: Expression<F>) -> Self {
+        self.to_vec()
+            .into_iter()
+            .map(|when_true| condition.expr() * when_true.expr())
+            .collect_tuple()
+            .unwrap()
+    }
+    fn to_vec(&self) -> Vec<Expression<F>> {
+        vec![self.0.expr(), self.1.expr(), self.2.expr()]
+    }
+}
+
+impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>, Expression<F>) {
+    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+        select(condition, &self.to_vec(), &when_false.to_vec())
+            .into_iter()
+            .collect_tuple()
+            .unwrap()
+    }
+    fn conditional(&self, condition: Expression<F>) -> Self {
+        self.to_vec()
+            .into_iter()
+            .map(|when_true| condition.expr() * when_true.expr())
+            .collect_tuple()
+            .unwrap()
+    }
+    fn to_vec(&self) -> Vec<Expression<F>> {
+        vec![self.0.expr(), self.1.expr(), self.2.expr(), self.3.expr()]
+    }
+}
+
+impl<F: FieldExt> Selectable<F>
+    for (
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    )
+{
+    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+        select(condition, &self.to_vec(), &when_false.to_vec())
+            .into_iter()
+            .collect_tuple()
+            .unwrap()
+    }
+    fn conditional(&self, condition: Expression<F>) -> Self {
+        self.to_vec()
+            .into_iter()
+            .map(|when_true| condition.expr() * when_true.expr())
+            .collect_tuple()
+            .unwrap()
+    }
+    fn to_vec(&self) -> Vec<Expression<F>> {
+        vec![
+            self.0.expr(),
+            self.1.expr(),
+            self.2.expr(),
+            self.3.expr(),
+            self.4.expr(),
+        ]
+    }
+}
+
 /// Constraint builder macros
 #[macro_export]
 macro_rules! constraints {
     ([$meta:ident, $cb:ident], $content:block) => {{
-        // Nested macro's can't do repitition... (https://github.com/rust-lang/rust/issues/35853)
+        #[allow(unused_imports)]
+        use crate::mpt_circuit::helpers::Selectable;
+        // Nested macro's can't do repetition... (https://github.com/rust-lang/rust/issues/35853)
         #[allow(unused_macros)]
         macro_rules! ifx {
             ($condition:expr => $when_true:block elsex $when_false:block) => {{
                 $cb.push_condition($condition.expr());
-                $when_true
+                let ret_true = $when_true;
                 $cb.pop_condition();
 
                 $cb.push_condition(not::expr($condition.expr()));
-                $when_false
+                let ret_false = $when_false;
                 $cb.pop_condition();
+
+                ret_true.select($condition.expr(), ret_false)
             }};
             ($condition_a:expr, $condition_b:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
 
                 $cb.push_condition(condition.expr());
-                $when_true
+                let ret_true = $when_true;
                 $cb.pop_condition();
 
                 $cb.push_condition(not::expr(condition.expr()));
-                $when_false
+                let ret_false = $when_false;
                 $cb.pop_condition();
+
+                ret_true.select(condition.expr(), ret_false)
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
 
                 $cb.push_condition(condition.expr());
-                $when_true
+                let ret_true = $when_true;
                 $cb.pop_condition();
 
                 $cb.push_condition(not::expr(condition.expr()));
-                $when_false
+                let ret_false = $when_false;
                 $cb.pop_condition();
+
+                ret_true.select(condition.expr(), ret_false)
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
 
                 $cb.push_condition(condition.expr());
-                $when_true
+                let ret_true = $when_true;
                 $cb.pop_condition();
 
                 $cb.push_condition(not::expr(condition.expr()));
-                $when_false
+                let ret_false = $when_false;
                 $cb.pop_condition();
+
+                ret_true.select(condition.expr(), ret_false)
             }};
 
             ($condition:expr => $when_true:block) => {{
                 $cb.push_condition($condition.expr());
-                $when_true
+                let ret_true = $when_true.clone();
                 $cb.pop_condition();
+
+                ret_true.conditional($condition.expr())
             }};
             ($condition_a:expr, $condition_b:expr => $when_true:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
                 $cb.push_condition(condition.expr());
-                $when_true
+                let ret_true = $when_true.clone();
                 $cb.pop_condition();
+
+                ret_true.conditional(condition.expr())
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
                 $cb.push_condition(condition.expr());
-                $when_true
+                let ret_true = $when_true.clone();
                 $cb.pop_condition();
+
+                ret_true.conditional(condition.expr())
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
                 $cb.push_condition(condition.expr());
-                $when_true
+                let ret_true = $when_true.clone();
                 $cb.pop_condition();
+
+                ret_true.conditional(condition.expr())
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr => $when_true:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr(), $condition_e.expr()]);
                 $cb.push_condition(condition.expr());
-                $when_true
-                $cb.pop_condition();
-            }};
-        }
-
-        #[allow(unused_macros)]
-        macro_rules! selectx {
-            ($condition:expr => $when_true:block elsex $when_false:block) => {{
-                $cb.push_condition($condition.expr());
-                let ret_true = $when_true.expr();
+                let ret_true = $when_true.clone();
                 $cb.pop_condition();
 
-                $cb.push_condition(not::expr($condition.expr()));
-                let ret_false = $when_false.expr();
-                $cb.pop_condition();
-
-                gadgets::util::select::expr($condition.expr(), ret_true, ret_false)
-            }};
-            ($condition:expr => $when_true:block) => {{
-                $cb.push_condition($condition.expr());
-                let ret_true = $when_true.expr();
-                $cb.pop_condition();
-
-                $condition.expr() * ret_true
+                ret_true.conditional(condition.expr())
             }};
         }
 
@@ -761,6 +877,13 @@ macro_rules! constraints {
             }};
             ($column:expr) => {{
                 $meta.query_advice($column.clone(), Rotation::cur())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! not {
+            ($expr:expr) => {{
+                gadgets::util::not::expr($expr.expr())
             }};
         }
 

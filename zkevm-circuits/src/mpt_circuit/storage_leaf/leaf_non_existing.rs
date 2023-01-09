@@ -11,7 +11,7 @@ use crate::{
     constraints,
     evm_circuit::util::{dot, rlc},
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::{helpers::extend_rand, MPTContext},
+    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::BRANCH_ROWS_NUM,
@@ -88,7 +88,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                             .iter()
                             .map(|&byte| a!(byte, rot))
                             .collect::<Vec<_>>(),
-                        &extend_rand(&r),
+                        &r,
                     );
                     // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
                     // We check whether the computed value is the same as the
@@ -98,7 +98,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                             .iter()
                             .map(|&byte| a!(byte))
                             .collect::<Vec<_>>(),
-                        &extend_rand(&r),
+                        &r,
                     );
                     require!(sum => sum_check);
                     // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
@@ -144,7 +144,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     // sel1, sel2 is in init branch
                     let branch = BranchNodeInfo::new(meta, s_main, true, rot_into_branch_init);
                     // Set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_start.clone() * selectx!{branch.is_c16() => { r[0].clone() } elsex { 1 }};
+                    let key_mult = key_mult_start.expr() * ifx!{branch.is_c16() => { r[0].expr() } elsex { 1.expr() }};
                     ifx!{is_short => {
                         // If there is an even number of nibbles stored in a leaf, `s_bytes0` needs to be 32.
                         ifx!{branch.is_c1() => {

@@ -100,41 +100,34 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     // (rot_into_branch_init takes us to branch init).
                     ifx!{a!(ctx.account_leaf.is_in_added_branch, rot_into_branch_init - 1) => {
                         /* Branch in first level of storage trie - hash compared to the storage root */
-                        // When branch is in the first level of the storage trie, we need to check whether
-                        // - `hash(branch) = storage_trie_root`. We do this by checking whether
-                        // - `(branch_RLC, storage_trie_root_RLC)` is in the keccak table.
-                        // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
+                        // When a branch is in the first level of the storage trie, we need to check whether
+                        // the branch hash matches the storage root.
+                        // Note: A branch in the first level cannot be shorter than 32 bytes (it is always hashed).
                         let storage_offset = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
                         let rot_into_storage_root = rot_into_branch_init - ACCOUNT_LEAF_ROWS + storage_offset;
                         // Note: storage root is always in s_main.bytes.
-                        let hash_rlc = rlc::expr(
+                        let storage_root_rlc = rlc::expr(
                             &ctx.s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
                             &ctx.r,
                         );
-                        require!((branch_rlc, branch.len(), hash_rlc) => @keccak);
+                        require!((branch_rlc, branch.len(), storage_root_rlc) => @keccak);
                     } elsex {
+                        // Here the branch is in some other branch
                         let mod_node_hash_rlc = a!(ctx.accumulators.mod_node_rlc(is_s), rot_into_prev_branch_child);
                         ifx!{branch.is_branch_non_hashed() => {
-                            /* NON-HASHED branch hash in parent branch */
-                            // Similar as the gate above, but here the branch is not hashed.
-                            // Instead of checking `hash(branch) = parent_branch_modified_node`, we check whether
-                            // `branch_RLC = parent_branch_modified_node_RLC`.
+                            /* Non-hashed branch hash in parent branch */
+                            // We need to check that `branch_RLC = parent_branch_modified_node_RLC`.
                             require!(branch_rlc => mod_node_hash_rlc);
                         } elsex {
-                            /* Branch hash in parent branch */
-                            // This is the scenario described at the top of the file.
-                            // When branch is in some other branch, we need to check whether
-                            // `hash(branch) = parent_branch_modified_node`. We do this by checking whether
-                            // `(branch_RLC, parent_branch_modified_node_RLC)` is in the Keccak table.
-                            // When placeholder branch, we don't check its hash in a parent.
+                            /* Hashed branch hash in parent branch */
+                            // We need to check that `hash(branch) = parent_branch_modified_node`.
                             require!((branch_rlc, branch.len(), mod_node_hash_rlc) => @keccak);
                         }}
                     }}
                 } elsex {
                     /* Branch in first level of account trie - hash compared to root */
-                    // When branch is in the first level of the account trie, we need to check whether
-                    // `hash(branch) = account_trie_root`. We do this by checking whether
-                    // `(branch_RLC, account_trie_root_RLC)` is in the keccak table.
+                    // When branch is in the first level of the account trie, we need to check that
+                    // `hash(branch) = account_trie_root`.
                     // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
                     require!((branch_rlc, branch.len(), a!(ctx.inter_root(is_s))) => @keccak);
                 }}

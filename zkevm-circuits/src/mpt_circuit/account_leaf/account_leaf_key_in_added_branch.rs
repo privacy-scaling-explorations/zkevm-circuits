@@ -5,10 +5,7 @@ use std::marker::PhantomData;
 use crate::{
     constraints,
     evm_circuit::util::rlc,
-    mpt_circuit::{
-        helpers::{accumulate_rand, extend_rand},
-        FixedTableTag,
-    },
+    mpt_circuit::{helpers::accumulate_rand, FixedTableTag},
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::{
@@ -76,6 +73,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         // for the first level because when the leaf appears in an added branch it is at
         // least in the second level (added branch being above it).
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
+        let rot_first_child = rot_branch_init + 1;
+        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
 
         constraints!([meta, cb], {
             let mut branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
@@ -99,11 +98,9 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // branches/extensions and leaf key).
                 let rlc = rlc::expr(
                     &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &extend_rand(&r),
+                    &r,
                 );
                 require!(a!(accs.acc_s.rlc) => rlc);
-
-                /* Account drifted leaf key RLC */
 
                 // Leaf key S
                 // Leaf key C
@@ -150,35 +147,35 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // is an extension node, we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above, we take 0).
 
-                let key_rlc_cur = selectx!{branch.is_extension() => {
+                let key_rlc_cur = ifx!{branch.is_extension() => {
                     a!(accs.key.rlc, -ACCOUNT_DRIFTED_LEAF_IND - 1)
                 } elsex {
-                    selectx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
-                        a!(accs.key.rlc, rot_branch_init - BRANCH_ROWS_NUM + 1)
+                    ifx!{not!(is_branch_placeholder_in_first_level) => {
+                        a!(accs.key.rlc, rot_first_child_prev)
                     }}
                 }};
 
-                let branch_above_placeholder_mult = selectx!{is_branch_placeholder_in_first_level => {
+                let branch_above_placeholder_mult = ifx!{is_branch_placeholder_in_first_level => {
                     1.expr()
                 } elsex {
-                    a!(accs.key.mult, rot_branch_init - BRANCH_ROWS_NUM + 1)
+                    a!(accs.key.mult, rot_first_child_prev)
                 }};
 
                 let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                selectx!{branch.is_extension() => {
+                ifx!{branch.is_extension() => {
                     // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    selectx!{branch.is_short() => {
+                    ifx!{branch.is_short() => {
                         // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        selectx!{branch.is_c1() => {
+                        ifx!{branch.is_c1() => {
                             1.expr()
-                        } elsex { // is_c16 TODO(Brecht): check if !c1 -> c16
+                        } elsex {
                             r[0].expr()
                         }}
                     } elsex {
                         // `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
                         // We need `mult_diff` because there is nothing stored in
                         // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
-                        a!(accs.mult_diff, rot_branch_init + 1)
+                        a!(accs.mult_diff, rot_first_child)
                     }}
                 } elsex {
                     1.expr()
@@ -188,7 +185,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // before it drifted down into extension/branch.
 
                 // Any rotation that lands into branch children can be used.
-                let drifted_pos = meta.query_advice(drifted_pos, Rotation(-17));
+                let drifted_pos = a!(drifted_pos, -17);
                 let drifted_pos_mult = key_rlc_mult.clone() * 16.expr() * branch.is_c16() + key_rlc_mult.clone() * branch.is_c1();
 
                 // If is_c1 = 1, we have 32 in `s_main.bytes[1]`.
@@ -205,7 +202,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // position in a branch or/and nibbles of the extension node.
                 let key_rlc = key_rlc_cur + drifted_pos * drifted_pos_mult + rlc::expr(
                     &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                    &extend_rand(&r),
+                    &r,
                 );
                 let num_bytes = a!(s_main.bytes[0]) - 128.expr();
                 // RLC bytes zero check
@@ -231,8 +228,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
                 // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
-                // the `drifted_pos` in the parent branch - we use a lookup to check that the hash that
-                // corresponds to this RLC is in the parent branch at `drifted_pos` position.
+                // the `drifted_pos` in the parent branch.
                 for is_s in [false, true] {
                     branch.set_is_s(is_s);
 
@@ -262,14 +258,14 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     let is_balance_long = a!(denoter.sel2, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
 
                     let nonce_stored = a!(accs.s_mod_node_rlc, nonce_rot);
-                    let nonce_rlc = selectx!{is_nonce_long => {
+                    let nonce_rlc = ifx!{is_nonce_long => {
                         rlc::expr(&[a!(s_main.bytes[0], nonce_rot), nonce_stored.expr()], &r)
                     } elsex {
                         nonce_stored
                     }};
 
                     let balance_stored = a!(accs.c_mod_node_rlc, nonce_rot);
-                    let balance_rlc = selectx!{is_balance_long => {
+                    let balance_rlc = ifx!{is_balance_long => {
                         rlc::expr(&[a!(c_main.bytes[0], nonce_rot), balance_stored.expr()], &r)
                     } elsex {
                         balance_stored

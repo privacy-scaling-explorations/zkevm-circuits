@@ -173,7 +173,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                             // Note: For `is_non_existing_account_proof` we do not need this constraint,
                             // `S` and `C` proofs are the same and we need to do a lookup into only one
                             // (the other one could really be whatever).
-                            ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_codehash_mod => {
+                            ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_codehash_mod.expr() => {
                                 require!(storage_root_s_from_prev => storage_root_stored);
                             }}
                             // If the modification is nonce or balance or storage modification (that means
@@ -182,7 +182,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                             // Note: For `is_non_existing_account_proof` we do not need this constraint,
                             // `S` and `C` proofs are the same and we need to do a lookup into only one
                             // (the other one could really be whatever).
-                            ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_storage_mod => {
+                            ifx!{is_nonce_mod.expr() + is_balance_mod.expr() + is_storage_mod.expr() => {
                                 require!(codehash_s_from_cur => codehash_stored);
                             }}
                         }}

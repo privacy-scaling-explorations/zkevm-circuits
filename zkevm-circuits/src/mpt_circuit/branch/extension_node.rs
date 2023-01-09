@@ -11,10 +11,7 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{extend_rand, BranchNodeInfo},
-        param::EXTENSION_ROWS_NUM,
-        witness_row::MptWitnessRow,
-        MPTContext,
+        helpers::BranchNodeInfo, param::EXTENSION_ROWS_NUM, witness_row::MptWitnessRow, MPTContext,
     },
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, ColumnTransition},
@@ -364,7 +361,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     .iter()
                     .map(|&byte| a!(byte, rot_into_s))
                     .collect::<Vec<_>>(),
-                &extend_rand(&r),
+                &r,
             );
             // TODO(Brecht): Do we need to store the RLC here? we can just use `rlc`
             // directly below...
@@ -466,7 +463,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // Note: Correspondence between nibbles in C and bytes in S is checked in
             // extension_node_key.
             if is_s {
-                let num_bytes = selectx! {ext.is_short() => {
+                // Calculate the number of bytes
+                let num_bytes = ifx! {ext.is_short() => {
                     // Only a single nibble (stored in s_rlp2)
                     1.expr()
                 } elsex {
@@ -474,14 +472,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     // - `s_main.bytes[0]` when the extension node is longer than 55
                     // - `s_rlp2` otherwise
                     // In both cases we have to subtract 128 to get the number of bytes.
-                    (selectx!{ext.is_longer_than_55 => {
+                    ifx!(ext.is_longer_than_55 => {
                         a!(s_main.bytes[0])
                     } elsex {
                         a!(s_main.rlp2)
-                    }} - 128.expr())
+                    }) - 128.expr()
                 }};
                 // Calculate the number of nibbles
-                let num_nibbles = selectx! {ext.is_even() => {
+                let num_nibbles = ifx! {ext.is_even() => {
                     // We need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
                     // (it is just 0 when even number of nibbles).
                     // In the example below it is: `(130 - 128 - 1) * 2`.
@@ -497,11 +495,11 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Make sure the nibble counter is updated correctly
                 // nibbles_count_prev needs to be 0 when in first account level or
                 // in first storage level
-                let is_first_storage_level = meta.query_advice(
+                let is_first_storage_level = a!(
                     ctx.account_leaf.is_in_added_branch,
-                    Rotation(rot_into_branch_init - 1),
+                    rot_into_branch_init - 1
                 );
-                let nibbles_count_prev = selectx! {not::expr(is_first_storage_level.expr()) * not_first_level.expr() => {
+                let nibbles_count_prev = ifx! {not::expr(is_first_storage_level.expr()) * not_first_level.expr() => {
                     ext.nibbles_counter().prev()
                 }};
                 require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());

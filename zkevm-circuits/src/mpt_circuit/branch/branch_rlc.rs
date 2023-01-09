@@ -158,7 +158,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                         &r,
                     );
                     require!(branch_rlc => rlc);
-                    require!(branch_mult => branch_mult.prev() * r[0].expr() * r.last().unwrap().expr());
+                    require!(branch_mult => branch_mult.prev() * r[32].expr());
                 }}
             }}
 

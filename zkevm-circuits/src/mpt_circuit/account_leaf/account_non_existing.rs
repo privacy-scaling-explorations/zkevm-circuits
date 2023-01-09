@@ -11,7 +11,7 @@ use crate::{
     constraints,
     evm_circuit::util::{dot, rlc},
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::{helpers::extend_rand, MPTContext},
+    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::{BaseConstraintBuilder, BranchNodeInfo},
         param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
@@ -120,7 +120,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                             .iter()
                             .map(|&byte| a!(byte, -1))
                             .collect::<Vec<_>>(),
-                        &extend_rand(&r),
+                        &r,
                     );
                     // We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check
                     // whether the computed value is the same as the one stored
@@ -130,7 +130,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                             .iter()
                             .map(|&byte| a!(byte))
                             .collect::<Vec<_>>(),
-                        &extend_rand(&r),
+                        &r,
                     );
                     require!(sum => sum_check);
                     // We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check
@@ -186,7 +186,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
                     let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
                     // set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_start.expr() * selectx!{branch.is_c16() => { r[0].expr() } elsex { 1 }};
+                    let key_mult = key_mult_start.expr() * ifx!{branch.is_c16() => { r[0].expr() } elsex { 1.expr() }};
                     // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
                     let key_rlc_acc = key_rlc_acc_start + rlc::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|

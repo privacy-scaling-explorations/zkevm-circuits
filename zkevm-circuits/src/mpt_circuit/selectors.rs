@@ -156,8 +156,8 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 {
                     // Proof type is the expected value on the specified lookup row type,
                     // 0 everywhere else
-                    ifx!{proof_type.expr() => {
-                        ifx!{row_type.expr() => {
+                    ifx!{proof_type => {
+                        ifx!{row_type => {
                             require!(proof_type_id => idx + 1);
                         } elsex {
                             require!(proof_type_id => 0);
@@ -323,11 +323,11 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 for is_mod in modifications {
                     // Does not change outside first level
                     ifx!{not_first_level => {
-                        require!(is_mod.prev() => is_mod.cur());
+                        require!(is_mod => is_mod.prev());
                     } elsex {
                         // Does not change inside first level except in the first row
                         ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()) => {
-                            require!(is_mod.prev() => is_mod.cur());
+                            require!(is_mod => is_mod.prev());
                         }}
                     }};
                 }

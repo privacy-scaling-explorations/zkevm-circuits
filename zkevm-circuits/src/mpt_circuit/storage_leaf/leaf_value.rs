@@ -11,7 +11,7 @@ use crate::{
     constraints,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{extend_rand, BranchNodeInfo},
+        helpers::BranchNodeInfo,
         param::STORAGE_LEAF_ROWS,
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
@@ -370,7 +370,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                     let mult = a!(accs.acc_s.mult, -1);
                                     let rlc = a!(accs.acc_s.rlc, -1) + rlc::expr(
                                         &s_main.rlp_bytes().iter().map(|&byte| a!(byte) * mult.expr()).collect::<Vec<_>>(),
-                                        &extend_rand(&r),
+                                        &r,
                                     );
                                     // -3 to get from init branch into the previous branch (last row), note that -2 is needed
                                     // because of extension nodes.

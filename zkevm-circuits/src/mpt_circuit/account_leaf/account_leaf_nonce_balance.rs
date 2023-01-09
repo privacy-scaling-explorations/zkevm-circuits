@@ -248,7 +248,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 &r,
             );
             let balance_rlc = c_bytes0.clone()
-                + selectx! {is_balance_long => {
+                + ifx! {is_balance_long => {
                     balance_value_long_rlc.clone() * r[0].clone()
                 }};
 
@@ -331,7 +331,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             // Computed RLC after nonce balance row is the same as the stored RLC value.
             let nonce_rlc = a!(s_main.bytes[0])
-                + selectx! {is_nonce_long => {
+                + ifx! {is_nonce_long => {
                     nonce_value_long_rlc.expr() * r[0].expr()
                 }};
             let rlc = acc_prev.expr()

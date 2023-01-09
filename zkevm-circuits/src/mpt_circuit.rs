@@ -33,7 +33,7 @@ use account_leaf::{
 use branch::{
     branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
     branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
-    extension_node_key::ExtensionNodeKeyConfig, Branch, BranchCols, BranchConfig,
+    Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
 use proof_chain::ProofChainConfig;
@@ -48,7 +48,7 @@ use selectors::SelectorsConfig;
 
 use crate::{
     constraints,
-    mpt_circuit::helpers::{BaseConstraintBuilder, BranchNodeInfo},
+    mpt_circuit::helpers::{extend_rand, BaseConstraintBuilder, BranchNodeInfo},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
@@ -124,7 +124,7 @@ pub struct MPTContext<F> {
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols<F>,
     pub(crate) address_rlc: Column<Advice>,
-    pub(crate) r: [Expression<F>; HASH_WIDTH],
+    pub(crate) r: Vec<Expression<F>>,
 }
 
 impl<F: FieldExt> MPTContext<F> {
@@ -433,7 +433,7 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators: accumulators.clone(),
             denoter: denoter.clone(),
             address_rlc: address_rlc.clone(),
-            r: power_of_randomness.clone(),
+            r: extend_rand(&power_of_randomness),
         };
 
         let mut row_config: RowConfig<F> = RowConfig::default();
@@ -449,16 +449,12 @@ impl<F: FieldExt> MPTConfig<F> {
                 let branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                 // BRANCH.IS_INIT
                 ifx!{f!(position_cols.q_enable), a!(branch.is_init) => {
-                    BranchInitConfig::<F>::configure(meta, &mut cb, ctx.clone());
+                    BranchInitConfig::configure(meta, &mut cb, ctx.clone());
                 }}
                 // BRANCH.IS_CHILD
                 ifx!{f!(position_cols.q_not_first), a!(branch.is_child) => {
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
-                }}
-                // - First child
-                ifx!{f!(position_cols.q_not_first), a!(branch.is_init, -1) => {
-                    BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
                 }}
                 // - Last child
                 ifx!{f!(position_cols.q_not_first), a!(branch.is_last_child) => {
@@ -466,7 +462,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
                 // BRANCH.IS_EXTENSION_NODE_S
-                ExtensionNodeKeyConfig::configure(meta, &mut cb, ctx.clone());
                 let ext_node_config_s;
                 let is_extension_node = BranchNodeInfo::new(meta, s_main, true, -BRANCH_ROWS_NUM + 2).is_extension();
                 let is_extension_node_s = a!(branch.is_extension_node_s);
@@ -480,6 +475,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 ifx!{f!(position_cols.q_not_first_ext_c), is_extension_node, is_extension_node_c => {
                     ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
+                // BRANCH.IS_EXTENSION_NODE_S + BRANCH.IS_EXTENSION_NODE_C
+                BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
 
                 /* Storage Leaf */
                 // NOTE/TODO: If having only storage proof is to be allowed, then this needs to

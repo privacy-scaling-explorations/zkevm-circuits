@@ -3,7 +3,6 @@ pub mod branch_init;
 pub mod branch_key;
 pub mod branch_rlc;
 pub mod extension_node;
-pub mod extension_node_key;
 
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -249,7 +248,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         let rlp1 = a!(ctx.main(is_s).rlp1);
                         let rlp2 = a!(ctx.main(is_s).rlp2);
                         // Calculate the number of bytes on this row.
-                        let num_bytes = selectx!{a!(denoter.is_not_hashed(is_s)) => {
+                        let num_bytes = ifx!{a!(denoter.is_not_hashed(is_s)) => {
                             a!(ctx.main(is_s).bytes[0]) - 192.expr() + 1.expr()
                         } elsex {
                             // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
@@ -258,7 +257,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         }};
                         // Fetch the number of bytes left from the previous row.
                         // TODO(Brecht): just store it in branch init in its own column.
-                        let num_bytes_left = selectx!{is_branch_init.prev() => {
+                        let num_bytes_left = ifx!{is_branch_init.prev() => {
                             // Length of branch without initial rlp bytes
                             BranchNodeInfo::new(meta, s_main, is_s, -1).raw_len()
                         } elsex {
@@ -299,12 +298,12 @@ impl<F: FieldExt> BranchConfig<F> {
                     // - `is_modified_child_empty`
                     ifx!{a!(branch.node_index) => {
                         // `modified_node_index` needs to be the same for all branch children.
-                        require!(modified_node_index.cur() => modified_node_index.prev());
+                        require!(modified_node_index => modified_node_index.prev());
                         // When not in a placeholder branch,
                         // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
                         // needs to be the same for all branch nodes.
                         ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()) => {
-                            require!(drifted_pos.cur() => drifted_pos.prev());
+                            require!(drifted_pos => drifted_pos.prev());
                         }}
                         for is_s in [true, false] {
                             let mod_node_hash_rlc = ctx.accumulators.mod_node_rlc(is_s);
@@ -330,18 +329,18 @@ impl<F: FieldExt> BranchConfig<F> {
                         require!(is_last_child.prev() => true);
                     }}
                 }}
-                ifx!{is_branch_child.cur() => {
+                ifx!{is_branch_child => {
                     // If we have a branch child, we can only have branch child or branch init in the previous row.
                     require!(or::expr([is_branch_child.prev(), is_branch_init.prev()]) => true);
                     // When `node_index` != 0
-                    ifx!{node_index.cur() => {
+                    ifx!{node_index => {
                         // `node_index` increases by 1 for each branch child.
-                        require!(node_index.cur() => node_index.prev() + 1.expr());
+                        require!(node_index => node_index.prev() + 1.expr());
                     }}
                 }}
                 ifx!{is_last_child => {
                     // When `node_index` is not 15, `is_last_child` needs to be 0.
-                    require!(node_index.cur() => 15);
+                    require!(node_index => 15);
                 }}
 
                 // TODO(Brecht): check `mod_node_rlc` use
@@ -637,10 +636,9 @@ impl<F: FieldExt> BranchConfig<F> {
             pv.key_rlc_prev = pv.key_rlc;
             pv.key_rlc_mult_prev = pv.key_rlc_mult;
 
-            if pv.is_extension_node
             // Extension node
             // We need nibbles here to be able to compute key RLC
-            {
+            if pv.is_extension_node {
                 // For key RLC, we need to first take into account
                 // extension node key.
                 // witness[offset + 16]
@@ -798,6 +796,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     pv.key_rlc_mult *= mpt_config.randomness;
                 }
                 pv.key_rlc_sel = !pv.key_rlc_sel;
+                pv.mult_diff = F::one();
             }
             row.assign_branch_row(region, mpt_config, pv, offset)?;
         } else {
