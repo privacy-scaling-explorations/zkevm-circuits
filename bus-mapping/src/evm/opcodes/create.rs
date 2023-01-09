@@ -1,11 +1,11 @@
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    evm::Opcode,
+    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    Error,
 };
-use crate::evm::Opcode;
-use crate::operation::{
-    AccountField, AccountOp, CallContextField, MemoryOp, TxAccessListAccountOp, RW,
-};
-use crate::Error;
 use eth_types::{
     evm_types::gas_utils::memory_expansion_gas_cost, Bytecode, GethExecStep, ToBigEndian, ToWord,
     Word, H160, H256,
@@ -36,8 +36,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let mut exec_step = state.new_step(geth_step)?;
 
-        // TODO: rename this to initialization call?
-        let call = state.parse_call(geth_step)?;
+        let callee = state.parse_call(geth_step)?;
 
         let n_pop = if IS_CREATE2 { 4 } else { 3 };
         for i in 0..n_pop {
@@ -56,7 +55,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
-            if call.is_success {
+            if callee.is_success {
                 address.to_word()
             } else {
                 Word::zero()
@@ -69,81 +68,60 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
                 handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?;
         }
 
-        // Quote from [EIP-2929](https://eips.ethereum.org/EIPS/eip-2929)
-        // > When a CREATE or CREATE2 opcode is called,
-        // > immediately (i.e. before checks are done to determine
-        // > whether or not the address is unclaimed)
-        // > add the address being created to accessed_addresses,
-        // > but gas costs of CREATE and CREATE2 are unchanged
-
         let tx_id = state.tx_ctx.id();
-        let current_call = state.call()?.clone();
-
-        for (field, value) in [
-            (CallContextField::TxId, tx_id.to_word()),
-            (
-                CallContextField::RwCounterEndOfReversion,
-                current_call.rw_counter_end_of_reversion.to_word(),
-            ),
-            (
-                CallContextField::IsPersistent,
-                current_call.is_persistent.to_word(),
-            ),
-        ] {
-            state.call_context_read(&mut exec_step, current_call.call_id, field, value);
-        }
-
-        let is_warm = state.sdb.check_account_in_access_list(&address);
-        state.push_op_reversible(
-            &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id,
-                address,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
-        )?;
+        let caller = state.call()?.clone();
 
         state.call_context_read(
             &mut exec_step,
-            current_call.call_id,
+            caller.call_id,
+            CallContextField::TxId,
+            tx_id.to_word(),
+        );
+        state.reversion_info_read(&mut exec_step, &caller);
+        state.tx_access_list_write(&mut exec_step, address)?;
+
+        state.call_context_read(
+            &mut exec_step,
+            caller.call_id,
             CallContextField::CalleeAddress,
-            current_call.address.to_word(),
+            caller.address.to_word(),
         );
 
         // Increase caller's nonce
-        let caller_nonce = state.sdb.get_nonce(&call.caller_address);
+        let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             AccountOp {
-                address: call.caller_address,
+                address: caller.address,
                 field: AccountField::Nonce,
                 value: (caller_nonce + 1).into(),
                 value_prev: caller_nonce.into(),
             },
         )?;
 
-        state.push_call(call.clone());
-        // Increase callee's nonce
+        // TODO: look into when this can be pushed. Could it be done in parse call?
+        state.push_call(callee.clone());
+
         for (field, value) in [
             (
                 CallContextField::RwCounterEndOfReversion,
-                call.rw_counter_end_of_reversion.to_word(),
+                callee.rw_counter_end_of_reversion.to_word(),
             ),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (
+                CallContextField::IsPersistent,
+                callee.is_persistent.to_word(),
+            ),
         ] {
-            state.call_context_write(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, callee.call_id, field, value);
         }
 
-        let nonce_prev = state.sdb.get_nonce(&call.address);
-        debug_assert!(nonce_prev == 0);
+        debug_assert!(state.sdb.get_nonce(&callee.address) == 0);
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
             AccountOp {
-                address: call.address,
+                address: callee.address,
                 field: AccountField::Nonce,
                 value: 1.into(),
                 value_prev: 0.into(),
@@ -152,15 +130,16 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         state.transfer(
             &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
+            callee.caller_address,
+            callee.address,
+            callee.value,
         )?;
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
 
-        // EIP-150: all but one 64th of the caller's gas is sent to the callee.
+        // Per EIP-150, all but one 64th of the caller's gas is sent to the
+        // initialization call.
         let caller_gas_left =
             (geth_step.gas.0 - geth_step.gas_cost.0 - memory_expansion_gas_cost) / 64;
 
@@ -177,30 +156,31 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             (CallContextField::MemorySize, next_memory_word_size.into()),
             (
                 CallContextField::ReversibleWriteCounter,
-                // +2 is because we do some reversible writes before pushing the call. can be just
-                // push the call later?
                 (exec_step.reversible_write_counter + 2).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, current_call.call_id, field, value);
+            state.call_context_write(&mut exec_step, caller.call_id, field, value);
         }
 
         for (field, value) in [
-            (CallContextField::CallerId, current_call.call_id.into()),
-            (CallContextField::IsSuccess, call.is_success.to_word()),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (CallContextField::CallerId, caller.call_id.into()),
+            (CallContextField::IsSuccess, callee.is_success.to_word()),
+            (
+                CallContextField::IsPersistent,
+                callee.is_persistent.to_word(),
+            ),
             (CallContextField::TxId, state.tx_ctx.id().into()),
             (
                 CallContextField::CallerAddress,
-                current_call.address.to_word(),
+                callee.caller_address.to_word(),
             ),
-            (CallContextField::CalleeAddress, call.address.to_word()),
+            (CallContextField::CalleeAddress, callee.address.to_word()),
             (
                 CallContextField::RwCounterEndOfReversion,
-                call.rw_counter_end_of_reversion.to_word(),
+                callee.rw_counter_end_of_reversion.to_word(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, callee.call_id, field, value);
         }
 
         let keccak_input = if IS_CREATE2 {
@@ -208,20 +188,20 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             assert_eq!(
                 address,
                 get_create2_address(
-                    current_call.address,
+                    caller.address,
                     salt.to_be_bytes().to_vec(),
                     initialization_code.clone()
                 )
             );
             std::iter::once(0xffu8)
-                .chain(current_call.address.to_fixed_bytes()) // also don't need to be reversed....
+                .chain(caller.address.to_fixed_bytes())
                 .chain(salt.to_be_bytes())
                 .chain(keccak256(&initialization_code))
                 .collect::<Vec<_>>()
         } else {
             let mut stream = rlp::RlpStream::new();
             stream.begin_list(2);
-            stream.append(&current_call.address);
+            stream.append(&caller.address);
             stream.append(&Word::from(caller_nonce));
             stream.out().to_vec()
         };

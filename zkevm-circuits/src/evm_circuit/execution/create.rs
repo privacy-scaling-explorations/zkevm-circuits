@@ -269,7 +269,10 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let keccak_input = cb.query_cell();
         let keccak_input_length = cb.query_cell();
         cb.condition(is_create2.expr(), |cb| {
-            // TODO: some comments here explaining what's going on....
+            // For CREATE2, the keccak input is the concatenation of 0xff, address, salt,
+            // and code_hash. Each sequence of bytes occurs in a fixed position, so to
+            // compute the RLC of the input, we only need to compute some fixed powers of
+            // the randomness.
             let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
             let randomness_raised_to_32 = randomness_raised_to_16.square();
             let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
@@ -730,8 +733,8 @@ mod test {
         }
         code.append(&bytecode! {
             PUSH1(initialization_bytes.len()) // size
-            PUSH1(32 - initialization_bytes.len()) // value
-            PUSH1(10) // value
+            PUSH1(32 - initialization_bytes.len()) // length
+            PUSH2(23414) // value
         });
         code.write_op(if is_create2 {
             OpcodeId::CREATE2
