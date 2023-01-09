@@ -6,20 +6,22 @@ use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
-use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, RandomLinearCombination};
+use crate::evm_circuit::util::{
+    from_bytes, select, CachedRegion, Cell, RandomLinearCombination, Word,
+};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use array_init::array_init;
 use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToAddress, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodesizeGadget<F> {
     same_context: SameContextGadget<F>,
-    address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    address_word: Word<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
@@ -35,15 +37,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODESIZE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address = cb.query_rlc();
-        cb.stack_pop(address.expr());
+        let address_word = cb.query_word();
+        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+        cb.stack_pop(address_word.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
         let is_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            from_bytes::expr(&address.cells),
+            address.expr(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
@@ -52,19 +55,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let exists = cb.query_bool();
         let code_hash = cb.query_cell();
         let code_size = cb.condition(exists.expr(), |cb| {
-            cb.account_read(
-                from_bytes::expr(&address.cells),
-                AccountFieldTag::CodeHash,
-                code_hash.expr(),
-            );
+            cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
             cb.bytecode_length(code_hash.expr())
         });
         cb.condition(1.expr() - exists.expr(), |cb| {
-            cb.account_read(
-                from_bytes::expr(&address.cells),
-                AccountFieldTag::NonExisting,
-                0.expr(),
-            );
+            cb.account_read(address, AccountFieldTag::NonExisting, 0.expr());
         });
         let code_size_bytes = array_init(|_| cb.query_byte());
 
@@ -103,7 +98,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         Self {
             same_context,
-            address,
+            address_word,
             tx_id,
             reversion_info,
             is_warm,
@@ -125,10 +120,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value().to_address();
-        let mut address_bytes = address.0;
-        address_bytes.reverse();
-        self.address.assign(region, offset, Some(address_bytes))?;
+        let address = block.rws[step.rw_indices[0]].stack_value();
+        self.address_word
+            .assign(region, offset, Some(address.to_le_bytes()))?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
