@@ -693,7 +693,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .assign(region, offset, Value::known(F::from(callee_exists)))?;
         self.callee_code_hash
             .assign(region, offset, Value::known(callee_code_hash))?;
-
         self.is_empty_code_hash.assign(
             region,
             offset,
