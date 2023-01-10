@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         // max_degree. otherwise need to do fixed lookup for these opcodes
         // checking.
         cb.require_in_set(
-            "ErrorWriteProtection only happend in [call, SSTORE, ]",
+            "ErrorWriteProtection only happens in [CALL, SSTORE, CREATE, CREATE2, SELFDESTRUCT, LOG0..4 ]",
             opcode.expr(),
             vec![
                 OpcodeId::CALL.expr(),
@@ -150,6 +150,7 @@ mod test {
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     // internal call test
@@ -316,7 +317,8 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(run_test_circuit(block), Ok(()));
     }
 }
