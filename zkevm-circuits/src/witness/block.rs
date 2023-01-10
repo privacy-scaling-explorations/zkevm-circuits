@@ -6,7 +6,6 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::halo2curves::bn256::Fr;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
@@ -162,13 +161,13 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 }
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
-pub fn block_convert(
+pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Result<Block<Fr>, Error> {
+) -> Result<Block<F>, Error> {
     Ok(Block {
-        // randomness: Fr::from(0xcafeu64), // TODO: Uncomment
-        randomness: Fr::from(0x10000), // Special value to reveal elements after RLC
+        randomness: F::from(0xcafeu64),
+        // randomness: F::from(0x100), // Special value to reveal elements after RLC
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
