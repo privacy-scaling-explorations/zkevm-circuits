@@ -1,5 +1,6 @@
 use anyhow::Result;
 use handlebars::Handlebars;
+use log::error;
 use prettytable::Row;
 use prettytable::Table;
 use serde::Deserialize;
@@ -111,7 +112,7 @@ impl Report {
         files_diff.print_tty(false)?;
         for (test_id, info) in &self.tests {
             if info.level == ResultLevel::Fail || info.level == ResultLevel::Panic {
-                println!("- {:?} {}", info.level, test_id);
+                error!("- {:?} {}", info.level, test_id);
             }
         }
         Ok(())
