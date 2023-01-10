@@ -16,6 +16,7 @@ use halo2_proofs::{
     plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use std::collections::BTreeMap;
 
 pub(crate) mod common_gadget;
@@ -79,6 +80,7 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
     challenges: &'r Challenges<Value<F>>,
+    advice_columns: Vec<Column<Advice>>,
     width_start: usize,
     height_start: usize,
 }
@@ -88,18 +90,51 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
         challenges: &'r Challenges<Value<F>>,
-        width: usize,
+        advice_columns: Vec<Column<Advice>>,
         height: usize,
-        width_start: usize,
         height_start: usize,
     ) -> Self {
         Self {
             region,
-            advice: vec![vec![F::zero(); height]; width],
+            advice: vec![vec![F::zero(); height]; advice_columns.len()],
             challenges,
-            width_start,
+            width_start: advice_columns[0].index(),
             height_start,
+            advice_columns,
         }
+    }
+
+    /// This method replicates the assignment of 1 row at height_start (which
+    /// must be already assigned via the CachedRegion) into a range of rows
+    /// indicated by offset_begin, offset_end. It can be used as a "quick"
+    /// path for assignment for repeated padding rows.
+    pub fn replicate_assignment_for_range<A, AR>(
+        &mut self,
+        annotation: A,
+        offset_begin: usize,
+        offset_end: usize,
+    ) -> Result<(), Error>
+    where
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        for (v, column) in self
+            .advice
+            .iter()
+            .map(|values| values[0])
+            .zip_eq(self.advice_columns.iter())
+        {
+            if v.is_zero_vartime() {
+                continue;
+            }
+            let annotation: &String = &annotation().into();
+            for offset in offset_begin..offset_end {
+                self.region
+                    .assign_advice(|| annotation, *column, offset, || Value::known(v))?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Assign an advice column value (witness).

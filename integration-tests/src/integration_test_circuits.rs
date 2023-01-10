@@ -361,7 +361,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     .unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
             &builder,
         )
         .unwrap();

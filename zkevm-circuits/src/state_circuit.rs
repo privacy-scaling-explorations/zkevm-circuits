@@ -379,6 +379,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         Self::new(block.rws.clone(), block.circuits_params.max_rws)
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+        block.circuits_params.max_rws
+    }
+
     /// Make the assignments to the StateCircuit
     fn synthesize_sub(
         &self,
@@ -402,10 +407,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.n_rows,
                     randomness,
                 )?;
-
-                config
-                    .mpt_table
-                    .load_with_region(&mut region, &self.updates, randomness)?;
 
                 config.assign_with_region(
                     &mut region,
@@ -480,6 +481,9 @@ where
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
+        config
+            .mpt_table
+            .load(&mut layouter, &self.updates, challenges.evm_word())?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

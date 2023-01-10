@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::collections::HashMap;
 
 use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
 use bus_mapping::{
@@ -6,7 +6,7 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
-use halo2_proofs::{halo2curves::bn256::Fr, circuit::Value};
+use halo2_proofs::circuit::Value;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
@@ -17,8 +17,6 @@ use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Trans
 pub struct Block<F> {
     /// The randomness for random linear combination
     pub randomness: F,
-    /// TODO REMOVE
-    pub _marker: PhantomData<F>,
     /// Transactions in the block
     pub txs: Vec<Transaction>,
     /// EndBlock step that is repeated after the last transaction and before
@@ -172,13 +170,12 @@ impl From<&circuit_input_builder::Block> for BlockContext {
 }
 
 /// Convert a block struct in bus-mapping to a witness block used in circuits
-pub fn block_convert(
+pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
-) -> Result<Block<Fr>, Error> {
+) -> Result<Block<F>, Error> {
     Ok(Block {
-        _marker: PhantomData::default(),
-        randomness: Fr::from(0x10000), // Special value to reveal elements after RLC
+        randomness: F::from(0x10000), // Special value to reveal elements after RLC
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
