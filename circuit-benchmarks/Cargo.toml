@@ -21,7 +21,16 @@ ethers-signers = "0.17.0"
 mock = { path="../mock" }
 rand_chacha = "0.3"
 snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2022_12_23", default-features = false, features = ["loader_evm", "loader_halo2", "system_halo2"] }
+clap = { version = "4.0", features = ["derive"] }
+ethers-providers = "0.17.0"
+tokio = { version = "1.22", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [features]
 default = []
 benches = []
+
+[[example]]
+name = "pi_circuit_integration"
+
