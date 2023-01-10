@@ -454,7 +454,7 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const CALL_OP: bool> {
+pub(crate) struct CommonCallGadget<F, const IS_ERROR: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word<F>,
@@ -471,7 +471,7 @@ pub(crate) struct CommonCallGadget<F, const CALL_OP: bool> {
     pub is_empty_code_hash: IsEqualGadget<F>,
 }
 
-impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
+impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -498,20 +498,20 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
 
-        if CALL_OP {
+        if IS_ERROR {
+            cb.stack_pop(value.expr());
+        } else {
             // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
             cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
-        } else {
-            cb.stack_pop(value.expr());
         }
         cb.stack_pop(cd_offset.expr());
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
         cb.stack_pop(rd_length.expr());
-        if CALL_OP {
-            cb.stack_push(is_success.expr());
-        } else {
+        if IS_ERROR {
             cb.stack_push(0.expr());
+        } else {
+            cb.stack_push(is_success.expr());
         }
 
         // Recomposition of random linear combination to integer
@@ -523,14 +523,14 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
 
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
-        let has_value = if CALL_OP {
+        let has_value = if IS_ERROR {
+            1.expr() - value_is_zero.expr()
+        } else {
             select::expr(
                 is_delegatecall.expr(),
                 0.expr(),
                 1.expr() - value_is_zero.expr(),
             )
-        } else {
-            1.expr() - value_is_zero.expr()
         };
 
         let callee_code_hash = cb.query_cell();
@@ -606,7 +606,7 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
             .assign(region, offset, Some(callee_address.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
-        if CALL_OP {
+        if !IS_ERROR {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
             self.gas_is_u64.assign(
