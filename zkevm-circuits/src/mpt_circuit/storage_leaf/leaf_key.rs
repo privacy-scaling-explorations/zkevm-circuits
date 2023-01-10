@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::FixedTableTag,
     mpt_circuit::{
@@ -112,7 +112,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let rot_into_account = if is_s { -1 } else { -3 };
         let rot_into_init = rot_into_account - (BRANCH_ROWS_NUM - 1);
 
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
 
             // TODO(Brecht): wrapper

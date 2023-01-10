@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{
         helpers::BranchNodeInfo,
@@ -151,7 +151,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         // Storage Leaf -> Account Leaf, back to back
         let rot_into_storage_root = -leaf_value_pos - ACCOUNT_LEAF_ROWS + storage_offset;
 
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             ifx! {a!(is_leaf_value) => {
                 let not_first_level = a!(position_cols.not_first_level);
                 let sel = a!(denoter.sel(is_s), rot_into_branch);
@@ -355,7 +355,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                     // For leaf without branch, the constraints are in `storage_root_in_account_leaf.rs`.
                                     // If `sel = 1`, the leaf is only a placeholder (the leaf is being added or deleted)
                                     // and we do not check the hash of it.
-                                    require!((a!(accs.acc_s.rlc), len, mod_node_hash_rlc_cur) => @keccak);
+                                    require!((1, a!(accs.acc_s.rlc), len, mod_node_hash_rlc_cur) => @"keccak");
                                 }}
                             } elsex {
                                 /* Leaf hash in parent (branch placeholder) */
@@ -375,7 +375,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                     // -3 to get from init branch into the previous branch (last row), note that -2 is needed
                                     // because of extension nodes.
                                     let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_init - 3);
-                                    require!((rlc, len, mod_node_hash_rlc) => @keccak);
+                                    require!((1, rlc, len, mod_node_hash_rlc) => @"keccak");
                                 }}
                             }}
                         }}
@@ -409,7 +409,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                 &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
                                 &r,
                             );
-                            require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
+                            require!((1, a!(accs.acc_s.rlc), len, hash_rlc) => @"keccak");
                         }}
                     } elsex {
                         /* Hash of the only storage leaf which is after a placeholder is storage trie root */
@@ -430,7 +430,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                 &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root - BRANCH_ROWS_NUM)).collect::<Vec<_>>(),
                                 &r,
                             );
-                            require!((a!(accs.acc_s.rlc), len, hash_rlc) => @keccak);
+                            require!((1, a!(accs.acc_s.rlc), len, hash_rlc) => @"keccak");
                         }}
                     }}
                     // RLC bytes zero check for s_main.bytes.iter()

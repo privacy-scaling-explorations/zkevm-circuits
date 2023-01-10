@@ -7,7 +7,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::FixedTableTag,
     mpt_circuit::{
@@ -102,7 +102,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         let is_modified_child_empty = ctx.denoter.sel(is_s);
         let node_mult_diff = ctx.accumulators.node_mult_diff(is_s);
         let r = ctx.r;
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let branch_mult = ColumnTransition::new(meta, branch_acc.mult);
             let branch_rlc = ColumnTransition::new(meta, branch_acc.rlc);
             ifx! {a!(is_not_hashed) => {
@@ -131,7 +131,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 require!(a!(main.rlp2) => {[0.expr(), 160.expr()]});
 
                 let is_empty = (160.expr() - a!(main.rlp2)) * Expression::Constant(F::from(160).invert().unwrap());
-                ifx!{is_empty => {
+                let (rlc, mult) = ifx!{is_empty => {
                     require!(a!(main.bytes[0]) => 128);
 
                     // There's only have one byte (128 at `bytes[0]`) that needs to be added to the RLC.
@@ -139,8 +139,6 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                         &main.rlp_bytes()[2..3].iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
                         &r,
                     );
-                    require!(branch_rlc => rlc);
-                    require!(branch_mult => branch_mult.prev() * r[0].expr());
 
                     // No further constraints needed for non-empty nodes besides `rlp2 = 160`
                     // and values to be bytes.
@@ -151,15 +149,18 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     // But then the constraints related to the branch RLP length would fail -
                     // the length of RLP bytes in such a row would then be `32 + 1 = 160 - 128 + 1`
                     // instead of `1`.
+
+                    (rlc, r[0].expr())
                 } elsex {
                     // When a branch child is non-empty and hashed, we have 33 bytes in a row.
                     let rlc = branch_rlc.prev() + rlc::expr(
                         &main.rlp_bytes()[1..34].iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
                         &r,
                     );
-                    require!(branch_rlc => rlc);
-                    require!(branch_mult => branch_mult.prev() * r[32].expr());
-                }}
+                    (rlc, r[32].expr())
+                }};
+                require!(branch_rlc => rlc);
+                require!(branch_mult => branch_mult.prev() * mult);
             }}
 
             // When a value is being added (and reverse situation when deleted) to the trie

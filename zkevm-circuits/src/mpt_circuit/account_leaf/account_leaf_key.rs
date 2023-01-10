@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::FixedTableTag,
     mpt_circuit::{
@@ -112,7 +112,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let rot_into_init = rot_into_first_child - 1;
         let rot_into_first_child_prev = rot_into_first_child - BRANCH_ROWS_NUM;
 
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
 
             // Account leaf always starts with 248 because its length is always longer than

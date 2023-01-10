@@ -1,8 +1,8 @@
 use crate::util::Expr;
-use gadgets::util::{and, not, select};
+use gadgets::util::{and, not, select, sum};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -381,27 +381,21 @@ impl<F: FieldExt> Expr<F> for ColumnTransition<F> {
     }
 }
 
-pub struct KeccakLookup<F> {
-    pub selector: Expression<F>,
-    pub input_rlc: Expression<F>,
-    pub input_len: Expression<F>,
-    pub output_rlc: Expression<F>,
-}
-
-pub struct FixedLookup<F> {
-    pub selector: Expression<F>,
-    pub tag: Expression<F>,
-    pub lhs: Expression<F>,
-    pub rhs: Expression<F>,
+#[derive(Clone)]
+pub struct LookupData<F> {
+    pub description: &'static str,
+    pub tag: String,
+    pub condition: Expression<F>,
+    pub values: Vec<Expression<F>>,
 }
 
 pub struct BaseConstraintBuilder<F> {
     pub constraints: Vec<(&'static str, Expression<F>)>,
     pub max_degree: usize,
     pub conditions: Vec<Expression<F>>,
-    pub keccak_lookups: Vec<(&'static str, KeccakLookup<F>)>,
-    pub fixed_lookups: Vec<(&'static str, FixedLookup<F>)>,
-    pub lookups: Vec<(&'static str, String, Vec<Expression<F>>)>,
+    pub lookups: Vec<LookupData<F>>,
+    pub lookup_tables: Vec<LookupData<F>>,
+
     pub range_length_s: Expression<F>,
     pub range_length_sc: Expression<F>,
     pub range_length_c: Expression<F>,
@@ -416,9 +410,8 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             constraints: Vec::new(),
             max_degree,
             conditions: Vec::new(),
-            keccak_lookups: Vec::new(),
-            fixed_lookups: Vec::new(),
             lookups: Vec::new(),
+            lookup_tables: Vec::new(),
             range_length_s: 0.expr(),
             range_length_sc: 0.expr(),
             range_length_c: 0.expr(),
@@ -524,6 +517,40 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
             .collect()
     }
 
+    pub(crate) fn generate_lookups<S: AsRef<str>>(
+        &self,
+        meta: &mut ConstraintSystem<F>,
+        lookup_names: &[S],
+    ) {
+        for lookup_name in lookup_names.iter() {
+            let lookups = self
+                .lookups
+                .iter()
+                .cloned()
+                .filter(|lookup| lookup.tag == lookup_name.as_ref())
+                .collect::<Vec<_>>();
+            for lookup in lookups.iter() {
+                meta.lookup_any(lookup.description, |_meta| {
+                    let table = self.get_lookup_table(lookup_name);
+                    let mut values: Vec<_> = lookup
+                        .values
+                        .iter()
+                        .map(|value| lookup.condition.expr() * value.expr())
+                        .collect();
+                    assert!(table.len() >= values.len());
+                    while values.len() < table.len() {
+                        values.push(0.expr());
+                    }
+                    table
+                        .iter()
+                        .zip(values.iter())
+                        .map(|(table, value)| (value.expr(), table.expr()))
+                        .collect()
+                });
+            }
+        }
+    }
+
     pub(crate) fn get_condition(&self) -> Option<Expression<F>> {
         if self.conditions.is_empty() {
             None
@@ -532,46 +559,53 @@ impl<F: FieldExt> BaseConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn keccak_table_lookup(
+    pub(crate) fn lookup_table(
         &mut self,
-        name: &'static str,
-        input_rlc: Expression<F>,
-        input_len: Expression<F>,
-        output_rlc: Expression<F>,
+        description: &'static str,
+        tag: String,
+        values: Vec<Expression<F>>,
     ) {
-        self.keccak_lookups.push((
-            name,
-            KeccakLookup {
-                selector: self.get_condition().unwrap_or_else(|| 1.expr()),
-                input_rlc,
-                input_len,
-                output_rlc,
-            },
-        ));
+        let condition = self.get_condition().unwrap_or_else(|| 1.expr());
+        self.lookup_tables.push(LookupData {
+            description,
+            tag,
+            condition,
+            values,
+        });
     }
 
-    pub(crate) fn fixed_table_lookup(
+    pub(crate) fn lookup(
         &mut self,
-        name: &'static str,
-        tag: Expression<F>,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
+        description: &'static str,
+        tag: String,
+        values: Vec<Expression<F>>,
     ) {
-        self.fixed_lookups.push((
-            name,
-            FixedLookup {
-                selector: self.get_condition().unwrap_or_else(|| 1.expr()),
-                tag,
-                lhs,
-                rhs,
-            },
-        ));
+        let condition = self.get_condition().unwrap_or_else(|| 1.expr());
+        self.lookups.push(LookupData {
+            description,
+            tag,
+            condition,
+            values,
+        });
     }
 
-    pub(crate) fn lookup(&mut self, name: &'static str, tag: String, inputs: Vec<Expression<F>>) {
-        let mut inputs = inputs;
-        inputs.insert(0, self.get_condition().unwrap_or_else(|| 1.expr()));
-        self.lookups.push((name, tag, inputs));
+    pub(crate) fn get_lookup_table<S: AsRef<str>>(&self, tag: S) -> Vec<Expression<F>> {
+        let lookups = self
+            .lookup_tables
+            .iter()
+            .filter(|lookup| lookup.tag == tag.as_ref())
+            .collect::<Vec<_>>();
+        let selector = sum::expr(lookups.iter().map(|lookup| lookup.condition.expr()));
+
+        let mut table = vec![0.expr(); lookups[0].values.len()];
+        for (idx, value) in table.iter_mut().enumerate() {
+            *value = sum::expr(
+                lookups
+                    .iter()
+                    .map(|lookup| selector.expr() * lookup.values[idx].expr()),
+            );
+        }
+        table
     }
 
     pub(crate) fn set_range_length_s(&mut self, length: Expression<F>) {
@@ -761,7 +795,7 @@ impl<F: FieldExt> Selectable<F>
 
 /// Constraint builder macros
 #[macro_export]
-macro_rules! constraints {
+macro_rules! circuit {
     ([$meta:ident, $cb:ident], $content:block) => {{
         #[allow(unused_imports)]
         use crate::mpt_circuit::helpers::Selectable;
@@ -927,63 +961,6 @@ macro_rules! constraints {
                 );
             }};
 
-            (($input_rlc:expr, $input_len:expr, $output_rlc:expr) => @keccak) => {{
-                $cb.keccak_table_lookup(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": (",
-                        stringify!($input_rlc),
-                        ", ",
-                        stringify!($input_len),
-                        ", ",
-                        stringify!($output_rlc),
-                        ") => @keccak",
-                    ),
-                    $input_rlc.expr(),
-                    $input_len.expr(),
-                    $output_rlc.expr(),
-                );
-            }};
-
-            (($tag:expr, $lhs:expr, $rhs:expr) => @fixed) => {{
-                $cb.fixed_table_lookup(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": (",
-                        stringify!($tag),
-                        ", ",
-                        stringify!($lhs),
-                        ", ",
-                        stringify!($rhs),
-                        ") => @fixed",
-                    ),
-                    $tag.expr(),
-                    $lhs.expr(),
-                    $rhs.expr(),
-                );
-            }};
-            (($tag:expr, $lhs:expr) => @fixed) => {{
-                $cb.fixed_table_lookup(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": (",
-                        stringify!($tag),
-                        ", ",
-                        stringify!($lhs),
-                        ") => @fixed",
-                    ),
-                    ($tag as u64).expr(),
-                    $lhs.expr(),
-                    0.expr(),
-                );
-            }};
-
             (($a:expr, $b:expr, $c:expr) => @$tag:expr) => {{
                 $cb.lookup(
                     concat!(
@@ -1001,6 +978,102 @@ macro_rules! constraints {
                     ),
                     $tag.to_string(),
                     vec![$a.expr(), $b.expr(), $c.expr()],
+                );
+            }};
+
+            (($a:expr, $b:expr, $c:expr, $d:expr) => @$tag:expr) => {{
+                $cb.lookup(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": (",
+                        stringify!($a),
+                        ", ",
+                        stringify!($b),
+                        ", ",
+                        stringify!($c),
+                        ", ",
+                        stringify!($d),
+                        ") => @",
+                        stringify!($tag),
+                    ),
+                    $tag.to_string(),
+                    vec![$a.expr(), $b.expr(), $c.expr(), $d.expr()],
+                );
+            }};
+
+            ($values:expr => @$tag:expr) => {{
+                $cb.lookup(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": (",
+                        stringify!($a),
+                        ", ",
+                        stringify!($b),
+                        ", ",
+                        stringify!($c),
+                        ") => @",
+                        stringify!($tag),
+                    ),
+                    $tag.to_string(),
+                    $values.clone(),
+                );
+            }};
+
+            ($descr:expr, ($a:expr, $b:expr, $c:expr) => @$tag:expr) => {{
+                $cb.lookup(
+                    Box::leak($descr.into_boxed_str()),
+                    $tag.to_string(),
+                    vec![$a.expr(), $b.expr(), $c.expr()],
+                );
+            }};
+
+            ($descr:expr, $values:expr => @$tag:expr) => {{
+                $cb.lookup(
+                    Box::leak($descr.into_boxed_str()),
+                    $tag.to_string(),
+                    $values.clone(),
+                );
+            }};
+
+            (@$tag:expr => ($a:expr, $b:expr, $c:expr)) => {{
+                $cb.lookup_table(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": @",
+                        stringify!($tag),
+                        " => (",
+                        stringify!($a),
+                        ", ",
+                        stringify!($b),
+                        ", ",
+                        stringify!($c),
+                        ")",
+                    ),
+                    $tag.to_string(),
+                    vec![$a.expr(), $b.expr(), $c.expr()],
+                );
+            }};
+
+            (@$tag:expr => $a:expr) => {{
+                $cb.lookup_table(
+                    concat!(
+                        file!(),
+                        ":",
+                        line!(),
+                        ": @",
+                        stringify!($tag),
+                        " => (",
+                        stringify!($a),
+                        ")",
+                    ),
+                    $tag.to_string(),
+                    $a,
                 );
             }};
 

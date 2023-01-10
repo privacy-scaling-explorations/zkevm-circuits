@@ -3,7 +3,7 @@ use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, p
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{helpers::accumulate_rand, FixedTableTag},
     mpt_circuit::{
@@ -45,6 +45,40 @@ The `ACCOUNT_LEAF_DRIFTED` row is nonempty when a leaf is added (or deleted) to 
 an existing leaf. This appears when an existing leaf and a newly added leaf have the same initial key nibbles.
 In this case, a new branch is created and both leaves (existing and newly added) appear in the new branch.
 `ACCOUNT_LEAF_DRIFTED` row contains the key bytes of the existing leaf once it drifted down to the new branch.
+
+Add case (S branch is placeholder):
+Branch S           || Branch C
+Placeholder branch || Added branch
+Leaf S             || Leaf C
+                    || Drifted leaf (this is Leaf S drifted into Added branch)
+
+Leaf S needs to have the same RLC as Drifted leaf.
+Note that Leaf S RLC is computed by taking the key RLC from Branch S and then adding
+the bytes in Leaf key S row.
+Drifted leaf RLC is computed by taking the key RLC from Added branch and then adding the bytes
+in Drifted leaf row.
+
+Delete case (C branch is placeholder):
+Branch S                        || Branch C
+Branch to be deleted            || Placeholder branch
+Leaf S (leaf to be deleted)     || Leaf C
+Leaf to be drifted one level up ||
+
+Drifted leaf in added branch has the same key as it had it before it drifted
+down to the new branch.
+
+We obtain the key RLC from the branch / extension node above the placeholder branch.
+We then add the remaining key nibbles that are stored in the drifted leaf key and the final RLC
+needs to be the same as the one stored in `accumulators.key.rlc` in the account leaf key row
+(not the drifted leaf). This means the storage leaf has the same key RLC before and after
+it drifts into a new branch.
+
+Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
+in the branch above the placeholder branch.
+
+We need the intermediate key RLC right before `drifted_pos` is added to it. If the branch parallel to the placeholder branch
+is an extension node, we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
+If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above, we take 0).
 */
 
 #[derive(Clone, Debug, Default)]
@@ -69,162 +103,35 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r;
 
-        // Note: `q_enable` switches off the first level, there is no need for checks
-        // for the first level because when the leaf appears in an added branch it is at
-        // least in the second level (added branch being above it).
+        let rot_ext = -ACCOUNT_DRIFTED_LEAF_IND - 1;
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
         let rot_first_child = rot_branch_init + 1;
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
 
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let mut branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
 
             // drifted leaf appears only when there is a placeholder branch
             ifx! {branch.is_s_or_c_placeholder() => {
-                /* Account drifted leaf: intermediate leaf RLC after key */
-
                 // `s_rlp1` is always 248 because the account leaf is always longer than 55 bytes.
                 require!(a!(s_main.rlp1) => 248);
+
+                // If is_c16 = 0, we have 32 in `s_main.bytes[1]`.
+                ifx!{not!(branch.is_c16()) => {
+                    require!(a!(s_main.bytes[1]) => 32);
+                }}
 
                 // We check that the leaf RLC is properly computed. RLC is then taken and
                 // nonce/balance & storage root / codehash values are added to the RLC (note that nonce/balance
                 // & storage root / codehash are not stored for the drifted leaf because these values stay
                 // the same as in the leaf before drift).
-                // Finally, the lookup is used to check the hash that corresponds to this RLC is
+                // Finally, a lookup is used to check the hash that corresponds to this RLC is
                 // in the parent branch at `drifted_pos` position.
-                // This is not to be confused with the key RLC
-                // checked in another gate (the gate here checks the RLC of all leaf bytes,
-                // while the gate below checks the key RLC accumulated in
-                // branches/extensions and leaf key).
                 let rlc = rlc::expr(
                     &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                     &r,
                 );
                 require!(a!(accs.acc_s.rlc) => rlc);
-
-                // Leaf key S
-                // Leaf key C
-                // Account non existing
-                // Nonce balance S
-                // Nonce balance C
-                // Storage codehash S
-                // Storage codehash C
-                // Drifted leaf (leaf in added branch)
-
-                // Add case (S branch is placeholder):
-                // Branch S           || Branch C
-                // Placeholder branch || Added branch
-                // Leaf S             || Leaf C
-                //                     || Drifted leaf (this is Leaf S drifted into Added branch)
-
-                // Leaf S needs to have the same RLC as Drifted leaf.
-                // Note that Leaf S RLC is computed by taking the key RLC from Branch S and then adding
-                // the bytes in Leaf key S row.
-                // Drifted leaf RLC is computed by taking the key RLC from Added branch and then adding the bytes
-                // in Drifted leaf row.
-
-                // Delete case (C branch is placeholder):
-                // Branch S                        || Branch C
-                // Branch to be deleted            || Placeholder branch
-                // Leaf S (leaf to be deleted)     || Leaf C
-                // Leaf to be drifted one level up ||
-
-                // Drifted leaf in added branch has the same key as it had it before it drifted
-                // down to the new branch.
-
-                let is_branch_placeholder_in_first_level = not::expr(a!(not_first_level, rot_branch_init));
-
-                // We obtain the key RLC from the branch / extension node above the placeholder branch.
-                // We then add the remaining key nibbles that are stored in the drifted leaf key and the final RLC
-                // needs to be the same as the one stored in `accumulators.key.rlc` in the account leaf key row
-                // (not the drifted leaf). This means the storage leaf has the same key RLC before and after
-                // it drifts into a new branch.
-
-                // Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
-                // in the branch above the placeholder branch.
-
-                // We need the intermediate key RLC right before `drifted_pos` is added to it. If the branch parallel to the placeholder branch
-                // is an extension node, we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
-                // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above, we take 0).
-
-                let key_rlc_cur = ifx!{branch.is_extension() => {
-                    a!(accs.key.rlc, -ACCOUNT_DRIFTED_LEAF_IND - 1)
-                } elsex {
-                    ifx!{not!(is_branch_placeholder_in_first_level) => {
-                        a!(accs.key.rlc, rot_first_child_prev)
-                    }}
-                }};
-
-                let branch_above_placeholder_mult = ifx!{is_branch_placeholder_in_first_level => {
-                    1.expr()
-                } elsex {
-                    a!(accs.key.mult, rot_first_child_prev)
-                }};
-
-                let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                ifx!{branch.is_extension() => {
-                    // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    ifx!{branch.is_short() => {
-                        // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        ifx!{branch.is_c1() => {
-                            1.expr()
-                        } elsex {
-                            r[0].expr()
-                        }}
-                    } elsex {
-                        // `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
-                        // We need `mult_diff` because there is nothing stored in
-                        // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
-                        a!(accs.mult_diff, rot_first_child)
-                    }}
-                } elsex {
-                    1.expr()
-                }};
-
-                // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
-                // before it drifted down into extension/branch.
-
-                // Any rotation that lands into branch children can be used.
-                let drifted_pos = a!(drifted_pos, -17);
-                let drifted_pos_mult = key_rlc_mult.clone() * 16.expr() * branch.is_c16() + key_rlc_mult.clone() * branch.is_c1();
-
-                // If is_c1 = 1, we have 32 in `s_main.bytes[1]`.
-                ifx!{branch.is_c1() => {
-                    require!(a!(s_main.bytes[1]) => 32);
-                }}
-                // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
-
-                // Note: no need to distinguish between `is_c16` and `is_c1` here as it was already
-                // when computing `key_rlc`.
-                // The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
-                // the drift - the nibbles are the same in both cases, the difference is that before the
-                // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
-                // position in a branch or/and nibbles of the extension node.
-                let key_rlc = key_rlc_cur + drifted_pos * drifted_pos_mult + rlc::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                    &r,
-                );
-                let num_bytes = a!(s_main.bytes[0]) - 128.expr();
-                // RLC bytes zero check
-                cb.set_range_length(1.expr() + num_bytes.expr());
-                // When the full account RLC is computed (see add_constraints below), we need to know
-                // the intermediate RLC and the randomness multiplier (`r` to some power) from the key row.
-                // The power of randomness `r` is determined by the key length - the intermediate RLC in the current row
-                // is computed as (key starts in `s_main.bytes[1]`):
-                // `rlc = s_main.rlp1 + s_main.rlp2 * r + s_main.bytes[0] * r^2 + key_bytes[0] * r^3 + ... + key_bytes[key_len-1] * r^{key_len + 2}`
-                // So the multiplier to be used in the next row is `r^{key_len + 2}`.
-                // `mult_diff` needs to correspond to the key length + 2 RLP bytes + 1 byte for byte that contains the key length.
-                // That means `mult_diff` needs to be `r^{key_len+1}` where `key_len = s_main.bytes[0] - 128`.
-                // Note that the key length is different than the on of the leaf before it drifted (by one nibble
-                // if a branch is added, by multiple nibbles if extension node is added).
-                require!((FixedTableTag::RMult, num_bytes + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
-                // Check stored values
-                ifx!{branch.is_s_placeholder() => {
-                    require!(a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND)) => key_rlc);
-                }}
-                ifx!{branch.is_c_placeholder() => {
-                    require!(a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND)) => key_rlc);
-                }}
 
                 // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
                 // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
@@ -232,30 +139,18 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 for is_s in [false, true] {
                     branch.set_is_s(is_s);
 
-                    // Leaf key S
-                    // Leaf key C
                     // Nonce balance S
                     // Nonce balance C
                     // Storage codehash S
                     // Storage codehash C
-                    // Drifted leaf (leaf in added branch)
+                    // Drifted leaf
 
                     let nonce_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_NONCE_BALANCE_S_IND} else {ACCOUNT_LEAF_NONCE_BALANCE_C_IND});
                     let storage_codehash_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND});
+                    let nonce_balance_rot = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND});
 
-                    let mult_diff_nonce = a!(accs.acc_c.rlc, nonce_rot);
-                    let s_rlp1_nonce = a!(s_main.rlp1, nonce_rot);
-                    let s_rlp2_nonce = a!(s_main.rlp2, nonce_rot);
-                    let c_rlp1_nonce = a!(c_main.rlp1, nonce_rot);
-                    let c_rlp2_nonce = a!(c_main.rlp2, nonce_rot);
-                    let s_rlp2_storage = a!(s_main.rlp2, storage_codehash_rot);
-                    let c_rlp2_storage = a!(c_main.rlp2, storage_codehash_rot);
-                    let mult_diff_balance = a!(accs.key.mult, nonce_rot);
-                    let storage_root_stored = a!(accs.s_mod_node_rlc, storage_codehash_rot);
-                    let codehash_stored = a!(accs.c_mod_node_rlc, storage_codehash_rot);
-
-                    let is_nonce_long = a!(denoter.sel1, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
-                    let is_balance_long = a!(denoter.sel2, -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND}));
+                    let is_nonce_long = a!(denoter.sel1, nonce_balance_rot);
+                    let is_balance_long = a!(denoter.sel2, nonce_balance_rot);
 
                     let nonce_stored = a!(accs.s_mod_node_rlc, nonce_rot);
                     let nonce_rlc = ifx!{is_nonce_long => {
@@ -271,20 +166,22 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                         balance_stored
                     }};
 
+                    let mult_diff_nonce = a!(accs.acc_c.rlc, nonce_rot);
+                    let mult_diff_balance = a!(accs.key.mult, nonce_rot);
+
                     // Calculate rlc
                     let rlc = a!(accs.acc_s.rlc) + rlc::expr(
                         &[
-                            s_rlp1_nonce,
-                            s_rlp2_nonce,
-                            c_rlp1_nonce,
-                            c_rlp2_nonce,
+                            a!(s_main.rlp1, nonce_rot),
+                            a!(s_main.rlp2, nonce_rot),
+                            a!(c_main.rlp1, nonce_rot),
+                            a!(c_main.rlp2, nonce_rot),
                             nonce_rlc,
-
                             balance_rlc,
-                            s_rlp2_storage,
-                            storage_root_stored,
-                            c_rlp2_storage,
-                            codehash_stored,
+                            a!(s_main.rlp2, storage_codehash_rot),
+                            a!(accs.s_mod_node_rlc, storage_codehash_rot), // storage root rlc
+                            a!(c_main.rlp2, storage_codehash_rot),
+                            a!(accs.c_mod_node_rlc, storage_codehash_rot), // codehash rlc
                         ].map(|v| v * a!(accs.acc_s.mult)),
                         &[
                             r[..4].to_vec(),
@@ -292,16 +189,72 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                         ].concat(),
                     );
 
-                    // `s(c)_mod_node_hash_rlc` in placeholder branch contains hash of a drifted leaf
+                    // Check that `mod_node_rlc` in a placeholder branch contains the hash of the drifted leaf.
                     // (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch_rlc.rs`)
-                    // Any rotation that lands into branch children can be used.
-                    let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17);
+                    // is checked in `branch.rs`)
                     ifx!{branch.is_placeholder() => {
-                        let account_len = a!(s_main.rlp2) + 1.expr() + 1.expr();
-                        require!((rlc, account_len, mod_node_hash_rlc) => @keccak);
+                        let account_len = a!(s_main.rlp2) + 2.expr();
+                        require!((1, rlc, account_len, a!(accs.mod_node_rlc(is_s), rot_first_child)) => @"keccak");
                     }}
                 }
+
+                // The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
+                // the drift - the nibbles are the same in both cases, the difference is that before the
+                // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
+                // position in a branch or/and nibbles of the extension node.
+                let is_branch_placeholder_in_first_level = not::expr(a!(not_first_level, rot_branch_init));
+                let key_rlc_prev = ifx!{branch.is_extension() => {
+                    a!(accs.key.rlc, rot_ext)
+                } elsex {
+                    ifx!{not!(is_branch_placeholder_in_first_level) => {
+                        a!(accs.key.rlc, rot_first_child_prev)
+                    }}
+                }};
+                let key_mult_prev = ifx!{is_branch_placeholder_in_first_level => {
+                    1.expr()
+                } elsex {
+                    a!(accs.key.mult, rot_first_child_prev)
+                }};
+
+                let key_mult_prev = key_mult_prev.expr() *
+                ifx!{branch.is_extension() => {
+                    // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
+                    ifx!{branch.is_short() => {
+                        // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
+                        ifx!{branch.is_c1() => {
+                            1.expr()
+                        } elsex {
+                            r[0].expr()
+                        }}
+                    } elsex {
+                        // Get the mult_diff from the extension node.
+                        a!(accs.mult_diff, rot_first_child)
+                    }}
+                } elsex {
+                    1.expr()
+                }};
+
+                // Check that the RLC matches
+                let acc_key_rlc = ifx!{branch.is_s_placeholder() => {
+                    a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND))
+                } elsex {
+                    a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND))
+                }};
+                // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
+                let drifted_pos_mult = key_mult_prev.clone() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
+                let key_rlc = key_rlc_prev + a!(drifted_pos, rot_first_child) * drifted_pos_mult + rlc::expr(
+                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                        key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
+                    &r,
+                );
+                require!(acc_key_rlc => key_rlc);
+
+                let num_bytes = a!(s_main.bytes[0]) - 128.expr();
+                // RLC bytes zero check
+                cb.set_range_length(1.expr() + num_bytes.expr());
+                // Update `mult_diff` for key length + 2 RLP bytes + 1 byte that contains the
+                // key length.
+                require!((FixedTableTag::RMult, num_bytes + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
             }}
         });
 

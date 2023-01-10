@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
@@ -95,7 +95,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         // row. Note: differently as in storage leaf value (see empty_trie
         // there), the placeholder leaf never appears in the first level here,
         // because there is always at least a genesis account.
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             ifx! {a!(ctx.account_leaf.is_storage_codehash(is_s)) => {
                 let q_not_first = f!(position_cols.q_not_first);
                 // We have storage length in `s_rlp2` (which is 160 presenting `128 + 32`).
@@ -225,7 +225,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                             // Any rotation that lands into branch can be used instead of -17.
                             let mod_node_hash_rlc_cur_prev = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17 - BRANCH_ROWS_NUM);
                             // Note about rlc: accumulated in s (not in c) for c:
-                            require!((rlc, account_len, mod_node_hash_rlc_cur_prev) => @keccak);
+                            require!((1, rlc, account_len, mod_node_hash_rlc_cur_prev) => @"keccak");
                         } elsex {
                             /* Hash of an account leaf compared to root when branch placeholder in the first level */
                             // When there is a placeholder branch above the account leaf (it means the account leaf
@@ -233,7 +233,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                             // the hash of the leaf needs to be checked to be the state root.
                             // Any rotation that lands into branch can be used instead of -17.
                             // Note about rlc: accumulated in s (not in c) for c:
-                            require!((rlc, account_len, root) => @keccak);
+                            require!((1, rlc, account_len, root) => @"keccak");
                         }}
                     } elsex {
                         /* Hash of an account leaf in a branch */
@@ -252,7 +252,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                             // Any rotation that lands into branch can be used instead of -17.
                             let mod_node_hash_rlc_cur = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, -17);
                             // Note about rlc: accumulated in s (not in c) for c:
-                            require!((rlc, account_len, mod_node_hash_rlc_cur) => @keccak);
+                            require!((1, rlc, account_len, mod_node_hash_rlc_cur) => @"keccak");
                         }}
                     }}
                 } elsex {
@@ -262,7 +262,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     // Note: the constraints for the first level branch to be compared to the state root
                     // are in `branch_hash_in_parent`.
                     ifx!{q_not_first => {
-                        require!((rlc, account_len, root) => @keccak);
+                        require!((1, rlc, account_len, root) => @"keccak");
                     }}
                 }}
             }}

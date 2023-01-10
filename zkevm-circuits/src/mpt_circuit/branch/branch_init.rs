@@ -3,7 +3,7 @@ use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::{
         get_num_rlp_bytes_selectors, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
@@ -93,7 +93,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
         let r = ctx.r;
 
         let rot = Rotation::cur();
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             for is_s in [true, false] {
                 // Boolean checks
                 let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);

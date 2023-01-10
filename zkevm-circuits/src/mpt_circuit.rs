@@ -47,7 +47,7 @@ use param::HASH_WIDTH;
 use selectors::SelectorsConfig;
 
 use crate::{
-    constraints,
+    circuit,
     mpt_circuit::helpers::{extend_rand, BaseConstraintBuilder, BranchNodeInfo},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
@@ -194,6 +194,8 @@ pub struct MPTConfig<F> {
 /// Enumerator to determine the type of row in the fixed table.
 #[derive(Clone, Copy, Debug)]
 pub enum FixedTableTag {
+    /// All zero lookup data
+    Disabled,
     /// Power of randomness: [1, r], [2, r^2],...
     RMult,
     /// 0 - 15
@@ -282,69 +284,6 @@ impl<F: FieldExt> ProofValues<F> {
             before_account_leaf: true,
             ..Default::default()
         }
-    }
-}
-
-fn generate_lookups<F: FieldExt>(
-    meta: &mut ConstraintSystem<F>,
-    cb: &BaseConstraintBuilder<F>,
-    keccak_table: KeccakTable,
-    fixed_table: [Column<Fixed>; 3],
-) {
-    /*meta.lookup_any("Hash lookup", |meta| {
-        let selector = sum::expr(lookups.iter().map(|lookup| lookup.selector.expr()));
-        let input_rlc = sum::expr(
-            lookups
-                .iter()
-                .map(|lookup| lookup.selector.expr() * lookup.input_rlc.expr()),
-        );
-        let input_len = sum::expr(
-            lookups
-                .iter()
-                .map(|lookup| lookup.selector.expr() * lookup.input_len.expr()),
-        );
-        let output_rlc = sum::expr(
-            lookups
-                .iter()
-                .map(|lookup| lookup.selector.expr() * lookup.output_rlc.expr()),
-        );
-        let values = [selector, input_rlc, input_len, output_rlc];
-        keccak_table.columns().iter().zip(values.iter()).map(|(&table, value)| {
-            (
-                value.expr(),
-                meta.query_advice(table, Rotation::cur()),
-            )
-        }).collect()
-    });*/
-
-    for (name, lookup) in cb.keccak_lookups.iter() {
-        meta.lookup_any(name, |meta| {
-            let selector = lookup.selector.expr();
-            let input_rlc = lookup.selector.expr() * lookup.input_rlc.expr();
-            let input_len = lookup.selector.expr() * lookup.input_len.expr();
-            let output_rlc = lookup.selector.expr() * lookup.output_rlc.expr();
-            let values = [selector, input_rlc, input_len, output_rlc];
-            keccak_table
-                .columns()
-                .iter()
-                .zip(values.iter())
-                .map(|(&table, value)| (value.expr(), meta.query_advice(table, Rotation::cur())))
-                .collect()
-        });
-    }
-
-    for (name, lookup) in cb.fixed_lookups.iter() {
-        meta.lookup_any(name, |meta| {
-            let tag = lookup.tag.expr();
-            let lhs = lookup.selector.expr() * lookup.lhs.expr();
-            let rhs = lookup.selector.expr() * lookup.rhs.expr();
-            let values = [tag, lhs, rhs];
-            fixed_table
-                .iter()
-                .zip(values.iter())
-                .map(|(&table, value)| (value.expr(), meta.query_fixed(table, Rotation::cur())))
-                .collect()
-        });
     }
 }
 
@@ -440,7 +379,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let mut cb = BaseConstraintBuilder::new(17);
         meta.create_gate("MPT", |meta| {
-            constraints!([meta, cb], {
+            circuit!([meta, cb], {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
@@ -563,49 +502,60 @@ impl<F: FieldExt> MPTConfig<F> {
                     // Range checks
                     ifx!{not::expr(a!(branch.is_child)) => {
                         for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..1].into_iter() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @fixed);
+                            require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                         }
                     }}
                     for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[1..2].into_iter() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @fixed);
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                     }
                     for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34].into_iter().enumerate() {
-                        require!((cb.get_range_s(), a!(byte), cb.get_range_length_s() - (idx + 1).expr()) => @fixed);
+                        require!((cb.get_range_s(), a!(byte), cb.get_range_length_s() - (idx + 1).expr()) => @"fixed");
                     }
                     ifx!{cb.range_length_sc => {
                         ifx!{not::expr(a!(branch.is_child)) => {
                             for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[34..35].into_iter().enumerate() {
-                                require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @fixed);
+                                require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                             }
                         }}
                         for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[35..36].into_iter().enumerate() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @fixed);
+                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                         }
                     }}
                     for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[36..68].into_iter().enumerate() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_c() - (idx + 1).expr()) => @fixed);
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_c() - (idx + 1).expr()) => @"fixed");
                     }
                 }}
 
                 /* Mult checks */
-                for target_tag in ["mult", "mult2"] {
-                    let lookups = cb.lookups.clone();
-                    let lookups = lookups.iter().filter(|(_, tag, _)| tag == target_tag).collect::<Vec<_>>();
-                    let selector = sum::expr(lookups.iter().map(|(_, _, inputs)| inputs[0].expr()));
-                    // Sanity checks (can be removed, here for safety)
-                    require!(selector => bool);
-                    let lhs = sum::expr(
-                        lookups
-                            .iter()
-                            .map(|(_, _, inputs)| inputs[0].expr() * inputs[2].expr()),
-                    );
-                    let rhs = sum::expr(
-                        lookups
-                            .iter()
-                            .map(|(_, _, inputs)| inputs[0].expr() * inputs[3].expr()),
-                    );
-                    require!((FixedTableTag::RMult, lhs, rhs) => @fixed);
+                for tag in ["mult", "mult2"] {
+                    let lookups = cb.lookups.iter().cloned().filter(|lookup| lookup.tag == tag).collect::<Vec<_>>();
+                    let optimize = true;
+                    if optimize {
+                        let selector = sum::expr(lookups.iter().map(|lookup| lookup.condition.expr()));
+                        // Sanity checks (can be removed, here for safety)
+                        require!(selector => bool);
+                        // Merge
+                        let max_length = lookups.iter().map(|lookup| lookup.values.len()).max().unwrap();
+                        let mut values = vec![0.expr(); max_length];
+                        for (idx, value) in values.iter_mut().enumerate() {
+                            *value = sum::expr(
+                                lookups
+                                    .iter()
+                                    .map(|lookup| lookup.condition.expr() * lookup.values[idx].expr()));
+                        }
+                        require!(values => @"fixed");
+                    } else {
+                        for lookup in lookups.iter() {
+                            ifx!{lookup.condition => {
+                                require!(lookup.description.to_string(), lookup.values => @"fixed");
+                            }}
+                        }
+                    }
                 }
+
+                /* Populate lookup tables */
+                require!(@"keccak" => keccak_table.columns().iter().map(|table| a!(table)).collect());
+                require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 row_config = RowConfig {
                     account_leaf_key_s,
@@ -636,7 +586,7 @@ impl<F: FieldExt> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            generate_lookups(meta, &cb, keccak_table.clone(), fixed_table.clone());
+            cb.generate_lookups(meta, &["fixed", "keccak"]);
         }
 
         println!("num lookups: {}", meta.lookups().len());
@@ -1206,6 +1156,18 @@ impl<F: FieldExt> MPTConfig<F> {
             || "fixed table",
             |mut region| {
                 let mut offset = 0;
+
+                // Zero lookup
+                for fixed_table in self.fixed_table.iter() {
+                    region.assign_fixed(
+                        || "fixed table zero",
+                        *fixed_table,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
                 let mut mult = F::one();
                 for ind in 0..(2 * HASH_WIDTH + 1) {
                     region.assign_fixed(

@@ -7,7 +7,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::BaseConstraintBuilder,
     mpt_circuit::FixedTableTag,
@@ -148,7 +148,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         let rot_to_first_child = rot_to_init + 1;
         let rot_to_previous_first_child = rot_to_first_child - BRANCH_ROWS_NUM;
         let rot_to_previous_init = rot_to_init - BRANCH_ROWS_NUM;
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let c16inv = Expression::Constant(F::from(16).invert().unwrap());
             let not_first_level = a!(position_cols.not_first_level);
             let branch = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_init);
@@ -180,7 +180,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 require!(sum::expr(&selectors) => 1);
 
                 // Get the previous values from the previous branch. In the first level use initial values.
-                let after_first_level = not_first_level.expr() * not::expr(is_first_storage_level.expr());
+                let after_first_level = not_first_level.expr() * not!(is_first_storage_level);
                 let (key_rlc_prev, key_mult_prev) = ifx!{after_first_level => {
                     (key_rlc.prev(), key_mult.prev())
                 } elsex {
@@ -197,7 +197,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 let key_len = ifx!{branch.is_long() => {
                     (a!(s_main.rlp2, -1) - 128.expr()) - branch.is_long_even() - branch.is_long_odd_c1.expr()
                 } elsex {
-                    ifx!{or::expr([not::expr(branch.is_extension()), branch.is_short_c1.expr()]) => {
+                    ifx!{or::expr([not!(branch.is_extension()), branch.is_short_c1.expr()]) => {
                         0.expr()
                     } elsex {
                         1.expr()
@@ -289,13 +289,13 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                         // We need to take account the nibbles of the extension node.
                         // `is_c16` alternates when there's an even number of nibbles, remains the same otherwise
                         ifx!{branch.is_even() => {
-                            require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
+                            require!(branch.is_c16() => not!(branch_prev.is_c16()));
                         } elsex {
                             require!(branch.is_c16() => branch_prev.is_c16());
                         }}
                     } elsex {
                         // `is_c16` simply alernates for regular branches.
-                        require!(branch.is_c16() => not::expr(branch_prev.is_c16()));
+                        require!(branch.is_c16() => not!(branch_prev.is_c16()));
                     }}
                 } elsex {
                     // In the first level we just have to ensure the initial values are set

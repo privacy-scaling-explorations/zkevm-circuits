@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
     mpt_circuit::FixedTableTag,
@@ -92,7 +92,18 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r;
 
-        constraints!([meta, cb], {
+        let rot_key = if is_s {
+            -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)
+        } else {
+            -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)
+        };
+        let rot_non_existing = if is_s {
+            -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND)
+        } else {
+            -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND)
+        };
+
+        circuit!([meta, cb], {
             // [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,
             // 236,246,95,240,224,191,229,27,102,202,231,184,80 There are 112
             // bytes after the first two bytes. 157 means the key is 29 (157 -
@@ -106,21 +117,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // s_rlp1  s_rlp2  c_rlp1  c_rlp2  s_main.bytes  c_main.bytes
             // 184     80      248     78      nonce      balance
 
-            let rot = if is_s {
-                -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND)
-            } else {
-                -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)
-            };
-            let rot_into_non_existing = if is_s {
-                -(ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_NON_EXISTING_IND)
-            } else {
-                -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_NON_EXISTING_IND)
-            };
-
-            let acc_prev = a!(accs.acc_s.rlc, rot);
-            let acc_mult_prev = a!(accs.acc_s.mult, rot);
-            let is_nonce_long = a!(denoter.sel1, rot);
-            let is_balance_long = a!(denoter.sel2, rot);
+            let acc_prev = a!(accs.acc_s.rlc, rot_key);
+            let acc_mult_prev = a!(accs.acc_s.mult, rot_key);
+            let is_nonce_long = a!(denoter.sel1, rot_key);
+            let is_balance_long = a!(denoter.sel2, rot_key);
 
             let acc_mult_after_nonce = a!(accs.acc_c.mult);
             let mult_diff_nonce = a!(accs.acc_c.rlc);
@@ -188,7 +188,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
             // In `is_wrong_leaf is bool` we only check that `is_wrong_leaf` is a boolean
             // values. Other wrong leaf related constraints are in other gates.
-            let is_wrong_leaf = a!(s_main.rlp1, rot_into_non_existing);
+            let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
             let is_non_existing_account_proof = a!(proof_type.is_non_existing_account_proof);
             require!(is_wrong_leaf => bool);
 
@@ -476,8 +476,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // [248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
                 // [184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
                 // We can see: `106 - 33 - 1 - 70 - 1 - 1 = 0`.
-                let rlp_len = a!(s_main.rlp2, rot);
-                let key_len = a!(s_main.bytes[0], rot) - 128.expr();
+                let rlp_len = a!(s_main.rlp2, rot_key);
+                let key_len = a!(s_main.bytes[0], rot_key) - 128.expr();
                 require!(rlp_len => key_len.expr() + 1.expr() + s_rlp2.expr() + 2.expr());
             }}
         });

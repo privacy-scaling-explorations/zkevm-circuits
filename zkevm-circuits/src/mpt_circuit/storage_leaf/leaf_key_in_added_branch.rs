@@ -3,7 +3,7 @@ use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, p
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{helpers::BranchNodeInfo, witness_row::MptWitnessRow, FixedTableTag, MPTContext},
     mpt_circuit::{
@@ -76,7 +76,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         // Finally, the lookup is used to check that the hash that
         // corresponds to the leaf RLC is in the parent branch at `drifted_pos`
         // position.
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             // drifted leaf appears only when there is a placeholder branch
 
             let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
@@ -372,7 +372,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // is checked in `branch_rlc.rs`.
                     // Any rotation that lands into branch children can be used.
                     let s_mod_node_hash_rlc = a!(accs.s_mod_node_rlc, rot_into_branch_child);
-                    require!((rlc, len, s_mod_node_hash_rlc) => @keccak);
+                    require!((1, rlc, len, s_mod_node_hash_rlc) => @"keccak");
                 }}
                 ifx!{branch.is_branch_c_placeholder => {
                     /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
@@ -412,7 +412,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
                     // is checked in `branch_rlc.rs`.
                     let c_mod_node_hash_rlc = a!(accs.c_mod_node_rlc, rot_into_branch_child);
-                    require!((rlc, len, c_mod_node_hash_rlc) => @keccak);
+                    require!((1, rlc, len, c_mod_node_hash_rlc) => @"keccak");
                 }}
 
                 // RLC bytes zero check

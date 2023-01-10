@@ -2,7 +2,7 @@ use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{
         helpers::BaseConstraintBuilder,
@@ -83,7 +83,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         let rot_into_branch_init = -(ARITY as i32);
         // Any rotation that lands into branch can be used
         let rot_into_prev_branch_child = rot_into_branch_init - EXTENSION_ROWS_NUM - 1;
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let branch = BranchNodeInfo::new(meta, ctx.s_main, is_s, rot_into_branch_init);
             // When placeholder branch, we don't check its hash in a parent.
             // Extension node is handled in `extension_node.rs`.
@@ -110,7 +110,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                             &ctx.s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
                             &ctx.r,
                         );
-                        require!((branch_rlc, branch.len(), storage_root_rlc) => @keccak);
+                        require!((1, branch_rlc, branch.len(), storage_root_rlc) => @"keccak");
                     } elsex {
                         // Here the branch is in some other branch
                         let mod_node_hash_rlc = a!(ctx.accumulators.mod_node_rlc(is_s), rot_into_prev_branch_child);
@@ -121,7 +121,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         } elsex {
                             /* Hashed branch hash in parent branch */
                             // We need to check that `hash(branch) = parent_branch_modified_node`.
-                            require!((branch_rlc, branch.len(), mod_node_hash_rlc) => @keccak);
+                            require!((1, branch_rlc, branch.len(), mod_node_hash_rlc) => @"keccak");
                         }}
                     }}
                 } elsex {
@@ -129,7 +129,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     // When branch is in the first level of the account trie, we need to check that
                     // `hash(branch) = account_trie_root`.
                     // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                    require!((branch_rlc, branch.len(), a!(ctx.inter_root(is_s))) => @keccak);
+                    require!((1, branch_rlc, branch.len(), a!(ctx.inter_root(is_s))) => @"keccak");
                 }}
             }}
         });

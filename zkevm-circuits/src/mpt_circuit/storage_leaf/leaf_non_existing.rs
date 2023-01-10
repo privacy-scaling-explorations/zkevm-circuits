@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::{dot, rlc},
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::MPTContext,
@@ -76,7 +76,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>, is_short: bool| {
-                constraints!([meta, cb], {
+                circuit!([meta, cb], {
                     let sum = a!(accs.acc_c.rlc);
                     let sum_prev = a!(accs.acc_c.mult);
                     let diff_inv = a!(accs.acc_s.rlc);
@@ -112,7 +112,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 });
             };
 
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             // key rlc is in the first branch node
             let rot_into_first_branch_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
             let rot_into_branch_init = rot_into_first_branch_child - 1;

@@ -8,7 +8,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{
         helpers::BranchNodeInfo, param::EXTENSION_ROWS_NUM, witness_row::MptWitnessRow, MPTContext,
@@ -202,7 +202,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         // Any rotation that lands into branch can be used instead
         let rot_into_prev_branch_child = rot_into_branch_init - EXTENSION_ROWS_NUM - 1;
 
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let not_first_level = a!(position_cols.not_first_level);
             let s_rlp2 = a!(s_main.rlp2);
             let ext = BranchNodeInfo::new(meta, s_main.clone(), is_s, rot_into_branch_init);
@@ -401,7 +401,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             );
             ifx! {is_branch_hashed => {
                 // Check that `(branch_rlc, extension_node_hash_rlc`) in in the keccak table.
-                require!((branch_rlc, ext.len(), rlc) => @keccak);
+                require!((1, branch_rlc, ext.len(), rlc) => @"keccak");
             } elsex {
                 // Check if the RLC matches.
                 require!(branch_rlc => rlc);
@@ -429,7 +429,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
                             &r,
                         );
-                        require!((ext_rlc, ext_len, hash_rlc) => @keccak);
+                        require!((1, ext_rlc, ext_len, hash_rlc) => @"keccak");
                     } elsex {
                         let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_into_prev_branch_child);
                         ifx!{ext.is_ext_non_hashed() => {
@@ -445,7 +445,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                             // `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
                             // branch child at `modified_node` position.
                             // Note: do not check if it is in the first storage level (see `storage_root_in_account_leaf.rs`).
-                            require!((ext_rlc, ext_len, mod_node_hash_rlc) => @keccak);
+                            require!((1, ext_rlc, ext_len, mod_node_hash_rlc) => @"keccak");
                         }}
                     }}
                 }}
@@ -454,7 +454,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // In the first level of the account trie the extension node hash
                 // needs to be match the trie root.
                 // Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
-                require!((ext_rlc, ext_len, a!(ctx.inter_root(is_s))) => @keccak);
+                require!((1, ext_rlc, ext_len, a!(ctx.inter_root(is_s))) => @"keccak");
             }}
 
             // Update the number of nibbles processed up till this point.

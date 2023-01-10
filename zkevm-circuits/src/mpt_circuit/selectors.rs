@@ -2,7 +2,7 @@ use super::{
     helpers::{BaseConstraintBuilder, ColumnTransition},
     MPTContext,
 };
-use crate::{constraints, util::Expr};
+use crate::{circuit, util::Expr};
 use gadgets::util::{and, not, or, sum};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
@@ -29,7 +29,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
         // - For sets of selectors that are mutually exclusive, it needs to be ensured
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
@@ -167,7 +167,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             }};
 
             // First row
-            ifx! {q_enable, not::expr(q_not_first.expr()) => {
+            ifx! {q_enable, not!(q_not_first) => {
                 // In the first row only account leaf key S row or branch init row can occur
                 require!(or::expr([is_account_leaf_key_s.cur(), is_branch_init.cur()]) => true);
             }};
@@ -326,7 +326,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                         require!(is_mod => is_mod.prev());
                     } elsex {
                         // Does not change inside first level except in the first row
-                        ifx!{not::expr(is_branch_init.expr()), not::expr(is_account_leaf_key_s.expr()) => {
+                        ifx!{not!(is_branch_init), not!(is_account_leaf_key_s) => {
                             require!(is_mod => is_mod.prev());
                         }}
                     }};

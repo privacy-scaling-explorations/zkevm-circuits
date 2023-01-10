@@ -13,7 +13,7 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::{
-    constraints,
+    circuit,
     evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
@@ -147,7 +147,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let r = ctx.r.clone();
 
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-        constraints!([meta, cb], {
+        circuit!([meta, cb], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
 
