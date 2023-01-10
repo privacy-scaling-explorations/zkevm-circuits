@@ -499,7 +499,7 @@ impl<F: Field, const CALL_OP: bool> CommonCallGadget<F, CALL_OP> {
         cb.stack_pop(callee_address_word.expr());
 
         if CALL_OP {
-            // `CALL` opcode has an additional stack pop `value`.
+            // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
             cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
         } else {
             cb.stack_pop(value.expr());
