@@ -498,12 +498,8 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
         cb.stack_pop(gas_word.expr());
         cb.stack_pop(callee_address_word.expr());
 
-        if IS_ERROR {
-            cb.stack_pop(value.expr());
-        } else {
-            // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
-            cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
-        }
+        // `CALL` and `CALLCODE` opcodes have an additional stack pop `value`.
+        cb.condition(is_call + is_callcode, |cb| cb.stack_pop(value.expr()));
         cb.stack_pop(cd_offset.expr());
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());

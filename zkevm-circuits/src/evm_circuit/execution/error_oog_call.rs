@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
-        let call_gadget = CommonCallGadget::construct(cb, 0.expr(), 0.expr(), 0.expr());
+        let call_gadget = CommonCallGadget::construct(cb, 1.expr(), 0.expr(), 0.expr());
 
         // Add callee to access list
         let is_warm = cb.query_bool();
