@@ -302,9 +302,7 @@ impl Transaction {
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
             from: eth_tx.from,
-            to: eth_tx
-                .to
-                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
+            to: eth_tx.to.unwrap_or_default(),
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
             calls: vec![call],
