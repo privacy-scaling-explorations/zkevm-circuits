@@ -82,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         let call_callee_address = cb.query_cell();
-        cb.condition(tx_is_create.expr(), |cb| {
+        cb.condition(tx_is_create.expr(), |_cb| {
             // TODO: require call_callee_address to be
             // address(keccak(rlp([tx_caller_address, tx_nonce])))
         });
