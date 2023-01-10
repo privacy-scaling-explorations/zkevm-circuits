@@ -504,7 +504,11 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
         cb.stack_pop(rd_length.expr());
-        cb.stack_push(if IS_ERROR {0.expr()} else {is_success.expr()});
+        cb.stack_push(if IS_ERROR {
+            0.expr()
+        } else {
+            is_success.expr()
+        });
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
@@ -516,9 +520,9 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
         let has_value = select::expr(
-                is_delegatecall.expr(),
-                0.expr(),
-                1.expr() - value_is_zero.expr(),
+            is_delegatecall.expr(),
+            0.expr(),
+            1.expr() - value_is_zero.expr(),
         );
 
         let callee_code_hash = cb.query_cell();
