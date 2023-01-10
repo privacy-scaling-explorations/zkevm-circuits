@@ -504,11 +504,7 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
         cb.stack_pop(rd_length.expr());
-        if IS_ERROR {
-            cb.stack_push(0.expr());
-        } else {
-            cb.stack_push(is_success.expr());
-        }
+        cb.stack_push(if IS_ERROR {0.expr()} else {is_success.expr()});
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));
