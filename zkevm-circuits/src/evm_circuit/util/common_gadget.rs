@@ -519,15 +519,11 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
 
         // construct common gadget
         let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
-        let has_value = if IS_ERROR {
-            1.expr() - value_is_zero.expr()
-        } else {
-            select::expr(
+        let has_value = select::expr(
                 is_delegatecall.expr(),
                 0.expr(),
                 1.expr() - value_is_zero.expr(),
-            )
-        };
+        );
 
         let callee_code_hash = cb.query_cell();
         let is_empty_code_hash = IsEqualGadget::construct(
