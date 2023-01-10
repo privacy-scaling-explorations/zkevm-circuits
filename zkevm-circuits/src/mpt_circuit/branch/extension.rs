@@ -703,6 +703,11 @@ pub(crate) fn extension_node_selectors<F: FieldExt>(
     });
 }
 
+/*
+Ensure the multiplier after nibbles is correct. Note that there are two multipliers used:
+ - after RLP bytes and nibbles (used to compute the RLC of the whole extension node)
+ - after nibbles (used to compute the nibbles RLC in `extension_node_modified.rs`)
+*/
 pub(crate) fn check_intermediate_mult<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_enable: impl Fn(&mut VirtualCells<'_, F>) -> Expression<F>,
@@ -710,8 +715,8 @@ pub(crate) fn check_intermediate_mult<F: FieldExt>(
     s_main: MainCols<F>,
     accs: AccumulatorCols<F>,
     /*
-    `rot_into_ext_node` and `rot_into_branch_init` are different for inserted extension node (inserted
-    at the place of some existing extension node). We use `rot_into_branch_init` for inserted
+    `rot_into_ext_node` and `rot_into_branch_init` are different for modified extension node (modified
+    at the place of some existing extension node). We use `rot_into_branch_init` for modified
     extension node to retrieve information about `is_branch_c16` and `is_branch_c1` - the
     constraints for these two flags are implemented in the branch configs.
     */

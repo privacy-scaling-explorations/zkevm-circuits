@@ -875,16 +875,51 @@ impl<F: FieldExt> ExtensionNodeModifiedConfig<F> {
             });
         }
 
-        check_intermediate_mult(
-            meta,
-            q_enable.clone(),
-            position_cols.clone(),
-            s_main.clone(),
-            accs,
-            -1,
-            fixed_table,
-            power_of_randomness[1].clone(),
-        );
+        if is_long {
+            // Note: `long` is always extension node
+            check_intermediate_mult(
+                meta,
+                q_enable.clone(),
+                position_cols.clone(),
+                s_main.clone(),
+                accs,
+                -1,
+                fixed_table,
+                power_of_randomness[1].clone(),
+            );
+        } else {
+            // Note: `short` can be a branch, in this case `short` rows do not store anything
+            let sel_short_is_not_branch= |meta: &mut VirtualCells<F>| {
+                let q_enable = q_enable(meta);
+
+                let rot_into_last_leaf_row = - SHORT_EXT_NODE_S - 1;
+                let rot_into_branch_init_storage = rot_into_last_leaf_row - LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+                let rot_into_branch_init_account = rot_into_last_leaf_row - ACCOUNT_LEAF_ROWS_NUM - BRANCH_ROWS_NUM + 1;
+
+                let is_account_proof = meta.query_advice(
+                    is_account_leaf_in_added_branch,
+                    Rotation(rot_into_last_leaf_row),
+                );
+
+                let short_is_branch =
+                    meta.query_advice(c_main.bytes[0], Rotation(rot_into_branch_init_account)) * is_account_proof.clone()
+                    + meta.query_advice(c_main.bytes[0], Rotation(rot_into_branch_init_storage)) * (one.clone() - is_account_proof.clone());
+
+                
+                q_enable * (one.clone() - short_is_branch)
+            };
+
+            check_intermediate_mult(
+                meta,
+                sel_short_is_not_branch,
+                position_cols.clone(),
+                s_main.clone(),
+                accs,
+                -1,
+                fixed_table,
+                power_of_randomness[1].clone(),
+            );
+        }
 
         let sel_branch_non_hashed = |meta: &mut VirtualCells<F>| {
             let q_enable = q_enable(meta);
