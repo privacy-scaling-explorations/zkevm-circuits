@@ -11,7 +11,7 @@ use crate::evm_circuit::util::math_gadget::{
     MinMaxGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
-use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
+use crate::evm_circuit::util::{from_bytes, not, select, sum, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -129,6 +129,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // `CALL` opcode has an additional stack pop `value`.
         cb.condition(is_call.expr() + is_callcode.expr(), |cb| {
             cb.stack_pop(value.expr())
+        });
+
+        cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
+            cb.require_zero("for non call/call code, value is zero", value.expr());
         });
 
         [
@@ -303,31 +307,28 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
 
         // handle is_insufficient_balance step transition
-        cb.condition(
-            is_insufficient_balance.expr() * (is_call.expr() + is_callcode.expr()),
-            |cb| {
-                // Save caller's call state
-                for field_tag in [
-                    CallContextFieldTag::LastCalleeId,
-                    CallContextFieldTag::LastCalleeReturnDataOffset,
-                    CallContextFieldTag::LastCalleeReturnDataLength,
-                ] {
-                    cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
-                }
+        cb.condition(is_insufficient_balance.expr(), |cb| {
+            // Save caller's call state
+            for field_tag in [
+                CallContextFieldTag::LastCalleeId,
+                CallContextFieldTag::LastCalleeReturnDataOffset,
+                CallContextFieldTag::LastCalleeReturnDataLength,
+            ] {
+                cb.call_context_lookup(true.expr(), None, field_tag, 0.expr());
+            }
 
-                cb.require_step_state_transition(StepStateTransition {
-                    rw_counter: Delta(24.expr()),
-                    program_counter: Delta(1.expr()),
-                    stack_pointer: Delta(stack_pointer_delta.expr()),
-                    gas_left: Delta(
-                        has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
-                    ),
-                    memory_word_size: To(memory_expansion.next_memory_word_size()),
-                    reversible_write_counter: Delta(1.expr()),
-                    ..StepStateTransition::default()
-                });
-            },
-        );
+            cb.require_step_state_transition(StepStateTransition {
+                rw_counter: Delta(24.expr()),
+                program_counter: Delta(1.expr()),
+                stack_pointer: Delta(stack_pointer_delta.expr()),
+                gas_left: Delta(
+                    has_value.clone() * GAS_STIPEND_CALL_WITH_VALUE.expr() - gas_cost.clone(),
+                ),
+                memory_word_size: To(memory_expansion.next_memory_word_size()),
+                reversible_write_counter: Delta(1.expr()),
+                ..StepStateTransition::default()
+            });
+        });
 
         cb.condition(
             is_empty_code_hash.expr() * (1.expr() - is_insufficient_balance.expr()),
