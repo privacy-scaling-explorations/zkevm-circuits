@@ -144,6 +144,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 gas_limit: U256::from(st.env.current_gas_limit),
                 base_fee: U256::one(),
             },
+
             transactions: vec![geth_types::Transaction {
                 from: st.from,
                 to: st.to,

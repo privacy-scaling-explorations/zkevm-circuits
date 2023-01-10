@@ -24,6 +24,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
+
         let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
         let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
@@ -121,7 +122,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         match call.kind {
             CallKind::Call => {
                 // Transfer value only for CALL opcode.
-
                 state.transfer(
                     &mut exec_step,
                     call.caller_address,
@@ -134,7 +134,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 // equal to stack `value`.
                 let (_, caller_account) = state.sdb.get_account(&call.caller_address);
                 let caller_balance = caller_account.balance;
-
                 state.account_read(
                     &mut exec_step,
                     call.caller_address,

@@ -53,3 +53,4 @@ pretty_assertions = "1.0.0"
 default = []
 test = ["ethers-signers", "mock"]
 onephase = []
+codehash = []
