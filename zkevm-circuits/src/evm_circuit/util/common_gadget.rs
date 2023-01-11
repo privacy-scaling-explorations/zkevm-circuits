@@ -85,7 +85,6 @@ impl<F: Field> SameContextGadget<F> {
 /// Construction of step state transition that restores caller's state.
 #[derive(Clone, Debug)]
 pub(crate) struct RestoreContextGadget<F> {
-    rw_counter_end_of_reversion: Cell<F>,
     caller_id: Cell<F>,
     caller_is_root: Cell<F>,
     caller_is_create: Cell<F>,
@@ -109,9 +108,7 @@ impl<F: Field> RestoreContextGadget<F> {
         reversible_write_counter_increase: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
-        let rw_counter_end_of_reversion =  cb.call_context(None, CallContextFieldTag::RwCounterEndOfReversion);
 
-        
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
         let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             [
@@ -143,10 +140,6 @@ impl<F: Field> RestoreContextGadget<F> {
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
         }
-
-        // TODO: add is_success check
-        cb.require_equal("rw_counter_end_of_reversion =  rw_counter + reversible_counter", rw_counter_end_of_reversion.expr(), 
-        cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() + cb.curr.state.reversible_write_counter.expr() - 1.expr());
 
         let code_deposit_cost = cb.curr.state.is_create.expr()
             * is_success.clone()
@@ -189,7 +182,6 @@ impl<F: Field> RestoreContextGadget<F> {
         });
 
         Self {
-            rw_counter_end_of_reversion,
             caller_id,
             caller_is_root,
             caller_is_create,
@@ -209,17 +201,9 @@ impl<F: Field> RestoreContextGadget<F> {
         block: &Block<F>,
         call: &Call,
         step: &ExecStep,
-        mut rw_offset: usize,
+        rw_offset: usize,
     ) -> Result<(), Error> {
 
-       let rw_counter_end_of_reversion = if step.execution_state.halts_in_exception(){
-            let value = block.rws[step.rw_indices[rw_offset]].call_context_value();
-            rw_offset += 1;
-            value
-        }else {
-            U256::zero()
-        };
-        self.rw_counter_end_of_reversion.assign(region, offset, Value::known(rw_counter_end_of_reversion.to_scalar().unwrap()))?;
         let [caller_id, caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             if call.is_root {
                 [U256::zero(); 9]
