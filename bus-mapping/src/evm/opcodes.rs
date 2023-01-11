@@ -72,7 +72,7 @@ use callop::CallOpcode;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
-use create::DummyCreate;
+use create::Create;
 use dup::Dup;
 use error_invalid_jump::ErrorInvalidJump;
 use error_oog_call::OOGCall;
@@ -236,19 +236,13 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL | OpcodeId::CALLCODE => CallOpcode::<7>::gen_associated_ops,
         OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
+        OpcodeId::CREATE => Create::<false>::gen_associated_ops,
+        OpcodeId::CREATE2 => Create::<true>::gen_associated_ops,
         OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::INVALID(_) => Stop::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             log::debug!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
-        }
-        OpcodeId::CREATE => {
-            log::debug!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::<false>::gen_associated_ops
-        }
-        OpcodeId::CREATE2 => {
-            log::debug!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::<true>::gen_associated_ops
         }
         _ => {
             log::debug!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);

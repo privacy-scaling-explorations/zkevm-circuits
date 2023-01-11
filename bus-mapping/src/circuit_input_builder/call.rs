@@ -137,6 +137,13 @@ pub struct CallContext {
     pub return_data: Vec<u8>,
 }
 
+impl CallContext {
+    /// Memory size in words, rounded up
+    pub fn memory_word_size(&self) -> u64 {
+        u64::try_from(self.memory.len()).expect("failed to convert usize to u64") / 32
+    }
+}
+
 /// A reversion group is the collection of calls and the operations which are
 /// [`Operation::reversible`](crate::operation::Operation::reversible) that
 /// happened in them, that will be reverted at once when the call that initiated

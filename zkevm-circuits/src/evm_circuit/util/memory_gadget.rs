@@ -95,6 +95,12 @@ impl<F: Field> MemoryAddressGadget<F> {
         }
     }
 
+    pub(crate) fn construct_2(cb: &mut ConstraintBuilder<F>) -> Self {
+        let offset = cb.query_cell();
+        let length = cb.query_rlc();
+        Self::construct(cb, offset, length)
+    }
+
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -146,6 +152,14 @@ impl<F: Field> MemoryAddressGadget<F> {
 
     pub(crate) fn offset(&self) -> Expression<F> {
         self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
+    }
+
+    pub(crate) fn offset_rlc(&self) -> Expression<F> {
+        self.memory_offset.expr()
+    }
+
+    pub(crate) fn length_rlc(&self) -> Expression<F> {
+        self.memory_length.expr()
     }
 
     pub(crate) fn length(&self) -> Expression<F> {

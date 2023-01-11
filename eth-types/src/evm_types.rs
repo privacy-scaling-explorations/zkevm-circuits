@@ -98,7 +98,7 @@ impl GasCost {
     pub const SHA3: Self = Self(30);
     /// Constant cost for SELFDESTRUCT
     pub const SELFDESTRUCT: Self = Self(5000);
-    /// Constant cost for CREATE
+    /// Constant cost for CREATE and CREATE2
     pub const CREATE: Self = Self(32000);
     /// Constant cost for copying every word
     pub const COPY: Self = Self(3);

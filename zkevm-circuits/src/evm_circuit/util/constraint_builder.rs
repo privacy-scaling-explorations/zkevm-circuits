@@ -103,6 +103,29 @@ pub(crate) struct ReversionInfo<F> {
 }
 
 impl<F: Field> ReversionInfo<F> {
+    pub(crate) fn from_caller(
+        cb: &mut ConstraintBuilder<F>,
+        caller: &mut ReversionInfo<F>,
+        callee_is_success: Expression<F>,
+    ) -> Self {
+        // not sure if this is correct??
+        // let call_id = cb.curr.state.rw_counter.expr();
+        let callee = cb.reversion_info_write(None);
+        cb.require_equal(
+            "callee_is_persistent == is_persistent ⋅ is_success",
+            callee.is_persistent(),
+            and::expr([caller.is_persistent(), callee_is_success.clone()]),
+        );
+        cb.condition(callee_is_success * not::expr(caller.is_persistent()), |cb| {
+            cb.require_equal(
+                "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
+                callee.rw_counter_end_of_reversion(),
+                caller.rw_counter_of_reversion(),
+            );
+        });
+        callee
+    }
+
     pub(crate) fn rw_counter_end_of_reversion(&self) -> Expression<F> {
         self.rw_counter_end_of_reversion.expr()
     }
@@ -502,6 +525,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
+            128 => ("Range64", FixedTableTag::Range128),
             256 => ("Range256", FixedTableTag::Range256),
             512 => ("Range512", FixedTableTag::Range512),
             1024 => ("Range1024", FixedTableTag::Range1024),

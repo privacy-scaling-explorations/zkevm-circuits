@@ -47,6 +47,7 @@ mod chainid;
 mod codecopy;
 mod codesize;
 mod comparator;
+mod create;
 mod dummy;
 mod dup;
 mod end_block;
@@ -110,6 +111,7 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
+use create::CreateGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -241,8 +243,7 @@ pub(crate) struct ExecutionConfig<F> {
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
-    create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
-    create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
+    create_gadget: CreateGadget<F>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
@@ -480,7 +481,6 @@ impl<F: Field> ExecutionConfig<F> {
             returndatasize_gadget: configure_gadget!(),
             returndatacopy_gadget: configure_gadget!(),
             create_gadget: configure_gadget!(),
-            create2_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
@@ -1196,11 +1196,10 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKCTXU256 => assign_exec_step!(self.block_ctx_u256_gadget),
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
+            ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             // dummy gadgets
             ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
-            ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
-            ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
             ExecutionState::SELFDESTRUCT => assign_exec_step!(self.selfdestruct_gadget),
             // end of dummy gadgets
             ExecutionState::SHA3 => assign_exec_step!(self.sha3_gadget),
@@ -1435,5 +1434,22 @@ impl<F: Field> ExecutionConfig<F> {
                 //);
             }
         }
+        // for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate()
+        // {     let rw_idx = step.rw_indices[idx];
+        //     let rw = block.rws[rw_idx];
+        //     let table_assignments =
+        // rw.table_assignment_aux(block.randomness);     let rlc =
+        // table_assignments.rlc(block.randomness);     if rlc !=
+        // assigned_rw_value.1 {         log::error!(
+        //             "incorrect rw witness. lookup input name:
+        // \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
+        //             assigned_rw_value.0,
+        //             assigned_rw_value.1,
+        //             rw,
+        //             rw_idx,
+        //             idx,
+        //             step.execution_state);
+        //     }
+        // }
     }
 }

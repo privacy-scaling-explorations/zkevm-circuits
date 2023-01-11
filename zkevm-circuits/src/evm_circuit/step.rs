@@ -77,14 +77,13 @@ pub enum ExecutionState {
     MSIZE,
     GAS,
     JUMPDEST,
-    PUSH, // PUSH1, PUSH2, ..., PUSH32
-    DUP,  // DUP1, DUP2, ..., DUP16
-    SWAP, // SWAP1, SWAP2, ..., SWAP16
-    LOG,  // LOG0, LOG1, ..., LOG4
-    CREATE,
+    PUSH,          // PUSH1, PUSH2, ..., PUSH32
+    DUP,           // DUP1, DUP2, ..., DUP16
+    SWAP,          // SWAP1, SWAP2, ..., SWAP16
+    LOG,           // LOG0, LOG1, ..., LOG4
+    CREATE,        // CREATE, CREATE2
     CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
     RETURN_REVERT, // RETURN, REVERT
-    CREATE2,
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
@@ -301,7 +300,7 @@ impl ExecutionState {
                 OpcodeId::LOG3,
                 OpcodeId::LOG4,
             ],
-            Self::CREATE => vec![OpcodeId::CREATE],
+            Self::CREATE => vec![OpcodeId::CREATE, OpcodeId::CREATE2],
             Self::CALL_OP => vec![
                 OpcodeId::CALL,
                 OpcodeId::CALLCODE,
@@ -309,7 +308,6 @@ impl ExecutionState {
                 OpcodeId::STATICCALL,
             ],
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
-            Self::CREATE2 => vec![OpcodeId::CREATE2],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
             _ => vec![],
         }
