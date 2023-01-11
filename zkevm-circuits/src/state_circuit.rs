@@ -9,7 +9,7 @@ mod test;
 
 use crate::{
     evm_circuit::param::N_BYTES_WORD,
-    table::{LookupTable, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -60,6 +60,8 @@ pub struct StateCircuitConfig<F> {
     // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
     // non-existing, otherwise do lookup for ProofType::StorageChanged.
     is_non_exist: BatchedIsZeroConfig,
+    // Intermediarey witness used to reduce mpt lookup expression degree
+    mpt_proof_type: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     not_first_access: Column<Advice>,
@@ -120,6 +122,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
                 ]
             },
         );
+        let mpt_proof_type = meta.advice_column_in(SecondPhase);
         let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
@@ -143,6 +146,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             sort_keys,
             initial_value,
             is_non_exist,
+            mpt_proof_type,
             state_root,
             lexicographic_ordering,
             not_first_access: meta.advice_column(),
@@ -302,6 +306,34 @@ impl<F: Field> StateCircuitConfig<F> {
                 region,
                 offset,
                 committed_value_value,
+            )?;
+            let mpt_proof_type = committed_value_value.map(|pair| {
+                F::from(match row {
+                    Rw::AccountStorage { .. } => {
+                        if pair[0].is_zero_vartime() && pair[1].is_zero_vartime() {
+                            ProofType::StorageDoesNotExist as u64
+                        } else {
+                            ProofType::StorageChanged as u64
+                        }
+                    }
+                    Rw::Account { field_tag, .. } => {
+                        if pair[0].is_zero_vartime()
+                            && pair[1].is_zero_vartime()
+                            && matches!(field_tag, AccountFieldTag::CodeHash)
+                        {
+                            ProofType::AccountDoesNotExist as u64
+                        } else {
+                            *field_tag as u64
+                        }
+                    }
+                    _ => 0,
+                })
+            });
+            region.assign_advice(
+                || "mpt_proof_type",
+                self.mpt_proof_type,
+                offset,
+                || mpt_proof_type,
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -558,6 +590,7 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
         is_non_exist: meta.query_advice(c.is_non_exist.is_zero, Rotation::cur()),
+        mpt_proof_type: meta.query_advice(c.mpt_proof_type, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
         first_different_limb: [0, 1, 2, 3]
