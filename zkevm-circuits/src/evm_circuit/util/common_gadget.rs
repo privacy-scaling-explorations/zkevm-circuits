@@ -454,7 +454,7 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const IS_ERROR: bool> {
+pub(crate) struct CommonCallGadget<F, const IS_OOG_ERROR: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word<F>,
@@ -471,7 +471,7 @@ pub(crate) struct CommonCallGadget<F, const IS_ERROR: bool> {
     pub is_empty_code_hash: IsEqualGadget<F>,
 }
 
-impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
+impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -504,7 +504,7 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
         cb.stack_pop(cd_length.expr());
         cb.stack_pop(rd_offset.expr());
         cb.stack_pop(rd_length.expr());
-        cb.stack_push(if IS_ERROR {
+        cb.stack_push(if IS_OOG_ERROR {
             0.expr()
         } else {
             is_success.expr()
@@ -598,7 +598,7 @@ impl<F: Field, const IS_ERROR: bool> CommonCallGadget<F, IS_ERROR> {
             .assign(region, offset, Some(callee_address.to_le_bytes()))?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
-        if !IS_ERROR {
+        if !IS_OOG_ERROR {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
             self.gas_is_u64.assign(

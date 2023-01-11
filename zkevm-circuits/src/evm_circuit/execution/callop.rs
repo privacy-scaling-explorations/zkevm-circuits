@@ -211,7 +211,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
         let gas_cost = call_gadget.gas_cost_expr(
             is_warm_prev.expr(),
-            // has_value.clone(),
             is_call.expr(),
             1.expr() - callee_exists.expr(),
         );
