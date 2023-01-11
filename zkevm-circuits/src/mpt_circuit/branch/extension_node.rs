@@ -402,6 +402,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             "Extension node in first level of storage trie - hash compared to the storage root",
             |meta| {
                 let q_enable = q_enable(meta);
+                let not_first_level = meta.query_advice(position_cols.not_first_level, Rotation::cur());
 
                 let mut is_branch_placeholder = meta.query_advice(
                     s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM],
@@ -455,6 +456,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let hash_rlc = bytes_expr_into_rlc(&sc_hash, power_of_randomness[0].clone());
 
                 let selector = q_enable
+                    * not_first_level
                     * is_extension_node
                     * is_account_leaf_in_added_branch
                     * (one.clone() - is_inserted_ext_node)
