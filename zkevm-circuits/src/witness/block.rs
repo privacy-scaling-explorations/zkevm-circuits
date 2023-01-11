@@ -175,7 +175,8 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     Ok(Block {
-        randomness: F::from(0xcafeu64), // Special value to reveal elements after RLC
+        // randomness: F::from(0x100), // Special value to reveal elements after RLC
+        randomness: F::from(0xcafeu64),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
