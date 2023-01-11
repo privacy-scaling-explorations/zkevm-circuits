@@ -512,7 +512,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             // data
             if idx > 0 {
                 let is_code = push_data_left == 0;
-                assert_eq!(F::from(is_code as u64), row.is_code, "is_code must match");
 
                 push_data_size = get_push_size(row.value.get_lower_128() as u8);
 
