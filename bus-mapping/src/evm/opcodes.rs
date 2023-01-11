@@ -53,6 +53,7 @@ mod stop;
 mod swap;
 
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
 
 #[cfg(test)]
@@ -71,7 +72,8 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
-use error_invalid_jump::ErrorInvalidJump;
+use error_invalid_jump::InvalidJump;
+use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -246,6 +248,9 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<true>::gen_associated_ops
         }
+        // Invalid opcodes should be handled via ErrorInvalidOpcode as below. Dummy associated
+        // operations to avoid unimplemented panic.
+        OpcodeId::INVALID(_) => Dummy::gen_associated_ops,
         _ => {
             evm_unimplemented!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             Dummy::gen_associated_ops
@@ -255,7 +260,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
     match error {
-        ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
+        ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
