@@ -18,6 +18,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use keccak256::plain::Keccak;
+use log::trace;
 use std::vec;
 
 use super::param::PUSH_TABLE_WIDTH;
@@ -357,7 +358,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
             cb.require_equal(
                 "cur.index + 1 == cur.length",
-                meta.query_advice(bytecode_table.index, Rotation::next()) + 1.expr(),
+                meta.query_advice(bytecode_table.index, Rotation::cur()) + 1.expr(),
                 meta.query_advice(length, Rotation::cur()),
             );
 
@@ -545,6 +546,22 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     length,
                     F::from(push_data_size as u64),
                 )?;
+
+                trace!(
+                    "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?} l:{:?} pds:{:?}",
+                    offset,
+                    *offset == last_row_offset,
+                    code_hash,
+                    row.tag.get_lower_32(),
+                    row.index.get_lower_32(),
+                    row.is_code.get_lower_32(),
+                    row.value.get_lower_32(),
+                    push_data_left,
+                    value_rlc,
+                    length.get_lower_32(),
+                    push_data_size
+                );
+
                 *offset += 1;
                 push_data_left = next_push_data_left
             }
