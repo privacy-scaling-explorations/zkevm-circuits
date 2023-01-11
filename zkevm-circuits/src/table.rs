@@ -512,6 +512,7 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
+#[derive(Copy, Clone)]
 pub enum ProofType {
     /// Nonce updated
     NonceChanged = AccountFieldTag::Nonce as isize,

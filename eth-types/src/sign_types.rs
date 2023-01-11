@@ -64,7 +64,7 @@ lazy_static! {
         let pk = generator * sk;
         let pk = pk.to_affine();
         let msg = b"1";
-        let msg_hash: [u8; 32] = Keccak256::digest(&msg)
+        let msg_hash: [u8; 32] = Keccak256::digest(msg)
             .as_slice()
             .to_vec()
             .try_into()
