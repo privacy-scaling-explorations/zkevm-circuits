@@ -426,7 +426,7 @@ mod super_circuit_tests {
         SuperCircuit::<_, 1, 32, 256>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
-        assert!(cs.degree() <= 13);
+        assert!(cs.degree() <= 12);
     }
 
     fn test_super_circuit<const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>(

@@ -354,8 +354,17 @@ impl<F: Field> ConstraintBuilder<F> {
             * generate_lagrange_base_polynomial(
                 q.field_tag(),
                 AccountFieldTag::CodeHash as usize,
-                AccountFieldTag::iter().map(|t| t as usize),
+                [
+                    AccountFieldTag::Nonce,
+                    AccountFieldTag::Balance,
+                    AccountFieldTag::CodeHash,
+                ]
+                .iter()
+                .map(|t| *t as usize),
             );
+        // is_non_exist degree = 4
+        //   q.is_non_exist() degree = 1
+        //   generate_lagrange_base_polynomial() degree = 3
 
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
@@ -370,6 +379,7 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.mpt_update_table.storage_key.clone(),
                     ),
                     (
+                        // degree = max(4, 4 + 1) = 5
                         is_non_exist.expr() * ProofType::AccountDoesNotExist.expr()
                             + (1.expr() - is_non_exist) * q.field_tag(),
                         q.mpt_update_table.proof_type.clone(),
