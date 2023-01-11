@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, Expr};
+use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Expression, VirtualCells},
@@ -128,7 +128,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 // [0, 0, 128, 0, ..., 0].
                 // While hashed nodes have `160` at `rlp2` and then any byte at `bytes`:
                 // [0, 160, a0, ..., a31].
-                require!(a!(main.rlp2) => {[0.expr(), 160.expr()]});
+                require!(a!(main.rlp2) => [0, 160]);
 
                 let is_empty = (160.expr() - a!(main.rlp2)) * Expression::Constant(F::from(160).invert().unwrap());
                 let (rlc, mult) = ifx!{is_empty => {

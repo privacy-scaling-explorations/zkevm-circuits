@@ -212,7 +212,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // There are two cases:
             // - hashed branch has 160 at c_rlp2 and hash in c_advices,
             // - non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
-            require!(a!(c_main.rlp2) => {[0.expr(), 160.expr()]});
+            require!(a!(c_main.rlp2) => [0, 160]);
             let is_branch_hashed =
                 a!(c_main.rlp2) * Expression::Constant(F::from(160).invert().unwrap());
 

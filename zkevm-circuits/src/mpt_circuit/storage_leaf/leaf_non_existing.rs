@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    evm_circuit::util::{dot, rlc},
+    evm_circuit::util::rlc,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::MPTContext,
     mpt_circuit::{
@@ -77,38 +77,33 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>, is_short: bool| {
                 circuit!([meta, cb], {
-                    let sum = a!(accs.acc_c.rlc);
-                    let sum_prev = a!(accs.acc_c.mult);
+                    let rlc = a!(accs.acc_c.rlc);
+                    let rlc_prev = a!(accs.acc_c.mult);
                     let diff_inv = a!(accs.acc_s.rlc);
                     let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
                     let start_idx = if is_short { 2 } else { 3 };
                     let end_idx = start_idx + 33;
-                    let sum_prev_check = dot::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx]
-                            .iter()
-                            .map(|&byte| a!(byte, rot))
-                            .collect::<Vec<_>>(),
-                        &r,
-                    );
+                    let mut calc_rlc = |rot: i32| {
+                        rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx]
+                                .iter()
+                                .map(|&byte| a!(byte, rot))
+                                .collect::<Vec<_>>(),
+                            &r,
+                        )
+                    };
                     // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
                     // We check whether the computed value is the same as the
                     // one stored in `accs.key.mult` column.
-                    let sum_check = dot::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx]
-                            .iter()
-                            .map(|&byte| a!(byte))
-                            .collect::<Vec<_>>(),
-                        &r,
-                    );
-                    require!(sum => sum_check);
+                    require!(rlc => calc_rlc(0));
                     // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
                     // We check whether the computed value is the same as the
                     // one stored in `accs.key.rlc` column.
-                    require!(sum_prev => sum_prev_check);
-                    // TODO(Brecht): what?
+                    require!(rlc_prev => calc_rlc(rot));
                     // The address in the ACCOUNT/STORAGE_NON_EXISTING row and the address in the
                     // ACCOUNT/STORAGE_NON_EXISTING row are different.
-                    require!((sum - sum_prev) * diff_inv => 1);
+                    // If the difference is 0 there is no inverse.
+                    require!((rlc - rlc_prev) * diff_inv => 1);
                 });
             };
 
@@ -279,7 +274,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let key_len = row_key_c.get_byte(start) as usize - 128;
         let mut sum = F::zero();
         let mut sum_prev = F::zero();
-        let mut mult = mpt_config.randomness;
+        let mut mult = F::one();
         for i in 0..key_len {
             sum += F::from(row.get_byte(start + 1 + i) as u64) * mult;
             sum_prev += F::from(row_key_c.get_byte(start + 1 + i) as u64) * mult;

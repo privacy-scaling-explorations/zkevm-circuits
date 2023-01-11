@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    evm_circuit::util::{dot, rlc},
+    evm_circuit::util::rlc,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::MPTContext,
     mpt_circuit::{
@@ -109,38 +109,38 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let r = ctx.r;
         let address_rlc = ctx.address_rlc;
 
+        let rot_first_branch = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
+        let rot_branch_init = rot_first_branch - 1;
+
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>| {
                 circuit!([meta, cb], {
-                    let sum = a!(accs.key.rlc);
-                    let sum_prev = a!(accs.key.mult);
+                    let rlc = a!(accs.key.rlc);
+                    let rlc_prev = a!(accs.key.mult);
                     let diff_inv = a!(accs.acc_s.rlc);
-                    let sum_prev_check = dot::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
-                            .iter()
-                            .map(|&byte| a!(byte, -1))
-                            .collect::<Vec<_>>(),
-                        &r,
-                    );
+                    let mut calc_rlc = |rot: i32| {
+                        rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
+                                .iter()
+                                .map(|&byte| a!(byte, rot))
+                                .collect::<Vec<_>>(),
+                            &r,
+                        )
+                    };
+                    // TODO(Brecht): should we store these RLC values?
                     // We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check
                     // whether the computed value is the same as the one stored
                     // in `accs.key.mult` column.
-                    let sum_check = dot::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
-                            .iter()
-                            .map(|&byte| a!(byte))
-                            .collect::<Vec<_>>(),
-                        &r,
-                    );
-                    require!(sum => sum_check);
+                    require!(rlc => calc_rlc(0));
                     // We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check
                     // whether the computed value is the same as the one stored
                     // in `accs.key.rlc` column.
-                    require!(sum_prev => sum_prev_check);
-                    // TODO(Brecht): what?
+                    // TODO(Brecht): This does not rotate to ACCOUNT_LEAF_KEY like the comment says?
+                    require!(rlc_prev => calc_rlc(-1));
                     // The address in the ACCOUNT_LEAF_KEY row and the address in the
                     // ACCOUNT_NON_EXISTING row are different.
-                    require!((sum - sum_prev) * diff_inv => 1);
+                    // If the difference is 0 there is no inverse.
+                    require!((rlc - rlc_prev) * diff_inv => 1);
                 });
             };
 
@@ -149,10 +149,6 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         // nodes above). Note: currently, for non_existing_account proof S and C
         // proofs are the same, thus there is never a placeholder branch.
         circuit!([meta, cb], {
-            // key rlc is in the first branch node
-            let rot_into_first_branch_child = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
-            let rot_branch_init = rot_into_first_branch_child - 1;
-
             // Wrong leaf has a meaning only for non existing account proof. For this proof,
             // there are two cases: 1. A leaf is returned that is not at the
             // required address (wrong leaf). 2. A branch is returned as the
@@ -163,8 +159,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             // (q_enable in this chip is true only when
             // non_existing_account_proof).
             ifx! {is_wrong_leaf => {
-                ifx!{a!(not_first_level) => {
-                    // Differently as for the other proofs, the account-non-existing proof compares `address_rlc`
+                let key_rlc = ifx! {a!(not_first_level) => {
+                    // Differently than for the other proofs, the account-non-existing proof compares `address_rlc`
                     // with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
                     // The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
                     // set of nibbles is the same) where we are proving there is no account.
@@ -175,25 +171,21 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
                     // is different).
                     let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
-
-                    // If c16 = 1, we have nibble+48 in s_main.bytes[0].
                     // If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
                     ifx!{branch.is_c1() => {
                         require!(a!(s_main.bytes[1]) => 32);
                     }}
-
-                    // RLC check
-                    let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
-                    let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
-                    // set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_start.expr() * ifx!{branch.is_c16() => { r[0].expr() } elsex { 1.expr() }};
-                    // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
-                    let key_rlc_acc = key_rlc_acc_start + rlc::expr(
+                    // Calculate the key RLC
+                    let key_rlc_prev = a!(accs.key.rlc, rot_first_branch);
+                    let key_mult_prev = a!(accs.key.mult, rot_first_branch);
+                    // Set to key_mult_start * r if is_c16, else key_mult_start
+                    let key_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { r[0].expr() } elsex { 1.expr() }};
+                    // If is_c16 = 1, we have nibble+48 in s_main.bytes[0].
+                    key_rlc_prev + rlc::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
-                            (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                            (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                         &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                    );
-                    require!(key_rlc_acc => a!(address_rlc));
+                    )
                 } elsex {
                     /* Non existing account proof leaf address RLC (leaf in first level) */
                     // Ensuring that the account does not exist when there is only one account in the state trie.
@@ -206,18 +198,17 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     // the information whether there the key is odd or even
                     // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
                     require!(a!(s_main.bytes[1]) => 32);
-                    // RLC check
-                    let rlc = rlc::expr(
+                    // Calculate the key RLC
+                    rlc::expr(
                         &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                         &r,
-                    );
-                    require!(a!(address_rlc) => rlc);
-                }}
+                    )
+                }};
+                require!(a!(address_rlc) => key_rlc);
 
                 // General wrong leaf constraints
                 add_wrong_leaf_constraints(meta, cb);
-
-                /* Address of wrong leaf and the enquired address are of the same length */
+                // The address of the wrong leaf and the enquired address are of the same length.
                 // This constraint is to prevent the attacker to prove that some account does not exist by setting
                 // some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
                 require!(a!(s_main.bytes[0]) => a!(s_main.bytes[0], -1));
@@ -226,7 +217,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                 // Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
                 // at `modified_node` position. We check that in case of no wrong leaf in
                 // the non-existing-account proof, `is_nil_object` is 1.
-                require!(a!(sel1, rot_into_first_branch_child) => true);
+                require!(a!(sel1, rot_first_branch) => true);
             }}
 
             // RLC bytes zero check for [s_main.rlp_bytes(),
@@ -252,7 +243,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let key_len = leaf_key_c.get_byte(2) as usize - 128;
         let mut sum = F::zero();
         let mut sum_prev = F::zero();
-        let mut mult = mpt_config.randomness;
+        let mut mult = F::one();
         for i in 0..key_len {
             sum += F::from(row.get_byte(3 + i) as u64) * mult;
             sum_prev += F::from(leaf_key_c.get_byte(3 + i) as u64) * mult;

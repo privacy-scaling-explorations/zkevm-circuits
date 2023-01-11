@@ -672,6 +672,48 @@ pub(crate) fn select<F: FieldExt>(
         .collect()
 }
 
+// Wrapper around select
+pub trait Expressable<F> {
+    fn to_expr_vec(&self) -> Vec<Expression<F>>;
+}
+
+impl<F: FieldExt, E: Expressable<F>> Expressable<F> for Vec<E> {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|e| e.to_expr_vec()[0].expr())
+            .collect::<Vec<_>>()
+    }
+}
+
+impl<F: FieldExt, E: Expressable<F>> Expressable<F> for [E] {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|e| e.to_expr_vec()[0].expr())
+            .collect::<Vec<_>>()
+    }
+}
+
+/// Implementation trait `Expr` for type able to be casted to u64
+#[macro_export]
+macro_rules! impl_expressable {
+    ($type:ty) => {
+        impl<F: halo2_proofs::arithmetic::FieldExt> Expressable<F> for $type {
+            #[inline]
+            fn to_expr_vec(&self) -> Vec<Expression<F>> {
+                vec![self.expr()]
+            }
+        }
+    };
+}
+
+impl_expressable!(bool);
+impl_expressable!(u8);
+impl_expressable!(i32);
+impl_expressable!(u64);
+impl_expressable!(usize);
+impl_expressable!(Expression<F>);
+impl_expressable!(ColumnTransition<F>);
+
 /// Wrapper around select
 pub trait Selectable<F> {
     fn select(&self, condition: Expression<F>, other: Self) -> Self;
@@ -798,7 +840,11 @@ impl<F: FieldExt> Selectable<F>
 macro_rules! circuit {
     ([$meta:ident, $cb:ident], $content:block) => {{
         #[allow(unused_imports)]
+        use gadgets::util::and;
+        #[allow(unused_imports)]
         use crate::mpt_circuit::helpers::Selectable;
+        #[allow(unused_imports)]
+        use crate::mpt_circuit::helpers::Expressable;
         // Nested macro's can't do repetition... (https://github.com/rust-lang/rust/issues/35853)
         #[allow(unused_macros)]
         macro_rules! ifx {
@@ -922,30 +968,6 @@ macro_rules! circuit {
         }
 
         macro_rules! require {
-            ($lhs:expr => $rhs:block) => {{
-                $cb.require_in_set(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": ",
-                        stringify!($lhs),
-                        " in ",
-                        stringify!($rhs),
-                    ),
-                    $lhs.expr(),
-                    $rhs.to_vec(),
-                );
-            }};
-            ($name:ident, $lhs:expr => $rhs:block) => {{
-                let descr = format!("{}:{}[{}]: {} => {{{}}}",  file!(), line!(), $name, stringify!($lhs), stringify!($rhs));
-                $cb.require_in_set(
-                    Box::leak(descr.into_boxed_str()),
-                    $lhs.expr(),
-                    $rhs.to_vec(),
-                );
-            }};
-
             ($lhs:expr => bool) => {{
                 $cb.require_boolean(
                     concat!(
@@ -959,6 +981,49 @@ macro_rules! circuit {
                     ),
                     $lhs.expr(),
                 );
+            }};
+
+            ($lhs:expr => $rhs:expr) => {{
+                let rhs = $rhs.to_expr_vec();
+                let description = concat!(
+                    file!(),
+                    ":",
+                    line!(),
+                    ": ",
+                    stringify!($lhs),
+                    " => ",
+                    stringify!($rhs)
+                );
+                if rhs.len() == 1 {
+                    $cb.require_equal(
+                        description,
+                        $lhs.expr(),
+                        rhs[0].expr(),
+                    );
+                } else {
+                    $cb.require_in_set(
+                        description,
+                        $lhs.expr(),
+                        rhs.clone(),
+                    );
+                }
+            }};
+            ($name:expr, $lhs:expr => $rhs:expr) => {{
+                let description = format!("{}:{}[{}]: {} => {}",  file!(), line!(), $name, stringify!($lhs), stringify!($rhs));
+                let rhs = $rhs.to_expr_vec();
+                if rhs.len() == 1 {
+                    $cb.require_equal(
+                        Box::leak(description.into_boxed_str()),
+                        $lhs.expr(),
+                        rhs[0].expr(),
+                    );
+                } else {
+                    $cb.require_in_set(
+                        Box::leak(description.into_boxed_str()),
+                        $lhs.expr(),
+                        rhs.clone(),
+                    );
+                }
             }};
 
             (($a:expr, $b:expr, $c:expr) => @$tag:expr) => {{
@@ -1009,13 +1074,9 @@ macro_rules! circuit {
                         file!(),
                         ":",
                         line!(),
-                        ": (",
-                        stringify!($a),
-                        ", ",
-                        stringify!($b),
-                        ", ",
-                        stringify!($c),
-                        ") => @",
+                        ": ",
+                        stringify!($values),
+                        " => @",
                         stringify!($tag),
                     ),
                     $tag.to_string(),
@@ -1074,30 +1135,6 @@ macro_rules! circuit {
                     ),
                     $tag.to_string(),
                     $a,
-                );
-            }};
-
-            ($lhs:expr => $rhs:expr) => {{
-                $cb.require_equal(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": ",
-                        stringify!($lhs),
-                        " == ",
-                        stringify!($rhs)
-                    ),
-                    $lhs.expr(),
-                    $rhs.expr(),
-                );
-            }};
-            ($name:expr, $lhs:expr => $rhs:expr) => {{
-                let descr = format!("{}:{}[{}]: {} == {}",  file!(), line!(), $name, stringify!($lhs), stringify!($rhs));
-                $cb.require_equal(
-                    Box::leak(descr.into_boxed_str()),
-                    $lhs.expr(),
-                    $rhs.expr(),
                 );
             }};
         }

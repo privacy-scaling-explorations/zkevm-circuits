@@ -3,7 +3,7 @@ use super::{
     MPTContext,
 };
 use crate::{circuit, util::Expr};
-use gadgets::util::{and, not, or, sum};
+use gadgets::util::{not, or, sum};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -300,7 +300,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 ];
                 for (name, condition, from, to) in transitions {
                     ifx!{condition => {
-                        require!(name, to => {from});
+                        require!(name, to => from);
                     }}
                 }
 

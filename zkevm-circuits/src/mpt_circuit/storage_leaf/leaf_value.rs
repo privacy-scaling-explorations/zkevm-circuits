@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, Expr};
+use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -374,7 +374,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                                     );
                                     // -3 to get from init branch into the previous branch (last row), note that -2 is needed
                                     // because of extension nodes.
-                                    let mod_node_hash_rlc = a!(if is_s {accs.s_mod_node_rlc} else {accs.c_mod_node_rlc}, rot_into_init - 3);
+                                    let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_into_init - 3);
                                     require!((1, rlc, len, mod_node_hash_rlc) => @"keccak");
                                 }}
                             }}

@@ -2,7 +2,7 @@
 use eth_types::Field;
 use gadgets::{
     impl_expr,
-    util::{and, not, sum, Expr},
+    util::{not, sum, Expr},
 };
 use halo2_proofs::{
     arithmetic::FieldExt,

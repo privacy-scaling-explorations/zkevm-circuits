@@ -33,7 +33,7 @@ use crate::{
     mpt_circuit::{MPTConfig, ProofValues},
     util::Expr,
 };
-use gadgets::util::{and, not, or};
+use gadgets::util::{not, or};
 
 use super::{
     helpers::{BaseConstraintBuilder, ColumnTransition},

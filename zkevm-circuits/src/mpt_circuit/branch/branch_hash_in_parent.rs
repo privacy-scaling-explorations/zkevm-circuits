@@ -13,7 +13,7 @@ use crate::{
     },
     mpt_circuit::{helpers::BranchNodeInfo, MPTContext},
 };
-use gadgets::util::{and, not, Expr};
+use gadgets::util::{not, Expr};
 
 /*
 A branch occupies 19 rows:

@@ -1,4 +1,4 @@
-use gadgets::util::{and, not, or, sum, Expr};
+use gadgets::util::{not, or, sum, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Expression, VirtualCells},
