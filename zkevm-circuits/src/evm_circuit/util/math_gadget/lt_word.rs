@@ -63,7 +63,6 @@ impl<F: Field> LtWordGadget<F> {
         )?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]

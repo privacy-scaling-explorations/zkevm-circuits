@@ -1,5 +1,7 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, CellType, transpose_val_ret},
+    evm_circuit::util::{
+        constraint_builder::ConstraintBuilder, transpose_val_ret, CachedRegion, Cell, CellType,
+    },
     util::Expr,
 };
 use eth_types::Field;
@@ -58,8 +60,7 @@ impl<F: Field> IsZeroGadget<F> {
         offset: usize,
         value: Value<F>,
     ) -> Result<Value<F>, Error> {
-        transpose_val_ret(value
-            .map(|value| self.assign(region, offset, value)))
+        transpose_val_ret(value.map(|value| self.assign(region, offset, value)))
     }
 }
 

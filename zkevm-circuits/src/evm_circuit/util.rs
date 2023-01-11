@@ -256,7 +256,7 @@ pub(crate) enum CellType {
     StoragePhase2,
     StoragePhase3,
     StoragePermutation,
-    Lookup(Table)
+    Lookup(Table),
 }
 
 impl CellType {
@@ -284,7 +284,6 @@ impl CellType {
     pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
         Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -355,7 +354,7 @@ impl<F: FieldExt> CellManager<F> {
             column_idx += 1;
         }
 
-       // Mark columns used for copy constraints
+        // Mark columns used for copy constraints
         for _ in 0..N_COPY_COLUMNS {
             meta.enable_equality(advices[column_idx]);
             columns[column_idx].cell_type = CellType::StoragePermutation;
@@ -589,10 +588,10 @@ pub(crate) fn split_u256_limb64(value: &U256) -> [U256; 4] {
 }
 
 /// Transposes an `Value` of a [`Result`] into a [`Result`] of an `Value`.
-pub(crate) fn transpose_val_ret<F,E>(value: Value<Result<F,E>>) -> Result<Value<F>,E> {
-    let mut ret= Ok(Value::unknown());
+pub(crate) fn transpose_val_ret<F, E>(value: Value<Result<F, E>>) -> Result<Value<F>, E> {
+    let mut ret = Ok(Value::unknown());
     value.map(|value| {
         ret = value.map(Value::known);
-   });
-   ret
-} 
+    });
+    ret
+}

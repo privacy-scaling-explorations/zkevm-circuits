@@ -1227,7 +1227,12 @@ impl<F: Field> ExecutionConfig<F> {
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
             // expensive function call
-            Self::check_rw_lookup(&assigned_stored_expressions, step, block, region.challenges());
+            Self::check_rw_lookup(
+                &assigned_stored_expressions,
+                step,
+                block,
+                region.challenges(),
+            );
         }
         Ok(())
     }

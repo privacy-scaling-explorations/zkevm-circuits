@@ -1,5 +1,7 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, CellType, transpose_val_ret},
+    evm_circuit::util::{
+        constraint_builder::ConstraintBuilder, transpose_val_ret, CachedRegion, Cell, CellType,
+    },
     util::Expr,
 };
 use eth_types::Field;
@@ -16,16 +18,16 @@ pub struct BatchedIsZeroGadget<F, const N: usize> {
 
 impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
-        let max_values_phase= values
-        .iter()
-        .map(CellType::expr_phase)
-        .max()
-        .expect("BatchedIsZeroGadget needs at least one expression");
-   
-    let cell_type = CellType::storage_for_phase::<F>(max_values_phase);
-    let is_zero = cb.query_bool_with_type(cell_type);
-    let nonempty_witness = cb.query_cell_with_type(cell_type);
-    
+        let max_values_phase = values
+            .iter()
+            .map(CellType::expr_phase)
+            .max()
+            .expect("BatchedIsZeroGadget needs at least one expression");
+
+        let cell_type = CellType::storage_for_phase::<F>(max_values_phase);
+        let is_zero = cb.query_bool_with_type(cell_type);
+        let nonempty_witness = cb.query_cell_with_type(cell_type);
+
         for value in values.iter() {
             cb.require_zero(
                 "is_zero is 0 if there is any non-zero value",
@@ -77,8 +79,7 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
     ) -> Result<Value<F>, Error> {
         let values: Value<[F; N]> =
             Value::<Vec<F>>::from_iter(values).map(|vv| vv.try_into().unwrap());
-            transpose_val_ret(values
-            .map(|values| self.assign(region, offset, values)))
+        transpose_val_ret(values.map(|values| self.assign(region, offset, values)))
     }
 }
 

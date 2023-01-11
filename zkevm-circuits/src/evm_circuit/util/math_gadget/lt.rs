@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, CachedRegion, Cell,transpose_val_ret
+        constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, transpose_val_ret,
+        CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -91,10 +92,11 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         lhs: Value<F>,
         rhs: Value<F>,
     ) -> Result<Value<(F, Vec<u8>)>, Error> {
-        transpose_val_ret(lhs.zip(rhs)
-            .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)))
+        transpose_val_ret(
+            lhs.zip(rhs)
+                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
+        )
     }
-
 }
 
 #[cfg(test)]

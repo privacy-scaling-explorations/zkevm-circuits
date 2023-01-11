@@ -5,7 +5,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, Word};
-use halo2_proofs::{plonk::Error};
+use halo2_proofs::plonk::Error;
 
 /// Constraints for the words a, n, r:
 /// a mod n = r, if n!=0

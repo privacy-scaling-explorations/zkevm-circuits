@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, math_gadget::*, CachedRegion, Cell, CellType, transpose_val_ret
+        constraint_builder::ConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+        Cell, CellType,
     },
     util::Expr,
 };
@@ -89,9 +90,9 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         offset: usize,
         numerator: Value<F>,
     ) -> Result<Value<(u128, u128)>, Error> {
-        transpose_val_ret(numerator
-            .map(|numerator| self.assign(region, offset, numerator.get_lower_128()))
-            )
+        transpose_val_ret(
+            numerator.map(|numerator| self.assign(region, offset, numerator.get_lower_128())),
+        )
     }
 }
 

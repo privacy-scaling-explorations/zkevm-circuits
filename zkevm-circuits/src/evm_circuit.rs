@@ -491,7 +491,6 @@ pub mod test {
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
-
 }
 
 #[cfg(test)]

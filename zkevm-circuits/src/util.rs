@@ -4,7 +4,8 @@ use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{
         Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
-    }};
+    },
+};
 
 use crate::table::TxLogFieldTag;
 use crate::witness;
@@ -27,7 +28,6 @@ pub(crate) fn query_expression<F: FieldExt, T>(
 pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
-
 
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]

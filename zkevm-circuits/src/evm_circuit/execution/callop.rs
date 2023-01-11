@@ -10,9 +10,7 @@ use crate::evm_circuit::util::math_gadget::{
     CmpWordsGadget, ConstantDivisionGadget, IsEqualGadget, IsZeroGadget, MinMaxGadget,
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
-use crate::evm_circuit::util::{
-    from_bytes, or, select, sum, CachedRegion, Cell, Word, CellType,
-};
+use crate::evm_circuit::util::{from_bytes, or, select, sum, CachedRegion, Cell, CellType, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -366,10 +364,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 0.expr()),
                 (CallContextFieldTag::IsCreate, 0.expr()),
-                (
-                    CallContextFieldTag::CodeHash,
-                    callee_code_hash.expr(),
-                ),
+                (CallContextFieldTag::CodeHash, callee_code_hash.expr()),
             ] {
                 cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
             }
@@ -524,7 +519,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             _ => unreachable!(),
         };
         let callee_code_hash = region.word_rlc(U256::from_little_endian(&callee_code_hash));
-        
+
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -651,11 +646,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             0
         } + memory_expansion_gas_cost;
         let gas_available = step.gas_left - gas_cost;
-        self.one_64th_gas.assign(
-            region,
-            offset,
-            gas_available.into(),
-        )?;
+        self.one_64th_gas
+            .assign(region, offset, gas_available.into())?;
         self.capped_callee_gas_left.assign(
             region,
             offset,

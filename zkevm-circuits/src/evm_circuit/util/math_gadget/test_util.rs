@@ -2,16 +2,20 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-use crate::{evm_circuit::{
-    param::{MAX_STEP_HEIGHT, STEP_WIDTH},
-    step::{ExecutionState, Step},
-    table::{FixedTableTag, Table},
-    util::{
-        constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr, StoredExpression,
-    },
-    Advice, Column, Fixed,
-}, util::Challenges};
 use crate::table::LookupTable;
+use crate::{
+    evm_circuit::{
+        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        step::{ExecutionState, Step},
+        table::{FixedTableTag, Table},
+        util::{
+            constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr,
+            StoredExpression,
+        },
+        Advice, Column, Fixed,
+    },
+    util::Challenges,
+};
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
 use halo2_proofs::{
@@ -102,7 +106,8 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         let challenges = Challenges::construct(meta);
         let challenges_exprs = challenges.exprs(meta);
         let evm_word_powers_of_randomness = challenges_exprs.evm_word_powers_of_randomness();
-        let lookup_input_powers_of_randomness = challenges_exprs.lookup_input_powers_of_randomness();
+        let lookup_input_powers_of_randomness =
+            challenges_exprs.lookup_input_powers_of_randomness();
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next,
@@ -140,16 +145,19 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             }
         }
 
-        (UnitTestMathGadgetBaseCircuitConfig::<F, G> {
-            q_usable,
-            fixed_table,
-            advices,
-            step: step_curr,
-            stored_expressions,
-            math_gadget_container,
-            _marker: PhantomData,
-            challenges: challenges_exprs,
-        }, challenges)
+        (
+            UnitTestMathGadgetBaseCircuitConfig::<F, G> {
+                q_usable,
+                fixed_table,
+                advices,
+                step: step_curr,
+                stored_expressions,
+                math_gadget_container,
+                _marker: PhantomData,
+                challenges: challenges_exprs,
+            },
+            challenges,
+        )
     }
 
     fn synthesize(

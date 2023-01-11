@@ -6,9 +6,7 @@ use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
-use crate::evm_circuit::util::{
-    from_bytes, select, CachedRegion, Cell, Word,
-};
+use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -151,11 +149,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         self.exists
             .assign(region, offset, Value::known(F::from(exists)))?;
-        self.code_hash.assign(
-            region,
-            offset,
-            region.word_rlc(code_hash)
-        )?;
+        self.code_hash
+            .assign(region, offset, region.word_rlc(code_hash))?;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
         for (c, b) in self
