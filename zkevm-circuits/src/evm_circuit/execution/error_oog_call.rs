@@ -1,23 +1,27 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    param::N_BYTES_GAS,
-    step::ExecutionState,
-    util::{
-        common_gadget::{CommonCallGadget, RestoreContextGadget},
-        constraint_builder::{
-            ConstraintBuilder, StepStateTransition,
-            Transition::{Delta, Same},
-        },
-        math_gadget::{BatchedIsZeroGadget, LtGadget},
-        CachedRegion, Cell, Word,
-    },
-    witness::{Block, Call, ExecStep, Transaction},
-};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            common_gadget::{CommonCallGadget, RestoreContextGadget},
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
+            math_gadget::{BatchedIsZeroGadget, LtGadget},
+            CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    witness::Rw,
+};
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCallGadget<F> {
@@ -27,8 +31,7 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     call: CommonCallGadget<F, true>,
     is_warm: Cell<F>,
     balance: Word<F>,
-    callee_nonce: Cell<F>,
-    is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
+    callee_exists: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -69,23 +72,23 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         );
 
         // Verify gas cost
-        let callee_nonce = cb.query_cell();
-        cb.account_read(
-            call_gadget.callee_address_expr(),
-            AccountFieldTag::Nonce,
-            callee_nonce.expr(),
-        );
-        cb.account_read(
-            call_gadget.callee_address_expr(),
-            AccountFieldTag::CodeHash,
-            call_gadget.callee_code_hash.expr(),
-        );
-
-        let is_empty_nonce_and_balance =
-            BatchedIsZeroGadget::construct(cb, [callee_nonce.expr(), balance.expr()]);
-        let is_empty_account =
-            is_empty_nonce_and_balance.expr() * call_gadget.is_empty_code_hash.expr();
-        let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), 1.expr(), is_empty_account);
+        let callee_exists = cb.query_bool();
+        cb.condition(callee_exists.expr(), |cb| {
+            cb.account_read(
+                call_gadget.callee_address_expr(),
+                AccountFieldTag::CodeHash,
+                call_gadget.callee_code_hash.expr(),
+            );
+        });
+        cb.condition(1.expr() - callee_exists.expr(), |cb| {
+            cb.account_read(
+                call_gadget.callee_address_expr(),
+                AccountFieldTag::NonExisting,
+                0.expr(),
+            );
+        });
+        let gas_cost =
+            call_gadget.gas_cost_expr(is_warm.expr(), 1.expr(), 1.expr() - callee_exists.expr());
 
         // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
@@ -138,8 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             call: call_gadget,
             is_warm,
             balance,
-            callee_nonce,
-            is_empty_nonce_and_balance,
+            callee_exists,
             insufficient_gas,
             restore_context,
         }
@@ -154,6 +156,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        println!("*** A: {:?} \n", block.rws[step.rw_indices[12]]);
+        println!("*** B: {:?} \n", block.rws[step.rw_indices[13]]);
+        println!("*** C: {:?} \n", block.rws[step.rw_indices[14]]);
+
         let opcode = step.opcode.unwrap();
         let [tx_id, is_static] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].call_context_value());
@@ -170,12 +176,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         .map(|idx| block.rws[idx].stack_value());
 
         let (is_warm, is_warm_prev) = block.rws[step.rw_indices[10]].tx_access_list_value_pair();
-        let [callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] = [
-            step.rw_indices[11],
-            step.rw_indices[12],
-            step.rw_indices[13],
-        ]
-        .map(|idx| block.rws[idx].account_value_pair());
+        let callee_balance_pair = block.rws[step.rw_indices[11]].account_value_pair();
+        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[13]] {
+            Rw::Account {
+                field_tag: AccountFieldTag::CodeHash,
+                value,
+                ..
+            } => (value.to_le_bytes(), true),
+            Rw::Account {
+                field_tag: AccountFieldTag::NonExisting,
+                ..
+            } => (*EMPTY_HASH_LE, false),
+            _ => unreachable!(),
+        };
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -186,9 +199,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
 
-        let callee_code_hash =
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness);
-        let (memory_expansion_gas_cost, is_empty_code_hash) = self.call.assign(
+        let callee_code_hash = Word::random_linear_combine(callee_code_hash, block.randomness);
+        let (memory_expansion_gas_cost, _) = self.call.assign(
             region,
             offset,
             gas,
@@ -210,39 +222,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // new assignment
         self.balance
             .assign(region, offset, Some(callee_balance_pair.0.to_le_bytes()))?;
-        self.callee_nonce.assign(
-            region,
-            offset,
-            Value::known(
-                callee_nonce
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
-        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign(
-            region,
-            offset,
-            [
-                F::from(callee_nonce.low_u64()),
-                Word::random_linear_combine(callee_balance_pair.1.to_le_bytes(), block.randomness),
-            ],
-        )?;
-
-        let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
+        self.callee_exists
+            .assign(region, offset, Value::known(F::from(callee_exists)))?;
         let has_value = !value.is_zero();
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,
             is_warm_prev,
             true,
             has_value,
-            is_empty_account == F::one(),
+            !callee_exists,
         )?;
 
         self.insufficient_gas
             .assign(region, offset, F::from(step.gas_left), F::from(gas_cost))?;
 
         self.restore_context
-            .assign(region, offset, block, call, step, 15)?;
+            .assign(region, offset, block, call, step, 14)?;
         Ok(())
     }
 }
