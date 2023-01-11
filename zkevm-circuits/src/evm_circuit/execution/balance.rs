@@ -7,8 +7,7 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::{
-    from_bytes, math_gadget::IsZeroGadget, not, select, CachedRegion, Cell,
-    RandomLinearCombination, Word,
+    from_bytes, math_gadget::IsZeroGadget, not, select, CachedRegion, Cell, Word,
 };
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};

@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodesize;
@@ -51,25 +51,22 @@ impl Opcode for Extcodesize {
 
         // Read account code hash and get code length.
         let account = state.sdb.get_account(&address).1;
-        let code_size = if !account.is_empty() {
-            let code_hash = account.code_hash;
-            let code_hash_word = code_hash.to_word();
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::CodeHash,
-                code_hash_word,
-                code_hash_word,
-            )?;
+        let exists = !account.is_empty();
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
+        state.account_read(
+            &mut exec_step,
+            address,
+            AccountField::CodeHash,
+            code_hash.to_word(),
+            code_hash.to_word(),
+        )?;
+        let code_size = if exists {
             state.code(code_hash)?.len()
         } else {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::NonExisting,
-                Word::zero(),
-                Word::zero(),
-            )?;
             0
         };
 
