@@ -67,7 +67,6 @@ use crate::table::{
     TxTable,
 };
 
-use crate::tx_circuit::TxCircuit;
 use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{block_convert, Block, MptUpdates, SignedTransaction};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
@@ -81,6 +80,7 @@ use halo2_proofs::{
 
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use crate::rlp_circuit::{RlpCircuit, RlpCircuitConfig};
+use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
 use std::array;
 
 /// Mock randomness used for `SuperCircuit`.
@@ -103,7 +103,7 @@ pub struct SuperCircuitConfig<
     tx_table: TxTable,
     evm_circuit: EvmCircuitConfig<F>,
     state_circuit: StateCircuitConfig<F>,
-    //tx_circuit: TxCircuitConfig<F>,
+    tx_circuit: TxCircuitConfig<F>,
     bytecode_circuit: BytecodeCircuitConfig<F>,
     copy_circuit: CopyCircuitConfig<F>,
     keccak_circuit: KeccakCircuitConfig<F>,
@@ -125,8 +125,8 @@ pub struct SuperCircuit<
     pub evm_circuit: EvmCircuit<F>,
     /// State Circuit
     pub state_circuit: StateCircuit<F>,
-    /// The transaction circuit that will be used in the `synthesize` step.
-    //pub tx_circuit: TxCircuit<F>,
+    /// Transaction Circuit
+    pub tx_circuit: TxCircuit<F>,
     /// Public Input Circuit
     pub pi_circuit: PiCircuit<F>,
     /// Bytecode Circuit
@@ -156,7 +156,7 @@ impl<
             let config = Self::configure(&mut cs);
             config.evm_circuit.get_num_rows_required(block)
         };
-        let num_rows_tx_circuit = 0; //TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
+        let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         log::debug!(
             "num_rows_evm_circuit {}, num_rows_tx_circuit {}",
             num_rows_evm_circuit,
@@ -253,7 +253,6 @@ impl<
         );
 
         log_circuit_info(meta, "pi");
-        /*
         let tx_circuit = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
@@ -263,7 +262,8 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-        */
+        log_circuit_info(meta, "tx circuit");
+
         let bytecode_circuit = BytecodeCircuitConfig::new(
             meta,
             BytecodeCircuitConfigArgs {
@@ -327,6 +327,7 @@ impl<
             keccak_circuit,
             pi_circuit,
             rlp_circuit,
+            tx_circuit,
             exp_circuit,
         }
     }
@@ -387,6 +388,8 @@ impl<
             .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
         self.rlp_circuit
             .synthesize_sub(&config.rlp_circuit, &challenges, &mut layouter)?;
+        self.tx_circuit
+            .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())
@@ -458,7 +461,7 @@ impl<
 
         let evm_circuit = EvmCircuit::new_from_block(&block);
         let state_circuit = StateCircuit::new_from_block(&block);
-        //let tx_circuit = TxCircuit::new_from_block(&block);
+        let tx_circuit = TxCircuit::new_from_block(&block);
         let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
         let copy_circuit = CopyCircuit::new_from_block(&block);
@@ -469,7 +472,7 @@ impl<
         let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
             evm_circuit,
             state_circuit,
-            //tx_circuit,
+            tx_circuit,
             pi_circuit,
             bytecode_circuit,
             copy_circuit,
@@ -484,11 +487,12 @@ impl<
 
     /// Returns suitable inputs for the SuperCircuit.
     pub fn instance(&self) -> Vec<Vec<F>> {
+        let mut instance = self.pi_circuit.instance();
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
         // FIXME: why two columns??
-        //let instance = vec![pi_instance[0].clone()];
+        instance.push(vec![]);
 
-        self.pi_circuit.instance()
+        instance
     }
 
     /// Return the minimum number of rows required to prove the block
@@ -499,10 +503,11 @@ impl<
         let copy = CopyCircuit::min_num_rows_block(block);
         let keccak = KeccakCircuit::min_num_rows_block(block);
         let tx = TxCircuit::min_num_rows_block(block);
+        let rlp = RlpCircuit::min_num_rows_block(block);
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
 
-        itertools::max([evm, state, bytecode, copy, keccak, tx, exp, pi]).unwrap()
+        itertools::max([evm, state, bytecode, copy, keccak, tx, rlp, exp, pi]).unwrap()
     }
 }
 
@@ -513,12 +518,13 @@ mod super_circuit_tests {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
     use log::error;
-    use mock::{TestContext, MOCK_CHAIN_ID};
+    use mock::{eth, TestContext, MOCK_CHAIN_ID};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use std::collections::HashMap;
 
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use eth_types::evm_types::OpcodeId;
+    use eth_types::{address, bytecode, geth_types::GethData, Bytecode, Word};
 
     #[test]
     fn super_circuit_degree() {
@@ -546,6 +552,53 @@ mod super_circuit_tests {
             error!("Verification failures: {:#?}", err);
             panic!("Failed verification");
         }
+    }
+
+    fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
+        let memory_bytes = [0x60; 10];
+        let memory_address = 0;
+        let memory_value = Word::from_big_endian(&memory_bytes);
+        let mut code = bytecode! {
+            PUSH10(memory_value)
+            PUSH1(memory_address)
+            MSTORE
+            PUSH2(length)
+            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap() + offset)
+        };
+        code.write_op(if is_return {
+            OpcodeId::RETURN
+        } else {
+            OpcodeId::REVERT
+        });
+        code
+    }
+
+    fn block_1tx_deploy() -> GethData {
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+
+        let chain_id = (*MOCK_CHAIN_ID).as_u64();
+
+        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
+        let addr_a = wallet_a.address();
+
+        let mut wallets = HashMap::new();
+        wallets.insert(wallet_a.address(), wallet_a);
+
+        let tx_input = callee_bytecode(true, 300, 20).code();
+        let mut block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_a).balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[0].address).input(tx_input.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        block.sign(&wallets);
+        block
     }
 
     fn block_1tx() -> GethData {
@@ -646,12 +699,34 @@ mod super_circuit_tests {
         const MAX_RWS: usize = 256;
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
     }
+
+    #[ignore]
+    #[test]
+    fn serial_test_super_circuit_1tx_deploy_1max_tx() {
+        let block = block_1tx_deploy();
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 1;
+        const MAX_RWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+    }
+
     #[ignore]
     #[test]
     fn serial_test_super_circuit_1tx_2max_tx() {
         let block = block_1tx();
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
+        const MAX_INNER_BLOCKS: usize = 1;
+        const MAX_RWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+    }
+    #[ignore]
+    #[test]
+    fn serial_test_super_circuit_2tx_4max_tx() {
+        let block = block_2tx();
+        const MAX_TXS: usize = 4;
+        const MAX_CALLDATA: usize = 320;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);

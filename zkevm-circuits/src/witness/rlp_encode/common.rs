@@ -293,7 +293,7 @@ pub fn handle_address<F: FieldExt>(
 ) -> usize {
     let value_bytes = value.as_fixed_bytes();
 
-    if value == Address::zero() {
+    if value == Address::zero() && rlp_data[idx] == 0x80 {
         assert_eq!(
             rlp_data[idx], 0x80,
             "RLP data mismatch({:?}): value = {}",
@@ -311,6 +311,7 @@ pub fn handle_address<F: FieldExt>(
             tag_rindex: 1,
             length_acc: 0,
         });
+        idx += 1;
     } else {
         assert_eq!(
             rlp_data[idx], 0x94,
@@ -412,7 +413,7 @@ pub fn handle_bytes<F: FieldExt>(
             index: idx + 1,
             data_type,
             value: (0x80 + length) as u8,
-            value_acc: Value::known(F::from((length) as u64)),
+            value_acc: Value::known(F::from(length as u64)),
             value_rlc_acc: Value::known(F::zero()),
             tag: prefix_tag,
             tag_length: 1,

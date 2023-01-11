@@ -26,8 +26,7 @@ use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
 use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256, U256};
 use eth_types::{geth_types, ToBigEndian};
 use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_core::types::{Bytes, Signature, TransactionRequest};
+use ethers_core::types::{Bytes, NameOrAddress, Signature, TransactionRequest};
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
@@ -480,14 +479,14 @@ pub fn keccak_inputs_sign_verify(sigs: &[SignData]) -> Vec<Vec<u8>> {
 /// Generate a dummy tx in which
 /// (nonce=0, gas=0, gas_price=0, to=0, value=0, data="", chain_id)
 /// using the dummy private key = 1
-pub fn get_dummy_tx(chain_id: u64) -> (TypedTransaction, Signature) {
+pub fn get_dummy_tx(chain_id: u64) -> (TransactionRequest, Signature) {
     let mut sk_be_scalar = [0u8; 32];
     sk_be_scalar[31] = 1_u8;
 
     let sk = SigningKey::from_bytes(&sk_be_scalar).expect("sign key = 1");
     let wallet = ethers_signers::Wallet::from(sk);
 
-    let tx_req = TransactionRequest::new()
+    let tx = TransactionRequest::new()
         .nonce(0)
         .gas(0)
         .gas_price(U256::zero())
@@ -496,8 +495,8 @@ pub fn get_dummy_tx(chain_id: u64) -> (TypedTransaction, Signature) {
         .data(Bytes::default())
         .chain_id(chain_id);
 
-    let tx = tx_req.into();
-    let sig = wallet.sign_transaction_sync(&tx);
+    // FIXME: need to check if this is deterministic which means sig is fixed.
+    let sig = wallet.sign_transaction_sync(&tx.clone().into());
 
     (tx, sig)
 }
@@ -508,7 +507,11 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
     let (tx, sig) = get_dummy_tx(chain_id);
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    log::debug!("dummy tx hash: {}", hex::encode(tx_hash));
+    log::debug!(
+        "DUMMY TX HASH for CHAIN_ID({}): {}",
+        chain_id,
+        hex::encode(tx_hash)
+    );
 
     H256(tx_hash)
 }
@@ -582,11 +585,24 @@ pub fn keccak_inputs_tx_circuit(
                 s: tx.s,
                 v: tx.v,
             };
-            let tx: TransactionRequest = tx.into();
+            let mut tx: TransactionRequest = tx.into();
+            if tx.to.is_some() {
+                let to = tx.to.clone().unwrap();
+                match to {
+                    NameOrAddress::Name(_) => {}
+                    NameOrAddress::Address(addr) => {
+                        // the rlp of zero addr is 0x80
+                        if addr == Address::zero() {
+                            tx.to = None;
+                        }
+                    }
+                }
+            }
             tx.rlp_signed(&sig).to_vec()
         })
         .collect::<Vec<Vec<u8>>>();
     let dummy_hash_data = {
+        // dummy tx is a legacy tx.
         let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
         dummy_tx.rlp_signed(&dummy_sig).to_vec()
     };
@@ -609,6 +625,15 @@ pub fn keccak_inputs_tx_circuit(
     // Keccak inputs from SignVerify Chip
     let sign_verify_inputs = keccak_inputs_sign_verify(&sign_datas);
     inputs.extend_from_slice(&sign_verify_inputs);
+
+    // Since the SignData::default() already includes pk = [1]G which is also the
+    // one that we use in get_dummy_tx, so we only need to include the tx sign
+    // hash of the dummy tx.
+    let dummy_sign_input = {
+        let (dummy_tx, _) = get_dummy_tx(chain_id);
+        dummy_tx.rlp().to_vec()
+    };
+    inputs.push(dummy_sign_input);
     // NOTE: We don't verify the Tx Hash in the circuit yet, so we don't have more
     // hash inputs.
     Ok(inputs)

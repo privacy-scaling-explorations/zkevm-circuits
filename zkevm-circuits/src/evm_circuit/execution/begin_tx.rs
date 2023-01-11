@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            CachedRegion, Cell, RandomLinearCombination, Word,
+            not, CachedRegion, Cell, RandomLinearCombination, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -18,6 +18,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{Field, ToLittleEndian, ToScalar};
+use ethers_core::utils::get_contract_address;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 use keccak256::EMPTY_HASH_LE;
@@ -32,6 +33,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
+    call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
     tx_value: Word<F>,
     tx_call_data_length: Cell<F>,
@@ -79,6 +81,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+
+        let call_callee_address = cb.query_cell();
+        cb.condition(tx_is_create.expr(), |_cb| {
+            // TODO: require call_callee_address to be
+            // address(keccak(rlp([tx_caller_address, tx_nonce])))
+        });
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
+            cb.require_equal(
+                "Tx to non-zero address",
+                tx_callee_address.expr(),
+                call_callee_address.expr(),
+            );
+        });
+
         let tx_caller_address_is_zero = IsZeroGadget::construct(cb, tx_caller_address.expr());
         cb.require_equal(
             "CallerAddress != 0 (not a padding tx)",
@@ -133,7 +149,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
         cb.account_access_list_write(
             tx_id.expr(),
-            tx_callee_address.expr(),
+            call_callee_address.expr(),
             1.expr(),
             0.expr(),
             None,
@@ -143,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
-            tx_callee_address.expr(),
+            call_callee_address.expr(),
             tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
@@ -155,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let code_hash = cb.query_cell();
         cb.account_write(
-            tx_callee_address.expr(),
+            call_callee_address.expr(),
             AccountFieldTag::CodeHash,
             code_hash.expr(),
             code_hash.expr(),
@@ -206,7 +222,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
                 (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
-                (CallContextFieldTag::CalleeAddress, tx_callee_address.expr()),
+                (
+                    CallContextFieldTag::CalleeAddress,
+                    call_callee_address.expr(),
+                ),
                 (CallContextFieldTag::CallDataOffset, 0.expr()),
                 (
                     CallContextFieldTag::CallDataLength,
@@ -270,6 +289,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address,
             tx_caller_address_is_zero,
             tx_callee_address,
+            call_callee_address,
             tx_is_create,
             tx_value,
             tx_call_data_length,
@@ -325,6 +345,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx.callee_address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
+        self.call_callee_address.assign(
+            region,
+            offset,
+            Value::known(
+                if tx.is_create {
+                    get_contract_address(tx.caller_address, tx.nonce)
+                } else {
+                    tx.callee_address
+                }
+                .to_scalar()
+                .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
         self.tx_is_create

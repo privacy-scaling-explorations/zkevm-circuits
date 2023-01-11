@@ -16,9 +16,8 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
 
-use crate::tx_circuit::TX_LEN;
-
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
+use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness::{self, Block, BlockContext, BlockContexts, Transaction};
 use gadgets::util::{not, select, Expr};
@@ -119,15 +118,6 @@ impl PublicData {
         H256(rpi_keccak)
     }
 }
-
-// fn rlc_be_bytes<F: Field, const N: usize>(bytes: [u8; N], rand: Value<F>) ->
-// Value<F> {     bytes
-//         .into_iter()
-//         .fold(Value::known(F::zero()), |acc, byte| {
-//             acc.zip(rand)
-//                 .and_then(|(acc, rand)| Value::known(acc * rand +
-// F::from(byte as u64)))         })
-// }
 
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
@@ -607,7 +597,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 tx_hash_cell.cell(),
                 Cell {
                     region_index: RegionIndex(1), // FIXME: this is not safe
-                    row_offset: i * 11 + 10,
+                    row_offset: i * TX_LEN + TX_HASH_OFFSET,
                     column: self.tx_table.value.into(),
                 },
             )?;
@@ -869,11 +859,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        BLOCK_LEN
-            + 1
-            + EXTRA_LEN
-            + 3 * (TX_LEN * block.circuits_params.max_txs + 1)
-            + block.circuits_params.max_calldata
+        BLOCK_HEADER_BYTES_NUM * block.circuits_params.max_inner_blocks
+            + KECCAK_DIGEST_SIZE * block.circuits_params.max_txs
+            + 33
     }
 
     /// Compute the public inputs for this circuit.

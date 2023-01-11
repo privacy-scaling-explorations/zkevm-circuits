@@ -10,13 +10,9 @@ use crate::witness::{
     Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
     RwMap, RwRow, SignedTransaction, Transaction,
 };
-use bus_mapping::circuit_input_builder::{
-    get_dummy_tx, CopyDataType, CopyEvent, CopyStep, ExpEvent,
-};
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
-use ethers_core::types::H256;
-use ethers_core::utils::keccak256;
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::util::{split_u256, split_u256_limb64};
 use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
@@ -98,15 +94,29 @@ pub enum TxFieldTag {
     SigR,
     /// Signature field S.
     SigS,
+    /// TxSignLength: Length of the RLP-encoded transaction without the
+    /// signature, used for signing
+    TxSignLength,
+    /// TxSignRLC: RLC of the RLP-encoded transaction without the signature,
+    /// used for signing
+    TxSignRLC,
     /// TxSignHash: Hash of the transaction without the signature, used for
     /// signing.
     TxSignHash,
+    /// TxHashLength: Length of the RLP-encoded transaction without the
+    /// signature, used for signing
+    TxHashLength,
+    /// TxHashRLC: RLC of the RLP-encoded transaction without the signature,
+    /// used for signing
+    TxHashRLC,
     /// TxHash: Hash of the transaction with the signature
     TxHash,
     /// CallData
     CallData,
     /// The block number in which this tx is included.
     BlockNumber,
+    /// Padding row
+    Padding,
 }
 impl_expr!(TxFieldTag);
 
@@ -125,7 +135,7 @@ pub struct TxTable {
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
-    pub tag: Column<Advice>,
+    pub tag: Column<Fixed>,
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
@@ -137,7 +147,7 @@ impl TxTable {
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             tx_id: meta.advice_column(),
-            tag: meta.advice_column(),
+            tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
         }
@@ -171,7 +181,7 @@ impl TxTable {
                         || Value::known(F::zero()),
                     )?;
                 }
-                region.assign_advice(
+                region.assign_fixed(
                     || "tx table all-zero row",
                     self.tag,
                     offset,
@@ -179,19 +189,18 @@ impl TxTable {
                 )?;
                 offset += 1;
 
-                // FIXME: remove this hardcoded default chain_id
                 let chain_id = if !txs.is_empty() { txs[0].chain_id } else { 1 };
-                let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
-                let dummy_tx_hash = keccak256(dummy_tx.rlp_signed(&dummy_sig));
+                let padding_txs = (txs.len()..max_txs)
+                    .into_iter()
+                    .map(|tx_id| {
+                        let mut padding_tx = Transaction::dummy(chain_id);
+                        padding_tx.id = tx_id + 1;
 
-                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        id: i + 1,
-                        hash: H256(dummy_tx_hash),
-                        ..Default::default()
+                        padding_tx
                     })
-                    .collect();
-                for tx in txs.iter().chain(padding_txs.iter()) {
+                    .collect::<Vec<Transaction>>();
+                for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
+                    debug_assert_eq!(i + 1, tx.id);
                     for row in tx.table_assignments_fixed(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
@@ -201,7 +210,7 @@ impl TxTable {
                                 || row[if index > 0 { index + 1 } else { index }],
                             )?;
                         }
-                        region.assign_advice(
+                        region.assign_fixed(
                             || format!("tx table row {}", offset),
                             self.tag,
                             offset,
@@ -210,7 +219,7 @@ impl TxTable {
                         offset += 1;
                     }
                 }
-                for tx in txs.iter().chain(padding_txs.iter()) {
+                for tx in txs.iter() {
                     for row in tx.table_assignments_dyn(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
@@ -220,7 +229,7 @@ impl TxTable {
                                 || row[if index > 0 { index + 1 } else { index }],
                             )?;
                         }
-                        region.assign_advice(
+                        region.assign_fixed(
                             || format!("tx table row {}", offset),
                             self.tag,
                             offset,
@@ -239,7 +248,7 @@ impl<F: Field> LookupTable<F> for TxTable {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.tx_id, Rotation::cur()),
-            meta.query_advice(self.tag, Rotation::cur()),
+            meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
             meta.query_advice(self.value, Rotation::cur()),
         ]
