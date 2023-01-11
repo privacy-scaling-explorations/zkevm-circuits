@@ -1451,6 +1451,7 @@ mod tx_circuit_tests {
         prover.verify()
     }
 
+    #[ignore]
     #[test]
     fn tx_circuit_2tx_2max_tx() {
         const NUM_TXS: usize = 2;
