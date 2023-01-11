@@ -270,45 +270,15 @@ mod extcodehash_tests {
                 RW::READ,
                 &AccountOp {
                     address: external_address,
-                    field: AccountField::Nonce,
-                    value: if exists { nonce } else { U256::zero() },
-                    value_prev: if exists { nonce } else { U256::zero() },
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.account[indices[6].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &AccountOp {
-                    address: external_address,
-                    field: AccountField::Balance,
-                    value: if exists { balance } else { U256::zero() },
-                    value_prev: if exists { balance } else { U256::zero() },
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.account[indices[7].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &AccountOp {
-                    address: external_address,
                     field: AccountField::CodeHash,
-                    value: code_hash,
-                    value_prev: code_hash,
+                    value: if exists { code_hash } else { U256::zero() },
+                    value_prev: if exists { code_hash } else { U256::zero() },
                 }
             )
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[8].as_usize()];
+                let operation = &container.stack[indices[6].as_usize()];
                 (operation.rw(), operation.op())
             },
             (

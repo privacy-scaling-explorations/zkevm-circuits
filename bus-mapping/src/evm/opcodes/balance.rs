@@ -100,6 +100,7 @@ mod balance_tests {
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
     use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
+    use keccak256::EMPTY_HASH_LE;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
@@ -248,23 +249,33 @@ mod balance_tests {
             }
         );
 
+        let code_hash = Word::from_little_endian(&*EMPTY_HASH_LE);
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
             &AccountOp {
                 address,
-                field: if exists {
-                    AccountField::Balance
-                } else {
-                    AccountField::NonExisting
-                },
-                value: balance,
-                value_prev: balance,
+                field: AccountField::CodeHash,
+                value: if exists { code_hash } else { U256::zero() },
+                value_prev: if exists { code_hash } else { U256::zero() },
             }
         );
+        if exists {
+            let operation = &container.account[indices[6].as_usize()];
+            assert_eq!(operation.rw(), RW::READ);
+            assert_eq!(
+                operation.op(),
+                &AccountOp {
+                    address,
+                    field: AccountField::Balance,
+                    value: balance,
+                    value_prev: balance,
+                }
+            );
+        }
 
-        let operation = &container.stack[indices[6].as_usize()];
+        let operation = &container.stack[indices[6 + if exists { 1 } else { 0 }].as_usize()];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),

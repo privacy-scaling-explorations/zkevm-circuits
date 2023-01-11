@@ -112,7 +112,7 @@ mod extcodesize_tests {
     }
 
     fn test_ok(account: &Account, is_warm: bool) {
-        let account_exists = !account.is_empty();
+        let exists = !account.is_empty();
 
         let mut bytecode = Bytecode::default();
         if is_warm {
@@ -136,7 +136,7 @@ mod extcodesize_tests {
                     .address(MOCK_ACCOUNTS[0])
                     .balance(*MOCK_1_ETH)
                     .code(bytecode);
-                if account_exists {
+                if exists {
                     accs[1].address(account.address).code(account.code.clone());
                 } else {
                     accs[1].address(MOCK_ACCOUNTS[1]).balance(*MOCK_1_ETH);
@@ -228,26 +228,17 @@ mod extcodesize_tests {
             }
         );
 
+        let code_hash = Word::from(keccak256(account.code.clone()));
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
-            &(if account_exists {
-                let code_hash = Word::from(keccak256(account.code.clone()));
-                AccountOp {
-                    address: account.address,
-                    field: AccountField::CodeHash,
-                    value: code_hash,
-                    value_prev: code_hash,
-                }
-            } else {
-                AccountOp {
-                    address: account.address,
-                    field: AccountField::NonExisting,
-                    value: Word::zero(),
-                    value_prev: Word::zero(),
-                }
-            })
+            &AccountOp {
+                address: account.address,
+                field: AccountField::CodeHash,
+                value: if exists { code_hash } else { U256::zero() },
+                value_prev: if exists { code_hash } else { U256::zero() },
+            }
         );
 
         let operation = &container.stack[indices[6].as_usize()];
@@ -257,12 +248,7 @@ mod extcodesize_tests {
             &StackOp {
                 call_id,
                 address: 1023u32.into(),
-                value: (if account_exists {
-                    account.code.len()
-                } else {
-                    0
-                })
-                .into(),
+                value: (if exists { account.code.len() } else { 0 }).into(),
             }
         );
     }
