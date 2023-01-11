@@ -1,6 +1,6 @@
 //! PI circuit benchmarks
 use ark_std::{end_timer, start_timer};
-use eth_types::Word;
+use eth_types::{Word, U256};
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
 use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
@@ -382,6 +382,45 @@ fn test_calldata_contract_pairing() {
     assert!(success);
 }
 
+use std::path::Path;
+
+pub fn write_pk(pk_file_path: &Path, pk: &ProvingKey<G1Affine>) -> Result<(), std::io::Error> {
+    let dir = pk_file_path.parent().unwrap();
+    fs::create_dir_all(dir).expect(format!("create {:?}", dir).as_str());
+    let mut file = fs::File::create(&pk_file_path)?;
+    pk.write(&mut file)
+}
+
+pub fn read_pk<C: Circuit<Fr>>(
+    pk_file_path: &str,
+    params: &ParamsKZG<Bn256>,
+) -> Result<ProvingKey<G1Affine>, std::io::Error> {
+    let mut file = fs::File::open(&pk_file_path)?;
+    ProvingKey::<G1Affine>::read::<File, C>(&mut file, params)
+}
+
+fn load_circuit_pk<C: Circuit<Fr>>(
+    pk_name: &str,
+    params: &ParamsKZG<Bn256>,
+    circuit: &C,
+) -> Result<ProvingKey<G1Affine>, halo2_proofs::plonk::Error> {
+    let pk_file_path = Path::new("./generated/keys").join(pk_name);
+    if pk_file_path.exists() {
+        read_pk::<C>(pk_file_path.to_str().unwrap(), params).map_err(|e| e.into())
+    } else {
+        let pk = keygen_pk(params, keygen_vk(params, circuit).unwrap(), circuit)?;
+        write_pk(pk_file_path.as_path(), &pk)?;
+        Ok(pk)
+    }
+}
+
+#[test]
+fn test_query_dir() {
+    let dir = Path::new("./");
+    let paths = dir.read_dir().unwrap();
+    paths.for_each(|path| println!("{}", path.unwrap().file_name().into_string().unwrap()));
+}
+
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
 use bus_mapping::rpc::GethClient;
 use bus_mapping::Error;
@@ -395,9 +434,7 @@ use zkevm_circuits::tx_circuit::PrimeField;
 
 #[derive(Parser, Debug)]
 #[clap(version, about)]
-/// This command starts a http/json-rpc server and serves proof oriented
-/// methods.
-pub(crate) struct ProverdConfig {
+pub(crate) struct ProverCmdConfig {
     /// geth_url
     geth_url: String,
     /// block_num
@@ -408,11 +445,11 @@ pub(crate) struct ProverdConfig {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let config = ProverdConfig::parse();
+    let config = ProverCmdConfig::parse();
     let provider = Http::from_str(&config.geth_url).expect("Http geth url");
     let geth_client = GethClient::new(provider);
-    const MAX_TXS: usize = 10;
-    const MAX_CALLDATA: usize = 128;
+    const MAX_TXS: usize = 14;
+    const MAX_CALLDATA: usize = 10500;
     let circuit_params = CircuitsParams {
         max_rws: 476052,
         max_txs: MAX_TXS,
@@ -421,7 +458,7 @@ async fn main() -> Result<(), Error> {
         keccak_padding: None,
     };
 
-    let builder = BuilderClient::new(geth_client, circuit_params).await?;
+    let builder = BuilderClient::new(geth_client, circuit_params.clone()).await?;
     let (builder, eth_block) = builder.gen_inputs(config.block_num).await?;
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
     block.randomness = Fr::from(MOCK_RANDOMNESS);
@@ -431,7 +468,16 @@ async fn main() -> Result<(), Error> {
     let degree = 18;
     let params = get_circuit_params::<0>(degree as usize);
 
-    let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
+    // let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(),
+    // &circuit).unwrap();
+    let pk = {
+        let key_file_name = format!(
+            "{}-{}-{}",
+            "pi", circuit_params.max_txs, circuit_params.max_calldata
+        );
+        load_circuit_pk(&key_file_name, &params, &circuit).unwrap()
+    };
+
     let deployment_code = gen_evm_verifier(
         &params,
         pk.get_vk(),
@@ -443,7 +489,7 @@ async fn main() -> Result<(), Error> {
 
     #[derive(Serialize, Deserialize, Debug)]
     struct BlockProofData {
-        instances: Vec<u8>,
+        instances: Vec<U256>,
         proof: Vec<u8>,
     }
 
@@ -452,7 +498,7 @@ async fn main() -> Result<(), Error> {
             .instances()
             .iter()
             .flatten()
-            .flat_map(|value| value.to_repr().as_ref().iter().rev().cloned().collect_vec())
+            .map(|v| U256::from_little_endian(v.to_repr().as_ref()))
             .collect(),
         proof: proof,
     };

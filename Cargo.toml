@@ -13,8 +13,8 @@ members = [
     "testool"
 ]
 
-[patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_10_22" }
+[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
+halo2_proofs = { git = "https://github.com/smtmfft/halo2.git", rev = "50ee8ad785c53232824e60b4ff6df32b69970358" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]
