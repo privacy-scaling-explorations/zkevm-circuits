@@ -649,7 +649,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         (
             block.copy_events.iter().map(|c| c.bytes.len() * 2).sum(),
-            block.exp_circuit_pad_to,
+            block.copy_circuit_pad_to,
         )
     }
 
