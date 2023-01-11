@@ -11,7 +11,7 @@ use crate::evm_circuit::util::math_gadget::{
 };
 use crate::evm_circuit::util::{not, or, select, CachedRegion, Cell, Word};
 
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
+use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
@@ -48,6 +48,11 @@ pub(crate) struct CallOpGadget<F> {
     caller_balance_word: Word<F>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
+
+    callee_code_hash: Cell<F>,
+    callee_not_exists: IsZeroGadget<F>,
+
+    is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
@@ -195,6 +200,22 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
+        let callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        cb.account_read(
+            code_address.expr(),
+            AccountFieldTag::CodeHash,
+            callee_code_hash.expr(),
+        );
+        let callee_not_exists = IsZeroGadget::construct(cb, callee_code_hash.expr());
+        let callee_exists = not::expr(callee_not_exists.expr());
+
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, callee_code_hash.expr(), cb.empty_hash_rlc());
+        // is_empty_code_hash_expr is true when the account exists and has empty
+        // code hash, or when the account doesn't exist (which we encode with
+        // code_hash = 0).
+        let is_empty_code_hash_expr = is_empty_code_hash.expr() + callee_not_exists.expr();
+
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
         let gas_cost = call_gadget.gas_cost_expr(cb, is_warm_prev.expr(), is_call.expr());
@@ -216,7 +237,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(
-            call_gadget.is_empty_code_hash.expr() * not::expr(is_insufficient_balance.expr()),
+            is_empty_code_hash_expr.clone() * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -283,8 +304,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            (1.expr() - call_gadget.is_empty_code_hash.expr())
-                * not::expr(is_insufficient_balance.expr()),
+            not::expr(is_empty_code_hash_expr) * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -411,6 +431,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             transfer,
             caller_balance_word,
             is_insufficient_balance,
+            callee_not_exists,
+            callee_code_hash,
+            is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
         }
@@ -497,19 +520,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
         };
 
-        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[17 + rw_offset]] {
-            Rw::Account {
-                field_tag: AccountFieldTag::CodeHash,
-                value,
-                ..
-            } => (value.to_le_bytes(), true),
-            Rw::Account {
-                field_tag: AccountFieldTag::NonExisting,
-                ..
-            } => (*EMPTY_HASH_LE, false),
-            _ => unreachable!(),
-        };
-        let callee_code_hash_word = region.word_rlc(U256::from_little_endian(&callee_code_hash));
+        let callee_code_hash = block.rws[step.rw_indices[17 + rw_offset]]
+            .table_assignment_aux(block.randomness)
+            .value;
+        let callee_exists = !callee_code_hash.is_zero_vartime();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -601,6 +615,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )?;
         }
 
+        self.callee_code_hash
+            .assign(region, offset, Value::known(callee_code_hash))?;
+        self.callee_not_exists
+            .assign(region, offset, callee_code_hash)?;
+        self.is_empty_code_hash.assign(
+            region,
+            offset,
+            callee_code_hash,
+            region.empty_hash_rlc(),
+        )?;
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,
