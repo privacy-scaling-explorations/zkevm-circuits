@@ -11,7 +11,7 @@ use crate::evm_circuit::util::math_gadget::{
 };
 use crate::evm_circuit::util::memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget};
 use crate::evm_circuit::util::{
-    from_bytes, not, or, select, sum, CachedRegion, Cell, Word, CellType,
+    from_bytes, not, or, select, sum, CachedRegion, Cell, CellType, Word,
 };
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};

@@ -18,6 +18,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
@@ -75,7 +76,6 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
         self.expression.clone()
     }
 }
-
 pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
@@ -207,8 +207,6 @@ pub struct StoredExpression<F> {
     expr_id: String,
 }
 
-use std::hash::{Hash, Hasher};
-
 impl<F> Hash for StoredExpression<F> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.expr_id.hash(state);
@@ -260,6 +258,7 @@ pub(crate) enum CellType {
 }
 
 impl CellType {
+    // The phase that given `Expression` becomes evaluateable.
     fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
         use Expression::*;
         match expr {

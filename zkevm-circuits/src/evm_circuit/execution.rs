@@ -1293,7 +1293,6 @@ impl<F: Field> ExecutionConfig<F> {
                 set
             });
 
-        // [TODO] Check this
         for (name, value) in assigned_rw_values.iter() {
             if !rlc_assignments.contains(value) {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
