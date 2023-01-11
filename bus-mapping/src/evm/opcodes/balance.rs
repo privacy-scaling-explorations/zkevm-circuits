@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, Word, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Balance;
@@ -57,23 +57,28 @@ impl Opcode for Balance {
         // Read account balance.
         let account = state.sdb.get_account(&address).1;
         let exists = !account.is_empty();
+        let balance = account.balance;
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
+        state.account_read(
+            &mut exec_step,
+            address,
+            AccountField::CodeHash,
+            code_hash.to_word(),
+            code_hash.to_word(),
+        )?;
         if exists {
             state.account_read(
                 &mut exec_step,
                 address,
                 AccountField::Balance,
-                account.balance,
-                account.balance,
+                balance,
+                balance,
             )?;
-        } else {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::NonExisting,
-                Word::zero(),
-                Word::zero(),
-            )?;
-        };
+        }
 
         // Write the BALANCE result to stack.
         state.stack_write(

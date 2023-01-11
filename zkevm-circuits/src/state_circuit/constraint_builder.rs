@@ -345,6 +345,9 @@ impl<F: Field> ConstraintBuilder<F> {
             set::<F, AccountFieldTag>(),
         );
 
+        // NOTE: This expression, when used in the lookup causes the state circuit
+        // degree to go from 9 to 13.  A possible solution to avoid this would
+        // be to use intermediary witnesses to split the expressions.
         // We use code_hash = 0 as non-existing account state.  code_hash: 0->0
         // transition requires a non-existing proof.
         let is_non_exist = q.is_non_exist()
