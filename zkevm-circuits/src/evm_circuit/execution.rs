@@ -1205,6 +1205,7 @@ impl<F: Field> ExecutionConfig<F> {
                 Self::check_rw_lookup(&assigned_stored_expressions, step, block);
             }
         }
+        //}
         Ok(())
     }
 
