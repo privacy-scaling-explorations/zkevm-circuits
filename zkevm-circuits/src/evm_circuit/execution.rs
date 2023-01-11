@@ -10,7 +10,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::LookupTable,
+    table::{LookupTable, RwTableTag, TxReceiptFieldTag},
     util::{query_expression, Expr},
 };
 use eth_types::Field;
@@ -25,7 +25,8 @@ use std::{
     collections::{BTreeSet, HashMap},
     iter,
 };
-use strum::IntoEnumIterator;
+
+use strum::{EnumCount, IntoEnumIterator};
 
 mod add_sub;
 mod addmod;
@@ -50,6 +51,7 @@ mod create;
 mod dummy;
 mod dup;
 mod end_block;
+mod end_inner_block;
 mod end_tx;
 mod error_invalid_jump;
 mod error_oog_call;
@@ -90,7 +92,7 @@ mod sstore;
 mod stop;
 mod swap;
 
-use self::sha3::Sha3Gadget;
+use self::{logs::LogGadget, sha3::Sha3Gadget};
 use add_sub::AddSubGadget;
 use addmod::AddModGadget;
 use address::AddressGadget;
@@ -98,7 +100,6 @@ use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
-use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
@@ -114,6 +115,7 @@ use create::CreateGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
+use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_call::ErrorOOGCallGadget;
@@ -128,7 +130,7 @@ use is_zero::IsZeroGadget;
 use jump::JumpGadget;
 use jumpdest::JumpdestGadget;
 use jumpi::JumpiGadget;
-use logs::LogGadget;
+
 use memory::MemoryGadget;
 use msize::MsizeGadget;
 use mul_div_mod::MulDivModGadget;
@@ -193,6 +195,7 @@ pub(crate) struct ExecutionConfig<F> {
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
+    end_inner_block_gadget: EndInnerBlockGadget<F>,
     end_tx_gadget: EndTxGadget<F>,
     // opcode gadgets
     add_sub_gadget: AddSubGadget<F>,
@@ -248,7 +251,7 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: SstoreGadget<F>,
     stop_gadget: StopGadget<F>,
     swap_gadget: SwapGadget<F>,
-    blockhash_gadget: BlockHashGadget<F>,
+    blockhash_gadget: DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>,
     block_ctx_u64_gadget: BlockCtxU64Gadget<F>,
     block_ctx_u160_gadget: BlockCtxU160Gadget<F>,
     block_ctx_u256_gadget: BlockCtxU256Gadget<F>,
@@ -429,6 +432,7 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             begin_tx_gadget: configure_gadget!(),
             end_block_gadget: configure_gadget!(),
+            end_inner_block_gadget: configure_gadget!(),
             end_tx_gadget: configure_gadget!(),
             // opcode gadgets
             add_sub_gadget: configure_gadget!(),
@@ -649,9 +653,14 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "EndTx can only transit to BeginTx or EndBlock",
+                            "EndTx can only transit to BeginTx or EndInnerBlock",
                             ExecutionState::EndTx,
-                            vec![ExecutionState::BeginTx, ExecutionState::EndBlock],
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock],
+                        ),
+                        (
+                            "EndInnerBlock can only transition to BeginTx, EndInnerBlock or EndBlock",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
                         ),
                         (
                             "EndBlock can only transit to EndBlock",
@@ -665,9 +674,9 @@ impl<F: Field> ExecutionConfig<F> {
                 .chain(
                     IntoIterator::into_iter([
                         (
-                            "Only EndTx can transit to BeginTx",
+                            "Only EndTx or EndInnerBlock can transit to BeginTx",
                             ExecutionState::BeginTx,
-                            vec![ExecutionState::EndTx],
+                            vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
                         ),
                         (
                             "Only ExecutionState which halts or BeginTx can transit to EndTx",
@@ -678,13 +687,47 @@ impl<F: Field> ExecutionConfig<F> {
                                 .collect(),
                         ),
                         (
-                            "Only EndTx or EndBlock can transit to EndBlock",
+                            "Only EndInnerBlock or EndBlock can transit to EndBlock",
                             ExecutionState::EndBlock,
-                            vec![ExecutionState::EndTx, ExecutionState::EndBlock],
+                            vec![ExecutionState::EndInnerBlock, ExecutionState::EndBlock],
+                        ),
+                        (
+                            "Only EndTx or EndInnerBlock can transit to EndInnerBlock",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::EndTx, ExecutionState::EndInnerBlock],
                         ),
                     ])
                     .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
                     .map(|(_, to, _)| step_next.execution_state_selector([to])),
+                )
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "EndInnerBlock -> BeginTx/EndInnerBlock: block number increases by one",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::BeginTx, ExecutionState::EndInnerBlock],
+                            step_next.state.block_number.expr() - step_curr.state.block_number.expr() - 1.expr(),
+                        ),
+                        (
+                            "EndInnerBlock -> EndBlock: block number does not change",
+                            ExecutionState::EndInnerBlock,
+                            vec![ExecutionState::EndBlock],
+                            step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
+                        ),
+                    ])
+                    .filter(move |(_, from, _, _)| *from == G::EXECUTION_STATE)
+                    .map(|(_, _, to, expr)| step_next.execution_state_selector(to) * expr)
+                )
+                .chain(
+                    IntoIterator::into_iter([
+                        (
+                            "step_cur != EndInnerBlock: block number does not change",
+                            ExecutionState::EndInnerBlock,
+                            step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
+                        ),
+                    ])
+                    .filter(move |(_, from, _)| *from != G::EXECUTION_STATE)
+                    .map(|(_, _, expr)| expr)
                 )
                 // Accumulate all state transition checks.
                 // This can be done because all summed values are enforced to be boolean.
@@ -741,6 +784,23 @@ impl<F: Field> ExecutionConfig<F> {
         }
     }
 
+    pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
+        // Start at 1 so we can be sure there is an unused `next` row available
+        let mut num_rows = 1;
+        let evm_rows = block.evm_circuit_pad_to;
+        if evm_rows == 0 {
+            for transaction in &block.txs {
+                for step in &transaction.steps {
+                    num_rows += self.get_step_height(step.execution_state);
+                }
+            }
+            num_rows += 1; // EndBlock
+        } else {
+            num_rows = block.evm_circuit_pad_to;
+        }
+        num_rows
+    }
+
     /// Assign columns related to step counter
     fn assign_q_step(
         &self,
@@ -792,10 +852,22 @@ impl<F: Field> ExecutionConfig<F> {
             .try_into()
             .unwrap();
 
+        let mut is_first_time = true;
+
         layouter.assign_region(
             || "Execution step",
             |mut region| {
                 log::info!("start execution step assignment");
+                if is_first_time {
+                    is_first_time = false;
+                    region.assign_advice(
+                        || "step selector",
+                        self.q_step,
+                        self.get_num_rows_required(block) - 1,
+                        || Value::known(F::zero()),
+                    )?;
+                    return Ok(());
+                }
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
@@ -833,6 +905,37 @@ impl<F: Field> ExecutionConfig<F> {
                     let height = self.get_step_height(step.execution_state);
 
                     // Assign the step witness
+                    if step.execution_state == ExecutionState::EndTx {
+                        let mut tx = transaction.clone();
+                        tx.call_data.clear();
+                        tx.calls.clear();
+                        tx.steps.clear();
+                        let total_gas = {
+                            let gas_used = tx.gas - step.gas_left;
+                            let current_cumulative_gas_used: u64 = if tx.id == 1 {
+                                0
+                            } else {
+                                // first transaction needs TxReceiptFieldTag::COUNT(3) lookups
+                                // to tx receipt,
+                                // while later transactions need 4 (with one extra cumulative
+                                // gas read) lookups
+                                let rw = &block.rws[(
+                                    RwTableTag::TxReceipt,
+                                    (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
+                                )];
+                                rw.receipt_value()
+                            };
+                            current_cumulative_gas_used + gas_used
+                        };
+                        log::info!(
+                            "offset {} tx_num {} total_gas {} assign last step {:?} of tx {:?}",
+                            offset,
+                            tx.id,
+                            total_gas,
+                            step,
+                            tx
+                        );
+                    }
                     self.assign_exec_step(
                         &mut region,
                         offset,
@@ -923,9 +1026,12 @@ impl<F: Field> ExecutionConfig<F> {
                 )?;
 
                 log::info!("finish execution step assignment");
+                log::debug!("assign for region done at offset {}", offset);
                 Ok(())
             },
-        )
+        )?;
+        log::debug!("assign_block done");
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -980,7 +1086,8 @@ impl<F: Field> ExecutionConfig<F> {
         next: Option<(&Transaction, &Call, &ExecStep)>,
         power_of_randomness: [F; 31],
     ) -> Result<(), Error> {
-        if !matches!(step.execution_state, ExecutionState::EndBlock) {
+        if !(matches!(step.execution_state, ExecutionState::EndBlock) && step.rw_indices.is_empty())
+        {
             log::trace!(
                 "assign_exec_step offset: {} state {:?} step: {:?} call: {:?}",
                 offset,
@@ -1028,7 +1135,7 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.step
-            .assign_exec_step(region, offset, block, call, step)?;
+            .assign_exec_step(region, offset, block, transaction, call, step)?;
 
         macro_rules! assign_exec_step {
             ($gadget:expr) => {
@@ -1040,6 +1147,7 @@ impl<F: Field> ExecutionConfig<F> {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
+            ExecutionState::EndInnerBlock => assign_exec_step!(self.end_inner_block_gadget),
             ExecutionState::EndBlock => assign_exec_step!(self.end_block_gadget),
             // opcode
             ExecutionState::ADD_SUB => assign_exec_step!(self.add_sub_gadget),
@@ -1199,7 +1307,14 @@ impl<F: Field> ExecutionConfig<F> {
                 && step.rw_indices.is_empty();
             if !is_padding_step {
                 // expensive function call
-                Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    offset,
+                    step,
+                    call,
+                    transaction,
+                    block,
+                );
             }
         }
         Ok(())
@@ -1228,7 +1343,10 @@ impl<F: Field> ExecutionConfig<F> {
 
     fn check_rw_lookup(
         assigned_stored_expressions: &[(String, F)],
-        _step: &ExecStep,
+        offset: usize,
+        step: &ExecStep,
+        call: &Call,
+        transaction: &Transaction,
         block: &Block<F>,
     ) {
         let mut assigned_rw_values = Vec::new();
@@ -1245,21 +1363,75 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        let rlc_assignments: BTreeSet<_> = block
-            .rws
-            .table_assignments()
+        let rlc_assignments: BTreeSet<_> = step
+            .rw_indices
             .iter()
+            .map(|rw_idx| block.rws[*rw_idx])
             .map(|rw| {
                 rw.table_assignment_aux(block.randomness)
                     .rlc(block.randomness)
             })
             .collect();
 
-        for (name, value) in assigned_rw_values.iter() {
+        let mut log_ctx_done = false;
+        let mut log_ctx = |assigned_rw_values: &[(String, F)]| {
+            if log_ctx_done {
+                return;
+            }
+            log_ctx_done = true;
+            log::error!("assigned_rw_values {:?}", assigned_rw_values);
+            for (idx, rw_idx) in step.rw_indices.iter().enumerate() {
+                log::error!(
+                    "{}th rw of step: {:?} rlc {:?}",
+                    idx,
+                    block.rws[*rw_idx],
+                    block.rws[*rw_idx]
+                        .table_assignment_aux(block.randomness)
+                        .rlc(block.randomness)
+                );
+            }
+            let mut tx = transaction.clone();
+            tx.call_data.clear();
+            tx.calls.clear();
+            tx.steps.clear();
+            log::error!(
+                "ctx: offset {} step {:?}. call: {:?}, tx: {:?}",
+                offset,
+                step,
+                call,
+                tx
+            );
+        };
+        for (idx, (_name, value)) in assigned_rw_values.iter().enumerate() {
+            if idx >= step.rw_indices.len() {
+                log_ctx(&assigned_rw_values);
+                panic!(
+                    "invalid rw len exp {} witness {}",
+                    assigned_rw_values.len(),
+                    step.rw_indices.len()
+                );
+            }
+
+            let rw_idx = step.rw_indices[idx];
+            let rw = block.rws[rw_idx];
+            let table_assignments = rw.table_assignment_aux(block.randomness);
+            let rlc = table_assignments.rlc(block.randomness);
+
             if !rlc_assignments.contains(value) {
-                log::error!("rw lookup error: name: {}", *name);
-                // log::error!("rw lookup error: name: {}, step: {:?}", *name,
-                // step);
+                log_ctx(&assigned_rw_values);
+                log::error!(
+                    "incorrect rw witness. input_value {:?}, name \"{}\". table_value {:?}, table_assignments {:?}, rw {:?}, index {:?}, {}th rw of step",
+                    assigned_rw_values[idx].1,
+                    assigned_rw_values[idx].0,
+                    rlc,
+                    table_assignments,
+                    rw,
+                    rw_idx, idx);
+
+                //debug_assert_eq!(
+                //    rlc, assigned_rw_values[idx].1,
+                //    "left is witness, right is expression"
+                //);
             }
         }
         // for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate()

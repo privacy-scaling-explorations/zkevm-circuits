@@ -12,7 +12,10 @@
 #![deny(clippy::debug_assert_with_mut_call)]
 
 pub mod binary_number;
+pub mod comparator;
+pub mod comparison;
 pub mod evm_word;
+pub mod is_equal;
 pub mod is_zero;
 pub mod less_than;
 pub mod monotone;

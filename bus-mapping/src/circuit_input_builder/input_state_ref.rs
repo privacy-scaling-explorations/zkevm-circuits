@@ -5,6 +5,7 @@ use super::{
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
+use crate::precompile::is_precompiled;
 use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
@@ -23,6 +24,7 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use keccak256::EMPTY_HASH;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -440,7 +442,20 @@ impl<'a> CircuitInputStateRef<'a> {
             return Err(Error::AccountNotFound(sender));
         }
         let sender_balance_prev = sender_account.balance;
+        debug_assert!(
+            sender_account.balance >= value + fee,
+            "invalid amount balance {:?} value {:?} fee {:?}",
+            sender_account.balance,
+            value,
+            fee
+        );
         let sender_balance = sender_account.balance - value - fee;
+        log::trace!(
+            "balance update: {:?} {:?}->{:?}",
+            sender,
+            sender_balance_prev,
+            sender_balance
+        );
         self.push_op_reversible(
             step,
             RW::WRITE,
@@ -455,6 +470,12 @@ impl<'a> CircuitInputStateRef<'a> {
         let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
+        log::trace!(
+            "balance update: {:?} {:?}->{:?}",
+            receiver,
+            receiver_balance_prev,
+            receiver_balance
+        );
         self.push_op_reversible(
             step,
             RW::WRITE,
@@ -606,7 +627,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn is_precompiled(&self, address: &Address) -> bool {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
-
+    
     // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
@@ -653,11 +674,15 @@ impl<'a> CircuitInputStateRef<'a> {
                     }
                     _ => address,
                 };
-                let (found, account) = self.sdb.get_account(&code_address);
-                if !found {
-                    return Err(Error::AccountNotFound(code_address));
+                if is_precompiled(&code_address) {
+                    (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                } else {
+                    let (found, account) = self.sdb.get_account(&code_address);
+                    if !found {
+                        return Err(Error::AccountNotFound(code_address));
+                    }
+                    (CodeSource::Address(code_address), account.code_hash)
                 }
-                (CodeSource::Address(code_address), account.code_hash)
             }
         };
 
@@ -853,6 +878,24 @@ impl<'a> CircuitInputStateRef<'a> {
                                 .copy_from_slice(&callee_memory.0[offset..offset + length]);
                         }
                         (offset, length)
+                    }
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::STATICCALL
+                    | OpcodeId::DELEGATECALL => {
+                        if self
+                            .call()?
+                            .code_address()
+                            .map(|ref addr| is_precompiled(addr))
+                            .unwrap_or(false)
+                        {
+                            let caller_ctx = self.caller_ctx_mut()?;
+                            (0, caller_ctx.return_data.len())
+                        } else {
+                            let caller_ctx = self.caller_ctx_mut()?;
+                            caller_ctx.return_data.truncate(0);
+                            (0, 0)
+                        }
                     }
                     _ => {
                         let caller_ctx = self.caller_ctx_mut()?;
@@ -1130,6 +1173,7 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // The *CALL*/CREATE* code was not executed
+
         let next_pc = next_step.map(|s| s.pc.0).unwrap_or(1);
         if matches!(
             step.op,
@@ -1164,6 +1208,12 @@ impl<'a> CircuitInputStateRef<'a> {
                 };
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
+                    log::error!(
+                        "create address collision at {:?}, step {:?}, next_step {:?}",
+                        address,
+                        step,
+                        next_step
+                    );
                     return Ok(Some(ExecError::ContractAddressCollision));
                 }
             }

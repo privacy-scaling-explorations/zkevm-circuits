@@ -4,17 +4,15 @@ use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
 use ethers_core::k256::ecdsa::SigningKey;
+use ethers_core::types::transaction::eip2718::TypedTransaction;
 use ethers_core::types::TransactionRequest;
+use ethers_core::utils::keccak256;
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
-
-const EVMERR_OOG: &str = "out of gas";
-const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
-const EVMERR_GAS_UINT64OVERFLOW: &str = "gas uint64 overflow";
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -124,8 +122,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     if let Some(to) = st.to {
         tx = tx.to(to);
     }
+    let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx.into());
+    let sig = wallet.sign_transaction_sync(&tx);
+    let tx_hash = keccak256(tx.rlp_signed(&sig));
 
     (
         st.id,
@@ -155,6 +155,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 v: sig.v,
                 r: sig.r,
                 s: sig.s,
+                hash: tx_hash.into(),
             }],
             accounts: st.pre,
             ..Default::default()
@@ -220,16 +221,6 @@ pub fn run_test(
             "OPCODE {:?}",
             step.op
         )));
-    }
-
-    for err in [EVMERR_STACKUNDERFLOW, EVMERR_OOG, EVMERR_GAS_UINT64OVERFLOW] {
-        if geth_traces[0]
-            .struct_logs
-            .iter()
-            .any(|step| step.error.as_ref().map(|e| e.contains(err)) == Some(true))
-        {
-            return Err(StateTestError::SkipUnimplemented(format!("Error {}", err)));
-        }
     }
 
     if geth_traces[0].gas.0 > suite.max_gas {

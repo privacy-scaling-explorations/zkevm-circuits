@@ -8,6 +8,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::util::sum;
+
 use super::{
     bool_check,
     util::{expr_from_bytes, pow_of_two},
@@ -42,12 +44,18 @@ impl<F: Field, const N_BYTES: usize> LtConfig<F, N_BYTES> {
     pub fn is_lt(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
         meta.query_advice(self.lt, rotation.unwrap_or_else(Rotation::cur))
     }
+
+    /// Returns an expression representing the difference between LHS and RHS.
+    pub fn diff(&self, meta: &mut VirtualCells<F>, rotation: Option<Rotation>) -> Expression<F> {
+        let rotation = rotation.unwrap_or_else(Rotation::cur);
+        sum::expr(self.diff.iter().map(|c| meta.query_advice(*c, rotation)))
+    }
 }
 
 /// Chip that compares lhs < rhs.
 #[derive(Clone, Debug)]
 pub struct LtChip<F, const N_BYTES: usize> {
-    config: LtConfig<F, N_BYTES>,
+    pub(crate) config: LtConfig<F, N_BYTES>,
 }
 
 impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
@@ -110,7 +118,6 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
 
         let diff = (lhs - rhs) + (if lt { config.range } else { F::zero() });
         let diff_bytes = diff.to_repr();
-        let diff_bytes = diff_bytes.as_ref();
         for (idx, diff_column) in config.diff.iter().enumerate() {
             region.assign_advice(
                 || format!("lt chip: diff byte {}", idx),

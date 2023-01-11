@@ -4,6 +4,7 @@
 //!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
 //!  `1/x` otherwise
 
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
@@ -38,7 +39,7 @@ pub struct IsZeroConfig<F> {
     pub is_zero_expression: Expression<F>,
 }
 
-impl<F: FieldExt> IsZeroConfig<F> {
+impl<F: Field> IsZeroConfig<F> {
     /// Returns the is_zero expression
     pub fn expr(&self) -> Expression<F> {
         self.is_zero_expression.clone()
@@ -46,12 +47,13 @@ impl<F: FieldExt> IsZeroConfig<F> {
 }
 
 /// Wrapper arround [`IsZeroConfig`] for which [`Chip`] is implemented.
+#[derive(Clone, Debug)]
 pub struct IsZeroChip<F> {
     config: IsZeroConfig<F>,
 }
 
 #[rustfmt::skip]
-impl<F: FieldExt> IsZeroChip<F> {
+impl<F: Field> IsZeroChip<F> {
     /// Sets up the configuration of the chip by creating the required columns
     /// and defining the constraints that take part when using `is_zero` gate.
     ///
@@ -101,7 +103,7 @@ impl<F: FieldExt> IsZeroChip<F> {
     }
 }
 
-impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
+impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -122,7 +124,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
+impl<F: Field> Chip<F> for IsZeroChip<F> {
     type Config = IsZeroConfig<F>;
     type Loaded = ();
 
@@ -138,6 +140,8 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 #[cfg(test)]
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+
+    use eth_types::Field;
     use halo2_proofs::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -200,7 +204,7 @@ mod test {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -332,7 +336,7 @@ mod test {
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

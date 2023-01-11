@@ -163,20 +163,7 @@ impl<F: Field> EvmCircuitConfig<F> {
     }
 
     pub fn get_num_rows_required(&self, block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
-        if evm_rows == 0 {
-            for transaction in &block.txs {
-                for step in &transaction.steps {
-                    num_rows += self.execution.get_step_height(step.execution_state);
-                }
-            }
-            num_rows += 1; // EndBlock
-        } else {
-            num_rows += block.evm_circuit_pad_to;
-        }
-        num_rows
+        self.execution.get_num_rows_required(block)
     }
 }
 
@@ -267,11 +254,14 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use super::*;
+    use std::convert::TryInto;
+
     use crate::{
         evm_circuit::{witness::Block, EvmCircuitConfig},
         exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
-        util::{power_of_randomness_from_instance, Challenges},
+        util::Challenges,
+        util::DEFAULT_RAND,
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -280,7 +270,7 @@ pub mod test {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error, Expression},
     };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
@@ -316,16 +306,19 @@ pub mod test {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
             let rw_table = RwTable::construct(meta);
+            let tx_table = TxTable::construct(meta);
             let bytecode_table = BytecodeTable::construct(meta);
             let block_table = BlockTable::construct(meta);
             let q_copy_table = meta.fixed_column();
             let copy_table = CopyTable::construct(meta, q_copy_table);
             let keccak_table = KeccakTable::construct(meta);
             let exp_table = ExpTable::construct(meta);
-
-            let power_of_randomness = power_of_randomness_from_instance(meta);
+            let power_of_randomness: [Expression<F>; 31] = (1..32)
+                .map(|exp| Expression::Constant(F::from_u128(DEFAULT_RAND).pow(&[exp, 0, 0, 0])))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             EvmCircuitConfig::new(
                 meta,
                 EvmCircuitConfigArgs {
@@ -370,7 +363,7 @@ pub mod test {
                 .load(&mut layouter, block.bytecodes.values(), &challenges)?;
             config
                 .block_table
-                .load(&mut layouter, &block.context, block.randomness)?;
+                .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
             config.copy_table.load(&mut layouter, block, &challenges)?;
             config
                 .keccak_table
@@ -460,15 +453,18 @@ pub mod test {
         .unwrap();
 
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
-        dbg!([
-            num_rows_required_for_rw_table,
-            num_rows_required_for_fixed_table,
-            num_rows_required_for_bytecode_table,
-            num_rows_required_for_copy_table,
-            num_rows_required_for_keccak_table,
-            num_rows_required_for_tx_table,
-            num_rows_required_for_exp_table
-        ]);
+        log::debug!(
+            "{:?}",
+            [
+                num_rows_required_for_rw_table,
+                num_rows_required_for_fixed_table,
+                num_rows_required_for_bytecode_table,
+                num_rows_required_for_copy_table,
+                num_rows_required_for_keccak_table,
+                num_rows_required_for_tx_table,
+                num_rows_required_for_exp_table
+            ]
+        );
         log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
         k
     }
@@ -491,11 +487,8 @@ pub mod test {
         let k = get_test_degree(&block);
 
         let (active_gate_rows, active_lookup_rows) = EvmCircuit::<F>::get_active_rows(&block);
-
-        let power_of_randomness = get_test_instance(&block);
-
         let circuit = get_test_cicuit_from_block(block);
-        let prover = MockProver::<F>::run(k, &circuit, power_of_randomness).unwrap();
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
     }
 }

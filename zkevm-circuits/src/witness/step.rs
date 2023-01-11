@@ -40,6 +40,8 @@ pub struct ExecStep {
     pub log_id: usize,
     /// The opcode corresponds to the step
     pub opcode: Option<OpcodeId>,
+    /// The block number in which this step exists.
+    pub block_num: u64,
 }
 
 impl ExecStep {
@@ -117,7 +119,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::warn!("{:?} is implemented with DummyGadget", $name);
+                        log::trace!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
@@ -187,6 +189,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
+                    OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,
                     _ => unimplemented!("unimplemented opcode {:?}", op),
                 }
             }
@@ -197,7 +200,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
     }
 }
 
-pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
+pub(super) fn step_convert(step: &circuit_input_builder::ExecStep, block_num: u64) -> ExecStep {
     ExecStep {
         call_index: step.call_index,
         rw_indices: step
@@ -236,5 +239,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
         log_id: step.log_id,
+        block_num,
     }
 }

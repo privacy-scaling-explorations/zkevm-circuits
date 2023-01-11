@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use eth_types::evm_types::Memory;
 use eth_types::Signature;
-use eth_types::{geth_types, Address, GethExecTrace, Word};
+use eth_types::{geth_types, Address, GethExecTrace, Word, H256};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -181,8 +181,12 @@ impl TransactionContext {
 #[derive(Debug, Clone)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
+    /// ..
+    pub block_num: u64,
     /// Nonce
     pub nonce: u64,
+    /// Hash
+    pub hash: H256,
     /// Gas
     pub gas: u64,
     /// Gas price
@@ -195,6 +199,8 @@ pub struct Transaction {
     pub value: Word,
     /// Input / Call Data
     pub input: Vec<u8>,
+    /// Chain_id
+    pub chain_id: u64,
     /// Signature
     pub signature: Signature,
     /// Calls made in the transaction
@@ -206,6 +212,7 @@ pub struct Transaction {
 impl From<&Transaction> for geth_types::Transaction {
     fn from(tx: &Transaction) -> geth_types::Transaction {
         geth_types::Transaction {
+            hash: tx.hash,
             from: tx.from,
             to: Some(tx.to),
             nonce: Word::from(tx.nonce),
@@ -232,6 +239,7 @@ impl Transaction {
             to: Address::zero(),
             value: Word::zero(),
             input: Vec::new(),
+            chain_id: 0,
             signature: Signature {
                 r: Word::zero(),
                 s: Word::zero(),
@@ -239,13 +247,15 @@ impl Transaction {
             },
             calls: Vec::new(),
             steps: Vec::new(),
+            block_num: Default::default(),
+            hash: Default::default(),
         }
     }
 
     /// Create a new Self.
     pub fn new(
         call_id: usize,
-        sdb: &StateDB,
+        sdb: &mut StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
@@ -280,6 +290,9 @@ impl Transaction {
         } else {
             // Contract creation
             let code_hash = code_db.insert(eth_tx.input.to_vec());
+            let address = get_contract_address(eth_tx.from, eth_tx.nonce);
+            let prev_nonce = sdb.increase_nonce(&address);
+            debug_assert_eq!(prev_nonce, 0);
             Call {
                 call_id,
                 kind: CallKind::Create,
@@ -287,7 +300,7 @@ impl Transaction {
                 is_persistent: is_success,
                 is_success,
                 caller_address: eth_tx.from,
-                address: get_contract_address(eth_tx.from, eth_tx.nonce),
+                address,
                 code_source: CodeSource::Tx,
                 code_hash,
                 depth: 1,
@@ -297,16 +310,24 @@ impl Transaction {
             }
         };
 
+        log::debug!(
+            "eth_tx's type: {:?}, idx: {:?}, hash: {:?}, tx: {:?}",
+            eth_tx.transaction_type,
+            eth_tx.transaction_index,
+            eth_tx.hash,
+            eth_tx
+        );
         Ok(Self {
+            block_num: eth_tx.block_number.unwrap().as_u64(),
+            hash: eth_tx.hash,
             nonce: eth_tx.nonce.as_u64(),
             gas: eth_tx.gas.as_u64(),
             gas_price: eth_tx.gas_price.unwrap_or_default(),
             from: eth_tx.from,
-            to: eth_tx
-                .to
-                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
+            to: eth_tx.to.unwrap_or_default(),
             value: eth_tx.value,
             input: eth_tx.input.to_vec(),
+            chain_id: eth_tx.chain_id.unwrap_or_default().as_u64(), // FIXME
             calls: vec![call],
             steps: Vec::new(),
             signature: Signature {

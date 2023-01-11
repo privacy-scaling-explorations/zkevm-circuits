@@ -1,6 +1,7 @@
 //! Mock types and functions to generate mock data useful for tests
 
 use crate::{
+    circuit_input_builder::BlockHead,
     circuit_input_builder::{Block, CircuitInputBuilder, CircuitsParams},
     state_db::{self, CodeDB, StateDB},
 };
@@ -31,18 +32,15 @@ impl BlockData {
     /// Generate a new CircuitInputBuilder initialized with the context of the
     /// BlockData.
     pub fn new_circuit_input_builder(&self) -> CircuitInputBuilder {
-        CircuitInputBuilder::new(
-            self.sdb.clone(),
-            self.code_db.clone(),
-            Block::new(
-                self.chain_id,
-                self.history_hashes.clone(),
-                Word::default(),
-                &self.eth_block,
-                self.circuits_params.clone(),
-            )
-            .unwrap(),
-        )
+        let mut block = Block::from_headers(
+            &[
+                BlockHead::new(self.chain_id, self.history_hashes.clone(), &self.eth_block)
+                    .unwrap(),
+            ],
+            Default::default(),
+        );
+        block.circuits_params = self.circuits_params.clone();
+        CircuitInputBuilder::new(self.sdb.clone(), self.code_db.clone(), &block)
     }
     /// Create a new block from the given Geth data.
     pub fn new_from_geth_data_with_params(
@@ -91,4 +89,11 @@ impl BlockData {
     pub fn new_from_geth_data(geth_data: GethData) -> Self {
         Self::new_from_geth_data_with_params(geth_data, CircuitsParams::default())
     }
+}
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_env_logger() {
+    // Enable RUST_LOG during tests
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }

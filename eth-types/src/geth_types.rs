@@ -5,7 +5,7 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
-use ethers_core::types::TransactionRequest;
+use ethers_core::types::{NameOrAddress, TransactionRequest, H256};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -139,6 +139,9 @@ pub struct Transaction {
     pub r: Word,
     /// "s" value of the transaction signature
     pub s: Word,
+
+    /// Transaction hash
+    pub hash: H256,
 }
 
 impl From<&Transaction> for crate::Transaction {
@@ -157,6 +160,7 @@ impl From<&Transaction> for crate::Transaction {
             v: tx.v.into(),
             r: tx.r,
             s: tx.s,
+            hash: tx.hash,
             ..Default::default()
         }
     }
@@ -178,20 +182,23 @@ impl From<&crate::Transaction> for Transaction {
             v: tx.v.as_u64(),
             r: tx.r,
             s: tx.s,
+            hash: tx.hash,
         }
     }
 }
 
 impl From<&Transaction> for TransactionRequest {
     fn from(tx: &Transaction) -> TransactionRequest {
-        TransactionRequest::new()
-            .from(tx.from)
-            .to(tx.to.unwrap())
-            .nonce(tx.nonce)
-            .value(tx.value)
-            .data(tx.call_data.clone())
-            .gas(tx.gas_limit)
-            .gas_price(tx.gas_price)
+        TransactionRequest {
+            from: Some(tx.from),
+            to: tx.to.map(NameOrAddress::Address),
+            gas: Some(tx.gas_limit),
+            gas_price: Some(tx.gas_price),
+            value: Some(tx.value),
+            data: Some(tx.call_data.clone()),
+            nonce: Some(tx.nonce),
+            ..Default::default()
+        }
     }
 }
 
@@ -208,18 +215,28 @@ impl Transaction {
             secp256k1::Fq::from_repr(sig_s_le),
             Error::Signature(libsecp256k1::Error::InvalidSignature),
         )?;
-        // msg = rlp([nonce, gasPrice, gas, to, value, data, sig_v, r, s])
-        let req: TransactionRequest = self.into();
+        // msg = rlp([nonce, gasPrice, gas, to, value, data, chain_id, 0, 0])
+        let mut req: TransactionRequest = self.into();
+        if req.to.is_some() {
+            let to = req.to.clone().unwrap();
+            match to {
+                NameOrAddress::Name(_) => {}
+                NameOrAddress::Address(addr) => {
+                    if addr == Address::zero() {
+                        // the rlp of zero addr is 0x80 instead of
+                        // [0x94, 0, ..., 0]
+                        req.to = None;
+                    }
+                }
+            }
+        }
         let msg = req.chain_id(chain_id).rlp();
         let msg_hash: [u8; 32] = Keccak256::digest(&msg)
             .as_slice()
             .to_vec()
             .try_into()
             .expect("hash length isn't 32 bytes");
-        let v = self
-            .v
-            .checked_sub(35 + chain_id * 2)
-            .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
+        let v = ((self.v + 1) % 2) as u8;
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());
@@ -232,6 +249,7 @@ impl Transaction {
         Ok(SignData {
             signature: (sig_r, sig_s),
             pk,
+            msg,
             msg_hash,
         })
     }
@@ -265,6 +283,9 @@ impl GethData {
             tx.v = U64::from(sig.v);
             tx.r = sig.r;
             tx.s = sig.s;
+            // The previous tx.hash is calculated without signature.
+            // Therefore we need to update tx.hash.
+            tx.hash = tx.hash();
         }
     }
 }

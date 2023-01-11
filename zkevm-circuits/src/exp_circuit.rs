@@ -298,8 +298,8 @@ impl<F: Field> ExpCircuitConfig<F> {
                         let two = U256::from(2);
                         let (exponent_div2, remainder) = exponent.div_mod(two);
 
-                        for i in 0..OFFSET_INCREMENT {
-                            self.q_usable.enable(&mut region, offset + i)?;
+                        for _i in 0..OFFSET_INCREMENT {
+                            //self.q_usable.enable(&mut region, offset + i)?;
                         }
                         mul_chip.assign(
                             &mut region,

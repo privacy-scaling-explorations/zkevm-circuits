@@ -17,6 +17,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
             max_rws: 16384,
             max_txs: 1,
             max_calldata: 4000,
+            max_inner_blocks: 64,
             max_bytecode: 4000,
             keccak_padding: None,
         },
@@ -33,7 +34,7 @@ async fn test_circuit_input_builder_block(block_num: u64) {
     trace!("AccessSet: {:#?}", access_set);
 
     // 3. Query geth for all accounts, storage keys, and codes from Accesses
-    let (proofs, codes) = cli.get_state(block_num, access_set).await.unwrap();
+    let (proofs, codes) = cli.get_state(block_num, access_set.into()).await.unwrap();
 
     // 4. Build a partial StateDB from step 3
     let (state_db, code_db) = cli.build_state_code_db(proofs, codes);

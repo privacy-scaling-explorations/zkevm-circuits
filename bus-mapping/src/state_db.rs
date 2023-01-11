@@ -1,6 +1,7 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
+use crate::precompile::is_precompiled;
 use eth_types::{Address, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
@@ -9,12 +10,39 @@ use std::collections::{HashMap, HashSet};
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
     static ref VALUE_ZERO: Word = Word::zero();
-    static ref CODE_HASH_ZERO: Hash = H256(keccak256(&[]));
+    static ref CODE_HASH_ZERO: Hash = H256(keccak256([]));
+}
+
+/// Define any object can encode the code to a 32 bytes hash
+pub trait CodeHash: std::fmt::Debug {
+    /// encode code
+    fn hash_code(&self, code: &[u8]) -> Hash;
+}
+
+/// Helper trait for clone object in a object-safe way
+pub trait CodeHashCopy: CodeHash {
+    /// clone to a boxed obect
+    fn clone_box(&self) -> Box<dyn CodeHashCopy>;
+}
+
+impl<T> CodeHashCopy for T
+where
+    T: 'static + CodeHash + Clone,
+{
+    fn clone_box(&self) -> Box<dyn CodeHashCopy> {
+        Box::new(self.clone())
+    }
 }
 
 /// Memory storage for contract code by code hash.
-#[derive(Debug, Clone)]
-pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
+#[derive(Debug)]
+pub struct CodeDB(pub HashMap<Hash, Vec<u8>>, Box<dyn CodeHashCopy>);
+
+impl Clone for CodeDB {
+    fn clone(&self) -> Self {
+        CodeDB(self.0.clone(), self.1.clone_box())
+    }
+}
 
 impl Default for CodeDB {
     fn default() -> Self {
@@ -22,16 +50,40 @@ impl Default for CodeDB {
     }
 }
 
+#[derive(Debug, Clone)]
+struct EthCodeHash;
+
+impl CodeHash for EthCodeHash {
+    fn hash_code(&self, code: &[u8]) -> Hash {
+        H256(keccak256(code))
+    }
+}
+
 impl CodeDB {
+    /// Create a new empty Self with specified code hash method
+    pub fn new_with_code_hasher(hasher: Box<dyn CodeHashCopy>) -> Self {
+        Self(HashMap::new(), hasher)
+    }
     /// Create a new empty Self.
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self::new_with_code_hasher(Box::new(EthCodeHash))
     }
-    /// Insert code indexed by code hash, and return the code hash.
+    /// Insert code indexed by code hash, and return the code hash. Notice we
+    /// always return Self::empty_code_hash() for empty code
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
-        let hash = H256(keccak256(&code));
+        let hash = if code.is_empty() {
+            Self::empty_code_hash()
+        } else {
+            self.1.hash_code(&code)
+        };
         self.0.insert(hash, code);
         hash
+    }
+    /// Specify code hash for empty code (nil), it should be kept consistent
+    /// between different methods because many contract use this magic hash
+    /// for distinguishing accounts without contracts
+    pub fn empty_code_hash() -> Hash {
+        *CODE_HASH_ZERO
     }
 }
 
@@ -192,8 +244,11 @@ impl StateDB {
     }
 
     /// Check whether `addr` exists in account access list.
+    ///
+    /// Note: After the hardfork Berlin,
+    /// all the precompiled contracts addresses are always considered warm.
     pub fn check_account_in_access_list(&self, addr: &Address) -> bool {
-        self.access_list_account.contains(addr)
+        is_precompiled(addr) || self.access_list_account.contains(addr)
     }
 
     /// Add `addr` into account access list. Returns `true` if it's not in the

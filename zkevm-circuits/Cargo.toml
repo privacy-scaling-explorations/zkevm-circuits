@@ -33,8 +33,11 @@ maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong"
 integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
+rlp = "0.5.1"
 subtle = "2.4"
 rand_chacha = "0.3"
+hex = "0.4.3"
+rayon = "1.5"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
@@ -49,3 +52,6 @@ pretty_assertions = "1.0.0"
 [features]
 default = []
 test = ["ethers-signers", "mock"]
+onephase = []
+enable-sign-verify = []
+codehash = []

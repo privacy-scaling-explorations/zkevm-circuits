@@ -2,8 +2,9 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
-    use eth_types::Word;
-    use halo2_proofs::arithmetic::Field;
+    use bus_mapping::mock::BlockData;
+    use eth_types::bytecode;
+    use eth_types::geth_types::GethData;
     use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -15,39 +16,29 @@ mod tests {
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     };
+    use mock::TestContext;
     use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
-    use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit, PublicData};
-    use zkevm_circuits::test_util::rand_tx;
+    use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit};
     use zkevm_circuits::util::SubCircuit;
+    use zkevm_circuits::witness::{block_convert, Block};
+
+    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_pi_circuit_prover() {
-        let degree: u32 = var("DEGREE")
-            .unwrap_or_else(|_| "15".to_string())
-            .parse()
-            .expect("Cannot parse DEGREE env var as u32");
-
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
+        const MAX_INNER_BLOCKS: usize = 64;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = Fr::random(&mut rng);
-        let rand_rpi = Fr::random(&mut rng);
-        let public_data = generate_publicdata::<MAX_TXS, MAX_CALLDATA>();
-        let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>(PiCircuit::<Fr>::new(
-            MAX_TXS,
-            MAX_CALLDATA,
-            randomness,
-            rand_rpi,
-            public_data,
-        ));
+        let block = generate_block::<MAX_TXS, MAX_CALLDATA>();
+        let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(
+            PiCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, &block),
+        );
         let public_inputs = circuit.0.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
-        let instances = &[&instance[..]][..];
+        let instances = &[&instance[..]];
 
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
@@ -55,9 +46,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("Setup generation with degree = {}", DEGREE);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -68,7 +59,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("PI_circuit Proof generation with {} rows", degree);
+        let proof_message = format!("PI_circuit Proof generation with {} rows", DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -76,7 +67,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            PiTestCircuit<Fr, MAX_TXS, MAX_CALLDATA>,
+            PiTestCircuit<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>,
         >(
             &general_params,
             &pk,
@@ -111,17 +102,16 @@ mod tests {
         end_timer!(start3);
     }
 
-    fn generate_publicdata<const MAX_TXS: usize, const MAX_CALLDATA: usize>() -> PublicData {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let mut public_data = PublicData::default();
-        let chain_id = 1337u64;
-        public_data.chain_id = Word::from(chain_id);
-
-        let n_tx = MAX_TXS;
-        for _ in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, true));
-            public_data.transactions.push(eth_tx);
-        }
-        public_data
+    fn generate_block<const MAX_TXS: usize, const MAX_CALLDATA: usize>() -> Block<Fr> {
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode! {
+            STOP
+        })
+        .unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        block_convert(&builder.block, &builder.code_db).unwrap()
     }
 }

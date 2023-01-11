@@ -7,19 +7,27 @@ use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
-    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+    Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
+    RwMap, RwRow, SignedTransaction, Transaction,
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
 use gadgets::util::{split_u256, split_u256_limb64};
+use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error},
 };
-use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
+use halo2_proofs::{circuit::Layouter, poly::Rotation};
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
@@ -58,16 +66,16 @@ impl<F: Field, C: Into<Column<Any>> + Clone, const W: usize> LookupTable<F> for 
 
 /// Tag used to identify each field in the transaction in a row of the
 /// transaction table.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 pub enum TxFieldTag {
     /// Unused tag
     Null = 0,
     /// Nonce
     Nonce,
-    /// Gas
-    Gas,
     /// GasPrice
     GasPrice,
+    /// Gas
+    Gas,
     /// CallerAddress
     CallerAddress,
     /// CalleeAddress
@@ -80,13 +88,43 @@ pub enum TxFieldTag {
     CallDataLength,
     /// Gas cost for transaction call data (4 for byte == 0, 16 otherwise)
     CallDataGasCost,
+    /// Signature field V.
+    SigV,
+    /// Signature field R.
+    SigR,
+    /// Signature field S.
+    SigS,
+    /// TxSignLength: Length of the RLP-encoded transaction without the
+    /// signature, used for signing
+    TxSignLength,
+    /// TxSignRLC: RLC of the RLP-encoded transaction without the signature,
+    /// used for signing
+    TxSignRLC,
     /// TxSignHash: Hash of the transaction without the signature, used for
     /// signing.
     TxSignHash,
+    /// TxHashLength: Length of the RLP-encoded transaction without the
+    /// signature, used for signing
+    TxHashLength,
+    /// TxHashRLC: RLC of the RLP-encoded transaction without the signature,
+    /// used for signing
+    TxHashRLC,
+    /// TxHash: Hash of the transaction with the signature
+    TxHash,
     /// CallData
     CallData,
+    /// The block number in which this tx is included.
+    BlockNumber,
+    /// Padding row
+    Padding,
 }
 impl_expr!(TxFieldTag);
+
+impl From<TxFieldTag> for usize {
+    fn from(t: TxFieldTag) -> Self {
+        t as usize
+    }
+}
 
 /// Alias for TxFieldTag used by EVM Circuit
 pub type TxContextFieldTag = TxFieldTag;
@@ -151,14 +189,38 @@ impl TxTable {
                 )?;
                 offset += 1;
 
-                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        id: i + 1,
-                        ..Default::default()
+                let chain_id = if !txs.is_empty() { txs[0].chain_id } else { 1 };
+                let padding_txs = (txs.len()..max_txs)
+                    .into_iter()
+                    .map(|tx_id| {
+                        let mut padding_tx = Transaction::dummy(chain_id);
+                        padding_tx.id = tx_id + 1;
+
+                        padding_tx
                     })
-                    .collect();
-                for tx in txs.iter().chain(padding_txs.iter()) {
-                    for row in tx.table_assignments(*challenges) {
+                    .collect::<Vec<Transaction>>();
+                for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
+                    debug_assert_eq!(i + 1, tx.id);
+                    for row in tx.table_assignments_fixed(*challenges) {
+                        for (index, column) in advice_columns.iter().enumerate() {
+                            region.assign_advice(
+                                || format!("tx table row {}", offset),
+                                *column,
+                                offset,
+                                || row[if index > 0 { index + 1 } else { index }],
+                            )?;
+                        }
+                        region.assign_fixed(
+                            || format!("tx table row {}", offset),
+                            self.tag,
+                            offset,
+                            || row[1],
+                        )?;
+                        offset += 1;
+                    }
+                }
+                for tx in txs.iter() {
+                    for row in tx.table_assignments_dyn(*challenges) {
                         for (index, column) in advice_columns.iter().enumerate() {
                             region.assign_advice(
                                 || format!("tx table row {}", offset),
@@ -245,7 +307,7 @@ impl From<RwTableTag> for usize {
 }
 
 /// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
     /// Nonce field
     Nonce = 1,
@@ -459,6 +521,7 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
+#[derive(Copy, Clone)]
 pub enum ProofType {
     /// Nonce updated
     NonceChanged = AccountFieldTag::Nonce as isize,
@@ -658,6 +721,12 @@ pub enum BlockContextFieldTag {
     /// Chain ID field.  Although this is not a field in the block header, we
     /// add it here for convenience.
     ChainId,
+    /// In a multi-block setup, this variant represents the total number of txs
+    /// included in this block.
+    NumTxs,
+    /// In a multi-block setup, this variant represents the cumulative number of
+    /// txs included up to this block, including the txs in this block.
+    CumNumTxs,
 }
 impl_expr!(BlockContextFieldTag);
 
@@ -686,34 +755,48 @@ impl BlockTable {
     pub fn load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &BlockContext,
-        randomness: F,
+        block_ctxs: &BlockContexts,
+        txs: &[Transaction],
+        max_inner_blocks: usize,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                let block_table_columns = self.columns();
+                for column in block_table_columns.iter() {
                     region.assign_advice(
                         || "block table all-zero row",
-                        column,
+                        *column,
                         offset,
                         || Value::known(F::zero()),
                     )?;
                 }
                 offset += 1;
 
-                let block_table_columns = self.columns();
-                for row in block.table_assignments(randomness) {
-                    for (column, value) in block_table_columns.iter().zip_eq(row) {
-                        region.assign_advice(
-                            || format!("block table row {}", offset),
-                            *column,
-                            offset,
-                            || Value::known(value),
-                        )?;
+                let mut cum_num_txs = 0usize;
+                let padding_blocks = (block_ctxs.ctxs.len()..max_inner_blocks)
+                    .into_iter()
+                    .map(|_| BlockContext::default())
+                    .collect::<Vec<_>>();
+                for block_ctx in block_ctxs.ctxs.values().chain(padding_blocks.iter()) {
+                    let num_txs = txs
+                        .iter()
+                        .filter(|tx| tx.block_number == block_ctx.number.as_u64())
+                        .count();
+                    cum_num_txs += num_txs;
+                    for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
+                        for (column, value) in block_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("block table row {}", offset),
+                                *column,
+                                offset,
+                                || value,
+                            )?;
+                        }
+                        offset += 1;
                     }
-                    offset += 1;
                 }
 
                 Ok(())
@@ -1309,5 +1392,117 @@ impl<F: Field> LookupTable<F> for ExpTable {
             meta.query_advice(self.exponentiation_lo_hi, Rotation::cur()),
             meta.query_advice(self.exponentiation_lo_hi, Rotation::next()),
         ]
+    }
+}
+
+/// Lookup table embedded in the RLP circuit.
+#[derive(Clone, Copy, Debug)]
+pub struct RlpTable {
+    /// Transaction ID of the transaction. This is not the transaction hash, but
+    /// an incremental ID starting from 1 to indicate the position of the
+    /// transaction within the L2 block.
+    pub tx_id: Column<Advice>,
+    /// Denotes the field/tag that this row represents. Example: nonce, gas,
+    /// gas_price, and so on.
+    pub tag: Column<Advice>,
+    /// Denotes the decrementing index specific to this tag. The final value of
+    /// the field is accumulated in `value_acc` at `tag_index == 1`.
+    pub tag_rindex: Column<Advice>,
+    /// Denotes the accumulator value for this field, which is a linear
+    /// combination or random linear combination of the field's bytes.
+    pub value_acc: Column<Advice>,
+    /// Denotes the type of input assigned in this row. Type can either be
+    /// `TxSign` (transaction data that needs to be signed) or `TxHash`
+    /// (signed transaction's data).
+    pub data_type: Column<Advice>,
+}
+
+impl DynamicTableColumns for RlpTable {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.tx_id,
+            self.tag,
+            self.tag_rindex,
+            self.value_acc,
+            self.data_type,
+        ]
+    }
+}
+
+impl RlpTable {
+    /// Construct the RLP table.
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            tx_id: meta.advice_column(),
+            tag: meta.advice_column(),
+            tag_rindex: meta.advice_column(),
+            value_acc: meta.advice_column_in(SecondPhase),
+            data_type: meta.advice_column(),
+        }
+    }
+
+    /// Get assignments to the RLP table. Meant to be used for dev purposes.
+    pub fn dev_assignments<F: Field>(
+        txs: Vec<SignedTransaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 5]> {
+        let mut assignments = vec![];
+        for signed_tx in txs {
+            for row in signed_tx
+                .gen_witness(challenges)
+                .iter()
+                .chain(signed_tx.rlp_rows(challenges.keccak_input()).iter())
+                .chain(signed_tx.tx.gen_witness(challenges).iter())
+                .chain(signed_tx.tx.rlp_rows(challenges.keccak_input()).iter())
+            {
+                assignments.push([
+                    Value::known(F::from(row.tx_id as u64)),
+                    Value::known(F::from(row.tag as u64)),
+                    Value::known(F::from(row.tag_rindex as u64)),
+                    row.value_acc,
+                    Value::known(F::from(row.data_type as u64)),
+                ]);
+            }
+        }
+        assignments
+    }
+}
+
+impl RlpTable {
+    /// Load witness into RLP table. Meant to be used for dev purposes.
+    pub fn dev_load<F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        txs: Vec<SignedTransaction>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "rlp table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || format!("empty row: {}", offset),
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+
+                for row in Self::dev_assignments(txs.clone(), challenges) {
+                    offset += 1;
+                    for (column, value) in self.columns().iter().zip(row) {
+                        region.assign_advice(
+                            || format!("row: {}", offset),
+                            *column,
+                            offset,
+                            || value,
+                        )?;
+                    }
+                }
+
+                Ok(())
+            },
+        )
     }
 }
