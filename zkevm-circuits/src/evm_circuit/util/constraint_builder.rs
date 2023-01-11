@@ -1515,7 +1515,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                             if expr.degree() > max_degree {
                                 self.split_expression(name, expr, max_degree)
                             } else {
-                                let cell_type = CellType::storage_for(&expr);
+                                let cell_type = CellType::storage_for_expr(&expr);
                                 self.store_expression(name, expr, cell_type)
                             }
                         };

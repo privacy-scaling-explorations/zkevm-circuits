@@ -17,7 +17,7 @@ pub struct IsZeroGadget<F> {
 
 impl<F: Field> IsZeroGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
-        let inverse = cb.query_cell_with_type(CellType::storage_for_inv(&value));
+        let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *

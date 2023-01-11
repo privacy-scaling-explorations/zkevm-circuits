@@ -260,9 +260,9 @@ pub(crate) enum CellType {
 }
 
 impl CellType {
-    fn expr_phase<F: FieldExt>(value: &Expression<F>) -> u8 {
+    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
         use Expression::*;
-        match value {
+        match expr {
             Challenge(challenge) => challenge.phase() + 1,
             Constant(_) | Selector(_) | Fixed(_) | Advice(_) | Instance(_) => 0,
             Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
@@ -270,9 +270,9 @@ impl CellType {
         }
     }
 
-    /// Return the phase of the expression
-    pub(crate) fn storage_for<F: FieldExt>(value: &Expression<F>) -> CellType {
-        match Self::expr_phase(value) {
+    /// Return the storage phase of phase
+    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
+        match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
             2 => CellType::StoragePhase3,
@@ -280,15 +280,11 @@ impl CellType {
         }
     }
 
-    /// Return the phase for the inverse of an the expression
-    pub(crate) fn storage_for_inv<F: FieldExt>(value: &Expression<F>) -> CellType {
-        match Self::expr_phase(value) {
-            0 => CellType::StoragePhase2,
-            1 => CellType::StoragePhase3,
-            2 => unimplemented!(),
-            _ => unreachable!(),
-        }
+    /// Return the storage cell of the expression
+    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
+        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
     }
+
 }
 
 #[derive(Clone, Debug)]

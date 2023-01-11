@@ -29,8 +29,8 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
-        let quotient = cb.query_cell_with_type(CellType::storage_for(&numerator));
-        let remainder = cb.query_cell_with_type(CellType::storage_for(&numerator));
+        let quotient = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
+        let remainder = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
 
         // Require that remainder < denominator
         cb.range_lookup(remainder.expr(), denominator);
