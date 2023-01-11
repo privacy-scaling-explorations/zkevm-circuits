@@ -330,7 +330,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 "next.value_rlc == cur.value_rlc * randomness + next.value",
                 meta.query_advice(value_rlc, Rotation::next()),
                 meta.query_advice(value_rlc, Rotation::cur()) * challenges.keccak_input()
-                    + meta.query_advice(value, Rotation::cur()),
+                    + meta.query_advice(value, Rotation::next()),
             );
 
             cb.require_equal(
