@@ -3,10 +3,9 @@ use crate::{
     circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
-    state_db::Account,
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodehash;
@@ -55,30 +54,13 @@ impl Opcode for Extcodehash {
             },
         )?;
 
-        // These three lookups are required to determine the existence of the external
-        // account
-        let &Account {
-            nonce,
-            code_hash,
-            balance,
-            ..
-        } = state.sdb.get_account(&external_address).1;
-        state.account_read(
-            &mut exec_step,
-            external_address,
-            AccountField::Nonce,
-            nonce,
-            nonce,
-        )?;
-
-        state.account_read(
-            &mut exec_step,
-            external_address,
-            AccountField::Balance,
-            balance,
-            balance,
-        )?;
-
+        let account = state.sdb.get_account(&external_address).1;
+        let exists = !account.is_empty();
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
         state.account_read(
             &mut exec_step,
             external_address,

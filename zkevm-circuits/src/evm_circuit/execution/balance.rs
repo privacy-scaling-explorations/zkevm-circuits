@@ -51,6 +51,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             Some(&mut reversion_info),
         );
         let code_hash = cb.query_cell();
+        // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
         let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
         let exists = not::expr(not_exists.expr());
@@ -103,10 +104,6 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        // dbg!(&step);
-        // for i in 0..7 {
-        //     dbg!(block.rws[step.rw_indices[i]]);
-        // }
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let address = block.rws[step.rw_indices[0]].stack_value();
@@ -127,18 +124,18 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let (code_hash, _) = block.rws[step.rw_indices[5]].account_value_pair();
-        let code_hash_rlc = RandomLinearCombination::random_linear_combine(
-            code_hash.to_le_bytes(),
-            block.randomness,
-        );
+        let code_hash = block.rws[step.rw_indices[5]]
+            .table_assignment_aux(block.randomness)
+            .value;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash_rlc))?;
-        self.not_exists.assign(region, offset, code_hash_rlc)?;
-        let balance = if code_hash.is_zero() {
-            eth_types::Word::zero()
+            .assign(region, offset, Value::known(code_hash))?;
+        self.not_exists.assign(region, offset, code_hash)?;
+        let balance = if code_hash.is_zero_vartime() {
+            F::zero()
         } else {
-            block.rws[step.rw_indices[6]].account_value_pair().0
+            block.rws[step.rw_indices[6]]
+                .table_assignment_aux(block.randomness)
+                .value
         };
         self.balance
             .assign(region, offset, region.word_rlc(balance))?;
