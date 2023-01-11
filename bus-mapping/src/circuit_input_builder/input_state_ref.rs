@@ -627,7 +627,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn is_precompiled(&self, address: &Address) -> bool {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
-    
+
     // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
