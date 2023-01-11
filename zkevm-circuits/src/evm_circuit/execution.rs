@@ -1234,6 +1234,7 @@ impl<F: Field> ExecutionConfig<F> {
                 region.challenges(),
             );
         }
+        //}
         Ok(())
     }
 
