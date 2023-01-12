@@ -218,7 +218,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.account_read(
-            callee_address.expr(),
+            caller_address.expr(),
             AccountFieldTag::Balance,
             caller_balance_word.expr(),
         );

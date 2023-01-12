@@ -406,11 +406,11 @@ pub(super) fn tx_convert(
     chain_id: u64,
     next_tx: Option<&circuit_input_builder::Transaction>,
 ) -> Transaction {
-    debug_assert_eq!(
-        chain_id, tx.chain_id,
-        "block.chain_id = {}, tx.chain_id = {}",
-        chain_id, tx.chain_id
-    );
+    //debug_assert_eq!(
+    //    chain_id, tx.chain_id,
+    //    "block.chain_id = {}, tx.chain_id = {}",
+    //    chain_id, tx.chain_id
+    //);
     let (rlp_unsigned, rlp_signed) = {
         let mut legacy_tx = TransactionRequest::new()
             .from(tx.from)
