@@ -11,20 +11,20 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsZeroGadget,
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, CellType, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct JumpiGadget<F> {
     same_context: SameContextGadget<F>,
     destination: RandomLinearCombination<F, N_BYTES_PROGRAM_COUNTER>,
-    condition: Cell<F>,
+    phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
 }
 
@@ -34,15 +34,15 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_rlc();
-        let condition = cb.query_cell();
+        let destination = cb.query_word_rlc();
+        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
-        cb.stack_pop(condition.expr());
+        cb.stack_pop(phase2_condition.expr());
 
         // Determine if the jump condition is met
-        let is_condition_zero = IsZeroGadget::construct(cb, condition.expr());
+        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
         let should_jump = 1.expr() - is_condition_zero.expr();
 
         // Lookup opcode at destination when should_jump
@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         Self {
             same_context,
             destination,
-            condition,
+            phase2_condition,
             is_condition_zero,
         }
     }
@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
         let [destination, condition] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-        let condition = Word::random_linear_combine(condition.to_le_bytes(), block.randomness);
+        let condition = region.word_rlc(condition);
 
         self.destination.assign(
             region,
@@ -105,9 +105,9 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
                     .unwrap(),
             ),
         )?;
-        self.condition
-            .assign(region, offset, Value::known(condition))?;
-        self.is_condition_zero.assign(region, offset, condition)?;
+        self.phase2_condition.assign(region, offset, condition)?;
+        self.is_condition_zero
+            .assign_value(region, offset, condition)?;
 
         Ok(())
     }

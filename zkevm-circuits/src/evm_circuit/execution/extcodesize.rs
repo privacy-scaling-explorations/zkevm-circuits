@@ -6,9 +6,7 @@ use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
-use crate::evm_circuit::util::{
-    from_bytes, select, CachedRegion, Cell, RandomLinearCombination, Word,
-};
+use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -37,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODESIZE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address_word = cb.query_word();
+        let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         cb.stack_pop(address_word.expr());
 
@@ -68,13 +66,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
             from_bytes::expr(&code_size_bytes),
             code_size.expr(),
         );
-
         cb.stack_push(select::expr(
             exists.expr(),
-            RandomLinearCombination::random_linear_combine_expr(
-                code_size_bytes.clone().map(|c| c.expr()),
-                cb.power_of_randomness(),
-            ),
+            cb.word_rlc(code_size_bytes.clone().map(|c| c.expr())),
             0.expr(),
         ));
 
@@ -155,14 +149,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         self.exists
             .assign(region, offset, Value::known(F::from(exists)))?;
-        self.code_hash.assign(
-            region,
-            offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.code_hash
+            .assign(region, offset, region.word_rlc(code_hash))?;
         self.code_size
             .assign(region, offset, Value::known(F::from(code_size)))?;
         for (c, b) in self

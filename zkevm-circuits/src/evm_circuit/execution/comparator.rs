@@ -36,8 +36,8 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
 
         // Check if opcode is EQ
         let is_eq = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());

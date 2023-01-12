@@ -123,7 +123,7 @@ mod tests {
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let value_rlc = cb.query_word();
+            let value_rlc = cb.query_word_rlc();
             let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
             cb.require_equal(
                 "byte size gadget must equal N",

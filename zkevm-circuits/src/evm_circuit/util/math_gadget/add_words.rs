@@ -170,8 +170,8 @@ mod tests {
         MathGadgetContainer<F> for AddWordsTestContainer<F, N_ADDENDS, CARRY_HI, CHECK_OVERFLOW>
     {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let addends = [(); N_ADDENDS].map(|_| cb.query_word());
-            let sum = cb.query_word();
+            let addends = [(); N_ADDENDS].map(|_| cb.query_word_rlc());
+            let sum = cb.query_word_rlc();
             let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct(
                 cb,
                 addends.clone(),
