@@ -122,8 +122,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
 
         let caller_balance = sender_account.balance;
-        let insufficient_balance = call.value > caller_balance;
+        let insufficient_balance = call.value > caller_balance && 
+            [CallKind::Call, CallKind::CallCode].contains(&call.kind);
 
+        println!("insufficient_balance: {}, call type: {:?}", insufficient_balance, call.kind);
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
         // indeed larger than transfer value. for call opcode, it does in
