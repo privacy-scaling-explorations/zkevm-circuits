@@ -107,6 +107,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
         let rot_first_child = rot_branch_init + 1;
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+        let rot_key_s = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND);
+        let rot_key_c = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND);
 
         circuit!([meta, cb], {
             let mut branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
@@ -218,30 +220,20 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 let key_mult_prev = key_mult_prev.expr() *
                 ifx!{branch.is_extension() => {
-                    // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    ifx!{branch.is_short() => {
-                        // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        ifx!{branch.is_c1() => {
-                            1.expr()
-                        } elsex {
-                            r[0].expr()
-                        }}
-                    } elsex {
-                        // Get the mult_diff from the extension node.
-                        a!(accs.mult_diff, rot_first_child)
-                    }}
+                    // Get the mult_diff from the extension node.
+                    a!(accs.mult_diff, rot_first_child)
                 } elsex {
                     1.expr()
                 }};
 
                 // Check that the RLC matches
                 let acc_key_rlc = ifx!{branch.is_s_placeholder() => {
-                    a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND))
+                    a!(accs.key.rlc, rot_key_s)
                 } elsex {
-                    a!(accs.key.rlc, -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND))
+                    a!(accs.key.rlc, rot_key_c)
                 }};
                 // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
-                let drifted_pos_mult = key_mult_prev.clone() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
+                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc = key_rlc_prev + a!(drifted_pos, rot_first_child) * drifted_pos_mult + rlc::expr(
                     &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
                         key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),

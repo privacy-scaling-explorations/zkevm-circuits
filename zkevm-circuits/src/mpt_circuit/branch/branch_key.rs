@@ -217,51 +217,53 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     require!(key_rlc_ext => key_rlc_ext.prev());
 
                     // Extension key rlc
-                    let mut ext_key_rlc = ifx!{branch.is_long_odd_c1.expr() + branch.is_long_even_c1.expr() => {
-                        // We check the extension node intermediate RLC for the case when we have
-                        // long odd nibbles (meaning there is an odd number of nibbles and this number
-                        // is bigger than 1) and sel2 (branch `modified_node` needs
-                        // to be multiplied by 1). Note that for the computation of
-                        // the intermediate RLC we need `first_nibbles` and
-                        // `second_nibbles`.
-                        rlc::expr(
-                            // Note that there can be at max 31 key bytes because 32 same bytes would mean
-                            // the two keys being the same - update operation, not splitting into extension node.
-                            // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
-                            // is not used (when even number of nibbles).
-                            &s_main.bytes.iter().skip(1).zip(s_main.bytes.iter()).map(|(byte, second_nibble)| {
-                                let byte = a!(byte, -1);
-                                let second_nibble = a!(second_nibble);
-                                let first_nibble = (byte.expr() - second_nibble.expr()) * c16inv.expr();
-                                // In this constraint we check whether the list of `second_nibbles` is correct.
-                                // For example having `first_nibble = 9 = ((9*16 + 5) - 5) / 16` we check:
-                                // `s_main.bytes[1] = first_nibble * 16 + 5`.
-                                // Note that first_nibble and second_nibble need to be between 0 and 15 - this
-                                // is checked in a lookup below.
-                                require!(byte => first_nibble.expr() * 16.expr() + second_nibble.expr());
-                                // Collect bytes for rlc calculation
-                                key_mult_prev.expr() * (first_nibble.expr() + second_nibble.expr() * 16.expr() * r[0].expr())
-                            }).collect::<Vec<_>>(),
-                            &r,
-                        ) + ifx!{branch.is_long_odd_c1 => {
-                                16.expr() * (a!(s_main.bytes[0], -1) - 16.expr()) * key_mult_prev.expr()
-                        }}
-                    }};
-                    ext_key_rlc = ext_key_rlc + ifx!{branch.is_long_odd_c16 => {
-                        rlc::expr(
-                            &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_mult_prev.expr() * (a!(byte, -1) - if idx == 0 { 16.expr() } else {0.expr()})).collect::<Vec<_>>(),
-                            &r,
-                        )
-                    }};
-                    ext_key_rlc = ext_key_rlc + ifx!{branch.is_long_even_c16 => {
-                        rlc::expr(
-                            &s_main.bytes.iter().skip(1).map(|byte| key_mult_prev.expr() * a!(byte, -1)).collect::<Vec<_>>(),
-                            &r,
-                        )
-                    }};
-                    ext_key_rlc = ext_key_rlc + ifx!{branch.is_short() => {
-                        (a!(s_main.rlp2, -1) - 16.expr()) * key_mult_prev.expr() * ifx!{branch.is_short_c1 => { 16.expr() } elsex { 1.expr() }}
-                    }};
+                    let ext_key_rlc = matchx! {
+                        branch.is_long_odd_c1.expr() + branch.is_long_even_c1.expr() => {
+                            // We check the extension node intermediate RLC for the case when we have
+                            // long odd nibbles (meaning there is an odd number of nibbles and this number
+                            // is bigger than 1) and sel2 (branch `modified_node` needs
+                            // to be multiplied by 1). Note that for the computation of
+                            // the intermediate RLC we need `first_nibbles` and
+                            // `second_nibbles`.
+                            rlc::expr(
+                                // Note that there can be at max 31 key bytes because 32 same bytes would mean
+                                // the two keys being the same - update operation, not splitting into extension node.
+                                // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
+                                // is not used (when even number of nibbles).
+                                &s_main.bytes.iter().skip(1).zip(s_main.bytes.iter()).map(|(byte, second_nibble)| {
+                                    let byte = a!(byte, -1);
+                                    let second_nibble = a!(second_nibble);
+                                    let first_nibble = (byte.expr() - second_nibble.expr()) * c16inv.expr();
+                                    // In this constraint we check whether the list of `second_nibbles` is correct.
+                                    // For example having `first_nibble = 9 = ((9*16 + 5) - 5) / 16` we check:
+                                    // `s_main.bytes[1] = first_nibble * 16 + 5`.
+                                    // Note that first_nibble and second_nibble need to be between 0 and 15 - this
+                                    // is checked in a lookup below.
+                                    require!(byte => first_nibble.expr() * 16.expr() + second_nibble.expr());
+                                    // Collect bytes for rlc calculation
+                                    key_mult_prev.expr() * (first_nibble.expr() + second_nibble.expr() * 16.expr() * r[0].expr())
+                                }).collect::<Vec<_>>(),
+                                &r,
+                            ) + ifx!{branch.is_long_odd_c1 => {
+                                    16.expr() * (a!(s_main.bytes[0], -1) - 16.expr()) * key_mult_prev.expr()
+                            }}
+                        },
+                        branch.is_long_odd_c16 => {
+                            rlc::expr(
+                                &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_mult_prev.expr() * (a!(byte, -1) - if idx == 0 { 16.expr() } else {0.expr()})).collect::<Vec<_>>(),
+                                &r,
+                            )
+                        },
+                        branch.is_long_even_c16 => {
+                            rlc::expr(
+                                &s_main.bytes.iter().skip(1).map(|byte| key_mult_prev.expr() * a!(byte, -1)).collect::<Vec<_>>(),
+                                &r,
+                            )
+                        },
+                        branch.is_short() => {
+                            (a!(s_main.rlp2, -1) - 16.expr()) * key_mult_prev.expr() * ifx!{branch.is_short_c1 => { 16.expr() } elsex { 1.expr() }}
+                        },
+                    };
                     // This value is stored is currently stored in `key_rlc_ext`
                     // TODO(Brecht): don't store it?
                     require!(key_rlc_ext => key_rlc_prev.expr() + ext_key_rlc.expr());

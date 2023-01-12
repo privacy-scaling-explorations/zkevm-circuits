@@ -108,12 +108,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let sel_2 = ctx.denoter.sel2;
 
         // key rlc is in the first branch node
-        let rot_into_first_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
-        let rot_into_init = rot_into_first_child - 1;
-        let rot_into_first_child_prev = rot_into_first_child - BRANCH_ROWS_NUM;
+        let rot_first_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
+        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+        let rot_branch_init = rot_first_child - 1;
 
         circuit!([meta, cb], {
-            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
+            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
 
             // Account leaf always starts with 248 because its length is always longer than
             // 55 bytes due to containing two hashes - storage root and
@@ -177,9 +177,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // is below the placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`),
                 // we still need properly computed `key_rlc` to reuse it in `account_leaf_key_in_added_branch`.
                 // Note: `key_rlc - address_rlc != 0` when placeholder branch.
-                let is_placeholder_branch_in_first_level = not!(a!(position_cols.not_first_level, rot_into_init));
+                let is_placeholder_branch_in_first_level = not!(a!(position_cols.not_first_level, rot_branch_init));
                 let (key_rlc_prev, key_mult_prev) = ifx!{not!(is_placeholder_branch_in_first_level) => {
-                    (a!(accs.key.rlc, rot_into_first_child_prev), a!(accs.key.mult, rot_into_first_child_prev))
+                    (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
                 } elsex {
                     (0.expr(), 1.expr())
                 }};
@@ -187,7 +187,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 // Note that when the leaf is in the first level (but positioned after the placeholder
                 // in the circuit), there is no branch above the placeholder branch from where
                 // `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
-                let is_not_branch_in_first_level = a!(position_cols.not_first_level, rot_into_first_child);
+                let is_not_branch_in_first_level = a!(position_cols.not_first_level, rot_first_child);
                 let nibbles_count_prev = ifx!{is_not_branch_in_first_level => { branch.nibbles_counter().prev() }};
 
                 (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_c16)
@@ -203,7 +203,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 }}
 
                 ifx! {a!(position_cols.not_first_level)  => {
-                    (a!(accs.key.rlc, rot_into_first_child), a!(accs.key.mult, rot_into_first_child), branch.nibbles_counter().expr(), branch.is_c16())
+                    (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.nibbles_counter().expr(), branch.is_c16())
                 } elsex {
                     (0.expr(), 1.expr(), 0.expr(), false.expr())
                 }}
@@ -259,12 +259,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 );
             require!(a!(accs.key.rlc) => rlc);
 
-            // Checking the total number of nibbles is to prevent having short addresses
-            // which could lead to a root node which would be shorter than 32 bytes and thus
-            // not hashed. That means the trie could be manipulated to reach a
-            // desired root. Note: we need to check the number of nibbles being
-            // 64 for non_existing_account_proof too (even if the address being
-            // checked here might be the address of the wrong leaf)
+            // Total number of nibbles needs to be 64.
             let key_len = a!(s_main.bytes[0]) - 128.expr();
             let num_nibbles = ifx! {is_c16 => {
                 key_len.expr() * 2.expr() - 1.expr()
@@ -295,7 +290,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // branch).
             if !is_s {
                 // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
-                let is_leaf_placeholder = a!(sel_2, rot_into_first_child);
+                let is_leaf_placeholder = a!(sel_2, rot_first_child);
                 // Note: this constraint suffices because the proper transition from branch to a
                 // leaf (2. case) is checked by constraints in
                 // account_leaf_key_in_added_branch.

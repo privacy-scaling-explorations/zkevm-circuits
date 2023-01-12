@@ -163,7 +163,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // Check if the account is in the branch above.
                 let root = a!(inter_root);
                 let account_len = a!(s_main.rlp2, rot_key) + 2.expr();
-                let (enabled, hash_rlc) = ifx!{a!(position_cols.not_first_level) => {
+                let (do_lookup, hash_rlc) = ifx!{a!(position_cols.not_first_level) => {
                     let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
                     ifx!{branch.is_placeholder() => {
                         ifx!{a!(position_cols.not_first_level, rot_last_child) => {
@@ -202,7 +202,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     (true.expr(), root.expr())
                 }};
                 // Do the lookup
-                ifx!{enabled => {
+                ifx!{do_lookup => {
                     require!((1, rlc, account_len, hash_rlc) => @"keccak");
                 }}
 

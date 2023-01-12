@@ -41,6 +41,113 @@ The constraints for `LEAF_DRIFTED` row are very similar to the ones for `LEAF_KE
 different selectors (different row) and there are some scenarios that do not appear here, like being in
 the first level of the trie. Also, when computing the leaf RLC, we need to take a different approach because
 the leaf value for the drifted leaf is stored in a parallel proof.
+
+
+Note: The leaf value is not stored in this row, but it needs to be the same
+as the leaf value before it drifted down to the new branch, so we can
+retrieve it from the row of a leaf before a drift. We need the leaf value to
+build the leaf RLC to check that the hash of a drifted leaf is in the
+new branch.
+It needs to be ensured that the leaf intermediate RLC (containing the leaf
+key bytes) is properly computed. The intermediate RLC is then used to
+compute the final leaf RLC (containing the leaf value bytes too).
+Finally, the lookup is used to check that the hash that
+corresponds to the leaf RLC is in the parent branch at `drifted_pos`
+position.
+drifted leaf appears only when there is a placeholder branch
+
+We obtain the key RLC from the branch / extension node above the placeholder branch.
+We then add the remaining key nibbles that are stored in the drifted leaf key and the final RLC
+needs to be the same as the one stored in `accumulators.key.rlc` in the storage leaf key row
+(not the drifted leaf). This means the storage leaf has the same key RLC before and after
+it drifts into a new branch.
+
+We need to ensure that the drifted leaf has the proper key RLC. It needs to be the same as the key RLC
+of this same leaf before it drifted to the new branch. The difference is that after being drifted the leaf
+has one nibble less stored in the key - `drifted_pos` nibble that is in a branch parallel to the branch
+placeholder (if it is an extension node there are more nibbles of a difference).
+Leaf key S
+Leaf value S
+Leaf key C
+Leaf value C
+Drifted leaf (leaf in added branch)
+Add case (S branch is placeholder):
+Branch S           || Branch C
+Placeholder branch || Added branch
+Leaf S             || Leaf C
+                   || Drifted leaf (this is Leaf S drifted into Added branch)
+Leaf S needs to have the same key RLC as Drifted leaf.
+Note that Leaf S key RLC is computed by taking the key RLC from Branch S and
+then adding the bytes in Leaf key S row.
+Drifted leaf RLC is computed by taking the key RLC from Added branch and
+then adding the bytes in Drifted leaf row.
+Delete case (C branch is placeholder):
+Branch S                        || Branch C
+Branch to be deleted            || Placeholder branch
+Leaf S (leaf to be deleted)     || Leaf C
+Leaf to be drifted one level up ||
+
+/* Leaf key in added branch: neighbour leaf in the added branch (S) */
+It needs to be ensured that the hash of the drifted leaf is in the parent branch
+at `drifted_pos` position.
+Rows:
+Leaf key S
+Leaf value S
+Leaf key C
+Leaf value C
+Drifted leaf (leaf in added branch)
+Add case (S branch is placeholder):
+    Branch S           || Branch C
+    Placeholder branch || Added branch
+    Leaf S             || Leaf C
+                       || Drifted leaf (this is Leaf S drifted into Added branch)
+We need to compute the RLC of the drifted leaf. We compute the intermediate RLC
+from the bytes in `LEAF_DRIFTED` row. And we retrieve the value from `LEAF_VALUE_S` row
+(where there is the same leaf, but before it drifted down into a new branch).
+Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
+
+`s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
+`modified_node` (the leaf that has been added):
+Add case (S branch is placeholder):
+    Branch S           || Branch C
+    Placeholder branch (`s_mod_node_hash_rlc` stores `drifted_pos` node hash) || Added branch (`c_mod_node_hash_rlc` stores `modified_node` hash)
+    Leaf S             || Leaf C
+                       || Drifted leaf (this is Leaf S drifted into Added branch)
+That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
+is checked in `branch_rlc.rs`.
+
+/* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
+It needs to be ensured that the hash of the drifted leaf is in the parent branch
+at `drifted_pos` position.
+Rows:
+Leaf key S
+Leaf value S
+Leaf key C
+Leaf value C
+Drifted leaf (leaf in added branch)
+Delete case (C branch is placeholder):
+Branch S                        || Branch C
+Branch to be deleted            || Placeholder branch
+Leaf S (leaf to be deleted)     || Leaf C
+Leaf to be drifted one level up ||
+We need to compute the RLC of the leaf that is a neighbour leaf of the leaf that is to be deleted.
+We compute the intermediate RLC from the bytes in `LEAF_DRIFTED` row.
+And we retrieve the value from `LEAF_VALUE_C` row
+(where there is the same leaf, but after it was moved one level up because of the deleted branch).
+Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
+
+`c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
+`modified_node` (the leaf that is to be deleted):
+Delete case (C branch is placeholder):
+    Branch S                        || Branch C
+    Branch to be deleted (`s_mod_node_hash_rlc` stores `modified_node` hash) || Placeholder branch (`c_mod_node_hash_rlc` stores `drifted_pos` node hash)
+    Leaf S (leaf to be deleted)     || Leaf C
+    Leaf to be drifted one level up ||
+That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
+is checked in `branch_rlc.rs`.
+
 */
 
 #[derive(Clone, Debug, Default)]
@@ -62,376 +169,170 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         let r = ctx.r;
 
         let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
-        let rot_into_account = -LEAF_DRIFTED_IND - 1;
-        let rot_into_branch_child = -BRANCH_ROWS_NUM + 2;
+        let rot_branch_parent = rot_branch_init - 1;
+        let rot_first_child = rot_branch_init + 1;
+        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+        let rot_parent = -LEAF_DRIFTED_IND - 1;
+        let rot_branch_child = -BRANCH_ROWS_NUM + 2;
+        let rot_key_s = -(LEAF_DRIFTED_IND - LEAF_KEY_S_IND);
+        let rot_key_c = -(LEAF_DRIFTED_IND - LEAF_KEY_C_IND);
 
-        // Note: The leaf value is not stored in this row, but it needs to be the same
-        // as the leaf value before it drifted down to the new branch, so we can
-        // retrieve it from the row of a leaf before a drift. We need the leaf value to
-        // build the leaf RLC to check that the hash of a drifted leaf is in the
-        // new branch.
-        // It needs to be ensured that the leaf intermediate RLC (containing the leaf
-        // key bytes) is properly computed. The intermediate RLC is then used to
-        // compute the final leaf RLC (containing the leaf value bytes too).
-        // Finally, the lookup is used to check that the hash that
-        // corresponds to the leaf RLC is in the parent branch at `drifted_pos`
-        // position.
         circuit!([meta, cb], {
-            // drifted leaf appears only when there is a placeholder branch
-
             let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
 
-            // TODO(Brecht): wrapper
             let flag1 = a!(accs.s_mod_node_rlc);
             let flag2 = a!(accs.c_mod_node_rlc);
-            let last_level = flag1.expr() * flag2.expr();
-            let one_nibble = not::expr(flag1.expr()) * not::expr(flag2.expr());
-            let is_long = flag1.expr() * not::expr(flag2.expr());
-            let is_short = not::expr(flag1.expr()) * flag2.expr();
+            let has_no_nibble = flag1.expr() * flag2.expr();
+            let has_one_nibble = not!(flag1) * not!(flag2);
+            let is_long = flag1.expr() * not!(flag2);
+            let is_short = not!(flag1) * flag2.expr();
 
-            // The two values that store the information about what kind of case we have
-            // need to be boolean.
+            // The two flag values need to be boolean.
             require!(flag1 => bool);
             require!(flag2 => bool);
 
-            // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to
-            // be 248. Example:
-            // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131
-            // 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
-            // 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
-            ifx! {is_long => {
-                require!(a!(s_main.rlp1) => 248);
-            }}
+            // Calculate and store the leaf data RLC
+            let rlc = rlc::expr(
+                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &r,
+            );
+            require!(a!(accs.acc_s.rlc) => rlc);
 
-            let is_leaf_in_first_storage_level =
-                a!(is_account_leaf_in_added_branch, rot_into_account);
-            ifx! {not::expr(is_leaf_in_first_storage_level.expr()) => {
-                ifx!{branch.is_s_or_c_placeholder() => {
-                    // If leaf is in the first storage level, there cannot be a placeholder branch (it would push the
-                    // leaf into a second level) and we do not need to trigger any checks.
-                    // Note that in this case `is_branch_placeholder` gets some value from the account rows and we cannot use it.
-
-                    // We need to ensure that the RLC of the row is computed properly for `is_short` and
-                    // `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                    ifx!{is_short.expr() + is_long.expr() => {
-                        let rlc = rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(a!(accs.acc_s.rlc) => rlc);
-                    }}
-
-                    // We need to ensure that the RLC of the row is computed properly for `last_level` and
-                    // `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                    // `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
-                    // where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
-                    ifx!{last_level.expr() + one_nibble.expr() => {
-                        let rlc_last_level = rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..2].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(a!(accs.acc_s.rlc) => rlc_last_level);
-                    }}
-                }}
-
-                /* Storage drifted leaf key RLC */
-                // We need to ensure that the drifted leaf has the proper key RLC. It needs to be the same as the key RLC
-                // of this same leaf before it drifted to the new branch. The difference is that after being drifted the leaf
-                // has one nibble less stored in the key - `drifted_pos` nibble that is in a branch parallel to the branch
-                // placeholder (if it is an extension node there are more nibbles of a difference).
-                // Leaf key S
-                // Leaf value S
-                // Leaf key C
-                // Leaf value C
-                // Drifted leaf (leaf in added branch)
-                // Add case (S branch is placeholder):
-                // Branch S           || Branch C
-                // Placeholder branch || Added branch
-                // Leaf S             || Leaf C
-                //                    || Drifted leaf (this is Leaf S drifted into Added branch)
-                // Leaf S needs to have the same key RLC as Drifted leaf.
-                // Note that Leaf S key RLC is computed by taking the key RLC from Branch S and
-                // then adding the bytes in Leaf key S row.
-                // Drifted leaf RLC is computed by taking the key RLC from Added branch and
-                // then adding the bytes in Drifted leaf row.
-                // Delete case (C branch is placeholder):
-                // Branch S                        || Branch C
-                // Branch to be deleted            || Placeholder branch
-                // Leaf S (leaf to be deleted)     || Leaf C
-                // Leaf to be drifted one level up ||
-
-                let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_init - 1);
-
-                // We obtain the key RLC from the branch / extension node above the placeholder branch.
-                // We then add the remaining key nibbles that are stored in the drifted leaf key and the final RLC
-                // needs to be the same as the one stored in `accumulators.key.rlc` in the storage leaf key row
-                // (not the drifted leaf). This means the storage leaf has the same key RLC before and after
-                // it drifts into a new branch.
-
+            let is_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_parent);
+            ifx! {not!(is_in_first_storage_level) => {
                 // We need the intermediate key RLC right before `drifted_pos` is added to it.
                 // If the branch parallel to the placeholder branch is an extension node,
                 // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above,
                 // we take 0).
-                let key_rlc_cur = ifx!{branch.is_extension() => {
-                    a!(accs.key.rlc, -LEAF_DRIFTED_IND - 1)
-                } elsex {
-                    ifx!{not::expr(is_branch_placeholder_in_first_level.expr()) => {
-                        a!(accs.key.rlc, rot_branch_init - BRANCH_ROWS_NUM + 1)
-                    }}
-                }};
-
-                // Note: Branch key RLC is in the first branch child row (not in branch init). We need to go
-                // in the branch above the placeholder branch.
-                let branch_above_placeholder_mult = ifx!{is_branch_placeholder_in_first_level => {
-                    1.expr()
-                } elsex {
-                    a!(accs.key.mult, rot_branch_init - BRANCH_ROWS_NUM + 1)
-                }};
-
-                // `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
-                // We need `mult_diff` because there is nothing stored in
-                // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
-                let key_rlc_mult = branch_above_placeholder_mult.expr() *
-                ifx!{branch.is_extension() => {
-                    // When we have only one nibble in the extension node, `mult_diff` is not used (and set).
-                    ifx!{branch.is_short() => {
-                        // `is_c16` and `is_c1` determine whether `drifted_pos` needs to be multiplied by 16 or 1.
-                        ifx!{branch.is_c1() => {
-                            1.expr()
-                        } elsex { // is_c16 TODO(Brecht): check if !c1 -> c16
-                            r[0].expr()
-                        }}
+                let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_parent);
+                let (key_rlc_prev, key_mult_prev) = ifx!{branch.is_extension() => {
+                    let key_mult_prev = ifx!{is_branch_placeholder_in_first_level => {
+                        1.expr()
                     } elsex {
-                        // `mult_diff` is the power of multiplier `r` and it corresponds to the number of nibbles in the extension node.
-                        // We need `mult_diff` because there is nothing stored in
-                        // `meta.query_advice(accs.key.mult, Rotation(-ACCOUNT_DRIFTED_LEAF_IND-1))` as we always use `mult_diff` in `extension_node_key.rs`.
-                        a!(accs.mult_diff, rot_branch_init + 1)
-                    }}
+                        a!(accs.key.mult, rot_first_child_prev)
+                    }};
+                    (a!(accs.key.rlc, rot_parent), key_mult_prev * a!(accs.mult_diff, rot_first_child))
                 } elsex {
-                    1.expr()
+                    ifx!{is_branch_placeholder_in_first_level => {
+                        (0.expr(), 1.expr())
+                    } elsex {
+                        (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
+                    }}
                 }};
-
-                // Key RLC of the drifted leaf needs to be the same as key RLC of the leaf
-                // before it drifted down into extension/branch.
-
-                // We retrieve `key_rlc` from the leaf before it drifted into a newly added branch. This RLC
-                // need to be the same as the drifted leaf key RLC.
-                let leaf_key_s_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_S_IND));
-                let leaf_key_c_rlc = a!(accs.key.rlc, -(LEAF_DRIFTED_IND - LEAF_KEY_C_IND));
-
-                let drifted_pos_mult = key_rlc_mult.expr() * 16.expr() * branch.is_c16() + key_rlc_mult.expr() * branch.is_c1();
-                // Any rotation that lands into branch children can be used.
-                let key_rlc_start = key_rlc_cur + a!(drifted_pos, rot_into_branch_child) * drifted_pos_mult;
-
-                ifx!{is_short => {
-                    // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
-                    // This is because `c1` in the branch above means there is an even number of nibbles left
-                    // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                    // specifying the length) of the key is 32.
-
-                    // Note: `is_c1` is taken from the branch parallel to the placeholder branch. This is because
-                    // the leaf in added branch is in this branch (parallel to placeholder branch).
-                    // When computing the key RLC, `is_c1` means `drifted_pos` needs to be multiplied by 1, while
-                    // `is_c16` means `drifted_pos` needs to be multiplied by 16.
-                    ifx!{branch.is_s_or_c_placeholder(), branch.is_c1() => {
-                        require!(a!(s_main.bytes[0]) => 32);
-                    }}
-
-                    // Note: drifted leaf key cannot reach `c_main.rlp1` because it has at most 31 nibbles.
-                    // In case of 31 nibbles, the key occupies 32 bytes (in case of 32 nibbles and no
-                    // branch above the leaf, the key occupies 33 bytes).
-
-                    // No need to distinguish between `is_c16` and `is_c1` here as it was already
-                    // when computing `key_rlc`.
-
-                    // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
-                    let key_rlc = key_rlc_start.expr() + rlc::expr(
-                        &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                        &r,
-                    );
-
-                    // When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
-                    // in a new branch. We retrieve it from `LEAF_KEY_S` row.
-                    // This value needs to be the same as the key RLC of the drifted leaf.
-                    ifx!{branch.is_branch_s_placeholder => {
-                        require!(leaf_key_s_rlc => key_rlc);
-                    }}
-
-                    // When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
-                    // has been deleted (and there were only two leaves, so the branch was deleted).
-                    // We retrieve it from `LEAF_KEY_C` row.
-                    // This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
-                    // the leaf that was deleted) before the leaf was deleted.
-                    ifx!{branch.is_branch_c_placeholder => {
-                        require!(leaf_key_c_rlc => key_rlc);
-                    }}
-                }}
-
-                ifx!{is_long => {
-                    // Note: long means long leaf RLP, not extension node nibbles.
-
-                    // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
-                    // This is because `is_c1` in the branch above means there is an even number of nibbles left
-                    // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                    // specifying the length) of the key is 32.
-                    ifx!{branch.is_s_or_c_placeholder(), branch.is_c1() => {
-                        require!(a!(s_main.bytes[1]) => 32);
-                    }}
-
-                    // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[1]`.
-                    let key_rlc = key_rlc_start.expr() + rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().enumerate().map(|(idx, &byte)| key_rlc_mult.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                        &r,
-                    );
-
-                    // When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
-                    // in a new branch. We retrieve it from `LEAF_KEY_S` row.
-                    // This value needs to be the same as the key RLC of the drifted leaf.
-                    ifx!{branch.is_branch_s_placeholder => {
-                        require!(leaf_key_s_rlc => key_rlc);
-                    }}
-
-                    // When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
-                    // has been deleted (and there were only two leaves, so the branch was deleted).
-                    // We retrieve it from `LEAF_KEY_C` row.
-                    // This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
-                    // the leaf that was deleted) before the leaf was deleted.
-                    ifx!{branch.is_branch_c_placeholder => {
-                        require!(leaf_key_c_rlc => key_rlc);
-                    }}
-                }}
-
-                ifx!{last_level => {
-                    let s_rlp2 = a!(s_main.rlp2);
-                    // When the leaf is in the last level there are no nibbles stored in the key and `s_main.rlp2 = 32`.
-                    ifx!{branch.is_s_or_c_placeholder() => {
-                        require!(s_rlp2 => 32.expr());
-                    }}
-                    // - When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
-                    // in a new branch. We retrieve it from `LEAF_KEY_S` row.
-                    // This value needs to be the same as the key RLC of the drifted leaf.
-                    // - When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
-                    // has been deleted (and there were only two leaves, so the branch was deleted).
-                    // We retrieve it from `LEAF_KEY_C` row. This value needs to be the same as the key RLC of the neighbour leaf
-                    // (neighbour of the leaf that was deleted) before the leaf was deleted.
-                    for (is_branch_sc_placeholder, leaf_key_sc_rlc) in [
-                        (branch.is_branch_s_placeholder.expr(), leaf_key_s_rlc.expr()),
-                        (branch.is_branch_c_placeholder.expr(), leaf_key_c_rlc.expr()),
-                        ].iter()
-                    {
-                        ifx!{is_branch_sc_placeholder => {
-                            // We do not need to add any nibbles to the key RLC as there are none stored in the storage leaf
-                            // (last level).
-                            // no nibbles in drifted leaf
-                            require!(leaf_key_sc_rlc => key_rlc_start);
-                            // We only need to add one nibble to the key RLC.
-                            // no nibbles in drifted leaf
-                            require!(leaf_key_sc_rlc => key_rlc_start.expr() + (s_rlp2.expr() - 48.expr()) * key_rlc_mult.expr());
+                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
+                let key_rlc_prev = key_rlc_prev + a!(drifted_pos, rot_branch_child) * drifted_pos_mult;
+                let key_rlc = key_rlc_prev.expr() + matchx! {
+                    is_short => {
+                        // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
+                        // This is because `c1` in the branch above means there is an even number of nibbles left
+                        // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+                        // specifying the length) of the key is 32.
+                        ifx!{branch.is_c1() => {
+                            require!(a!(s_main.bytes[0]) => 32);
                         }}
-                    }
-                }}
-
+                        // Note: drifted leaf key cannot reach `c_main.rlp1` because it has at most 31 nibbles.
+                        // In case of 31 nibbles, the key occupies 32 bytes (in case of 32 nibbles and no
+                        // branch above the leaf, the key occupies 33 bytes).
+                        // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
+                        rlc::expr(
+                            &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
+                            &r,
+                        )
+                    },
+                    is_long => {
+                        // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
+                        require!(a!(s_main.rlp1) => 248);
+                        // Note: long means long leaf RLP, not extension node nibbles.
+                        // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
+                        // This is because `is_c1` in the branch above means there is an even number of nibbles left
+                        // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+                        // specifying the length) of the key is 32.
+                        ifx!{branch.is_c1() => {
+                            require!(a!(s_main.bytes[1]) => 32);
+                        }}
+                        // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[1]`.
+                        rlc::expr(
+                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().enumerate().map(|(idx, &byte)| key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
+                            &r,
+                        )
+                    },
+                    has_no_nibble => {
+                        let s_rlp2 = a!(s_main.rlp2);
+                        // When the leaf is in the last level there are no nibbles stored in the key and `s_main.rlp2 = 32`.
+                        require!(s_rlp2 => 32.expr());
+                        (s_rlp2.expr() - 48.expr()) * key_mult_prev.expr()
+                    },
+                    has_one_nibble => 0.expr(),
+                };
+                // Check that the drifted leaf key is unchanged.
                 let acc_mult = a!(accs.acc_s.mult);
                 let len = get_leaf_len(meta, s_main.clone(), accs.clone(), 0);
-                ifx!{branch.is_branch_s_placeholder => {
-                    /* Leaf key in added branch: neighbour leaf in the added branch (S) */
-                    // It needs to be ensured that the hash of the drifted leaf is in the parent branch
-                    // at `drifted_pos` position.
-                    // Rows:
-                    // Leaf key S
-                    // Leaf value S
-                    // Leaf key C
-                    // Leaf value C
-                    // Drifted leaf (leaf in added branch)
-                    // Add case (S branch is placeholder):
-                    //     Branch S           || Branch C
-                    //     Placeholder branch || Added branch
-                    //     Leaf S             || Leaf C
-                    //                        || Drifted leaf (this is Leaf S drifted into Added branch)
-                    // We need to compute the RLC of the drifted leaf. We compute the intermediate RLC
-                    // from the bytes in `LEAF_DRIFTED` row. And we retrieve the value from `LEAF_VALUE_S` row
-                    // (where there is the same leaf, but before it drifted down into a new branch).
-                    // Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
-
-                    // If branch placeholder in `S`, the leaf value is 3 rows above.
-                    let rlc = a!(accs.acc_s.rlc) + rlc::expr(
-                        &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -3)).collect::<Vec<_>>(),
-                        &r,
-                    );
-
-                    // `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-                    // This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
-                    // `modified_node` (the leaf that has been added):
-                    // Add case (S branch is placeholder):
-                    //     Branch S           || Branch C
-                    //     Placeholder branch (`s_mod_node_hash_rlc` stores `drifted_pos` node hash) || Added branch (`c_mod_node_hash_rlc` stores `modified_node` hash)
-                    //     Leaf S             || Leaf C
-                    //                        || Drifted leaf (this is Leaf S drifted into Added branch)
-                    // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch_rlc.rs`.
-                    // Any rotation that lands into branch children can be used.
-                    let s_mod_node_hash_rlc = a!(accs.s_mod_node_rlc, rot_into_branch_child);
-                    require!((1, rlc, len, s_mod_node_hash_rlc) => @"keccak");
-                }}
-                ifx!{branch.is_branch_c_placeholder => {
-                    /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
-                    // It needs to be ensured that the hash of the drifted leaf is in the parent branch
-                    // at `drifted_pos` position.
-                    // Rows:
-                    // Leaf key S
-                    // Leaf value S
-                    // Leaf key C
-                    // Leaf value C
-                    // Drifted leaf (leaf in added branch)
-                    // Delete case (C branch is placeholder):
-                    // Branch S                        || Branch C
-                    // Branch to be deleted            || Placeholder branch
-                    // Leaf S (leaf to be deleted)     || Leaf C
-                    // Leaf to be drifted one level up ||
-                    // We need to compute the RLC of the leaf that is a neighbour leaf of the leaf that is to be deleted.
-                    // We compute the intermediate RLC from the bytes in `LEAF_DRIFTED` row.
-                    // And we retrieve the value from `LEAF_VALUE_C` row
-                    // (where there is the same leaf, but after it was moved one level up because of the deleted branch).
-                    // Then we execute the lookup into a keccak table: `lookup(leaf_rlc, branch_child_at_drifted_pos_rlc)`.
-
-                    // If branch placeholder in C, value is 1 above.
-                    let rlc = a!(accs.acc_s.rlc) + rlc::expr(
-                        &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -1)).collect::<Vec<_>>(),
-                        &r,
-                    );
-
-                    // `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-                    // This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
-                    // `modified_node` (the leaf that is to be deleted):
-                    // Delete case (C branch is placeholder):
-                    //     Branch S                        || Branch C
-                    //     Branch to be deleted (`s_mod_node_hash_rlc` stores `modified_node` hash) || Placeholder branch (`c_mod_node_hash_rlc` stores `drifted_pos` node hash)
-                    //     Leaf S (leaf to be deleted)     || Leaf C
-                    //     Leaf to be drifted one level up ||
-                    // That the stored value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch_rlc.rs`.
-                    let c_mod_node_hash_rlc = a!(accs.c_mod_node_rlc, rot_into_branch_child);
-                    require!((1, rlc, len, c_mod_node_hash_rlc) => @"keccak");
+                let (stored_key_rlc, mod_rlc, do_lookup, mod_hash) = matchx! {
+                    branch.is_branch_s_placeholder => {
+                        // When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+                        // in a new branch. We retrieve it from `LEAF_KEY_S` row.
+                        // This value needs to be the same as the key RLC of the drifted leaf.
+                        /* Leaf key in added branch: neighbour leaf in the added branch (S) */
+                        // It needs to be ensured that the hash of the drifted leaf is in the parent branch
+                        // at `drifted_pos` position.
+                        // If branch placeholder in `S`, the leaf value is 3 rows above.
+                        let rlc = a!(accs.acc_s.rlc) + rlc::expr(
+                            &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -3)).collect::<Vec<_>>(),
+                            &r,
+                        );
+                        // `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                        // This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
+                        // `modified_node` (the leaf that has been added).
+                        (a!(accs.key.rlc, rot_key_s), rlc, true.expr(), a!(accs.mod_node_rlc(true), rot_branch_child))
+                    },
+                    branch.is_branch_c_placeholder => {
+                        // When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+                        // has been deleted (and there were only two leaves, so the branch was deleted).
+                        // We retrieve it from `LEAF_KEY_C` row.
+                        // This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
+                        // the leaf that was deleted) before the leaf was deleted.
+                        /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
+                        // It needs to be ensured that the hash of the drifted leaf is in the parent branch
+                        // at `drifted_pos` position.
+                        // If branch placeholder in C, value is 1 above.
+                        let rlc = a!(accs.acc_s.rlc) + rlc::expr(
+                            &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -1)).collect::<Vec<_>>(),
+                            &r,
+                        );
+                        // `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                        // This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
+                        // `modified_node` (the leaf that is to be deleted).
+                        (a!(accs.key.rlc, rot_key_c), rlc, true.expr(), a!(accs.mod_node_rlc(false), rot_branch_child))
+                    },
+                    not!(branch.is_s_or_c_placeholder()) => {
+                        (key_rlc.expr(), 0.expr(), false.expr(), 0.expr())
+                    },
+                };
+                require!(stored_key_rlc => key_rlc);
+                ifx! {do_lookup => {
+                    require!((1, mod_rlc, len, mod_hash) => @"keccak");
                 }}
 
-                // RLC bytes zero check
-                // There are 0s in `s_main.bytes` after the last key nibble (this does not need
-                // to be checked for `last_level` and `one_nibble` as in these cases
-                // `s_main.bytes` are not used).
+                // Check zero bytes and mult_diff
+                // TODO(Brecht): share code with leaf_key.rs
                 ifx!{branch.is_s_or_c_placeholder() => {
-                    ifx!{is_short => {
-                        let num_bytes = a!(s_main.rlp2) - 128.expr();
-                        require!((FixedTableTag::RMult, num_bytes.expr() + 2.expr(), a!(accs.acc_s.mult)) => @"mult");
-                        // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34]
-                        cb.set_range_length(num_bytes);
-                    }}
-                    ifx!{is_long => {
-                        let num_bytes = a!(s_main.bytes[0]) - 128.expr();
-                        require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
-                        // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35]
-                        cb.set_range_length(num_bytes.expr() + 1.expr());
-                    }}
+                    // Get the number of bytes used for the key in the leaf.
+                    let key_len = matchx! {
+                        has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 byte in s_rlp2
+                        is_short => a!(s_main.rlp2) - 128.expr(),
+                        is_long => a!(s_main.bytes[0]) - 128.expr(),
+                    };
+                    // Num bytes used in RLC
+                    let num_bytes = key_len + matchx! {
+                        has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 RLP byte
+                        is_short => 2.expr(),                                     // 2 RLP bytes
+                        is_long => 3.expr(),                                      // 3 RLP bytes
+                    };
+                    // Multiplier is number of bytes
+                    require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
+                    // RLC bytes zero check (subtract RLP bytes used)
+                    cb.set_range_length(num_bytes.expr() - 2.expr());
                 }}
             }}
         });

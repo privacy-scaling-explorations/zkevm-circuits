@@ -693,6 +693,33 @@ impl<F: FieldExt, E: Expressable<F>> Expressable<F> for [E] {
     }
 }
 
+impl<F: FieldExt, E: Expressable<F>> Expressable<F> for (E, E) {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        let mut res = self.0.to_expr_vec();
+        res.append(&mut self.1.to_expr_vec());
+        res
+    }
+}
+
+impl<F: FieldExt, E: Expressable<F>> Expressable<F> for (E, E, E) {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        let mut res = self.0.to_expr_vec();
+        res.append(&mut self.1.to_expr_vec());
+        res.append(&mut self.2.to_expr_vec());
+        res
+    }
+}
+
+impl<F: FieldExt, E: Expressable<F>> Expressable<F> for (E, E, E, E) {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        let mut res = self.0.to_expr_vec();
+        res.append(&mut self.1.to_expr_vec());
+        res.append(&mut self.2.to_expr_vec());
+        res.append(&mut self.3.to_expr_vec());
+        res
+    }
+}
+
 /// Implementation trait `Expr` for type able to be casted to u64
 #[macro_export]
 macro_rules! impl_expressable {
@@ -716,16 +743,21 @@ impl_expressable!(ColumnTransition<F>);
 
 /// Wrapper around select
 pub trait Selectable<F> {
-    fn select(&self, condition: Expression<F>, other: Self) -> Self;
+    fn select(&self, condition: Expression<F>, other: &Self) -> Self;
     fn conditional(&self, condition: Expression<F>) -> Self;
+    fn add_expr(&self, other: &Self) -> Self;
     fn to_vec(&self) -> Vec<Expression<F>>;
+
 }
 
 impl<F: FieldExt> Selectable<F> for () {
-    fn select(&self, _condition: Expression<F>, _when_false: Self) -> Self {
+    fn select(&self, _condition: Expression<F>, _when_false: &Self) -> Self {
         ()
     }
     fn conditional(&self, _condition: Expression<F>) -> Self {
+        ()
+    }
+    fn add_expr(&self, _other: &Self) -> Self {
         ()
     }
     fn to_vec(&self) -> Vec<Expression<F>> {
@@ -734,11 +766,14 @@ impl<F: FieldExt> Selectable<F> for () {
 }
 
 impl<F: FieldExt> Selectable<F> for Expression<F> {
-    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
         gadgets::util::select::expr(condition, self.expr(), when_false.expr())
     }
     fn conditional(&self, condition: Expression<F>) -> Self {
         condition * self.expr()
+    }
+    fn add_expr(&self, other: &Self) -> Self {
+        self.expr() + other.expr()
     }
     fn to_vec(&self) -> Vec<Expression<F>> {
         vec![self.expr()]
@@ -746,7 +781,7 @@ impl<F: FieldExt> Selectable<F> for Expression<F> {
 }
 
 impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>) {
-    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
         select(condition, &self.to_vec(), &when_false.to_vec())
             .into_iter()
             .collect_tuple()
@@ -758,6 +793,9 @@ impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>) {
             .map(|when_true| condition.expr() * when_true.expr())
             .collect_tuple()
             .unwrap()
+    }
+    fn add_expr(&self, other: &Self) -> Self {
+        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
     }
     fn to_vec(&self) -> Vec<Expression<F>> {
         vec![self.0.expr(), self.1.expr()]
@@ -765,7 +803,7 @@ impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>) {
 }
 
 impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>) {
-    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
         select(condition, &self.to_vec(), &when_false.to_vec())
             .into_iter()
             .collect_tuple()
@@ -777,6 +815,9 @@ impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>
             .map(|when_true| condition.expr() * when_true.expr())
             .collect_tuple()
             .unwrap()
+    }
+    fn add_expr(&self, other: &Self) -> Self {
+        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
     }
     fn to_vec(&self) -> Vec<Expression<F>> {
         vec![self.0.expr(), self.1.expr(), self.2.expr()]
@@ -784,7 +825,7 @@ impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>
 }
 
 impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>, Expression<F>) {
-    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
         select(condition, &self.to_vec(), &when_false.to_vec())
             .into_iter()
             .collect_tuple()
@@ -796,6 +837,9 @@ impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>
             .map(|when_true| condition.expr() * when_true.expr())
             .collect_tuple()
             .unwrap()
+    }
+    fn add_expr(&self, other: &Self) -> Self {
+        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
     }
     fn to_vec(&self) -> Vec<Expression<F>> {
         vec![self.0.expr(), self.1.expr(), self.2.expr(), self.3.expr()]
@@ -811,7 +855,7 @@ impl<F: FieldExt> Selectable<F>
         Expression<F>,
     )
 {
-    fn select(&self, condition: Expression<F>, when_false: Self) -> Self {
+    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
         select(condition, &self.to_vec(), &when_false.to_vec())
             .into_iter()
             .collect_tuple()
@@ -823,6 +867,9 @@ impl<F: FieldExt> Selectable<F>
             .map(|when_true| condition.expr() * when_true.expr())
             .collect_tuple()
             .unwrap()
+    }
+    fn add_expr(&self, other: &Self) -> Self {
+        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
     }
     fn to_vec(&self) -> Vec<Expression<F>> {
         vec![
@@ -857,7 +904,7 @@ macro_rules! circuit {
                 let ret_false = $when_false;
                 $cb.pop_condition();
 
-                ret_true.select($condition.expr(), ret_false)
+                ret_true.select($condition.expr(), &ret_false)
             }};
             ($condition_a:expr, $condition_b:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
@@ -870,7 +917,7 @@ macro_rules! circuit {
                 let ret_false = $when_false;
                 $cb.pop_condition();
 
-                ret_true.select(condition.expr(), ret_false)
+                ret_true.select(condition.expr(), &ret_false)
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
@@ -883,7 +930,7 @@ macro_rules! circuit {
                 let ret_false = $when_false;
                 $cb.pop_condition();
 
-                ret_true.select(condition.expr(), ret_false)
+                ret_true.select(condition.expr(), &ret_false)
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
                 let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
@@ -896,7 +943,7 @@ macro_rules! circuit {
                 let ret_false = $when_false;
                 $cb.pop_condition();
 
-                ret_true.select(condition.expr(), ret_false)
+                ret_true.select(condition.expr(), &ret_false)
             }};
 
             ($condition:expr => $when_true:block) => {{
@@ -937,6 +984,66 @@ macro_rules! circuit {
                 $cb.pop_condition();
 
                 ret_true.conditional(condition.expr())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! matchx {
+            ($condition_a:expr => $when_a:expr,) => {{
+                $cb.push_condition($condition_a.expr());
+                let ret_a = $when_a.clone();
+                $cb.pop_condition();
+
+                require!($condition_a.expr() => 1);
+                ret_a.conditional($condition_a.expr())
+            }};
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr,) => {{
+                $cb.push_condition($condition_a.expr());
+                let ret_a = $when_a.clone();
+                $cb.pop_condition();
+
+                $cb.push_condition($condition_b.expr());
+                let ret_b = $when_b.clone();
+                $cb.pop_condition();
+
+                require!($condition_a.expr() + $condition_b.expr() => 1);
+                ret_a.conditional($condition_a.expr()).add_expr(&ret_b.conditional($condition_b.expr()))
+            }};
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr,) => {{
+                $cb.push_condition($condition_a.expr());
+                let ret_a = $when_a.clone();
+                $cb.pop_condition();
+
+                $cb.push_condition($condition_b.expr());
+                let ret_b = $when_b.clone();
+                $cb.pop_condition();
+
+                $cb.push_condition($condition_c.expr());
+                let ret_c = $when_c.clone();
+                $cb.pop_condition();
+
+                require!($condition_a.expr() + $condition_b.expr() + $condition_c.expr() => 1);
+                ret_a.conditional($condition_a.expr()).add_expr(&ret_b.conditional($condition_b.expr())).add_expr(&ret_c.conditional($condition_c.expr()))
+            }};
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr,) => {{
+                $cb.push_condition($condition_a.expr());
+                let ret_a = $when_a.clone();
+                $cb.pop_condition();
+
+                $cb.push_condition($condition_b.expr());
+                let ret_b = $when_b.clone();
+                $cb.pop_condition();
+
+                $cb.push_condition($condition_c.expr());
+                let ret_c = $when_c.clone();
+                $cb.pop_condition();
+
+                $cb.push_condition($condition_d.expr());
+                let ret_d = $when_d.clone();
+                $cb.pop_condition();
+
+                require!($condition_a.expr() + $condition_b.expr() + $condition_c.expr() + $condition_d.expr() => 1);
+                ret_a.conditional($condition_a.expr()).add_expr(&ret_b.conditional($condition_b.expr())).add_expr(&ret_c.conditional($condition_c.expr())).add_expr(&ret_d.conditional($condition_d.expr()))
             }};
         }
 

@@ -499,7 +499,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     ctx.account_leaf.is_in_added_branch,
                     rot_into_branch_init - 1
                 );
-                let nibbles_count_prev = ifx! {not::expr(is_first_storage_level.expr()) * not_first_level.expr() => {
+                let nibbles_count_prev = ifx! {not!(is_first_storage_level) * not_first_level.expr() => {
                     ext.nibbles_counter().prev()
                 }};
                 require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());

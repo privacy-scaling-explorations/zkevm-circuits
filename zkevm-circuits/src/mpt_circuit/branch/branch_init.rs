@@ -102,7 +102,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
                 }
                 // There should never be `rlp1, rlp2: 0, 0`
                 // (we only have three cases, there is no case with both being 0).
-                require!(or::expr(rlp_meta_bytes.clone()) => true);
+                require!(or::expr(&rlp_meta_bytes) => true);
 
                 // The RLC of the init branch comprises 1, 2, or 3 bytes.
                 // Here we check that stored rlc/mult values are correct.

@@ -88,6 +88,38 @@ kind of case we have:
  `flag1: 0, flag0: 1`: `one_nibble`
 
 The constraints in `leaf_key.rs` apply to `LEAF_KEY_S` and `LEAF_KEY_C` rows.
+
+- We need to ensure that the storage leaf is at the key specified in `key_rlc` column (used
+by MPT lookup). To do this we take the key RLC computed in the branches above the leaf
+and add the remaining bytes (nibbles) stored in the leaf.
+We also ensure that the number of all nibbles (in branches / extension nodes above
+the leaf and in the leaf) is 64.
+- For leaf under the placeholder branch we would not need to check the key RLC -
+this leaf is something we did not ask for, it is just a leaf that happened to be
+at the place where adding a new leaf causes adding a new branch.
+For example, when adding a leaf `L` causes that a leaf `L1`
+(this will be the leaf under the branch placeholder)
+is replaced by a branch, we get a placeholder branch at `S` side
+and leaf `L1` under it. However, the key RLC needs to be compared for leaf `L`,
+because this is where the modification takes place.
+In delete, the situation is turned around.
+However, we also check that the key RLC for `L1` is computed properly because
+we need `L1` key RLC for the constraints for checking that leaf `L1` is the same
+as the drifted leaf in the branch parallel. This can be checked by
+comparing the key RLC of the leaf before being replaced by branch and the key RLC
+of this same leaf after it drifted into a branch.
+Constraints for this are in `leaf_key_in_added_branch.rs`.
+Note that the hash of a leaf `L1` needs to be checked to be in the branch
+above the placeholder branch - this is checked in `leaf_value.rs`.
+Note: `last_level` cannot occur in a leaf after placeholder branch, because being
+after placeholder branch means this leaf drifted down into a new branch (in a parallel
+proof) and thus cannot be in the last level.
+- key rlc is in the first branch node (not branch init)
+- If the last branch is placeholder (the placeholder branch is the same as its
+parallel counterpart), there is a branch `modified_node` nibble already
+incorporated in `key_rlc`. That means we need to ignore the first nibble here
+(in leaf key).
+
 */
 
 #[derive(Clone, Debug, Default)]
@@ -109,270 +141,136 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r;
 
-        let rot_into_account = if is_s { -1 } else { -3 };
-        let rot_into_init = rot_into_account - (BRANCH_ROWS_NUM - 1);
+        let rot_parent = if is_s { -1 } else { -3 };
+        let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
+        let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
+        let rot_first_child = rot_branch_init + 1;
+        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+        let rot_branch_parent = rot_branch_init - 1;
 
         circuit!([meta, cb], {
-            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_into_init);
+            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
 
-            // TODO(Brecht): wrapper
             let flag1 = a!(accs.s_mod_node_rlc);
             let flag2 = a!(accs.c_mod_node_rlc);
-            let last_level = flag1.clone() * flag2.clone();
-            let one_nibble = not::expr(flag1.clone()) * not::expr(flag2.clone());
-            let is_long = flag1.clone() * not::expr(flag2.clone());
-            let is_short = not::expr(flag1.clone()) * flag2.clone();
+            let has_no_nibble = flag1.expr() * flag2.expr();
+            let has_one_nibble = not!(flag1) * not!(flag2);
+            let is_long = flag1.expr() * not!(flag2);
+            let is_short = not!(flag1) * flag2.expr();
 
-            // The two values that store the information about what kind of case we have
-            // need to be boolean.
+            // The two flag values need to be boolean.
             require!(flag1 => bool);
             require!(flag2 => bool);
 
-            /* Storage leaf key RLC */
-            // Checking the leaf RLC is ok - this value is then taken in the next row, where
-            // leaf value is added to the RLC. Finally, the lookup is used to check the hash
-            // that corresponds to the RLC is in the parent branch.
-            let is_leaf_in_first_storage_level =
-                a!(is_account_leaf_in_added_branch, rot_into_account);
-            let sel = a!(
-                if is_s { denoter.sel1 } else { denoter.sel2 },
-                rot_into_init + 1
+            // Calculate and store the leaf data RLC
+            let rlc = rlc::expr(
+                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &r,
             );
-            let is_leaf_in_first_level = a!(if is_s { denoter.sel1 } else { denoter.sel2 }, 1);
-            let is_leaf_placeholder = is_leaf_in_first_level
-                + ifx! {not::expr(is_leaf_in_first_storage_level.expr()) => {sel}};
-            ifx! {not::expr(is_leaf_placeholder.expr()) => {
-                // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
-                // Example:
-                // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
-                ifx!{is_long => {
-                    require!(a!(s_main.rlp1) => 248);
-                }}
+            require!(a!(accs.acc_s.rlc) => rlc);
 
-                // When `last_level`, there is no nibble stored in the leaf key, it is just the value
-                // `32` in `s_main.rlp2`. In the `getProof` output, there is then the value stored immediately
-                // after `32`. However, in the MPT witness, we have value in the next row, so there are 0s
-                // in `s_main.bytes` (we do not need to check `s_main.bytes[i]` to be 0 due to how the RLC
-                // constraints are written).
-                // Example:
-                // `[194 32 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
-                ifx!{last_level => {
-                    require!(a!(s_main.rlp2) => 32);
-                }}
-
-                // We need to ensure that the RLC of the row is computed properly for `is_short` and
-                // `is_long`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                ifx!{is_short.expr() + is_long.expr() => {
-                    // c_rlp2 can appear if long and if no branch above leaf
-                    let rlc = rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                        &r,
-                    );
-                    require!(a!(accs.acc_s.rlc) => rlc);
-                }}
-
-                // We need to ensure that the RLC of the row is computed properly for `last_level` and
-                // `one_nibble`. We compare the computed value with the value stored in `accumulators.acc_s.rlc`.
-                // `last_level` and `one_nibble` cases have one RLP byte (`s_rlp1`) and one byte (`s_rlp2`)
-                // where it is 32 (for `last_level`) or `48 + last_nibble` (for `one_nibble`).
-                ifx!{last_level.expr() + one_nibble.expr() => {
-                    // If leaf in last level, it contains only s_rlp1 and s_rlp2, while s_main.bytes are 0.
-                    let rlc_last_level_or_one_nibble = rlc::expr(
-                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..2].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                        &r,
-                    );
-                    require!(a!(accs.acc_s.rlc) => rlc_last_level_or_one_nibble);
-                }}
-
-                /* Storage leaf key RLC & nibbles count */
-                // If the last branch is placeholder (the placeholder branch is the same as its
-                // parallel counterpart), there is a branch `modified_node` nibble already
-                // incorporated in `key_rlc`. That means we need to ignore the first nibble here
-                // (in leaf key).
-                // `is_branch_placeholder = 0` when in first level
-                let is_branch_placeholder = ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {branch.is_placeholder()}};
-                // - We need to ensure that the storage leaf is at the key specified in `key_rlc` column (used
-                // by MPT lookup). To do this we take the key RLC computed in the branches above the leaf
-                // and add the remaining bytes (nibbles) stored in the leaf.
-                // We also ensure that the number of all nibbles (in branches / extension nodes above
-                // the leaf and in the leaf) is 64.
-                // - For leaf under the placeholder branch we would not need to check the key RLC -
-                // this leaf is something we did not ask for, it is just a leaf that happened to be
-                // at the place where adding a new leaf causes adding a new branch.
-                // For example, when adding a leaf `L` causes that a leaf `L1`
-                // (this will be the leaf under the branch placeholder)
-                // is replaced by a branch, we get a placeholder branch at `S` side
-                // and leaf `L1` under it. However, the key RLC needs to be compared for leaf `L`,
-                // because this is where the modification takes place.
-                // In delete, the situation is turned around.
-                // However, we also check that the key RLC for `L1` is computed properly because
-                // we need `L1` key RLC for the constraints for checking that leaf `L1` is the same
-                // as the drifted leaf in the branch parallel. This can be checked by
-                // comparing the key RLC of the leaf before being replaced by branch and the key RLC
-                // of this same leaf after it drifted into a branch.
-                // Constraints for this are in `leaf_key_in_added_branch.rs`.
-                // Note that the hash of a leaf `L1` needs to be checked to be in the branch
-                // above the placeholder branch - this is checked in `leaf_value.rs`.
-                // Note: `last_level` cannot occur in a leaf after placeholder branch, because being
-                // after placeholder branch means this leaf drifted down into a new branch (in a parallel
-                // proof) and thus cannot be in the last level.
-                // - key rlc is in the first branch node (not branch init)
-                for (is_placeholder, selector, is_first_storage_level, rot) in [
-                    (false, not::expr(is_branch_placeholder.expr()), is_leaf_in_first_storage_level.expr(), rot_into_init + 1),
-                    (true, is_branch_placeholder.expr(), a!(is_account_leaf_in_added_branch, rot_into_init - 1), rot_into_init + 1 - BRANCH_ROWS_NUM),
-                ].into_iter() {
-                    ifx!{selector => {
-                        // `key_rlc_acc_start = 0` if leaf in first storage level
-                        // `key_mult_start = 1` if leaf in first storage level
-                        let key_rlc_acc_start = ifx!{not::expr(is_first_storage_level.expr()) => {a!(accs.key.rlc, rot)}};
-                        let key_mult_start = ifx!{not::expr(is_first_storage_level.expr()) => {
-                            a!(accs.key.mult, rot)
-                        } elsex {
-                            1.expr()
-                        }};
-                        // `c16` and `c1` specify whether in the branch above the leaf the `modified_nibble`
-                        // had to be multiplied by 16 or by 1 for the computation the key RLC.
-                        // `c16 = 0, c1 = 1` if leaf in first storage level, because we do not have the branch above
-                        // and we need to multiply the first nibble by 16 (as it would be `c1` in the branch above)
-                        let branch = BranchNodeInfo::new(meta, s_main, is_s, rot - 1);
-                        let is_c16 = ifx!{not::expr(is_first_storage_level.expr()) => { branch.is_c16() }};
-                        let is_c1 = ifx!{not::expr(is_first_storage_level.expr()) => { branch.is_c1() } elsex { 1.expr() }};
-                        // Set to key_mult_start * r if is_c16, else key_mult_start
-                        let key_mult = key_mult_start.clone() * ifx!{is_c16 => { r[0].clone() } elsex { 1.expr() }};
-                        ifx!{is_short => {
-                            // - If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
-                            // This is because `is_c1` in the branch above means there is an even number of nibbles left
-                            // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                            // specifying the length) of the key is 32.
-                            // - If `is_c1 = 1` which means there is an even number of nibbles stored in a leaf,
-                            // we have 32 in `s_main.bytes[0]`.
-                            ifx!{is_c1 => {
-                                require!(a!(s_main.bytes[0]) => 32);
-                            }}
-                            // - When `is_short` the first key byte is at `s_main.bytes[0]`. We retrieve the key RLC from the
-                            // branch above the branch placeholder and add the nibbles stored in a leaf.
-                            // - We need to ensure the leaf key RLC is computed properly. We take the key RLC value
-                            // from the last branch and add the bytes from position
-                            // `s_main.bytes[0]` up at most to `c_main.rlp1`. We need to ensure that there are 0s
-                            // after the last key byte, this is done by `key_len_lookup`.
-                            // The computed value needs to be the same as the value stored `key_rlc` column.
-                            // `is_short` example:
-                            // [226,160,59,138,106,70,105,186,37,13,38[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]
-                            // Note: No need to distinguish between `c16` and `c1` here as it was already
-                            // when computing `key_rlc_acc_short`.
-                            // If sel1 = 1, we have nibble+48 in s_main.bytes[0].
-                            // c_rlp1 can appear if no branch above the leaf
-                            let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
-                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
-                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                            );
-                            require!(a!(accs.key.rlc) => key_rlc);
-                        }}
-                        ifx!{is_long => {
-                            // - If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
-                            // This is because `is_c1` in the branch above means there is an even number of nibbles left
-                            // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                            // specifying the length) of the key is 32.
-                            // - If `is_c1 = 1` which means there is an even number of nibbles stored in a leaf,
-                            // we have 32 in `s_main.bytes[1]`.
-                            ifx!{is_c1 => {
-                                require!(a!(s_main.bytes[1]) => 32);
-                            }}
-                            // - When `is_long` the first key byte is at `s_main.bytes[1]`. We retrieve the key RLC from the
-                            // branch above the branch placeholder and add the nibbles stored in a leaf.
-                            // - We need to ensure the leaf key RLC is computed properly. We take the key RLC value
-                            // from the last branch and add the bytes from position
-                            // `s_main.bytes[1]` up at most to `c_main.rlp2`. We need to ensure that there are 0s
-                            // after the last key byte, this is done by `key_len_lookup`.
-                            // The computed value needs to be the same as the value stored `key_rlc` column.
-                            // `is_long` example:
-                            // `[248,67,160,59,138,106,70,105,186,37,13,38,205,122,69,158,202,157,33,95,131,7,227,58,235,229,3,121,188,90,54,23,236,52,68,161,160,...`
-                            // Note: No need to distinguish between `c16` and `c1` here as it was already
-                            // when computing `key_rlc_acc_long`.
-                            // If `is_c16`, we have nibble+48 in `s_main.bytes[1]`.
-                            let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
-                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
-                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                            );
-                            require!(a!(accs.key.rlc) => key_rlc);
-                        }}
-
-                        // - Checking the total number of nibbles is to prevent having short addresses
-                        // which could lead to a root node which would be shorter than 32 bytes and thus not hashed. That
-                        // means the trie could be manipulated to reach a desired root.
-                        // - To get the number of nibbles above the leaf we need to go into the branch above the placeholder branch.
-                        // Note that when the leaf is in the first storage level (but positioned after the placeholder
-                        // in the circuit), there is no branch above the placeholder branch from where
-                        // `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
-                        let leaf_nibbles_long = ifx!{is_c1 => {
-                            (a!(s_main.bytes[0])- 128.expr() - 1.expr()) * 2.expr()
-                        } elsex {
-                            (a!(s_main.bytes[0])- 128.expr()) * 2.expr() - 1.expr()
-                        }};
-                        let leaf_nibbles_short = ifx!{is_c1 => {
-                            (a!(s_main.rlp2) - 128.expr() - 1.expr()) * 2.expr()
-                        } elsex {
-                            (a!(s_main.rlp2) - 128.expr()) * 2.expr() - 1.expr()
-                        }};
-                        let leaf_nibbles_last_level = 0.expr();
-                        let leaf_nibbles_one_nibble = 1.expr();
-                        let leaf_nibbles = leaf_nibbles_long * is_long.expr() + leaf_nibbles_short * is_short.expr()
-                            + leaf_nibbles_last_level * last_level.expr() + leaf_nibbles_one_nibble * one_nibble.expr();
-                        let nibbles_count = ifx!{not::expr(is_first_storage_level.expr()) => { branch.nibbles_counter().expr() }};
-                        require!(nibbles_count + leaf_nibbles => 64);
-
-                        // Note: When the leaf is after the placeholder branch, it cannot be in the last level
-                        // otherwise it would not be possible to add a branch placeholder.
-                        if is_placeholder {
-                            ifx!{last_level => {
-                                // When the leaf is in the last level there are no nibbles stored in the key and
-                                // `s_main.rlp2 = 32`.
-                                require!(a!(s_main.rlp2) => 32);
-                                // We need to ensure the leaf key RLC is computed properly.
-                                // When the leaf is in the last level we simply take the key RLC value
-                                // from the last branch and this is the final key RLC value as there is no
-                                // nibble in the leaf.
-                                // The computed value needs to be the same as the value stored `key_rlc` column.
-                                // Last level example:
-                                // `[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]`
-                                require!(a!(accs.key.rlc) => key_rlc_acc_start);
-                            }}
-
-                            // We need to ensure the leaf key RLC is computed properly.
-                            // When there is only one nibble in the leaf, we take the key RLC value
-                            // from the last branch and add the last remaining nibble stored in `s_main.rlp2`.
-                            // The computed value needs to be the same as the value stored `key_rlc` column.
-                            // One nibble example short value:
-                            // `[194,48,1]`
-                            // One nibble example long value:
-                            // `[227,48,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]`
-                            ifx!{one_nibble => {
-                                let key_rlc = key_rlc_acc_start.expr() + (a!(s_main.rlp2) - 48.expr()) * key_mult_start;
-                                require!(a!(accs.key.rlc) => key_rlc);
-                            }}
-                        }
+            // Calculate the key RLC
+            let is_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_parent);
+            let (key_rlc_prev, key_mult_prev, is_c16, nibbles_count_prev) = ifx!{not!(is_in_first_storage_level) => {
+                ifx!{branch.is_placeholder() => {
+                    ifx!{not!(a!(is_account_leaf_in_added_branch, rot_branch_parent)) => {
+                        let branch_prev = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init_prev);
+                        let rot_prev = rot_first_child_prev;
+                        (a!(accs.key.rlc, rot_prev), a!(accs.key.mult, rot_prev), branch_prev.is_c16(), branch_prev.nibbles_counter().expr())
+                    } elsex {
+                        (0.expr(), 1.expr(), 0.expr(), 0.expr())
                     }}
-                }
+                } elsex {
+                    let rot = rot_first_child;
+                    (a!(accs.key.rlc, rot), a!(accs.key.mult, rot), branch.is_c16(), branch.nibbles_counter().expr())
+                }}
+            } elsex {
+                (0.expr(), 1.expr(), 0.expr(), 0.expr())
+            }};
+            // Set to key_mult_start * r if is_c16, else key_mult_start
+            let key_mult = key_mult_prev.expr() * ifx!{is_c16 => { r[0].clone() } elsex { 1.expr() }};
+            // TODO(Brecht): Shift the bytes in the witness so the same constraints can be used?
+            let key_rlc = key_rlc_prev.expr() + matchx!{
+                is_short => {
+                    // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
+                    // This is because `is_c1` in the branch above means there is an even number of nibbles left
+                    // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+                    // specifying the length) of the key is 32.
+                    ifx!{not!(is_c16) => {
+                        require!(a!(s_main.bytes[0]) => 32);
+                    }}
+                    // When `is_short` the first key byte is at `s_main.bytes[0]`.
+                    // If is_c16, we have nibble+48 in s_main.bytes[0].
+                    rlc::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
+                            (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                        &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                    )
+                },
+                is_long => {
+                    // `s_main.rlp1` needs to be 248.
+                    require!(a!(s_main.rlp1) => 248);
+                    // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
+                    // This is because `is_c1` in the branch above means there is an even number of nibbles left
+                    // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
+                    // specifying the length) of the key is 32.
+                    ifx!{not!(is_c16) => {
+                        require!(a!(s_main.bytes[1]) => 32);
+                    }}
+                    // When `is_long` the first key byte is at `s_main.bytes[1]`.
+                    // If `is_c16`, we have nibble+48 in `s_main.bytes[1]`.
+                    rlc::expr(
+                        &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                            (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                        &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                    )
+                },
+                has_no_nibble => {
+                    // When `last_level`, there is no nibble stored in the leaf key, it is just the value
+                    // `32` in `s_main.rlp2`. In the `getProof` output, there is then the value stored immediately
+                    // after `32`. However, in the MPT witness, we have value in the next row, so there are 0s
+                    // in `s_main.bytes`.
+                    require!(a!(s_main.rlp2) => 32);
+                    // No nibble
+                    0.expr()
+                },
+                has_one_nibble => {
+                    // When there is only one nibble we take the last remaining nibble stored in `s_main.rlp2`.
+                    (a!(s_main.rlp2) - 48.expr()) * key_mult_prev
+                },
+            };
+            require!(a!(accs.key.rlc) => key_rlc);
+
+            // Get the number of bytes used for the key in the leaf.
+            let key_len = matchx! {
+                has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 byte in s_rlp2
+                is_short => a!(s_main.rlp2) - 128.expr(),
+                is_long => a!(s_main.bytes[0]) - 128.expr(),
+            };
+            // Total number of nibbles needs to be 64 (except in a placeholder leaf).
+            let is_in_first_level = a!(denoter.sel(is_s), 1);
+            let is_leaf_placeholder = is_in_first_level + ifx! {not!(is_in_first_storage_level) => {
+                a!(denoter.sel(is_s), rot_first_child)
+            }};
+            let num_nibbles = ifx! {is_c16 => {
+                key_len.expr() * 2.expr() - 1.expr()
+            } elsex {
+                (key_len.expr() - 1.expr()) * 2.expr()
+            }};
+            ifx! {not!(is_leaf_placeholder) => {
+                require!(nibbles_count_prev + num_nibbles => 64);
             }}
 
-            // RLC bytes zero check
-            // There are 0s in `s_main.bytes` after the last key nibble (this does not need
-            // to be checked for `last_level` and `one_nibble` as in these cases
-            // `s_main.bytes` are not used).
-            ifx! {is_short => {
-                let num_bytes = a!(s_main.rlp2) - 128.expr();
-                require!((FixedTableTag::RMult, num_bytes.expr() + 2.expr(), a!(accs.acc_s.mult)) => @"mult");
-                // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35]
-                cb.set_range_length(num_bytes);
-            }}
-            ifx! {is_long => {
-                let num_bytes = a!(s_main.bytes[0]) - 128.expr();
-                require!((FixedTableTag::RMult, num_bytes.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
-                // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
-                cb.set_range_length(num_bytes.expr() + 1.expr());
-            }}
+            // Num bytes used in RLC
+            let num_bytes = key_len + matchx! {
+                has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 RLP byte
+                is_short => 2.expr(), // 2 RLP bytes
+                is_long => 3.expr(), // 3 RLP bytes
+            };
+            // Multiplier is number of bytes
+            require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
+            // RLC bytes zero check (subtract RLP bytes used)
+            cb.set_range_length(num_bytes.expr() - 2.expr());
         });
 
         LeafKeyConfig {
