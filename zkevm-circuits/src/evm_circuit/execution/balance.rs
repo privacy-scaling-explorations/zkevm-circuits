@@ -182,8 +182,8 @@ mod test {
         });
 
         test_root_ok(&account, false);
-        // test_internal_ok(0x20, 0x00, &account, false);
-        // test_internal_ok(0x1010, 0xff, &account, false);
+        test_internal_ok(0x20, 0x00, &account, false);
+        test_internal_ok(0x1010, 0xff, &account, false);
     }
 
     #[test]

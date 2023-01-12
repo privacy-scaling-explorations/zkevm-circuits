@@ -24,8 +24,7 @@ use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
 use strum::IntoEnumIterator;
 
-const N_ROWS: usize = 1 << 16; // TODO: Uncomment
-                               // const N_ROWS: usize = 1 << 8;
+const N_ROWS: usize = 1 << 16;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum AdviceColumn {
@@ -106,7 +105,6 @@ fn test_state_circuit_ok(
     let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
-    // prover.assert_satisfied();
 }
 
 #[test]
