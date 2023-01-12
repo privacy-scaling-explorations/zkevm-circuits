@@ -713,9 +713,9 @@ mod super_circuit_tests {
 
     #[ignore]
     #[test]
-    fn serial_test_super_circuit_1tx_deploy_1max_tx() {
+    fn serial_test_super_circuit_1tx_deploy_2max_tx() {
         let block = block_1tx_deploy();
-        const MAX_TXS: usize = 1;
+        const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;

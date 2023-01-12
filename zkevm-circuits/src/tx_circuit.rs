@@ -524,6 +524,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         });
          */
 
+        #[cfg(feature = "non-legacy-tx")]
         meta.create_gate("caller address == sv_address if it's not zero", |meta| {
             let mut cb = BaseConstraintBuilder::default();
 
