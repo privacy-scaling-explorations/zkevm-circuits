@@ -749,12 +749,15 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block
-            .bytecodes
-            .values()
-            .map(|bytecode| bytecode.bytes.len() + 1)
-            .sum()
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block
+                .bytecodes
+                .values()
+                .map(|bytecode| bytecode.bytes.len() + 1)
+                .sum(),
+            block.circuits_params.max_bytecode,
+        )
     }
 
     /// Make the assignments to the TxCircuit
