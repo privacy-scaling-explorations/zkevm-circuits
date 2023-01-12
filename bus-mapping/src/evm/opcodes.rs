@@ -17,6 +17,8 @@ use ethers_core::utils::get_contract_address;
 use keccak256::EMPTY_HASH;
 use log::warn;
 
+use crate::util::CHECK_MEM_STRICT;
+
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
 
@@ -264,6 +266,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         }
     }
 }
+
 #[allow(clippy::collapsible_else_if)]
 /// Generate the associated operations according to the particular
 /// [`OpcodeId`].
@@ -277,7 +280,7 @@ pub fn gen_associated_ops(
     // if no errors, continue as normal
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
-        let check_level = 0; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
+        let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
         match check_level {
             1 => {
                 if state.call_ctx()?.memory != geth_steps[0].memory {
