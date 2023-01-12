@@ -200,16 +200,19 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(block);
         let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
             .iter()
             .map(|tag| tag.build::<F>().count())
             .sum();
-        std::cmp::max(
-            num_rows_required_for_execution_steps,
-            num_rows_required_for_fixed_table,
+        (
+            std::cmp::max(
+                num_rows_required_for_execution_steps,
+                num_rows_required_for_fixed_table,
+            ),
+            block.evm_circuit_pad_to,
         )
     }
 

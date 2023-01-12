@@ -455,7 +455,7 @@ impl<
         );
 
         const NUM_BLINDING_ROWS: usize = 64;
-        let rows_needed = Self::min_num_rows_block(&block);
+        let (_, rows_needed) = Self::min_num_rows_block(&block);
         let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
         log::debug!("super circuit needs k = {}", k);
 
@@ -496,7 +496,7 @@ impl<
     }
 
     /// Return the minimum number of rows required to prove the block
-    pub fn min_num_rows_block(block: &Block<F>) -> usize {
+    pub fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
         let evm = EvmCircuit::min_num_rows_block(block);
         let state = StateCircuit::min_num_rows_block(block);
         let bytecode = BytecodeCircuit::min_num_rows_block(block);
@@ -507,7 +507,18 @@ impl<
         let exp = ExpCircuit::min_num_rows_block(block);
         let pi = PiCircuit::min_num_rows_block(block);
 
-        itertools::max([evm, state, bytecode, copy, keccak, tx, rlp, exp, pi]).unwrap()
+        let rows: Vec<(usize, usize)> = vec![evm, state, bytecode, copy, keccak, tx, rlp, exp, pi];
+        let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
+            rows.into_iter().unzip();
+        log::debug!(
+            "subcircuit rows(without padding): {:?}",
+            rows_without_padding
+        );
+        log::debug!("subcircuit rows(with    padding): {:?}", rows_with_padding);
+        (
+            itertools::max(rows_without_padding).unwrap(),
+            itertools::max(rows_with_padding).unwrap(),
+        )
     }
 }
 

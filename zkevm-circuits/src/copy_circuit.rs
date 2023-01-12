@@ -664,8 +664,11 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block.copy_events.iter().map(|c| c.bytes.len() * 2).sum()
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block.copy_events.iter().map(|c| c.bytes.len() * 2).sum(),
+            block.copy_circuit_pad_to,
+        )
     }
 
     /// Make the assignments to the CopyCircuit

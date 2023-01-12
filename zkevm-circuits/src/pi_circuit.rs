@@ -858,10 +858,17 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        BLOCK_HEADER_BYTES_NUM * block.circuits_params.max_inner_blocks
-            + KECCAK_DIGEST_SIZE * block.circuits_params.max_txs
-            + 33
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let row_num = |inner_block_num, tx_num| {
+            BLOCK_HEADER_BYTES_NUM * inner_block_num + KECCAK_DIGEST_SIZE * tx_num + 33
+        };
+        (
+            row_num(block.context.ctxs.len(), block.txs.len()),
+            row_num(
+                block.circuits_params.max_inner_blocks,
+                block.circuits_params.max_txs,
+            ),
+        )
     }
 
     /// Compute the public inputs for this circuit.

@@ -164,8 +164,9 @@ pub trait SubCircuit<F: Field> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error>;
 
-    /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize;
+    /// Return the minimum number of rows required to prove the block.
+    /// Row numbers without/with padding are both returned.
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
 }
 
 /// SubCircuit configuration
