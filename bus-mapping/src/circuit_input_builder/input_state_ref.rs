@@ -1191,7 +1191,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 0u64.into(),
             );
 
-            //even call.rw_counter_end_of_reversion is zero for now, it will set in 
+            //even call.rw_counter_end_of_reversion is zero for now, it will set in
             //set_value_ops_call_context_rwc_eor later
             // if call fails, no matter root or internal, read RwCounterEndOfReversion for
             // circuit constraint.
@@ -1203,7 +1203,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     call.rw_counter_end_of_reversion.into(),
                 );
             }
-       
 
             if call.is_root {
                 return Ok(());

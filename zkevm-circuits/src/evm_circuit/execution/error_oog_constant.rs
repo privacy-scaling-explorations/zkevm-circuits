@@ -55,7 +55,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
         // constrain RwCounterEndOfReversion
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::RwCounterEndOfReversion, rw_counter_end_of_reversion.expr());
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
 
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
@@ -90,8 +95,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             )
         });
 
-        cb.require_equal("rw_counter_end_of_reversion = rw_counter + reversible_counter - 1", rw_counter_end_of_reversion.expr(), 
-        cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() + cb.curr.state.reversible_write_counter.expr() - 1.expr());        
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter + reversible_counter - 1",
+            rw_counter_end_of_reversion.expr(),
+            cb.curr.state.rw_counter.expr()
+                + cb.rw_counter_offset()
+                + cb.curr.state.reversible_write_counter.expr()
+                - 1.expr(),
+        );
 
         Self {
             opcode,
@@ -127,7 +138,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             F::from(step.gas_cost),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(region, offset, Value::known(F::from(call.rw_counter_end_of_reversion as u64)))?;
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
 
         self.restore_context
             .assign(region, offset, block, call, step, 2)?;
