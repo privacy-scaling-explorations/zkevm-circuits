@@ -1,5 +1,5 @@
 use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_ACCOUNT_ADDRESS;
+use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
 use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::SameContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::Delta;
@@ -27,7 +27,7 @@ pub(crate) struct ExtcodesizeGadget<F> {
     is_warm: Cell<F>,
     code_hash: Cell<F>,
     not_exists: IsZeroGadget<F>,
-    code_size: RandomLinearCombination<F, 8>,
+    code_size: RandomLinearCombination<F, N_BYTES_U64>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {

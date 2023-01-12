@@ -210,10 +210,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, callee_code_hash.expr(), cb.empty_hash_rlc());
-        // is_empty_code_hash_expr is true when the account exists and has empty
+        // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).
-        let is_empty_code_hash_expr = is_empty_code_hash.expr() + callee_not_exists.expr();
+        let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
@@ -236,7 +236,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(
-            is_empty_code_hash_expr.clone() * not::expr(is_insufficient_balance.expr()),
+            no_callee_code.clone() * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -303,7 +303,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            not::expr(is_empty_code_hash_expr) * not::expr(is_insufficient_balance.expr()),
+            not::expr(no_callee_code) * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [

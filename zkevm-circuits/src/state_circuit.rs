@@ -60,7 +60,7 @@ pub struct StateCircuitConfig<F> {
     // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
     // non-existing, otherwise do lookup for ProofType::StorageChanged.
     is_non_exist: BatchedIsZeroConfig,
-    // Intermediarey witness used to reduce mpt lookup expression degree
+    // Intermediary witness used to reduce mpt lookup expression degree
     mpt_proof_type: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
