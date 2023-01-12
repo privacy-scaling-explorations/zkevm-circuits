@@ -1642,9 +1642,16 @@ impl<F: Field> KeccakCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         witness: &[KeccakRow<F>],
     ) -> Result<(), Error> {
+        let mut is_first_time = true;
         layouter.assign_region(
             || "assign keccak rows",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    let offset = witness.len() - 1;
+                    self.set_row(&mut region, offset, &witness[offset])?;
+                    return Ok(());
+                }
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     self.set_row(&mut region, offset, keccak_row)?;
                 }

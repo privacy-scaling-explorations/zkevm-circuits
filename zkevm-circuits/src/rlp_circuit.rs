@@ -1310,7 +1310,13 @@ impl<F: Field> RlpCircuitConfig<F> {
                     ChainId,
                 ];
 
-                for signed_tx in signed_txs.iter() {
+                for (signed_tx_idx, signed_tx) in signed_txs.iter().enumerate() {
+                    log::debug!(
+                        "rlp circuit assign {}th tx at offset:{}, tx hash {:?}",
+                        signed_tx_idx,
+                        offset,
+                        signed_tx.tx.hash
+                    );
                     // tx hash (signed tx)
                     let mut all_bytes_rlc_acc = Value::known(F::zero());
                     let tx_hash_rows = signed_tx.gen_witness(challenges);

@@ -192,9 +192,10 @@ impl<F: Field> StateCircuitConfig<F> {
 
         let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
         log::info!(
-            "state circuit assign total rows {}, n_rows {}",
+            "state circuit assign total rows {}, n_rows {}, padding_length {}",
             rows.len(),
-            n_rows
+            n_rows,
+            padding_length
         );
         let rows_len = rows.len();
         let rows = rows.iter();
@@ -205,6 +206,9 @@ impl<F: Field> StateCircuitConfig<F> {
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
                 log::trace!("state circuit assign offset:{} row:{:?}", offset, row);
+            }
+            if offset + 1 >= n_rows || offset == padding_length {
+                log::debug!("state circuit assign offset:{} row:{:?}", offset, row);
             }
 
             region.assign_fixed(
