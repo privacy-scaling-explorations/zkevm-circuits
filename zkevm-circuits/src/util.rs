@@ -155,6 +155,10 @@ pub trait SubCircuit<F: Field> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error>;
+
+    /// Return the minimum number of rows required to prove the block.
+    /// Row numbers without/with padding are both returned.
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize);
 }
 
 /// SubCircuit configuration
@@ -164,4 +168,9 @@ pub trait SubCircuitConfig<F: Field> {
 
     /// Type constructor
     fn new(meta: &mut ConstraintSystem<F>, args: Self::ConfigArgs) -> Self;
+}
+
+/// Ceiling of log_2(n)
+pub fn log2_ceil(n: usize) -> u32 {
+    u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
 }

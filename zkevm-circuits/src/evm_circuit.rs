@@ -14,8 +14,9 @@ pub(crate) mod util;
 pub mod table;
 
 use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable};
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
 pub use crate::witness;
+use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use execution::ExecutionConfig;
 use itertools::Itertools;
@@ -211,6 +212,23 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         Self::new(block.clone())
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let num_rows_required_for_execution_steps: usize =
+            EvmCircuit::<F>::get_num_rows_required(block);
+        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(block)
+            .iter()
+            .map(|tag| tag.build::<F>().count())
+            .sum();
+        (
+            std::cmp::max(
+                num_rows_required_for_execution_steps,
+                num_rows_required_for_fixed_table,
+            ),
+            block.evm_circuit_pad_to,
+        )
+    }
+
     /// Make the assignments to the EvmCircuit
     fn synthesize_sub(
         &self,
@@ -226,18 +244,42 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     }
 }
 
+/// create fixed_table_tags needed given witness block
+pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
+    let need_bitwise_lookup = block.txs.iter().any(|tx| {
+        tx.steps.iter().any(|step| {
+            matches!(
+                step.opcode,
+                Some(OpcodeId::AND)
+                    | Some(OpcodeId::OR)
+                    | Some(OpcodeId::XOR)
+                    | Some(OpcodeId::NOT)
+            )
+        })
+    });
+    FixedTableTag::iter()
+        .filter(|t| {
+            !matches!(
+                t,
+                FixedTableTag::BitwiseAnd | FixedTableTag::BitwiseOr | FixedTableTag::BitwiseXor
+            ) || need_bitwise_lookup
+        })
+        .collect()
+}
+
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use super::*;
     use crate::{
-        evm_circuit::{table::FixedTableTag, witness::Block, EvmCircuitConfig},
+        evm_circuit::{witness::Block, EvmCircuitConfig},
         exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::{power_of_randomness_from_instance, Challenges},
         witness::block_convert,
     };
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId, mock::BlockData};
+    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::{geth_types::GethData, Field, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::{MockProver, VerifyFailure},
@@ -247,7 +289,6 @@ pub mod test {
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
     };
-    use strum::IntoEnumIterator;
 
     pub(crate) fn rand_range<T, R>(range: R) -> T
     where
@@ -267,31 +308,6 @@ pub mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    /// create fixed_table_tags needed given witness block
-    pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
-        let need_bitwise_lookup = block.txs.iter().any(|tx| {
-            tx.steps.iter().any(|step| {
-                matches!(
-                    step.opcode,
-                    Some(OpcodeId::AND)
-                        | Some(OpcodeId::OR)
-                        | Some(OpcodeId::XOR)
-                        | Some(OpcodeId::NOT)
-                )
-            })
-        });
-        FixedTableTag::iter()
-            .filter(|t| {
-                !matches!(
-                    t,
-                    FixedTableTag::BitwiseAnd
-                        | FixedTableTag::BitwiseOr
-                        | FixedTableTag::BitwiseXor
-                ) || need_bitwise_lookup
-            })
-            .collect()
     }
 
     impl<F: Field> Circuit<F> for EvmCircuit<F> {
@@ -391,7 +407,7 @@ pub mod test {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         run_test_circuit(block)
     }
 
@@ -404,7 +420,7 @@ pub mod test {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         run_test_circuit(block)
     }
 
@@ -431,8 +447,6 @@ pub mod test {
             .iter()
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
             .sum();
-
-        let log2_ceil = |n| u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32;
 
         const NUM_BLINDING_ROWS: usize = 64;
 
@@ -493,19 +507,39 @@ pub mod test {
 mod evm_circuit_stats {
     use super::test::*;
     use super::*;
-    use crate::evm_circuit::step::ExecutionState;
+    use crate::{evm_circuit::step::ExecutionState, witness::block_convert};
+    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::ConstraintSystem;
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
 
-    #[test]
-    pub fn empty_evm_circuit() {
+    fn get_empty_witness_block() -> Block<Fr> {
         let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
             .unwrap()
             .into();
-        run_test_circuit_geth_data_default::<Fr>(block).unwrap();
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+
+        block_convert(&builder.block, &builder.code_db).unwrap()
+    }
+
+    #[test]
+    pub fn empty_evm_circuit_no_padding() {
+        let block = get_empty_witness_block();
+        run_test_circuit(block).unwrap();
+    }
+
+    #[test]
+    pub fn empty_evm_circuit_with_padding() {
+        let mut block = get_empty_witness_block();
+        block.evm_circuit_pad_to = (1 << 18) - 100;
+        run_test_circuit(block).unwrap();
     }
 
     /// This function prints to stdout a table with all the implemented states

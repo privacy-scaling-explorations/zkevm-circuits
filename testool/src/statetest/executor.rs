@@ -7,14 +7,10 @@ use ethers_core::k256::ecdsa::SigningKey;
 use ethers_core::types::TransactionRequest;
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
-use halo2_proofs::dev::MockProver;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
-
-const EVMERR_OOG: &str = "out of gas";
-const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
-const EVMERR_GAS_UINT64OVERFLOW: &str = "gas uint64 overflow";
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -222,16 +218,6 @@ pub fn run_test(
         )));
     }
 
-    for err in [EVMERR_STACKUNDERFLOW, EVMERR_OOG, EVMERR_GAS_UINT64OVERFLOW] {
-        if geth_traces[0]
-            .struct_logs
-            .iter()
-            .any(|step| step.error.as_ref().map(|e| e.contains(err)) == Some(true))
-        {
-            return Err(StateTestError::SkipUnimplemented(format!("Error {}", err)));
-        }
-    }
-
     if geth_traces[0].gas.0 > suite.max_gas {
         return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
     }
@@ -326,7 +312,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<_, 1, 32, 255>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, 1, 32, 255>::build(geth_data).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

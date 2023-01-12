@@ -14,6 +14,7 @@ use halo2_proofs::plonk::Instance;
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
+use crate::tx_circuit::TX_LEN;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use gadgets::is_zero::IsZeroChip;
@@ -25,7 +26,6 @@ use halo2_proofs::{
 };
 
 /// Fixed by the spec
-const TX_LEN: usize = 10;
 const BLOCK_LEN: usize = 7 + 256;
 const EXTRA_LEN: usize = 2;
 const ZERO_BYTE_GAS_COST: u64 = 4;
@@ -1140,6 +1140,21 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             block.randomness,
             block.randomness + F::from_u128(1),
             public_data,
+        )
+    }
+
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let row_num = |tx_num, calldata_len| {
+            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * tx_num + 1) + calldata_len
+        };
+        let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
+        (
+            row_num(block.txs.len(), calldata_len),
+            row_num(
+                block.circuits_params.max_txs,
+                block.circuits_params.max_calldata,
+            ),
         )
     }
 
