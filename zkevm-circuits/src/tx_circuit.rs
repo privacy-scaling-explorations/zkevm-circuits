@@ -335,10 +335,16 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        Self::min_num_rows(
-            block.txs.len(),
-            block.txs.iter().map(|tx| tx.call_data.len()).sum(),
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            Self::min_num_rows(
+                block.txs.len(),
+                block.txs.iter().map(|tx| tx.call_data.len()).sum(),
+            ),
+            Self::min_num_rows(
+                block.circuits_params.max_txs,
+                block.circuits_params.max_calldata,
+            ),
         )
     }
 

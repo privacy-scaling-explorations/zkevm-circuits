@@ -40,6 +40,8 @@ pub struct Block<F> {
     pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
+    /// Pad copy circuit to make selectors fixed.
+    pub copy_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
@@ -192,6 +194,7 @@ pub fn block_convert<F: Field>(
         circuits_params: block.circuits_params.clone(),
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
+        copy_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
