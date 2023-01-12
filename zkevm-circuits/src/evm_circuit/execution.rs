@@ -186,7 +186,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    height_map: HashMap<ExecutionState, usize>,
+    pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
@@ -255,10 +255,10 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
     error_oog_static_memory_gadget:
-    DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
-    DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
     error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
     error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
@@ -278,10 +278,10 @@ pub(crate) struct ExecutionConfig<F> {
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
-    DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
-    DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
     invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
@@ -518,13 +518,7 @@ impl<F: Field> ExecutionConfig<F> {
             invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
-            height_map: {
-                println!("height_map");
-                for (k, v) in height_map.iter() {
-                    println!("| {:?} | {:?} |", k, v);
-                }
-                height_map
-            },
+            height_map,
             stored_expressions_map,
         };
 
@@ -544,15 +538,6 @@ impl<F: Field> ExecutionConfig<F> {
         );
 
         config
-    }
-
-    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
-        self.height_map.get(&execution_state).copied()
-    }
-
-    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        self.get_step_height_option(execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -665,8 +650,8 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndBlock],
                         ),
                     ])
-                        .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
-                        .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
+                    .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
+                    .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
                 )
                 .chain(
                     IntoIterator::into_iter([
@@ -689,8 +674,8 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndTx, ExecutionState::EndBlock],
                         ),
                     ])
-                        .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
-                        .map(|(_, to, _)| step_next.execution_state_selector([to])),
+                    .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
+                    .map(|(_, to, _)| step_next.execution_state_selector([to])),
                 )
                 // Accumulate all state transition checks.
                 // This can be done because all summed values are enforced to be boolean.
@@ -737,7 +722,7 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
                     }
-                        .table_exprs(meta);
+                    .table_exprs(meta);
                     vec![(
                         column.expr(),
                         rlc::expr(&table_expressions, power_of_randomness),
@@ -836,7 +821,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = self.get_step_height(step.execution_state);
+                    let height = step.execution_state.get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -867,7 +852,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
-                    let height = self.get_step_height(ExecutionState::EndBlock);
+                    let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -894,7 +879,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = self.get_step_height(ExecutionState::EndBlock);
+                let height = ExecutionState::EndBlock.get_step_height();
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(

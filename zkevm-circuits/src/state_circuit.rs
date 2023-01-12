@@ -444,8 +444,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
 #[cfg(any(feature = "test", test))]
 impl<F: Field> Circuit<F> for StateCircuit<F>
-where
-    F: Field,
+    where
+        F: Field,
 {
     type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -537,8 +537,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         // Address9, which is always 0 for Rw::Stack rows.
         is_tag_and_id_unchanged: 4.expr()
             * (meta.query_advice(first_different_limb.bits[0], Rotation::cur())
-                + meta.query_advice(first_different_limb.bits[1], Rotation::cur())
-                + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
+            + meta.query_advice(first_different_limb.bits[1], Rotation::cur())
+            + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
@@ -559,11 +559,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 #[cfg(test)]
 mod state_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
-    use crate::evm_circuit::EvmCircuit;
     use bus_mapping::{circuit_input_builder::ExecState, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
     use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
     use strum::IntoEnumIterator;
 
@@ -583,12 +580,10 @@ mod state_circuit_stats {
         // Get the list of implemented execution states by configuring the EVM Circuit
         // and querying the step height for each possible execution state (only those
         // implemented will return a Some value).
-        let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = EvmCircuit::configure(&mut meta);
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.execution.get_step_height_option(state);
+            let height = state.get_step_height_option();
             if height.is_some() {
                 implemented_states.push(state);
             }
@@ -651,8 +646,8 @@ mod state_circuit_stats {
                     },
                     |block, _tx| block.number(0xcafeu64),
                 )
-                .unwrap()
-                .into();
+                    .unwrap()
+                    .into();
                 let mut builder =
                     BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
                 builder

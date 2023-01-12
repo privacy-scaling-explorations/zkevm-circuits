@@ -1,4 +1,5 @@
 use super::util::{CachedRegion, CellManager, CellType};
+use crate::evm_circuit::param::EXECUTION_STATE_HEIGHT_MAP;
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
@@ -313,104 +314,14 @@ impl ExecutionState {
         }
     }
 
-
-    pub fn get_step_height(&self) -> usize{
-        match self {
-            // Internal state
-            Self::BeginTx => 10,
-            Self::EndBlock => 1,
-            Self::EndTx => 14,
-            // Opcode successful cases
-            Self::STOP => 2,
-            Self::ADD_SUB => 5,
-            Self::ADDMOD => 17,
-            Self::BITWISE => 5,
-            Self::BYTE => 3,
-            Self::MUL_DIV_MOD =>8,
-            Self::SDIV_SMOD => 19,
-            Self::SHL_SHR => 10,
-            Self::MULMOD => 20,
-            Self::EXP => 7,
-            Self::SIGNEXTEND => 4,
-            Self::CMP => 5,
-            Self::SCMP => 5,
-            Self::ISZERO => 1,
-            Self::NOT => 5,
-            Self::SAR => 4,
-            Self::SHA3 => 4,
-            Self::ADDRESS => 2,
-            Self::BALANCE => 2,
-            Self::ORIGIN => 2,
-            Self::CALLER => 2,
-            Self::CALLVALUE => 1,
-            Self::CALLDATALOAD => 9,
-            Self::CALLDATASIZE => 1,
-            Self::CALLDATACOPY => 3,
-            Self::CODESIZE => 1,
-            Self::CODECOPY =>3,
-            Self::GASPRICE => 1,
-            Self::EXTCODESIZE => 2,
-            Self::EXTCODECOPY => 6,
-            Self::RETURNDATASIZE => 1,
-            Self::RETURNDATACOPY => 3,
-            Self::EXTCODEHASH => 2,
-            Self::BLOCKHASH => 3,
-            Self::BLOCKCTXU64 => 1,
-            Self::BLOCKCTXU160 => 2,
-            Self::BLOCKCTXU256 => 2,
-            Self::CHAINID => 1,
-            Self::SELFBALANCE => 1,
-            Self::POP => 1,
-            Self::MEMORY => 5,
-            Self::SLOAD => 2,
-            Self::SSTORE => 2,
-            Self::JUMP => 1,
-            Self::JUMPI => 1,
-            Self::PC => 1,
-            Self::MSIZE => 1,
-            Self::GAS => 1,
-            Self::JUMPDEST => 1,
-            Self::PUSH => 9,
-            Self::DUP => 1,
-            Self::SWAP => 1,
-            Self::LOG => 3,
-            Self::CREATE => 6,
-            Self::CALL_OP => 17,
-            Self::RETURN_REVERT => 3,
-            Self::CREATE2 => 7,
-            Self::SELFDESTRUCT => 2,
-            // Error cases
-            Self::ErrorInvalidOpcode => 1,
-            Self::ErrorStack => 2,
-            Self::ErrorWriteProtection => 1,
-            Self::ErrorDepth => 1,
-            Self::ErrorInsufficientBalance => 1,
-            Self::ErrorContractAddressCollision => 1,
-            Self::ErrorInvalidCreationCode => 1,
-            Self::ErrorMaxCodeSizeExceeded => ,
-            Self::ErrorInvalidJump => 2,
-            Self::ErrorReturnDataOutOfBound => 1,
-            Self::ErrorOutOfGasConstant => 2,
-            Self::ErrorOutOfGasStaticMemoryExpansion => 1,
-            Self::ErrorOutOfGasDynamicMemoryExpansion => 1,
-            Self::ErrorOutOfGasMemoryCopy => 1,
-            Self::ErrorOutOfGasAccountAccess => 1,
-            Self::ErrorOutOfGasCodeStore => 1,
-            Self::ErrorOutOfGasLOG => 1,
-            Self::ErrorOutOfGasEXP => 1,
-            Self::ErrorOutOfGasSHA3 => 1,
-            Self::ErrorOutOfGasEXTCODECOPY => 1,
-            Self::ErrorOutOfGasSLOAD => 1,
-            Self::ErrorOutOfGasSSTORE => 1,
-            Self::ErrorOutOfGasCALL => 8,
-            Self::ErrorOutOfGasCALLCODE => 1,
-            Self::ErrorOutOfGasDELEGATECALL => 1,
-            Self::ErrorOutOfGasCREATE2 => 1,
-            Self::ErrorOutOfGasSTATICCALL => 1,
-            Self::ErrorOutOfGasSELFDESTRUCT => 1,
-        }
+    pub fn get_step_height_option(&self) -> Option<usize> {
+        EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
     }
 
+    pub fn get_step_height(&self) -> usize {
+        self.get_step_height_option()
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+    }
 }
 
 /// Dynamic selector that generates expressions of degree 2 to select from N

@@ -1,4 +1,9 @@
 use super::table::Table;
+use crate::evm_circuit::step::ExecutionState;
+use crate::evm_circuit::EvmCircuit;
+use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+use std::collections::HashMap;
 
 // Step dimension
 pub(crate) const STEP_WIDTH: usize = 128;
@@ -59,8 +64,12 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 // Number of bytes that will be used for call data's size.
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 
-
 lazy_static::lazy_static! {
-    // execution::rows
+    pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
+}
+fn get_step_height_map() -> HashMap<ExecutionState, usize> {
+    let mut meta = ConstraintSystem::<Fr>::default();
+    let circuit = EvmCircuit::configure(&mut meta);
 
+    circuit.execution.height_map
 }
