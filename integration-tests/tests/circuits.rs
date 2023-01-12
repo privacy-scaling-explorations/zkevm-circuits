@@ -69,7 +69,7 @@ fn test_with<C: SubCircuit<Fr> + Circuit<Fr>>(
     block: &witness::Block<Fr>,
     instance: Vec<Vec<Fr>>,
 ) -> MockProver<Fr> {
-    let rows_needed = C::min_num_rows_block(block);
+    let (_, rows_needed) = C::min_num_rows_block(block);
     let k = log2_ceil(128 + rows_needed);
     log::debug!("{} circuit needs k = {}", *CIRCUIT, k);
     let circuit = C::new_from_block(block);
