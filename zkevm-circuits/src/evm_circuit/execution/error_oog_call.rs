@@ -18,9 +18,8 @@ use crate::evm_circuit::{
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCallGadget<F> {
@@ -115,11 +114,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         });
         let is_empty_nonce_and_balance =
             BatchedIsZeroGadget::construct(cb, [callee_nonce.expr(), balance.expr()]);
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            phase2_callee_code_hash.expr(),
-            cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr())),
-        );
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
         let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
         // Sum up gas cost
         let gas_cost = select::expr(
@@ -290,7 +286,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE)),
+            region.empty_hash_rlc(),
         )?;
         let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();

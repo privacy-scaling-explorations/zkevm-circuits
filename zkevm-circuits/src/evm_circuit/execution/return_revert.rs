@@ -22,7 +22,6 @@ use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
@@ -121,13 +120,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 .map(|tag| cb.call_context(None, tag));
                 let mut reversion_info = cb.reversion_info_read(None);
 
-                let empty_code_hash_rlc = cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()));
-
                 cb.account_write(
                     address.expr(),
                     AccountFieldTag::CodeHash,
                     code_hash.expr(),
-                    empty_code_hash_rlc,
+                    cb.empty_hash_rlc(),
                     Some(&mut reversion_info),
                 );
 

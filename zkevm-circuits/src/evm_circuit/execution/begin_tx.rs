@@ -17,10 +17,9 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -157,11 +156,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             phase2_code_hash.expr(),
         );
 
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            phase2_code_hash.expr(),
-            cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr())),
-        );
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
         cb.condition(is_empty_code_hash.expr(), |cb| {
             cb.require_equal(
@@ -349,7 +345,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE)),
+            region.empty_hash_rlc(),
         )?;
         Ok(())
     }

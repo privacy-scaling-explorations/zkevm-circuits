@@ -17,9 +17,8 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExtcodehashGadget<F> {
@@ -63,7 +62,6 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         let code_hash = cb.query_cell();
         cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
 
-        let empty_code_hash_rlc = cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()));
         // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
         // go to the work of writing out the RLC expression
         let is_empty = BatchedIsZeroGadget::construct(
@@ -71,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             [
                 nonce.expr(),
                 balance.expr(),
-                code_hash.expr() - empty_code_hash_rlc,
+                code_hash.expr() - cb.empty_hash_rlc(),
             ],
         );
 
@@ -148,11 +146,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.balance.assign(region, offset, balance)?;
         self.code_hash.assign(region, offset, code_hash)?;
 
-        let empty_code_hash_rlc = region.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE));
         self.is_empty.assign_value(
             region,
             offset,
-            [nonce, balance, code_hash - empty_code_hash_rlc],
+            [nonce, balance, code_hash - region.empty_hash_rlc()],
         )?;
 
         Ok(())

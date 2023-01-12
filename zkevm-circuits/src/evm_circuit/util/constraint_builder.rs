@@ -20,6 +20,7 @@ use halo2_proofs::{
         Expression::{self, Constant},
     },
 };
+use keccak256::EMPTY_HASH_LE;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -419,6 +420,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
         RandomLinearCombination::random_linear_combine_expr(bytes, self.word_powers_of_randomness)
+    }
+
+    pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
+        self.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()))
     }
 
     // Common

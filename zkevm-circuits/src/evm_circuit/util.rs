@@ -17,6 +17,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use keccak256::EMPTY_HASH_LE;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
@@ -180,6 +181,9 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         self.challenges
             .evm_word()
             .map(|r| Word::random_linear_combine(n.to_le_bytes(), r))
+    }
+    pub fn empty_hash_rlc(&self) -> Value<F> {
+        self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
     }
 
     /// Constrains a cell to have a constant value.

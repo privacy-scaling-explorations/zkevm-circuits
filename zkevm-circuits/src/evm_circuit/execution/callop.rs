@@ -263,11 +263,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb.account_read(code_address, AccountFieldTag::NonExisting, 0.expr());
         });
 
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            callee_code_hash.expr(),
-            cb.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr())),
-        );
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, callee_code_hash.expr(), cb.empty_hash_rlc());
 
         // Sum up and verify gas cost.
         let gas_cost = select::expr(
@@ -694,7 +691,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             region,
             offset,
             callee_code_hash,
-            region.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE)),
+            region.empty_hash_rlc(),
         )?;
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = if is_warm_prev {
@@ -978,8 +975,6 @@ mod test {
             caller(&OpcodeId::CALL, Stack::default(), true),
             callee(bytecode! {}),
         );
-        // use crate::evm_circuit::util::print_op_count;
-        // print_op_count();
     }
 
     fn test_ok(caller: Account, callee: Account) {
