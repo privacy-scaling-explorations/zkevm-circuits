@@ -447,8 +447,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
 #[cfg(any(feature = "test", test))]
 impl<F: Field> Circuit<F> for StateCircuit<F>
-    where
-        F: Field,
+where
+    F: Field,
 {
     type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -540,8 +540,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         // Address9, which is always 0 for Rw::Stack rows.
         is_tag_and_id_unchanged: 4.expr()
             * (meta.query_advice(first_different_limb.bits[0], Rotation::cur())
-            + meta.query_advice(first_different_limb.bits[1], Rotation::cur())
-            + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
+                + meta.query_advice(first_different_limb.bits[1], Rotation::cur())
+                + meta.query_advice(first_different_limb.bits[2], Rotation::cur()))
             + final_bits_sum.clone() * (1.expr() - final_bits_sum),
         address: MpiQueries::new(meta, c.sort_keys.address),
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
@@ -649,8 +649,8 @@ mod state_circuit_stats {
                     },
                     |block, _tx| block.number(0xcafeu64),
                 )
-                    .unwrap()
-                    .into();
+                .unwrap()
+                .into();
                 let mut builder =
                     BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
                 builder
