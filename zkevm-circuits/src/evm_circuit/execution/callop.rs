@@ -19,7 +19,6 @@ use eth_types::evm_types::GAS_STIPEND_CALL_WITH_VALUE;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -521,9 +520,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         };
 
         let callee_code_hash = block.rws[step.rw_indices[17 + rw_offset]]
-            .table_assignment_aux(block.randomness)
-            .value;
-        let callee_exists = !callee_code_hash.is_zero_vartime();
+            .account_value_pair()
+            .0;
+        let callee_exists = !callee_code_hash.is_zero();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -616,13 +615,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         }
 
         self.callee_code_hash
-            .assign(region, offset, Value::known(callee_code_hash))?;
+            .assign(region, offset, region.word_rlc(callee_code_hash))?;
         self.callee_not_exists
-            .assign(region, offset, callee_code_hash)?;
-        self.is_empty_code_hash.assign(
+            .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
+        self.is_empty_code_hash.assign_value(
             region,
             offset,
-            callee_code_hash,
+            region.word_rlc(callee_code_hash),
             region.empty_hash_rlc(),
         )?;
         let has_value = !value.is_zero() && !is_delegatecall;

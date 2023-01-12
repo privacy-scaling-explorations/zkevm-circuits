@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
         let exists = not::expr(not_exists.expr());
 
-        let code_size = cb.query_rlc();
+        let code_size = cb.query_word_rlc();
         cb.condition(exists.expr(), |cb| {
             cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
         });
@@ -126,12 +126,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]]
-            .table_assignment_aux(block.randomness)
-            .value;
+        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
-        self.not_exists.assign(region, offset, code_hash)?;
+            .assign(region, offset, region.word_rlc(code_hash))?;
+        self.not_exists
+            .assign_value(region, offset, region.word_rlc(code_hash))?;
 
         let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
         self.code_size

@@ -123,18 +123,15 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]]
-            .table_assignment_aux(block.randomness)
-            .value;
+        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
-        self.not_exists.assign(region, offset, code_hash)?;
-        let balance = if code_hash.is_zero_vartime() {
-            F::zero()
+            .assign(region, offset, region.word_rlc(code_hash))?;
+        self.not_exists
+            .assign_value(region, offset, region.word_rlc(code_hash))?;
+        let balance = if code_hash.is_zero() {
+            eth_types::Word::zero()
         } else {
-            block.rws[step.rw_indices[6]]
-                .table_assignment_aux(block.randomness)
-                .value
+            block.rws[step.rw_indices[6]].account_value_pair().0
         };
         self.balance
             .assign(region, offset, region.word_rlc(balance))?;

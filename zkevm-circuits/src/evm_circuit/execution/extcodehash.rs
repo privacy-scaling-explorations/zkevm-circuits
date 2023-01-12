@@ -111,11 +111,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let code_hash = block.rws[step.rw_indices[5]]
-            .table_assignment_aux(block.randomness)
-            .value;
+        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
+            .assign(region, offset, region.word_rlc(code_hash))?;
 
         Ok(())
     }
