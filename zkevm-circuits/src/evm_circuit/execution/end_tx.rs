@@ -23,6 +23,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
+use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -72,14 +73,13 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
 
         // gas_used & refund == 0 if tx is invalid
-        cb.require_zero(
-            "is_tx_invalid * gas_used == 0",
-            is_tx_invalid.expr() * gas_used.expr(),
-        );
-        cb.require_zero(
-            "is_tx_invalid * effective_refund == 0",
-            is_tx_invalid.expr() * effective_refund.min().expr(),
-        );
+        cb.condition(is_tx_invalid.expr(), |cb| {
+            cb.require_zero("gas_used == 0 if tx is invalid", gas_used.expr());
+            cb.require_zero(
+                "refund == 0 if tx is invalid",
+                effective_refund.min().expr(),
+            );
+        });
 
         // Add effective_refund * tx_gas_price back to caller's balance
         let mul_gas_price_by_refund = MulWordByU64Gadget::construct(
@@ -120,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             1.expr(),
             tx_id.expr(),
             TxReceiptFieldTag::PostStateOrStatus,
-            (1.expr() - is_tx_invalid.expr()) * is_persistent.expr(),
+            not::expr(is_tx_invalid.expr()) * is_persistent.expr(),
         );
         cb.tx_receipt_lookup(
             1.expr(),
