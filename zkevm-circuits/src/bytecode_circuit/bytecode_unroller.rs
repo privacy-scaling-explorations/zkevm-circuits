@@ -12,8 +12,7 @@ use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
@@ -441,6 +440,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
 
+        trace!(
+            "size: {}, minimum_rows: {}, last_row_offset:{}",
+            size,
+            self.minimum_rows,
+            last_row_offset
+        );
+
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
@@ -528,7 +534,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             }
 
             // Set the data for this row
-            if *offset <= last_row_offset {
+            if *offset < last_row_offset {
                 self.set_row(
                     region,
                     push_rindex_is_zero_chip,
@@ -563,6 +569,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
                 *offset += 1;
                 push_data_left = next_push_data_left
+            }
+            if *offset == last_row_offset {
+                self.set_padding_row(region, push_rindex_is_zero_chip, *offset, last_row_offset)?;
             }
         }
 
@@ -831,7 +840,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
+        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, true)
     }
 }
 
@@ -936,7 +945,14 @@ mod tests {
     #[test]
     fn bytecode_full() {
         let k = 9;
-        test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7])], true);
+        test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 8])], true);
+    }
+
+    #[test]
+    fn bytecode_full_last_row() {
+        let k = 9;
+        // Last row must be a padding row, so we have one row less for actual bytecode
+        test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7])], false);
     }
 
     /// Tests a circuit with incomplete bytecode
