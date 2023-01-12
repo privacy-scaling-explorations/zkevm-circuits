@@ -189,7 +189,7 @@ pub(crate) fn extension_node_rlp<F: FieldExt>(
                 * (is_even_nibbles + is_long_odd_nibbles)
                 * (one.clone() - is_branch_hashed.clone())
                 * (s_rlp1.clone() - c192.clone() - (s_rlp2.clone() - c128.clone()) - one.clone()
-                    - (c_bytes0.clone() - c192.clone()) - one.clone() - one.clone()),
+                    - (c_bytes0.clone() - c192.clone()) - one.clone()),
         ));
 
         /*
