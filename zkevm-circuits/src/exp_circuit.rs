@@ -284,8 +284,8 @@ impl<F: Field> ExpCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
     ) -> Result<(), Error> {
-        let mul_chip = MulAddChip::construct(self.mul_gadget.clone());
-        let parity_check_chip = MulAddChip::construct(self.parity_check.clone());
+        let mut mul_chip = MulAddChip::construct(self.mul_gadget.clone());
+        let mut parity_check_chip = MulAddChip::construct(self.parity_check.clone());
 
         layouter.assign_region(
             || "exponentiation circuit",
@@ -348,14 +348,25 @@ impl<F: Field> ExpCircuitConfig<F> {
                     }
                 }
 
-                self.assign_padding_rows(&mut region, offset)?;
+                self.assign_padding_rows(
+                    &mut region,
+                    offset,
+                    &mut mul_chip,
+                    &mut parity_check_chip,
+                )?;
 
                 Ok(())
             },
         )
     }
 
-    fn assign_padding_rows(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+    fn assign_padding_rows(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        mul_chip: &mut MulAddChip<F>,
+        parity_check_chip: &mut MulAddChip<F>,
+    ) -> Result<(), Error> {
         let mut all_columns = self.exp_table.columns();
         all_columns.extend_from_slice(&[
             self.mul_gadget.col0,
@@ -369,8 +380,35 @@ impl<F: Field> ExpCircuitConfig<F> {
             self.parity_check.col3,
             self.parity_check.col4,
         ]);
-        for column in all_columns {
+        // assign exponentiation trace
+        // for i in 0..(2 * OFFSET_INCREMENT) {
+        //     self.q_usable.enable(region, offset + i)?;
+        //     // assign exp table
+        //     for column in self.exp_table.columns().iter() {
+        //         region.assign_advice(
+        //             || format!("exp circuit padding: {:?}: {}", *column, offset + i),
+        //             *column,
+        //             offset + i,
+        //             || Value::known(F::zero()),
+        //         )?;
+        //     }
+        // }
+        // mul_chip.assign(
+        //     region,
+        //     offset,
+        //     [U256::one(), U256::one(), U256::zero(), U256::one()],
+        // )?;
+        // let exponent = U256::one();
+        // let two = U256::from(2);
+        // let (exponent_div2, remainder) = exponent.div_mod(two);
+        // parity_check_chip.assign(region, offset, [two, exponent_div2, remainder,
+        // exponent])?;
+
+        for column in all_columns.clone() {
             for i in 0..(2 * OFFSET_INCREMENT) {
+                // Removed * 2 because we only pad one exp event
+                self.q_usable.enable(region, offset + i)?;
+                // dbg!(offset + i);
                 region.assign_advice(
                     || format!("padding steps: {}", offset + i),
                     column,
@@ -509,6 +547,7 @@ mod tests {
     fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
         let code = gen_code_single(base, exponent);
         let builder = gen_data(code);
+        log::debug!("generating block");
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
     }
