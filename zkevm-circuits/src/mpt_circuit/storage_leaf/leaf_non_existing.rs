@@ -51,6 +51,30 @@ are in the first level).
 
 Lookups:
 The `non_existing_storage_proof` lookup is enabled in `LEAF_NON_EXISTING` row.
+
+Wrong leaf has a meaning only for non existing storage proof. For this proof,
+there are two cases: 1. A leaf is returned that is not at the
+required key (wrong leaf). 2. A branch is returned as the last
+element of getProof and there is nil object at key position.
+Placeholder leaf is added in this case.
+
+Ensuring that the storage does not exist when there is only one storage key in the storage trie.
+Note 1: The hash of the only storage is checked to be the storage root in `leaf_value.rs`.
+Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
+above. That is because when there is a branch (with nil object) in the first level,
+it automatically means the leaf is not in the first level.
+
+Differently as for the other proofs, the storage-non-existing proof compares `key_rlc`
+with the key stored in `STORAGE_NON_EXISTING` row, not in `LEAF_KEY` row.
+The crucial thing is that we have a wrong leaf at the key (not exactly the same, just some starting
+set of nibbles is the same) where we are proving there is no leaf.
+If there would be a leaf at the specified key, it would be positioned in the branch where
+the wrong leaf is positioned. Note that the position is determined by the starting set of nibbles.
+Once we add the remaining nibbles to the starting ones, we need to obtain the enquired key.
+There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
+and the non-existing leaf (in the case of wrong leaf, while the case with nil being in branch
+is different).
+
 */
 
 #[derive(Clone, Debug, Default)]
@@ -64,15 +88,21 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         cb: &mut BaseConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
+        let proof_type = ctx.proof_type;
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
         let accs = ctx.accumulators;
         // Should be the same as sel1 as both parallel proofs are the same
         // for non_existing_storage_proof, but we use C for non-existing
         // storage
-        let sel2 = ctx.denoter.sel2;
+        let is_modified_node_empty = ctx.denoter.sel2;
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let r = ctx.r;
+
+        let rot_key_c = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
+        let rot_first_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
+        let rot_branch_init = rot_first_child - 1;
+        let rot_last_account_row = -LEAF_NON_EXISTING_IND - 1;
 
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>, is_short: bool| {
@@ -108,140 +138,71 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             };
 
         circuit!([meta, cb], {
-            // key rlc is in the first branch node
-            let rot_into_first_branch_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
-            let rot_into_branch_init = rot_into_first_branch_child - 1;
+            let flag1 = a!(accs.s_mod_node_rlc, rot_key_c);
+            let flag2 = a!(accs.c_mod_node_rlc, rot_key_c);
+            let is_leaf_long = flag1.expr() * not!(flag2);
+            let is_leaf_short = not!(flag1) * flag2.expr();
 
-            let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-            let flag1 = a!(accs.s_mod_node_rlc, rot);
-            let flag2 = a!(accs.c_mod_node_rlc, rot);
-            let is_long = flag1.clone() * not::expr(flag2.clone());
-            let is_short = not::expr(flag1.clone()) * flag2.clone();
-            // Wrong leaf has a meaning only for non existing storage proof. For this proof,
-            // there are two cases: 1. A leaf is returned that is not at the
-            // required key (wrong leaf). 2. A branch is returned as the last
-            // element of getProof and there is nil object at key position.
-            //    Placeholder leaf is added in this case.
             let is_wrong_leaf = a!(s_main.rlp1);
-            // is_wrong_leaf is checked to be bool in `leaf_value.rs`.
-            ifx! {is_wrong_leaf => {
-                // Check if there is an account above the leaf.
-                let rot_into_last_account_row = -LEAF_NON_EXISTING_IND - 1;
-                let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_into_last_account_row);
-                ifx!{not::expr(is_leaf_in_first_storage_level.expr()) => {
-                    // Checks that storage_non_existing_row contains the nibbles that give key_rlc (after considering
-                    // modified_node in branches/extension nodes above).
-                    // Note: currently, for non_existing_storage proof S and C proofs are the same, thus there is never
-                    // a placeholder branch.
-
-                    let key_rlc_acc_start = a!(accs.key.rlc, rot_into_first_branch_child);
-                    let key_mult_start = a!(accs.key.mult, rot_into_first_branch_child);
-                    // sel1, sel2 is in init branch
-                    let branch = BranchNodeInfo::new(meta, s_main, true, rot_into_branch_init);
+            // Make sure is_wrong_leaf is boolean
+            require!(is_wrong_leaf => bool);
+            ifx! {a!(proof_type.is_non_existing_storage_proof) => {
+                ifx! {is_wrong_leaf => {
+                    let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_last_account_row);
+                    let (key_rlc_prev, key_mult_prev, is_c16) = ifx!{not!(is_leaf_in_first_storage_level) => {
+                        let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
+                        (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.is_c16())
+                    } elsex {
+                        (0.expr(), 1.expr(), false.expr())
+                    }};
                     // Set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_start.expr() * ifx!{branch.is_c16() => { r[0].expr() } elsex { 1.expr() }};
-                    ifx!{is_short => {
-                        // If there is an even number of nibbles stored in a leaf, `s_bytes0` needs to be 32.
-                        ifx!{branch.is_c1() => {
-                            require!(a!(s_main.bytes[0]) => 32);
-                        }}
-                        // Differently as for the other proofs, the storage-non-existing proof compares `key_rlc`
-                        // with the key stored in `STORAGE_NON_EXISTING` row, not in `LEAF_KEY` row.
-                        // The crucial thing is that we have a wrong leaf at the key (not exactly the same, just some starting
-                        // set of nibbles is the same) where we are proving there is no leaf.
-                        // If there would be a leaf at the specified key, it would be positioned in the branch where
-                        // the wrong leaf is positioned. Note that the position is determined by the starting set of nibbles.
-                        // Once we add the remaining nibbles to the starting ones, we need to obtain the enquired key.
-                        // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
-                        // and the non-existing leaf (in the case of wrong leaf, while the case with nil being in branch
-                        // is different).
-                        // If c16 = 1, we have nibble+48 in s_main.bytes[0].
-                        let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
-                                (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                            &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                        );
-                        require!(a!(accs.key.mult) => key_rlc);
-                        // General wrong leaf constraints
-                        add_wrong_leaf_constraints(meta, cb, true);
+                    let key_mult = key_mult_prev.expr() * ifx!{is_c16 => { r[0].expr() } elsex { 1.expr() }};
+                    let (key_rlc, len_prev, len, first_byte, num_rlp_bytes) = matchx! {
+                        is_leaf_short => {
+                            // Key RLC needs to be different
+                            add_wrong_leaf_constraints(meta, cb, true);
+                            // Calculate the RLC
+                            let rlc = rlc::expr(
+                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
+                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                            );
+                            (rlc, a!(s_main.rlp2, rot_key_c), a!(s_main.rlp2), a!(s_main.bytes[0]), 2.expr())
+                        },
+                        is_leaf_long => {
+                            // Key RLC needs to be different
+                            add_wrong_leaf_constraints(meta, cb, false);
+                            // Calculate the RLC
+                            let rlc = rlc::expr(
+                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
+                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
+                            );
+                            (rlc, a!(s_main.bytes[0], rot_key_c), a!(s_main.bytes[0]), a!(s_main.bytes[1]), 3.expr())
+                        },
+                    };
+                    // Check that the stored RLC is correct
+                    require!(a!(accs.key.mult) => key_rlc_prev.expr() + key_rlc);
+                    // If there is an even number of nibbles stored in a leaf, first_byte needs to be 32.
+                    ifx!{not!(is_c16) => {
+                        require!(first_byte => 32);
                     }}
-                    ifx!{is_long => {
-                        // If there is an even number of nibbles stored in a leaf, `s_bytes1` needs to be 32.
-                        ifx!{branch.is_c1() => {
-                            require!(a!(s_main.bytes[1]) => 32);
-                        }}
-                        // Same as for `Storage key RLC (long)`, but here for the cases when there are two RLP bytes.
-                        let key_rlc = key_rlc_acc_start.expr() + rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
-                                (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_start.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                            &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                        );
-                        require!(a!(accs.key.mult) => key_rlc);
-                        // General wrong leaf constraints
-                        add_wrong_leaf_constraints(meta, cb, false);
-                    }}
+                    // Key of wrong leaf and the enquired key are of the same length.
+                    // This constraint is to prevent the attacker to prove that some key does not exist by setting
+                    // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
+                    require!(len => len_prev);
+                    // RLC bytes zero check (subtract 2 for first two RLP bytes)
+                    cb.set_range_length(num_rlp_bytes + (len - 128.expr()) - 2.expr());
                 } elsex {
-                    // Ensuring that the storage does not exist when there is only one storage key in the storage trie.
-                    // Note 1: The hash of the only storage is checked to be the storage root in `leaf_value.rs`.
-                    // Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
-                    // above. That is because when there is a branch (with nil object) in the first level,
-                    // it automatically means the leaf is not in the first level.
-
-                    // Note: when leaf is in the first level, the key stored in the leaf is always
-                    // of length 33 - the first byte being 32 (when after branch,
-                    // the information whether there the key is odd or even
-                    // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
-                    ifx!{is_short => {
-                        require!(a!(s_main.bytes[0]) => 32);
-                        // RLC check
-                        // Note: `accs.key.mult` is used for a lookup.
-                        let rlc = rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(a!(accs.key.mult) => rlc);
-                        // General wrong leaf constraints
-                        add_wrong_leaf_constraints(meta, cb, true);
-                    }}
-                    ifx!{is_long => {
-                        require!(a!(s_main.bytes[1]) => 32);
-                        // RLC check
-                        // Note: `accs.key.mult` is used for a lookup.
-                        let rlc = rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                            &r,
-                        );
-                        require!(a!(accs.key.mult) => rlc);
-                        // General wrong leaf constraints
-                        add_wrong_leaf_constraints(meta, cb, false);
-                    }}
-                }}
-
-                // Key of wrong leaf and the enquired key are of the same length
-                ifx!{is_short => {
-                    // This constraint is to prevent the attacker to prove that some key does not exist by setting
-                    // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
-                    let len_prev_short = a!(s_main.rlp2, -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND));
-                    let len_cur_short = a!(s_main.rlp2);
-                    require!(len_cur_short => len_prev_short);
-                    // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].
-                    cb.set_range_length(a!(s_main.rlp2) - 128.expr());
-                }}
-                ifx!{is_long => {
-                    // This constraint is to prevent the attacker to prove that some key does not exist by setting
-                    // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
-                    let len_prev_long = a!(s_main.bytes[0], -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND));
-                    let len_cur_long = a!(s_main.bytes[0]);
-                    require!(len_cur_long => len_prev_long);
-                    // RLC bytes zero check for [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
-                    cb.set_range_length(1.expr() + (a!(s_main.bytes[0]) - 128.expr()));
+                    // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
+                    // Note that the constraints in `branch.rs` ensure that `sel2` is 1 if and only if there is a nil object
+                    // at `modified_node` position. We check that in case of no wrong leaf in
+                    // the non-existing-storage proof, `is_nil_object` is 1.
+                    require!(a!(is_modified_node_empty, rot_first_child) => true);
                 }}
             } elsex {
-                // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                // Note that the constraints in `branch.rs` ensure that `sel2` is 1 if and only if there is a nil object
-                // at `modified_node` position. We check that in case of no wrong leaf in
-                // the non-existing-storage proof, `is_nil_object` is 1.
-                require!(a!(sel2, rot_into_first_branch_child) => true);
+                // is_wrong_leaf needs to be false when not in non_existing_account proof
+                require!(is_wrong_leaf => false);
             }}
         });
 

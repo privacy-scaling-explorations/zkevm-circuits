@@ -183,9 +183,9 @@ impl<F: FieldExt> BranchConfig<F> {
                     // in the extension key and the additional nibble for the position in a branch (this constraint
                     // is in `extension_node.rs` though).
                     let branch = BranchNodeInfo::new(meta, s_main, true, 0);
-                    ifx!{not::expr(branch.is_extension()) => {
+                    ifx!{not!(branch.is_extension()) => {
                         // TODO(Brecht): Is always 1 for added branches?
-                        ifx!{not::expr(a!(ctx.account_leaf.is_in_added_branch, -1)), not_first_level.expr() => {
+                        ifx!{not!(a!(ctx.account_leaf.is_in_added_branch, -1)), not_first_level => {
                             // Only check if there is an account above the branch.
                             require!(branch.nibbles_counter() => branch.nibbles_counter().prev() + 1.expr());
                         } elsex {
@@ -302,7 +302,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         // When not in a placeholder branch,
                         // `drifted_pos` (the index of the branch child that drifted down into a newly added branch)
                         // needs to be the same for all branch nodes.
-                        ifx!{not::expr(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()) => {
+                        ifx!{not!(is_branch_placeholder_s.prev() + is_branch_placeholder_c.prev()) => {
                             require!(drifted_pos => drifted_pos.prev());
                         }}
                         for is_s in [true, false] {

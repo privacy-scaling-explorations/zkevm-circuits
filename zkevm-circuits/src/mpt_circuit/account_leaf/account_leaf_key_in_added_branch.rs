@@ -204,7 +204,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // the drift - the nibbles are the same in both cases, the difference is that before the
                 // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
                 // position in a branch or/and nibbles of the extension node.
-                let is_branch_placeholder_in_first_level = not::expr(a!(not_first_level, rot_branch_init));
+                let is_branch_placeholder_in_first_level = not!(a!(not_first_level, rot_branch_init));
                 let key_rlc_prev = ifx!{branch.is_extension() => {
                     a!(accs.key.rlc, rot_ext)
                 } elsex {

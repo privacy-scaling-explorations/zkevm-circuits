@@ -143,26 +143,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         };
 
         circuit!([meta, cb], {
-            // When `non_existing_account_proof` proof type (which can be of two subtypes:
-            // with wrong leaf and without wrong leaf, more about it below), the
-            // `is_wrong_leaf` flag specifies whether the subtype is with wrong
-            // leaf or not. When `non_existing_account_proof` without wrong leaf
-            // the proof contains only branches and a placeholder account leaf.
-            // In this case, it is checked that there is nil in the parent branch
-            // at the proper position (see `account_non_existing`). Note that we need
-            // (placeholder) account leaf for lookups and to know when to check
-            // that parent branch has a nil.
-            // In `is_wrong_leaf is bool` we only check that `is_wrong_leaf` is a boolean
-            // values. Other wrong leaf related constraints are in other gates.
             let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
-            require!(is_wrong_leaf => bool);
-            // Note: some is_wrong_leaf constraints are in this config because
-            // account_non_existing config only triggers constraints for
-            // non_existing_account proof (see q_enable).
-            // is_wrong_leaf needs to be 0 when not in non_existing_account proof
-            ifx! {not!(a!(proof_type.is_non_existing_account_proof)) => {
-                require!(is_wrong_leaf => false);
-            }};
 
             // RLC calculation
             let nonce = ColumnTransition::new(meta, accs.s_mod_node_rlc);
@@ -196,7 +177,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!(data => rlc);
                 // RLC bytes zero check
                 cb.set_range_length_sc(is_s, len.expr());
-                // Get the correct multiploer for the length
+                // Get the correct multiplier for the length
                 require!((FixedTableTag::RMult, len.expr() + mult_offset.expr(), mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
 
                 // Go from the value rlc to the full rlc

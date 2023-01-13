@@ -437,8 +437,16 @@ impl<F: FieldExt> MPTConfig<F> {
                 }}
                 // LEAF_VALUE_S
                 // LEAF_VALUE_C
-                let storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), true);
-                let storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), false);
+                let storage_leaf_value_s;
+                let storage_leaf_value_c;
+                ifx!{f!(position_cols.q_not_first) => {
+                    ifx!{a!(ctx.storage_leaf.is_s_value) => {
+                        storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), true);
+                    }}
+                    ifx!{a!(ctx.storage_leaf.is_c_value) => {
+                        storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), false);
+                    }}
+                }}
                 // LEAF_DRIFTED
                 let storage_leaf_key_in_added_branch;
                 ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level), a!(storage_leaf.is_in_added_branch) => {
@@ -446,7 +454,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 }}
                 // LEAF_NON_EXISTING
                 let storage_non_existing;
-                ifx!{f!(position_cols.q_enable), a!(storage_leaf.is_non_existing), a!(proof_type.is_non_existing_storage_proof) => {
+                ifx!{f!(position_cols.q_enable), a!(storage_leaf.is_non_existing) => {
                     storage_non_existing = StorageNonExistingConfig::<F>::configure(meta, &mut cb, ctx.clone());
                 }}
 
@@ -465,7 +473,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 }}
                 // ACCOUNT_NON_EXISTING
                 let account_non_existing;
-                ifx!{f!(position_cols.q_enable), a!(account_leaf.is_non_existing), a!(proof_type.is_non_existing_account_proof) => {
+                ifx!{f!(position_cols.q_enable), a!(account_leaf.is_non_existing) => {
                     account_non_existing = AccountNonExistingConfig::configure(meta, &mut cb, ctx.clone());
                 }}
                 // ACCOUNT_LEAF_NONCE_BALANCE_S
@@ -500,7 +508,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     require!(cb.range_length_s_condition => bool);
                     require!(cb.range_length_c_condition => bool);
                     // Range checks
-                    ifx!{not::expr(a!(branch.is_child)) => {
+                    ifx!{not!(a!(branch.is_child)) => {
                         for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..1].into_iter() {
                             require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                         }
@@ -512,7 +520,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         require!((cb.get_range_s(), a!(byte), cb.get_range_length_s() - (idx + 1).expr()) => @"fixed");
                     }
                     ifx!{cb.range_length_sc => {
-                        ifx!{not::expr(a!(branch.is_child)) => {
+                        ifx!{not!(a!(branch.is_child)) => {
                             for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[34..35].into_iter().enumerate() {
                                 require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                             }

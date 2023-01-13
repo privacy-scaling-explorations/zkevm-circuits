@@ -270,20 +270,17 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     ext_key_rlc.expr()
                 }};
 
-                // Now update the key RLC for the branch nibble.
-                // If is_c16 = 1, then modified_node_index is multiplied by 16, else it's multiplied by 1.
-                // NOTE: modified_node_index represents nibbles: n0, n1, ...
-                // key_rlc = (n0 * 16 + n1) + (n2 * 16 + n3) * r + (n4 * 16 + n5) * r^2 + ...
+                // Now update the key RLC and multiplier for the branch nibble.
                 let mult = key_mult_prev.expr() * mult_diff.expr();
-                ifx!{branch.is_c16() => {
-                    require!(key_rlc => key_rlc_post_ext.expr() + modified_node_index.expr() * mult.expr() * 16.expr());
+                let (rlc_mult, mult_mult) = ifx!{branch.is_c16() => {
                     // The least significant nibble still needs to be added using the same multiplier
-                    require!(key_mult => mult.expr());
+                    (16.expr(), 1.expr())
                 } elsex {
-                    require!(key_rlc => key_rlc_post_ext.expr() + modified_node_index.expr() * mult.expr());
                     // The least significant nibble is added, update the multiplier for the next nibble
-                    require!(key_mult => mult.expr() * r[0].expr());
-                }}
+                    (1.expr(), r[0].expr())
+                }};
+                require!(key_rlc => key_rlc_post_ext.expr() + modified_node_index.expr() * mult.expr() * rlc_mult.expr());
+                require!(key_mult => mult.expr() * mult_mult.expr());
 
                 // Update `is_c16`.
                 ifx!{after_first_level => {

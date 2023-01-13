@@ -298,7 +298,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         require!(s_rlp1 => 192.expr() + 1.expr() + (a!(c_main.bytes[0]) - 192.expr() - 1.expr()));
                     }}
                 }}
-                ifx! {not::expr(ext.is_longer_than_55.expr()) => {
+                ifx! {not!(ext.is_longer_than_55) => {
                     ifx!{ext.is_long() => {
                         ifx!{is_branch_hashed => {
                             // For example, in
@@ -412,7 +412,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             let ext_rlc = a!(accs.acc_c.rlc);
             let ext_len = a!(s_main.rlp1, rot_into_s) - 192.expr() + 1.expr();
             ifx! {not_first_level => {
-                ifx!{not::expr(ext.is_placeholder()) => {
+                ifx!{not!(ext.is_placeholder()) => {
                     // Only check if there is an account above the leaf.
                     // rot_into_branch_init - 1 because we are in the last branch child
                     // (rot_into_branch_init takes us to branch init).

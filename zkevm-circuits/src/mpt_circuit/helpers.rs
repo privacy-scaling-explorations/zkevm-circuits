@@ -747,7 +747,6 @@ pub trait Selectable<F> {
     fn conditional(&self, condition: Expression<F>) -> Self;
     fn add_expr(&self, other: &Self) -> Self;
     fn to_vec(&self) -> Vec<Expression<F>>;
-
 }
 
 impl<F: FieldExt> Selectable<F> for () {
@@ -780,105 +779,87 @@ impl<F: FieldExt> Selectable<F> for Expression<F> {
     }
 }
 
-impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>) {
-    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
-        select(condition, &self.to_vec(), &when_false.to_vec())
-            .into_iter()
-            .collect_tuple()
-            .unwrap()
-    }
-    fn conditional(&self, condition: Expression<F>) -> Self {
-        self.to_vec()
-            .into_iter()
-            .map(|when_true| condition.expr() * when_true.expr())
-            .collect_tuple()
-            .unwrap()
-    }
-    fn add_expr(&self, other: &Self) -> Self {
-        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
-    }
-    fn to_vec(&self) -> Vec<Expression<F>> {
-        vec![self.0.expr(), self.1.expr()]
-    }
+/// Implementation trait `Expr` for type able to be casted to u64
+#[macro_export]
+macro_rules! impl_selectable {
+    ($type:ty, $v:expr) => {
+        impl<F: halo2_proofs::arithmetic::FieldExt> Selectable<F> for $type {
+            fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
+                select(condition, &self.to_vec(), &when_false.to_vec())
+                    .into_iter()
+                    .collect_tuple()
+                    .unwrap()
+            }
+            fn conditional(&self, condition: Expression<F>) -> Self {
+                self.to_vec()
+                    .into_iter()
+                    .map(|when_true| condition.expr() * when_true.expr())
+                    .collect_tuple()
+                    .unwrap()
+            }
+            fn add_expr(&self, other: &Self) -> Self {
+                self.to_vec()
+                    .iter()
+                    .zip(other.to_vec().iter())
+                    .map(|(a, b)| a.expr() + b.expr())
+                    .collect_tuple()
+                    .unwrap()
+            }
+            fn to_vec(&self) -> Vec<Expression<F>> {
+                $v(self)
+            }
+        }
+    };
 }
 
-impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>) {
-    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
-        select(condition, &self.to_vec(), &when_false.to_vec())
-            .into_iter()
-            .collect_tuple()
-            .unwrap()
+impl_selectable!((Expression<F>, Expression<F>), |t: &(
+    Expression<F>,
+    Expression<F>
+)| {
+    vec![t.0.expr(), t.1.expr()]
+});
+impl_selectable!((Expression<F>, Expression<F>, Expression<F>), |t: &(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>
+)| {
+    vec![t.0.expr(), t.1.expr(), t.2.expr()]
+});
+impl_selectable!(
+    (Expression<F>, Expression<F>, Expression<F>, Expression<F>),
+    |t: &(Expression<F>, Expression<F>, Expression<F>, Expression<F>)| {
+        vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr()]
     }
-    fn conditional(&self, condition: Expression<F>) -> Self {
-        self.to_vec()
-            .into_iter()
-            .map(|when_true| condition.expr() * when_true.expr())
-            .collect_tuple()
-            .unwrap()
-    }
-    fn add_expr(&self, other: &Self) -> Self {
-        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
-    }
-    fn to_vec(&self) -> Vec<Expression<F>> {
-        vec![self.0.expr(), self.1.expr(), self.2.expr()]
-    }
+);
+impl_selectable!(
+    (
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>
+    ),
+    |t: &(
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>
+    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr()] }
+);
+
+/// Wrapper around condition for multiple conditions
+pub trait Conditionable<F, E> {
+    fn conditionals(&self) -> E;
 }
 
-impl<F: FieldExt> Selectable<F> for (Expression<F>, Expression<F>, Expression<F>, Expression<F>) {
-    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
-        select(condition, &self.to_vec(), &when_false.to_vec())
-            .into_iter()
-            .collect_tuple()
-            .unwrap()
-    }
-    fn conditional(&self, condition: Expression<F>) -> Self {
-        self.to_vec()
-            .into_iter()
-            .map(|when_true| condition.expr() * when_true.expr())
-            .collect_tuple()
-            .unwrap()
-    }
-    fn add_expr(&self, other: &Self) -> Self {
-        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
-    }
-    fn to_vec(&self) -> Vec<Expression<F>> {
-        vec![self.0.expr(), self.1.expr(), self.2.expr(), self.3.expr()]
-    }
-}
-
-impl<F: FieldExt> Selectable<F>
-    for (
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    )
-{
-    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
-        select(condition, &self.to_vec(), &when_false.to_vec())
-            .into_iter()
-            .collect_tuple()
-            .unwrap()
-    }
-    fn conditional(&self, condition: Expression<F>) -> Self {
-        self.to_vec()
-            .into_iter()
-            .map(|when_true| condition.expr() * when_true.expr())
-            .collect_tuple()
-            .unwrap()
-    }
-    fn add_expr(&self, other: &Self) -> Self {
-        self.to_vec().iter().zip(other.to_vec().iter()).map(|(a, b)| a.expr() + b.expr()).collect_tuple().unwrap()
-    }
-    fn to_vec(&self) -> Vec<Expression<F>> {
-        vec![
-            self.0.expr(),
-            self.1.expr(),
-            self.2.expr(),
-            self.3.expr(),
-            self.4.expr(),
-        ]
+impl<F: FieldExt, E: Selectable<F>> Conditionable<F, E> for Vec<(Expression<F>, E)> {
+    fn conditionals(&self) -> E {
+        let mut res = self[0].1.conditional(self[0].0.expr());
+        for pair in self.iter().skip(1) {
+            res = res.add_expr(&pair.1.conditional(pair.0.expr()));
+        }
+        res
     }
 }
 
@@ -892,6 +873,8 @@ macro_rules! circuit {
         use crate::mpt_circuit::helpers::Selectable;
         #[allow(unused_imports)]
         use crate::mpt_circuit::helpers::Expressable;
+        #[allow(unused_imports)]
+        use crate::mpt_circuit::helpers::Conditionable;
         // Nested macro's can't do repetition... (https://github.com/rust-lang/rust/issues/35853)
         #[allow(unused_macros)]
         macro_rules! ifx {
@@ -1007,7 +990,7 @@ macro_rules! circuit {
                 $cb.pop_condition();
 
                 require!($condition_a.expr() + $condition_b.expr() => 1);
-                ret_a.conditional($condition_a.expr()).add_expr(&ret_b.conditional($condition_b.expr()))
+                vec![($condition_a.expr(), ret_a), ($condition_b.expr(), ret_b)].conditionals()
             }};
             ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr,) => {{
                 $cb.push_condition($condition_a.expr());
@@ -1023,7 +1006,7 @@ macro_rules! circuit {
                 $cb.pop_condition();
 
                 require!($condition_a.expr() + $condition_b.expr() + $condition_c.expr() => 1);
-                ret_a.conditional($condition_a.expr()).add_expr(&ret_b.conditional($condition_b.expr())).add_expr(&ret_c.conditional($condition_c.expr()))
+                vec![($condition_a.expr(), ret_a), ($condition_b.expr(), ret_b), ($condition_c.expr(), ret_c)].conditionals()
             }};
             ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr,) => {{
                 $cb.push_condition($condition_a.expr());
@@ -1043,7 +1026,7 @@ macro_rules! circuit {
                 $cb.pop_condition();
 
                 require!($condition_a.expr() + $condition_b.expr() + $condition_c.expr() + $condition_d.expr() => 1);
-                ret_a.conditional($condition_a.expr()).add_expr(&ret_b.conditional($condition_b.expr())).add_expr(&ret_c.conditional($condition_c.expr())).add_expr(&ret_d.conditional($condition_d.expr()))
+                vec![($condition_a.expr(), ret_a), ($condition_b.expr(), ret_b), ($condition_c.expr(), ret_c), ($condition_d.expr(), ret_d)].conditionals()
             }};
         }
 

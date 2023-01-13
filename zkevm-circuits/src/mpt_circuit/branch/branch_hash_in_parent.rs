@@ -87,7 +87,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
             let branch = BranchNodeInfo::new(meta, ctx.s_main, is_s, rot_into_branch_init);
             // When placeholder branch, we don't check its hash in a parent.
             // Extension node is handled in `extension_node.rs`.
-            ifx! {not::expr(branch.is_extension()), not::expr(branch.is_placeholder()) => {
+            ifx! {not!(branch.is_extension()), not!(branch.is_placeholder()) => {
                 // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
                 let acc = ctx.accumulators.acc(is_s);
                 let branch_rlc = rlc::expr(

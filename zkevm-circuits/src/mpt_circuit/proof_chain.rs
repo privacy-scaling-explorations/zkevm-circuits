@@ -145,7 +145,8 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     }}
                     // It needs to be ensured that `address_rlc` changes only at the first row of the account leaf
                     // or in the branch init row if it is in the first level.
-                    ifx!{not::expr(is_account_leaf_key_s.expr()), is_branch_init.expr() - (not_first_level.cur() + 1.expr()) => {
+                    // TODO(Brecht): strange condition
+                    ifx!{not!(is_account_leaf_key_s), is_branch_init.expr() - (not_first_level.cur() + 1.expr()) => {
                         require!(address_rlc => address_rlc.prev());
                     }}
                 }}

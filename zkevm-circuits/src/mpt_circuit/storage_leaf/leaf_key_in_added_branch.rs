@@ -193,7 +193,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
 
             // Calculate and store the leaf data RLC
             let rlc = rlc::expr(
-                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36]
+                    .iter()
+                    .map(|&byte| a!(byte))
+                    .collect::<Vec<_>>(),
                 &r,
             );
             require!(a!(accs.acc_s.rlc) => rlc);
