@@ -50,7 +50,6 @@ pub(crate) struct CallOpGadget<F> {
     caller_balance_word: Word<F>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
-    callee_exists: Cell<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
@@ -191,29 +190,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let callee_exists = cb.query_bool();
-        cb.condition(callee_exists.expr(), |cb| {
-            cb.account_read(
-                call_gadget.callee_address_expr(),
-                AccountFieldTag::CodeHash,
-                call_gadget.callee_code_hash.expr(),
-            );
-        });
-        cb.condition(1.expr() - callee_exists.expr(), |cb| {
-            cb.account_read(
-                call_gadget.callee_address_expr(),
-                AccountFieldTag::NonExisting,
-                0.expr(),
-            );
-        });
-
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
-        let gas_cost = call_gadget.gas_cost_expr(
-            is_warm_prev.expr(),
-            is_call.expr(),
-            1.expr() - callee_exists.expr(),
-        );
+        let gas_cost = call_gadget.gas_cost_expr(cb, is_warm_prev.expr(), is_call.expr());
         // Apply EIP 150
         let gas_available = cb.curr.state.gas_left.expr() - gas_cost.clone();
         let one_64th_gas = ConstantDivisionGadget::construct(cb, gas_available.clone(), 64);
@@ -427,7 +406,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             transfer,
             caller_balance_word,
             is_insufficient_balance,
-            callee_exists,
             one_64th_gas,
             capped_callee_gas_left,
         }
@@ -526,7 +504,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             } => (*EMPTY_HASH_LE, false),
             _ => unreachable!(),
         };
-        let callee_code_hash =
+        let callee_code_hash_word =
             RandomLinearCombination::random_linear_combine(callee_code_hash, block.randomness);
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -596,7 +574,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_length,
             step.memory_word_size(),
             block.randomness,
-            callee_code_hash,
+            callee_code_hash_word,
+            F::from(callee_exists),
         )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
@@ -618,8 +597,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 value,
             )?;
         }
-        self.callee_exists
-            .assign(region, offset, Value::known(F::from(callee_exists)))?;
+
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,

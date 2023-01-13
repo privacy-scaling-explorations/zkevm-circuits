@@ -11,7 +11,7 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
-            math_gadget::{BatchedIsZeroGadget, LtGadget},
+            math_gadget::LtGadget,
             CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -19,7 +19,7 @@ use crate::{
     witness::Rw,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use keccak256::EMPTY_HASH_LE;
 
@@ -31,7 +31,6 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     call: CommonCallGadget<F, true>,
     is_warm: Cell<F>,
     balance: Word<F>,
-    callee_exists: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -72,23 +71,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         );
 
         // Verify gas cost
-        let callee_exists = cb.query_bool();
-        cb.condition(callee_exists.expr(), |cb| {
-            cb.account_read(
-                call_gadget.callee_address_expr(),
-                AccountFieldTag::CodeHash,
-                call_gadget.callee_code_hash.expr(),
-            );
-        });
-        cb.condition(1.expr() - callee_exists.expr(), |cb| {
-            cb.account_read(
-                call_gadget.callee_address_expr(),
-                AccountFieldTag::NonExisting,
-                0.expr(),
-            );
-        });
-        let gas_cost =
-            call_gadget.gas_cost_expr(is_warm.expr(), 1.expr(), 1.expr() - callee_exists.expr());
+        let gas_cost = call_gadget.gas_cost_expr(cb, is_warm.expr(), 1.expr());
 
         // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
@@ -114,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(15.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(14.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
@@ -141,7 +124,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             call: call_gadget,
             is_warm,
             balance,
-            callee_exists,
             insufficient_gas,
             restore_context,
         }
@@ -156,10 +138,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        println!("*** A: {:?} \n", block.rws[step.rw_indices[12]]);
-        println!("*** B: {:?} \n", block.rws[step.rw_indices[13]]);
-        println!("*** C: {:?} \n", block.rws[step.rw_indices[14]]);
-
         let opcode = step.opcode.unwrap();
         let [tx_id, is_static] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].call_context_value());
@@ -177,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
         let (is_warm, is_warm_prev) = block.rws[step.rw_indices[10]].tx_access_list_value_pair();
         let callee_balance_pair = block.rws[step.rw_indices[11]].account_value_pair();
-        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[13]] {
+        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[12]] {
             Rw::Account {
                 field_tag: AccountFieldTag::CodeHash,
                 value,
@@ -189,17 +167,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             } => (*EMPTY_HASH_LE, false),
             _ => unreachable!(),
         };
-
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-
-        self.tx_id
-            .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
-
-        self.is_static
-            .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
-
-        let callee_code_hash = Word::random_linear_combine(callee_code_hash, block.randomness);
+        let callee_code_hash_word = Word::random_linear_combine(callee_code_hash, block.randomness);
         let (memory_expansion_gas_cost, _) = self.call.assign(
             region,
             offset,
@@ -213,8 +181,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_length,
             step.memory_word_size(),
             block.randomness,
-            callee_code_hash,
+            callee_code_hash_word,
+            F::from(callee_exists),
         )?;
+
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+        self.tx_id
+            .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
+
+        self.is_static
+            .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
 
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
@@ -222,8 +200,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // new assignment
         self.balance
             .assign(region, offset, Some(callee_balance_pair.0.to_le_bytes()))?;
-        self.callee_exists
-            .assign(region, offset, Value::known(F::from(callee_exists)))?;
         let has_value = !value.is_zero();
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,

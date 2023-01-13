@@ -469,6 +469,8 @@ pub(crate) struct CommonCallGadget<F, const IS_OOG_ERROR: bool> {
     pub has_value: Expression<F>,
     pub callee_code_hash: Cell<F>,
     pub is_empty_code_hash: IsEqualGadget<F>,
+
+    callee_exists: Cell<F>,
 }
 
 impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
@@ -486,6 +488,7 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         let rd_offset = cb.query_cell();
         let rd_length = cb.query_rlc();
         let is_success = cb.query_bool();
+        let callee_exists = cb.query_bool();
 
         // Lookup values from stack
         // `callee_address` is poped from stack and used to check if it exists in
@@ -548,6 +551,7 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
             has_value,
             callee_code_hash,
             is_empty_code_hash,
+            callee_exists,
         }
     }
 
@@ -561,10 +565,26 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
 
     pub fn gas_cost_expr(
         &self,
+        cb: &mut ConstraintBuilder<F>,
         is_warm_prev: Expression<F>,
         is_call: Expression<F>,
-        is_empty: Expression<F>,
     ) -> Expression<F> {
+        let is_empty_account = 1.expr() - self.callee_exists.expr();
+        cb.condition(self.callee_exists.expr(), |cb| {
+            cb.account_read(
+                self.callee_address_expr(),
+                AccountFieldTag::CodeHash,
+                self.callee_code_hash.expr(),
+            );
+        });
+        cb.condition(is_empty_account.clone(), |cb| {
+            cb.account_read(
+                self.callee_address_expr(),
+                AccountFieldTag::NonExisting,
+                0.expr(),
+            );
+        });
+
         select::expr(
             is_warm_prev,
             GasCost::WARM_ACCESS.expr(),
@@ -572,7 +592,7 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         ) + self.has_value.clone()
             * (GasCost::CALL_WITH_VALUE.expr()
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
-                + is_call * is_empty * GasCost::NEW_ACCOUNT.expr())
+                + is_call * is_empty_account.clone() * GasCost::NEW_ACCOUNT.expr())
             + self.memory_expansion.gas_cost()
     }
 
@@ -592,6 +612,7 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         memory_word_size: u64,
         randomness: F,
         callee_code_hash: F,
+        callee_exists: F,
     ) -> Result<(u64, F), Error> {
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
         self.callee_address
@@ -622,7 +643,6 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
 
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
-
         self.callee_code_hash
             .assign(region, offset, Value::known(callee_code_hash))?;
         let is_empty_code_hash = self.is_empty_code_hash.assign(
@@ -631,6 +651,8 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
             callee_code_hash,
             Word::random_linear_combine(*EMPTY_HASH_LE, randomness),
         )?;
+        self.callee_exists
+            .assign(region, offset, Value::known(callee_exists))?;
         Ok((memory_expansion_gas_cost, is_empty_code_hash))
     }
 
