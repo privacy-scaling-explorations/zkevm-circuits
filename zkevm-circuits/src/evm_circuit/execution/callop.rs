@@ -47,11 +47,6 @@ pub(crate) struct CallOpGadget<F> {
     caller_balance_word: Word<F>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
-
-    callee_code_hash: Cell<F>,
-    callee_not_exists: IsZeroGadget<F>,
-
-    is_empty_code_hash: IsEqualGadget<F>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
@@ -199,21 +194,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
-        cb.account_read(
-            code_address.expr(),
-            AccountFieldTag::CodeHash,
-            callee_code_hash.expr(),
-        );
-        let callee_not_exists = IsZeroGadget::construct(cb, callee_code_hash.expr());
-        let callee_exists = not::expr(callee_not_exists.expr());
-
-        let is_empty_code_hash =
-            IsEqualGadget::construct(cb, callee_code_hash.expr(), cb.empty_hash_rlc());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
         // code_hash = 0).
-        let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
+        let no_callee_code =
+            call_gadget.is_empty_code_hash.expr() + call_gadget.callee_not_exists.expr();
 
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
@@ -430,9 +415,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             transfer,
             caller_balance_word,
             is_insufficient_balance,
-            callee_not_exists,
-            callee_code_hash,
-            is_empty_code_hash,
             one_64th_gas,
             capped_callee_gas_left,
         }
@@ -590,8 +572,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            callee_code_hash_word,
-            F::from(callee_exists),
+            region.word_rlc(callee_code_hash),
         )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
@@ -614,16 +595,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )?;
         }
 
-        self.callee_code_hash
-            .assign(region, offset, region.word_rlc(callee_code_hash))?;
-        self.callee_not_exists
-            .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
-        self.is_empty_code_hash.assign_value(
-            region,
-            offset,
-            region.word_rlc(callee_code_hash),
-            region.empty_hash_rlc(),
-        )?;
         let has_value = !value.is_zero() && !is_delegatecall;
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,
