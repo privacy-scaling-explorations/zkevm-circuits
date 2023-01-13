@@ -1001,6 +1001,7 @@ mod tests {
         let prover2 = MockProver::<Fr>::run(10, &circuit, vec![]).unwrap();
 
         assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
     }
 
     // // TODO: replace these with deterministic failure tests
