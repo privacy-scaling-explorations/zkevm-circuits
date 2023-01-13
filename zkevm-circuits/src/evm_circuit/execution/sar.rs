@@ -25,10 +25,6 @@ pub(crate) struct SarGadget<F> {
     shift: Word<F>,
     a: Word<F>,
     b: Word<F>,
-    // Four 64-bit limbs of word `a`.
-    a64s: [Cell<F>; 4],
-    // Four 64-bit limbs of word `b`.
-    b64s: [Cell<F>; 4],
     // Each of the four `a64s` limbs is split into two parts (`a64s_lo` and `a64s_hi`) at position
     // `shf_mod64`, `a64s_lo` is the lower `shf_mod64` bits.
     a64s_lo: [Cell<F>; 4],
@@ -80,8 +76,6 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         cb.stack_pop(a.expr());
         cb.stack_push(b.expr());
 
-        let a64s = array_init(|_| cb.query_cell());
-        let b64s = array_init(|_| cb.query_cell());
         let a64s_lo = array_init(|_| cb.query_cell());
         let a64s_hi = array_init(|_| cb.query_cell());
         let shf_div64 = cb.query_cell();
@@ -97,25 +91,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let shf_hi_is_zero = IsZeroGadget::construct(cb, shf_hi.expr());
 
         for idx in 0..4 {
-            let offset = idx * N_BYTES_U64;
-
-            // a64s constraint
-            cb.require_equal(
-                "a64s[idx] should be equal to corresponding part of a",
-                a64s[idx].expr(),
-                from_bytes::expr(&a.cells[offset..offset + N_BYTES_U64]),
-            );
-
-            // b64s constraint
-            cb.require_equal(
-                "b64s[idx] should be equal to corresponding part of b",
-                b64s[idx].expr(),
-                from_bytes::expr(&b.cells[offset..offset + N_BYTES_U64]),
-            );
-
             cb.require_equal(
                 "a64s[idx] == a64s_lo[idx] + a64s_hi[idx] * p_lo",
-                a64s[idx].expr(),
+                from_bytes::expr(&a.cells[N_BYTES_U64 * idx..N_BYTES_U64 * (idx + 1)]),
                 a64s_lo[idx].expr() + a64s_hi[idx].expr() * p_lo.expr(),
             );
         }
@@ -146,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
         cb.require_equal(
             "Constrain merged b64s[0] value",
-            b64s[0].expr(),
+            from_bytes::expr(&b.cells[0..N_BYTES_U64]),
             (a64s_hi[0].expr() + a64s_lo[1].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq1.expr()
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq2.expr()
@@ -161,7 +139,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
         cb.require_equal(
             "Constrain merged b64s[1] value",
-            b64s[1].expr(),
+            from_bytes::expr(&b.cells[N_BYTES_U64..N_BYTES_U64 * 2]),
             (a64s_hi[1].expr() + a64s_lo[2].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq1.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq2.expr()
@@ -174,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
         cb.require_equal(
             "Constrain merged b64s[2] value",
-            b64s[2].expr(),
+            from_bytes::expr(&b.cells[N_BYTES_U64 * 2..N_BYTES_U64 * 3]),
             (a64s_hi[2].expr() + a64s_lo[3].expr() * p_hi.expr()) * shf_div64_eq0.expr()
                 + (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq1.expr()
                 + is_neg.expr()
@@ -183,7 +161,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         );
         cb.require_equal(
             "Constrain merged b64s[3] value",
-            b64s[3].expr(),
+            from_bytes::expr(&b.cells[N_BYTES_U64 * 3..]),
             (a64s_hi[3].expr() + p_top.expr()) * shf_div64_eq0.expr()
                 + is_neg.expr() * u64::MAX.expr() * (1.expr() - shf_div64_eq0.expr()),
         );
@@ -251,8 +229,6 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             shift,
             a,
             b,
-            a64s,
-            b64s,
             a64s_lo,
             a64s_hi,
             shf_div64,
@@ -322,16 +298,6 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
                 b64s[k] = a64s_hi[k + idx] + a64s_lo[k + idx + 1] * p_hi;
             }
         }
-        self.a64s
-            .iter()
-            .zip(a64s.into_iter())
-            .map(|(c, v)| c.assign(region, offset, Value::known(F::from(v))))
-            .collect::<Result<Vec<_>, _>>()?;
-        self.b64s
-            .iter()
-            .zip(b64s.into_iter())
-            .map(|(c, v)| c.assign(region, offset, Value::known(F::from_u128(v))))
-            .collect::<Result<Vec<_>, _>>()?;
         self.a64s_lo
             .iter()
             .zip(a64s_lo.into_iter())
