@@ -11,7 +11,7 @@ use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::util::Expr;
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::split_u256;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
@@ -266,7 +266,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
 
-        let is_neg = is_neg(a);
+        let is_neg = 127 < a.to_le_bytes()[31];
         let (shf_lo, shf_hi) = split_u256(&shift);
         let shf_lo = shf_lo.as_u128();
         let shf_hi = shf_hi.as_u128();
@@ -349,11 +349,6 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
 
         Ok(())
     }
-}
-
-#[inline]
-fn is_neg(x: U256) -> bool {
-    127 < x.to_le_bytes()[31]
 }
 
 #[cfg(test)]
