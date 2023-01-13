@@ -287,6 +287,7 @@ pub fn run_test(
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
+            max_copy_rows: 55000,
             keccak_padding: None,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -312,7 +313,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, 1, 32, 255>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, 1, 32, 255, 32>::build(geth_data).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

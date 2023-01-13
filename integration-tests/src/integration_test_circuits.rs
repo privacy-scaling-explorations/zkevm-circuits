@@ -38,6 +38,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_txs: 4,
     max_calldata: 4000,
     max_bytecode: 4000,
+    max_copy_rows: 16384,
     keccak_padding: None,
 };
 
@@ -344,6 +345,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_CALLDATA: usize = 512;
     const MAX_RWS: usize = 5888;
     const MAX_BYTECODE: usize = 5000;
+    const MAX_COPY_ROWS: usize = 5888;
 
     log::info!("test super circuit, block number: {}", block_num);
     let cli = get_client();
@@ -354,6 +356,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
             max_txs: MAX_TXS,
             max_calldata: MAX_CALLDATA,
             max_bytecode: MAX_BYTECODE,
+            max_copy_rows: MAX_COPY_ROWS,
             keccak_padding: None,
         },
     )
@@ -361,7 +364,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     .unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>::build_from_circuit_input_builder(
             &builder,
         )
         .unwrap();
