@@ -103,6 +103,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_callcode.expr(),
             is_delegatecall.expr(),
         );
+        cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
+            cb.require_zero(
+                "for non call/call code, value is zero",
+                call_gadget.value.expr(),
+            );
+        });
+
         let caller_address = select::expr(
             is_delegatecall.expr(),
             current_caller_address.expr(),

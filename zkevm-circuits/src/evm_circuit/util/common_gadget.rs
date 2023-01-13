@@ -579,7 +579,7 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         ) + self.has_value.clone()
             * (GasCost::CALL_WITH_VALUE.expr()
                 // Only CALL opcode could invoke transfer to make empty account into non-empty.
-                + is_call * is_empty_account.clone() * GasCost::NEW_ACCOUNT.expr())
+                + is_call * is_empty_account * GasCost::NEW_ACCOUNT.expr())
             + self.memory_expansion.gas_cost()
     }
 
