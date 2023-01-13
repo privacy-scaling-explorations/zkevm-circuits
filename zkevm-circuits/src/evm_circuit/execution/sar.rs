@@ -6,13 +6,12 @@ use crate::evm_circuit::util::common_gadget::SameContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
 use crate::evm_circuit::util::math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget};
-use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, Word};
+use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::util::Expr;
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use gadgets::util::split_u256;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
@@ -30,9 +29,9 @@ pub(crate) struct SarGadget<F> {
     a64s_lo: [Cell<F>; 4],
     // `a64s_hi` is the higher `64 - shf_mod64` bits.
     a64s_hi: [Cell<F>; 4],
-    // `shift` lower part divides 64 as `shf_lo / 64`.
+    // `shift[0] / 64`
     shf_div64: Cell<F>,
-    // `shift` lower part mods 64 as `shf_lo % 64`.
+    // `shift[0] % 64`
     shf_mod64: Cell<F>,
     // 1 << shf_mod64
     p_lo: Cell<F>,
@@ -44,8 +43,8 @@ pub(crate) struct SarGadget<F> {
     is_neg: LtGadget<F, 1>,
     // Verify `shf_mod64 < 64`.
     shf_mod64_lt_64: LtGadget<F, 1>,
-    // Identify if higher 128-bit part of `shift` is zero or not.
-    shf_hi_is_zero: IsZeroGadget<F>,
+    // Identify if `shift` is less than 256 or not.
+    shf_lt256: IsZeroGadget<F>,
     // shf_div64 == 0
     shf_lo_div64_eq0: IsZeroGadget<F>,
     // shf_div64 == 1
@@ -84,11 +83,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let p_hi = cb.query_cell();
         let p_top = cb.query_cell();
         let is_neg = LtGadget::construct(cb, 127.expr(), a.cells[31].expr());
-
-        // Split `shift` to lower and higher parts.
-        let shf_lo = from_bytes::expr(&shift.cells[0..16]);
-        let shf_hi = from_bytes::expr(&shift.cells[16..32]);
-        let shf_hi_is_zero = IsZeroGadget::construct(cb, shf_hi.expr());
+        let shf_lt256 = IsZeroGadget::construct(cb, sum::expr(&shift.cells[1..32]));
 
         for idx in 0..4 {
             cb.require_equal(
@@ -117,10 +112,10 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let shf_lo_div64_eq1 = IsEqualGadget::construct(cb, shf_div64.expr(), 1.expr());
         let shf_lo_div64_eq2 = IsEqualGadget::construct(cb, shf_div64.expr(), 2.expr());
         let shf_lo_div64_eq3 = IsEqualGadget::construct(cb, shf_div64.expr(), 3.expr());
-        let shf_div64_eq0 = shf_hi_is_zero.expr() * shf_lo_div64_eq0.expr();
-        let shf_div64_eq1 = shf_hi_is_zero.expr() * shf_lo_div64_eq1.expr();
-        let shf_div64_eq2 = shf_hi_is_zero.expr() * shf_lo_div64_eq2.expr();
-        let shf_div64_eq3 = shf_hi_is_zero.expr() * shf_lo_div64_eq3.expr();
+        let shf_div64_eq0 = shf_lt256.expr() * shf_lo_div64_eq0.expr();
+        let shf_div64_eq1 = shf_lt256.expr() * shf_lo_div64_eq1.expr();
+        let shf_div64_eq2 = shf_lt256.expr() * shf_lo_div64_eq2.expr();
+        let shf_div64_eq3 = shf_lt256.expr() * shf_lo_div64_eq3.expr();
 
         cb.require_equal(
             "Constrain merged b64s[0] value",
@@ -170,8 +165,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         let shf_mod64_lt_64 = LtGadget::construct(cb, shf_mod64.expr(), 64.expr());
         cb.require_equal("shf_mod64 < 64", shf_mod64_lt_64.expr(), 1.expr());
         cb.require_equal(
-            "shf_lo == shf_mod64 + shf_div64 * 64",
-            shf_lo.expr(),
+            "shift[0] == shf_mod64 + shf_div64 * 64",
+            shift.cells[0].expr(),
             shf_mod64.expr() + shf_div64.expr() * 64.expr(),
         );
 
@@ -238,7 +233,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
             p_top,
             is_neg,
             shf_mod64_lt_64,
-            shf_hi_is_zero,
+            shf_lt256,
             shf_lo_div64_eq0,
             shf_lo_div64_eq1,
             shf_lo_div64_eq2,
@@ -267,11 +262,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
 
         let is_neg = 127 < a.to_le_bytes()[31];
-        let (shf_lo, shf_hi) = split_u256(&shift);
-        let shf_lo = shf_lo.as_u128();
-        let shf_hi = shf_hi.as_u128();
-        let shf_div64 = shf_lo / 64;
-        let shf_mod64 = shf_lo % 64;
+        let shf0 = u128::from(shift.to_le_bytes()[0]);
+        let shf_div64 = shf0 / 64;
+        let shf_mod64 = shf0 % 64;
         let p_lo = 1 << shf_mod64;
         let p_hi = 1 << (64 - shf_mod64);
         let p_top = if is_neg {
@@ -279,6 +272,11 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         } else {
             0
         };
+        let shf_lt256 = shift
+            .to_le_bytes()
+            .iter()
+            .fold(0, |acc, val| acc + u128::from(*val))
+            - shf0;
         let a64s = a.0;
         let mut a64s_lo = [0; 4];
         let mut a64s_hi = [0; 4];
@@ -291,7 +289,7 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         } else {
             [0; 4]
         };
-        if shf_hi == 0 && shf_div64 < 4 {
+        if shf_lt256 == 0 && shf_div64 < 4 {
             let idx = shf_div64 as usize;
             b64s[3 - idx] = a64s_hi[3] + p_top;
             for k in 0..3 - idx {
@@ -326,8 +324,8 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         )?;
         self.shf_mod64_lt_64
             .assign(region, offset, F::from_u128(shf_mod64), 64.into())?;
-        self.shf_hi_is_zero
-            .assign(region, offset, F::from_u128(shf_hi))?;
+        self.shf_lt256
+            .assign(region, offset, F::from_u128(shf_lt256))?;
         self.shf_lo_div64_eq0
             .assign(region, offset, F::from_u128(shf_div64))?;
         self.shf_lo_div64_eq1
