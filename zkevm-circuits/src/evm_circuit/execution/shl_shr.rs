@@ -54,11 +54,11 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         let is_shl = OpcodeId::SHR.expr() - opcode.expr();
         let is_shr = 1.expr() - is_shl.expr();
 
-        let quotient = cb.query_word();
-        let divisor = cb.query_word();
-        let remainder = cb.query_word();
-        let dividend = cb.query_word();
-        let shift = cb.query_word();
+        let quotient = cb.query_word_rlc();
+        let divisor = cb.query_word_rlc();
+        let remainder = cb.query_word_rlc();
+        let dividend = cb.query_word_rlc();
+        let shift = cb.query_word_rlc();
         let shf0 = cb.query_cell();
 
         let mul_add_words =

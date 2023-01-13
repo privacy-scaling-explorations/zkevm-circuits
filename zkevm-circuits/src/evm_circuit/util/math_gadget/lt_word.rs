@@ -83,8 +83,8 @@ mod tests {
 
     impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
-            let b = cb.query_word();
+            let a = cb.query_word_rlc();
+            let b = cb.query_word_rlc();
             let ltword_gadget = LtWordGadget::<F>::construct(cb, &a, &b);
             cb.require_equal("a < b", ltword_gadget.expr(), 1.expr());
             LtWordTestContainer {

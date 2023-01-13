@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, math_gadget::*, CachedRegion, Cell,
+        constraint_builder::ConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
+        Cell, CellType,
     },
     util::Expr,
 };
@@ -29,8 +30,8 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
         numerator: Expression<F>,
         denominator: u64,
     ) -> Self {
-        let quotient = cb.query_cell();
-        let remainder = cb.query_cell();
+        let quotient = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
+        let remainder = cb.query_cell_with_type(CellType::storage_for_expr(&numerator));
 
         // Require that remainder < denominator
         cb.range_lookup(remainder.expr(), denominator);
@@ -81,6 +82,17 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
             .assign(region, offset, F::from_u128(quotient))?;
 
         Ok((quotient, remainder))
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        numerator: Value<F>,
+    ) -> Result<Value<(u128, u128)>, Error> {
+        transpose_val_ret(
+            numerator.map(|numerator| self.assign(region, offset, numerator.get_lower_128())),
+        )
     }
 }
 

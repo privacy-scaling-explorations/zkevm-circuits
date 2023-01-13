@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::MSIZE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_rlc();
+        let value = cb.query_word_rlc();
 
         // memory_size is limited to 64 bits so we only consider 8 bytes
         cb.require_equal(
