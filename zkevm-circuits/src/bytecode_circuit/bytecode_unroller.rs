@@ -964,7 +964,7 @@ mod tests {
     }
 
     #[test]
-    fn bytecode_full_last_row() {
+    fn bytecode_last_row_with_byte() {
         let k = 9;
         // Last row must be a padding row, so we have one row less for actual bytecode
         test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7])], false);
