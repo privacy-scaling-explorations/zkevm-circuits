@@ -46,10 +46,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let external_address = cb.query_rlc();
+        let external_address = cb.query_word_rlc();
         let memory_offset = cb.query_cell();
-        let data_offset = cb.query_rlc();
-        let memory_length = cb.query_rlc();
+        let data_offset = cb.query_word_rlc();
+        let memory_length = cb.query_word_rlc();
 
         cb.stack_pop(external_address.expr());
         cb.stack_pop(memory_offset.expr());
@@ -75,7 +75,8 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             AccountFieldTag::CodeHash,
             code_hash.expr(),
         );
-        let code_size = cb.bytecode_length(code_hash.expr());
+        let code_size = cb.query_cell();
+        cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
@@ -156,13 +157,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.external_address
             .assign(region, offset, Some(le_bytes))?;
 
-        let memory_address = self.memory_address.assign(
-            region,
-            offset,
-            memory_offset,
-            memory_length,
-            block.randomness,
-        )?;
+        let memory_address =
+            self.memory_address
+                .assign(region, offset, memory_offset, memory_length)?;
         self.data_offset.assign(
             region,
             offset,

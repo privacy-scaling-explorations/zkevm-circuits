@@ -761,10 +761,10 @@ mod tests {
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
         mock::BlockData,
     };
-    use eth_types::{address, bytecode, geth_types::GethData, ToWord, Word};
+    use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
+    use mock::{TestContext, MOCK_ACCOUNTS};
 
     use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
@@ -824,7 +824,7 @@ mod tests {
     }
 
     fn gen_extcodecopy_data() -> CircuitInputBuilder {
-        let external_address = address!("0xaabbccddee000000000000000000000000000000");
+        let external_address = MOCK_ACCOUNTS[0];
         let code = bytecode! {
             PUSH1(0x30usize)
             PUSH1(0x0usize)
@@ -837,14 +837,12 @@ mod tests {
         let test_ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
-                accs[0]
-                    .address(address!("0x0000000000000000000000000000000000000010"))
-                    .code(code.clone());
+                accs[0].address(MOCK_ACCOUNTS[1]).code(code.clone());
 
                 accs[1].address(external_address).code(code_ext.clone());
 
                 accs[2]
-                    .address(address!("0x0000000000000000000000000000000000cafe01"))
+                    .address(MOCK_ACCOUNTS[2])
                     .balance(Word::from(1u64 << 20));
             },
             |mut txs, accs| {

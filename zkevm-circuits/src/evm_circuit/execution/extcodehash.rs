@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes, CachedRegion, Cell, Word,
+            from_bytes, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
