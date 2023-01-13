@@ -77,5 +77,5 @@ fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
     let circuit = EvmCircuit::configure(&mut meta);
 
-    circuit.execution.height_map
+    circuit.0.execution.height_map
 }
