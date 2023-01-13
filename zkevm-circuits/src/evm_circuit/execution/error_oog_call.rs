@@ -181,7 +181,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_length,
             step.memory_word_size(),
             callee_code_hash_word,
-            F::from(callee_exists),
         )?;
 
         self.opcode

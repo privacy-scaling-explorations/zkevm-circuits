@@ -11,7 +11,7 @@ use crate::evm_circuit::util::math_gadget::{
 };
 use crate::evm_circuit::util::{not, or, select, CachedRegion, Cell, Word};
 
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
+use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
@@ -19,7 +19,6 @@ use eth_types::evm_types::GAS_STIPEND_CALL_WITH_VALUE;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -195,6 +194,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
+        // no_callee_code is true when the account exists and has empty
+        // code hash, or when the account doesn't exist (which we encode with
+        // code_hash = 0).
+        let no_callee_code =
+            call_gadget.is_empty_code_hash.expr() + call_gadget.callee_not_exists.expr();
+
         // Sum up and verify gas cost.
         // Only CALL opcode could invoke transfer to make empty account into non-empty.
         let gas_cost = call_gadget.gas_cost_expr(cb, is_warm_prev.expr(), is_call.expr());
@@ -216,7 +221,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(
-            call_gadget.is_empty_code_hash.expr() * not::expr(is_insufficient_balance.expr()),
+            no_callee_code.clone() * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -283,8 +288,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            (1.expr() - call_gadget.is_empty_code_hash.expr())
-                * not::expr(is_insufficient_balance.expr()),
+            not::expr(no_callee_code) * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -497,19 +501,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
         };
 
-        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[17 + rw_offset]] {
-            Rw::Account {
-                field_tag: AccountFieldTag::CodeHash,
-                value,
-                ..
-            } => (value.to_le_bytes(), true),
-            Rw::Account {
-                field_tag: AccountFieldTag::NonExisting,
-                ..
-            } => (*EMPTY_HASH_LE, false),
-            _ => unreachable!(),
-        };
-        let callee_code_hash_word = region.word_rlc(U256::from_little_endian(&callee_code_hash));
+        let callee_code_hash = block.rws[step.rw_indices[17 + rw_offset]]
+            .account_value_pair()
+            .0;
+        let callee_exists = !callee_code_hash.is_zero();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -577,8 +572,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            callee_code_hash_word,
-            F::from(callee_exists),
+            region.word_rlc(callee_code_hash),
         )?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
