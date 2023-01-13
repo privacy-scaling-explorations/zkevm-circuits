@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
     witness::{Block, Call, ExecStep},
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -235,14 +235,8 @@ impl<F: Field> RestoreContextGadget<F> {
             )?;
         }
 
-        self.caller_code_hash.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                caller_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.caller_code_hash
+            .assign(region, offset, region.word_rlc(caller_code_hash))?;
 
         Ok(())
     }
@@ -264,8 +258,8 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
 
-        let balance_addend = cb.query_word();
-        let balance_sum = cb.query_word();
+        let balance_addend = cb.query_word_rlc();
+        let balance_sum = cb.query_word_rlc();
 
         let [value, value_prev] = if INCREASE {
             [balance_sum.expr(), balance_addend.expr()]

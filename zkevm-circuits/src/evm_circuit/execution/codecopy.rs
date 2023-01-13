@@ -51,8 +51,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Query elements to be popped from the stack.
         let dst_memory_offset = cb.query_cell();
-        let code_offset = cb.query_rlc();
-        let size = cb.query_rlc();
+        let code_offset = cb.query_word_rlc();
+        let size = cb.query_word_rlc();
 
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.expr());
@@ -166,9 +166,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
 
         // assign the destination memory offset.
-        let memory_address =
-            self.dst_memory_addr
-                .assign(region, offset, dest_offset, size, block.randomness)?;
+        let memory_address = self
+            .dst_memory_addr
+            .assign(region, offset, dest_offset, size)?;
 
         // assign to gadgets handling memory expansion cost and copying cost.
         let (_, memory_expansion_cost) = self.memory_expansion.assign(

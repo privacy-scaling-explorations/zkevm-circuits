@@ -29,8 +29,8 @@ pub(crate) struct ModGadget<F> {
 impl<F: Field> ModGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = cb.query_word();
-        let a_or_zero = cb.query_word();
+        let k = cb.query_word_rlc();
+        let a_or_zero = cb.query_word_rlc();
         let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
         let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
@@ -72,7 +72,6 @@ impl<F: Field> ModGadget<F> {
         n: Word,
         r: Word,
         k: Word,
-        randomness: F,
     ) -> Result<(), Error> {
         let a_or_zero = if n.is_zero() { Word::zero() } else { a };
 
@@ -87,11 +86,11 @@ impl<F: Field> ModGadget<F> {
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
-        self.eq.assign(
+        self.eq.assign_value(
             region,
             offset,
-            util::Word::random_linear_combine(a.to_le_bytes(), randomness),
-            util::Word::random_linear_combine(a_or_zero.to_le_bytes(), randomness),
+            region.word_rlc(a),
+            region.word_rlc(a_or_zero),
         )?;
 
         Ok(())
@@ -117,9 +116,9 @@ mod tests {
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
-            let n = cb.query_word();
-            let r = cb.query_word();
+            let a = cb.query_word_rlc();
+            let n = cb.query_word_rlc();
+            let r = cb.query_word_rlc();
             let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,
@@ -149,7 +148,7 @@ mod tests {
             self.n.assign(region, offset, Some(n.to_le_bytes()))?;
             self.r.assign(region, offset, Some(r.to_le_bytes()))?;
 
-            self.mod_gadget.assign(region, 0, a, n, r, k, F::one())
+            self.mod_gadget.assign(region, 0, a, n, r, k)
         }
     }
 
