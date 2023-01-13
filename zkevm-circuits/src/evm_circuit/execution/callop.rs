@@ -38,7 +38,7 @@ pub(crate) struct CallOpGadget<F> {
     current_caller_address: Cell<F>,
     is_static: Cell<F>,
     depth: Cell<F>,
-    call: CommonCallGadget<F, false>,
+    call: CommonCallGadget<F, true>,
     current_value: Word<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,

@@ -28,7 +28,7 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     is_static: Cell<F>,
-    call: CommonCallGadget<F, true>,
+    call: CommonCallGadget<F, false>,
     is_warm: Cell<F>,
     balance: Word<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
