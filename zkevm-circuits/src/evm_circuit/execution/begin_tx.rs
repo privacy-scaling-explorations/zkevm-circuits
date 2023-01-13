@@ -694,6 +694,42 @@ mod test {
     }
 
     #[test]
+    #[ignore]
+    fn begin_tx_insufficient_gas() {
+        let multibyte_nonce = Word::from(1);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(18));
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(multibyte_nonce)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(1))
+                    .value(gwei(1))
+                    .invalid_tx(Word::from(1));
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    #[test]
     fn begin_tx_gadget_rand() {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
