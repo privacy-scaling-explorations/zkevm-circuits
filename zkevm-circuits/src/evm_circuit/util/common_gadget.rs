@@ -108,7 +108,6 @@ impl<F: Field> RestoreContextGadget<F> {
         reversible_write_counter_increase: Expression<F>,
     ) -> Self {
         // Read caller's context for restore
-
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
         let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             [

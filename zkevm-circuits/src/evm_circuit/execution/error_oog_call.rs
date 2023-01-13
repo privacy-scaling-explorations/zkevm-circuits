@@ -144,7 +144,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
-        // constrain RwCounterEndOfReversion
         cb.call_context_lookup(
             false.expr(),
             None,
@@ -185,13 +184,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             )
         });
 
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
         cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter + reversible_counter - 1",
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
             rw_counter_end_of_reversion.expr(),
-            cb.curr.state.rw_counter.expr()
-                + cb.rw_counter_offset()
-                + cb.curr.state.reversible_write_counter.expr()
-                - 1.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
         );
 
         Self {

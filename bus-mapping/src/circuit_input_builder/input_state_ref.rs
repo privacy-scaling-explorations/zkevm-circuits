@@ -1195,14 +1195,12 @@ impl<'a> CircuitInputStateRef<'a> {
             //set_value_ops_call_context_rwc_eor later
             // if call fails, no matter root or internal, read RwCounterEndOfReversion for
             // circuit constraint.
-            if !call.is_success {
-                self.call_context_read(
-                    exec_step,
-                    call.call_id,
-                    CallContextField::RwCounterEndOfReversion,
-                    call.rw_counter_end_of_reversion.into(),
-                );
-            }
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.into(),
+            );
 
             if call.is_root {
                 return Ok(());
