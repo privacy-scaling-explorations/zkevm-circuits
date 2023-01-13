@@ -687,7 +687,7 @@ impl BlockTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &BlockContext,
-        randomness: F,
+        randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -710,7 +710,7 @@ impl BlockTable {
                             || format!("block table row {}", offset),
                             *column,
                             offset,
-                            || Value::known(value),
+                            || value,
                         )?;
                     }
                     offset += 1;
@@ -914,8 +914,8 @@ impl CopyTable {
                 .map(|(value, _)| *value)
                 .collect::<Vec<u8>>();
             challenges
-                .evm_word()
-                .map(|evm_word_challenge| rlc::value(values.iter().rev(), evm_word_challenge))
+                .keccak_input()
+                .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         } else {
             Value::known(F::zero())
         };
@@ -996,7 +996,7 @@ impl CopyTable {
                 if is_read_step {
                     Value::known(F::from(copy_step.value as u64))
                 } else {
-                    value_acc = value_acc * challenges.evm_word()
+                    value_acc = value_acc * challenges.keccak_input()
                         + Value::known(F::from(copy_step.value as u64));
                     value_acc
                 }

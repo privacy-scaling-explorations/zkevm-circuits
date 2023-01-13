@@ -6,9 +6,7 @@ use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
-use crate::evm_circuit::util::{
-    from_bytes, select, CachedRegion, Cell, RandomLinearCombination, Word,
-};
+use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -34,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BALANCE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address_word = cb.query_word();
+        let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         cb.stack_pop(address_word.expr());
 
@@ -130,14 +128,8 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             } => (0.into(), false),
             _ => unreachable!(),
         };
-        self.balance.assign(
-            region,
-            offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                balance.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.balance
+            .assign(region, offset, region.word_rlc(balance))?;
         self.exists
             .assign(region, offset, Value::known(F::from(exists)))?;
 

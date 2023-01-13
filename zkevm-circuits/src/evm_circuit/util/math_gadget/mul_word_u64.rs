@@ -28,7 +28,7 @@ impl<F: Field> MulWordByU64Gadget<F> {
     ) -> Self {
         let gadget = Self {
             multiplicand,
-            product: cb.query_word(),
+            product: cb.query_word_rlc(),
             carry_lo: cb.query_bytes(),
         };
 
@@ -109,9 +109,9 @@ mod tests {
 
     impl<F: Field> MathGadgetContainer<F> for MulWordByU64TestContainer<F> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
+            let a = cb.query_word_rlc();
             let b = cb.query_cell();
-            let product = cb.query_word();
+            let product = cb.query_word_rlc();
             let mulwords_u64_gadget = MulWordByU64Gadget::<F>::construct(cb, a.clone(), b.expr());
             MulWordByU64TestContainer {
                 mulwords_u64_gadget,

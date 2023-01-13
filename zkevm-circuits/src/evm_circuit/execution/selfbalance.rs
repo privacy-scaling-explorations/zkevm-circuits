@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -13,14 +13,14 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SelfbalanceGadget<F> {
     same_context: SameContextGadget<F>,
     callee_address: Cell<F>,
-    self_balance: Cell<F>,
+    phase2_self_balance: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
@@ -31,14 +31,14 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
-        let self_balance = cb.query_cell();
+        let phase2_self_balance = cb.query_cell_with_type(CellType::StoragePhase2);
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Balance,
-            self_balance.expr(),
+            phase2_self_balance.expr(),
         );
 
-        cb.stack_push(self_balance.expr());
+        cb.stack_push(phase2_self_balance.expr());
 
         let opcode = cb.query_cell();
         let step_state_transition = StepStateTransition {
@@ -52,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
 
         Self {
             same_context,
-            self_balance,
+            phase2_self_balance,
             callee_address,
         }
     }
@@ -79,14 +79,8 @@ impl<F: Field> ExecutionGadget<F> for SelfbalanceGadget<F> {
         )?;
 
         let self_balance = block.rws[step.rw_indices[2]].stack_value();
-        self.self_balance.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                self_balance.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.phase2_self_balance
+            .assign(region, offset, region.word_rlc(self_balance))?;
 
         Ok(())
     }

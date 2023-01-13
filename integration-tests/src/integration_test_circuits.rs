@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
-use zkevm_circuits::evm_circuit::test::{get_test_degree, get_test_instance};
+use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
@@ -245,13 +245,12 @@ pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
     let degree = get_test_degree(&block);
-    let instance = get_test_instance(&block);
     let circuit = get_test_cicuit_from_block(block);
 
     if actual {
-        test_actual(degree, circuit, instance, None);
+        test_actual(degree, circuit, vec![], None);
     } else {
-        test_mock(degree, &circuit, instance);
+        test_mock(degree, &circuit, vec![]);
     }
 }
 

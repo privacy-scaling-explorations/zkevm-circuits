@@ -2,8 +2,9 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
-    poly::Rotation,
+    plonk::{
+        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
+    },
 };
 
 use crate::table::TxLogFieldTag;
@@ -28,50 +29,41 @@ pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomnes
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
-/// Query N instances at current rotation and return their expressions.  This
-/// function is used to get the power of randomness (passed as
-/// instances) in our tests.
-pub fn power_of_randomness_from_instance<F: FieldExt, const N: usize>(
-    meta: &mut ConstraintSystem<F>,
-) -> [Expression<F>; N] {
-    // This gate is used just to get the array of expressions from the power of
-    // randomness instance column, so that later on we don't need to query
-    // columns everywhere, and can pass the power of randomness array
-    // expression everywhere.  The gate itself doesn't add any constraints.
-
-    let columns = [(); N].map(|_| meta.instance_column());
-    query_expression(meta, |meta| {
-        columns.map(|column| meta.query_instance(column, Rotation::cur()))
-    })
-}
-
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Challenges<T = Challenge> {
     evm_word: T,
     keccak_input: T,
+    lookup_input: T,
 }
 
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         #[cfg(test)]
-        let _dummy_col = meta.advice_column();
+        let _dummy_cols = [
+            meta.advice_column(),
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column_in(halo2_proofs::plonk::ThirdPhase),
+        ];
 
         Self {
             evm_word: meta.challenge_usable_after(FirstPhase),
             keccak_input: meta.challenge_usable_after(FirstPhase),
+            lookup_input: meta.challenge_usable_after(SecondPhase),
         }
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
     pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
-        let [evm_word, keccak_input] = query_expression(meta, |meta| {
-            [self.evm_word, self.keccak_input].map(|challenge| meta.query_challenge(challenge))
+        let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
+            [self.evm_word, self.keccak_input, self.lookup_input]
+                .map(|challenge| meta.query_challenge(challenge))
         });
         Challenges {
             evm_word,
             keccak_input,
+            lookup_input,
         }
     }
 
@@ -80,6 +72,7 @@ impl Challenges {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
+            lookup_input: layouter.get_challenge(self.lookup_input),
         }
     }
 }
@@ -95,24 +88,45 @@ impl<T: Clone> Challenges<T> {
         self.keccak_input.clone()
     }
 
-    pub(crate) fn mock(evm_word: T, keccak_input: T) -> Self {
+    /// Returns challenge of `lookup_input`.
+    pub fn lookup_input(&self) -> T {
+        self.lookup_input.clone()
+    }
+
+    /// Returns the challenges indexed by the challenge index
+    pub fn indexed(&self) -> [&T; 3] {
+        [&self.evm_word, &self.keccak_input, &self.lookup_input]
+    }
+
+    pub(crate) fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {
         Self {
             evm_word,
             keccak_input,
+            lookup_input,
         }
     }
 }
 
 impl<F: Field> Challenges<Expression<F>> {
-    /// Returns powers of randomness for word RLC encoding
-    pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
-        std::iter::successors(self.evm_word.clone().into(), |power| {
-            (self.evm_word.clone() * power.clone()).into()
+    /// Returns powers of randomness
+    fn powers_of<const S: usize>(base: Expression<F>) -> [Expression<F>; S] {
+        std::iter::successors(base.clone().into(), |power| {
+            (base.clone() * power.clone()).into()
         })
         .take(S)
         .collect::<Vec<_>>()
         .try_into()
         .unwrap()
+    }
+
+    /// Returns powers of randomness for word RLC encoding
+    pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
+        Self::powers_of(self.evm_word.clone())
+    }
+
+    /// Returns powers of randomness for lookups
+    pub fn lookup_input_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
+        Self::powers_of(self.lookup_input.clone())
     }
 }
 

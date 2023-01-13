@@ -24,9 +24,9 @@ pub(crate) struct AbsWordGadget<F> {
 
 impl<F: Field> AbsWordGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let x = cb.query_word();
-        let x_abs = cb.query_word();
-        let sum = cb.query_word();
+        let x = cb.query_word_rlc();
+        let x_abs = cb.query_word_rlc();
+        let sum = cb.query_word_rlc();
         let x_lo = from_bytes::expr(&x.cells[0..16]);
         let x_hi = from_bytes::expr(&x.cells[16..32]);
         let x_abs_lo = from_bytes::expr(&x_abs.cells[0..16]);

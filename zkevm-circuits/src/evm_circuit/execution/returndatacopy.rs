@@ -61,8 +61,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         let opcode = cb.query_cell();
 
         let dest_offset = cb.query_cell();
-        let data_offset = cb.query_rlc();
-        let size = cb.query_rlc();
+        let data_offset = cb.query_word_rlc();
+        let size = cb.query_word_rlc();
 
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
@@ -227,9 +227,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         )?;
 
         // assign the destination memory offset.
-        let memory_address =
-            self.dst_memory_addr
-                .assign(region, offset, dest_offset, size, block.randomness)?;
+        let memory_address = self
+            .dst_memory_addr
+            .assign(region, offset, dest_offset, size)?;
 
         // assign to gadgets handling memory expansion cost and copying cost.
         let (_, memory_expansion_cost) = self.memory_expansion.assign(
