@@ -612,8 +612,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>) -> Cell<F> {
-        let cell = self.query_cell();
+    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
         self.add_lookup(
             "Bytecode (length)",
             Lookup::Bytecode {
@@ -621,10 +620,9 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 tag: BytecodeFieldTag::Length.expr(),
                 index: 0.expr(),
                 is_code: 0.expr(),
-                value: cell.expr(),
+                value,
             },
         );
-        cell
     }
 
     // Tx context

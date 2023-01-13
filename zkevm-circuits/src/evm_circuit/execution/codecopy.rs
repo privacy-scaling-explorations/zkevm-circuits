@@ -66,7 +66,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let code_hash = cb.curr.state.code_hash.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        let code_size = cb.bytecode_length(code_hash.expr());
+        let code_size = cb.query_cell();
+        cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
