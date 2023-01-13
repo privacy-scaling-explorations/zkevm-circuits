@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
-        let balance = cb.query_word();
+        let balance = cb.query_word_rlc();
         cb.account_read(
             call_gadget.callee_address_expr(),
             AccountFieldTag::Balance,
@@ -167,8 +167,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             } => (*EMPTY_HASH_LE, false),
             _ => unreachable!(),
         };
-        let callee_code_hash_word = Word::random_linear_combine(callee_code_hash, block.randomness);
-        let (memory_expansion_gas_cost, _) = self.call.assign(
+        let callee_code_hash_word = region.word_rlc(U256::from_little_endian(&callee_code_hash));
+        let memory_expansion_gas_cost = self.call.assign(
             region,
             offset,
             gas,
@@ -180,7 +180,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            block.randomness,
             callee_code_hash_word,
             F::from(callee_exists),
         )?;
@@ -209,8 +208,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             !callee_exists,
         )?;
 
-        self.insufficient_gas
-            .assign(region, offset, F::from(step.gas_left), F::from(gas_cost))?;
+        self.insufficient_gas.assign_value(
+            region,
+            offset,
+            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(gas_cost)),
+        )?;
 
         self.restore_context
             .assign(region, offset, block, call, step, 14)?;

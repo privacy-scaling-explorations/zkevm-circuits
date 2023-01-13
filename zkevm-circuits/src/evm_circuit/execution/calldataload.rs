@@ -14,7 +14,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             memory_gadget::BufferReaderGadget,
-            not, CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
+            not, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -56,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset = cb.query_rlc();
+        let offset = cb.query_word_rlc();
 
         // Pop the offset value from stack.
         cb.stack_pop(offset.expr());
@@ -143,10 +143,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
         let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
-        cb.stack_push(RandomLinearCombination::random_linear_combine_expr(
-            calldata_word,
-            cb.power_of_randomness(),
-        ));
+        cb.stack_push(cb.word_rlc(calldata_word));
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),

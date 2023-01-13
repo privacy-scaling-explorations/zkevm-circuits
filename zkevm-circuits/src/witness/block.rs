@@ -6,6 +6,7 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use halo2_proofs::circuit::Value;
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
@@ -40,6 +41,8 @@ pub struct Block<F> {
     pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
+    /// Pad copy circuit to make selectors fixed.
+    pub copy_circuit_pad_to: usize,
     /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
@@ -75,52 +78,58 @@ pub struct BlockContext {
 
 impl BlockContext {
     /// Assignments for block table
-    pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 3]> {
+    pub fn table_assignments<F: Field>(&self, randomness: Value<F>) -> Vec<[Value<F>; 3]> {
         [
             vec![
                 [
-                    F::from(BlockContextFieldTag::Coinbase as u64),
-                    F::zero(),
-                    self.coinbase.to_scalar().unwrap(),
+                    Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
+                    Value::known(F::zero()),
+                    Value::known(self.coinbase.to_scalar().unwrap()),
                 ],
                 [
-                    F::from(BlockContextFieldTag::Timestamp as u64),
-                    F::zero(),
-                    self.timestamp.to_scalar().unwrap(),
+                    Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
+                    Value::known(F::zero()),
+                    Value::known(self.timestamp.to_scalar().unwrap()),
                 ],
                 [
-                    F::from(BlockContextFieldTag::Number as u64),
-                    F::zero(),
-                    self.number.to_scalar().unwrap(),
+                    Value::known(F::from(BlockContextFieldTag::Number as u64)),
+                    Value::known(F::zero()),
+                    Value::known(self.number.to_scalar().unwrap()),
                 ],
                 [
-                    F::from(BlockContextFieldTag::Difficulty as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.difficulty.to_le_bytes(),
-                        randomness,
-                    ),
+                    Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
+                    Value::known(F::zero()),
+                    randomness.map(|randomness| {
+                        RandomLinearCombination::random_linear_combine(
+                            self.difficulty.to_le_bytes(),
+                            randomness,
+                        )
+                    }),
                 ],
                 [
-                    F::from(BlockContextFieldTag::GasLimit as u64),
-                    F::zero(),
-                    F::from(self.gas_limit),
+                    Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
+                    Value::known(F::zero()),
+                    Value::known(F::from(self.gas_limit)),
                 ],
                 [
-                    F::from(BlockContextFieldTag::BaseFee as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.base_fee.to_le_bytes(),
-                        randomness,
-                    ),
+                    Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
+                    Value::known(F::zero()),
+                    randomness.map(|randomness| {
+                        RandomLinearCombination::random_linear_combine(
+                            self.base_fee.to_le_bytes(),
+                            randomness,
+                        )
+                    }),
                 ],
                 [
-                    F::from(BlockContextFieldTag::ChainId as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.chain_id.to_le_bytes(),
-                        randomness,
-                    ),
+                    Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
+                    Value::known(F::zero()),
+                    randomness.map(|randomness| {
+                        RandomLinearCombination::random_linear_combine(
+                            self.chain_id.to_le_bytes(),
+                            randomness,
+                        )
+                    }),
                 ],
             ],
             {
@@ -130,12 +139,14 @@ impl BlockContext {
                     .enumerate()
                     .map(|(idx, hash)| {
                         [
-                            F::from(BlockContextFieldTag::BlockHash as u64),
-                            (self.number - len_history + idx).to_scalar().unwrap(),
-                            RandomLinearCombination::random_linear_combine(
-                                hash.to_le_bytes(),
-                                randomness,
-                            ),
+                            Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
+                            Value::known((self.number - len_history + idx).to_scalar().unwrap()),
+                            randomness.map(|randomness| {
+                                RandomLinearCombination::random_linear_combine(
+                                    hash.to_le_bytes(),
+                                    randomness,
+                                )
+                            }),
                         ]
                     })
                     .collect()
@@ -166,8 +177,8 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     Ok(Block {
-        randomness: F::from(0xcafeu64),
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
+        randomness: F::from(0xcafeu64),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -192,6 +203,7 @@ pub fn block_convert<F: Field>(
         circuits_params: block.circuits_params.clone(),
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
+        copy_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),

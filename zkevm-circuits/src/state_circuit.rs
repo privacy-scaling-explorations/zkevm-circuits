@@ -92,6 +92,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
+        let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
@@ -103,7 +104,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             selector,
             rw_table.storage_key,
             lookups,
-            challenges.evm_word_powers_of_randomness(),
+            power_of_randomness.clone(),
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);
@@ -123,7 +124,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             meta,
             sort_keys,
             lookups,
-            challenges.evm_word_powers_of_randomness(),
+            power_of_randomness.clone(),
         );
 
         let config = Self {
@@ -135,7 +136,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             lexicographic_ordering,
             not_first_access: meta.advice_column(),
             lookups,
-            power_of_randomness: challenges.evm_word_powers_of_randomness(),
+            power_of_randomness,
             rw_table,
             mpt_table,
         };
@@ -379,8 +380,11 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block.circuits_params.max_rws
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block.rws.0.values().flatten().count() + 1,
+            block.circuits_params.max_rws,
+        )
     }
 
     /// Make the assignments to the StateCircuit
@@ -588,7 +592,7 @@ mod state_circuit_stats {
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.execution.get_step_height_option(state);
+            let height = circuit.0.execution.get_step_height_option(state);
             if height.is_some() {
                 implemented_states.push(state);
             }

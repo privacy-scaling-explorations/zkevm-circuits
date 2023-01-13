@@ -9,9 +9,7 @@ use crate::evm_circuit::util::constraint_builder::{
 use crate::evm_circuit::util::math_gadget::{
     ConstantDivisionGadget, IsZeroGadget, LtWordGadget, MinMaxGadget,
 };
-use crate::evm_circuit::util::{
-    not, or, select, CachedRegion, Cell, RandomLinearCombination, Word,
-};
+use crate::evm_circuit::util::{not, or, select, CachedRegion, Cell, Word};
 
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
@@ -149,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
-        let caller_balance_word = cb.query_word();
+        let caller_balance_word = cb.query_word_rlc();
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Balance,
@@ -504,8 +502,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             } => (*EMPTY_HASH_LE, false),
             _ => unreachable!(),
         };
-        let callee_code_hash_word =
-            RandomLinearCombination::random_linear_combine(callee_code_hash, block.randomness);
+        let callee_code_hash_word = region.word_rlc(U256::from_little_endian(&callee_code_hash));
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -561,7 +558,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.depth
             .assign(region, offset, Value::known(F::from(depth.low_u64())))?;
 
-        let (memory_expansion_gas_cost, _) = self.call.assign(
+        let memory_expansion_gas_cost = self.call.assign(
             region,
             offset,
             gas,
@@ -573,7 +570,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            block.randomness,
             callee_code_hash_word,
             F::from(callee_exists),
         )?;
@@ -609,7 +605,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let gas_available = step.gas_left - gas_cost;
 
         self.one_64th_gas
-            .assign(region, offset, gas_available as u128)?;
+            .assign(region, offset, gas_available.into())?;
         self.capped_callee_gas_left.assign(
             region,
             offset,
@@ -864,6 +860,14 @@ mod test {
         for (caller, callee) in callers.into_iter().cartesian_product(callees.into_iter()) {
             test_ok(caller, callee);
         }
+    }
+
+    #[test]
+    fn callop_base() {
+        test_ok(
+            caller(&OpcodeId::CALL, Stack::default(), true),
+            callee(bytecode! {}),
+        );
     }
 
     fn test_ok(caller: Account, callee: Account) {

@@ -14,7 +14,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, Cell, Word,
+            not, Cell, CellType, Word,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
@@ -27,7 +27,6 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-use keccak256::EMPTY_HASH_LE;
 
 /// Construction of execution state that stays in the same call context, which
 /// lookups the opcode and verifies the execution state is responsible for it,
@@ -242,14 +241,8 @@ impl<F: Field> RestoreContextGadget<F> {
             )?;
         }
 
-        self.caller_code_hash.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                caller_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.caller_code_hash
+            .assign(region, offset, region.word_rlc(caller_code_hash))?;
 
         Ok(())
     }
@@ -271,8 +264,8 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
 
-        let balance_addend = cb.query_word();
-        let balance_sum = cb.query_word();
+        let balance_addend = cb.query_word_rlc();
+        let balance_sum = cb.query_word_rlc();
 
         let [value, value_prev] = if INCREASE {
             [balance_sum.expr(), balance_addend.expr()]
@@ -480,13 +473,13 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
     ) -> Self {
-        let gas_word = cb.query_word();
-        let callee_address_word = cb.query_word();
-        let value = cb.query_word();
+        let gas_word = cb.query_word_rlc();
+        let callee_address_word = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
         let cd_offset = cb.query_cell();
-        let cd_length = cb.query_rlc();
+        let cd_length = cb.query_word_rlc();
         let rd_offset = cb.query_cell();
-        let rd_length = cb.query_rlc();
+        let rd_length = cb.query_word_rlc();
         let is_success = cb.query_bool();
         let callee_exists = cb.query_bool();
 
@@ -528,15 +521,9 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
             1.expr() - value_is_zero.expr(),
         );
 
-        let callee_code_hash = cb.query_cell();
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            callee_code_hash.expr(),
-            Word::random_linear_combine_expr(
-                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                cb.power_of_randomness(),
-            ),
-        );
+        let callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, callee_code_hash.expr(), cb.empty_hash_rlc());
 
         Self {
             is_success,
@@ -610,10 +597,9 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         rd_offset: U256,
         rd_length: U256,
         memory_word_size: u64,
-        randomness: F,
-        callee_code_hash: F,
+        callee_code_hash: Value<F>,
         callee_exists: F,
-    ) -> Result<(u64, F), Error> {
+    ) -> Result<u64, Error> {
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
         self.callee_address
             .assign(region, offset, Some(callee_address.to_le_bytes()))?;
@@ -630,10 +616,10 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         }
         let cd_address = self
             .cd_address
-            .assign(region, offset, cd_offset, cd_length, randomness)?;
+            .assign(region, offset, cd_offset, cd_length)?;
         let rd_address = self
             .rd_address
-            .assign(region, offset, rd_offset, rd_length, randomness)?;
+            .assign(region, offset, rd_offset, rd_length)?;
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
             region,
             offset,
@@ -644,16 +630,16 @@ impl<F: Field, const IS_OOG_ERROR: bool> CommonCallGadget<F, IS_OOG_ERROR> {
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
         self.callee_code_hash
-            .assign(region, offset, Value::known(callee_code_hash))?;
-        let is_empty_code_hash = self.is_empty_code_hash.assign(
+            .assign(region, offset, callee_code_hash)?;
+        self.is_empty_code_hash.assign_value(
             region,
             offset,
             callee_code_hash,
-            Word::random_linear_combine(*EMPTY_HASH_LE, randomness),
+            region.empty_hash_rlc(),
         )?;
         self.callee_exists
             .assign(region, offset, Value::known(callee_exists))?;
-        Ok((memory_expansion_gas_cost, is_empty_code_hash))
+        Ok(memory_expansion_gas_cost)
     }
 
     pub(crate) fn cal_gas_cost_for_assignment(
