@@ -72,9 +72,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         cb.tx_refund_read(tx_id.expr(), refund.expr());
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
 
-        // gas_used & refund == 0 if tx is invalid
+        // refund == 0 if tx is invalid
         cb.condition(is_tx_invalid.expr(), |cb| {
-            cb.require_zero("gas_used == 0 if tx is invalid", gas_used.expr());
             cb.require_zero(
                 "refund == 0 if tx is invalid",
                 effective_refund.min().expr(),

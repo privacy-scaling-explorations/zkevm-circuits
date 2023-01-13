@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = select::expr(
             gas_not_enough.expr(),
             tx_gas.expr(),
-            tx_gas.expr() - intrinsic_gas.clone(),
+            tx_gas.expr() - intrinsic_gas,
         );
 
         // Prepare access list of caller and callee
@@ -179,7 +179,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 true.expr(),
             );
         });
-
         cb.condition(not::expr(is_tx_invalid.expr()), |cb| {
             cb.require_equal(
                 "effective_tx_value == tx_value",
@@ -193,6 +192,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
         });
 
+        // Verify transfer
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
@@ -201,28 +201,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             effective_gas_fee.clone(),
             &mut reversion_info,
         );
-
-        // Verify transfer
         let sender_balance_prev = transfer_with_gas_fee.sender.balance_prev();
-
         let add_tx_value_and_mul_gas_fee_by_gas = cb.query_word();
-
-        // tx_value.int_value + gas_fee.int_value
         let total_eth_cost = AddWordsGadget::construct(
             cb,
             [tx_value.clone(), gas_fee.product().clone()],
             add_tx_value_and_mul_gas_fee_by_gas.clone(),
         );
 
-        // balance_not_enough = sender_balance_prev.int_value < tx_value.int_value +
-        // gas_fee.int_value
+        // Check if the account ETH balance is sufficient
         let balance_not_enough = LtWordGadget::construct(
             cb,
-            &sender_balance_prev,
+            sender_balance_prev,
             &add_tx_value_and_mul_gas_fee_by_gas,
         );
 
-        // prover should not give incorrect is_tx_invalid flag.
+        // A transaction is invalid when
+        // - The transaction requires more ETH than the transaction needs
+        // - The amount of gas specified in the transaction is lower than the intrinsic
+        //   gas cost
+        // - The transaction nonce does not match the current nonce expected in the
+        //   account
         cb.require_equal(
             "is_tx_invalid is correct",
             or::expr([
@@ -451,19 +450,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.balance_not_enough.assign(
             region,
             offset,
-            caller_balance_pair.1.clone(),
+            caller_balance_pair.1,
             add_tx_value_and_mul_gas_fee_by_gas,
         )?;
 
-        let intrinsic_tx_value = if tx.invalid_tx >= 1 {
-            U256::zero()
+        let (intrinsic_tx_value, intrinsic_gas_fee) = if tx.invalid_tx == 0 {
+            (tx.value, gas_fee)
         } else {
-            tx.value
-        };
-        let intrinsic_gas_fee = if tx.invalid_tx >= 1 {
-            U256::zero()
-        } else {
-            gas_fee
+            (U256::zero(), U256::zero())
         };
         self.effective_tx_value
             .assign(region, offset, Some(intrinsic_tx_value.to_le_bytes()))?;
