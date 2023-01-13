@@ -16,7 +16,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use keccak256::plain::Keccak;
+use keccak256::{plain::Keccak, EMPTY_HASH_LE};
 use log::trace;
 use std::vec;
 
@@ -229,16 +229,17 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            // TODO: assert cur.hash == EMPTY_HASH
-            // FIXME: Since randomness is only known at synthesis time, the RLC of empty
-            // code_hash is not constant.  Consider doing a lookup to the empty code_hash
-            // value? cb.condition(length_is_zero.clone().is_zero_expression,
-            // |cb| {     cb.require_equal(
-            //         "if length == 0: code_hash == RLC(EMPTY_HASH, randomness)",
-            //         meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
-            //         Expression::Constant(keccak(&[], randomness)),
-            //     );
-            // });
+            // TODO: the following does not match
+            let empty_hash = RandomLinearCombination::<F, 32>::random_linear_combine_expr(
+                EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
+                &core::array::from_fn::<Expression<F>, 32, _>(|_| challenges.evm_word()),
+            );
+
+            cb.require_equal(
+                "assert cur.hash == EMPTY_HASH",
+                meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
+                empty_hash,
+            );
 
             cb.gate(and::expr(vec![
                 meta.query_fixed(q_enable, Rotation::cur()),
@@ -447,6 +448,10 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             last_row_offset
         );
 
+        let empty_hash = challenges.evm_word().map(|challenge| {
+            RandomLinearCombination::<F, 32>::random_linear_combine(*EMPTY_HASH_LE, challenge)
+        });
+
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
@@ -457,6 +462,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         bytecode,
                         challenges,
                         &push_data_left_is_zero_chip,
+                        empty_hash,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -468,6 +474,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     self.set_padding_row(
                         &mut region,
                         &push_data_left_is_zero_chip,
+                        empty_hash,
                         idx,
                         last_row_offset,
                     )?;
@@ -484,6 +491,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         bytecode: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
         push_rindex_is_zero_chip: &IsZeroChip<F>,
+        empty_hash: Value<F>,
         offset: &mut usize,
         last_row_offset: usize,
         fail_fast: bool,
@@ -571,7 +579,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 push_data_left = next_push_data_left
             }
             if *offset == last_row_offset {
-                self.set_padding_row(region, push_rindex_is_zero_chip, *offset, last_row_offset)?;
+                self.set_padding_row(
+                    region,
+                    push_rindex_is_zero_chip,
+                    empty_hash,
+                    *offset,
+                    last_row_offset,
+                )?;
             }
         }
 
@@ -582,6 +596,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         push_data_left_is_zero_chip: &IsZeroChip<F>,
+        empty_hash: Value<F>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
@@ -591,7 +606,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             offset,
             offset < last_row_offset,
             offset == last_row_offset,
-            Value::known(F::zero()),
+            empty_hash,
             F::from(BytecodeFieldTag::Header as u64),
             F::zero(),
             F::zero(),
