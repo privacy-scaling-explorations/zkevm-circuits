@@ -460,7 +460,7 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
 
     value_is_zero: IsZeroGadget<F>,
     pub has_value: Expression<F>,
-    pub callee_code_hash: Cell<F>,
+    pub phase2_callee_code_hash: Cell<F>,
     pub is_empty_code_hash: IsEqualGadget<F>,
 
     callee_exists: Cell<F>,
@@ -521,9 +521,9 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             1.expr() - value_is_zero.expr(),
         );
 
-        let callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_callee_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, callee_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
 
         Self {
             is_success,
@@ -536,7 +536,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             memory_expansion,
             value_is_zero,
             has_value,
-            callee_code_hash,
+            phase2_callee_code_hash,
             is_empty_code_hash,
             callee_exists,
         }
@@ -561,7 +561,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             cb.account_read(
                 self.callee_address_expr(),
                 AccountFieldTag::CodeHash,
-                self.callee_code_hash.expr(),
+                self.phase2_callee_code_hash.expr(),
             );
         });
         cb.condition(is_empty_account.clone(), |cb| {
@@ -597,7 +597,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         rd_offset: U256,
         rd_length: U256,
         memory_word_size: u64,
-        callee_code_hash: Value<F>,
+        phase2_callee_code_hash: Value<F>,
         callee_exists: F,
     ) -> Result<u64, Error> {
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
@@ -629,12 +629,12 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         self.value_is_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
-        self.callee_code_hash
-            .assign(region, offset, callee_code_hash)?;
+        self.phase2_callee_code_hash
+            .assign(region, offset, phase2_callee_code_hash)?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
-            callee_code_hash,
+            phase2_callee_code_hash,
             region.empty_hash_rlc(),
         )?;
         self.callee_exists
