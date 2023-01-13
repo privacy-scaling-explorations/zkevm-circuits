@@ -68,9 +68,9 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let shift = cb.query_word();
-        let a = cb.query_word();
-        let b = cb.query_word();
+        let shift = cb.query_word_rlc();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
 
         cb.stack_pop(shift.expr());
         cb.stack_pop(a.expr());
