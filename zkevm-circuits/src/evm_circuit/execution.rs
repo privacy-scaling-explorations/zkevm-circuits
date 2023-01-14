@@ -59,6 +59,7 @@ mod error_oog_constant;
 mod error_oog_static_memory;
 mod error_stack;
 mod exp;
+mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
 mod gas;
@@ -122,6 +123,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
+use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
 use extcodesize::ExtcodesizeGadget;
 use gas::GasGadget;
@@ -218,6 +220,7 @@ pub(crate) struct ExecutionConfig<F> {
     exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     extcodesize_gadget: ExtcodesizeGadget<F>,
+    extcodecopy_gadget: ExtcodecopyGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
     iszero_gadget: IsZeroGadget<F>,
@@ -240,7 +243,6 @@ pub(crate) struct ExecutionConfig<F> {
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
-    extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
