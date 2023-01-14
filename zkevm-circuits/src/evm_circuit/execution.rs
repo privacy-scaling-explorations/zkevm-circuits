@@ -81,6 +81,7 @@ mod push;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
+mod sar;
 mod sdiv_smod;
 mod selfbalance;
 mod sha3;
@@ -142,6 +143,7 @@ use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
 use returndatasize::ReturnDataSizeGadget;
+use sar::SarGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
 use shl_shr::ShlShrGadget;
@@ -233,11 +235,11 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     return_revert_gadget: ReturnRevertGadget<F>,
+    sar_gadget: SarGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
-    sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
     extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
@@ -1111,6 +1113,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::RETURN_REVERT => assign_exec_step!(self.return_revert_gadget),
             ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
             ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
+            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
@@ -1119,7 +1122,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
