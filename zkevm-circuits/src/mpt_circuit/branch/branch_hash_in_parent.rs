@@ -4,14 +4,14 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     evm_circuit::util::rlc,
-    mpt_circuit::{
-        helpers::BaseConstraintBuilder,
-        param::{
-            ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, EXTENSION_ROWS_NUM,
-        },
+    mpt_circuit::param::{
+        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, EXTENSION_ROWS_NUM,
     },
-    mpt_circuit::{helpers::BranchNodeInfo, MPTContext},
+    mpt_circuit::{
+        helpers::{BranchNodeInfo, MPTConstraintBuilder},
+        MPTContext,
+    },
 };
 use gadgets::util::{not, Expr};
 
@@ -76,15 +76,15 @@ pub(crate) struct BranchHashInParentConfig<F> {
 impl<F: FieldExt> BranchHashInParentConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
-        let rot_into_branch_init = -(ARITY as i32);
+        let rot_branch_init = -(ARITY as i32);
         // Any rotation that lands into branch can be used
-        let rot_into_prev_branch_child = rot_into_branch_init - EXTENSION_ROWS_NUM - 1;
-        circuit!([meta, cb], {
-            let branch = BranchNodeInfo::new(meta, ctx.s_main, is_s, rot_into_branch_init);
+        let rot_branch_child_prev = rot_branch_init - EXTENSION_ROWS_NUM - 1;
+        circuit!([meta, cb.base], {
+            let branch = BranchNodeInfo::new(meta, ctx.s_main, is_s, rot_branch_init);
             // When placeholder branch, we don't check its hash in a parent.
             // Extension node is handled in `extension_node.rs`.
             ifx! {not!(branch.is_extension()), not!(branch.is_placeholder()) => {
@@ -98,13 +98,13 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     // Only check if there is an account above the leaf.
                     // rot_into_branch_init - 1 because we are in the last branch child
                     // (rot_into_branch_init takes us to branch init).
-                    ifx!{a!(ctx.account_leaf.is_in_added_branch, rot_into_branch_init - 1) => {
+                    ifx!{a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1) => {
                         /* Branch in first level of storage trie - hash compared to the storage root */
                         // When a branch is in the first level of the storage trie, we need to check whether
                         // the branch hash matches the storage root.
                         // Note: A branch in the first level cannot be shorter than 32 bytes (it is always hashed).
                         let storage_offset = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
-                        let rot_into_storage_root = rot_into_branch_init - ACCOUNT_LEAF_ROWS + storage_offset;
+                        let rot_into_storage_root = rot_branch_init - ACCOUNT_LEAF_ROWS + storage_offset;
                         // Note: storage root is always in s_main.bytes.
                         let storage_root_rlc = rlc::expr(
                             &ctx.s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
@@ -113,7 +113,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         require!((1, branch_rlc, branch.len(), storage_root_rlc) => @"keccak");
                     } elsex {
                         // Here the branch is in some other branch
-                        let mod_node_hash_rlc = a!(ctx.accumulators.mod_node_rlc(is_s), rot_into_prev_branch_child);
+                        let mod_node_hash_rlc = a!(ctx.accumulators.mod_node_rlc(is_s), rot_branch_child_prev);
                         ifx!{branch.is_branch_non_hashed() => {
                             /* Non-hashed branch hash in parent branch */
                             // We need to check that `branch_RLC = parent_branch_modified_node_RLC`.

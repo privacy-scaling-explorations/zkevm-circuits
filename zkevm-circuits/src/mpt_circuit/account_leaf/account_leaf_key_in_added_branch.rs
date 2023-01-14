@@ -5,15 +5,18 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     evm_circuit::util::rlc,
-    mpt_circuit::{helpers::accumulate_rand, FixedTableTag},
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, BranchNodeInfo},
+        helpers::BranchNodeInfo,
         param::{
             ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
             ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
             BRANCH_ROWS_NUM,
         },
+    },
+    mpt_circuit::{
+        helpers::{accumulate_rand, MPTConstraintBuilder},
+        FixedTableTag,
     },
     mpt_circuit::{MPTConfig, MPTContext, ProofValues},
 };
@@ -89,7 +92,7 @@ pub(crate) struct AccountLeafKeyInAddedBranchConfig<F> {
 impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let not_first_level = ctx.position_cols.not_first_level;
@@ -101,7 +104,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let accs = ctx.accumulators;
         let drifted_pos = ctx.branch.drifted_pos;
         let denoter = ctx.denoter;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         let rot_ext = -ACCOUNT_DRIFTED_LEAF_IND - 1;
         let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
@@ -110,7 +113,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         let rot_key_s = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND);
         let rot_key_c = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND);
 
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let mut branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
 
             // drifted leaf appears only when there is a placeholder branch
@@ -130,7 +133,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // Finally, a lookup is used to check the hash that corresponds to this RLC is
                 // in the parent branch at `drifted_pos` position.
                 let rlc = rlc::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                    &ctx.rlp_bytes()[0..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                     &r,
                 );
                 require!(a!(accs.acc_s.rlc) => rlc);
@@ -235,7 +238,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
                 let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc = key_rlc_prev + a!(drifted_pos, rot_first_child) * drifted_pos_mult + rlc::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                    &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
                         key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
                     &r,
                 );
@@ -243,7 +246,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 let num_bytes = a!(s_main.bytes[0]) - 128.expr();
                 // RLC bytes zero check
-                cb.set_range_length(1.expr() + num_bytes.expr());
+                cb.set_length(1.expr() + num_bytes.expr());
                 // Update `mult_diff` for key length + 2 RLP bytes + 1 byte that contains the
                 // key length.
                 require!((FixedTableTag::RMult, num_bytes + 3.expr(), a!(accs.acc_s.mult)) => @"mult");

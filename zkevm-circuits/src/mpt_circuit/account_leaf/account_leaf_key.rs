@@ -10,11 +10,11 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     evm_circuit::util::rlc,
-    mpt_circuit::FixedTableTag,
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, BranchNodeInfo},
+        helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
+    mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
@@ -94,16 +94,15 @@ pub(crate) struct AccountLeafKeyConfig<F> {
 impl<F: FieldExt> AccountLeafKeyConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
         let proof_type = ctx.proof_type;
         let position_cols = ctx.position_cols;
         let s_main = ctx.s_main;
-        let c_main = ctx.c_main;
         let accs = ctx.accumulators;
-        let r = ctx.r;
+        let r = ctx.r.clone();
         let address_rlc = ctx.address_rlc;
         let sel_2 = ctx.denoter.sel2;
 
@@ -112,7 +111,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_branch_init = rot_first_child - 1;
 
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
 
             // Account leaf always starts with 248 because its length is always longer than
@@ -127,7 +126,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // leaf. The RLC after account leaf key row is stored in `acc`
             // column. We check the stored value is computed correctly.
             let rlc = rlc::expr(
-                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..36]
+                &ctx.rlp_bytes()[0..36]
                     .iter()
                     .map(|&byte| a!(byte))
                     .collect::<Vec<_>>(),
@@ -244,7 +243,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // If is_c16, we have nibble+48 in s_main.bytes[0].
             let rlc = key_rlc_prev
                 + rlc::expr(
-                    &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
+                    &ctx.rlp_bytes()[3..36]
                         .iter()
                         .enumerate()
                         .map(|(idx, &byte)| {
@@ -269,7 +268,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             require!(nibbles_count_prev + num_nibbles => 64);
 
             // RLC bytes zero check
-            cb.set_range_length(1.expr() + key_len.expr());
+            cb.set_length(1.expr() + key_len.expr());
             // Update `mult_diff` for key length + 2 RLP bytes + 1 byte that contains the
             // key length.
             require!((FixedTableTag::RMult, key_len.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");

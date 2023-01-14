@@ -6,7 +6,7 @@ use crate::{
     circuit,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::{
-        get_num_rlp_bytes_selectors, get_rlp_meta_bytes, get_rlp_value_bytes, BaseConstraintBuilder,
+        get_num_rlp_bytes_selectors, get_rlp_meta_bytes, get_rlp_value_bytes, MPTConstraintBuilder,
     },
     mpt_circuit::MPTContext,
 };
@@ -85,7 +85,7 @@ pub(crate) struct BranchInitConfig<F> {
 impl<F: FieldExt> BranchInitConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let s_main = ctx.s_main;
@@ -93,7 +93,7 @@ impl<F: FieldExt> BranchInitConfig<F> {
         let r = ctx.r;
 
         let rot = Rotation::cur();
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             for is_s in [true, false] {
                 // Boolean checks
                 let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);

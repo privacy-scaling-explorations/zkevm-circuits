@@ -11,11 +11,8 @@ use crate::{
     circuit,
     evm_circuit::util::rlc,
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::MPTContext,
-    mpt_circuit::{
-        helpers::{BaseConstraintBuilder, BranchNodeInfo},
-        param::BRANCH_ROWS_NUM,
-    },
+    mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
+    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
     mpt_circuit::{
         param::{IS_NON_EXISTING_STORAGE_POS, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND, S_START},
         MPTConfig, ProofValues,
@@ -85,19 +82,18 @@ pub(crate) struct StorageNonExistingConfig<F> {
 impl<F: FieldExt> StorageNonExistingConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let proof_type = ctx.proof_type;
         let s_main = ctx.s_main;
-        let c_main = ctx.c_main;
         let accs = ctx.accumulators;
         // Should be the same as sel1 as both parallel proofs are the same
         // for non_existing_storage_proof, but we use C for non-existing
         // storage
         let is_modified_node_empty = ctx.denoter.sel2;
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         let rot_key_c = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
         let rot_first_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
@@ -105,8 +101,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let rot_last_account_row = -LEAF_NON_EXISTING_IND - 1;
 
         let add_wrong_leaf_constraints =
-            |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>, is_short: bool| {
-                circuit!([meta, cb], {
+            |meta: &mut VirtualCells<F>, cb: &mut MPTConstraintBuilder<F>, is_short: bool| {
+                circuit!([meta, cb.base], {
                     let rlc = a!(accs.acc_c.rlc);
                     let rlc_prev = a!(accs.acc_c.mult);
                     let diff_inv = a!(accs.acc_s.rlc);
@@ -115,7 +111,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     let end_idx = start_idx + 33;
                     let mut calc_rlc = |rot: i32| {
                         rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[start_idx..end_idx]
+                            &ctx.rlp_bytes()[start_idx..end_idx]
                                 .iter()
                                 .map(|&byte| a!(byte, rot))
                                 .collect::<Vec<_>>(),
@@ -137,7 +133,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                 });
             };
 
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let flag1 = a!(accs.s_mod_node_rlc, rot_key_c);
             let flag2 = a!(accs.c_mod_node_rlc, rot_key_c);
             let is_leaf_long = flag1.expr() * not!(flag2);
@@ -163,7 +159,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                             add_wrong_leaf_constraints(meta, cb, true);
                             // Calculate the RLC
                             let rlc = rlc::expr(
-                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
+                                &ctx.rlp_bytes()[2..35].iter().enumerate().map(|(idx, &byte)|
                                     (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                                 &[[1.expr()].to_vec(), r.to_vec()].concat(),
                             );
@@ -174,7 +170,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                             add_wrong_leaf_constraints(meta, cb, false);
                             // Calculate the RLC
                             let rlc = rlc::expr(
-                                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                                &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
                                     (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                                 &[[1.expr()].to_vec(), r.to_vec()].concat(),
                             );
@@ -192,7 +188,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
                     require!(len => len_prev);
                     // RLC bytes zero check (subtract 2 for first two RLP bytes)
-                    cb.set_range_length(num_rlp_bytes + (len - 128.expr()) - 2.expr());
+                    cb.set_length(num_rlp_bytes + (len - 128.expr()) - 2.expr());
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
                     // Note that the constraints in `branch.rs` ensure that `sel2` is 1 if and only if there is a nil object

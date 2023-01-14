@@ -2,7 +2,7 @@
 use eth_types::Field;
 use gadgets::{
     impl_expr,
-    util::{not, sum, Expr},
+    util::{sum, Expr},
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -48,7 +48,7 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
-    mpt_circuit::helpers::{extend_rand, BaseConstraintBuilder, BranchNodeInfo},
+    mpt_circuit::helpers::{extend_rand, BranchNodeInfo, MPTConstraintBuilder},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
@@ -142,6 +142,12 @@ impl<F: FieldExt> MPTContext<F> {
         } else {
             self.inter_final_root
         }
+    }
+
+    pub(crate) fn rlp_bytes(&self) -> Vec<Column<Advice>> {
+        [self.s_main.rlp_bytes(), self.c_main.rlp_bytes()]
+            .concat()
+            .to_vec()
     }
 }
 
@@ -377,9 +383,9 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let mut row_config: RowConfig<F> = RowConfig::default();
 
-        let mut cb = BaseConstraintBuilder::new(17);
+        let mut cb = MPTConstraintBuilder::new(17);
         meta.create_gate("MPT", |meta| {
-            circuit!([meta, cb], {
+            circuit!([meta, cb.base], {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
@@ -418,11 +424,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
 
                 /* Storage Leaf */
-                // NOTE/TODO: If having only storage proof is to be allowed, then this needs to
-                // be changed as currently the first row is not checked (and
-                // leaf key can appear in the first row if there is no account
-                // proof). See how it is done for account_leaf_key.rs which can appear in the
-                // first row. q_not_first is needed to avoid PoisenedConstraint.
                 // LEAF_KEY_S
                 // LEAF_KEY_C
                 let storage_leaf_key_s;
@@ -501,42 +502,42 @@ impl<F: FieldExt> MPTConfig<F> {
                 /* Range checks */
                 // These range checks ensure that the value in the RLP columns are all bytes
                 // (between 0 - 255).
-                // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for rlp1
+                // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for branch child rlp1
                 // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
                 ifx!{f!(position_cols.q_enable) => {
                     // Sanity checks (can be removed, here for safety)
-                    require!(cb.range_length_s_condition => bool);
-                    require!(cb.range_length_c_condition => bool);
+                    require!(cb.length_s.sum_conditions() => bool);
+                    require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
                     ifx!{not!(a!(branch.is_child)) => {
-                        for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[0..1].into_iter() {
+                        for &byte in ctx.rlp_bytes()[0..1].into_iter() {
                             require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                         }
                     }}
-                    for &byte in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[1..2].into_iter() {
+                    for &byte in ctx.rlp_bytes()[1..2].into_iter() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                     }
-                    for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..34].into_iter().enumerate() {
-                        require!((cb.get_range_s(), a!(byte), cb.get_range_length_s() - (idx + 1).expr()) => @"fixed");
+                    for (idx, &byte) in ctx.rlp_bytes()[2..34].into_iter().enumerate() {
+                        require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
-                    ifx!{cb.range_length_sc => {
+                    ifx!{cb.length_sc => {
                         ifx!{not!(a!(branch.is_child)) => {
-                            for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[34..35].into_iter().enumerate() {
-                                require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
+                            for (idx, &byte) in ctx.rlp_bytes()[34..35].into_iter().enumerate() {
+                                require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                             }
                         }}
-                        for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[35..36].into_iter().enumerate() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
+                        for (idx, &byte) in ctx.rlp_bytes()[35..36].into_iter().enumerate() {
+                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                         }
                     }}
-                    for (idx, &byte) in [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[36..68].into_iter().enumerate() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_range_length_c() - (idx + 1).expr()) => @"fixed");
+                    for (idx, &byte) in ctx.rlp_bytes()[36..68].into_iter().enumerate() {
+                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
                     }
                 }}
 
                 /* Mult checks */
                 for tag in ["mult", "mult2"] {
-                    let lookups = cb.lookups.iter().cloned().filter(|lookup| lookup.tag == tag).collect::<Vec<_>>();
+                    let lookups = cb.base.lookups.iter().cloned().filter(|lookup| lookup.tag == tag).collect::<Vec<_>>();
                     let optimize = true;
                     if optimize {
                         let selector = sum::expr(lookups.iter().map(|lookup| lookup.condition.expr()));
@@ -586,7 +587,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 };
             });
 
-            cb.gate(1.expr())
+            cb.base.generate_constraints()
         });
 
         let disable_lookups: usize = var("DISABLE_LOOKUPS")
@@ -594,7 +595,7 @@ impl<F: FieldExt> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.generate_lookups(meta, &["fixed", "keccak"]);
+            cb.base.generate_lookups(meta, &["fixed", "keccak"]);
         }
 
         println!("num lookups: {}", meta.lookups().len());

@@ -9,18 +9,18 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::DataTransition,
     evm_circuit::util::rlc,
-    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
-    mpt_circuit::FixedTableTag,
-    mpt_circuit::{
-        helpers::BaseConstraintBuilder,
-        param::{
-            ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-            ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH,
-            S_START,
-        },
+    mpt_circuit::param::{
+        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH, S_START,
     },
-    mpt_circuit::{helpers::ColumnTransition, MPTContext},
+    mpt_circuit::FixedTableTag,
+    mpt_circuit::MPTContext,
+    mpt_circuit::{
+        helpers::MPTConstraintBuilder,
+        witness_row::{MptWitnessRow, MptWitnessRowType},
+    },
     mpt_circuit::{
         param::{IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS},
         MPTConfig, ProofValues,
@@ -113,7 +113,7 @@ pub(crate) struct AccountLeafNonceBalanceConfig<F> {
 impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
@@ -142,12 +142,12 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND)
         };
 
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
 
             // RLC calculation
-            let nonce = ColumnTransition::new(meta, accs.s_mod_node_rlc);
-            let balance = ColumnTransition::new(meta, accs.c_mod_node_rlc);
+            let nonce = DataTransition::new(meta, accs.s_mod_node_rlc);
+            let balance = DataTransition::new(meta, accs.c_mod_node_rlc);
             let is_nonce_long = a!(denoter.sel1, rot_key);
             let is_balance_long = a!(denoter.sel2, rot_key);
             let mult_diff_nonce = a!(accs.acc_c.rlc);
@@ -176,7 +176,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 }};
                 require!(data => rlc);
                 // RLC bytes zero check
-                cb.set_range_length_sc(is_s, len.expr());
+                cb.set_length_sc(is_s, len.expr());
                 // Get the correct multiplier for the length
                 require!((FixedTableTag::RMult, len.expr() + mult_offset.expr(), mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
 

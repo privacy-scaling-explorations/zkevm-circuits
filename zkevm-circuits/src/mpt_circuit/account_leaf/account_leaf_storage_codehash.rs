@@ -9,9 +9,10 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::DataTransition,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{accumulate_rand, BranchNodeInfo},
+        helpers::{accumulate_rand, BranchNodeInfo, MPTConstraintBuilder},
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
@@ -20,7 +21,6 @@ use crate::{
         MPTContext,
     },
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ColumnTransition},
         param::ARITY,
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
@@ -77,7 +77,7 @@ pub(crate) struct AccountLeafStorageCodehashConfig<F> {
 impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
@@ -115,7 +115,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         // row. Note: differently as in storage leaf value (see empty_trie
         // there), the placeholder leaf never appears in the first level here,
         // because there is always at least a genesis account.
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             ifx! {f!(position_cols.q_not_first), a!(ctx.account_leaf.is_storage_codehash(is_s)) => {
                 // When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
                 // and the constraints in this gate are not triggered. In that case it is checked
@@ -133,8 +133,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 }}
 
                 // RLC calculation
-                let storage_root = ColumnTransition::new(meta, accs.s_mod_node_rlc);
-                let codehash = ColumnTransition::new(meta, accs.c_mod_node_rlc);
+                let storage_root = DataTransition::new(meta, accs.s_mod_node_rlc);
+                let codehash = DataTransition::new(meta, accs.c_mod_node_rlc);
                 let storage_root_rlc = rlc::expr(
                     &s_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                     &r,

@@ -1,4 +1,4 @@
-use gadgets::util::{not, or, sum, Expr};
+use gadgets::util::{not, sum, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Expression, VirtualCells},
@@ -8,11 +8,11 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::DataTransition,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::BaseConstraintBuilder,
-    mpt_circuit::FixedTableTag,
+    mpt_circuit::MPTContext,
     mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
-    mpt_circuit::{helpers::ColumnTransition, MPTContext},
+    mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
 };
 
 /*
@@ -135,7 +135,7 @@ pub(crate) struct BranchKeyConfig<F> {
 impl<F: FieldExt> BranchKeyConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let position_cols = ctx.position_cols;
@@ -144,31 +144,24 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         let mult_diff = ctx.accumulators.mult_diff;
         let r = ctx.r;
 
-        let rot_to_init = -BRANCH_ROWS_NUM + 1;
-        let rot_to_first_child = rot_to_init + 1;
-        let rot_to_previous_first_child = rot_to_first_child - BRANCH_ROWS_NUM;
-        let rot_to_previous_init = rot_to_init - BRANCH_ROWS_NUM;
-        circuit!([meta, cb], {
+        let rot_branch_init = -BRANCH_ROWS_NUM + 1;
+        let rot_first_child = rot_branch_init + 1;
+        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+        let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
+        circuit!([meta, cb.base], {
             let c16inv = Expression::Constant(F::from(16).invert().unwrap());
             let not_first_level = a!(position_cols.not_first_level);
-            let branch = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_init);
-            let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, rot_to_previous_init);
-            let modified_node_index = a!(ctx.branch.modified_node_index, rot_to_first_child);
-            let key_rlc = ColumnTransition::new_with_rot(
-                meta,
-                key.rlc,
-                Rotation(rot_to_previous_first_child),
-                Rotation(rot_to_first_child),
-            );
-            let key_mult = ColumnTransition::new_with_rot(
-                meta,
-                key.mult,
-                Rotation(rot_to_previous_first_child),
-                Rotation(rot_to_first_child),
-            );
+            let branch = BranchNodeInfo::new(meta, s_main.clone(), true, rot_branch_init);
+            let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, rot_branch_init_prev);
+            let modified_node_index = a!(ctx.branch.modified_node_index, rot_first_child);
+            let key_rlc =
+                DataTransition::new_with_rot(meta, key.rlc, rot_first_child_prev, rot_first_child);
+            let key_mult =
+                DataTransition::new_with_rot(meta, key.mult, rot_first_child_prev, rot_first_child);
             // We are in extension row C, rot_into_branch_init - 1 brings us to the account
             // leaf storage codehash in the first storage proof level.
-            let is_first_storage_level = a!(ctx.account_leaf.is_in_added_branch, rot_to_init - 1);
+            let is_first_storage_level =
+                a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1);
 
             ifx! {f!(position_cols.q_not_first_ext_c), a!(ctx.branch.is_extension_node_c) => {
                 let selectors = [branch.is_c16(), branch.is_c1()];
@@ -187,29 +180,23 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     (0.expr(), 1.expr())
                 }};
 
-                // The information about the number of nibbles
-                // is encoded in s_rlp2 except in the short case where we only have one nibble.
-                // - long even: s_rlp2 - 128 - 1
-                // - is_ext_long_odd_c1: s_rlp2 - 128 - 1
-                // - is_ext_long_odd_c16: s_rlp2 - 128
-                // - is_short_c6: 1
-                // - else: 0
-                let key_len = ifx!{branch.is_long() => {
-                    (a!(s_main.rlp2, -1) - 128.expr()) - branch.is_long_even() - branch.is_long_odd_c1.expr()
-                } elsex {
-                    ifx!{or::expr([not!(branch.is_extension()), branch.is_short_c1.expr()]) => {
-                        0.expr()
-                    } elsex {
-                        1.expr()
-                    }}
+                // Get the length of the key
+                let key_len = ifx!{branch.is_extension() => {
+                    let num_bytes = a!(s_main.rlp2, -1) - 128.expr();
+                    matchx! {
+                        branch.is_long_even() + branch.is_long_odd_c1.expr() => num_bytes.expr() - 1.expr(),
+                        branch.is_long_odd_c16 => num_bytes.expr(),
+                        branch.is_short_c16 => 1.expr(),
+                        branch.is_short_c1 => 0.expr(),
+                    }
                 }};
                 // Get the multiplier for this length
-                let mult_diff = a!(mult_diff, rot_to_first_child);
+                let mult_diff = a!(mult_diff, rot_first_child);
                 require!((FixedTableTag::RMult, key_len, mult_diff) => @"mult");
 
                 // Calculate the extension node key RLC when in an extension node
                 let key_rlc_post_ext = key_rlc_prev.expr() + ifx!{branch.is_extension() => {
-                    let key_rlc_ext = ColumnTransition::new(meta, key.rlc);
+                    let key_rlc_ext = DataTransition::new(meta, key.rlc);
                     // Currently, the extension node S and extension node C both have the same key RLC -
                     // however, sometimes extension node can be replaced by a shorter extension node
                     // (in terms of nibbles), this is still to be implemented.
@@ -314,11 +301,11 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 ifx!{branch.is_short() => {
                     // We need to ensure `s_main.bytes` are all 0 when short - the only nibble is in `s_main.rlp2`.
                     // TODO(Brecht): this can currently be removed
-                    cb.set_range_length_s(0.expr());
+                    cb.set_length_s(0.expr());
                 }}
                 ifx!{branch.is_long() => {
-                    // `s_main.bytes[i] = 0` after last extension node nibble, [s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..35]
-                    cb.set_range_length(1.expr() + (a!(s_main.bytes[0]) - 128.expr()));
+                    // `s_main.bytes[i] = 0` after last extension node nibble, ctx.rlp_bytes()[3..35]
+                    cb.set_length(1.expr() + (a!(s_main.bytes[0]) - 128.expr()));
                 }}
             }}
         });

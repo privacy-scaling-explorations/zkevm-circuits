@@ -11,11 +11,11 @@ use crate::{
     circuit,
     evm_circuit::util::rlc,
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::MPTContext,
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, BranchNodeInfo},
+        helpers::BranchNodeInfo,
         param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
     },
+    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
     mpt_circuit::{
         param::{ACCOUNT_LEAF_KEY_C_IND, IS_NON_EXISTING_ACCOUNT_POS},
         MPTConfig,
@@ -107,32 +107,31 @@ pub(crate) struct AccountNonExistingConfig<F> {
 impl<F: FieldExt> AccountNonExistingConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let proof_type = ctx.proof_type;
         let not_first_level = ctx.position_cols.not_first_level;
         let s_main = ctx.s_main;
-        let c_main = ctx.c_main;
         let accs = ctx.accumulators;
         // should be the same as sel2 as both parallel proofs are the same for
         // non_existing_account_proof
         let sel1 = ctx.denoter.sel1;
-        let r = ctx.r;
+        let r = ctx.r.clone();
         let address_rlc = ctx.address_rlc;
 
         let rot_first_branch = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
         let rot_branch_init = rot_first_branch - 1;
 
         let add_wrong_leaf_constraints =
-            |meta: &mut VirtualCells<F>, cb: &mut BaseConstraintBuilder<F>| {
-                circuit!([meta, cb], {
+            |meta: &mut VirtualCells<F>, cb: &mut MPTConstraintBuilder<F>| {
+                circuit!([meta, cb.base], {
                     let rlc = a!(accs.key.rlc);
                     let rlc_prev = a!(accs.key.mult);
                     let diff_inv = a!(accs.acc_s.rlc);
                     let mut calc_rlc = |rot: i32| {
                         rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36]
+                            &ctx.rlp_bytes()[3..36]
                                 .iter()
                                 .map(|&byte| a!(byte, rot))
                                 .collect::<Vec<_>>(),
@@ -160,7 +159,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         // address_rlc (after considering modified_node in branches/extension
         // nodes above). Note: currently, for non_existing_account proof S and C
         // proofs are the same, thus there is never a placeholder branch.
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             // Wrong leaf has a meaning only for non existing account proof. For this proof,
             // there are two cases: 1. A leaf is returned that is not at the
             // required address (wrong leaf). 2. A branch is returned as the
@@ -195,7 +194,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         let key_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { r[0].expr() } elsex { 1.expr() }};
                         // If is_c16 = 1, we have nibble+48 in s_main.bytes[0].
                         key_rlc_prev + rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                            &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
                                 (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                             &[[1.expr()].to_vec(), r.to_vec()].concat(),
                         )
@@ -213,7 +212,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         require!(a!(s_main.bytes[1]) => 32);
                         // Calculate the key RLC
                         rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
+                            &ctx.rlp_bytes()[4..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
                             &r,
                         )
                     }};
@@ -238,7 +237,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
             // RLC bytes zero check for [s_main.rlp_bytes(),
             // c_main.rlp_bytes()].concat()[3..36]
-            cb.set_range_length(1.expr() + a!(s_main.bytes[0]) - 128.expr());
+            cb.set_length(1.expr() + a!(s_main.bytes[0]) - 128.expr());
         });
 
         AccountNonExistingConfig {

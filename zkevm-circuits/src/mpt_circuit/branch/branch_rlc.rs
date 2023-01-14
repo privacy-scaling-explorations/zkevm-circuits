@@ -8,12 +8,10 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::DataTransition,
     evm_circuit::util::rlc,
     mpt_circuit::FixedTableTag,
-    mpt_circuit::{
-        helpers::{BaseConstraintBuilder, ColumnTransition},
-        MPTContext,
-    },
+    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
 };
 
 /*
@@ -91,7 +89,7 @@ pub(crate) struct BranchRLCConfig<F> {
 impl<F: FieldExt> BranchRLCConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
@@ -102,9 +100,9 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         let is_modified_child_empty = ctx.denoter.sel(is_s);
         let node_mult_diff = ctx.accumulators.node_mult_diff(is_s);
         let r = ctx.r;
-        circuit!([meta, cb], {
-            let branch_mult = ColumnTransition::new(meta, branch_acc.mult);
-            let branch_rlc = ColumnTransition::new(meta, branch_acc.rlc);
+        circuit!([meta, cb.base], {
+            let branch_mult = DataTransition::new(meta, branch_acc.mult);
+            let branch_rlc = DataTransition::new(meta, branch_acc.rlc);
             ifx! {a!(is_not_hashed) => {
                 // TODO(Brecht): strangely inconsistent RLC calculation, hashed RLC starts at 1 instead of 2.
                 // When a branch child is not empty and is not hashed, a list is stored in the branch and
@@ -118,7 +116,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
 
                 let num_bytes = 1.expr() + (a!(main.bytes[0]) - 192.expr());
                 // Only `main.bytes[0] + num_bytes` bytes can be non-zero.
-                cb.set_range_length_sc(is_s, num_bytes.expr());
+                cb.set_length_sc(is_s, num_bytes.expr());
                 // We need to check that the multiplier changes according to `num_bytes` and update it.
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(node_mult_diff)) => @format!("mult{}", if is_s {""} else {"2"}));
                 require!(branch_mult => branch_mult.prev() * a!(node_mult_diff));

@@ -9,20 +9,21 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::DataTransition,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{get_leaf_len, BaseConstraintBuilder},
+        helpers::BranchNodeInfo,
+        param::{EXTENSION_ROWS_NUM, STORAGE_LEAF_ROWS},
+        witness_row::{MptWitnessRow, MptWitnessRowType},
+    },
+    mpt_circuit::{
+        helpers::{get_leaf_len, MPTConstraintBuilder},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_STORAGE_MOD_POS,
             LEAF_VALUE_C_IND, LEAF_VALUE_S_IND,
         },
         MPTContext,
-    },
-    mpt_circuit::{
-        helpers::{BranchNodeInfo, ColumnTransition},
-        param::{EXTENSION_ROWS_NUM, STORAGE_LEAF_ROWS},
-        witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -126,7 +127,7 @@ pub(crate) struct LeafValueConfig<F> {
 impl<F: FieldExt> LeafValueConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
@@ -160,7 +161,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let rot_key = -1;
         let rot_s = if is_s { 0 } else { -2 };
 
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let not_first_level = a!(position_cols.not_first_level);
             let is_modified_node_empty = a!(denoter.sel(is_s), rot_branch);
             let is_placeholder_without_branch = a!(denoter.sel(is_s));
@@ -191,13 +192,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
 
             // We need to ensure that the stored leaf RLC and value RLC is the same as the
             // computed one.
-            let leaf_rlc = ColumnTransition::new(meta, accs.acc_s.rlc);
-            let value_rlc = ColumnTransition::new_with_rot(
-                meta,
-                accs.acc_c.rlc,
-                Rotation(rot_s),
-                Rotation::cur(),
-            );
+            let leaf_rlc = DataTransition::new(meta, accs.acc_s.rlc);
+            let value_rlc = DataTransition::new_with_rot(meta, accs.acc_c.rlc, rot_s, 0);
             let mult_prev = a!(accs.acc_s.mult, rot_key);
             let (new_value_rlc, new_leaf_rlc) = ifx! {is_short => {
                 (a!(s_main.rlp1), a!(s_main.rlp1) * mult_prev.expr())
@@ -338,8 +334,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         /* Leaf hash in parent (branch placeholder) */
                         // When there is a placeholder branch we need to
                         // check the hash to correspond to the modified node of the branch above the placeholder branch.
-                        // For leaf without branch, the constraints are in storage_root_in_account_leaf.
-                        // TODO(Brecht): storage_root_in_account_leaf???
                         ifx!{not!(is_account_leaf_above_branch) => {
                             let rlc = a!(accs.acc_s.rlc, -1) + rlc::expr(
                                 &s_main.rlp_bytes().iter().map(|&byte| a!(byte) * mult_prev.expr()).collect::<Vec<_>>(),
@@ -397,19 +391,13 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 // When there is an empty child, we have a placeholder leaf under the last branch.
                 // If `is_modified_node_empty = 1` which means an empty child, we need to ensure that the value is set to 0
                 // in the placeholder leaf.
-                // Note: For a leaf without a branch (means it is in the first level of the trie)
-                // the constraint is in `storage_root_in_account_leaf.rs`.
-                // TODO(Brecht): `storage_root_in_account_leaf.rs` mentioned above does not exist?
                 0.expr()
             } elsex {
                 // RLC bytes zero check for s_main.bytes.iter()
                 a!(s_main.rlp2) - 128.expr()
             }};
-            cb.set_range_length_s(num_bytes);
+            cb.set_length_s(num_bytes);
         });
-
-        // Note: For cases when storage leaf is in the first storage level, the
-        // constraints are in `storage_root_in_account_leaf.rs`.
 
         LeafValueConfig {
             _marker: PhantomData,

@@ -1,8 +1,5 @@
-use super::{
-    helpers::{BaseConstraintBuilder, ColumnTransition},
-    MPTContext,
-};
-use crate::{circuit, util::Expr};
+use super::{helpers::MPTConstraintBuilder, MPTContext};
+use crate::{circuit, circuit_tools::DataTransition, util::Expr};
 use gadgets::util::{not, or, sum};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
@@ -15,7 +12,7 @@ pub(crate) struct SelectorsConfig<F> {
 impl<F: FieldExt> SelectorsConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let proof_type = ctx.proof_type;
@@ -29,55 +26,54 @@ impl<F: FieldExt> SelectorsConfig<F> {
         // - For sets of selectors that are mutually exclusive, it needs to be ensured
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
             let sel1 = a!(denoter.sel1);
             let sel2 = a!(denoter.sel2);
 
-            let is_leaf_s_key = ColumnTransition::new(meta, storage_leaf.is_s_key);
-            let is_leaf_s_value = ColumnTransition::new(meta, storage_leaf.is_s_value);
-            let is_leaf_c_key = ColumnTransition::new(meta, storage_leaf.is_c_key);
-            let is_leaf_c_value = ColumnTransition::new(meta, storage_leaf.is_c_value);
+            let is_leaf_s_key = DataTransition::new(meta, storage_leaf.is_s_key);
+            let is_leaf_s_value = DataTransition::new(meta, storage_leaf.is_s_value);
+            let is_leaf_c_key = DataTransition::new(meta, storage_leaf.is_c_key);
+            let is_leaf_c_value = DataTransition::new(meta, storage_leaf.is_c_value);
             let is_leaf_in_added_branch =
-                ColumnTransition::new(meta, storage_leaf.is_in_added_branch);
-            let is_leaf_non_existing = ColumnTransition::new(meta, storage_leaf.is_non_existing);
+                DataTransition::new(meta, storage_leaf.is_in_added_branch);
+            let is_leaf_non_existing = DataTransition::new(meta, storage_leaf.is_non_existing);
             let is_non_existing_storage_row =
-                ColumnTransition::new(meta, storage_leaf.is_non_existing);
-            let is_account_leaf_key_s = ColumnTransition::new(meta, account_leaf.is_key_s);
-            let is_account_leaf_key_c = ColumnTransition::new(meta, account_leaf.is_key_c);
+                DataTransition::new(meta, storage_leaf.is_non_existing);
+            let is_account_leaf_key_s = DataTransition::new(meta, account_leaf.is_key_s);
+            let is_account_leaf_key_c = DataTransition::new(meta, account_leaf.is_key_c);
             let is_account_leaf_nonce_balance_s =
-                ColumnTransition::new(meta, account_leaf.is_nonce_balance_s);
+                DataTransition::new(meta, account_leaf.is_nonce_balance_s);
             let is_account_leaf_nonce_balance_c =
-                ColumnTransition::new(meta, account_leaf.is_nonce_balance_c);
+                DataTransition::new(meta, account_leaf.is_nonce_balance_c);
             let is_account_leaf_storage_codehash_s =
-                ColumnTransition::new(meta, account_leaf.is_storage_codehash_s);
+                DataTransition::new(meta, account_leaf.is_storage_codehash_s);
             let is_account_leaf_storage_codehash_c =
-                ColumnTransition::new(meta, account_leaf.is_storage_codehash_c);
+                DataTransition::new(meta, account_leaf.is_storage_codehash_c);
             let is_account_leaf_in_added_branch =
-                ColumnTransition::new(meta, account_leaf.is_in_added_branch);
+                DataTransition::new(meta, account_leaf.is_in_added_branch);
             let is_non_existing_account_row =
-                ColumnTransition::new(meta, account_leaf.is_non_existing);
-            let is_extension_node_s = ColumnTransition::new(meta, branch.is_extension_node_s);
-            let is_extension_node_c = ColumnTransition::new(meta, branch.is_extension_node_c);
-            let is_branch_init = ColumnTransition::new(meta, branch.is_init);
-            let is_branch_child = ColumnTransition::new(meta, branch.is_child);
-            let is_last_branch_child = ColumnTransition::new(meta, branch.is_last_child);
-            let is_modified = ColumnTransition::new(meta, branch.is_modified);
-            let is_at_drifted_pos = ColumnTransition::new(meta, branch.is_at_drifted_pos);
+                DataTransition::new(meta, account_leaf.is_non_existing);
+            let is_extension_node_s = DataTransition::new(meta, branch.is_extension_node_s);
+            let is_extension_node_c = DataTransition::new(meta, branch.is_extension_node_c);
+            let is_branch_init = DataTransition::new(meta, branch.is_init);
+            let is_branch_child = DataTransition::new(meta, branch.is_child);
+            let is_last_branch_child = DataTransition::new(meta, branch.is_last_child);
+            let is_modified = DataTransition::new(meta, branch.is_modified);
+            let is_at_drifted_pos = DataTransition::new(meta, branch.is_at_drifted_pos);
 
-            let proof_type_id = ColumnTransition::new(meta, proof_type.proof_type);
-            let is_storage_mod = ColumnTransition::new(meta, proof_type.is_storage_mod);
-            let is_nonce_mod = ColumnTransition::new(meta, proof_type.is_nonce_mod);
-            let is_balance_mod = ColumnTransition::new(meta, proof_type.is_balance_mod);
-            let is_codehash_mod = ColumnTransition::new(meta, proof_type.is_codehash_mod);
-            let is_account_delete_mod =
-                ColumnTransition::new(meta, proof_type.is_account_delete_mod);
+            let proof_type_id = DataTransition::new(meta, proof_type.proof_type);
+            let is_storage_mod = DataTransition::new(meta, proof_type.is_storage_mod);
+            let is_nonce_mod = DataTransition::new(meta, proof_type.is_nonce_mod);
+            let is_balance_mod = DataTransition::new(meta, proof_type.is_balance_mod);
+            let is_codehash_mod = DataTransition::new(meta, proof_type.is_codehash_mod);
+            let is_account_delete_mod = DataTransition::new(meta, proof_type.is_account_delete_mod);
             let is_non_existing_account_proof =
-                ColumnTransition::new(meta, proof_type.is_non_existing_account_proof);
+                DataTransition::new(meta, proof_type.is_non_existing_account_proof);
             let is_non_existing_storage_proof =
-                ColumnTransition::new(meta, proof_type.is_non_existing_storage_proof);
+                DataTransition::new(meta, proof_type.is_non_existing_storage_proof);
 
             // Row type selectors
             let row_type_selectors = [

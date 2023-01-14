@@ -10,11 +10,11 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     evm_circuit::util::rlc,
-    mpt_circuit::FixedTableTag,
     mpt_circuit::{
-        helpers::{BaseConstraintBuilder, BranchNodeInfo},
+        helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
+    mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
         MPTContext,
@@ -130,16 +130,15 @@ pub(crate) struct LeafKeyConfig<F> {
 impl<F: FieldExt> LeafKeyConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
         let s_main = ctx.s_main;
-        let c_main = ctx.c_main;
         let accs = ctx.accumulators;
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let denoter = ctx.denoter;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         let rot_parent = if is_s { -1 } else { -3 };
         let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
@@ -148,7 +147,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_branch_parent = rot_branch_init - 1;
 
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
 
             let flag1 = a!(accs.s_mod_node_rlc);
@@ -164,7 +163,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             // Calculate and store the leaf data RLC
             let rlc = rlc::expr(
-                &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[..36]
+                &ctx.rlp_bytes()[..36]
                     .iter()
                     .map(|&byte| a!(byte))
                     .collect::<Vec<_>>(),
@@ -208,7 +207,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         // When `is_short` the first key byte is at `s_main.bytes[0]`.
                         // If is_c16, we have nibble+48 in s_main.bytes[0].
                         rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[2..35].iter().enumerate().map(|(idx, &byte)|
+                            &ctx.rlp_bytes()[2..35].iter().enumerate().map(|(idx, &byte)|
                                 (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                             &[[1.expr()].to_vec(), r.to_vec()].concat(),
                         )
@@ -226,7 +225,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                         // When `is_long` the first key byte is at `s_main.bytes[1]`.
                         // If `is_c16`, we have nibble+48 in `s_main.bytes[1]`.
                         rlc::expr(
-                            &[s_main.rlp_bytes(), c_main.rlp_bytes()].concat()[3..36].iter().enumerate().map(|(idx, &byte)|
+                            &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
                                 (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
                             &[[1.expr()].to_vec(), r.to_vec()].concat(),
                         )
@@ -278,7 +277,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // Multiplier is number of bytes
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check (subtract RLP bytes used)
-            cb.set_range_length(num_bytes.expr() - 2.expr());
+            cb.set_length(num_bytes.expr() - 2.expr());
         });
 
         LeafKeyConfig {

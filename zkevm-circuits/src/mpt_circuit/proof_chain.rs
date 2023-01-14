@@ -1,10 +1,9 @@
-use gadgets::util::{not, Expr};
+use gadgets::util::{not, or, Expr};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
-use crate::{circuit, mpt_circuit::helpers::ColumnTransition};
-
-use super::{helpers::BaseConstraintBuilder, MPTContext};
+use super::{helpers::MPTConstraintBuilder, MPTContext};
+use crate::{circuit, circuit_tools::DataTransition};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -44,13 +43,13 @@ pub(crate) struct ProofChainConfig<F> {
 impl<F: FieldExt> ProofChainConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let q_enable = f!(ctx.position_cols.q_enable);
             let q_not_first = f!(ctx.position_cols.q_not_first);
-            let not_first_level = ColumnTransition::new(meta, ctx.position_cols.not_first_level);
+            let not_first_level = DataTransition::new(meta, ctx.position_cols.not_first_level);
             let is_branch_init = a!(ctx.branch.is_init);
             let is_account_leaf_key_s = a!(ctx.account_leaf.is_key_s);
             let is_storage_leaf_key_s = a!(ctx.storage_leaf.is_s_key);
@@ -58,9 +57,9 @@ impl<F: FieldExt> ProofChainConfig<F> {
             let is_account_leaf_last_row_prev = a!(ctx.account_leaf.is_in_added_branch, -1);
             let is_non_storage_mod_proof_type_prev = not!(a!(ctx.proof_type.is_storage_mod, -1));
 
-            let start_root = ColumnTransition::new(meta, ctx.inter_start_root);
-            let final_root = ColumnTransition::new(meta, ctx.inter_final_root);
-            let address_rlc = ColumnTransition::new(meta, ctx.address_rlc);
+            let start_root = DataTransition::new(meta, ctx.inter_start_root);
+            let final_root = DataTransition::new(meta, ctx.inter_final_root);
+            let address_rlc = DataTransition::new(meta, ctx.address_rlc);
 
             let is_branch_or_account = is_account_leaf_key_s.expr() + is_branch_init.expr();
 
@@ -146,7 +145,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // It needs to be ensured that `address_rlc` changes only at the first row of the account leaf
                     // or in the branch init row if it is in the first level.
                     // TODO(Brecht): strange condition
-                    ifx!{not!(is_account_leaf_key_s), is_branch_init.expr() - (not_first_level.cur() + 1.expr()) => {
+                    ifx!{not!(is_account_leaf_key_s), or::expr([not!(is_branch_init.expr()), not_first_level.expr()]) => {
                         require!(address_rlc => address_rlc.prev());
                     }}
                 }}

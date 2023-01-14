@@ -14,6 +14,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::DataTransition,
     evm_circuit::util::rlc,
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
@@ -35,11 +36,7 @@ use crate::{
 };
 use gadgets::util::{not, or};
 
-use super::{
-    helpers::{BaseConstraintBuilder, ColumnTransition},
-    param::ARITY,
-    MPTContext,
-};
+use super::{helpers::MPTConstraintBuilder, param::ARITY, MPTContext};
 
 /*
 A branch occupies 19 rows:
@@ -135,7 +132,7 @@ pub(crate) struct BranchConfig<F> {
 impl<F: FieldExt> BranchConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
-        cb: &mut BaseConstraintBuilder<F>,
+        cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let position_cols = ctx.position_cols;
@@ -147,27 +144,27 @@ impl<F: FieldExt> BranchConfig<F> {
         let r = ctx.r.clone();
 
         let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
-        circuit!([meta, cb], {
+        circuit!([meta, cb.base], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
 
-            let drifted_pos = ColumnTransition::new(meta, branch.drifted_pos);
-            let node_index = ColumnTransition::new(meta, branch.node_index);
-            let modified_node_index = ColumnTransition::new(meta, branch.modified_node_index);
-            let is_modified = ColumnTransition::new(meta, branch.is_modified);
-            let is_branch_init = ColumnTransition::new(meta, branch.is_init);
-            let is_branch_child = ColumnTransition::new(meta, branch.is_child);
-            let is_last_child = ColumnTransition::new(meta, branch.is_last_child);
-            let is_at_drifted_pos = ColumnTransition::new(meta, branch.is_at_drifted_pos);
+            let drifted_pos = DataTransition::new(meta, branch.drifted_pos);
+            let node_index = DataTransition::new(meta, branch.node_index);
+            let modified_node_index = DataTransition::new(meta, branch.modified_node_index);
+            let is_modified = DataTransition::new(meta, branch.is_modified);
+            let is_branch_init = DataTransition::new(meta, branch.is_init);
+            let is_branch_child = DataTransition::new(meta, branch.is_child);
+            let is_last_child = DataTransition::new(meta, branch.is_last_child);
+            let is_at_drifted_pos = DataTransition::new(meta, branch.is_at_drifted_pos);
 
             let is_branch_placeholder_s =
-                ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
+                DataTransition::new(meta, s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM]);
             let is_branch_placeholder_c =
-                ColumnTransition::new(meta, s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM]);
+                DataTransition::new(meta, s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM]);
             let is_branch_non_hashed_s =
-                ColumnTransition::new(meta, s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM]);
+                DataTransition::new(meta, s_main.bytes[IS_S_BRANCH_NON_HASHED_POS - RLP_NUM]);
             let is_branch_non_hashed_c =
-                ColumnTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
+                DataTransition::new(meta, s_main.bytes[IS_C_BRANCH_NON_HASHED_POS - RLP_NUM]);
 
             ifx! {f!(position_cols.q_enable) => {
                 // These selectors are only stored in branch init rows
@@ -253,7 +250,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         } elsex {
                             // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
                             // non-nil node (1 or 33 respectively).
-                            rlp2.expr() * c160_inv.clone() * 32.expr() + 1.expr()
+                            rlp2.expr() * c160_inv.expr() * 32.expr() + 1.expr()
                         }};
                         // Fetch the number of bytes left from the previous row.
                         // TODO(Brecht): just store it in branch init in its own column.
@@ -337,10 +334,6 @@ impl<F: FieldExt> BranchConfig<F> {
                         // `node_index` increases by 1 for each branch child.
                         require!(node_index => node_index.prev() + 1.expr());
                     }}
-                }}
-                ifx!{is_last_child => {
-                    // When `node_index` is not 15, `is_last_child` needs to be 0.
-                    require!(node_index => 15);
                 }}
 
                 // TODO(Brecht): check `mod_node_rlc` use
