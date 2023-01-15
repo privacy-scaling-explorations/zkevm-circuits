@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
+        and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select,
+        RandomLinearCombination,
     },
     table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
@@ -18,6 +19,7 @@ use halo2_proofs::{
 };
 use keccak256::{plain::Keccak, EMPTY_HASH_LE};
 use log::trace;
+use rand::seq::index;
 use std::vec;
 
 use super::param::PUSH_TABLE_WIDTH;
@@ -229,10 +231,9 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            // TODO: the following does not match
             let empty_hash = RandomLinearCombination::<F, 32>::random_linear_combine_expr(
                 EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
-                &core::array::from_fn::<Expression<F>, 32, _>(|_| challenges.evm_word()),
+                &challenges.evm_word_powers_of_randomness::<32>(),
             );
 
             cb.require_equal(
