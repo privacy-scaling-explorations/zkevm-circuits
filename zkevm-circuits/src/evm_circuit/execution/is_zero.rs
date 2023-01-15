@@ -5,15 +5,15 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            math_gadget, CachedRegion, Cell, Word,
+            math_gadget, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct IsZeroGadget<F> {
@@ -65,9 +65,9 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
-        let value = Word::random_linear_combine(value.to_le_bytes(), block.randomness);
-        self.value.assign(region, offset, Value::known(value))?;
-        self.is_zero.assign(region, offset, value)?;
+        let value = region.word_rlc(value);
+        self.value.assign(region, offset, value)?;
+        self.is_zero.assign_value(region, offset, value)?;
 
         Ok(())
     }

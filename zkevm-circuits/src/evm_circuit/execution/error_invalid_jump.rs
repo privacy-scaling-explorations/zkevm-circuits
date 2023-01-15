@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
+            CachedRegion, Cell, CellType, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -32,7 +32,7 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
-    condition: Cell<F>,
+    phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -43,11 +43,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_rlc();
+        let destination = cb.query_word_rlc();
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
-        let condition = cb.query_cell();
+        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
@@ -62,19 +62,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // first default this condition, if use will re-construct with real condition
         // value
-        let is_condition_zero = IsZeroGadget::construct(cb, condition.expr());
+        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
 
         cb.condition(is_jumpi.expr(), |cb| {
-            cb.stack_pop(condition.expr());
+            cb.stack_pop(phase2_condition.expr());
             // if condition is zero, jump will not happen, so constrain condition not zero
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
         // look up bytecode length
-        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let code_length = cb.query_cell();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let dest_value = from_bytes::expr(&destination.cells);
 
         let within_range = LtGadget::construct(cb, dest_value.expr(), code_length.expr());
@@ -139,7 +140,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             within_range,
             is_jump_dest,
             is_jumpi,
-            condition,
+            phase2_condition,
             is_condition_zero,
             restore_context,
         }
@@ -165,9 +166,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         } else {
             Word::zero()
         };
-        let condition_rlc =
-            RLCWord::random_linear_combine(condition.to_le_bytes(), block.randomness);
-
+        let condition_rlc = region.word_rlc(condition);
         self.destination.assign(
             region,
             offset,
@@ -218,10 +217,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             F::from(OpcodeId::JUMPI.as_u64()),
         )?;
 
-        self.condition
-            .assign(region, offset, Value::known(condition_rlc))?;
-        self.is_condition_zero
+        self.phase2_condition
             .assign(region, offset, condition_rlc)?;
+        self.is_condition_zero
+            .assign_value(region, offset, condition_rlc)?;
 
         self.restore_context
             .assign(region, offset, block, call, step, 2 + is_jumpi as usize)?;

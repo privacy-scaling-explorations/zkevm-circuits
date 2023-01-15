@@ -308,7 +308,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.require_equal(
                 "rows[2].value == rows[0].value * r + rows[1].value",
                 meta.query_advice(value, Rotation(2)),
-                meta.query_advice(value, Rotation::cur()) * challenges.evm_word()
+                meta.query_advice(value, Rotation::cur()) * challenges.keccak_input()
                     + meta.query_advice(value, Rotation::next()),
             );
 
@@ -646,8 +646,11 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block.copy_events.iter().map(|c| c.bytes.len() * 2).sum()
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block.copy_events.iter().map(|c| c.bytes.len() * 2).sum(),
+            block.copy_circuit_pad_to,
+        )
     }
 
     /// Make the assignments to the CopyCircuit
@@ -670,9 +673,9 @@ pub mod test {
         evm::{gen_sha3_code, MemoryKind},
         mock::BlockData,
     };
-    use eth_types::{bytecode, geth_types::GethData, Word};
+    use eth_types::{bytecode, geth_types::GethData, Word, ToWord};
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
+    use mock::{TestContext, MOCK_ACCOUNTS};
 
     use crate::evm_circuit::test::rand_bytes;
 
@@ -814,6 +817,42 @@ pub mod test {
         builder
     }
 
+    fn gen_extcodecopy_data() -> CircuitInputBuilder {
+        let external_address = MOCK_ACCOUNTS[0];
+        let code = bytecode! {
+            PUSH1(0x30usize)
+            PUSH1(0x0usize)
+            PUSH1(0x0usize)
+            PUSH20(external_address.to_word())
+            EXTCODECOPY
+            STOP
+        };
+        let code_ext = rand_bytes(0x0fffusize);
+        let test_ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[1]).code(code.clone());
+
+                accs[1].address(external_address).code(code_ext.clone());
+
+                accs[2]
+                    .address(MOCK_ACCOUNTS[2])
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     fn gen_sha3_data() -> CircuitInputBuilder {
         let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
@@ -870,6 +909,13 @@ pub mod test {
         let builder = gen_codecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_valid_extcodecopy() {
+        let builder = gen_extcodecopy_data();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]

@@ -32,7 +32,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the calldatasize field.
-        let call_data_size = cb.query_rlc();
+        let call_data_size = cb.query_word_rlc();
         cb.call_context_lookup(
             false.expr(),
             None,

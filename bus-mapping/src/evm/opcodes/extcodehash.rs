@@ -3,10 +3,9 @@ use crate::{
     circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
     operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
-    state_db::Account,
     Error,
 };
-use eth_types::{GethExecStep, ToAddress, ToWord, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodehash;
@@ -21,8 +20,9 @@ impl Opcode for Extcodehash {
         let stack_address = step.stack.last_filled();
 
         // Pop external address off stack
-        let external_address = step.stack.last()?.to_address();
-        state.stack_read(&mut exec_step, stack_address, external_address.to_word())?;
+        let external_address_word = step.stack.last()?;
+        let external_address = external_address_word.to_address();
+        state.stack_read(&mut exec_step, stack_address, external_address_word)?;
 
         // Read transaction id, rw_counter_end_of_reversion, and is_persistent from call
         // context
@@ -54,30 +54,13 @@ impl Opcode for Extcodehash {
             },
         )?;
 
-        // These three lookups are required to determine the existence of the external
-        // account
-        let &Account {
-            nonce,
-            code_hash,
-            balance,
-            ..
-        } = state.sdb.get_account(&external_address).1;
-        state.account_read(
-            &mut exec_step,
-            external_address,
-            AccountField::Nonce,
-            nonce,
-            nonce,
-        )?;
-
-        state.account_read(
-            &mut exec_step,
-            external_address,
-            AccountField::Balance,
-            balance,
-            balance,
-        )?;
-
+        let account = state.sdb.get_account(&external_address).1;
+        let exists = !account.is_empty();
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
         state.account_read(
             &mut exec_step,
             external_address,
@@ -287,45 +270,15 @@ mod extcodehash_tests {
                 RW::READ,
                 &AccountOp {
                     address: external_address,
-                    field: AccountField::Nonce,
-                    value: if exists { nonce } else { U256::zero() },
-                    value_prev: if exists { nonce } else { U256::zero() },
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.account[indices[6].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &AccountOp {
-                    address: external_address,
-                    field: AccountField::Balance,
-                    value: if exists { balance } else { U256::zero() },
-                    value_prev: if exists { balance } else { U256::zero() },
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.account[indices[7].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &AccountOp {
-                    address: external_address,
                     field: AccountField::CodeHash,
-                    value: code_hash,
-                    value_prev: code_hash,
+                    value: if exists { code_hash } else { U256::zero() },
+                    value_prev: if exists { code_hash } else { U256::zero() },
                 }
             )
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[8].as_usize()];
+                let operation = &container.stack[indices[6].as_usize()];
                 (operation.rw(), operation.op())
             },
             (

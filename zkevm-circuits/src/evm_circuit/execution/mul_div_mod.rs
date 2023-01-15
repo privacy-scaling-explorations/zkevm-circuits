@@ -52,10 +52,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let is_mod = (opcode.expr() - OpcodeId::MUL.expr())
             * (opcode.expr() - OpcodeId::DIV.expr())
             * F::from(8).invert().unwrap();
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
-        let d = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
+        let d = cb.query_word_rlc();
 
         let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));

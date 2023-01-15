@@ -371,13 +371,16 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         let rows_per_chunk = (NUM_ROUNDS + 1) * get_num_rows_per_round();
-        block
-            .keccak_inputs
-            .iter()
-            .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
-            .sum()
+        (
+            block
+                .keccak_inputs
+                .iter()
+                .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize * rows_per_chunk)
+                .sum(),
+            block.circuits_params.keccak_padding.unwrap_or_default(),
+        )
     }
 
     /// Make the assignments to the KeccakCircuit
