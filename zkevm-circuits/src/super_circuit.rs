@@ -131,7 +131,6 @@ pub struct SuperCircuit<
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: usize>
     SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>
 {
-
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
     ///
@@ -284,144 +283,147 @@ pub mod test {
             let exp_table = ExpTable::construct(meta);
             let keccak_table = KeccakTable::construct(meta);
 
-        let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
-            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
-        });
+            let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
+                Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
+            });
 
-        let challenges = Challenges::mock(
-            power_of_randomness[0].clone(),
-            power_of_randomness[0].clone(),
-            power_of_randomness[0].clone(),
-        );
+            let challenges = Challenges::mock(
+                power_of_randomness[0].clone(),
+                power_of_randomness[0].clone(),
+                power_of_randomness[0].clone(),
+            );
 
-        let keccak_circuit = KeccakCircuitConfig::new(
-            meta,
-            KeccakCircuitConfigArgs {
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
+            let keccak_circuit = KeccakCircuitConfig::new(
+                meta,
+                KeccakCircuitConfigArgs {
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges.clone(),
+                },
+            );
 
-        let pi_circuit = PiCircuitConfig::new(
-            meta,
-            PiCircuitConfigArgs {
-                max_txs: MAX_TXS,
-                max_calldata: MAX_CALLDATA,
-                block_table: block_table.clone(),
-                tx_table: tx_table.clone(),
-            },
-        );
-        let tx_circuit = TxCircuitConfig::new(
-            meta,
-            TxCircuitConfigArgs {
-                tx_table: tx_table.clone(),
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-        let bytecode_circuit = BytecodeCircuitConfig::new(
-            meta,
-            BytecodeCircuitConfigArgs {
-                bytecode_table: bytecode_table.clone(),
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-        let copy_circuit = CopyCircuitConfig::new(
-            meta,
-            CopyCircuitConfigArgs {
-                tx_table: tx_table.clone(),
-                rw_table,
-                bytecode_table: bytecode_table.clone(),
-                copy_table,
-                q_enable: q_copy_table,
-                challenges: challenges.clone(),
-            },
-        );
-        let state_circuit = StateCircuitConfig::new(
-            meta,
-            StateCircuitConfigArgs {
-                rw_table,
+            let pi_circuit = PiCircuitConfig::new(
+                meta,
+                PiCircuitConfigArgs {
+                    max_txs: MAX_TXS,
+                    max_calldata: MAX_CALLDATA,
+                    block_table: block_table.clone(),
+                    tx_table: tx_table.clone(),
+                },
+            );
+            let tx_circuit = TxCircuitConfig::new(
+                meta,
+                TxCircuitConfigArgs {
+                    tx_table: tx_table.clone(),
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges.clone(),
+                },
+            );
+            let bytecode_circuit = BytecodeCircuitConfig::new(
+                meta,
+                BytecodeCircuitConfigArgs {
+                    bytecode_table: bytecode_table.clone(),
+                    keccak_table: keccak_table.clone(),
+                    challenges: challenges.clone(),
+                },
+            );
+            let copy_circuit = CopyCircuitConfig::new(
+                meta,
+                CopyCircuitConfigArgs {
+                    tx_table: tx_table.clone(),
+                    rw_table,
+                    bytecode_table: bytecode_table.clone(),
+                    copy_table,
+                    q_enable: q_copy_table,
+                    challenges: challenges.clone(),
+                },
+            );
+            let state_circuit = StateCircuitConfig::new(
+                meta,
+                StateCircuitConfigArgs {
+                    rw_table,
+                    mpt_table,
+                    challenges: challenges.clone(),
+                },
+            );
+            let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
+            let evm_circuit = EvmCircuitConfig::new(
+                meta,
+                EvmCircuitConfigArgs {
+                    challenges,
+                    tx_table,
+                    rw_table,
+                    bytecode_table,
+                    block_table: block_table.clone(),
+                    copy_table,
+                    keccak_table,
+                    exp_table,
+                },
+            );
+
+            Self::Config {
+                block_table,
                 mpt_table,
-                challenges: challenges.clone(),
-            },
-        );
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
-        let evm_circuit = EvmCircuitConfig::new(
-            meta,
-            EvmCircuitConfigArgs {
-                challenges,
-                tx_table,
-                rw_table,
-                bytecode_table,
-                block_table: block_table.clone(),
-                copy_table,
-                keccak_table,
-                exp_table,
-            },
-        );
+                evm_circuit,
+                state_circuit,
+                copy_circuit,
+                tx_circuit,
+                bytecode_circuit,
+                keccak_circuit,
+                pi_circuit,
+                exp_circuit,
+            }
+        }
 
-        Self::Config {
-            block_table,
-            mpt_table,
-            evm_circuit,
-            state_circuit,
-            copy_circuit,
-            tx_circuit,
-            bytecode_circuit,
-            keccak_circuit,
-            pi_circuit,
-            exp_circuit,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let block = self.evm_circuit.block.as_ref().unwrap();
+            let challenges = Challenges::mock(
+                Value::known(block.randomness),
+                Value::known(block.randomness),
+                Value::known(block.randomness),
+            );
+            let rws = &self.state_circuit.rows;
+
+            config.block_table.load(
+                &mut layouter,
+                &block.context,
+                Value::known(block.randomness),
+            )?;
+
+            config.mpt_table.load(
+                &mut layouter,
+                &MptUpdates::mock_from(rws),
+                Value::known(block.randomness),
+            )?;
+
+            self.keccak_circuit.synthesize_sub(
+                &config.keccak_circuit,
+                &challenges,
+                &mut layouter,
+            )?;
+            self.bytecode_circuit.synthesize_sub(
+                &config.bytecode_circuit,
+                &challenges,
+                &mut layouter,
+            )?;
+            self.tx_circuit
+                .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
+            self.state_circuit
+                .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
+            self.copy_circuit
+                .synthesize_sub(&config.copy_circuit, &challenges, &mut layouter)?;
+            self.exp_circuit
+                .synthesize_sub(&config.exp_circuit, &challenges, &mut layouter)?;
+            self.evm_circuit
+                .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
+            self.pi_circuit
+                .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
+            Ok(())
         }
     }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let block = self.evm_circuit.block.as_ref().unwrap();
-        let challenges = Challenges::mock(
-            Value::known(block.randomness),
-            Value::known(block.randomness),
-            Value::known(block.randomness),
-        );
-        let rws = &self.state_circuit.rows;
-
-        config.block_table.load(
-            &mut layouter,
-            &block.context,
-            Value::known(block.randomness),
-        )?;
-
-        config.mpt_table.load(
-            &mut layouter,
-            &MptUpdates::mock_from(rws),
-            Value::known(block.randomness),
-        )?;
-
-        self.keccak_circuit
-            .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
-        self.bytecode_circuit.synthesize_sub(
-            &config.bytecode_circuit,
-            &challenges,
-            &mut layouter,
-        )?;
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
-        self.state_circuit
-            .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
-        self.copy_circuit
-            .synthesize_sub(&config.copy_circuit, &challenges, &mut layouter)?;
-        self.exp_circuit
-            .synthesize_sub(&config.exp_circuit, &challenges, &mut layouter)?;
-        self.evm_circuit
-            .synthesize_sub(&config.evm_circuit, &challenges, &mut layouter)?;
-        self.pi_circuit
-            .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
-        Ok(())
-    }
-}
 
     #[test]
     fn super_circuit_degree() {

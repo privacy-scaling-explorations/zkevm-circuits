@@ -673,24 +673,23 @@ pub mod test {
         evm::{gen_sha3_code, MemoryKind},
         mock::BlockData,
     };
-    use eth_types::{bytecode, geth_types::GethData, Word, ToWord};
+    use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::{TestContext, MOCK_ACCOUNTS};
 
     use crate::evm_circuit::test::rand_bytes;
 
     pub use super::*;
+    use crate::{
+        evm_circuit::witness::Block,
+        table::{BytecodeTable, RwTable, TxTable},
+        util::Challenges,
+    };
     use eth_types::Field;
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem},
-    };
-
-    use crate::{
-        evm_circuit::witness::Block,
-        table::{BytecodeTable, RwTable, TxTable},
-        util::Challenges,
     };
 
     impl<F: Field> Circuit<F> for CopyCircuit<F> {
@@ -913,6 +912,9 @@ pub mod test {
 
     #[test]
     fn copy_circuit_valid_extcodecopy() {
+        use crate::witness::block_convert;
+        use halo2_proofs::halo2curves::bn256::Fr;
+
         let builder = gen_extcodecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(14, block), Ok(()));

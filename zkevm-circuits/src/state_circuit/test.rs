@@ -9,9 +9,9 @@ use crate::{
 use bus_mapping::operation::{MemoryOp, Operation, OperationContainer, StackOp, StorageOp};
 use eth_types::Field;
 use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner},
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
-    circuit::{Layouter, SimpleFloorPlanner}
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
 };
 use std::collections::HashMap;
