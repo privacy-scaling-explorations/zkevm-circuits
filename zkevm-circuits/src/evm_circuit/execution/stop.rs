@@ -34,7 +34,8 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let code_length = cb.query_cell();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let is_out_of_range = IsZeroGadget::construct(
             cb,
             code_length.expr() - cb.curr.state.program_counter.expr(),

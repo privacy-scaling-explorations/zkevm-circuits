@@ -233,6 +233,10 @@ impl<F: Field> RwRow<F> {
             .rev()
             .fold(F::zero(), |acc, value| acc * randomness + value)
     }
+
+    pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
+        randomness.map(|randomness| self.rlc(randomness))
+    }
 }
 
 impl Rw {

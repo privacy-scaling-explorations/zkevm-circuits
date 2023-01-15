@@ -103,8 +103,8 @@ mod tests {
         for CmpWordGadgetTestContainer<F, CHECK_EQ>
     {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
-            let b = cb.query_word();
+            let a = cb.query_word_rlc();
+            let b = cb.query_word_rlc();
             let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a, &b);
             cb.require_equal(
                 "(a < b) * (a == b) == 0",

@@ -53,15 +53,15 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let opcode = cb.query_cell();
 
         // values got from stack (original r is modified if n==0)
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let n = cb.query_word();
-        let r = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let n = cb.query_word_rlc();
+        let r = cb.query_word_rlc();
 
         // auxiliar witness
-        let k = cb.query_word();
-        let a_reduced = cb.query_word();
-        let d = cb.query_word();
+        let k = cb.query_word_rlc();
+        let a_reduced = cb.query_word_rlc();
+        let d = cb.query_word_rlc();
 
         let n_is_zero = IsZeroGadget::construct(cb, n.clone().expr());
 
@@ -74,10 +74,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // 2. check d * N + r == a_reduced + b, only checking carry if n != 0
         let sum_areduced_b = {
-            let sum = cb.query_word();
+            let sum = cb.query_word_rlc();
             AddWordsGadget::construct(cb, [a_reduced.clone(), b.clone()], sum)
         };
-        let sum_areduced_b_overflow = cb.query_word();
+        let sum_areduced_b_overflow = cb.query_word_rlc();
         let muladd_d_n_r = MulAddWords512Gadget::construct(
             cb,
             [&d, &n, &sum_areduced_b_overflow, sum_areduced_b.sum()],
@@ -213,11 +213,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.cmp_r_n.assign(region, offset, r, n)?;
         self.cmp_areduced_n.assign(region, offset, a_reduced, n)?;
 
-        self.n_is_zero.assign(
-            region,
-            offset,
-            Word::random_linear_combine(n.to_le_bytes(), block.randomness),
-        )?;
+        self.n_is_zero
+            .assign_value(region, offset, region.word_rlc(n))?;
 
         Ok(())
     }

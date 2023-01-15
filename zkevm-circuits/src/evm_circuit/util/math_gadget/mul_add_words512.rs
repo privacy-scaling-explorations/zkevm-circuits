@@ -213,11 +213,11 @@ mod tests {
 
     impl<F: Field> MathGadgetContainer<F> for MulAddWords512GadgetContainer<F> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
-            let b = cb.query_word();
-            let d = cb.query_word();
-            let e = cb.query_word();
-            let addend = cb.query_word();
+            let a = cb.query_word_rlc();
+            let b = cb.query_word_rlc();
+            let d = cb.query_word_rlc();
+            let e = cb.query_word_rlc();
+            let addend = cb.query_word_rlc();
             let math_gadget =
                 MulAddWords512Gadget::<F>::construct(cb, [&a, &b, &d, &e], Some(&addend));
             MulAddWords512GadgetContainer {

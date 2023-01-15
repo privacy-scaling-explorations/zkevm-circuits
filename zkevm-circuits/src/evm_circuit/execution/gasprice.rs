@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -13,7 +13,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -77,14 +77,8 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
 
-        self.gas_price.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                gas_price.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.gas_price
+            .assign(region, offset, region.word_rlc(gas_price))?;
 
         self.same_context.assign_exec_step(region, offset, step)?;
 

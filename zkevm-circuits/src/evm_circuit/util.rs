@@ -1,10 +1,14 @@
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS},
+        param::{
+            LOOKUP_CONFIG, N_BYTES_MEMORY_ADDRESS, N_COPY_COLUMNS, N_PHASE2_COLUMNS,
+            N_PHASE3_COLUMNS,
+        },
         table::Table,
     },
-    util::{query_expression, Expr},
+    util::{query_expression, Challenges, Expr},
 };
+use eth_types::ToLittleEndian;
 use eth_types::U256;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -13,7 +17,9 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+use keccak256::EMPTY_HASH_LE;
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
@@ -71,12 +77,11 @@ impl<F: FieldExt> Expr<F> for &Cell<F> {
         self.expression.clone()
     }
 }
-
 pub struct CachedRegion<'r, 'b, F: FieldExt> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
+    challenges: &'r Challenges<Value<F>>,
     advice_columns: Vec<Column<Advice>>,
-    power_of_randomness: [F; 31],
     width_start: usize,
     height_start: usize,
 }
@@ -85,7 +90,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
-        power_of_randomness: [F; 31],
+        challenges: &'r Challenges<Value<F>>,
         advice_columns: Vec<Column<Advice>>,
         height: usize,
         height_start: usize,
@@ -93,7 +98,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
         Self {
             region,
             advice: vec![vec![F::zero(); height]; advice_columns.len()],
-            power_of_randomness,
+            challenges,
             width_start: advice_columns[0].index(),
             height_start,
             advice_columns,
@@ -168,8 +173,17 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             [(((row_index - self.height_start) as i32) + rotation.0) as usize]
     }
 
-    pub fn get_instance(&self, _row_index: usize, column_index: usize, _rotation: Rotation) -> F {
-        self.power_of_randomness[column_index]
+    pub fn challenges(&self) -> &Challenges<Value<F>> {
+        self.challenges
+    }
+
+    pub fn word_rlc(&self, n: U256) -> Value<F> {
+        self.challenges
+            .evm_word()
+            .map(|r| Word::random_linear_combine(n.to_le_bytes(), r))
+    }
+    pub fn empty_hash_rlc(&self) -> Value<F> {
+        self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
     }
 
     /// Constrains a cell to have a constant value.
@@ -197,6 +211,13 @@ pub struct StoredExpression<F> {
     expr_id: String,
 }
 
+impl<F> Hash for StoredExpression<F> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.expr_id.hash(state);
+        self.cell_type.hash(state);
+    }
+}
+
 impl<F: FieldExt> StoredExpression<F> {
     pub fn assign(
         &self,
@@ -204,36 +225,68 @@ impl<F: FieldExt> StoredExpression<F> {
         offset: usize,
     ) -> Result<AssignedCell<F, F>, Error> {
         let value = self.expr.evaluate(
-            &|scalar| scalar,
+            &|scalar| Value::known(scalar),
             &|_| unimplemented!("selector column"),
             &|fixed_query| {
-                region.get_fixed(offset, fixed_query.column_index(), fixed_query.rotation())
+                Value::known(region.get_fixed(
+                    offset,
+                    fixed_query.column_index(),
+                    fixed_query.rotation(),
+                ))
             },
             &|advide_query| {
-                region.get_advice(offset, advide_query.column_index(), advide_query.rotation())
-            },
-            &|instance_query| {
-                region.get_instance(
+                Value::known(region.get_advice(
                     offset,
-                    instance_query.column_index(),
-                    instance_query.rotation(),
-                )
+                    advide_query.column_index(),
+                    advide_query.rotation(),
+                ))
             },
-            &|_| unimplemented!(),
+            &|_| unimplemented!("instance column"),
+            &|challenge| *region.challenges().indexed()[challenge.index()],
             &|a| -a,
             &|a, b| a + b,
             &|a, b| a * b,
-            &|a, scalar| a * scalar,
+            &|a, scalar| a * Value::known(scalar),
         );
-        self.cell.assign(region, offset, Value::known(value))
+        self.cell.assign(region, offset, value)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum CellType {
-    Storage,
+    StoragePhase1,
+    StoragePhase2,
+    StoragePhase3,
     StoragePermutation,
     Lookup(Table),
+}
+
+impl CellType {
+    // The phase that given `Expression` becomes evaluateable.
+    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+        use Expression::*;
+        match expr {
+            Challenge(challenge) => challenge.phase() + 1,
+            Constant(_) | Selector(_) | Fixed(_) | Advice(_) | Instance(_) => 0,
+            Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
+            Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
+        }
+    }
+
+    /// Return the storage phase of phase
+    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
+        match phase {
+            0 => CellType::StoragePhase1,
+            1 => CellType::StoragePhase2,
+            2 => CellType::StoragePhase3,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Return the storage cell of the expression
+    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
+        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -276,21 +329,34 @@ impl<F: FieldExt> CellManager<F> {
                 }
                 columns.push(CellColumn {
                     index: c,
-                    cell_type: CellType::Storage,
+                    cell_type: CellType::StoragePhase1,
                     height: 0,
                     expr: cells[c * height].expr(),
                 });
             }
         });
 
-        // Mark columns used for lookups
+        // Mark columns used for Phase3 constraints
         let mut column_idx = 0;
+        for _ in 0..N_PHASE3_COLUMNS {
+            columns[column_idx].cell_type = CellType::StoragePhase3;
+            column_idx += 1;
+        }
+
+        // Mark columns used for lookups in Phase3
         for &(table, count) in LOOKUP_CONFIG {
             for _ in 0usize..count {
                 columns[column_idx].cell_type = CellType::Lookup(table);
                 column_idx += 1;
             }
         }
+
+        // Mark columns used for Phase2 constraints
+        for _ in 0..N_PHASE2_COLUMNS {
+            columns[column_idx].cell_type = CellType::StoragePhase2;
+            column_idx += 1;
+        }
+
         // Mark columns used for copy constraints
         for _ in 0..N_COPY_COLUMNS {
             meta.enable_equality(advices[column_idx]);
@@ -332,7 +398,7 @@ impl<F: FieldExt> CellManager<F> {
         }
         // Replace a CellType::Storage by CellType::StoragePermutation if the later has
         // better height
-        if cell_type == CellType::Storage {
+        if cell_type == CellType::StoragePhase1 {
             for column in self.columns.iter() {
                 if column.cell_type == CellType::StoragePermutation && column.height < best_height {
                     best_index = Some(column.index);
@@ -522,4 +588,13 @@ pub(crate) fn split_u256_limb64(value: &U256) -> [U256; 4] {
         U256([value.0[2], 0, 0, 0]),
         U256([value.0[3], 0, 0, 0]),
     ]
+}
+
+/// Transposes an `Value` of a [`Result`] into a [`Result`] of an `Value`.
+pub(crate) fn transpose_val_ret<F, E>(value: Value<Result<F, E>>) -> Result<Value<F>, E> {
+    let mut ret = Ok(Value::unknown());
+    value.map(|value| {
+        ret = value.map(Value::known);
+    });
+    ret
 }

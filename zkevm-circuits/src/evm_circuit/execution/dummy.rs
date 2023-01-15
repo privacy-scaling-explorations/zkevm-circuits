@@ -26,8 +26,8 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
     const EXECUTION_STATE: ExecutionState = S;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let pops: [Word<F>; N_POP] = [(); N_POP].map(|_| cb.query_word());
-        let pushes: [Word<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word());
+        let pops: [Word<F>; N_POP] = [(); N_POP].map(|_| cb.query_word_rlc());
+        let pushes: [Word<F>; N_PUSH] = [(); N_PUSH].map(|_| cb.query_word_rlc());
         for _pop in pops.iter() {
             //cb.stack_pop(pop.expr());
         }

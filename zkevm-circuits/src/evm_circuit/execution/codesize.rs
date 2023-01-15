@@ -9,7 +9,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
-            from_bytes, CachedRegion, Cell, RandomLinearCombination,
+            from_bytes, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -36,7 +36,8 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         let codesize_bytes = array_init(|_| cb.query_byte());
 
         let code_hash = cb.curr.state.code_hash.clone();
-        let codesize = cb.bytecode_length(code_hash.expr());
+        let codesize = cb.query_cell();
+        cb.bytecode_length(code_hash.expr(), codesize.expr());
 
         cb.require_equal(
             "Constraint: bytecode length lookup == codesize",
@@ -44,10 +45,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
             codesize.expr(),
         );
 
-        cb.stack_push(RandomLinearCombination::random_linear_combine_expr(
-            codesize_bytes.clone().map(|c| c.expr()),
-            cb.power_of_randomness(),
-        ));
+        cb.stack_push(cb.word_rlc(codesize_bytes.clone().map(|c| c.expr())));
 
         let step_state_transition = StepStateTransition {
             gas_left: Transition::Delta(-OpcodeId::CODESIZE.constant_gas_cost().expr()),

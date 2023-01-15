@@ -219,11 +219,12 @@ impl<
         let keccak_table = KeccakTable::construct(meta);
         log_circuit_info(meta, "keccak");
 
-        let power_of_randomness = array::from_fn(|i| {
+        let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
             Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
         });
 
         let challenges = Challenges::mock(
+            power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
             power_of_randomness[0].clone(),
         );
@@ -291,7 +292,7 @@ impl<
             StateCircuitConfigArgs {
                 rw_table,
                 mpt_table,
-                challenges,
+                challenges: challenges.clone(),
             },
         );
 
@@ -302,7 +303,7 @@ impl<
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
-                power_of_randomness,
+                challenges,
                 tx_table: tx_table.clone(),
                 rw_table,
                 bytecode_table,
@@ -339,6 +340,7 @@ impl<
     ) -> Result<(), Error> {
         let block = self.evm_circuit.block.as_ref().unwrap();
         let challenges = Challenges::mock(
+            Value::known(block.randomness),
             Value::known(block.randomness),
             Value::known(block.randomness),
         );

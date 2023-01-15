@@ -54,8 +54,10 @@ impl MptUpdates {
             .map(|(i, (key, mut rows))| {
                 let first = rows.next().unwrap();
                 let last = rows.last().unwrap_or(first);
+                let key_exists = key;
+                let key = key.set_non_exists(value_prev(first), value(last));
                 (
-                    key,
+                    key_exists,
                     MptUpdate {
                         key,
                         old_root: Word::from(i as u64),
@@ -133,10 +135,43 @@ enum Key {
         tx_id: usize,
         address: Address,
         storage_key: Word,
+        exists: bool,
     },
 }
 
 impl Key {
+    // If the transition is Storage 0 -> 0, set the key as non-existing storage.
+    // If the transition is CodeHash 0 -> 0, set the key as non-existing account.
+    // Otherwise return the key unmodified.
+    fn set_non_exists(self, value_prev: Word, value: Word) -> Self {
+        if value_prev.is_zero() && value.is_zero() {
+            match self {
+                Key::Account { address, field_tag } => {
+                    if matches!(field_tag, AccountFieldTag::CodeHash) {
+                        Key::Account {
+                            address,
+                            field_tag: AccountFieldTag::NonExisting,
+                        }
+                    } else {
+                        self
+                    }
+                }
+                Key::AccountStorage {
+                    tx_id,
+                    address,
+                    storage_key,
+                    ..
+                } => Key::AccountStorage {
+                    tx_id,
+                    address,
+                    storage_key,
+                    exists: false,
+                },
+            }
+        } else {
+            self
+        }
+    }
     fn address<F: Field>(&self) -> F {
         match self {
             Self::Account { address, .. } | Self::AccountStorage { address, .. } => {
@@ -184,6 +219,7 @@ fn key(row: &Rw) -> Option<Key> {
             tx_id: *tx_id,
             address: *account_address,
             storage_key: *storage_key,
+            exists: true,
         }),
         _ => None,
     }

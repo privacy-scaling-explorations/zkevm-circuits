@@ -164,6 +164,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
+                    OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
@@ -186,7 +187,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     OpcodeId::CREATE | OpcodeId::CREATE2 => ExecutionState::CREATE,
                     // dummy ops
-                    OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     OpcodeId::INVALID(_) => ExecutionState::ErrorInvalidOpcode,

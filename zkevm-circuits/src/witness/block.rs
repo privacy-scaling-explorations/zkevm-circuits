@@ -8,6 +8,7 @@ use bus_mapping::{
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use halo2_proofs::circuit::Value;
 
 use halo2_proofs::circuit::Value;
 
@@ -255,6 +256,7 @@ pub fn block_convert<F: Field>(
 
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
+        
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

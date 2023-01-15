@@ -150,24 +150,21 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             )?;
         }
 
-        if callee_exists {
-            let callee_code_hash_word = callee_code_hash.to_word();
-            state.account_read(
-                &mut exec_step,
-                callee_address,
-                AccountField::CodeHash,
-                callee_code_hash_word,
-                callee_code_hash_word,
-            )?;
+        let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+            (
+                callee_code_hash.to_word(),
+                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            )
         } else {
-            state.account_read(
-                &mut exec_step,
-                callee_address,
-                AccountField::NonExisting,
-                Word::zero(),
-                Word::zero(),
-            )?;
-        }
+            (Word::zero(), true)
+        };
+        state.account_read(
+            &mut exec_step,
+            callee_address,
+            AccountField::CodeHash,
+            callee_code_hash_word,
+            callee_code_hash_word,
+        )?;
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
@@ -245,7 +242,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             code_address
                 .map(|ref addr| is_precompiled(addr))
                 .unwrap_or(false),
-            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            is_empty_code_hash,
         ) {
             // 1. Call to precompiled.
             (false, true, _) => {

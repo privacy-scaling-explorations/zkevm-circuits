@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, MemoryAddress, Word,
+            select, sum, Cell, MemoryAddress,
         },
     },
     util::Expr,
@@ -76,7 +76,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_length: MemoryAddress<F>,
     ) -> Self {
         let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
-        let memory_offset_bytes = cb.query_rlc();
+        let memory_offset_bytes = cb.query_word_rlc();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
         cb.condition(has_length, |cb| {
@@ -107,7 +107,6 @@ impl<F: Field> MemoryAddressGadget<F> {
         offset: usize,
         memory_offset: U256,
         memory_length: U256,
-        randomness: F,
     ) -> Result<u64, Error> {
         let memory_offset_bytes = memory_offset.to_le_bytes();
         let memory_length_bytes = memory_length.to_le_bytes();
@@ -115,7 +114,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         self.memory_offset.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(memory_offset_bytes, randomness)),
+            region.word_rlc(U256::from_little_endian(&memory_offset_bytes)),
         )?;
         self.memory_offset_bytes.assign(
             region,

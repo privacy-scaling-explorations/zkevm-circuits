@@ -5,7 +5,10 @@ use super::{
 };
 use crate::util::Expr;
 use crate::{
-    evm_circuit::{param::N_BYTES_WORD, util::not},
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{math_gadget::generate_lagrange_base_polynomial, not},
+    },
     table::{AccountFieldTag, ProofType, RwTableTag},
 };
 use eth_types::Field;
@@ -57,6 +60,7 @@ pub struct Queries<F: Field> {
     pub value_prev_col: Expression<F>,
     pub initial_value_prev: Expression<F>,
     pub is_non_exist: Expression<F>,
+    pub mpt_proof_type: Expression<F>,
     pub lookups: LookupsQueries<F>,
     pub power_of_randomness: [Expression<F>; N_BYTES_WORD - 1],
     pub first_different_limb: [Expression<F>; 4],
@@ -316,10 +320,20 @@ impl<F: Field> ConstraintBuilder<F> {
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
         // TODO: cold VS warm
+        // ref. spec 4.0. Unused keys are 0
         self.require_zero("field_tag is 0 for AccountStorage", q.field_tag());
 
+        // value = 0 means the leaf doesn't exist. 0->0 transition requires a
+        // non-existing proof.
         let is_non_exist = q.is_non_exist();
+        self.require_equal(
+            "mpt_proof_type is field_tag or StorageDoesNotExist",
+            q.mpt_proof_type(),
+            is_non_exist.expr() * ProofType::StorageDoesNotExist.expr()
+                + (1.expr() - is_non_exist) * ProofType::StorageChanged.expr(),
+        );
 
+        // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for AccountStorage last access",
@@ -332,11 +346,7 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.rw_table.storage_key.clone(),
                         q.mpt_update_table.storage_key.clone(),
                     ),
-                    (
-                        is_non_exist.expr() * ProofType::StorageDoesNotExist.expr()
-                            + (1.expr() - is_non_exist) * ProofType::StorageChanged.expr(),
-                        q.mpt_update_table.proof_type.clone(),
-                    ),
+                    (q.mpt_proof_type(), q.mpt_update_table.proof_type.clone()),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
                     (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
                     (q.value(), q.mpt_update_table.new_value.clone()),
@@ -399,6 +409,7 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
+        // ref. spec 6.0. Unused keys are 0
         self.require_zero("id is 0 for Account", q.id());
         self.require_zero(
             "storage_key is 0 for Account",
@@ -410,6 +421,32 @@ impl<F: Field> ConstraintBuilder<F> {
             set::<F, AccountFieldTag>(),
         );
 
+        // We use code_hash = 0 as non-existing account state.  code_hash: 0->0
+        // transition requires a non-existing proof.
+        // is_non_exist degree = 4
+        //   q.is_non_exist() degree = 1
+        //   generate_lagrange_base_polynomial() degree = 3
+        let is_non_exist = q.is_non_exist()
+            * generate_lagrange_base_polynomial(
+                q.field_tag(),
+                AccountFieldTag::CodeHash as usize,
+                [
+                    AccountFieldTag::Nonce,
+                    AccountFieldTag::Balance,
+                    AccountFieldTag::CodeHash,
+                ]
+                .iter()
+                .map(|t| *t as usize),
+            );
+        self.require_equal(
+            "mpt_proof_type is field_tag or AccountDoesNotExists",
+            q.mpt_proof_type(),
+            // degree = max(4, 4 + 1) = 5
+            is_non_exist.expr() * ProofType::AccountDoesNotExist.expr()
+                + (1.expr() - is_non_exist) * q.field_tag(),
+        );
+
+        // last_access degree = 1
         self.condition(q.last_access(), |cb| {
             cb.add_lookup(
                 "mpt_update exists in mpt circuit for Account last access",
@@ -422,7 +459,7 @@ impl<F: Field> ConstraintBuilder<F> {
                         q.rw_table.storage_key.clone(),
                         q.mpt_update_table.storage_key.clone(),
                     ),
-                    (q.field_tag(), q.mpt_update_table.proof_type.clone()),
+                    (q.mpt_proof_type(), q.mpt_update_table.proof_type.clone()),
                     (q.state_root(), q.mpt_update_table.new_root.clone()),
                     (q.state_root_prev(), q.mpt_update_table.old_root.clone()),
                     (q.value(), q.mpt_update_table.new_value.clone()),
@@ -570,6 +607,10 @@ impl<F: Field> Queries<F> {
 
     fn is_non_exist(&self) -> Expression<F> {
         self.is_non_exist.clone()
+    }
+
+    fn mpt_proof_type(&self) -> Expression<F> {
+        self.mpt_proof_type.clone()
     }
 
     fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {

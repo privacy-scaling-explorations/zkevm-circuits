@@ -26,7 +26,7 @@ pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
     fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_rlc();
+        let value = cb.query_word_rlc();
 
         // Push the const generic parameter N_BYTES value to the stack
         cb.stack_push(value.expr());

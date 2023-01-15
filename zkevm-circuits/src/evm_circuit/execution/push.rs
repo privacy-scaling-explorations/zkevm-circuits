@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_rlc();
+        let value = cb.query_word_rlc();
         // Query selectors for each opcode_lookup
         let selectors = array_init(|_| cb.query_bool());
 
