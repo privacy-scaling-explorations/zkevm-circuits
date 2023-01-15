@@ -18,7 +18,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::evm_circuit::witness::RwMap;
-    use zkevm_circuits::state_circuit::test::StateCircuit;
+    use zkevm_circuits::state_circuit::TestStateCircuit;
     use zkevm_circuits::util::SubCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -29,7 +29,7 @@ mod tests {
             .parse()
             .expect("Cannot parse DEGREE env var as u32");
 
-        let empty_circuit = StateCircuit::<Fr>::new(RwMap::default(), 1 << 16);
+        let empty_circuit = TestStateCircuit::<Fr>::new(RwMap::default(), 1 << 16);
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([
@@ -62,7 +62,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            StateCircuit<Fr>,
+            TestStateCircuit<Fr>,
         >(
             &general_params,
             &pk,

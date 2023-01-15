@@ -27,7 +27,7 @@ use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::test::CopyCircuit;
 use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
-use zkevm_circuits::state_circuit::test::StateCircuit;
+use zkevm_circuits::state_circuit::TestStateCircuit;
 use zkevm_circuits::super_circuit::test::SuperCircuit;
 use zkevm_circuits::tx_circuit::test::TxCircuit;
 use zkevm_circuits::util::SubCircuit;
@@ -62,7 +62,7 @@ lazy_static! {
 lazy_static! {
     static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
-        let circuit = StateCircuit::<Fr>::new_from_block(&block);
+        let circuit = TestStateCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(STATE_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -261,7 +261,7 @@ pub async fn test_state_circuit_block(block_num: u64, actual: bool) {
     let (builder, _) = gen_inputs(block_num).await;
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let circuit = StateCircuit::<Fr>::new_from_block(&block);
+    let circuit = TestStateCircuit::<Fr>::new_from_block(&block);
     let instance = circuit.instance();
 
     if actual {

@@ -6,7 +6,8 @@ mod multiple_precision_integer;
 mod random_linear_combination;
 /// state circuit test
 #[cfg(any(feature = "test", test))]
-pub mod test;
+mod test;
+pub use test::StateCircuit as TestStateCircuit;
 
 use crate::{
     evm_circuit::param::N_BYTES_WORD,
