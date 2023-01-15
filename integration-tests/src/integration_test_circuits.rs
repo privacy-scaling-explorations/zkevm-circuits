@@ -24,7 +24,7 @@ use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
-use zkevm_circuits::copy_circuit::test::CopyCircuit;
+use zkevm_circuits::copy_circuit::TestCopyCircuit;
 use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::TestStateCircuit;
@@ -89,7 +89,7 @@ lazy_static! {
     };
     static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
-        let circuit = CopyCircuit::<Fr>::new_from_block(&block);
+        let circuit = TestCopyCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(COPY_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -324,7 +324,7 @@ pub async fn test_copy_circuit_block(block_num: u64, actual: bool) {
     let (builder, _) = gen_inputs(block_num).await;
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let circuit = CopyCircuit::<Fr>::new_from_block(&block);
+    let circuit = TestCopyCircuit::<Fr>::new_from_block(&block);
 
     if actual {
         test_actual(
