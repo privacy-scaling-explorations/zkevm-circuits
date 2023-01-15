@@ -238,6 +238,7 @@ async fn test_print_circuits_size() {
         let challenges = Challenges::mock(
             Value::known(block.randomness),
             Value::known(block.randomness),
+            Value::known(block.randomness),
         );
         let keccak_rows = multi_keccak(&keccak_inputs, challenges, None)
             .unwrap()

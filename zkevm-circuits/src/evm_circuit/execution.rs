@@ -1338,15 +1338,15 @@ impl<F: Field> ExecutionConfig<F> {
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
             // expensive function call
-                Self::check_rw_lookup(
-                    &assigned_stored_expressions,
-                    offset,
-                    step,
-                    call,
-                    transaction,
-                    block,
-                    region.challenges(),
-                );
+            Self::check_rw_lookup(
+                &assigned_stored_expressions,
+                offset,
+                step,
+                call,
+                transaction,
+                block,
+                region.challenges(),
+            );
         }
         Ok(())
     }
@@ -1447,7 +1447,7 @@ impl<F: Field> ExecutionConfig<F> {
                     step.rw_indices.len()
                 );
             }
-        challenges.evm_word().map(|randomness| {
+            challenges.evm_word().map(|randomness| {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
             let table_assignments = rw.table_assignment_aux(randomness);
@@ -1469,8 +1469,8 @@ impl<F: Field> ExecutionConfig<F> {
                 //    "left is witness, right is expression"
                 //);
             }
+        });
         }
-    });
         // for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate()
         // {     let rw_idx = step.rw_indices[idx];
         //     let rw = block.rws[rw_idx];

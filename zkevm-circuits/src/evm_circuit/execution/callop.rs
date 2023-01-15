@@ -1,5 +1,5 @@
 use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_GAS;
+use crate::evm_circuit::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS};
 use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::{CommonCallGadget, TransferGadget};
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, To};
@@ -7,12 +7,9 @@ use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::math_gadget::{
-    ConstantDivisionGadget, IsZeroGadget, LtWordGadget, MinMaxGadget,
+    ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
 };
-use crate::evm_circuit::util::{not, or, select, CachedRegion, Cell, Word};
-use crate::evm_circuit::util::{
-    and, from_bytes, not, or, select, sum, CachedRegion, Cell, RandomLinearCombination, Word,
-};
+use crate::evm_circuit::util::{and, not, or, select, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
@@ -223,8 +220,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             all_but_one_64th_gas,
         );
 
-        let is_code_address_zero = IsZeroGadget::construct(cb, code_address.expr());
-        let is_precompile_lt = LtGadget::construct(cb, code_address.expr(), 0xA.expr());
+        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_precompile_lt =
+            LtGadget::construct(cb, call_gadget.callee_address_expr(), 0xA.expr());
         let is_precompile = and::expr(&[
             not::expr(is_code_address_zero.expr()),
             is_precompile_lt.expr(),
@@ -276,7 +274,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         cb.condition(
             and::expr([
-                is_empty_code_hash.expr(),
+                call_gadget.is_empty_code_hash.expr(),
                 not::expr(is_insufficient_balance.expr()),
             ]),
             |cb| {
@@ -300,7 +298,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
                     gas_left: Delta(-gas_cost_cell.expr()),
-                            
+
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
                     // For CALL opcode, `transfer` invocation has two account write.
                     reversible_write_counter: Delta(1.expr() + is_call.expr() * 2.expr()),
@@ -512,7 +510,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[stack_index + 1 + rw_offset],
         ]
         .map(|idx| block.rws[idx].stack_value());
-        let is_precompile = code_address < 10.into() && !code_address.is_zero();
+        let is_precompile = callee_address < 10.into() && !callee_address.is_zero();
         let value = if is_call || is_callcode {
             rw_offset += 1;
             block.rws[step.rw_indices[7 + rw_offset]].stack_value()
@@ -665,7 +663,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let mut code_address_bytes = [0; 32];
         code_address_bytes[0..N_BYTES_ACCOUNT_ADDRESS]
-            .copy_from_slice(&code_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]);
+            .copy_from_slice(&callee_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]);
         let code_address_bytes = F::from_repr(code_address_bytes).unwrap();
         self.is_code_address_zero
             .assign(region, offset, code_address_bytes)?;

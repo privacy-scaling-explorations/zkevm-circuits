@@ -97,7 +97,7 @@ impl<F: Field> MemoryAddressGadget<F> {
 
     pub(crate) fn construct_2(cb: &mut ConstraintBuilder<F>) -> Self {
         let offset = cb.query_cell();
-        let length = cb.query_rlc();
+        let length = cb.query_word_rlc();
         Self::construct(cb, offset, length)
     }
 

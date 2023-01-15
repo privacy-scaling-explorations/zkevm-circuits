@@ -173,7 +173,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call_callee_address.expr(),
             AccountFieldTag::CodeHash,
             phase2_code_hash.expr(),
-            code_hash.expr(),
+            phase2_code_hash.expr(),
             None,
         );
 

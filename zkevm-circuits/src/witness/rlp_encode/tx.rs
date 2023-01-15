@@ -371,8 +371,11 @@ mod tests {
     #[test]
     fn tx_rlp_witgen_a() {
         let r = Fr::random(rand::thread_rng());
-        let challenges =
-            Challenges::<Value<Fr>>::mock(Value::known(r), Value::known(r + Fr::one()));
+        let challenges = Challenges::<Value<Fr>>::mock(
+            Value::known(r),
+            Value::known(r + Fr::one()),
+            Value::known(r + Fr::one() + Fr::one()),
+        );
 
         let callee_address = mock::MOCK_ACCOUNTS[0];
         let call_data = rand_bytes(55);
@@ -461,8 +464,11 @@ mod tests {
     #[test]
     fn tx_rlp_witgen_b() {
         let r = Fr::random(rand::thread_rng());
-        let challenges =
-            Challenges::<Value<Fr>>::mock(Value::known(r), Value::known(r + Fr::one()));
+        let challenges = Challenges::<Value<Fr>>::mock(
+            Value::known(r),
+            Value::known(r + Fr::one()),
+            Value::known(r + Fr::one() + Fr::one()),
+        );
 
         let nonce = 0x123456u64;
         let gas_price = 0x234567u64.into();

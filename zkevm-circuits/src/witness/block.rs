@@ -10,8 +10,6 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use halo2_proofs::circuit::Value;
-
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 use crate::util::{Challenges, DEFAULT_RAND};
 
@@ -256,7 +254,7 @@ pub fn block_convert<F: Field>(
 
     Ok(Block {
         randomness: F::from_u128(DEFAULT_RAND),
-        
+
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block

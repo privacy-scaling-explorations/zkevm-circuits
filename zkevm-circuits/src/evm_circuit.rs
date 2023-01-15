@@ -257,14 +257,12 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use super::*;
-    use std::convert::TryInto;
 
     use crate::{
         evm_circuit::{witness::Block, EvmCircuitConfig},
         exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::Challenges,
-        util::DEFAULT_RAND,
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -273,7 +271,7 @@ pub mod test {
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
-        plonk::{Circuit, ConstraintSystem, Error, Expression},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
@@ -319,7 +317,6 @@ pub mod test {
             let exp_table = ExpTable::construct(meta);
             let challenges = Challenges::construct(meta);
             let challenges_expr = challenges.exprs(meta);
-                .
             (
                 EvmCircuitConfig::new(
                     meta,
@@ -459,13 +456,13 @@ pub mod test {
         log::debug!(
             "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
-                num_rows_required_for_rw_table,
-                num_rows_required_for_fixed_table,
-                num_rows_required_for_bytecode_table,
-                num_rows_required_for_copy_table,
-                num_rows_required_for_keccak_table,
-                num_rows_required_for_tx_table,
-                num_rows_required_for_exp_table
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table
         );
 
         log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);

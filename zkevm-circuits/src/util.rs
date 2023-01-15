@@ -2,8 +2,9 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{ConstraintSystem, Error, Expression, VirtualCells},
-    poly::Rotation,
+    plonk::{
+        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
+    },
 };
 
 use crate::table::TxLogFieldTag;
@@ -38,7 +39,7 @@ pub(crate) fn rlc_be_bytes<F: Field>(bytes: &[u8], rand: Value<F>) -> Value<F> {
 
 /// All challenges used in `SuperCircuit`.
 #[derive(Default, Clone, Copy, Debug)]
-pub struct Challenges<T = u128> {
+pub struct Challenges<T = Challenge> {
     evm_word: T,
     keccak_input: T,
     lookup_input: T,
@@ -46,7 +47,7 @@ pub struct Challenges<T = u128> {
 
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
-    pub fn construct<F: FieldExt>(_meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         #[cfg(test)]
         let _dummy_cols = [
             meta.advice_column(),
@@ -55,19 +56,18 @@ impl Challenges {
         ];
 
         Self {
-            evm_word: meta.challenge_usable_after(FirstPhase),,
-            keccak_input: meta.challenge_usable_after(FirstPhase),,
+            evm_word: meta.challenge_usable_after(FirstPhase),
+            keccak_input: meta.challenge_usable_after(FirstPhase),
             lookup_input: meta.challenge_usable_after(SecondPhase),
         }
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
-    pub fn exprs<F: FieldExt>(&self, _meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+    pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
         let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
             [self.evm_word, self.keccak_input, self.lookup_input]
                 .map(|challenge| meta.query_challenge(challenge))
         });
-               
         Challenges {
             evm_word,
             keccak_input,
@@ -76,10 +76,10 @@ impl Challenges {
     }
 
     /// Returns `Value` of challenges from `Layouter`.
-    pub fn values<F: FieldExt>(&self, _layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
-            evm_word: Value::known(F::from_u128(self.evm_word)),
-            keccak_input: Value::known(F::from_u128(self.keccak_input)),
+            evm_word: layouter.get_challenge(self.evm_word),
+            keccak_input: layouter.get_challenge(self.keccak_input),
             lookup_input: layouter.get_challenge(self.lookup_input),
         }
     }
@@ -106,7 +106,8 @@ impl<T: Clone> Challenges<T> {
         [&self.evm_word, &self.keccak_input, &self.lookup_input]
     }
 
-    pub(crate) fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {
+    /// ..
+    pub fn mock(evm_word: T, keccak_input: T, lookup_input: T) -> Self {
         Self {
             evm_word,
             keccak_input,

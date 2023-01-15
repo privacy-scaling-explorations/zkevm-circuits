@@ -223,6 +223,7 @@
 //#![deny(unsafe_code)] Allowed now until we find a
 // better way to handle downcasting from Operation into it's variants.
 #![allow(clippy::upper_case_acronyms)] // Too pedantic
+#![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::result_large_err)] // it's large, but what can we do?
 
 extern crate alloc;
