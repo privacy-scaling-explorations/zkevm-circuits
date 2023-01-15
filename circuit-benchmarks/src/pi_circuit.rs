@@ -18,7 +18,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
-    use zkevm_circuits::pi_circuit::test::{PiCircuit, PiTestCircuit, PublicData};
+    use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit, PublicData};
     use zkevm_circuits::test_util::rand_tx;
     use zkevm_circuits::util::SubCircuit;
 
