@@ -476,7 +476,12 @@ pub(crate) mod rlc {
         expressions: &[E],
         power_of_randomness: &[E],
     ) -> Expression<F> {
-        debug_assert!(expressions.len() <= power_of_randomness.len() + 1);
+        debug_assert!(
+            expressions.len() <= power_of_randomness.len() + 1,
+            "{} <= {}",
+            expressions.len(),
+            power_of_randomness.len() + 1
+        );
 
         let mut rlc = expressions[0].expr();
         for (expression, randomness) in expressions[1..].iter().zip(power_of_randomness.iter()) {

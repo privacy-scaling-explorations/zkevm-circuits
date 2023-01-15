@@ -51,7 +51,7 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::bytecode_circuit::bytecode_unroller::{
+use crate::bytecode_circuit::circuit::{
     BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
 };
 use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
