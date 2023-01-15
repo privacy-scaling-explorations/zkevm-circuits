@@ -13,6 +13,8 @@ pub mod table;
 /// evm circuit tests
 #[cfg(any(feature = "test", test))]
 pub mod test;
+pub use test::EvmCircuit as TestEvmCircuit;
+
 pub(crate) mod util;
 
 use crate::table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable};

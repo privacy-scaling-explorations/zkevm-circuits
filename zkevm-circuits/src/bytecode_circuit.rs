@@ -6,4 +6,4 @@ pub(crate) mod param;
 /// bytecode circuit test
 #[cfg(any(feature = "test", test))]
 mod test;
-pub use test::BytecodeCircuit;
+pub use test::BytecodeCircuit as TestBytecodeCircuit;

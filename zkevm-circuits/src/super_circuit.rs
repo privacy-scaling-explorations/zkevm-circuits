@@ -229,9 +229,10 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
     }
 }
 
+pub use test::SuperCircuit as TestSuperCircuit;
 /// super circuit test
 #[cfg(any(feature = "test", test))]
-pub mod test {
+mod test {
     pub use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use halo2_proofs::dev::MockProver;

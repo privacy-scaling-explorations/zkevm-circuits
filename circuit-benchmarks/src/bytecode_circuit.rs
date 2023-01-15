@@ -19,8 +19,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::bytecode_circuit::bytecode_unroller::{
-        unroll, BytecodeCircuit, UnrolledBytecode,
+    use zkevm_circuits::bytecode_circuit::{
+        bytecode_unroller::{unroll, UnrolledBytecode},
+        TestBytecodeCircuit,
     };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
@@ -41,7 +42,7 @@ mod tests {
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 
         // Create the circuit
-        let bytecode_circuit = BytecodeCircuit::<Fr>::new(
+        let bytecode_circuit = TestBytecodeCircuit::<Fr>::new(
             fillup_codebytes(bytecodes_num, bytecode_len),
             2usize.pow(degree),
         );
@@ -75,7 +76,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            BytecodeCircuit<Fr>,
+            TestBytecodeCircuit<Fr>,
         >(
             &general_params,
             &pk,

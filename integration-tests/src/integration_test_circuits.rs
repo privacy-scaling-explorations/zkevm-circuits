@@ -23,12 +23,12 @@ use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
+use zkevm_circuits::bytecode_circuit::TestBytecodeCircuit;
 use zkevm_circuits::copy_circuit::TestCopyCircuit;
 use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::TestStateCircuit;
-use zkevm_circuits::super_circuit::test::SuperCircuit;
+use zkevm_circuits::super_circuit::TestSuperCircuit;
 use zkevm_circuits::tx_circuit::TestTxCircuit;
 use zkevm_circuits::util::SubCircuit;
 use zkevm_circuits::witness::Block;
@@ -80,7 +80,7 @@ lazy_static! {
     };
     static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
-        let circuit = BytecodeCircuit::<Fr>::new_from_block(&block);
+        let circuit = TestBytecodeCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(BYTECODE_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -303,8 +303,10 @@ pub async fn test_bytecode_circuit_block(block_num: u64, actual: bool) {
     let (builder, _) = gen_inputs(block_num).await;
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let circuit =
-        BytecodeCircuit::<Fr>::new_from_block_sized(&block, 2usize.pow(BYTECODE_CIRCUIT_DEGREE));
+    let circuit = TestBytecodeCircuit::<Fr>::new_from_block_sized(
+        &block,
+        2usize.pow(BYTECODE_CIRCUIT_DEGREE),
+    );
 
     if actual {
         test_actual(
@@ -361,7 +363,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     .unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+        TestSuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
             &builder,
         )
         .unwrap();

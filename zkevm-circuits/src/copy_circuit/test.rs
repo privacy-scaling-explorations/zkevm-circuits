@@ -1,4 +1,6 @@
+#![allow(unused_imports)]
 pub use super::*;
+use crate::witness::block_convert;
 use crate::{
     evm_circuit::test::rand_bytes,
     evm_circuit::witness::Block,
@@ -11,6 +13,7 @@ use bus_mapping::{
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, Field, ToWord, Word};
+use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     dev::{MockProver, VerifyFailure},
@@ -217,9 +220,6 @@ fn gen_tx_log_data() -> CircuitInputBuilder {
 
 #[test]
 fn copy_circuit_valid_calldatacopy() {
-    use crate::evm_circuit::witness::block_convert;
-    use halo2_proofs::halo2curves::bn256::Fr;
-
     let builder = gen_calldatacopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit(14, block), Ok(()));
@@ -227,9 +227,6 @@ fn copy_circuit_valid_calldatacopy() {
 
 #[test]
 fn copy_circuit_valid_codecopy() {
-    use crate::evm_circuit::witness::block_convert;
-    use halo2_proofs::halo2curves::bn256::Fr;
-
     let builder = gen_codecopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit(10, block), Ok(()));
@@ -237,9 +234,6 @@ fn copy_circuit_valid_codecopy() {
 
 #[test]
 fn copy_circuit_valid_extcodecopy() {
-    use crate::witness::block_convert;
-    use halo2_proofs::halo2curves::bn256::Fr;
-
     let builder = gen_extcodecopy_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit(14, block), Ok(()));
@@ -247,9 +241,6 @@ fn copy_circuit_valid_extcodecopy() {
 
 #[test]
 fn copy_circuit_valid_sha3() {
-    use crate::evm_circuit::witness::block_convert;
-    use halo2_proofs::halo2curves::bn256::Fr;
-
     let builder = gen_sha3_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit(20, block), Ok(()));
@@ -257,9 +248,6 @@ fn copy_circuit_valid_sha3() {
 
 #[test]
 fn copy_circuit_tx_log() {
-    use crate::evm_circuit::witness::block_convert;
-    use halo2_proofs::halo2curves::bn256::Fr;
-
     let builder = gen_tx_log_data();
     let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
     assert_eq!(test_copy_circuit(10, block), Ok(()));
