@@ -29,7 +29,7 @@ use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::TestStateCircuit;
 use zkevm_circuits::super_circuit::test::SuperCircuit;
-use zkevm_circuits::tx_circuit::test::TxCircuit;
+use zkevm_circuits::tx_circuit::TestTxCircuit;
 use zkevm_circuits::util::SubCircuit;
 use zkevm_circuits::witness::Block;
 
@@ -71,7 +71,7 @@ lazy_static! {
     };
     static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
-        let circuit = TxCircuit::<Fr>::new_from_block(&block);
+        let circuit = TestTxCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(TX_CIRCUIT_DEGREE);
 
         let verifying_key =
@@ -283,7 +283,7 @@ pub async fn test_tx_circuit_block(block_num: u64, actual: bool) {
     let (builder, _) = gen_inputs(block_num).await;
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    let circuit = TxCircuit::<Fr>::new_from_block(&block);
+    let circuit = TestTxCircuit::<Fr>::new_from_block(&block);
 
     if actual {
         test_actual(
