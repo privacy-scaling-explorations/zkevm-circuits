@@ -23,7 +23,7 @@ use rand_core::RngCore;
 use rand_xorshift::XorShiftRng;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use zkevm_circuits::bytecode_circuit::bytecode_unroller::test::BytecodeCircuit;
+use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::test::CopyCircuit;
 use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
