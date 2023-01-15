@@ -7,7 +7,6 @@ use crate::{
         },
         step::ExecutionState,
         util::{
-            and,
             common_gadget::TransferGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -30,7 +29,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
-use keccak256::EMPTY_HASH_LE;
+
 use std::iter::once;
 
 /// Gadget for CREATE and CREATE2 opcodes
@@ -91,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ),
         );
 
-        let value = cb.query_word();
+        let value = cb.query_word_rlc();
         cb.stack_pop(value.expr());
 
         let initialization_code = MemoryAddressGadget::construct_2(cb);
@@ -99,19 +98,19 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         cb.stack_pop(initialization_code.length_rlc());
 
         let salt = cb.condition(is_create2.expr(), |cb| {
-            let salt = cb.query_word();
+            let salt = cb.query_word_rlc();
             cb.stack_pop(salt.expr());
             salt
         });
 
-        let keccak_output = cb.query_word();
-        let new_address_rlc = rlc::expr(
-            &keccak_output.cells[..20]
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<_>>(),
-            cb.power_of_randomness(),
-        );
+        let keccak_output = cb.query_word_rlc();
+        let new_address_array: [Expression<F>; 20] = keccak_output.cells[..20]
+            .iter()
+            .map(Expr::expr)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let new_address_rlc = cb.word_rlc(new_address_array);
         let callee_is_success = cb.query_bool();
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
@@ -131,14 +130,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             );
         });
         cb.condition(not::expr(initialization_code.has_length()), |cb| {
-            cb.require_equal(
-                "",
-                code_hash.expr(),
-                Word::random_linear_combine_expr(
-                    (*EMPTY_HASH_LE).map(|b| b.expr()),
-                    cb.power_of_randomness(),
-                ),
-            );
+            cb.require_equal("", code_hash.expr(), cb.empty_hash_rlc());
         });
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -153,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let caller_address = cb.query_rlc();
+        let caller_address = cb.query_word_rlc();
         cb.call_context_lookup(
             0.expr(),
             None,
@@ -290,6 +282,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let keccak_input = cb.query_cell();
         let keccak_input_length = cb.query_cell();
+        /*
         cb.condition(is_create2.expr(), |cb| {
             // For CREATE2, the keccak input is the concatenation of 0xff, address, salt,
             // and code_hash. Each sequence of bytes occurs in a fixed position, so to
@@ -315,6 +308,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             );
         });
 
+
         cb.condition(not::expr(is_create2.expr()), |cb| {
             let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
             let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
@@ -335,11 +329,13 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             );
         });
 
+
         cb.keccak_table_lookup(
             keccak_input.expr(),
             keccak_input_length.expr(),
             keccak_output.expr(),
         );
+        */
 
         Self {
             opcode,
@@ -400,10 +396,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             .collect();
         let mut code_hash = keccak256(&values);
         code_hash.reverse();
-        let code_hash_rlc =
-            RandomLinearCombination::random_linear_combine(code_hash, block.randomness);
+        let code_has_rlc = region.word_rlc(U256::from_little_endian(&code_hash));
         self.code_hash
-            .assign(region, offset, Value::known(code_hash_rlc))?;
+            .assign(region, offset, code_has_rlc)?;
 
         for (word, assignment) in [(&self.value, value), (&self.salt, salt)] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;
@@ -413,7 +408,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             offset,
             initialization_code_start,
             initialization_code_length,
-            block.randomness,
         )?;
 
         self.tx_id
@@ -541,10 +535,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let mut keccak_output = keccak256(&keccak_input);
         keccak_output.reverse();
 
+        let keccak_input_rlc = region
+            .challenges()
+            .keccak_input()
+            .map(|randomness| rlc::value(keccak_input.iter().rev(), randomness));
         self.keccak_input.assign(
             region,
             offset,
-            Value::known(rlc::value(keccak_input.iter().rev(), block.randomness)),
+            keccak_input_rlc,
         )?;
         self.keccak_input_length.assign(
             region,
@@ -568,7 +566,7 @@ struct RlpU64Gadget<F> {
 
 impl<F: Field> RlpU64Gadget<F> {
     fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let bytes = cb.query_rlc();
+        let bytes = cb.query_word_rlc();
         let is_most_significant_byte = [(); N_BYTES_U64].map(|()| cb.query_bool());
         let most_significant_byte = sum::expr(
             bytes
@@ -671,7 +669,7 @@ impl<F: Field> RlpU64Gadget<F> {
     fn rlp_length(&self) -> Expression<F> {
         1.expr() + not::expr(self.is_less_than_128.expr()) * self.n_bytes_nonce()
     }
-
+    /*
     fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
         select::expr(
             and::expr(&[
@@ -707,6 +705,7 @@ impl<F: Field> RlpU64Gadget<F> {
             ),
         )
     }
+    */
 }
 
 #[cfg(test)]
