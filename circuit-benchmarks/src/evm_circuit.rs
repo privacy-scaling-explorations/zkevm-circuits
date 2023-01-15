@@ -21,7 +21,7 @@ mod evm_circ_benches {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
 
-    use zkevm_circuits::evm_circuit::{test::EvmCircuit, witness::block_convert};
+    use zkevm_circuits::evm_circuit::{witness::block_convert, EvmCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
