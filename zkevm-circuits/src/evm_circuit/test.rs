@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 use crate::evm_circuit::step::ExecutionState;
 pub use crate::evm_circuit::*;
-use crate::exp_circuit::OFFSET_INCREMENT;
+use crate::exp_circuit::param::OFFSET_INCREMENT;
 use crate::witness::block_convert;
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::{bytecode, geth_types::GethData, Field, Word};
