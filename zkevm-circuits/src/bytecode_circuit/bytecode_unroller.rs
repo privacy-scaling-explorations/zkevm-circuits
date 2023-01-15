@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::util::{
-        and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select,
-        RandomLinearCombination,
+        and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
     },
     table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
@@ -19,7 +18,6 @@ use halo2_proofs::{
 };
 use keccak256::{plain::Keccak, EMPTY_HASH_LE};
 use log::trace;
-use rand::seq::index;
 use std::vec;
 
 use super::param::PUSH_TABLE_WIDTH;
