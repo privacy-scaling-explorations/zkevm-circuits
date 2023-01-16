@@ -67,7 +67,7 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
         let mut eth_trie: EthTrie<F> = Default::default();
         eth_trie.add_ops(traces.iter().map(|tr| AccountOp::try_from(tr).unwrap()));
         let (circuit, _) =
-            eth_trie.to_circuits((block.circuits_params.max_rws, None), tips.as_slice());
+            eth_trie.to_circuits((block.circuits_params.max_rws / 3, None), tips.as_slice());
         MptCircuit(circuit)
     }
 

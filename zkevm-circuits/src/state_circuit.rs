@@ -364,7 +364,9 @@ impl<F: Field> StateCircuitConfig<F> {
                 if let Some(update) = updates.get(row) {
                     state_root = randomness.zip(state_root).map(|(randomness, state_root)| {
                         let (new_root, old_root) = update.root_assignments(randomness);
-                        assert_eq!(state_root, old_root);
+                        if !state_root.is_zero_vartime() {
+                            assert_eq!(state_root, old_root);
+                        }
                         new_root
                     });
                 }
@@ -427,7 +429,22 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(block.rws.clone(), block.circuits_params.max_rws)
+        let rows = block.rws.table_assignments();
+        let updates = match &block.mpt_state {
+            None => MptUpdates::mock_from(&rows),
+            Some(mpt_state) => {
+                let (updates, _, _) = MptUpdates::construct(rows.as_slice(), mpt_state);
+                updates
+            }
+        };
+        Self {
+            rows,
+            updates,
+            n_rows: block.circuits_params.max_rws,
+            #[cfg(test)]
+            overrides: HashMap::new(),
+            _marker: PhantomData::default(),
+        }
     }
 
     /// Return the minimum number of rows required to prove the block

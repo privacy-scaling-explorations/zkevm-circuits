@@ -88,7 +88,6 @@ use halo2_proofs::{
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use crate::rlp_circuit::{RlpCircuit, RlpCircuitConfig};
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
-use std::array;
 
 /// Mock randomness used for `SuperCircuit`.
 pub const MOCK_RANDOMNESS: u64 = 0x10000;
@@ -239,14 +238,10 @@ impl<
         let keccak_table = KeccakTable::construct(meta);
         log_circuit_info(meta, "keccak");
 
-        let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
-            Expression::Constant(F::from(MOCK_RANDOMNESS).pow(&[1 + i as u64, 0, 0, 0]))
-        });
-
         let challenges = Challenges::mock(
-            power_of_randomness[0].clone(),
-            power_of_randomness[0].clone(),
-            power_of_randomness[0].clone(),
+            Expression::Constant(F::from(MOCK_RANDOMNESS)),
+            Expression::Constant(F::from(MOCK_RANDOMNESS) * F::from(0x10)),
+            Expression::Constant(F::from(MOCK_RANDOMNESS) * F::from(0x100)),
         );
 
         let keccak_circuit = KeccakCircuitConfig::new(
