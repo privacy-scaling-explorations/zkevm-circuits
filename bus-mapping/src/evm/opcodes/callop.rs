@@ -119,7 +119,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
 
         let caller_balance = sender_account.balance;
-        let insufficient_balance = call.value > caller_balance;
+        let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
+        let insufficient_balance = call.value > caller_balance && is_call_or_callcode;
+
+        log::info!(
+            "insufficient_balance: {}, call type: {:?}, sender_account: {:?} ",
+            insufficient_balance,
+            call.kind,
+            call.caller_address
+        );
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -127,7 +135,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // tranfer gadget implicitly.
         state.account_read(
             &mut exec_step,
-            call.address,
+            call.caller_address,
             AccountField::Balance,
             caller_balance,
             caller_balance,
