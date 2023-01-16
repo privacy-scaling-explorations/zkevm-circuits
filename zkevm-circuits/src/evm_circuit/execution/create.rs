@@ -397,8 +397,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let mut code_hash = keccak256(&values);
         code_hash.reverse();
         let code_has_rlc = region.word_rlc(U256::from_little_endian(&code_hash));
-        self.code_hash
-            .assign(region, offset, code_has_rlc)?;
+        self.code_hash.assign(region, offset, code_has_rlc)?;
 
         for (word, assignment) in [(&self.value, value), (&self.salt, salt)] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;
@@ -539,11 +538,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             .challenges()
             .keccak_input()
             .map(|randomness| rlc::value(keccak_input.iter().rev(), randomness));
-        self.keccak_input.assign(
-            region,
-            offset,
-            keccak_input_rlc,
-        )?;
+        self.keccak_input.assign(region, offset, keccak_input_rlc)?;
         self.keccak_input_length.assign(
             region,
             offset,

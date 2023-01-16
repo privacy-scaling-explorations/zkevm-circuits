@@ -19,8 +19,8 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
-        Selector, ThirdPhase, VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, Selector,
+        VirtualCells,
     },
     poly::Rotation,
 };
@@ -28,6 +28,15 @@ use std::{
     collections::{BTreeSet, HashMap},
     iter,
 };
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as ThirdPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::ThirdPhase;
 
 use strum::{EnumCount, IntoEnumIterator};
 

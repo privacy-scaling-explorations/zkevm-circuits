@@ -46,4 +46,5 @@ mock = { path = "../mock" }
 rand = "0.8"
 
 [features]
+default = ["test"]
 test = ["mock", "rand"]

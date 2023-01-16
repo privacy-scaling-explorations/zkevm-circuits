@@ -341,8 +341,8 @@ impl<
         let block = self.evm_circuit.block.as_ref().unwrap();
         let challenges = Challenges::mock(
             Value::known(block.randomness),
-            Value::known(block.randomness),
-            Value::known(block.randomness),
+            Value::known(block.randomness * F::from(0x10)),
+            Value::known(block.randomness * F::from(0x100)),
         );
         let rws = &self.state_circuit.rows;
 

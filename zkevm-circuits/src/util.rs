@@ -2,10 +2,13 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
-    plonk::{
-        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
-    },
+    plonk::{Challenge, ConstraintSystem, Error, Expression, FirstPhase, VirtualCells},
 };
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 
 use crate::table::TxLogFieldTag;
 use crate::witness;
@@ -48,10 +51,10 @@ pub struct Challenges<T = Challenge> {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        #[cfg(test)]
+        #[cfg(all(not(feature = "onephase"), test))]
         let _dummy_cols = [
             meta.advice_column(),
-            meta.advice_column_in(SecondPhase),
+            meta.advice_column_in(halo2_proofs::plonk::SecondPhase),
             meta.advice_column_in(halo2_proofs::plonk::ThirdPhase),
         ];
 
@@ -198,5 +201,5 @@ pub fn log2_ceil(n: usize) -> u32 {
     u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
 }
 
-/// the magic number is `echo 'zkevm-circuits' | hexdump`
-pub const DEFAULT_RAND: u128 = 0x10000; //0x6b7a76652d6d6963637269757374u128;
+/// Using values like this will make it easier to debug...
+pub const DEFAULT_RAND: u128 = 0x10000;
