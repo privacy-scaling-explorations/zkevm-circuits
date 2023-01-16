@@ -41,7 +41,7 @@ macro_rules! declare_tests {
 
 macro_rules! unroll_tests {
     ($($arg:tt),*) => {
-        mod circuits_actual {
+        mod real_prover {
             use paste::paste;
             use integration_tests::integration_test_circuits::{
                 test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
@@ -53,7 +53,7 @@ macro_rules! unroll_tests {
             )*
         }
 
-        mod circuits_mock {
+        mod mock_prover {
             use paste::paste;
             use integration_tests::integration_test_circuits::{
                 test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
