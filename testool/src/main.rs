@@ -73,16 +73,12 @@ const RESULT_CACHE: &str = "result.cache";
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
     println!("{}", &test);
-    dbg!();
     let trace = geth_trace(test.clone())?;
-    dbg!();
     crate::utils::print_trace(trace)?;
-    dbg!();
     println!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );
-    dbg!();
     Ok(())
 }
 
