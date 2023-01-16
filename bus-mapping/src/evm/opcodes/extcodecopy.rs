@@ -243,7 +243,11 @@ mod extcodecopy_tests {
         });
 
         let bytecode_ext = Bytecode::from(code_ext.to_vec());
-        let code_hash = keccak256(code_ext.clone());
+        let code_hash = if code_ext.is_empty() {
+            Default::default()
+        } else {
+            keccak256(code_ext.clone())
+        };
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
