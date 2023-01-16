@@ -1,13 +1,5 @@
-#![cfg(feature = "circuits_actual")]
-use integration_tests::integration_test_circuits::{
-    test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
-    test_state_circuit_block, test_tx_circuit_block, GEN_DATA,
-};
-use integration_tests::log_init;
-use paste::paste;
-
 macro_rules! declare_tests {
-    ($name:ident, $block_tag:expr, $mock:expr) => {
+    (($name:ident, $block_tag:expr),$mock:expr) => {
         paste! {
             #[tokio::test]
             async fn [<serial_test_evm_ $name>]() {
@@ -47,51 +39,47 @@ macro_rules! declare_tests {
     };
 }
 
-// Mock tests
-declare_tests!(circuit_block_transfer_0_mock, "Transfer 0", true);
-/*
-declare_tests!(
-    circuit_deploy_greeter,
-    "Deploy Greeter",
-    true
-);
-*/
-declare_tests!(
-    circuit_multiple_transfers_0_mock,
-    "Multiple transfers 0",
-    true
-);
-declare_tests!(
-    circuit_erc20_openzeppelin_transfer_fail_mock,
-    "ERC20 OpenZeppelin transfer failed",
-    true
-);
-declare_tests!(
-    circuit_erc20_openzeppelin_transfer_succeed_mock,
-    "ERC20 OpenZeppelin transfer successful",
-    true
-);
-declare_tests!(
-    circuit_multiple_erc20_openzeppelin_transfers_mock,
-    "Multiple ERC20 OpenZeppelin transfers",
-    true
-);
+macro_rules! unroll_tests {
+    ($($arg:tt),*) => {
+        mod circuits_actual {
+            use paste::paste;
+            use integration_tests::integration_test_circuits::{
+                test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
+                test_state_circuit_block, test_tx_circuit_block, GEN_DATA,
+            };
+            use integration_tests::log_init;
+            $(
+                declare_tests! ($arg, false) ;
+            )*
+        }
 
-// Actual tests
-declare_tests!(circuit_block_transfer_0, "Transfer 0", false);
-declare_tests!(circuit_multiple_transfers_0, "Multiple transfers 0", false);
-declare_tests!(
-    circuit_erc20_openzeppelin_transfer_fail,
-    "ERC20 OpenZeppelin transfer failed",
-    false
-);
-declare_tests!(
-    circuit_erc20_openzeppelin_transfer_succeed,
-    "ERC20 OpenZeppelin transfer successful",
-    false
-);
-declare_tests!(
-    circuit_multiple_erc20_openzeppelin_transfers,
-    "Multiple ERC20 OpenZeppelin transfers",
-    false
+        mod circuits_mock {
+            use paste::paste;
+            use integration_tests::integration_test_circuits::{
+                test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
+                test_state_circuit_block, test_tx_circuit_block, GEN_DATA,
+            };
+            use integration_tests::log_init;
+            $(
+                declare_tests! ($arg, true) ;
+            )*
+        }
+    }
+}
+
+unroll_tests!(
+    (circuit_block_transfer_0, "Transfer 0"),
+    (circuit_multiple_transfers_0, "Multiple transfers 0"),
+    (
+        circuit_erc20_openzeppelin_transfer_fail,
+        "ERC20 OpenZeppelin transfer failed"
+    ),
+    (
+        circuit_erc20_openzeppelin_transfer_succeed,
+        "ERC20 OpenZeppelin transfer successful"
+    ),
+    (
+        circuit_multiple_erc20_openzeppelin_transfers,
+        "Multiple ERC20 OpenZeppelin transfers"
+    )
 );
