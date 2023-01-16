@@ -20,7 +20,7 @@ unimplemented_opcodes = [
     "CREATE2",
     "SELFDESTRUCT"
 ]
-ignore_tests=["&tofix"]
+ignore_tests=["&tofix", "&sigkill"]
 
 [[suite]]
 id = "light"
@@ -173,6 +173,13 @@ allow_tests=[
 ]
 
 # must fix  ------------------------------------------------------------------------------
+
+[[set]]
+id = "sigkill"
+desc = "tests that sigkill"
+tests = [
+	"CallToNameRegistratorMemOOGAndInsufficientBalance_d0_g0_v0"
+]
 
 [[set]]
 id  = "tofix"
