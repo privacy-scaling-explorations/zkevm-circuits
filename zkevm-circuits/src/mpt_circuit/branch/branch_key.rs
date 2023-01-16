@@ -164,7 +164,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1);
 
             ifx! {f!(position_cols.q_not_first_ext_c), a!(ctx.branch.is_extension_node_c) => {
-                let selectors = [branch.is_c16(), branch.is_c1()];
+                let selectors = [branch.is_key_odd(), branch.is_key_even()];
                 // Selectors need to be boolean.
                 for selector in selectors.iter() {
                     require!(selector => bool);
@@ -259,7 +259,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
                 // Now update the key RLC and multiplier for the branch nibble.
                 let mult = key_mult_prev.expr() * mult_diff.expr();
-                let (rlc_mult, mult_mult) = ifx!{branch.is_c16() => {
+                let (rlc_mult, mult_mult) = ifx!{branch.is_key_odd() => {
                     // The least significant nibble still needs to be added using the same multiplier
                     (16.expr(), 1.expr())
                 } elsex {
@@ -275,20 +275,20 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                         // We need to take account the nibbles of the extension node.
                         // `is_c16` alternates when there's an even number of nibbles, remains the same otherwise
                         ifx!{branch.is_even() => {
-                            require!(branch.is_c16() => not!(branch_prev.is_c16()));
+                            require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
                         } elsex {
-                            require!(branch.is_c16() => branch_prev.is_c16());
+                            require!(branch.is_key_odd() => branch_prev.is_key_odd());
                         }}
                     } elsex {
                         // `is_c16` simply alernates for regular branches.
-                        require!(branch.is_c16() => not!(branch_prev.is_c16()));
+                        require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
                     }}
                 } elsex {
                     // In the first level we just have to ensure the initial values are set
                     ifx!{branch.is_extension() => {
-                        require!(branch.is_c16() => branch.is_even());
+                        require!(branch.is_key_odd() => branch.is_even());
                     } elsex {
-                        require!(branch.is_c16() => true);
+                        require!(branch.is_key_odd() => true);
                     }}
                 }}
 

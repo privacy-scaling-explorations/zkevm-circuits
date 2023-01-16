@@ -9,14 +9,14 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
+    circuit_tools::{DataTransition, LRCable},
     evm_circuit::util::rlc,
     mpt_circuit::{
         helpers::{accumulate_rand, BranchNodeInfo, MPTConstraintBuilder},
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-            C_START, HASH_WIDTH, IS_CODEHASH_MOD_POS, S_START,
+            C_START, HASH_WIDTH, IS_CODEHASH_MOD_POS, RLP_SHORT, S_START,
         },
         MPTContext,
     },
@@ -127,33 +127,27 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
                 // TODO(Brecht): Can we remove this if by just making this pass in this special case?
                 ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(is_wrong_leaf)])) => {
-                    // Storage root and codehash are always 32byte hashes, so rlp2 is `160 = 128 + 32`.
-                    require!(a!(s_main.rlp2) => 160);
-                    require!(a!(c_main.rlp2) => 160);
+                    // Storage root and codehash are always 32byte hashes.
+                    require!(a!(s_main.rlp2) => RLP_SHORT + 32);
+                    require!(a!(c_main.rlp2) => RLP_SHORT + 32);
                 }}
 
                 // RLC calculation
+                // - Storage root
                 let storage_root = DataTransition::new(meta, accs.s_mod_node_rlc);
+                require!(storage_root => s_main.bytes(meta, 0).rlc(&r));
+                // - Codehash
                 let codehash = DataTransition::new(meta, accs.c_mod_node_rlc);
-                let storage_root_rlc = rlc::expr(
-                    &s_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
-                require!(storage_root_rlc => storage_root);
-                let codehash_rlc = rlc::expr(
-                    &c_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
-                require!(codehash_rlc => codehash);
+                require!(codehash => c_main.bytes(meta, 0).rlc(&r));
                 // Calculate the full account leaf RLC using the intermediate data in nonce/balance and adding the final data here.
                 let acc_prev = a!(accs.acc_s.rlc, rot_nonce_balance);
                 let acc_mult_prev = a!(accs.acc_s.mult, rot_nonce_balance);
                 let rlc = acc_prev.expr() + rlc::expr(
                     &[
                         a!(s_main.rlp2),
-                        storage_root_rlc.expr(),
+                        storage_root.expr(),
                         a!(c_main.rlp2),
-                        codehash_rlc.expr(),
+                        codehash.expr(),
                     ].map(|v| v * acc_mult_prev.expr()),
                     &accumulate_rand(&[r[0].expr(), r[31].expr(), r[0].expr()]),
                 );

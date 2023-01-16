@@ -8,8 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
-    evm_circuit::util::rlc,
+    circuit_tools::{DataTransition, LRCable},
     mpt_circuit::FixedTableTag,
     mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
 };
@@ -104,14 +103,10 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             let branch_mult = DataTransition::new(meta, branch_acc.mult);
             let branch_rlc = DataTransition::new(meta, branch_acc.rlc);
             ifx! {a!(is_not_hashed) => {
-                // TODO(Brecht): strangely inconsistent RLC calculation, hashed RLC starts at 1 instead of 2.
                 // When a branch child is not empty and is not hashed, a list is stored in the branch and
                 // we have `bytes[0] - 192` bytes in a row. We need to add these bytes to the RLC.
                 // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
-                let rlc = branch_rlc.prev() + rlc::expr(
-                    &main.rlp_bytes()[2..34].iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
+                let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..34].to_vec().rlc_chain(&r, branch_mult.prev());
                 require!(branch_rlc => rlc);
 
                 let num_bytes = 1.expr() + (a!(main.bytes[0]) - 192.expr());
@@ -133,10 +128,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     require!(a!(main.bytes[0]) => 128);
 
                     // There's only have one byte (128 at `bytes[0]`) that needs to be added to the RLC.
-                    let rlc = branch_rlc.prev() + rlc::expr(
-                        &main.rlp_bytes()[2..3].iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
-                        &r,
-                    );
+                    let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..3].to_vec().rlc_chain(&r, branch_mult.prev());
 
                     // No further constraints needed for non-empty nodes besides `rlp2 = 160`
                     // and values to be bytes.
@@ -151,10 +143,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     (rlc, r[0].expr())
                 } elsex {
                     // When a branch child is non-empty and hashed, we have 33 bytes in a row.
-                    let rlc = branch_rlc.prev() + rlc::expr(
-                        &main.rlp_bytes()[1..34].iter().map(|&byte| branch_mult.prev() * a!(byte)).collect::<Vec<_>>(),
-                        &r,
-                    );
+                    let rlc = branch_rlc.prev() + main.expr(meta, 0)[1..34].to_vec().rlc_chain(&r, branch_mult.prev());
                     (rlc, r[32].expr())
                 }};
                 require!(branch_rlc => rlc);

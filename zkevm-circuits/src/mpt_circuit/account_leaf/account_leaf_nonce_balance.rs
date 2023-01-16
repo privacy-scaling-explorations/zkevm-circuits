@@ -9,18 +9,18 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
+    circuit_tools::{DataTransition, LRCable},
     evm_circuit::util::rlc,
     mpt_circuit::param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
         ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH, S_START,
     },
     mpt_circuit::FixedTableTag,
-    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::MPTConstraintBuilder,
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
+    mpt_circuit::{param::RLP_SHORT, MPTContext},
     mpt_circuit::{
         param::{IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS},
         MPTConfig, ProofValues,
@@ -162,14 +162,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!(is_long => bool);
                 // Calculate the RLC
                 let (len, rlc) = ifx! {is_long => {
-                    let num_bytes = 1.expr() + (a!(ctx.main(is_s).bytes[0]) - 128.expr());
-                    let rlc = rlc::expr(
-                        &ctx.main(is_s).bytes[1..]
-                            .iter()
-                            .map(|&byte| a!(byte))
-                            .collect::<Vec<_>>(),
-                        &r,
-                    );
+                    let num_bytes = 1.expr() + (a!(ctx.main(is_s).bytes[0]) - RLP_SHORT.expr());
+                    let rlc = ctx.main(is_s).bytes(meta, 0)[1..].to_vec().rlc(&r);
                     (num_bytes, rlc)
                 } elsex {
                     (1.expr(), a!(ctx.main(is_s).bytes[0]))

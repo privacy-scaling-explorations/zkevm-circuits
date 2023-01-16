@@ -1,6 +1,9 @@
 //! Circuit utilities
 
-use crate::util::Expr;
+use crate::{
+    evm_circuit::util::{rlc, scalar_mult},
+    util::Expr,
+};
 use gadgets::util::{and, select, sum};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -305,6 +308,14 @@ impl<F: FieldExt, E: Expressable<F>> Expressable<F> for [E] {
     }
 }
 
+impl<F: FieldExt, E: Expressable<F>> Expressable<F> for &[E] {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        self.iter()
+            .map(|e| e.to_expr_vec()[0].expr())
+            .collect::<Vec<_>>()
+    }
+}
+
 impl<F: FieldExt, E: Expressable<F>> Expressable<F> for (E, E) {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
         let mut res = self.0.to_expr_vec();
@@ -490,6 +501,24 @@ impl<F: FieldExt, E: Selectable<F>> Conditionable<F, E> for Vec<(Expression<F>, 
 
     fn sum_conditions(&self) -> Expression<F> {
         sum::expr(&self.get_conditions())
+    }
+}
+
+/// Trait around LRC
+pub trait LRCable<F> {
+    /// Returns the LRC of itself
+    fn rlc(&self, r: &[Expression<F>]) -> Expression<F>;
+    /// Returns the LRC of itself with a starting multiplier
+    fn rlc_chain(&self, r: &[Expression<F>], mult: Expression<F>) -> Expression<F>;
+}
+
+impl<F: FieldExt, E: Expressable<F>> LRCable<F> for Vec<E> {
+    fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
+        rlc::expr(&self.to_expr_vec(), r)
+    }
+
+    fn rlc_chain(&self, r: &[Expression<F>], mult: Expression<F>) -> Expression<F> {
+        rlc::expr(&scalar_mult::expr(&self.to_expr_vec(), mult.expr()), &r)
     }
 }
 
@@ -687,6 +716,7 @@ macro_rules! circuit {
             }};
         }
 
+        #[allow(unused_macros)]
         macro_rules! require {
             ($lhs:expr => bool) => {{
                 $cb.require_boolean(

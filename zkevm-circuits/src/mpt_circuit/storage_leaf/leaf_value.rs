@@ -9,21 +9,20 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
-    evm_circuit::util::rlc,
+    circuit_tools::{DataTransition, LRCable},
     mpt_circuit::{
-        helpers::BranchNodeInfo,
-        param::{EXTENSION_ROWS_NUM, STORAGE_LEAF_ROWS},
-        witness_row::{MptWitnessRow, MptWitnessRowType},
-    },
-    mpt_circuit::{
-        helpers::{get_leaf_len, MPTConstraintBuilder},
+        helpers::MPTConstraintBuilder,
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_STORAGE_MOD_POS,
             LEAF_VALUE_C_IND, LEAF_VALUE_S_IND,
         },
         MPTContext,
+    },
+    mpt_circuit::{
+        helpers::{BranchNodeInfo, StorageLeafInfo},
+        param::{EXTENSION_ROWS_NUM, RLP_SHORT, STORAGE_LEAF_ROWS},
+        witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -138,7 +137,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let value_prev = ctx.value_prev;
         let value = ctx.value;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         let leaf_value_pos = if is_s {
             LEAF_VALUE_S_IND
@@ -173,21 +172,15 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let mod_node_hash_rlc_cur = a!(accs.mod_node_rlc(is_s), rot_branch);
 
             let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
+            let leaf = StorageLeafInfo::new(meta, ctx.clone(), rot_key);
 
             let is_long = a!(accs.s_mod_node_rlc);
             let is_short = a!(accs.c_mod_node_rlc);
 
-            let flag1 = a!(accs.s_mod_node_rlc, -1);
-            let flag2 = a!(accs.c_mod_node_rlc, -1);
-            let has_no_nibble = flag1.expr() * flag2.expr();
-            let has_one_nibble = not::expr(flag1.expr()) * not::expr(flag2.expr());
-            let is_leaf_long = flag1.expr() * not::expr(flag2.expr());
-            let is_leaf_short = not::expr(flag1.expr()) * flag2.expr();
-
-            // We need to ensure `is_long` and `is_short` are booleans and that `is_long +
-            // is_short = 1`.
+            // We need to ensure `is_long` and `is_short` are boolean.
             require!(is_short => bool);
             require!(is_long => bool);
+            // `is_short` or `is_long` needs to be true.
             require!(sum::expr([is_short.expr(), is_long.expr()]) => 1);
 
             // We need to ensure that the stored leaf RLC and value RLC is the same as the
@@ -198,14 +191,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let (new_value_rlc, new_leaf_rlc) = ifx! {is_short => {
                 (a!(s_main.rlp1), a!(s_main.rlp1) * mult_prev.expr())
             } elsex {
-                let value_rlc = rlc::expr(
-                    &s_main.bytes.iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
-                let leaf_rlc = rlc::expr(
-                    &[a!(s_main.rlp1), a!(s_main.rlp2), value_rlc.expr()].into_iter().map(|part| part * mult_prev.expr()).collect::<Vec<_>>(),
-                    &r,
-                );
+                let value_rlc = s_main.bytes(meta, 0).rlc(&r);
+                let leaf_rlc = [a!(s_main.rlp1), a!(s_main.rlp2), value_rlc.expr()].to_vec().rlc_chain(&r, mult_prev.expr());
                 (value_rlc, leaf_rlc)
             }};
             require!(value_rlc => new_value_rlc);
@@ -223,80 +210,20 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 require!(a!(value) => value_rlc);
             }
 
+            // Get the number of bytes used by the value
+            let value_num_bytes = matchx! {
+                is_short => 1.expr(),
+                is_long => 2.expr() + (a!(s_main.rlp2) - RLP_SHORT.expr()),
+            };
+
             // Make sure the RLP encoding is correct
+            let len = leaf.len(meta, &mut cb.base, ctx.clone());
             ifx! {not!(is_leaf_placeholder) => {
-                let short_remainder = a!(s_main.rlp1, -1) - 192.expr() - a!(s_main.rlp2, -1) + 128.expr() - 1.expr();
-                let long_remainder = a!(s_main.rlp2, -1) - a!(s_main.bytes[0], -1) + 128.expr() - 1.expr();
-                ifx!{is_short => {
-                    matchx! {
-                        is_leaf_short => {
-                            // When the leaf is short (first key byte in `s_main.bytes[0]` in the leaf key row) and the value
-                            // is short (first value byte in `s_main.rlp1` in the leaf value row), we need to check that:
-                            // `s_rlp1_prev - 192 - s_rlp2_prev + 128 - 1 - 1 = 0`.
-                            // The first `-1` presents the byte occupied by `s_rlp2_prev`.
-                            // The second `-1` presents the length of the value which is 1 because the value is short in this case.
-                            // Example:
-                            // `[226 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2]`
-                            // In the example: `34 = 226 - 192` gives the length of the RLP stream. `32 = 160 - 128` gives the length
-                            // of the key. That means there are 34 bytes after the first byte, 32 of these are occupied by the key,
-                            // 1 is occupied by `s_rlp2_prev`, and 1 is occupied by the value.
-                            require!(short_remainder => 1);
-                        },
-                        has_no_nibble.expr() + has_one_nibble.expr() => {
-                            // Note: long short is not possible because the key has at most 32 bytes and
-                            // short value means only 1 byte which (together with RLP meta
-                            // bytes) cannot go over 55 bytes.
-                            // When the leaf is in the last level of the trie and the value is short,
-                            // we need to ensure that `s_main.rlp2 = 32`.
-                            // Note that in this case we do not have the length of the key stored in `s_main.rlp2` or `s_main.bytes[0]`.
-                            // Example: `[194,32,1]`
-                            require!(a!(s_main.rlp1, -1) => 194);
-                        },
-                    }
-                } elsex {
-                    // When the leaf is long (first key byte in `s_main.bytes[1]` in the leaf key row) and the value
-                    // is long (first value byte in `s_main.bytes[0]` in the leaf value row), we need to check that:
-                    // `s_rlp2_prev - s_bytes0_prev + 128 - 1 - (s_rlp2_cur - 128 + 1 + 1) = 0`.
-                    // The expression `s_rlp2_prev - s_bytes0_prev + 128 - 1` gives us the number of bytes that are to be left
-                    // in the value. The expression `s_rlp2_cur - 128 + 1 + 1` gives us the number of bytes in the leaf.
-                    // Note that there is an additional constraint to ensure `s_main.rlp1 = s_main.rlp2 + 1`.
-                    // Example:
-                    // `[248 67 160 59 138 106 70 105 186 37 13 38 205 122 69 158 202 157 33 95 131 7 227 58 235 229 3 121 188 90 54 23 236 52 68 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 3]`
-                    // `[161 160 187 239 170 18 88 1 56 188 38 60 149 117 120 38 223 78 36 235 129 201 170 170 170 170 170 170 170 170 170 170 170 170 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 14]`
-                    let long_value_len = a!(s_main.rlp2) - 128.expr() + 1.expr() + 1.expr();
-                    matchx! {
-                        is_leaf_short => {
-                            // When the leaf is short (first key byte in `s_main.bytes[0]` in the leaf key row) and the value
-                            // is long (first value byte in `s_main.bytes[0]` in the leaf value row), we need to check that:
-                            // `s_rlp1_prev - 192 - s_rlp2_prev + 128 - 1 - (s_rlp2_cur - 128 + 1 + 1) = 0`.
-                            // The expression `s_rlp1_prev - 192 - s_rlp2_prev + 128 - 1` gives us the number of bytes that are to be left
-                            // in the value. The expression `s_rlp2_cur - 128 + 1 + 1` gives us the number of bytes in the leaf.
-                            require!(short_remainder => long_value_len);
-                        },
-                        is_leaf_long => {
-                            // 67 is the number of bytes after `s_main.rlp2`. `160 - 128 + 1` is the number of bytes that are occupied
-                            // by the key and the byte that stores key length.
-                            // In the next row, we have `32 = 160 - 128` bytes after `s_main.rlp2`, but we need to take into
-                            // account also the two bytes `s_main.rlp1` and `s_main.rlp2`.
-                            require!(long_remainder => long_value_len);
-                        },
-                        has_no_nibble.expr() + has_one_nibble.expr() => {
-                            // When the leaf is in the last level of the trie and the value is long or there is one nibble in the key,
-                            // we need to check:
-                            // `s_rlp1_prev - 192 - 1  - (s_rlp2_cur - 128 + 1 + 1) = 0`.
-                            // `s_rlp1_prev - 192 - 1` gives us the number of bytes that are to be in the leaf value row, while
-                            // s_rlp2_cur - 128 + 1 + 1 gives us the number of bytes in the leaf value row.
-                            // Note that in this case we do not have the length of the key stored in `s_main.rlp2` or `s_main.bytes[0]`.
-                            // Example:
-                            // `[227,32,161,160,187,239,170,18,88,1,56,188,38,60,149,117,120,38,223,78,36,235,129,201,170,170,170,170,170,170,170,170,170,170,170,170]`
-                            require!(a!(s_main.rlp1, -1) => 192.expr() + 1.expr() + long_value_len.expr());
-                        },
-                    }
-                }}
-            }}
+                let key_num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                require!(len => key_num_bytes.expr() + value_num_bytes.expr());
+            }};
 
             // Check that the storage leaf is in the branch above.
-            let len = get_leaf_len(meta, s_main.clone(), accs.clone(), -1);
             ifx! {is_account_leaf_above => {
                 /* Hash of the only storage leaf which is placeholder requires empty storage root */
                 // When there is only one leaf in a storage trie and it is a placeholder, the trie needs to
@@ -335,10 +262,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         // When there is a placeholder branch we need to
                         // check the hash to correspond to the modified node of the branch above the placeholder branch.
                         ifx!{not!(is_account_leaf_above_branch) => {
-                            let rlc = a!(accs.acc_s.rlc, -1) + rlc::expr(
-                                &s_main.rlp_bytes().iter().map(|&byte| a!(byte) * mult_prev.expr()).collect::<Vec<_>>(),
-                                &r,
-                            );
+                            let rlc = a!(accs.acc_s.rlc, -1) + s_main.rlc_chain(meta, 0, &r, mult_prev.expr());
                             let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_branch_child_prev);
                             require!((1, rlc, len, mod_node_hash_rlc) => @"keccak");
                         }}
@@ -354,10 +278,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     // Note: if leaf is a placeholder, the root in the account leaf needs to be the empty trie hash.
                     ifx!{not!(is_placeholder_without_branch) => {
                         // Note: storage root is always in `s_main.bytes`.
-                        let hash_rlc = rlc::expr(
-                            &s_main.bytes.iter().map(|&byte| a!(byte, rot_storage_root)).collect::<Vec<_>>(),
-                            &r,
-                        );
+                        let hash_rlc = s_main.bytes(meta, rot_storage_root).rlc(&r);
                         require!((1, a!(accs.acc_s.rlc), len, hash_rlc) => @"keccak");
                     }}
                 } elsex {
@@ -375,28 +296,24 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     // if account is directly above storage leaf, there is no placeholder branch
                     ifx!{is_account_leaf_above_branch, branch.is_placeholder() => {
                         // Note: storage root is always in `s_main.bytes`.
-                        let hash_rlc = rlc::expr(
-                            &s_main.bytes.iter().map(|&byte| a!(byte, rot_storage_root_prev)).collect::<Vec<_>>(),
-                            &r,
-                        );
+                        let hash_rlc = s_main.bytes(meta, rot_storage_root_prev).rlc(&r);
                         require!((1, a!(accs.acc_s.rlc), len, hash_rlc) => @"keccak");
                     }}
                 }}
             }}
 
-            // Get the number of bytes used
+            // Set the number of bytes used
             let num_bytes = ifx! {is_modified_node_empty, not!(is_account_leaf_above) => {
                 // For example when adding a new storage leaf to the trie, we have an empty child in `S` proof
                 // and non-empty in `C` proof.
                 // When there is an empty child, we have a placeholder leaf under the last branch.
                 // If `is_modified_node_empty = 1` which means an empty child, we need to ensure that the value is set to 0
                 // in the placeholder leaf.
-                0.expr()
+                2.expr()
             } elsex {
-                // RLC bytes zero check for s_main.bytes.iter()
-                a!(s_main.rlp2) - 128.expr()
+                value_num_bytes
             }};
-            cb.set_length_s(num_bytes);
+            cb.set_length_s(num_bytes - 2.expr());
         });
 
         LeafValueConfig {

@@ -124,3 +124,19 @@ pub const ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND: i32 = 5;
 pub const ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND: i32 = 6;
 pub const ACCOUNT_DRIFTED_LEAF_IND: i32 = 7;
 pub const ACCOUNT_LEAF_ROWS: i32 = 8;
+
+// Compact encoding key prefixes
+pub const KEY_PREFIX_EVEN: u8 = 0b0000_0000;
+pub const KEY_PREFIX_ODD: u8 = 0b0001_0000;
+pub const KEY_TERMINAL_PREFIX_EVEN: u8 = 0b0010_0000;
+pub const KEY_TERMINAL_PREFIX_ODD: u8 = 0b0011_0000;
+
+// RLP prefixes
+pub const RLP_SHORT: u8 = 128; // 0x80
+pub const RLP_LONG: u8 = 183; //  0xb7
+pub const RLP_LIST_SHORT: u8 = 192; //  0xc0
+pub const RLP_LIST_LONG: u8 = 247; //  0xf7
+
+// Key parameters
+pub const KEY_LEN: usize = 32;
+pub const KEY_LEN_IN_NIBBLES: usize = KEY_LEN * 2;

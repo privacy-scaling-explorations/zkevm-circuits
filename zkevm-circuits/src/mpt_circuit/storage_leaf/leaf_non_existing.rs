@@ -9,10 +9,12 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    evm_circuit::util::rlc,
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
     mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
+    mpt_circuit::{
+        helpers::{BranchNodeInfo, StorageLeafInfo},
+        param::BRANCH_ROWS_NUM,
+    },
     mpt_circuit::{
         param::{IS_NON_EXISTING_STORAGE_POS, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND, S_START},
         MPTConfig, ProofValues,
@@ -93,7 +95,6 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         // storage
         let is_modified_node_empty = ctx.denoter.sel2;
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
-        let r = ctx.r.clone();
 
         let rot_key_c = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
         let rot_first_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
@@ -109,23 +110,14 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     let rot = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
                     let start_idx = if is_short { 2 } else { 3 };
                     let end_idx = start_idx + 33;
-                    let mut calc_rlc = |rot: i32| {
-                        rlc::expr(
-                            &ctx.rlp_bytes()[start_idx..end_idx]
-                                .iter()
-                                .map(|&byte| a!(byte, rot))
-                                .collect::<Vec<_>>(),
-                            &r,
-                        )
-                    };
                     // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
                     // We check whether the computed value is the same as the
                     // one stored in `accs.key.mult` column.
-                    require!(rlc => calc_rlc(0));
+                    require!(rlc => ctx.rlc(meta, start_idx..end_idx, 0));
                     // We compute the RLC of the key bytes in the ACCOUNT/STORAGE_NON_EXISTING row.
                     // We check whether the computed value is the same as the
                     // one stored in `accs.key.rlc` column.
-                    require!(rlc_prev => calc_rlc(rot));
+                    require!(rlc_prev => ctx.rlc(meta, start_idx..end_idx, rot));
                     // The address in the ACCOUNT/STORAGE_NON_EXISTING row and the address in the
                     // ACCOUNT/STORAGE_NON_EXISTING row are different.
                     // If the difference is 0 there is no inverse.
@@ -134,60 +126,50 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             };
 
         circuit!([meta, cb.base], {
-            let flag1 = a!(accs.s_mod_node_rlc, rot_key_c);
-            let flag2 = a!(accs.c_mod_node_rlc, rot_key_c);
-            let is_leaf_long = flag1.expr() * not!(flag2);
-            let is_leaf_short = not!(flag1) * flag2.expr();
+            //let leaf = StorageLeafInfo::new(meta, ctx.clone(), 0);
+            let leaf_prev = StorageLeafInfo::new(meta, ctx.clone(), rot_key_c);
 
             let is_wrong_leaf = a!(s_main.rlp1);
             // Make sure is_wrong_leaf is boolean
             require!(is_wrong_leaf => bool);
+
             ifx! {a!(proof_type.is_non_existing_storage_proof) => {
                 ifx! {is_wrong_leaf => {
+                    // Get the previous RLC data
                     let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_last_account_row);
-                    let (key_rlc_prev, key_mult_prev, is_c16) = ifx!{not!(is_leaf_in_first_storage_level) => {
+                    let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx!{not!(is_leaf_in_first_storage_level) => {
                         let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
-                        (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.is_c16())
+                        (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.is_key_odd())
                     } elsex {
                         (0.expr(), 1.expr(), false.expr())
                     }};
-                    // Set to key_mult_start * r if is_c16, else key_mult_start
-                    let key_mult = key_mult_prev.expr() * ifx!{is_c16 => { r[0].expr() } elsex { 1.expr() }};
-                    let (key_rlc, len_prev, len, first_byte, num_rlp_bytes) = matchx! {
-                        is_leaf_short => {
+                    // Check that the stored RLC is correct
+                    let key_rlc = leaf_prev.key_rlc(meta, &mut cb.base, ctx.clone(), key_mult_prev, is_key_odd.expr(), 1.expr(), false);
+                    require!(a!(accs.key.mult) => key_rlc_prev.expr() + key_rlc);
+
+                    // TODO(Brecht): Somehow we need to use the flags on the key_c row to calculate these and the RLC
+                    // (instead of just using the flags on the current row).
+                    let (len_prev, len) = matchx! {
+                        leaf_prev.is_short() => {
                             // Key RLC needs to be different
                             add_wrong_leaf_constraints(meta, cb, true);
-                            // Calculate the RLC
-                            let rlc = rlc::expr(
-                                &ctx.rlp_bytes()[2..35].iter().enumerate().map(|(idx, &byte)|
-                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                            );
-                            (rlc, a!(s_main.rlp2, rot_key_c), a!(s_main.rlp2), a!(s_main.bytes[0]), 2.expr())
+                            (a!(s_main.rlp2, rot_key_c), a!(s_main.rlp2))
                         },
-                        is_leaf_long => {
+                        leaf_prev.is_long() => {
                             // Key RLC needs to be different
                             add_wrong_leaf_constraints(meta, cb, false);
-                            // Calculate the RLC
-                            let rlc = rlc::expr(
-                                &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
-                                    (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                                &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                            );
-                            (rlc, a!(s_main.bytes[0], rot_key_c), a!(s_main.bytes[0]), a!(s_main.bytes[1]), 3.expr())
+                            (a!(s_main.bytes[0], rot_key_c), a!(s_main.bytes[0]))
                         },
                     };
-                    // Check that the stored RLC is correct
-                    require!(a!(accs.key.mult) => key_rlc_prev.expr() + key_rlc);
-                    // If there is an even number of nibbles stored in a leaf, first_byte needs to be 32.
-                    ifx!{not!(is_c16) => {
-                        require!(first_byte => 32);
-                    }}
+
                     // Key of wrong leaf and the enquired key are of the same length.
                     // This constraint is to prevent the attacker to prove that some key does not exist by setting
                     // some arbitrary number of nibbles in the leaf which would lead to a desired RLC.
+                    //let len = leaf.key_len(meta, &mut cb.base, ctx.clone());
+                    //let len_prev = leaf_prev.key_len(meta, &mut cb.base, ctx.clone());
                     require!(len => len_prev);
                     // RLC bytes zero check (subtract 2 for first two RLP bytes)
+                    let num_rlp_bytes = leaf_prev.num_rlp_bytes(meta, &mut cb.base);
                     cb.set_length(num_rlp_bytes + (len - 128.expr()) - 2.expr());
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.

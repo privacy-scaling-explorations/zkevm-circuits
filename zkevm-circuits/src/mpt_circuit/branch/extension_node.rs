@@ -9,11 +9,13 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
-    evm_circuit::util::rlc,
-    mpt_circuit::param::{
-        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, C_RLP_START, C_START, HASH_WIDTH,
+    circuit_tools::{DataTransition, LRCable},
+    mpt_circuit::{
+        helpers::get_num_nibbles,
+        param::{
+            ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, C_RLP_START, C_START, HASH_WIDTH,
+        },
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
@@ -63,6 +65,13 @@ The constraints in `extension_node.rs` check:
  - that the branch hash is in the extension node (the bytes `[30 252 ... 174]` in extension node rows present the hash
 of the underlying branch)
  - that the hash of the extension is in the parent node.
+
+Note that an attacker can set `is_extension_node = 1`
+for a regular branch (or `is_extension_node = 0` for the extension node),
+the final key RLC check fails because key RLC is computed differently
+for extension nodes and regular branches - a regular branch occupies only one
+key nibble (`modified_node`), while extension node occupies at least one additional
+nibble (the actual extension of the extension node).
 
 Some observations:
 
@@ -243,20 +252,12 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 for selector in type_selectors.iter().chain(misc_selectors.iter()) {
                     require!(selector => bool);
                 }
-
                 // For extension nodes exactly 1 type selector needs to be enabled.
-                // Note that an attacker can set `is_extension_node = 1`
-                // for a regular branch (or `is_extension_node = 0` for the extension node),
-                // the final key RLC check fails because key RLC is computed differently
-                // for extension nodes and regular branches - a regular branch occupies only one
-                // key nibble (`modified_node`), while extension node occupies at least one additional
-                // nibble (the actual extension of the extension node).
                 require!(sum::expr(type_selectors.clone()) => 1);
-
                 // `is_c16` and `is_c1` selectors are set using the extension node type selector data.
                 // (while in case of a regular branch the extension node selectors do not hold this information).
-                require!(ext.is_c1() => sum::expr(type_selectors_c1.clone()));
-                require!(ext.is_c16() => sum::expr(type_selectors_c16.clone()));
+                require!(ext.is_key_even() => sum::expr(type_selectors_c1.clone()));
+                require!(ext.is_key_odd() => sum::expr(type_selectors_c16.clone()));
             }}
 
             // In C we have nibbles, we check below only for S.
@@ -355,14 +356,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
             // However, to make space for nibble witnesses, we put nibbles in
             // extension row C s_bytes. So we use s_bytes from S row.
-            let rlc = rlc::expr(
-                &s_main
-                    .rlp_bytes()
-                    .iter()
-                    .map(|&byte| a!(byte, rot_s))
-                    .collect::<Vec<_>>(),
-                &r,
-            );
+            let rlc = s_main.expr(meta, rot_s).rlc(&r);
             // TODO(Brecht): Do we need to store the RLC here? we can just use `rlc`
             // directly below...
             require!(ext_rlc.prev() => rlc);
@@ -370,18 +364,12 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // The RLC is used to check whether the extension node is a node at the
             // appropriate position in the parent node.
             // Note: acc_mult is checked in `extension_node_key.rs`.
-            let acc_mult_s = a!(accs.acc_s.mult);
+            let mult = a!(accs.acc_s.mult);
             ifx! {is_branch_hashed => {
-                let rlc = ext_rlc.prev() + rlc::expr(
-                    &c_main.rlp_bytes()[1..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
+                let rlc = ext_rlc.prev() + c_main.expr(meta, 0)[1..].to_vec().rlc_chain(&r, mult.expr());
                 require!(ext_rlc => rlc);
             } elsex {
-                let rlc = ext_rlc.prev() + rlc::expr(
-                    &c_main.rlp_bytes()[2..].iter().map(|&byte| acc_mult_s.expr() * a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
+                let rlc = ext_rlc.prev() + c_main.expr(meta, 0)[2..].to_vec().rlc_chain(&r, mult.expr());
                 require!(ext_rlc => rlc);
                 // RLC bytes zero check for c_main.bytes.iter().skip(1)
                 cb.set_length_c(1.expr() + a!(c_main.bytes[0]) - 192.expr());
@@ -391,14 +379,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
             let branch_rlc = a!(accs.acc(is_s).rlc, rot_last_child)
                 + 128.expr() * a!(accs.acc(is_s).mult, rot_last_child);
-            let rlc = rlc::expr(
-                &c_main
-                    .bytes
-                    .iter()
-                    .map(|&byte| a!(byte))
-                    .collect::<Vec<_>>(),
-                &r,
-            );
+            let rlc = c_main.bytes(meta, 0).rlc(&r);
             ifx! {is_branch_hashed => {
                 // Check that `(branch_rlc, extension_node_hash_rlc`) in in the keccak table.
                 require!((1, branch_rlc, ext.len(), rlc) => @"keccak");
@@ -425,10 +406,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                         let storage_offset = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
                         let rot_into_storage_root = rot_branch_init - ACCOUNT_LEAF_ROWS + storage_offset;
                         // Note: storage root is always in s_main.bytes.
-                        let hash_rlc = rlc::expr(
-                            &s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
-                            &r,
-                        );
+                        let hash_rlc = s_main.bytes(meta, rot_into_storage_root).rlc(&r);
                         require!((1, ext_rlc, ext_len, hash_rlc) => @"keccak");
                     } elsex {
                         let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_branch_child_prev);
@@ -478,19 +456,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     }) - 128.expr()
                 }};
                 // Calculate the number of nibbles
-                let num_nibbles = ifx! {ext.is_even() => {
-                    // We need to subtract 1 because `s_main.bytes[1]` does not contain any nibbles
-                    // (it is just 0 when even number of nibbles).
-                    // In the example below it is: `(130 - 128 - 1) * 2`.
-                    // `[228,130,0,149,160,114,253...`
-                    (num_bytes.expr() - 1.expr()) * 2.expr()
-                } elsex {
-                    // We multiply by 2 to get the nibbles, but then subtract 1 because in
-                    // `s_main.bytes[1]` there is only 1 nibble.
-                    // Example:
-                    // `[248,58,159,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,217,128,196,130,32,0,1,128,196,130,32,0,1,128,128,128,128,128,128,128,128,128,128,128,128,128]`
-                    num_bytes.expr() * 2.expr() - 1.expr()
-                }};
+                let num_nibbles =
+                    get_num_nibbles(meta, &mut cb.base, num_bytes.expr(), ext.is_odd());
                 // Make sure the nibble counter is updated correctly
                 // nibbles_count_prev needs to be 0 when in first account level or
                 // in first storage level

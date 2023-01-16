@@ -1,10 +1,11 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Fixed},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    poly::Rotation,
 };
 use std::{convert::TryInto, marker::PhantomData};
 
-use crate::mpt_circuit::param::HASH_WIDTH;
+use crate::{circuit_tools::LRCable, mpt_circuit::param::HASH_WIDTH};
 
 /*
 This file contains columns that are not specific to any of account leaf, storage leaf, branch,
@@ -80,6 +81,39 @@ impl<F: FieldExt> MainCols<F> {
         [[self.rlp1, self.rlp2].to_vec(), self.bytes.to_vec()]
             .concat()
             .to_vec()
+    }
+
+    pub(crate) fn rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rot: i32,
+        r: &Vec<Expression<F>>,
+    ) -> Expression<F> {
+        self.expr(meta, rot).rlc(r)
+    }
+
+    pub(crate) fn rlc_chain(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rot: i32,
+        r: &Vec<Expression<F>>,
+        mult: Expression<F>,
+    ) -> Expression<F> {
+        self.expr(meta, rot).rlc_chain(r, mult)
+    }
+
+    pub(crate) fn bytes(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
+        self.bytes
+            .iter()
+            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn expr(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
+        self.rlp_bytes()
+            .iter()
+            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
+            .collect::<Vec<_>>()
     }
 }
 

@@ -14,8 +14,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
-    evm_circuit::util::rlc,
+    circuit_tools::{DataTransition, LRCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::storage_leaf::StorageLeaf,
@@ -365,18 +364,12 @@ impl<F: FieldExt> BranchConfig<F> {
                                 // When branch is a placeholder, `main.bytes RLC` corresponds to the value
                                 // stored in `accumulators.mod_node_rlc` in `is_at_drifted_pos` row.
                                 ifx!{a!(ctx.branch.is_at_drifted_pos, rot) => {
-                                    let hash_rlc = rlc::expr(
-                                        &ctx.main(!is_s).bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                                        &r,
-                                    );
+                                    let hash_rlc = ctx.main(!is_s).bytes(meta, rot).rlc(&r);
                                     require!(a!(accs.mod_node_rlc(is_s), rot) => hash_rlc);
                                 }}
                             } elsex {
                                 ifx!{a!(ctx.branch.is_modified, rot) => {
-                                    let hash_rlc = rlc::expr(
-                                        &ctx.main(is_s).bytes.iter().map(|&byte| a!(byte, rot)).collect::<Vec<_>>(),
-                                        &r,
-                                    );
+                                    let hash_rlc = ctx.main(is_s).bytes(meta, rot).rlc(&r);
                                     require!(a!(accs.mod_node_rlc(is_s), rot) => hash_rlc);
                                 }}
                             }}

@@ -6,17 +6,17 @@ use crate::{
     circuit,
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::BranchNodeInfo,
+        helpers::{accumulate_rand, MPTConstraintBuilder},
+        FixedTableTag,
+    },
+    mpt_circuit::{
+        helpers::{key_rlc, BranchNodeInfo},
         param::{
             ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
             ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
-            BRANCH_ROWS_NUM,
+            BRANCH_ROWS_NUM, RLP_LIST_LONG, RLP_SHORT,
         },
-    },
-    mpt_circuit::{
-        helpers::{accumulate_rand, MPTConstraintBuilder},
-        FixedTableTag,
     },
     mpt_circuit::{MPTConfig, MPTContext, ProofValues},
 };
@@ -118,25 +118,11 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
             // drifted leaf appears only when there is a placeholder branch
             ifx! {branch.is_s_or_c_placeholder() => {
-                // `s_rlp1` is always 248 because the account leaf is always longer than 55 bytes.
-                require!(a!(s_main.rlp1) => 248);
+                // Calculate and store the leaf data RLC
+                require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
-                // If is_c16 = 0, we have 32 in `s_main.bytes[1]`.
-                ifx!{not!(branch.is_c16()) => {
-                    require!(a!(s_main.bytes[1]) => 32);
-                }}
-
-                // We check that the leaf RLC is properly computed. RLC is then taken and
-                // nonce/balance & storage root / codehash values are added to the RLC (note that nonce/balance
-                // & storage root / codehash are not stored for the drifted leaf because these values stay
-                // the same as in the leaf before drift).
-                // Finally, a lookup is used to check the hash that corresponds to this RLC is
-                // in the parent branch at `drifted_pos` position.
-                let rlc = rlc::expr(
-                    &ctx.rlp_bytes()[0..36].iter().map(|&byte| a!(byte)).collect::<Vec<_>>(),
-                    &r,
-                );
-                require!(a!(accs.acc_s.rlc) => rlc);
+                // `s_rlp1` is always RLP_LIST_LONG + 1 because the account leaf is always > 55 bytes (and < 256)
+                require!(a!(s_main.rlp1) => (RLP_LIST_LONG + 1).expr());
 
                 // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
                 // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
@@ -220,32 +206,27 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 } elsex {
                     a!(accs.key.mult, rot_first_child_prev)
                 }};
-
-                let key_mult_prev = key_mult_prev.expr() *
-                ifx!{branch.is_extension() => {
+                let key_mult_prev = key_mult_prev.expr() * ifx!{branch.is_extension() => {
                     // Get the mult_diff from the extension node.
                     a!(accs.mult_diff, rot_first_child)
                 } elsex {
                     1.expr()
                 }};
 
-                // Check that the RLC matches
-                let acc_key_rlc = ifx!{branch.is_s_placeholder() => {
+                // Check that the RLC is calculated correctly
+                let stored_key_rlc = ifx!{branch.is_s_placeholder() => {
                     a!(accs.key.rlc, rot_key_s)
                 } elsex {
                     a!(accs.key.rlc, rot_key_c)
                 }};
-                // If is_c16 = 1, we have one nibble+48 in `s_main.bytes[1]`.
-                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
-                let key_rlc = key_rlc_prev + a!(drifted_pos, rot_first_child) * drifted_pos_mult + rlc::expr(
-                    &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
-                        key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                    &r,
-                );
-                require!(acc_key_rlc => key_rlc);
+                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
+                let key_rlc = key_rlc_prev +
+                    a!(drifted_pos, rot_first_child) * drifted_pos_mult +
+                    key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr());
+                require!(stored_key_rlc => key_rlc);
 
-                let num_bytes = a!(s_main.bytes[0]) - 128.expr();
                 // RLC bytes zero check
+                let num_bytes = a!(s_main.bytes[0]) - RLP_SHORT.expr();
                 cb.set_length(1.expr() + num_bytes.expr());
                 // Update `mult_diff` for key length + 2 RLP bytes + 1 byte that contains the
                 // key length.

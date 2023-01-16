@@ -4,13 +4,13 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::get_leaf_len,
+        helpers::StorageLeafInfo,
         param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
+        param::{LEAF_VALUE_C_IND, LEAF_VALUE_S_IND},
         witness_row::MptWitnessRow,
         FixedTableTag, MPTContext,
     },
@@ -178,134 +178,79 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         let rot_parent = -LEAF_DRIFTED_IND - 1;
         let rot_branch_child = -BRANCH_ROWS_NUM + 2;
         let rot_key_s = -(LEAF_DRIFTED_IND - LEAF_KEY_S_IND);
+        let rot_value_s = -(LEAF_DRIFTED_IND - LEAF_VALUE_S_IND);
         let rot_key_c = -(LEAF_DRIFTED_IND - LEAF_KEY_C_IND);
+        let rot_value_c = -(LEAF_DRIFTED_IND - LEAF_VALUE_C_IND);
 
         circuit!([meta, cb.base], {
-            let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
-
-            let flag1 = a!(accs.s_mod_node_rlc);
-            let flag2 = a!(accs.c_mod_node_rlc);
-            let has_no_nibble = flag1.expr() * flag2.expr();
-            let has_one_nibble = not!(flag1) * not!(flag2);
-            let is_long = flag1.expr() * not!(flag2);
-            let is_short = not!(flag1) * flag2.expr();
-
-            // The two flag values need to be boolean.
-            require!(flag1 => bool);
-            require!(flag2 => bool);
-
-            // Calculate and store the leaf data RLC
-            let rlc = rlc::expr(
-                &ctx.rlp_bytes()[..36]
-                    .iter()
-                    .map(|&byte| a!(byte))
-                    .collect::<Vec<_>>(),
-                &r,
-            );
-            require!(a!(accs.acc_s.rlc) => rlc);
-
             let is_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_parent);
             ifx! {not!(is_in_first_storage_level) => {
+                let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
+                let leaf = StorageLeafInfo::new(meta, ctx.clone(), 0);
+
+                // The two flag values need to be boolean.
+                require!(leaf.flag1 => bool);
+                require!(leaf.flag2 => bool);
+
+                // Calculate and store the leaf data RLC
+                require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
+
                 // We need the intermediate key RLC right before `drifted_pos` is added to it.
                 // If the branch parallel to the placeholder branch is an extension node,
                 // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
-                // If it is a regular branch, we need to go one branch above to retrieve the RLC (if there is no level above,
-                // we take 0).
-                let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_parent);
-                let (key_rlc_prev, key_mult_prev) = ifx!{branch.is_extension() => {
-                    let key_mult_prev = ifx!{is_branch_placeholder_in_first_level => {
-                        1.expr()
+                let (key_rlc_prev, key_mult_prev) = ifx! {not!(is_in_first_storage_level) => {
+                    let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_parent);
+                    ifx!{branch.is_extension() => {
+                        let key_mult_prev = ifx!{is_branch_placeholder_in_first_level => {
+                            1.expr()
+                        } elsex {
+                            a!(accs.key.mult, rot_first_child_prev)
+                        }};
+                        (a!(accs.key.rlc, rot_parent), key_mult_prev * a!(accs.mult_diff, rot_first_child))
                     } elsex {
-                        a!(accs.key.mult, rot_first_child_prev)
-                    }};
-                    (a!(accs.key.rlc, rot_parent), key_mult_prev * a!(accs.mult_diff, rot_first_child))
-                } elsex {
-                    ifx!{is_branch_placeholder_in_first_level => {
-                        (0.expr(), 1.expr())
-                    } elsex {
-                        (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
+                        ifx!{is_branch_placeholder_in_first_level => {
+                            (0.expr(), 1.expr())
+                        } elsex {
+                            (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
+                        }}
                     }}
+                } elsex {
+                    (0.expr(), 1.expr())
                 }};
-                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_c16() => { 16.expr() } elsex { 1.expr() }};
+                // Add the nibble from the branch
+                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc_prev = key_rlc_prev + a!(drifted_pos, rot_branch_child) * drifted_pos_mult;
-                let key_rlc = key_rlc_prev.expr() + matchx! {
-                    is_short => {
-                        // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
-                        // This is because `c1` in the branch above means there is an even number of nibbles left
-                        // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                        // specifying the length) of the key is 32.
-                        ifx!{branch.is_c1() => {
-                            require!(a!(s_main.bytes[0]) => 32);
-                        }}
-                        // Note: drifted leaf key cannot reach `c_main.rlp1` because it has at most 31 nibbles.
-                        // In case of 31 nibbles, the key occupies 32 bytes (in case of 32 nibbles and no
-                        // branch above the leaf, the key occupies 33 bytes).
-                        // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[0]`.
-                        rlc::expr(
-                            &s_main.bytes.iter().enumerate().map(|(idx, &byte)| key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                            &r,
-                        )
-                    },
-                    is_long => {
-                        // When `is_long` (the leaf value is longer than 1 byte), `s_main.rlp1` needs to be 248.
-                        require!(a!(s_main.rlp1) => 248);
-                        // Note: long means long leaf RLP, not extension node nibbles.
-                        // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
-                        // This is because `is_c1` in the branch above means there is an even number of nibbles left
-                        // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                        // specifying the length) of the key is 32.
-                        ifx!{branch.is_c1() => {
-                            require!(a!(s_main.bytes[1]) => 32);
-                        }}
-                        // If `is_c16 = 1`, we have one nibble+48 in `s_main.bytes[1]`.
-                        rlc::expr(
-                            &ctx.rlp_bytes()[3..35].iter().enumerate().map(|(idx, &byte)| key_mult_prev.expr() * (if idx == 0 { (a!(byte) - 48.expr()) * branch.is_c16() } else { a!(byte) })).collect::<Vec<_>>(),
-                            &r,
-                        )
-                    },
-                    has_no_nibble => {
-                        let s_rlp2 = a!(s_main.rlp2);
-                        // When the leaf is in the last level there are no nibbles stored in the key and `s_main.rlp2 = 32`.
-                        require!(s_rlp2 => 32.expr());
-                        (s_rlp2.expr() - 48.expr()) * key_mult_prev.expr()
-                    },
-                    has_one_nibble => 0.expr(),
-                };
-                // Check that the drifted leaf key is unchanged.
-                let acc_mult = a!(accs.acc_s.mult);
-                let len = get_leaf_len(meta, s_main.clone(), accs.clone(), 0);
+                // Calculate the key RLC
+                let key_rlc = key_rlc_prev.expr() + leaf.key_rlc(meta, &mut cb.base, ctx.clone(), key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
+
+                // Check zero bytes and mult_diff
+                ifx!{branch.is_s_or_c_placeholder() => {
+                    // Num bytes used in RLC
+                    let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                    // Multiplier is number of bytes
+                    require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
+                    // RLC bytes zero check (subtract RLP bytes used)
+                    cb.set_length(num_bytes.expr() - 2.expr());
+                }}
+
+                // Check that the drifted leaf is unchanged and is stored at `drifted_pos`.
+                let mult = a!(accs.acc_s.mult);
                 let (stored_key_rlc, mod_rlc, do_lookup, mod_hash) = matchx! {
                     branch.is_branch_s_placeholder => {
-                        // When `S` placeholder, `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
-                        // in a new branch. We retrieve it from `LEAF_KEY_S` row.
-                        // This value needs to be the same as the key RLC of the drifted leaf.
                         /* Leaf key in added branch: neighbour leaf in the added branch (S) */
-                        // It needs to be ensured that the hash of the drifted leaf is in the parent branch
-                        // at `drifted_pos` position.
-                        // If branch placeholder in `S`, the leaf value is 3 rows above.
-                        let rlc = a!(accs.acc_s.rlc) + rlc::expr(
-                            &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -3)).collect::<Vec<_>>(),
-                            &r,
-                        );
+                        // `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+                        // in a new branch.
+                        let rlc = a!(accs.acc_s.rlc) + s_main.rlc_chain(meta, rot_value_s, &r, mult.expr());
                         // `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                         // This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
                         // `modified_node` (the leaf that has been added).
                         (a!(accs.key.rlc, rot_key_s), rlc, true.expr(), a!(accs.mod_node_rlc(true), rot_branch_child))
                     },
                     branch.is_branch_c_placeholder => {
-                        // When `C` placeholder, `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
-                        // has been deleted (and there were only two leaves, so the branch was deleted).
-                        // We retrieve it from `LEAF_KEY_C` row.
-                        // This value needs to be the same as the key RLC of the neighbour leaf (neighbour of
-                        // the leaf that was deleted) before the leaf was deleted.
                         /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
-                        // It needs to be ensured that the hash of the drifted leaf is in the parent branch
-                        // at `drifted_pos` position.
-                        // If branch placeholder in C, value is 1 above.
-                        let rlc = a!(accs.acc_s.rlc) + rlc::expr(
-                            &s_main.rlp_bytes().iter().map(|&byte| acc_mult.expr() * a!(byte, -1)).collect::<Vec<_>>(),
-                            &r,
-                        );
+                        // `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+                        // has been deleted (and there were only two leaves, so the branch was deleted).
+                        let rlc = a!(accs.acc_s.rlc) + s_main.rlc_chain(meta, rot_value_c, &r, mult.expr());
                         // `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                         // This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
                         // `modified_node` (the leaf that is to be deleted).
@@ -317,28 +262,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 };
                 require!(stored_key_rlc => key_rlc);
                 ifx! {do_lookup => {
+                    let len = leaf.len(meta, &mut cb.base, ctx.clone());
                     require!((1, mod_rlc, len, mod_hash) => @"keccak");
-                }}
-
-                // Check zero bytes and mult_diff
-                // TODO(Brecht): share code with leaf_key.rs
-                ifx!{branch.is_s_or_c_placeholder() => {
-                    // Get the number of bytes used for the key in the leaf.
-                    let key_len = matchx! {
-                        has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 byte in s_rlp2
-                        is_short => a!(s_main.rlp2) - 128.expr(),
-                        is_long => a!(s_main.bytes[0]) - 128.expr(),
-                    };
-                    // Num bytes used in RLC
-                    let num_bytes = key_len + matchx! {
-                        has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 RLP byte
-                        is_short => 2.expr(),                                     // 2 RLP bytes
-                        is_long => 3.expr(),                                      // 3 RLP bytes
-                    };
-                    // Multiplier is number of bytes
-                    require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
-                    // RLC bytes zero check (subtract RLP bytes used)
-                    cb.set_length(num_bytes.expr() - 2.expr());
                 }}
             }}
         });
@@ -360,21 +285,32 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         row[1] != 0 just to avoid usize problems below (when row doesn't
         need to be assigned) Info whether leaf rlp is long or short.
         */
+        /*
+        Info whether leaf rlp is long or short:
+         - long means the key length is at position 2.
+         - short means the key length is at position 1.
+        */
         let mut typ = "short";
         if row.get_byte(0) == 248 {
             typ = "long";
         } else if row.get_byte(1) == 32 {
             typ = "last_level";
+        } else if row.get_byte(1) < 128 {
+            typ = "one_nibble";
         }
         mpt_config.assign_long_short(region, typ, offset).ok();
 
         pv.acc_s = F::zero();
         pv.acc_mult_s = F::one();
-        let len = if row.get_byte(0) == 248 {
-            (row.get_byte(2) - 128) as usize + 3
+        let len: usize;
+        if typ == "long" {
+            len = (row.get_byte(2) - 128) as usize + 3;
+        } else if typ == "short" {
+            len = (row.get_byte(1) - 128) as usize + 2;
         } else {
-            (row.get_byte(1) - 128) as usize + 2
-        };
+            // last_level or one_nibble
+            len = 2
+        }
         mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
 
         mpt_config

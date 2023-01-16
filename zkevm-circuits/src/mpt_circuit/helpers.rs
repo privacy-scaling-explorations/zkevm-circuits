@@ -1,5 +1,9 @@
+use std::ops::Range;
+
 use crate::{
+    circuit,
     circuit_tools::{Conditionable, ConstraintBuilder, DataTransition},
+    mpt_circuit::param::{KEY_TERMINAL_PREFIX_EVEN, RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
     util::Expr,
 };
 use gadgets::util::{and, not};
@@ -10,14 +14,15 @@ use halo2_proofs::{
 };
 
 use super::{
-    columns::{AccumulatorCols, MainCols},
+    columns::MainCols,
     param::{
         BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM, IS_BRANCH_C16_POS, IS_BRANCH_C1_POS,
         IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS,
         IS_C_EXT_LONGER_THAN_55_POS, IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS,
-        IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, NIBBLES_COUNTER_POS,
+        IS_S_EXT_LONGER_THAN_55_POS, IS_S_EXT_NODE_NON_HASHED_POS, KEY_TERMINAL_PREFIX_ODD,
+        NIBBLES_COUNTER_POS,
     },
-    FixedTableTag,
+    FixedTableTag, MPTContext,
 };
 use crate::mpt_circuit::param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
@@ -52,9 +57,9 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         meta: &mut VirtualCells<F>,
         s_main: MainCols<F>,
         is_s: bool,
-        rot_into_branch_init: i32,
+        rot_branch_init: i32,
     ) -> BranchNodeInfo<F> {
-        let rot = Rotation(rot_into_branch_init);
+        let rot = Rotation(rot_branch_init);
         let is_short_c16 = meta.query_advice(s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM], rot);
         let is_short_c1 = meta.query_advice(s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM], rot);
         let is_long_even_c16 =
@@ -102,8 +107,8 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         let nibbles_counter = DataTransition::new_with_rot(
             meta,
             s_main.bytes[NIBBLES_COUNTER_POS - RLP_NUM],
-            rot_into_branch_init - BRANCH_ROWS_NUM,
-            rot_into_branch_init,
+            rot_branch_init - BRANCH_ROWS_NUM,
+            rot_branch_init,
         );
 
         let len = get_branch_len(meta, s_main, rot, is_s);
@@ -156,11 +161,11 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         self.is_long_even() + self.is_long_odd()
     }
 
-    pub(crate) fn is_c1(&self) -> Expression<F> {
+    pub(crate) fn is_key_even(&self) -> Expression<F> {
         self.is_c1.expr()
     }
 
-    pub(crate) fn is_c16(&self) -> Expression<F> {
+    pub(crate) fn is_key_odd(&self) -> Expression<F> {
         self.is_c16.expr()
     }
 
@@ -207,6 +212,208 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     pub(crate) fn set_is_s(&mut self, is_s: bool) {
         self.is_s = is_s;
     }
+}
+
+#[derive(Clone)]
+pub(crate) struct StorageLeafInfo<F> {
+    pub(crate) rot_key: i32,
+    pub(crate) flag1: Expression<F>,
+    pub(crate) flag2: Expression<F>,
+}
+
+impl<F: FieldExt> StorageLeafInfo<F> {
+    pub(crate) fn new(
+        meta: &mut VirtualCells<F>,
+        ctx: MPTContext<F>,
+        rot_key: i32,
+    ) -> StorageLeafInfo<F> {
+        let rot = Rotation(rot_key);
+        let flag1 = meta.query_advice(ctx.accumulators.s_mod_node_rlc, rot);
+        let flag2 = meta.query_advice(ctx.accumulators.c_mod_node_rlc, rot);
+        StorageLeafInfo {
+            rot_key,
+            flag1,
+            flag2,
+        }
+    }
+
+    pub(crate) fn has_no_nibble(&self) -> Expression<F> {
+        self.flag1.expr() * self.flag2.expr()
+    }
+
+    pub(crate) fn has_one_nibble(&self) -> Expression<F> {
+        not::expr(self.flag1.expr()) * not::expr(self.flag2.expr())
+    }
+
+    pub(crate) fn is_long(&self) -> Expression<F> {
+        self.flag1.expr() * not::expr(self.flag2.expr())
+    }
+
+    pub(crate) fn is_short(&self) -> Expression<F> {
+        not::expr(self.flag1.expr()) * self.flag2.expr()
+    }
+
+    pub(crate) fn is_very_short(&self) -> Expression<F> {
+        self.has_no_nibble() + self.has_one_nibble()
+    }
+
+    /// Returns the total length of the leaf (including RLP bytes)
+    pub(crate) fn len(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+    ) -> Expression<F> {
+        circuit!([meta, cb], {
+            ifx! {self.is_long() => {
+                2.expr() + a!(ctx.s_main.rlp2, self.rot_key)
+            } elsex {
+                1.expr() + (a!(ctx.s_main.rlp1, self.rot_key) - RLP_LIST_SHORT.expr())
+            }}
+        })
+    }
+
+    /// Number of RLP bytes for leaf and key
+    pub(crate) fn num_rlp_bytes(
+        &self,
+        _meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+    ) -> Expression<F> {
+        circuit!([meta, cb], {
+            matchx! {
+                self.is_very_short() => 1.expr(),
+                self.is_short() => 2.expr(),
+                self.is_long() => 3.expr(),
+            }
+        })
+    }
+
+    /// Length of the key (excluding RLP bytes)
+    pub(crate) fn key_len(
+        &self,
+        _meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+    ) -> Expression<F> {
+        circuit!([_meta, cb], {
+            matchx! {
+                self.is_very_short() => 1.expr(), // 1 byte in s_rlp2
+                self.is_short() => a!(ctx.s_main.rlp2, self.rot_key) - RLP_SHORT.expr(),
+                self.is_long() => a!(ctx.s_main.bytes[0], self.rot_key) - RLP_SHORT.expr(),
+            }
+        })
+    }
+
+    /// Number of bytes of RLP (including list RLP bytes) and key
+    pub(crate) fn num_bytes_on_key_row(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+    ) -> Expression<F> {
+        self.num_rlp_bytes(meta, cb) + self.key_len(meta, cb, ctx)
+    }
+
+    pub(crate) fn num_key_nibbles(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+        is_key_odd: Expression<F>,
+    ) -> Expression<F> {
+        let key_len = self.key_len(meta, cb, ctx);
+        get_num_nibbles(meta, cb, key_len, is_key_odd)
+    }
+
+    /// Key data is read from the current row, not at rot_key!
+    pub(crate) fn key_rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+        key_mult_prev: Expression<F>,
+        is_key_odd: Expression<F>,
+        key_mult_first_even: Expression<F>,
+        is_longer_than_55: bool,
+    ) -> Expression<F> {
+        let calc_rlc =
+            |meta: &mut VirtualCells<F>, cb: &mut ConstraintBuilder<F>, range: Range<usize>| {
+                key_rlc(
+                    meta,
+                    cb,
+                    ctx.clone(),
+                    range,
+                    key_mult_prev.expr(),
+                    is_key_odd.expr(),
+                    key_mult_first_even.expr(),
+                )
+            };
+        circuit!([meta, cb], {
+            matchx! {
+                self.is_short() => {
+                    // First key byte is at `s_main.bytes[0]`.
+                    calc_rlc(meta, cb, 2..35)
+                },
+                self.is_long() => {
+                    if is_longer_than_55 {
+                        // `s_main.rlp1` needs to be 248.
+                        require!(a!(ctx.s_main.rlp1) => (RLP_LIST_LONG + 1));
+                    }
+                    // First key byte is at `s_main.bytes[1]`.
+                    calc_rlc(meta, cb, 3..36)
+                },
+                self.has_no_nibble() => {
+                    require!(a!(ctx.s_main.rlp2) => KEY_TERMINAL_PREFIX_EVEN);
+                    0.expr()
+                },
+                self.has_one_nibble() => {
+                    get_terminal_odd_nibble(a!(ctx.s_main.rlp2)) * key_mult_prev.expr()
+                },
+            }
+        })
+    }
+}
+
+pub(crate) fn key_rlc<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    cb: &mut ConstraintBuilder<F>,
+    ctx: MPTContext<F>,
+    range: Range<usize>,
+    key_mult_prev: Expression<F>,
+    is_key_odd: Expression<F>,
+    key_mult_first_even: Expression<F>,
+) -> Expression<F> {
+    circuit!([meta, cb], {
+        // Add the odd nibble first if we have one.
+        let first_byte = a!(ctx.s_main.rlp_bytes()[range.start]);
+        let (rlc, mult) = ifx! {is_key_odd => {
+            (get_terminal_odd_nibble(first_byte.expr()) * key_mult_prev.expr(), key_mult_prev.expr() * ctx.r[0].expr())
+        } elsex {
+            require!(first_byte => KEY_TERMINAL_PREFIX_EVEN);
+            (0.expr(), key_mult_prev.expr() * key_mult_first_even.expr())
+        }};
+        rlc + ctx.rlc_chain(meta, range.start + 1..range.end, 0, mult.expr())
+    })
+}
+
+pub(crate) fn get_terminal_odd_nibble<F: FieldExt>(byte: Expression<F>) -> Expression<F> {
+    // The odd nible is stored in the same byte as the prefix
+    byte - KEY_TERMINAL_PREFIX_ODD.expr()
+}
+
+pub(crate) fn get_num_nibbles<F: FieldExt>(
+    _meta: &mut VirtualCells<F>,
+    cb: &mut ConstraintBuilder<F>,
+    key_len: Expression<F>,
+    is_key_odd: Expression<F>,
+) -> Expression<F> {
+    circuit!([meta, cb], {
+        ifx! {is_key_odd => {
+            key_len.expr() * 2.expr() - 1.expr()
+        } elsex {
+            (key_len.expr() - 1.expr()) * 2.expr()
+        }}
+    })
 }
 
 pub(crate) fn get_rlp_meta_bytes<F: FieldExt>(
@@ -282,23 +489,6 @@ pub(crate) fn get_branch_len<F: FieldExt>(
             + num_rlp_byte_selectors[2].expr()
                 * (rlp_bytes[1].expr() * 256.expr() + rlp_bytes[2].expr()),
     )
-}
-
-pub(crate) fn get_leaf_len<F: FieldExt>(
-    meta: &mut VirtualCells<F>,
-    s_main: MainCols<F>,
-    accs: AccumulatorCols<F>,
-    rot_into_leaf_key: i32,
-) -> Expression<F> {
-    let flag1 = meta.query_advice(accs.s_mod_node_rlc, Rotation(rot_into_leaf_key));
-    let flag2 = meta.query_advice(accs.c_mod_node_rlc, Rotation(rot_into_leaf_key));
-    let is_leaf_long = flag1 * (1.expr() - flag2);
-
-    let rlp1 = meta.query_advice(s_main.rlp1, Rotation(rot_into_leaf_key));
-    let rlp2 = meta.query_advice(s_main.rlp2, Rotation(rot_into_leaf_key));
-
-    is_leaf_long.expr() * (rlp2 + 1.expr() + 1.expr())
-        + (1.expr() - is_leaf_long) * (rlp1 - 192.expr() + 1.expr())
 }
 
 pub(crate) fn extend_rand<F: FieldExt>(r: &[Expression<F>]) -> Vec<Expression<F>> {

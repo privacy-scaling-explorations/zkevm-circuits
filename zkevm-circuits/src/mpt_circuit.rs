@@ -7,11 +7,11 @@ use gadgets::{
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var};
+use std::{convert::TryInto, env::var, ops::Range};
 
 mod account_leaf;
 mod branch;
@@ -48,6 +48,7 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
+    evm_circuit::util::rlc,
     mpt_circuit::helpers::{extend_rand, BranchNodeInfo, MPTConstraintBuilder},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
@@ -148,6 +149,37 @@ impl<F: FieldExt> MPTContext<F> {
         [self.s_main.rlp_bytes(), self.c_main.rlp_bytes()]
             .concat()
             .to_vec()
+    }
+
+    pub(crate) fn rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        range: Range<usize>,
+        rot: i32,
+    ) -> Expression<F> {
+        rlc::expr(
+            &self.rlp_bytes()[range]
+                .iter()
+                .map(|&byte| meta.query_advice(byte, Rotation(rot)))
+                .collect::<Vec<_>>(),
+            &self.r,
+        )
+    }
+
+    pub(crate) fn rlc_chain(
+        &self,
+        meta: &mut VirtualCells<F>,
+        range: Range<usize>,
+        rot: i32,
+        mult: Expression<F>,
+    ) -> Expression<F> {
+        rlc::expr(
+            &self.rlp_bytes()[range]
+                .iter()
+                .map(|&byte| mult.expr() * meta.query_advice(byte, Rotation(rot)))
+                .collect::<Vec<_>>(),
+            &self.r,
+        )
     }
 }
 

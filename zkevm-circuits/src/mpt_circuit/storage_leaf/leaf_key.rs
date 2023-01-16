@@ -9,12 +9,15 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    evm_circuit::util::rlc,
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
-    mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
+    mpt_circuit::{
+        helpers::{MPTConstraintBuilder, StorageLeafInfo},
+        param::KEY_LEN_IN_NIBBLES,
+        FixedTableTag,
+    },
     mpt_circuit::{
         witness_row::{MptWitnessRow, MptWitnessRowType},
         MPTContext,
@@ -138,7 +141,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let accs = ctx.accumulators;
         let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let denoter = ctx.denoter;
-        let r = ctx.r.clone();
 
         let rot_parent = if is_s { -1 } else { -3 };
         let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
@@ -148,135 +150,66 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let rot_branch_parent = rot_branch_init - 1;
 
         circuit!([meta, cb.base], {
-            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
-
-            let flag1 = a!(accs.s_mod_node_rlc);
-            let flag2 = a!(accs.c_mod_node_rlc);
-            let has_no_nibble = flag1.expr() * flag2.expr();
-            let has_one_nibble = not!(flag1) * not!(flag2);
-            let is_long = flag1.expr() * not!(flag2);
-            let is_short = not!(flag1) * flag2.expr();
+            let leaf = StorageLeafInfo::new(meta, ctx.clone(), 0);
 
             // The two flag values need to be boolean.
-            require!(flag1 => bool);
-            require!(flag2 => bool);
+            require!(leaf.flag1 => bool);
+            require!(leaf.flag2 => bool);
 
             // Calculate and store the leaf data RLC
-            let rlc = rlc::expr(
-                &ctx.rlp_bytes()[..36]
-                    .iter()
-                    .map(|&byte| a!(byte))
-                    .collect::<Vec<_>>(),
-                &r,
-            );
-            require!(a!(accs.acc_s.rlc) => rlc);
+            require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
-            // Calculate the key RLC
+            // Get the key data from the branch above (if any)
             let is_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_parent);
-            let (key_rlc_prev, key_mult_prev, is_c16, nibbles_count_prev) = ifx! {not!(is_in_first_storage_level) => {
+            let (key_rlc_prev, key_mult_prev, is_key_odd, nibbles_count_prev) = ifx! {not!(is_in_first_storage_level) => {
+                let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
                 ifx!{branch.is_placeholder() => {
                     ifx!{not!(a!(is_account_leaf_in_added_branch, rot_branch_parent)) => {
                         let branch_prev = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init_prev);
                         let rot_prev = rot_first_child_prev;
-                        (a!(accs.key.rlc, rot_prev), a!(accs.key.mult, rot_prev), branch_prev.is_c16(), branch_prev.nibbles_counter().expr())
+                        (a!(accs.key.rlc, rot_prev), a!(accs.key.mult, rot_prev), branch_prev.is_key_odd(), branch_prev.nibbles_counter().expr())
                     } elsex {
                         (0.expr(), 1.expr(), 0.expr(), 0.expr())
                     }}
                 } elsex {
                     let rot = rot_first_child;
-                    (a!(accs.key.rlc, rot), a!(accs.key.mult, rot), branch.is_c16(), branch.nibbles_counter().expr())
+                    (a!(accs.key.rlc, rot), a!(accs.key.mult, rot), branch.is_key_odd(), branch.nibbles_counter().expr())
                 }}
             } elsex {
                 (0.expr(), 1.expr(), 0.expr(), 0.expr())
             }};
-            // Set to key_mult_start * r if is_c16, else key_mult_start
-            let key_mult =
-                key_mult_prev.expr() * ifx! {is_c16 => { r[0].clone() } elsex { 1.expr() }};
-            // TODO(Brecht): Shift the bytes in the witness so the same constraints can be
-            // used?
+
+            // Calculate and store the key RLC.
             let key_rlc = key_rlc_prev.expr()
-                + matchx! {
-                    is_short => {
-                        // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[0]`.
-                        // This is because `is_c1` in the branch above means there is an even number of nibbles left
-                        // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                        // specifying the length) of the key is 32.
-                        ifx!{not!(is_c16) => {
-                            require!(a!(s_main.bytes[0]) => 32);
-                        }}
-                        // When `is_short` the first key byte is at `s_main.bytes[0]`.
-                        // If is_c16, we have nibble+48 in s_main.bytes[0].
-                        rlc::expr(
-                            &ctx.rlp_bytes()[2..35].iter().enumerate().map(|(idx, &byte)|
-                                (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                            &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                        )
-                    },
-                    is_long => {
-                        // `s_main.rlp1` needs to be 248.
-                        require!(a!(s_main.rlp1) => 248);
-                        // If `is_c1` and branch above is not a placeholder, we have 32 in `s_main.bytes[1]`.
-                        // This is because `is_c1` in the branch above means there is an even number of nibbles left
-                        // and we have an even number of nibbles in the leaf, the first byte (after RLP bytes
-                        // specifying the length) of the key is 32.
-                        ifx!{not!(is_c16) => {
-                            require!(a!(s_main.bytes[1]) => 32);
-                        }}
-                        // When `is_long` the first key byte is at `s_main.bytes[1]`.
-                        // If `is_c16`, we have nibble+48 in `s_main.bytes[1]`.
-                        rlc::expr(
-                            &ctx.rlp_bytes()[3..36].iter().enumerate().map(|(idx, &byte)|
-                                (if idx == 0 { (a!(byte) - 48.expr()) * is_c16.expr() * key_mult_prev.expr() } else { a!(byte) * key_mult.expr() })).collect::<Vec<_>>(),
-                            &[[1.expr()].to_vec(), r.to_vec()].concat(),
-                        )
-                    },
-                    has_no_nibble => {
-                        // When `last_level`, there is no nibble stored in the leaf key, it is just the value
-                        // `32` in `s_main.rlp2`. In the `getProof` output, there is then the value stored immediately
-                        // after `32`. However, in the MPT witness, we have value in the next row, so there are 0s
-                        // in `s_main.bytes`.
-                        require!(a!(s_main.rlp2) => 32);
-                        // No nibble
-                        0.expr()
-                    },
-                    has_one_nibble => {
-                        // When there is only one nibble we take the last remaining nibble stored in `s_main.rlp2`.
-                        (a!(s_main.rlp2) - 48.expr()) * key_mult_prev
-                    },
-                };
+                + leaf.key_rlc(
+                    meta,
+                    &mut cb.base,
+                    ctx.clone(),
+                    key_mult_prev,
+                    is_key_odd.expr(),
+                    1.expr(),
+                    true,
+                );
             require!(a!(accs.key.rlc) => key_rlc);
 
-            // Get the number of bytes used for the key in the leaf.
-            let key_len = matchx! {
-                has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 byte in s_rlp2
-                is_short => a!(s_main.rlp2) - 128.expr(),
-                is_long => a!(s_main.bytes[0]) - 128.expr(),
-            };
-            // Total number of nibbles needs to be 64 (except in a placeholder leaf).
+            // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES (except in a
+            // placeholder leaf).
             let is_in_first_level = a!(denoter.sel(is_s), 1);
             let is_leaf_placeholder = is_in_first_level
                 + ifx! {not!(is_in_first_storage_level) => {
                     a!(denoter.sel(is_s), rot_first_child)
                 }};
-            let num_nibbles = ifx! {is_c16 => {
-                key_len.expr() * 2.expr() - 1.expr()
-            } elsex {
-                (key_len.expr() - 1.expr()) * 2.expr()
-            }};
+            let num_nibbles =
+                leaf.num_key_nibbles(meta, &mut cb.base, ctx.clone(), is_key_odd.expr());
             ifx! {not!(is_leaf_placeholder) => {
-                require!(nibbles_count_prev + num_nibbles => 64);
+                require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
             }}
 
             // Num bytes used in RLC
-            let num_bytes = key_len
-                + matchx! {
-                    has_no_nibble.expr() + has_one_nibble.expr() => 1.expr(), // 1 RLP byte
-                    is_short => 2.expr(), // 2 RLP bytes
-                    is_long => 3.expr(), // 3 RLP bytes
-                };
+            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
             // Multiplier is number of bytes
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
-            // RLC bytes zero check (subtract RLP bytes used)
+            // RLC bytes zero check (subtract 2 RLP bytes used)
             cb.set_length(num_bytes.expr() - 2.expr());
         });
 
