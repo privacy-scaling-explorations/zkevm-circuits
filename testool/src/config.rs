@@ -31,9 +31,9 @@ impl Default for TestSuite {
         Self {
             id: "default".to_string(),
             path: String::default(),
-            max_gas: 100000,
-            max_steps: 1000,
-            max_rws: 50104,
+            max_gas: u64::MAX,
+            max_steps: u64::MAX,
+            max_rws: u64::MAX,
             unimplemented_opcodes: Vec::new(),
             ignore_tests: Some(Vec::new()),
             allow_tests: None,
