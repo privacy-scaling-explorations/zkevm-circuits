@@ -8,9 +8,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes,
-            math_gadget::BatchedIsZeroGadget,
-            CachedRegion, Cell, Word,
+            from_bytes, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -27,10 +25,7 @@ pub(crate) struct ExtcodehashGadget<F> {
     tx_id: Cell<F>,
     reversion_info: ReversionInfo<F>,
     is_warm: Cell<F>,
-    nonce: Cell<F>,
-    balance: Cell<F>,
     code_hash: Cell<F>,
-    is_empty: BatchedIsZeroGadget<F, 3>, // boolean for if the external account is empty
 }
 
 impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
@@ -55,30 +50,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let nonce = cb.query_cell();
-        cb.account_read(address.expr(), AccountFieldTag::Nonce, nonce.expr());
-        let balance = cb.query_cell();
-        cb.account_read(address.expr(), AccountFieldTag::Balance, balance.expr());
         let code_hash = cb.query_cell();
+        // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
+        cb.stack_push(code_hash.expr());
 
-        // Note that balance is RLC encoded, but RLC(x) = 0 iff x = 0, so we don't need
-        // go to the work of writing out the RLC expression
-        let is_empty = BatchedIsZeroGadget::construct(
-            cb,
-            [
-                nonce.expr(),
-                balance.expr(),
-                code_hash.expr() - cb.empty_hash_rlc(),
-            ],
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_ACCOUNT_ACCESS.expr(),
         );
-
-        // The stack push is 0 if the external account is empty. Otherwise, it's the
-        // code hash
-        cb.stack_push((1.expr() - is_empty.expr()) * code_hash.expr());
-
-        let gas_cost = is_warm.expr() * GasCost::WARM_ACCESS.expr()
-            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
@@ -97,10 +78,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             tx_id,
             reversion_info,
             is_warm,
-            nonce,
-            balance,
             code_hash,
-            is_empty,
         }
     }
 
@@ -128,29 +106,13 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             call.is_persistent,
         )?;
 
-        let is_warm = match GasCost::from(step.gas_cost) {
-            GasCost::COLD_ACCOUNT_ACCESS => 0,
-            GasCost::WARM_ACCESS => 1,
-            _ => unreachable!(),
-        };
+        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let [nonce, balance, code_hash] = [5, 6, 7].map(|i| {
-            block.rws[step.rw_indices[i]]
-                .table_assignment(region.challenges().evm_word())
-                .value
-        });
-
-        self.nonce.assign(region, offset, nonce)?;
-        self.balance.assign(region, offset, balance)?;
-        self.code_hash.assign(region, offset, code_hash)?;
-
-        self.is_empty.assign_value(
-            region,
-            offset,
-            [nonce, balance, code_hash - region.empty_hash_rlc()],
-        )?;
+        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
+        self.code_hash
+            .assign(region, offset, region.word_rlc(code_hash))?;
 
         Ok(())
     }
