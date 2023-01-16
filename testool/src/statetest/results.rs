@@ -322,9 +322,9 @@ impl Results {
             }
             let details = result
                 .details
-                .replace("\n", "")
-                .replace(" ", "")
-                .replace("\t", "");
+                .replace('\n', "")
+                .replace(' ', "")
+                .replace('\t', "");
             let entry = format!("{:?};{};{}\n", result.level, test_id, details);
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
