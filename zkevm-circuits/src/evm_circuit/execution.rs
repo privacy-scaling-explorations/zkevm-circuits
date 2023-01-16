@@ -1346,16 +1346,20 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            // expensive function call
-            Self::check_rw_lookup(
-                &assigned_stored_expressions,
-                offset,
-                step,
-                call,
-                transaction,
-                block,
-                region.challenges(),
-            );
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    offset,
+                    step,
+                    call,
+                    transaction,
+                    block,
+                    region.challenges(),
+                );
+            }
         }
         Ok(())
     }
@@ -1390,6 +1394,14 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) {
+        let mut evm_randomness = F::zero();
+        challenges.evm_word().map(|v| evm_randomness = v);
+        let mut lookup_randomness = F::zero();
+        challenges.lookup_input().map(|v| lookup_randomness = v);
+        if evm_randomness.is_zero_vartime() || lookup_randomness.is_zero_vartime() {
+            // challenges not ready
+            return;
+        }
         let mut assigned_rw_values = Vec::new();
         // Reversion lookup expressions have different ordering compared to rw table,
         // making it a bit complex to check,
@@ -1409,12 +1421,11 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .map(|rw_idx| block.rws[*rw_idx])
             .map(|rw| {
-                challenges
-                    .evm_word()
-                    .map(|randomness| rw.table_assignment_aux(randomness).rlc(randomness))
+                rw.table_assignment_aux(evm_randomness)
+                    .rlc(lookup_randomness)
             })
             .fold(BTreeSet::<F>::new(), |mut set, value| {
-                value.map(|value| set.insert(value));
+                set.insert(value);
                 set
             });
 
@@ -1431,8 +1442,8 @@ impl<F: Field> ExecutionConfig<F> {
                     idx,
                     block.rws[*rw_idx],
                     block.rws[*rw_idx]
-                        .table_assignment_aux(block.randomness)
-                        .rlc(block.randomness)
+                        .table_assignment_aux(evm_randomness)
+                        .rlc(lookup_randomness)
                 );
             }
             let mut tx = transaction.clone();
@@ -1456,11 +1467,10 @@ impl<F: Field> ExecutionConfig<F> {
                     step.rw_indices.len()
                 );
             }
-            challenges.evm_word().map(|randomness| {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(randomness);
-            let rlc = table_assignments.rlc(randomness);
+            let table_assignments = rw.table_assignment_aux(evm_randomness);
+            let rlc = table_assignments.rlc(lookup_randomness);
 
             if !rlc_assignments.contains(value) {
                 log_ctx(&assigned_rw_values);
@@ -1478,7 +1488,6 @@ impl<F: Field> ExecutionConfig<F> {
                 //    "left is witness, right is expression"
                 //);
             }
-        });
         }
         // for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate()
         // {     let rw_idx = step.rw_indices[idx];
