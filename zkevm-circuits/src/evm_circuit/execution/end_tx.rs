@@ -95,14 +95,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
-        let base_fee = cb.query_word();
+        let base_fee = cb.query_word_rlc();
         for (tag, value) in [
             (BlockContextFieldTag::Coinbase, coinbase.expr()),
             (BlockContextFieldTag::BaseFee, base_fee.expr()),
         ] {
             cb.block_lookup(tag.expr(), None, value);
         }
-        let effective_tip = cb.query_word();
+        let effective_tip = cb.query_word_rlc();
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =

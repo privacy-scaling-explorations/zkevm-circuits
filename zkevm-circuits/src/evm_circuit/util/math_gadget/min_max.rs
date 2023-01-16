@@ -1,8 +1,11 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, math_gadget::*, select, CachedRegion,
+    constraint_builder::ConstraintBuilder, math_gadget::*, select, transpose_val_ret, CachedRegion,
 };
 use eth_types::Field;
-use halo2_proofs::plonk::{Error, Expression};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
 /// lhs and rhs `< 256**N_BYTES`
 /// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
@@ -47,6 +50,19 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
         } else {
             (lhs, rhs)
         })
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<Value<(F, F)>, Error> {
+        transpose_val_ret(
+            lhs.zip(rhs)
+                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
+        )
     }
 }
 

@@ -13,6 +13,7 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
+use halo2_proofs::arithmetic::Field as Halo2Field;
 use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -49,6 +50,10 @@ pub enum AdviceColumn {
     LimbIndexBit3,
     LimbIndexBit4, // least significant bit
     InitialValue,
+    IsZero, // committed_value and value are 0
+    // NonEmptyWitness is the BatchedIsZero chip witness that contains the
+    // inverse of the non-zero value if any in [committed_value, value]
+    NonEmptyWitness,
 }
 
 impl AdviceColumn {
@@ -76,6 +81,8 @@ impl AdviceColumn {
             Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
             Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
             Self::InitialValue => config.initial_value,
+            Self::IsZero => config.is_non_exist.is_zero,
+            Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
         }
     }
 }
@@ -776,10 +783,13 @@ fn bad_initial_memory_value() {
         byte: 0,
     }];
 
+    let v = Fr::from(200);
     let overrides = HashMap::from([
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
-        ((AdviceColumn::Value, 0), Fr::from(200)),
-        ((AdviceColumn::InitialValue, 0), Fr::from(200)),
+        ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::IsZero, 0), Fr::zero()),
+        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
+        ((AdviceColumn::InitialValue, 0), v),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -794,9 +804,13 @@ fn invalid_memory_value() {
         is_write: true,
         call_id: 1,
         memory_address: 10,
-        byte: 0,
+        byte: 1,
     }];
-    let overrides = HashMap::from([((AdviceColumn::Value, 0), Fr::from(256))]);
+    let v = Fr::from(256);
+    let overrides = HashMap::from([
+        ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
+    ]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -925,11 +939,13 @@ fn bad_initial_tx_refund_value() {
         value: 0,
         value_prev: 0,
     }];
-
+    let v = Fr::from(10);
     let overrides = HashMap::from([
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
-        ((AdviceColumn::Value, 0), Fr::from(10)),
-        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
+        ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::IsZero, 0), Fr::zero()),
+        ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
+        ((AdviceColumn::InitialValue, 0), v),
     ]);
 
     assert_error_matches(

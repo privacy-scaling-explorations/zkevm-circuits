@@ -53,9 +53,9 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // Query RLC-encoded values for base, exponent and exponentiation, where:
         // base^exponent == exponentiation (mod 2^256).
-        let base_rlc = cb.query_rlc();
-        let exponent_rlc = cb.query_rlc();
-        let exponentiation_rlc = cb.query_rlc();
+        let base_rlc = cb.query_word_rlc();
+        let exponent_rlc = cb.query_word_rlc();
+        let exponentiation_rlc = cb.query_word_rlc();
 
         // Pop RLC-encoded base and exponent from the stack.
         cb.stack_pop(base_rlc.expr());
@@ -90,12 +90,12 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let exponent_is_one_expr =
             and::expr([exponent_lo_is_one.expr(), exponent_hi_is_zero.expr()]);
 
-        let zero_rlc = cb.query_word();
+        let zero_rlc = cb.query_word_rlc();
         cb.require_zero(
             "base * base + c == base^2 (c == 0)",
             sum::expr(&zero_rlc.cells),
         );
-        let base_sq = cb.query_word();
+        let base_sq = cb.query_word_rlc();
 
         // If exponent == 0, base^exponent == 1, which implies:
         // 1. Low bytes of exponentiation == 1

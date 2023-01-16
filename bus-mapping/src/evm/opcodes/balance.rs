@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word, U256};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Balance;
@@ -16,12 +16,9 @@ impl Opcode for Balance {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address = geth_step.stack.last()?.to_address();
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            address.to_word(),
-        )?;
+        let address_word = geth_step.stack.last()?;
+        let address = address_word.to_address();
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent
         // from call context.
@@ -60,23 +57,28 @@ impl Opcode for Balance {
         // Read account balance.
         let account = state.sdb.get_account(&address).1;
         let exists = !account.is_empty();
+        let balance = account.balance;
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
+        state.account_read(
+            &mut exec_step,
+            address,
+            AccountField::CodeHash,
+            code_hash.to_word(),
+            code_hash.to_word(),
+        )?;
         if exists {
             state.account_read(
                 &mut exec_step,
                 address,
                 AccountField::Balance,
-                account.balance,
-                account.balance,
+                balance,
+                balance,
             )?;
-        } else {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::NonExisting,
-                Word::zero(),
-                Word::zero(),
-            )?;
-        };
+        }
 
         // Write the BALANCE result to stack.
         state.stack_write(
@@ -97,7 +99,8 @@ mod balance_tests {
     use crate::operation::{AccountOp, CallContextOp, StackOp};
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Bytecode, Word, U256};
+    use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
+    use keccak256::EMPTY_HASH_LE;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
@@ -246,23 +249,33 @@ mod balance_tests {
             }
         );
 
+        let code_hash = Word::from_little_endian(&*EMPTY_HASH_LE);
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
             &AccountOp {
                 address,
-                field: if exists {
-                    AccountField::Balance
-                } else {
-                    AccountField::NonExisting
-                },
-                value: balance,
-                value_prev: balance,
+                field: AccountField::CodeHash,
+                value: if exists { code_hash } else { U256::zero() },
+                value_prev: if exists { code_hash } else { U256::zero() },
             }
         );
+        if exists {
+            let operation = &container.account[indices[6].as_usize()];
+            assert_eq!(operation.rw(), RW::READ);
+            assert_eq!(
+                operation.op(),
+                &AccountOp {
+                    address,
+                    field: AccountField::Balance,
+                    value: balance,
+                    value_prev: balance,
+                }
+            );
+        }
 
-        let operation = &container.stack[indices[6].as_usize()];
+        let operation = &container.stack[indices[6 + if exists { 1 } else { 0 }].as_usize()];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),

@@ -9,13 +9,16 @@ mod test;
 
 use crate::{
     evm_circuit::param::N_BYTES_WORD,
-    table::{LookupTable, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
 use eth_types::{Address, Field};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
+use gadgets::{
+    batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{
@@ -56,9 +59,9 @@ pub struct StateCircuitConfig<F> {
     // For Rw::AccountStorage, identify non-existing if both committed value and
     // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
     // non-existing, otherwise do lookup for ProofType::StorageChanged.
-    // TODO: use BatchedIsZeroGadget here, once it doesn't depend on the evm circuit constraint
-    // builder.
-    is_non_exist: Column<Advice>,
+    is_non_exist: BatchedIsZeroConfig,
+    // Intermediary witness used to reduce mpt lookup expression degree
+    mpt_proof_type: Column<Advice>,
     state_root: Column<Advice>,
     lexicographic_ordering: LexicographicOrderingConfig,
     not_first_access: Column<Advice>,
@@ -92,6 +95,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
     ) -> Self {
         let selector = meta.fixed_column();
         let lookups = LookupsChip::configure(meta);
+        let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
         let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
@@ -103,11 +107,22 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             selector,
             rw_table.storage_key,
             lookups,
-            challenges.evm_word_powers_of_randomness(),
+            power_of_randomness.clone(),
         );
 
         let initial_value = meta.advice_column_in(SecondPhase);
-        let is_non_exist = meta.advice_column_in(SecondPhase);
+        let is_non_exist = BatchedIsZeroChip::configure(
+            meta,
+            (SecondPhase, SecondPhase),
+            |meta| meta.query_fixed(selector, Rotation::cur()),
+            |meta| {
+                [
+                    meta.query_advice(initial_value, Rotation::cur()),
+                    meta.query_advice(rw_table.value, Rotation::cur()),
+                ]
+            },
+        );
+        let mpt_proof_type = meta.advice_column_in(SecondPhase);
         let state_root = meta.advice_column_in(SecondPhase);
 
         let sort_keys = SortKeysConfig {
@@ -123,7 +138,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             meta,
             sort_keys,
             lookups,
-            challenges.evm_word_powers_of_randomness(),
+            power_of_randomness.clone(),
         );
 
         let config = Self {
@@ -131,11 +146,12 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             sort_keys,
             initial_value,
             is_non_exist,
+            mpt_proof_type,
             state_root,
             lexicographic_ordering,
             not_first_access: meta.advice_column(),
             lookups,
-            power_of_randomness: challenges.evm_word_powers_of_randomness(),
+            power_of_randomness,
             rw_table,
             mpt_table,
         };
@@ -278,20 +294,46 @@ impl<F: Field> StateCircuitConfig<F> {
             )?;
 
             // Identify non-existing if both committed value and new value are zero.
-            let is_non_exist = randomness.map(|randomness| {
-                let (committed_value, new_value) = updates
+            let committed_value_value = randomness.map(|randomness| {
+                let (_, committed_value) = updates
                     .get(row)
                     .map(|u| u.value_assignments(randomness))
                     .unwrap_or_default();
-
-                (F::one() - committed_value * committed_value.invert().unwrap_or(F::zero()))
-                    * (F::one() - new_value * new_value.invert().unwrap_or(F::zero()))
+                let value = row.value_assignment(randomness);
+                [committed_value, value]
+            });
+            BatchedIsZeroChip::construct(self.is_non_exist.clone()).assign(
+                region,
+                offset,
+                committed_value_value,
+            )?;
+            let mpt_proof_type = committed_value_value.map(|pair| {
+                F::from(match row {
+                    Rw::AccountStorage { .. } => {
+                        if pair[0].is_zero_vartime() && pair[1].is_zero_vartime() {
+                            ProofType::StorageDoesNotExist as u64
+                        } else {
+                            ProofType::StorageChanged as u64
+                        }
+                    }
+                    Rw::Account { field_tag, .. } => {
+                        if pair[0].is_zero_vartime()
+                            && pair[1].is_zero_vartime()
+                            && matches!(field_tag, AccountFieldTag::CodeHash)
+                        {
+                            ProofType::AccountDoesNotExist as u64
+                        } else {
+                            *field_tag as u64
+                        }
+                    }
+                    _ => 0,
+                })
             });
             region.assign_advice(
-                || "is_non_exist",
-                self.is_non_exist,
+                || "mpt_proof_type",
+                self.mpt_proof_type,
                 offset,
-                || is_non_exist,
+                || mpt_proof_type,
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
@@ -378,6 +420,14 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         Self::new(block.rws.clone(), block.circuits_params.max_rws)
     }
 
+    /// Return the minimum number of rows required to prove the block
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block.rws.0.values().flatten().count() + 1,
+            block.circuits_params.max_rws,
+        )
+    }
+
     /// Make the assignments to the StateCircuit
     fn synthesize_sub(
         &self,
@@ -401,10 +451,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.n_rows,
                     randomness,
                 )?;
-
-                config
-                    .mpt_table
-                    .load_with_region(&mut region, &self.updates, randomness)?;
 
                 config.assign_with_region(
                     &mut region,
@@ -479,6 +525,9 @@ where
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
+        config
+            .mpt_table
+            .load(&mut layouter, &self.updates, challenges.evm_word())?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
@@ -540,7 +589,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         storage_key: RlcQueries::new(meta, c.sort_keys.storage_key),
         initial_value: meta.query_advice(c.initial_value, Rotation::cur()),
         initial_value_prev: meta.query_advice(c.initial_value, Rotation::prev()),
-        is_non_exist: meta.query_advice(c.is_non_exist, Rotation::cur()),
+        is_non_exist: meta.query_advice(c.is_non_exist.is_zero, Rotation::cur()),
+        mpt_proof_type: meta.query_advice(c.mpt_proof_type, Rotation::cur()),
         lookups: LookupsQueries::new(meta, c.lookups),
         power_of_randomness: c.power_of_randomness.clone(),
         first_different_limb: [0, 1, 2, 3]
@@ -584,7 +634,7 @@ mod state_circuit_stats {
 
         let mut implemented_states = Vec::new();
         for state in ExecutionState::iter() {
-            let height = circuit.execution.get_step_height_option(state);
+            let height = circuit.0.execution.get_step_height_option(state);
             if height.is_some() {
                 implemented_states.push(state);
             }

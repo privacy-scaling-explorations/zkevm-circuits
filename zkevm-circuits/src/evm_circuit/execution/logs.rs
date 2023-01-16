@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,7 +19,7 @@ use crate::{
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToScalar};
 use eth_types::{Field, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -28,7 +28,7 @@ pub(crate) struct LogGadget<F> {
     same_context: SameContextGadget<F>,
     // memory address
     memory_address: MemoryAddressGadget<F>,
-    topics: [Cell<F>; 4],
+    phase2_topics: [Cell<F>; 4],
     topic_selectors: [Cell<F>; 4],
 
     contract_address: Cell<F>,
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let mstart = cb.query_cell();
-        let msize = cb.query_rlc();
+        let msize = cb.query_word_rlc();
 
         // Pop mstart_address, msize from stack
         cb.stack_pop(mstart.expr());
@@ -74,9 +74,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         });
 
         // constrain topics in logs
-        let topics = array_init(|_| cb.query_cell());
+        let phase2_topics = array_init(|_| cb.query_cell_with_type(CellType::StoragePhase2));
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
-        for (idx, topic) in topics.iter().enumerate() {
+        for (idx, topic) in phase2_topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
                 cb.stack_pop(topic.expr());
             });
@@ -170,7 +170,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         Self {
             same_context,
             memory_address,
-            topics,
+            phase2_topics,
             topic_selectors,
             contract_address,
             is_static_call,
@@ -195,9 +195,9 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
 
-        let memory_address =
-            self.memory_address
-                .assign(region, offset, memory_start, msize, block.randomness)?;
+        let memory_address = self
+            .memory_address
+            .assign(region, offset, memory_start, msize)?;
 
         // Memory expansion
         self.memory_expansion
@@ -216,18 +216,15 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         };
 
         for i in 0..4 {
-            let mut topic = Word::random_linear_combine([0; 32], block.randomness);
+            let mut topic = region.word_rlc(U256::zero());
             if i < topic_count {
-                topic = Word::random_linear_combine(
-                    block.rws[topic_stack_entry].stack_value().to_le_bytes(),
-                    block.randomness,
-                );
+                topic = region.word_rlc(block.rws[topic_stack_entry].stack_value());
                 self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
                 topic_stack_entry.1 += 1;
             } else {
                 self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
             }
-            self.topics[i].assign(region, offset, Value::known(topic))?;
+            self.phase2_topics[i].assign(region, offset, topic)?;
         }
 
         self.contract_address.assign(

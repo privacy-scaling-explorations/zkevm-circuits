@@ -44,16 +44,16 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let n = cb.query_word();
-        let r = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let n = cb.query_word_rlc();
+        let r = cb.query_word_rlc();
 
-        let k = cb.query_word();
+        let k = cb.query_word_rlc();
 
-        let a_reduced = cb.query_word();
-        let d = cb.query_word();
-        let e = cb.query_word();
+        let a_reduced = cb.query_word_rlc();
+        let d = cb.query_word_rlc();
+        let e = cb.query_word_rlc();
 
         // 1.  k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
@@ -147,8 +147,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         self.d.assign(region, offset, Some(d.to_le_bytes()))?;
         self.e.assign(region, offset, Some(e.to_le_bytes()))?;
 
-        self.modword
-            .assign(region, offset, a, n, a_reduced, k1, block.randomness)?;
+        self.modword.assign(region, offset, a, n, a_reduced, k1)?;
         self.mul512_left
             .assign(region, offset, [a_reduced, b, d, e], None)?;
         self.mul512_right
