@@ -14,8 +14,6 @@ max_gas = 500000
 max_steps = 1000
 max_rws = 51000
 unimplemented_opcodes = [
-    "SAR",
-    "EXTCODECOPY",
     "CREATE",
     "CREATE2",
     "SELFDESTRUCT"
