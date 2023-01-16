@@ -10,7 +10,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                AddWordsGadget, IsEqualGadget, IsZeroGadget, LtGadget, LtWordGadget, MulWordByU64Gadget,
+                AddWordsGadget, IsEqualGadget, IsZeroGadget, LtGadget, LtWordGadget,
+                MulWordByU64Gadget,
             },
             select, CachedRegion, Cell, CellType, Word,
         },
