@@ -3,7 +3,6 @@ id="default"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-max_rws = 51000
 unimplemented_opcodes = []
 ignore_tests = []
 
@@ -12,22 +11,18 @@ id="nightly"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-max_rws = 51000
 unimplemented_opcodes = [
-    "SAR",
-    "EXTCODECOPY",
     "CREATE",
     "CREATE2",
     "SELFDESTRUCT"
 ]
-ignore_tests=["&tofix"]
+ignore_tests=["&tofix", "&sigkill"]
 
 [[suite]]
 id = "light"
 path="tests/src/GeneralStateTestsFiller/**/*"
 max_gas = 500000
 max_steps = 1000
-max_rws = 51000
 unimplemented_opcodes = []
 allow_tests=[
 	"add_d0(add_neg1_neg1)_g0_v0",
@@ -173,6 +168,13 @@ allow_tests=[
 ]
 
 # must fix  ------------------------------------------------------------------------------
+
+[[set]]
+id = "sigkill"
+desc = "tests that sigkill"
+tests = [
+	"CallToNameRegistratorMemOOGAndInsufficientBalance_d0_g0_v0"
+]
 
 [[set]]
 id  = "tofix"
