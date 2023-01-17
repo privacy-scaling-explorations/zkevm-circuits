@@ -10,7 +10,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use log::{debug, error, info};
+use log::{error, info};
 use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
@@ -72,15 +72,13 @@ struct Args {
 const RESULT_CACHE: &str = "result.cache";
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
-    debug!("{}", &test);
-
+    println!("{}", &test);
     let trace = geth_trace(test.clone())?;
     crate::utils::print_trace(trace)?;
-    debug!(
+    println!(
         "result={:?}",
         run_test(test, TestSuite::default(), circuits_config)
     );
-
     Ok(())
 }
 
