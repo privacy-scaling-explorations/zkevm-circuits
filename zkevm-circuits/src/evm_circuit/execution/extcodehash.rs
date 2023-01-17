@@ -128,7 +128,7 @@ mod test {
         Address, Bytecode, Bytes, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::{TestContext, eth};
+    use mock::{eth, TestContext};
 
     lazy_static! {
         static ref EXTERNAL_ADDRESS: Address =
