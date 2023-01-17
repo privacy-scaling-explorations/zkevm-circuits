@@ -58,10 +58,17 @@ pub fn run_statetests_suite(
     results: &mut Results,
 ) -> Result<()> {
     // Filter already cached entries
+    let all_test_count = tcs.len();
     let tcs: Vec<StateTest> = tcs
         .into_iter()
-        .filter(|t| !results.contains(&t.id))
+        .filter(|t| !results.contains(&format!("{}#{}", t.id, t.path)))
         .collect();
+
+    log::info!(
+        "{} test results cached, {} remaining",
+        all_test_count - tcs.len(),
+        tcs.len()
+    );
 
     let results = Arc::new(RwLock::from(results));
 

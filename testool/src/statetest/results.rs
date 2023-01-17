@@ -320,7 +320,12 @@ impl Results {
                     result.details
                 );
             }
-            let entry = format!("{:?};{};{}\n", result.level, test_id, result.details);
+            let details = result
+                .details
+                .replace('\n', "")
+                .replace(' ', "")
+                .replace('\t', "");
+            let entry = format!("{:?};{};{}\n", result.level, test_id, details);
             if let Some(path) = &self.cache {
                 std::fs::OpenOptions::new()
                     .read(true)
