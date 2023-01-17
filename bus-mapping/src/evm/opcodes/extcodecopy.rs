@@ -3,9 +3,8 @@ use crate::circuit_input_builder::{
     CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
 };
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::state_db::Account;
 use crate::Error;
-use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, U256};
+use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Extcodecopy;
@@ -108,7 +107,13 @@ fn gen_extcodecopy_step(
         },
     )?;
 
-    let &Account { code_hash, .. } = state.sdb.get_account(&external_address).1;
+    let account = state.sdb.get_account(&external_address).1;
+    let exists = !account.is_empty();
+    let code_hash = if exists {
+        account.code_hash
+    } else {
+        H256::zero()
+    };
     state.account_read(
         &mut exec_step,
         external_address,
@@ -154,8 +159,19 @@ fn gen_copy_event(
     let data_offset = geth_step.stack.nth_last(2)?.as_u64();
     let length = geth_step.stack.nth_last(3)?.as_u64();
 
-    let code_hash = state.sdb.get_account(&external_address).1.code_hash;
-    let code: Bytecode = state.code(code_hash)?.into();
+    let account = state.sdb.get_account(&external_address).1;
+    let exists = !account.is_empty();
+    let code_hash = if exists {
+        account.code_hash
+    } else {
+        H256::zero()
+    };
+
+    let code: Bytecode = if exists {
+        state.code(code_hash)?.into()
+    } else {
+        Bytecode::default()
+    };
     let src_addr_end = code.code.len() as u64;
     let mut exec_step = state.new_step(geth_step)?;
     let copy_steps = gen_copy_steps(
@@ -226,7 +242,11 @@ mod extcodecopy_tests {
         });
 
         let bytecode_ext = Bytecode::from(code_ext.to_vec());
-        let code_hash = keccak256(code_ext.clone());
+        let code_hash = if code_ext.is_empty() {
+            Default::default()
+        } else {
+            keccak256(code_ext.clone())
+        };
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
