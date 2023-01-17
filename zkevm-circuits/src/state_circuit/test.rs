@@ -100,9 +100,9 @@ fn test_state_circuit_ok(
     });
 
     let circuit = StateCircuit::<Fr>::new(rw_map, N_ROWS);
-    let power_of_randomness = circuit.instance();
+    let instance = circuit.instance();
 
-    let prover = MockProver::<Fr>::run(19, &circuit, power_of_randomness).unwrap();
+    let prover = MockProver::<Fr>::run(19, &circuit, instance).unwrap();
     let verify_result = prover.verify();
     assert_eq!(verify_result, Ok(()));
 }
@@ -1006,9 +1006,9 @@ fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockP
         n_rows: N_ROWS,
         _marker: std::marker::PhantomData::default(),
     };
-    let power_of_randomness = circuit.instance();
+    let instance = circuit.instance();
 
-    MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap()
+    MockProver::<Fr>::run(17, &circuit, instance).unwrap()
 }
 
 fn verify(rows: Vec<Rw>) -> Result<(), Vec<VerifyFailure>> {

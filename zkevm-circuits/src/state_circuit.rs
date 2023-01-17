@@ -8,13 +8,13 @@ mod random_linear_combination;
 mod test;
 
 use crate::{
-    evm_circuit::param::N_BYTES_WORD,
+    evm_circuit::{param::N_BYTES_WORD, util::rlc},
     table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
 use constraint_builder::{ConstraintBuilder, Queries};
-use eth_types::{Address, Field};
+use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
@@ -217,7 +217,8 @@ impl<F: Field> StateCircuitConfig<F> {
         let rows = rows.iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));
 
-        let mut state_root = randomness.map(|_| F::zero());
+        let mut state_root =
+            randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(), randomness));
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
