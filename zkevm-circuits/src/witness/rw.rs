@@ -691,7 +691,7 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
-                        AccountField::NonExisting => AccountFieldTag::NonExisting,
+                        // AccountField::NonExisting => AccountFieldTag::NonExisting,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,

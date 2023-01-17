@@ -262,6 +262,45 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    fn sanity_check_account_op(&mut self, rw: RW, op: &AccountOp) {
+        if matches!(rw, RW::READ) {
+            if op.value_prev != op.value {
+                panic!(
+                    "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
+                    self.block_ctx.rwc.0, op
+                )
+            }
+        }
+        let account = self.sdb.get_account(&op.address).1;
+        let account_value_prev = match op.field {
+            AccountField::Nonce => account.nonce,
+            AccountField::Balance => account.balance,
+            AccountField::CodeHash => {
+                if account.is_empty() {
+                    Word::zero()
+                } else {
+                    account.code_hash.to_word()
+                }
+            }
+        };
+        if op.value_prev != account_value_prev {
+            panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
+                rw,
+                account,
+                self.block_ctx.rwc.0,
+                op
+            );
+        }
+        if !matches!(op.field, AccountField::CodeHash) {
+            if account.is_empty() {
+                panic!(
+                    "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+                    rw, self.block_ctx.rwc.0, op
+                );
+            }
+        }
+    }
+
     /// Push a read type [`AccountOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter), and then
@@ -276,11 +315,9 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::READ,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.sanity_check_account_op(RW::READ, &op);
+        self.push_op(step, RW::READ, op);
         Ok(())
     }
 
@@ -298,11 +335,9 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::WRITE,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.sanity_check_account_op(RW::WRITE, &op);
+        self.push_op(step, RW::WRITE, op);
         Ok(())
     }
 
@@ -759,7 +794,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     AccountField::Nonce => account.nonce = op.value,
                     AccountField::Balance => account.balance = op.value,
                     AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
-                    AccountField::NonExisting => (),
+                    // AccountField::NonExisting => (),
                 }
             }
             OpEnum::TxRefund(op) => {
