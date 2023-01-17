@@ -10,9 +10,12 @@ use crate::{
     circuit,
     circuit_tools::DataTransition,
     evm_circuit::util::rlc,
-    mpt_circuit::MPTContext,
     mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
     mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
+    mpt_circuit::{
+        helpers::{get_len_short, get_num_bytes_short},
+        MPTContext,
+    },
 };
 
 /*
@@ -142,7 +145,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         let s_main = ctx.s_main;
         let key = ctx.accumulators.key;
         let mult_diff = ctx.accumulators.mult_diff;
-        let r = ctx.r;
+        let r = ctx.r.clone();
 
         let rot_branch_init = -BRANCH_ROWS_NUM + 1;
         let rot_first_child = rot_branch_init + 1;
@@ -151,17 +154,13 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         circuit!([meta, cb.base], {
             let c16inv = Expression::Constant(F::from(16).invert().unwrap());
             let not_first_level = a!(position_cols.not_first_level);
-            let branch = BranchNodeInfo::new(meta, s_main.clone(), true, rot_branch_init);
-            let branch_prev = BranchNodeInfo::new(meta, s_main.clone(), true, rot_branch_init_prev);
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+            let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init_prev);
             let modified_node_index = a!(ctx.branch.modified_node_index, rot_first_child);
             let key_rlc =
                 DataTransition::new_with_rot(meta, key.rlc, rot_first_child_prev, rot_first_child);
             let key_mult =
                 DataTransition::new_with_rot(meta, key.mult, rot_first_child_prev, rot_first_child);
-            // We are in extension row C, rot_into_branch_init - 1 brings us to the account
-            // leaf storage codehash in the first storage proof level.
-            let is_first_storage_level =
-                a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1);
 
             ifx! {f!(position_cols.q_not_first_ext_c), a!(ctx.branch.is_extension_node_c) => {
                 let selectors = [branch.is_key_odd(), branch.is_key_even()];
@@ -173,7 +172,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 require!(sum::expr(&selectors) => 1);
 
                 // Get the previous values from the previous branch. In the first level use initial values.
-                let after_first_level = not_first_level.expr() * not!(is_first_storage_level);
+                let after_first_level = not_first_level.expr() * not!(branch.is_below_account(meta));
                 let (key_rlc_prev, key_mult_prev) = ifx!{after_first_level => {
                     (key_rlc.prev(), key_mult.prev())
                 } elsex {
@@ -182,10 +181,10 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
                 // Get the length of the key
                 let key_len = ifx!{branch.is_extension() => {
-                    let num_bytes = a!(s_main.rlp2, -1) - 128.expr();
+                    let len = get_len_short(a!(s_main.rlp2, -1));
                     matchx! {
-                        branch.is_long_even() + branch.is_long_odd_c1.expr() => num_bytes.expr() - 1.expr(),
-                        branch.is_long_odd_c16 => num_bytes.expr(),
+                        branch.is_long_even() + branch.is_long_odd_c1.expr() => len.expr() - 1.expr(),
+                        branch.is_long_odd_c16 => len.expr(),
                         branch.is_short_c16 => 1.expr(),
                         branch.is_short_c1 => 0.expr(),
                     }
@@ -204,6 +203,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     require!(key_rlc_ext => key_rlc_ext.prev());
 
                     // Extension key rlc
+                    // TODO(Brecht): refactor
                     let ext_key_rlc = matchx! {
                         branch.is_long_odd_c1.expr() + branch.is_long_even_c1.expr() => {
                             // We check the extension node intermediate RLC for the case when we have
@@ -305,7 +305,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 }}
                 ifx!{branch.is_long() => {
                     // `s_main.bytes[i] = 0` after last extension node nibble, ctx.rlp_bytes()[3..35]
-                    cb.set_length(1.expr() + (a!(s_main.bytes[0]) - 128.expr()));
+                    cb.set_length(get_num_bytes_short(a!(s_main.bytes[0])));
                 }}
             }}
         });

@@ -412,6 +412,10 @@ pub(crate) mod rlc {
     ) -> Expression<F> {
         debug_assert!(expressions.len() <= power_of_randomness.len() + 1);
 
+        if expressions.is_empty() {
+            return 0.expr();
+        }
+
         let mut rlc = expressions[0].expr();
         for (expression, randomness) in expressions[1..].iter().zip(power_of_randomness.iter()) {
             rlc = rlc + expression.expr() * randomness.expr();

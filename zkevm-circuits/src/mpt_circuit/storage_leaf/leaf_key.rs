@@ -137,9 +137,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
-        let s_main = ctx.s_main;
         let accs = ctx.accumulators;
-        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let denoter = ctx.denoter;
 
         let rot_parent = if is_s { -1 } else { -3 };
@@ -147,10 +145,9 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
         let rot_first_child = rot_branch_init + 1;
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
-        let rot_branch_parent = rot_branch_init - 1;
 
         circuit!([meta, cb.base], {
-            let leaf = StorageLeafInfo::new(meta, ctx.clone(), 0);
+            let leaf = StorageLeafInfo::new(meta, ctx.clone(), is_s, 0);
 
             // The two flag values need to be boolean.
             require!(leaf.flag1 => bool);
@@ -160,12 +157,11 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
             // Get the key data from the branch above (if any)
-            let is_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_parent);
-            let (key_rlc_prev, key_mult_prev, is_key_odd, nibbles_count_prev) = ifx! {not!(is_in_first_storage_level) => {
-                let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
+            let (key_rlc_prev, key_mult_prev, is_key_odd, nibbles_count_prev) = ifx! {not!(leaf.is_below_account(meta)) => {
+                let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
                 ifx!{branch.is_placeholder() => {
-                    ifx!{not!(a!(is_account_leaf_in_added_branch, rot_branch_parent)) => {
-                        let branch_prev = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init_prev);
+                    ifx!{not!(branch.is_below_account(meta)) => {
+                        let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init_prev);
                         let rot_prev = rot_first_child_prev;
                         (a!(accs.key.rlc, rot_prev), a!(accs.key.mult, rot_prev), branch_prev.is_key_odd(), branch_prev.nibbles_counter().expr())
                     } elsex {
@@ -196,7 +192,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // placeholder leaf).
             let is_in_first_level = a!(denoter.sel(is_s), 1);
             let is_leaf_placeholder = is_in_first_level
-                + ifx! {not!(is_in_first_storage_level) => {
+                + ifx! {not!(leaf.is_below_account(meta)) => {
                     a!(denoter.sel(is_s), rot_first_child)
                 }};
             let num_nibbles =

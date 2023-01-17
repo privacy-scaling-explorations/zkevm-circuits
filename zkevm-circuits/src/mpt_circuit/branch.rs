@@ -178,10 +178,9 @@ impl<F: FieldExt> BranchConfig<F> {
                     // On the contrary, when it is an extension node the counter increases by the number of nibbles
                     // in the extension key and the additional nibble for the position in a branch (this constraint
                     // is in `extension_node.rs` though).
-                    let branch = BranchNodeInfo::new(meta, s_main, true, 0);
+                    let branch = BranchNodeInfo::new(meta, ctx.clone(), true, 0);
                     ifx!{not!(branch.is_extension()) => {
-                        // TODO(Brecht): Is always 1 for added branches?
-                        ifx!{not!(a!(ctx.account_leaf.is_in_added_branch, -1)), not_first_level => {
+                        ifx!{not!(branch.is_below_account(meta)), not_first_level => {
                             // Only check if there is an account above the branch.
                             require!(branch.nibbles_counter() => branch.nibbles_counter().prev() + 1.expr());
                         } elsex {
@@ -224,7 +223,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         // only in branch init). Another alternative would be to have a column where we
                         // add `rlp2` value from the current row in each of the 16
                         // rows. Both alternative would require additional column.
-                        let branch = BranchNodeInfo::new(meta, s_main, is_s, -(ARITY as i32));
+                        let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, -(ARITY as i32));
                         ifx!{branch.is_placeholder() => {
                             let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
                                 acc + a!(ctx.main(is_s).rlp2, -(idx as i32))
@@ -255,7 +254,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         // TODO(Brecht): just store it in branch init in its own column.
                         let num_bytes_left = ifx!{is_branch_init.prev() => {
                             // Length of branch without initial rlp bytes
-                            BranchNodeInfo::new(meta, s_main, is_s, -1).raw_len()
+                            BranchNodeInfo::new(meta, ctx.clone(), is_s, -1).raw_len()
                         } elsex {
                             // Simply stored in rlp1 otherwise
                             a!(ctx.main(is_s).rlp1, -1)
@@ -356,7 +355,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 // The same applies for `c_hash_rlc`.
                 ifx!{is_last_child => {
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
-                    let mut branch = BranchNodeInfo::new(meta, s_main, true, -(ARITY as i32));
+                    let mut branch = BranchNodeInfo::new(meta, ctx.clone(), true, -(ARITY as i32));
                     for rot in -(ARITY as i32)+1..=0 {
                         for is_s in [true, false] {
                             branch.set_is_s(is_s);

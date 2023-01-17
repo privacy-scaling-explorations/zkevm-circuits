@@ -10,11 +10,13 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     circuit_tools::{DataTransition, LRCable},
+    evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::get_num_nibbles,
+        helpers::{get_len_short, get_num_bytes_list_short, get_num_nibbles},
         param::{
             ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, C_RLP_START, C_START, HASH_WIDTH,
+            RLP_HASH_VALUE, RLP_NIL,
         },
     },
     mpt_circuit::{
@@ -215,15 +217,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         circuit!([meta, cb.base], {
             let not_first_level = a!(position_cols.not_first_level);
             let s_rlp2 = a!(s_main.rlp2);
-            let ext = BranchNodeInfo::new(meta, s_main.clone(), is_s, rot_branch_init);
+            let ext = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
             let ext_rlc = DataTransition::from(a!(accs.acc_s.rlc, rot_s), a!(accs.acc_c.rlc));
 
             // There are two cases:
-            // - hashed branch has 160 at c_rlp2 and hash in c_advices,
+            // - hashed branch has RLP_HASH_VALUE at c_rlp2 and hash in c_advices,
             // - non-hashed branch has 0 at c_rlp2 and all the bytes in c_advices
-            require!(a!(c_main.rlp2) => [0, 160]);
-            let is_branch_hashed =
-                a!(c_main.rlp2) * Expression::Constant(F::from(160).invert().unwrap());
+            require!(a!(c_main.rlp2) => [0, RLP_HASH_VALUE]);
+            let is_branch_hashed = a!(c_main.rlp2)
+                * Expression::Constant(F::from(RLP_HASH_VALUE as u64).invert().unwrap());
 
             // `short` means there is only one nibble in the extension node, `long` means
             // there are at least two. `even` means the number of nibbles is
@@ -253,13 +255,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     require!(selector => bool);
                 }
                 // For extension nodes exactly 1 type selector needs to be enabled.
-                require!(sum::expr(type_selectors.clone()) => 1);
+                require!(sum::expr(&type_selectors) => 1);
                 // `is_c16` and `is_c1` selectors are set using the extension node type selector data.
                 // (while in case of a regular branch the extension node selectors do not hold this information).
-                require!(ext.is_key_even() => sum::expr(type_selectors_c1.clone()));
-                require!(ext.is_key_odd() => sum::expr(type_selectors_c16.clone()));
+                require!(ext.is_key_even() => sum::expr(&type_selectors_c1));
+                require!(ext.is_key_odd() => sum::expr(&type_selectors_c16));
             }}
 
+            // TODO(Brecht): refactor
             // In C we have nibbles, we check below only for S.
             if is_s {
                 // Even implies long and implies s_main.bytes[0] = 0
@@ -372,13 +375,15 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 let rlc = ext_rlc.prev() + c_main.expr(meta, 0)[2..].to_vec().rlc_chain(&r, mult.expr());
                 require!(ext_rlc => rlc);
                 // RLC bytes zero check for c_main.bytes.iter().skip(1)
-                cb.set_length_c(1.expr() + a!(c_main.bytes[0]) - 192.expr());
+                cb.set_length_c(get_num_bytes_list_short(a!(c_main.bytes[0])));
             }}
             // We check that the branch hash RLC (computed over the first 17 rows)
             // corresponds to the extension node RLC stored in the extension node row.
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let branch_rlc = a!(accs.acc(is_s).rlc, rot_last_child)
-                + 128.expr() * a!(accs.acc(is_s).mult, rot_last_child);
+            let branch_rlc = rlc::expr(
+                &[a!(accs.acc(is_s).rlc, rot_last_child), RLP_NIL.expr()],
+                &[a!(accs.acc(is_s).mult, rot_last_child)],
+            );
             let rlc = c_main.bytes(meta, 0).rlc(&r);
             ifx! {is_branch_hashed => {
                 // Check that `(branch_rlc, extension_node_hash_rlc`) in in the keccak table.
@@ -391,13 +396,13 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // Check if the extension node is in its parent.
             // Note: acc_c in both cases.
             let ext_rlc = a!(accs.acc_c.rlc);
-            let ext_len = a!(s_main.rlp1, rot_s) - 192.expr() + 1.expr();
+            let ext_len = get_num_bytes_list_short(a!(s_main.rlp1, rot_s));
             ifx! {not_first_level => {
                 ifx!{not!(ext.is_placeholder()) => {
                     // Only check if there is an account above the leaf.
                     // rot_into_branch_init - 1 because we are in the last branch child
                     // (rot_into_branch_init takes us to branch init).
-                    ifx!{a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1) => {
+                    ifx!{ext.is_below_account(meta) => {
                         /* Extension node in first level of storage trie - hash compared to the storage root */
                         // When extension node is in the first level of the storage trie, we need to check whether
                         // `hash(ext_node) = storage_trie_root`. We do this by checking whether
@@ -449,11 +454,12 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     // - `s_main.bytes[0]` when the extension node is longer than 55
                     // - `s_rlp2` otherwise
                     // In both cases we have to subtract 128 to get the number of bytes.
-                    ifx!(ext.is_longer_than_55 => {
+                    // TODO(Brecht): Is this correct for is_longer_than_55?
+                    get_len_short(ifx!{ext.is_longer_than_55 => {
                         a!(s_main.bytes[0])
                     } elsex {
                         a!(s_main.rlp2)
-                    }) - 128.expr()
+                    }})
                 }};
                 // Calculate the number of nibbles
                 let num_nibbles =
@@ -461,9 +467,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Make sure the nibble counter is updated correctly
                 // nibbles_count_prev needs to be 0 when in first account level or
                 // in first storage level
-                let is_first_storage_level =
-                    a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1);
-                let nibbles_count_prev = ifx! {not!(is_first_storage_level) * not_first_level.expr() => {
+                let nibbles_count_prev = ifx! {not!(ext.is_below_account(meta)), not_first_level.expr() => {
                     ext.nibbles_counter().prev()
                 }};
                 require!(ext.nibbles_counter() => nibbles_count_prev.expr() + num_nibbles.expr() + 1.expr());

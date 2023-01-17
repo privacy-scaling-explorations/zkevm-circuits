@@ -10,10 +10,13 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
     mpt_circuit::{
         helpers::{key_rlc, BranchNodeInfo},
-        param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM, RLP_SHORT},
+        param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
+    },
+    mpt_circuit::{
+        helpers::{AccountLeafInfo, MPTConstraintBuilder},
+        MPTContext,
     },
     mpt_circuit::{
         param::{ACCOUNT_LEAF_KEY_C_IND, IS_NON_EXISTING_ACCOUNT_POS},
@@ -160,7 +163,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
             ifx! {a!(proof_type.is_non_existing_account_proof) => {
                 ifx! {is_wrong_leaf => {
-                    let key_rlc = ifx! {a!(not_first_level) => {
+                    let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx! {a!(not_first_level) => {
                         // Differently than for the other proofs, the account-non-existing proof compares `address_rlc`
                         // with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
                         // The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
@@ -171,11 +174,8 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
                         // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
                         // is different).
-                        let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
-                        // Calculate the key RLC
-                        let key_rlc_prev = a!(accs.key.rlc, rot_first_branch);
-                        let key_mult_prev = a!(accs.key.mult, rot_first_branch);
-                        key_rlc_prev + key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev.expr(), branch.is_key_odd(), 1.expr())
+                        let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+                        (a!(accs.key.rlc, rot_first_branch), a!(accs.key.mult, rot_first_branch), branch.is_key_odd())
                     } elsex {
                         /* Non existing account proof leaf address RLC (leaf in first level) */
                         // Ensuring that the account does not exist when there is only one account in the state trie.
@@ -183,14 +183,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         // Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
                         // above. That is because when there is a branch (with nil object) in the first level,
                         // it automatically means the account leaf is not in the first level.
-                        // Note: when leaf is in the first level, the key stored in the leaf is always
-                        // of length 33 - the first byte being 32 (when after branch,
-                        // the information whether there the key is odd or even
-                        // is in s_main.bytes[IS_BRANCH_C16_POS - LAYOUT_OFFSET] (see sel1/sel2).
-                        require!(a!(s_main.bytes[1]) => 32);
-                        // Calculate the key RLC
-                        ctx.rlc(meta, 4..36, 0)
+                        (0.expr(), 1.expr(), false.expr())
                     }};
+                    let key_rlc = key_rlc_prev + key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev, is_key_odd, 1.expr());
                     require!(a!(address_rlc) => key_rlc);
                     // Key RLC needs to be different
                     add_wrong_leaf_constraints(meta, cb);
@@ -211,7 +206,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             }};
 
             // RLC bytes zero check
-            cb.set_length(1.expr() + a!(s_main.bytes[0]) - RLP_SHORT.expr());
+            let leaf = AccountLeafInfo::new(meta, ctx.clone(), 0);
+            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+            cb.set_length(num_bytes - 2.expr());
         });
 
         AccountNonExistingConfig {

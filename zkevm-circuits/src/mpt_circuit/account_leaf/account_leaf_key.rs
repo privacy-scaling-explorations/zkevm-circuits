@@ -14,8 +14,8 @@ use crate::{
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{get_num_nibbles, key_rlc, MPTConstraintBuilder},
-        param::RLP_SHORT,
+        helpers::{get_num_nibbles, key_rlc, AccountLeafInfo, MPTConstraintBuilder},
+        param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG},
         FixedTableTag,
     },
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
@@ -87,6 +87,31 @@ The `is_account_delete_mod` lookup is enabled in `ACCOUNT_LEAF_KEY_S` row.
 236,246,95,240,224,191,229,27,102,202,231,184,80 There are 112
 bytes after the first two bytes. 157 means the key is 29 (157 -
 128) bytes long.
+
+The example layout for a branch placeholder looks like (placeholder could be in `C` proof too):
+    Branch 1S               || Branch 1C
+    Branch 2S (placeholder) || Branch 2C
+    Leaf S
+    Leaf C
+Using `Previous key RLC` constraint we ensured that we copied the key RLC from Branch 1S
+to Leaf S `accs.acc_c.rlc` column. So when add nibbles to compute the key RLC (address RLC)
+of the account, we start with `accs.acc_c.rlc` value from the current row.
+sel1/sel2 tells us whether there is an even or odd number of nibbles in the leaf.
+sel1/sel2 info is need for the computation of the key RLC (see below), in case of a leaf
+after branch placeholder, sel1/sel2 can be computed as follows.
+Note that we cannot rotate back into Branch 1S because we get PoisonedConstraint
+in extension_node_key.
+Instead, we can rotate into branch parallel to the placeholder branch and compute sel1/sel2 with info from there.
+Let's denote sel1/sel2 from this branch by sel1p/sel2p.
+There are a couple of different cases, for example when branch/extension node parallel
+to the placeholder branch is a regular branch.
+There is only one nibble taken by Branch 2C, so sel1/sel2 simply turns around compared to sel1p/sel2p:
+sel1 = sel2p
+sel2 = sel1p
+When branch/extension node parallel to the placeholder branch is an extension node, it depends on the
+number of nibbles. If there is an odd number of nibbles: sel1 = sel1p, sel2 = sel2p. If there is
+an even number of nibbles, it turns around.
+
 */
 
 #[derive(Clone, Debug, Default)]
@@ -114,15 +139,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let rot_branch_init = rot_first_child - 1;
 
         circuit!([meta, cb.base], {
-            let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
+            let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
 
-            // Account leaf always starts with 248 because its length is always longer than
-            // 55 bytes due to containing two hashes - storage root and
-            // codehash. 248 is the RLP byte which means
-            // there is `1 = 248 - 247` byte specifying the length of the remaining
-            // list. For example, in [248,112,157,59,...], there are 112 byte after the
-            // second byte.
-            require!(a!(s_main.rlp1) => 248);
+            // Account leaf always starts with RLP_LIST_LONG + 1 because its length is
+            // always longer than 55 bytes due to containing two hashes -
+            // storage root and codehash.
+            require!(a!(s_main.rlp1) => RLP_LIST_LONG + 1);
 
             // Calculate and store the leaf data RLC
             require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
@@ -131,39 +154,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let is_branch_placeholder =
                 ifx! {a!(position_cols.not_first_level) => { branch.is_placeholder() }};
             let (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd) = ifx! {is_branch_placeholder => {
-                // The example layout for a branch placeholder looks like (placeholder could be in `C` proof too):
-                //     Branch 1S               || Branch 1C
-                //     Branch 2S (placeholder) || Branch 2C
-                //     Leaf S
-                //     Leaf C
-                // Using `Previous key RLC` constraint we ensured that we copied the key RLC from Branch 1S
-                // to Leaf S `accs.acc_c.rlc` column. So when add nibbles to compute the key RLC (address RLC)
-                // of the account, we start with `accs.acc_c.rlc` value from the current row.
-                // sel1/sel2 tells us whether there is an even or odd number of nibbles in the leaf.
-                // sel1/sel2 info is need for the computation of the key RLC (see below), in case of a leaf
-                // after branch placeholder, sel1/sel2 can be computed as follows.
-                // Note that we cannot rotate back into Branch 1S because we get PoisonedConstraint
-                // in extension_node_key.
-                // Instead, we can rotate into branch parallel to the placeholder branch and compute sel1/sel2 with info from there.
-                // Let's denote sel1/sel2 from this branch by sel1p/sel2p.
-                // There are a couple of different cases, for example when branch/extension node parallel
-                // to the placeholder branch is a regular branch.
-                // There is only one nibble taken by Branch 2C, so sel1/sel2 simply turns around compared to sel1p/sel2p:
-                // sel1 = sel2p
-                // sel2 = sel1p
-                // When branch/extension node parallel to the placeholder branch is an extension node, it depends on the
-                // number of nibbles. If there is an odd number of nibbles: sel1 = sel1p, sel2 = sel2p. If there is
-                // an even number of nibbles, it turns around.
-                // Note: _c16 presents the same info as sel1, _c1 presents the same info as sel2 (this information is doubled
-                // to reduce the degree when handling different cases in extension_node_key).
-                // TODO(Brecht): hmmmm
-                let is_key_odd = not!(branch.is_extension()) * branch.is_key_even()
-                    + branch.is_short_c16.expr() * branch.is_key_odd()
-                    + branch.is_short_c1.expr() * branch.is_key_even()
-                    + branch.is_long_even_c16.expr() * branch.is_key_even()
-                    + branch.is_long_even_c1.expr() * branch.is_key_odd()
-                    + branch.is_long_odd_c16.expr() * branch.is_key_odd()
-                    + branch.is_long_odd_c1.expr() * branch.is_key_even();
+                // Update key parity
+                let is_key_odd = matchx! {
+                    not!(branch.is_extension()) => branch.is_key_even(),
+                    branch.is_ext_even() => branch.is_key_odd(),
+                    branch.is_ext_odd() => branch.is_key_even(),
+                };
 
                 // Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
                 // is below the placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`),
@@ -214,17 +210,18 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 );
             require!(a!(accs.key.rlc) => key_rlc);
 
-            // Total number of nibbles needs to be 64.
-            let key_len = a!(s_main.bytes[0]) - RLP_SHORT.expr();
+            // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
+            let key_len = account.key_len(meta, &mut cb.base, ctx.clone());
             let num_nibbles =
                 get_num_nibbles(meta, &mut cb.base, key_len.expr(), is_key_odd.expr());
-            require!(nibbles_count_prev + num_nibbles => 64);
+            require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
 
+            // Num bytes used in RLC
+            let num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+            // Update `mult_diff`
+            require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check
-            cb.set_length(1.expr() + key_len.expr());
-            // Update `mult_diff` for key length + 2 RLP bytes + 1 byte that contains the
-            // key length.
-            require!((FixedTableTag::RMult, key_len.expr() + 3.expr(), a!(accs.acc_s.mult)) => @"mult");
+            cb.set_length(num_bytes.expr() - 2.expr());
 
             /* Account delete */
             // We need to make sure there is no leaf when account is deleted. Two possible
@@ -251,9 +248,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                 }}
             }
         });
-
-        // Note: there is no need to check `key_rlc_mult` as it is not used after this
-        // row.
 
         AccountLeafKeyConfig {
             _marker: PhantomData,

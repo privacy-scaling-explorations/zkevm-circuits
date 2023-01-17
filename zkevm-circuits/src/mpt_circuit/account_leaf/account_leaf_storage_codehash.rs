@@ -10,13 +10,12 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     circuit_tools::{DataTransition, LRCable},
-    evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{accumulate_rand, BranchNodeInfo, MPTConstraintBuilder},
+        helpers::{AccountLeafInfo, BranchNodeInfo, MPTConstraintBuilder},
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-            C_START, HASH_WIDTH, IS_CODEHASH_MOD_POS, RLP_SHORT, S_START,
+            C_START, HASH_WIDTH, IS_CODEHASH_MOD_POS, RLP_HASH_VALUE, S_START,
         },
         MPTContext,
     },
@@ -86,7 +85,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         let position_cols = ctx.position_cols;
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
-        let r = ctx.r;
+        let r = ctx.r.clone();
         let accs = ctx.accumulators;
         let value_prev = ctx.value_prev;
         let value = ctx.value;
@@ -111,54 +110,44 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         let rot_last_child = rot_branch_init + (ARITY as i32);
         let rot_last_child_prev = rot_last_child - BRANCH_ROWS_NUM;
 
-        // Note: We do not need to check `acc_mult` because it is not used after this
-        // row. Note: differently as in storage leaf value (see empty_trie
+        // Note: differently as in storage leaf value (see empty_trie
         // there), the placeholder leaf never appears in the first level here,
         // because there is always at least a genesis account.
         circuit!([meta, cb.base], {
             ifx! {f!(position_cols.q_not_first), a!(ctx.account_leaf.is_storage_codehash(is_s)) => {
+                // rlp1 is not used, rlp2 is used to store the first RLP byte.
+                let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
+
                 // When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
                 // and the constraints in this gate are not triggered. In that case it is checked
                 // that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
                 // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
                 // has a nil.
-                // Note: `(is_non_existing_account_proof.clone() - is_wrong_leaf.clone() - one.clone())`
-                // cannot be 0 when `is_non_existing_account_proof = 0` (see `account_leaf_nonce_balance.rs`).
                 let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
                 // TODO(Brecht): Can we remove this if by just making this pass in this special case?
                 ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(is_wrong_leaf)])) => {
-                    // Storage root and codehash are always 32byte hashes.
-                    require!(a!(s_main.rlp2) => RLP_SHORT + 32);
-                    require!(a!(c_main.rlp2) => RLP_SHORT + 32);
+                    // Storage root and codehash are always 32-byte hashes.
+                    require!(a!(s_main.rlp2) => RLP_HASH_VALUE);
+                    require!(a!(c_main.rlp2) => RLP_HASH_VALUE);
                 }}
 
                 // RLC calculation
+                let account_rlc = DataTransition::new_with_rot(meta, accs.acc_s.rlc, rot_nonce_balance, 0);
+                let mult_prev = a!(accs.acc_s.mult, rot_nonce_balance);
                 // - Storage root
                 let storage_root = DataTransition::new(meta, accs.s_mod_node_rlc);
                 require!(storage_root => s_main.bytes(meta, 0).rlc(&r));
                 // - Codehash
                 let codehash = DataTransition::new(meta, accs.c_mod_node_rlc);
                 require!(codehash => c_main.bytes(meta, 0).rlc(&r));
-                // Calculate the full account leaf RLC using the intermediate data in nonce/balance and adding the final data here.
-                let acc_prev = a!(accs.acc_s.rlc, rot_nonce_balance);
-                let acc_mult_prev = a!(accs.acc_s.mult, rot_nonce_balance);
-                let rlc = acc_prev.expr() + rlc::expr(
-                    &[
-                        a!(s_main.rlp2),
-                        storage_root.expr(),
-                        a!(c_main.rlp2),
-                        codehash.expr(),
-                    ].map(|v| v * acc_mult_prev.expr()),
-                    &accumulate_rand(&[r[0].expr(), r[31].expr(), r[0].expr()]),
-                );
-                require!(a!(accs.acc_s.rlc) => rlc);
-                let rlc = a!(accs.acc_s.rlc);
+                // The full account leaf RLC
+                let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, &mut cb.base, ctx.clone(), storage_root.expr(), codehash.expr(), mult_prev.expr(), 0);
+                require!(account_rlc => rlc);
 
                 // Check if the account is in the branch above.
                 let root = a!(inter_root);
-                let account_len = a!(s_main.rlp2, rot_key) + 2.expr();
                 let (do_lookup, hash_rlc) = ifx!{a!(position_cols.not_first_level) => {
-                    let branch = BranchNodeInfo::new(meta, s_main, is_s, rot_branch_init);
+                    let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
                     ifx!{branch.is_placeholder() => {
                         ifx!{a!(position_cols.not_first_level, rot_last_child) => {
                             /* Hash of an account leaf when branch placeholder */
@@ -197,7 +186,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 }};
                 // Do the lookup
                 ifx!{do_lookup => {
-                    require!((1, rlc, account_len, hash_rlc) => @"keccak");
+                    let leaf = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
+                    let leaf_len = leaf.len(meta, &mut cb.base, ctx.clone());
+                    require!((1, account_rlc, leaf_len, hash_rlc) => @"keccak");
                 }}
 
                 if !is_s {

@@ -3,10 +3,11 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::LRCable,
     evm_circuit::util::rlc,
     mpt_circuit::param::{
         ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, EXTENSION_ROWS_NUM,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, EXTENSION_ROWS_NUM, RLP_NIL,
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
@@ -84,21 +85,18 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
         // Any rotation that lands into branch can be used
         let rot_branch_child_prev = rot_branch_init - EXTENSION_ROWS_NUM - 1;
         circuit!([meta, cb.base], {
-            let branch = BranchNodeInfo::new(meta, ctx.s_main, is_s, rot_branch_init);
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
             // When placeholder branch, we don't check its hash in a parent.
             // Extension node is handled in `extension_node.rs`.
             ifx! {not!(branch.is_extension()), not!(branch.is_placeholder()) => {
-                // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
+                // TODO: acc currently doesn't have branch ValueNode info
                 let acc = ctx.accumulators.acc(is_s);
                 let branch_rlc = rlc::expr(
-                    &[a!(acc.rlc), 128.expr()],
+                    &[a!(acc.rlc), RLP_NIL.expr()],
                     &[a!(acc.mult)],
                 );
                 ifx!{a!(ctx.position_cols.not_first_level) => {
-                    // Only check if there is an account above the leaf.
-                    // rot_into_branch_init - 1 because we are in the last branch child
-                    // (rot_into_branch_init takes us to branch init).
-                    ifx!{a!(ctx.account_leaf.is_in_added_branch, rot_branch_init - 1) => {
+                    ifx!{branch.is_below_account(meta) => {
                         /* Branch in first level of storage trie - hash compared to the storage root */
                         // When a branch is in the first level of the storage trie, we need to check whether
                         // the branch hash matches the storage root.
@@ -106,10 +104,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         let storage_offset = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
                         let rot_into_storage_root = rot_branch_init - ACCOUNT_LEAF_ROWS + storage_offset;
                         // Note: storage root is always in s_main.bytes.
-                        let storage_root_rlc = rlc::expr(
-                            &ctx.s_main.bytes.iter().map(|&byte| a!(byte, rot_into_storage_root)).collect::<Vec<_>>(),
-                            &ctx.r,
-                        );
+                        let storage_root_rlc = ctx.s_main.bytes(meta, rot_into_storage_root).rlc(&ctx.r);
                         require!((1, branch_rlc, branch.len(), storage_root_rlc) => @"keccak");
                     } elsex {
                         // Here the branch is in some other branch

@@ -181,6 +181,10 @@ impl<F: FieldExt> MPTContext<F> {
             &self.r,
         )
     }
+
+    pub(crate) fn is_account(&self, meta: &mut VirtualCells<F>, rot_above: i32) -> Expression<F> {
+        meta.query_advice(self.account_leaf.is_in_added_branch, Rotation(rot_above))
+    }
 }
 
 /// Merkle Patricia Trie config.
@@ -422,6 +426,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
 
+                // TODO(Brecht): Make an actual state machine (currently close, but not yet)
                 /* Branch node */
                 let branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                 // BRANCH.IS_INIT
@@ -440,14 +445,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 }}
                 // BRANCH.IS_EXTENSION_NODE_S
                 let ext_node_config_s;
-                let is_extension_node = BranchNodeInfo::new(meta, s_main, true, -BRANCH_ROWS_NUM + 2).is_extension();
+                let is_extension_node = BranchNodeInfo::new(meta, ctx.clone(), true, -BRANCH_ROWS_NUM + 2).is_extension();
                 let is_extension_node_s = a!(branch.is_extension_node_s);
                 ifx!{f!(position_cols.q_not_first_ext_s), is_extension_node, is_extension_node_s => {
                     ext_node_config_s = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), true);
                 }}
                 // BRANCH.IS_EXTENSION_NODE_C
                 let ext_node_config_c;
-                let is_extension_node = BranchNodeInfo::new(meta, s_main, false, -BRANCH_ROWS_NUM + 1).is_extension();
+                let is_extension_node = BranchNodeInfo::new(meta, ctx.clone(), false, -BRANCH_ROWS_NUM + 1).is_extension();
                 let is_extension_node_c = a!(branch.is_extension_node_c);
                 ifx!{f!(position_cols.q_not_first_ext_c), is_extension_node, is_extension_node_c => {
                     ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);
@@ -532,8 +537,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 }}
 
                 /* Range checks */
-                // These range checks ensure that the value in the RLP columns are all bytes
-                // (between 0 - 255).
+                // These range checks ensure that the value in the RLP columns are all byte value.
+                // These lookups also enforce the value to be zero if the passed in length is < 0.
                 // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for branch child rlp1
                 // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
                 ifx!{f!(position_cols.q_enable) => {

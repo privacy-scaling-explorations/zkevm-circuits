@@ -10,17 +10,20 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     circuit_tools::{DataTransition, LRCable},
-    evm_circuit::util::rlc,
-    mpt_circuit::param::{
-        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH, S_START,
+    mpt_circuit::MPTContext,
+    mpt_circuit::{helpers::get_num_bytes_short, FixedTableTag},
+    mpt_circuit::{
+        helpers::AccountLeafInfo,
+        param::{
+            ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
+            ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH,
+            RLP_LIST_LONG, RLP_LONG, S_START,
+        },
     },
-    mpt_circuit::FixedTableTag,
     mpt_circuit::{
         helpers::MPTConstraintBuilder,
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
-    mpt_circuit::{param::RLP_SHORT, MPTContext},
     mpt_circuit::{
         param::{IS_BALANCE_MOD_POS, IS_NONCE_MOD_POS},
         MPTConfig, ProofValues,
@@ -63,6 +66,7 @@ The whole account leaf looks like:
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
+account leaf = [key, [nonce, balance, storage, codehash]]
 
 [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,
 236,246,95,240,224,191,229,27,102,202,231,184,80 There are 112
@@ -104,6 +108,11 @@ we enable nonce lookup in `ACCOUNT_LEAF_NONCE_BALANCE_S` row and balance lookup 
 This means we copy nonce C RLC to `ACCOUNT_LEAF_NONCE_BALANCE_S` row,
 and balance S RLC to `ACCOUNT_LEAF_NONCE_BALANCE_C` row.
 Constraints are added to ensure everything is properly copied.
+
+Note: when nonce or balance is 0, the actual value in the RLP encoding is
+128! TODO: when finalizing lookups, having 128 instead of 0
+needs to be taken into account.
+
 */
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafNonceBalanceConfig<F> {
@@ -123,7 +132,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         let accs = ctx.accumulators;
         let value_prev = ctx.value_prev;
         let value = ctx.value;
-        let denoter = ctx.denoter;
         let r = ctx.r.clone();
 
         let rot_key = if is_s {
@@ -143,16 +151,18 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         };
 
         circuit!([meta, cb.base], {
+            let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
             let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
 
-            // RLC calculation
+            // The two string RLP bytes stored in the s RLP bytes.
+            // The two list RLP bytes are stored in the c RLP bytes.
+            // The RLP bytes of nonce/balance are stored bytes[0].
+
+            // RLC calculation for nonce/balance
             let nonce = DataTransition::new(meta, accs.s_mod_node_rlc);
             let balance = DataTransition::new(meta, accs.c_mod_node_rlc);
-            let is_nonce_long = a!(denoter.sel1, rot_key);
-            let is_balance_long = a!(denoter.sel2, rot_key);
             let mult_diff_nonce = a!(accs.acc_c.rlc);
             let mult_diff_balance = a!(accs.key.mult);
-
             let mut calc_rlc = |data: Expression<F>,
                                 is_long: Expression<F>,
                                 mult_diff: Expression<F>,
@@ -161,64 +171,68 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // The is_long selector needs to be boolean
                 require!(is_long => bool);
                 // Calculate the RLC
-                let (len, rlc) = ifx! {is_long => {
-                    let num_bytes = 1.expr() + (a!(ctx.main(is_s).bytes[0]) - RLP_SHORT.expr());
-                    let rlc = ctx.main(is_s).bytes(meta, 0)[1..].to_vec().rlc(&r);
-                    (num_bytes, rlc)
+                let (num_bytes, value_rlc) = ifx! {is_long => {
+                    let num_bytes = get_num_bytes_short(a!(ctx.main(is_s).bytes[0]));
+                    let value_rlc = ctx.main(is_s).bytes(meta, 0)[1..].to_vec().rlc(&r);
+                    (num_bytes, value_rlc)
                 } elsex {
                     (1.expr(), a!(ctx.main(is_s).bytes[0]))
                 }};
-                require!(data => rlc);
+                require!(data => value_rlc);
                 // RLC bytes zero check
-                cb.set_length_sc(is_s, len.expr());
+                cb.set_length_sc(is_s, num_bytes.expr());
                 // Get the correct multiplier for the length
-                require!((FixedTableTag::RMult, len.expr() + mult_offset.expr(), mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
+                require!((FixedTableTag::RMult, num_bytes.expr() + mult_offset.expr(), mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
 
-                // Go from the value rlc to the full rlc
-                let rlc = ifx! {is_long => {
-                    a!(ctx.main(is_s).bytes[0]) + rlc.expr() * r[0].expr()
-                } elsex {
-                    rlc
-                }};
-                (rlc, len)
+                // Go from the value rlc to the data rlc
+                let rlc = account.to_data_rlc(
+                    meta,
+                    &mut cb.base,
+                    ctx.clone(),
+                    ctx.main(is_s),
+                    value_rlc,
+                    is_long,
+                    0,
+                );
+                (rlc, num_bytes)
             };
-            // `mult_diff_nonce` needs to correspond to nonce length + 4 bytes (s_rlp1,
-            // s_rlp2, c_rlp1, c_rlp1)
-            let (nonce_rlc, nonce_len) =
-                calc_rlc(nonce.expr(), is_nonce_long, mult_diff_nonce.expr(), 4, true);
-            let (balance_rlc, balance_len) = calc_rlc(
+            let (nonce_rlc, nonce_num_bytes) = calc_rlc(
+                nonce.expr(),
+                account.is_nonce_long(),
+                mult_diff_nonce.expr(),
+                4,
+                true,
+            );
+            let (balance_rlc, balance_num_bytes) = calc_rlc(
                 balance.expr(),
-                is_balance_long,
+                account.is_balance_long(),
                 mult_diff_balance.expr(),
                 0,
                 false,
             );
 
             // Calculate and store the combined nonce + balance multipliers
-            let acc_mult_prev = a!(accs.acc_s.mult, rot_key);
-            let acc_mult_after_nonce = a!(accs.acc_c.mult);
+            let account_rlc = DataTransition::new_with_rot(meta, accs.acc_s.rlc, rot_key, 0);
+            let mult_prev = a!(accs.acc_s.mult, rot_key);
+            // Multipliers
+            let mult_after_nonce = a!(accs.acc_c.mult);
             let mult_diff_balance = a!(accs.key.mult);
             let acc_mult_final = a!(accs.acc_s.mult);
-            require!(acc_mult_after_nonce => acc_mult_prev.expr() * mult_diff_nonce.expr());
-            require!(acc_mult_final => acc_mult_after_nonce.expr() * mult_diff_balance.expr());
-            // Store the combined nonce + balance RLC.
-            let acc_prev = a!(accs.acc_s.rlc, rot_key);
-            let rlc = acc_prev.expr()
-                + rlc::expr(
-                    &[
-                        a!(s_main.rlp1),
-                        a!(s_main.rlp2),
-                        a!(c_main.rlp1),
-                        a!(c_main.rlp2),
-                        nonce_rlc,
-                    ]
-                    .into_iter()
-                    .map(|value| value * acc_mult_prev.expr())
-                    .collect::<Vec<_>>(),
-                    &r,
-                )
-                + balance_rlc * acc_mult_after_nonce.clone();
-            require!(a!(accs.acc_s.rlc) => rlc);
+            require!(mult_after_nonce => mult_prev.expr() * mult_diff_nonce.expr());
+            require!(acc_mult_final => mult_after_nonce.expr() * mult_diff_balance.expr());
+            // Store the RLP bytes + nonce + balance RLC.
+            let rlc = account_rlc.prev()
+                + account.nonce_balance_rlc(
+                    meta,
+                    &mut cb.base,
+                    ctx.clone(),
+                    nonce_rlc.expr(),
+                    balance_rlc.expr(),
+                    mult_prev.expr(),
+                    mult_diff_nonce.expr(),
+                    0,
+                );
+            require!(account_rlc => rlc);
 
             // Check the RLP encoding consistency.
             // The only exception is when `is_non_existing_account_proof = 1` &
@@ -228,62 +242,30 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             //  TODO(Brecht): Can we remove this if by just making this pass in this special
             // case?
             ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(is_wrong_leaf)])) => {
-                // `s_main.rlp1` always needs to be 184. This is RLP byte meaning that behind this byte
-                // there is a string of length more than 55 bytes and that only `1 = 184 - 183` byte is reserved
-                // for length (`s_main.rlp2`). The string is always of length greater than 55 because there
-                // are codehash (32 bytes) and storage root (32 bytes) in the next row as part of this string.
-                // Note that it uses `s_main` for nibbles because the account address is computed using nibbles
-                // and this account address needs to be as required by a lookup.
-                require!(a!(s_main.rlp1) => 184);
-                // `c_main.rlp1` needs to always be 248. This is RLP byte meaning that behind this byte
-                // there is a list which has one byte that specifies the length at `c_main.rlp2`.
-                // The only exception is when `is_non_existing_account_proof = 1` & `is_wrong_leaf = 0`.
-                // In this case the value does not matter as the account leaf is only a placeholder and
-                // does not use `c_main`. Note that it uses `s_main` for nibbles because the account address
-                // is computed using nibbles and this account address needs to be as required by a lookup.
-                // That means there is an account leaf which is just a placeholder but it still has the
-                // correct address.
-                require!(a!(c_main.rlp1) => 248);
-                // `c_main.rlp2` specifies the length of the remaining RLP string. Note that the string
-                // is `s_main.rlp1`, `s_main.rlp2`, `c_main.rlp1`, `c_main.rlp2`, nonce bytes, balance bytes.
-                // Thus, `c_main.rlp2 = #(nonce bytes) + #(balance bytes) + 32 + 32`.
-                // `s_main.rlp2` - `c_main.rlp2` = 2 because of two bytes difference: `c_main.rlp1` and c_main.rlp2`.
-                // Example:
-                // [184  78   129      142       0 0 ... 0 248  76   135      28       5 107 201 118 120 59 0 0 ... 0]
-                // We can see: `78 - 76 - 1 - 1 = 0`.
+                // We always store between 55 and 256 bytes of data in the values list.
+                require!(a!(s_main.rlp1) => RLP_LONG + 1);
+                // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
                 require!(a!(s_main.rlp2) => a!(c_main.rlp2) + 2.expr());
-                // `c_main.rlp2 = #(nonce bytes) + #(balance bytes) + 32 + 32`.
-                // Note that `32 + 32` means the number of codehash bytes + the number of storage root bytes.
-                require!(a!(c_main.rlp2) => nonce_len.expr() + balance_len.expr() + (2 + 32 + 32).expr());
-                // The whole RLP length of the account leaf is specified in the account leaf key row with
-                // `s_main.rlp1 = 248` and `s_main.rlp2`. `s_main.rlp2` in key row actually specifies the length.
-                // `s_main.rlp2` in nonce balance row specifies the length of the remaining string in nonce balance
-                // row, so we need to check that `s_main.rlp2` corresponds to the key length (in key row) and
-                // `s_main.rlp2` in nonce balance row. However, we need to take into account also the bytes
-                // where the lengths are stored:
-                // `s_main.rlp2 (key row) - key_len - 1 (because key_len is stored in 1 byte)
-                //     - s_main.rlp2 (nonce balance row) - 1 (because of s_main.rlp1)
-                //     - 1 (because of s_main.rlp2) = 0`
-                // Example:
-                // [248,106,161,32,252,237,52,8,133,130,180,167,143,97,28,115,102,25,94,62,148,249,8,6,55,244,16,75,187,208,208,127,251,120,61,73,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                // [184,70,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,248,68,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                // We can see: `106 - 33 - 1 - 70 - 1 - 1 = 0`.
-                let rlp_len = a!(s_main.rlp2, rot_key);
-                let key_len = a!(s_main.bytes[0], rot_key) - 128.expr();
-                require!(rlp_len => key_len.expr() + 1.expr() + a!(s_main.rlp2) + 2.expr());
+                // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
+                require!(a!(c_main.rlp1) => RLP_LIST_LONG + 1);
+                // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
+                require!(a!(c_main.rlp2) => nonce_num_bytes.expr() + balance_num_bytes.expr() + (2 * (1 + 32)).expr());
+                // Now check that the the key and value list length matches the account length.
+                let len = account.len(meta, &mut cb.base, ctx.clone());
+                let key_num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
+                let value_list_num_bytes = a!(s_main.rlp2) + 2.expr();
+                // Account length needs to equal all key bytes and all values list bytes.
+                require!(len => key_num_bytes + value_list_num_bytes);
             }}
 
-            // Verify data consistency for lookup data.
-            // To enable lookup for balance modification we need to have S balance and C
+            // To enable lookups for balance modification we need to have S balance and C
             // balance in the same row.
             if is_s {
                 // Copy S nonce RLC to `value_prev` column.
                 require!(a!(value_prev) => nonce);
             } else {
-                // Note: when nonce or balance is 0, the actual value in the RLP encoding is
-                // 128! TODO: when finalizing lookups, having 128 instead of 0
-                // needs to be taken into account.
-                // Copy C nonce RLC to `value` column in `ACCOUNT_LEAF_NONCE_BALANCE_S` row.
+                // Copy C nonce RLC to `value` column S row.
                 require!(a!(value, rot_s) => nonce);
                 // Copy S balance RLC to `value_prev` column in C row.
                 require!(a!(value_prev) => balance.prev());

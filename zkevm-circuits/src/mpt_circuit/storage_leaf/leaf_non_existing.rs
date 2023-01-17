@@ -94,7 +94,6 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         // for non_existing_storage_proof, but we use C for non-existing
         // storage
         let is_modified_node_empty = ctx.denoter.sel2;
-        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
 
         let rot_key_c = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
         let rot_first_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
@@ -127,7 +126,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
 
         circuit!([meta, cb.base], {
             //let leaf = StorageLeafInfo::new(meta, ctx.clone(), 0);
-            let leaf_prev = StorageLeafInfo::new(meta, ctx.clone(), rot_key_c);
+            let leaf_prev = StorageLeafInfo::new(meta, ctx.clone(), true, rot_key_c);
 
             let is_wrong_leaf = a!(s_main.rlp1);
             // Make sure is_wrong_leaf is boolean
@@ -136,9 +135,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             ifx! {a!(proof_type.is_non_existing_storage_proof) => {
                 ifx! {is_wrong_leaf => {
                     // Get the previous RLC data
-                    let is_leaf_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_last_account_row);
-                    let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx!{not!(is_leaf_in_first_storage_level) => {
-                        let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
+                    let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx!{not!(ctx.is_account(meta, rot_last_account_row)) => {
+                        let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
                         (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.is_key_odd())
                     } elsex {
                         (0.expr(), 1.expr(), false.expr())

@@ -9,7 +9,11 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     circuit_tools::{DataTransition, LRCable},
-    mpt_circuit::FixedTableTag,
+    mpt_circuit::{
+        helpers::get_num_bytes_list_short,
+        param::{RLP_HASH_VALUE, RLP_NIL},
+        FixedTableTag,
+    },
     mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
 };
 
@@ -109,24 +113,19 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..34].to_vec().rlc_chain(&r, branch_mult.prev());
                 require!(branch_rlc => rlc);
 
-                let num_bytes = 1.expr() + (a!(main.bytes[0]) - 192.expr());
-                // Only `main.bytes[0] + num_bytes` bytes can be non-zero.
+                let num_bytes = get_num_bytes_list_short(a!(main.bytes[0]));
                 cb.set_length_sc(is_s, num_bytes.expr());
                 // We need to check that the multiplier changes according to `num_bytes` and update it.
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(node_mult_diff)) => @format!("mult{}", if is_s {""} else {"2"}));
                 require!(branch_mult => branch_mult.prev() * a!(node_mult_diff));
             } elsex {
-                // Empty and hashed branch children
-                // Empty nodes have 0 at `rlp2`, have `128` at `bytes[0]` and 0 everywhere else:
-                // [0, 0, 128, 0, ..., 0].
-                // While hashed nodes have `160` at `rlp2` and then any byte at `bytes`:
-                // [0, 160, a0, ..., a31].
-                require!(a!(main.rlp2) => [0, 160]);
+                // Empty nodes have 0 at `rlp2`, have `RLP_NIL` at `bytes[0]` and 0 everywhere else.
+                // While hashed nodes have `RLP_HASH_VALUE at `rlp2` and then any byte at `bytes`.
+                require!(a!(main.rlp2) => [0, RLP_HASH_VALUE]);
 
-                let is_empty = (160.expr() - a!(main.rlp2)) * Expression::Constant(F::from(160).invert().unwrap());
+                let is_empty = (RLP_HASH_VALUE.expr() - a!(main.rlp2)) * Expression::Constant(F::from(RLP_HASH_VALUE as u64).invert().unwrap());
                 let (rlc, mult) = ifx!{is_empty => {
-                    require!(a!(main.bytes[0]) => 128);
-
+                    require!(a!(main.bytes[0]) => RLP_NIL);
                     // There's only have one byte (128 at `bytes[0]`) that needs to be added to the RLC.
                     let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..3].to_vec().rlc_chain(&r, branch_mult.prev());
 
@@ -162,9 +161,6 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 require!(a!(main.rlp2) => 0);
             }}
         });
-
-        // Note: the constraints for there being 0s after the non-hashed child last byte
-        // are in branch_rlc.rs.
 
         BranchRLCConfig {
             _marker: PhantomData,

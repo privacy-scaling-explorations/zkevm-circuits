@@ -136,6 +136,8 @@ pub const RLP_SHORT: u8 = 128; // 0x80
 pub const RLP_LONG: u8 = 183; //  0xb7
 pub const RLP_LIST_SHORT: u8 = 192; //  0xc0
 pub const RLP_LIST_LONG: u8 = 247; //  0xf7
+pub const RLP_NIL: u8 = 128; //  0x80
+pub const RLP_HASH_VALUE: u8 = 128 + 32; //  0x80
 
 // Key parameters
 pub const KEY_LEN: usize = 32;

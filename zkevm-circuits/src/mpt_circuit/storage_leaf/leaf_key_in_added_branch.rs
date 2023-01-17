@@ -168,11 +168,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
         let drifted_pos = ctx.branch.drifted_pos;
-        let is_account_leaf_in_added_branch = ctx.account_leaf.is_in_added_branch;
         let r = ctx.r.clone();
 
         let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
-        let rot_branch_parent = rot_branch_init - 1;
         let rot_first_child = rot_branch_init + 1;
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_parent = -LEAF_DRIFTED_IND - 1;
@@ -183,10 +181,10 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         let rot_value_c = -(LEAF_DRIFTED_IND - LEAF_VALUE_C_IND);
 
         circuit!([meta, cb.base], {
-            let is_in_first_storage_level = a!(is_account_leaf_in_added_branch, rot_parent);
+            let is_in_first_storage_level = ctx.is_account(meta, rot_parent);
             ifx! {not!(is_in_first_storage_level) => {
-                let branch = BranchNodeInfo::new(meta, s_main, true, rot_branch_init);
-                let leaf = StorageLeafInfo::new(meta, ctx.clone(), 0);
+                let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+                let leaf = StorageLeafInfo::new(meta, ctx.clone(), true, 0);
 
                 // The two flag values need to be boolean.
                 require!(leaf.flag1 => bool);
@@ -199,16 +197,15 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // If the branch parallel to the placeholder branch is an extension node,
                 // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
                 let (key_rlc_prev, key_mult_prev) = ifx! {not!(is_in_first_storage_level) => {
-                    let is_branch_placeholder_in_first_level = a!(is_account_leaf_in_added_branch, rot_branch_parent);
                     ifx!{branch.is_extension() => {
-                        let key_mult_prev = ifx!{is_branch_placeholder_in_first_level => {
+                        let key_mult_prev = ifx!{branch.is_below_account(meta) => {
                             1.expr()
                         } elsex {
                             a!(accs.key.mult, rot_first_child_prev)
                         }};
                         (a!(accs.key.rlc, rot_parent), key_mult_prev * a!(accs.mult_diff, rot_first_child))
                     } elsex {
-                        ifx!{is_branch_placeholder_in_first_level => {
+                        ifx!{branch.is_below_account(meta) => {
                             (0.expr(), 1.expr())
                         } elsex {
                             (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
