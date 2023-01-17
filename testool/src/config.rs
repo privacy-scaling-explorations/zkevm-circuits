@@ -18,7 +18,6 @@ pub struct TestSuite {
     pub path: String,
     pub max_gas: u64,
     pub max_steps: u64,
-    pub max_rws: u64,
 
     /// see [Implemented opcodes status](https://github.com/appliedzkp/zkevm-circuits/issues/477)
     pub unimplemented_opcodes: Vec<OpcodeId>,
@@ -33,7 +32,6 @@ impl Default for TestSuite {
             path: String::default(),
             max_gas: u64::MAX,
             max_steps: u64::MAX,
-            max_rws: u64::MAX,
             unimplemented_opcodes: Vec::new(),
             ignore_tests: Some(Vec::new()),
             allow_tests: None,
