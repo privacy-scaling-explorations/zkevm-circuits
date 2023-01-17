@@ -128,7 +128,7 @@ mod test {
         Address, Bytecode, Bytes, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::TestContext;
+    use mock::{TestContext, eth};
 
     lazy_static! {
         static ref EXTERNAL_ADDRESS: Address =
@@ -242,7 +242,7 @@ mod test {
             ..Default::default()
         };
         // This account state should no longer be possible because contract nonces start
-        // at 1, per EIP-161. However, the requirement that the code be emtpy is still
+        // at 1, per EIP-161. However, the requirement that the code be empty is still
         // in the yellow paper and our constraints, so we test this case
         // anyways.
         let contract_only_account = Account {
@@ -258,5 +258,28 @@ mod test {
         ] {
             test_ok(Some(account), false);
         }
+    }
+
+    #[test]
+    fn create_tx_extcodehash() {
+        let code = bytecode! {
+            ADDRESS
+            EXTCODEHASH
+        };
+
+        let block: GethData = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(Address::repeat_byte(23)).balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[0].address).input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        test_circuits_block_geth_data_default(block).unwrap();
     }
 }
