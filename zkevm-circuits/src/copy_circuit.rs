@@ -472,6 +472,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                         if is_read {
                             //self.q_step.enable(&mut region, offset)?;
                         }
+                        // Andy test
                         // FIXME: finish padding of copy circuit
                         // Now temporarily set it to 0 to make vk univeral
                         // q_enable
