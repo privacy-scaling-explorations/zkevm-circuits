@@ -1,11 +1,42 @@
-### What was wrong?
+_PR description_
 
-> 1. Reference the issue to resolve
-> 2. Please give a concise description to the problem. The target readers could be the future developers, reviewers, and auditors. By reading your description, they should easily understand the changes proposed in this pull request.
+### Contents
 
-### How was it fixed?
+- _item_
 
-> Please include 
-> 1. What types of design choices you faced
-> 2. What decisions you have made
-> 3. Any valuable information that could help reviewers to think critically
+### Rationale
+
+_design decisions and extended information_
+
+
+<hr>
+
+## How to fill a PR description (remove this)
+
+Please give a concise description of your PR.
+
+The target readers could be future developers, reviewers, and auditors. By reading your description, they should easily understand the changes proposed in this pull request.
+
+MUST: Reference the issue to resolve
+
+### Single responsability
+
+Is RECOMMENDED to create single responsibility commits, but not mandatory.
+
+Anyway, you MUST enumerate the changes in a unitary way, e.g.
+
+```
+This PR contains:
+
+- Cleanup of xxxx, yyyy
+- Changed xxxx to yyyy in order to bla bla
+- Added xxxx function to ...
+- Refactored ....
+```
+
+### Design choices
+
+RECOMMENDED to:
+- What types of design choices did you face?
+- What decisions you have made?
+- Any valuable information that could help reviewers to think critically
