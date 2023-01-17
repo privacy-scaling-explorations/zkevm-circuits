@@ -114,7 +114,6 @@ fn gen_extcodecopy_step(
     } else {
         H256::zero()
     };
-
     state.account_read(
         &mut exec_step,
         external_address,
