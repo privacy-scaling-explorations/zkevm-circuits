@@ -65,8 +65,6 @@ use crate::keccak_circuit::keccak_packed_multi::{
 use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
 #[cfg(feature = "zktrie")]
 use crate::table::PoseidonTable;
-#[cfg(not(feature = "zktrie"))]
-use crate::witness::MptUpdates;
 
 use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
 use crate::table::{
@@ -399,15 +397,11 @@ impl<
         // TODO: if we have mpt circuit, mpt table should be assigned within it
         // rather than being loaded externally
         // TODO: use challenge API here??
-        #[cfg(not(feature = "zktrie"))]
-        {
-            let rws = &self.state_circuit.rows;
-            config.mpt_table.load(
-                &mut layouter,
-                &MptUpdates::mock_from(rws),
-                Value::known(block.randomness),
-            )?;
-        }
+        config.mpt_table.load(
+            &mut layouter,
+            &self.state_circuit.updates,
+            challenges.evm_word(),
+        )?;
 
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;

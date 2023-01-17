@@ -61,12 +61,13 @@ impl MptUpdates {
         use state::witness::WitnessGenerator;
 
         let mut update_without_root = Self::mock_from(rows);
+        update_without_root.old_root = U256::from_big_endian(init_trie.root());
 
         let mut wit_gen = WitnessGenerator::from(init_trie);
         let mut smt_traces = Vec::new();
         let mut tips = Vec::new();
 
-        for (key, update) in &mut update_without_root.0 {
+        for (key, update) in &mut update_without_root.updates {
             let proof_tip = state::as_proof_type(match key {
                 Key::AccountStorage { .. } => {
                     if update.old_value.is_zero() && update.new_value.is_zero() {

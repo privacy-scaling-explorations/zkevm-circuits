@@ -51,6 +51,11 @@ impl fmt::Debug for ZktrieState {
 
 impl ZktrieState {
     /// help to query account data
+    pub fn root(&self) -> &ZkTrieHash {
+        &self.trie_root
+    }
+
+    /// help to query account data
     pub fn state(&self) -> &StateDB {
         &self.sdb
     }

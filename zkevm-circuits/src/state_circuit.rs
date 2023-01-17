@@ -402,7 +402,7 @@ type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
 pub struct StateCircuit<F> {
     /// Rw rows
     pub rows: Vec<Rw>,
-    updates: MptUpdates,
+    pub(crate) updates: MptUpdates,
     pub(crate) n_rows: usize,
     #[cfg(test)]
     overrides: HashMap<(test::AdviceColumn, isize), F>,
