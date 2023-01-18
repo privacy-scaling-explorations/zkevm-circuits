@@ -262,7 +262,11 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    fn update_check_sdb_account(&mut self, rw: RW, op: &AccountOp) {
+    /// First check the validity and consistency of the rw operation against the
+    /// account in the StateDB, then if the rw operation is a write, apply
+    /// it to the corresponding account in the StateDB.
+    fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
+        // Verify that a READ dosn't change the field value
         if matches!(rw, RW::READ) {
             if op.value_prev != op.value {
                 panic!(
@@ -272,7 +276,6 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
         let account = self.sdb.get_account_mut(&op.address).1;
-        /*
         let account_value_prev = match op.field {
             AccountField::Nonce => account.nonce,
             AccountField::Balance => account.balance,
@@ -284,6 +287,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
         };
+        // Verify that the previous value matches the account field value in the StateDB
         if op.value_prev != account_value_prev {
             panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
                 rw,
@@ -292,6 +296,10 @@ impl<'a> CircuitInputStateRef<'a> {
                 op
             );
         }
+        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // account (only CodeHash reads with value=0 can be done to non-existing
+        // accounts, which the State Circuit translates to MPT
+        // AccountNonExisting proofs lookups).
         if matches!(rw, RW::READ) && !matches!(op.field, AccountField::CodeHash) {
             if account.is_empty() {
                 panic!(
@@ -300,7 +308,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 );
             }
         }
-        */
         // Perform the write to the account in the StateDB
         if matches!(rw, RW::WRITE) {
             match op.field {
@@ -326,7 +333,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value_prev: Word,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.update_check_sdb_account(RW::READ, &op);
+        self.check_update_sdb_account(RW::READ, &op);
         self.push_op(step, RW::READ, op);
         Ok(())
     }
@@ -346,7 +353,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value_prev: Word,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.update_check_sdb_account(RW::WRITE, &op);
+        self.check_update_sdb_account(RW::WRITE, &op);
         self.push_op(step, RW::WRITE, op);
         Ok(())
     }
