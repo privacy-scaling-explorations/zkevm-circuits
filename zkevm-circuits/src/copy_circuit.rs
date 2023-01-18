@@ -551,7 +551,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             )?;
             // q_step
             if offset % 2 == 0 {
-                let _ = self.q_step.enable(region, offset)?;
+                self.q_step.enable(region, offset)?;
             }
         }
 
