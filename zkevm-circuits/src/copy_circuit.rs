@@ -846,10 +846,28 @@ pub mod dev {
         }
     }
 
+    /// Test copy circuit from copy events and test data
+    #[cfg(test)]
+    pub fn test_copy_circuit<F: Field>(
+        k: u32,
+        copy_events: Vec<CopyEvent>,
+        max_copy_rows: usize,
+        test_data: CopyCircuitTestData,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let circuit = CopyCircuit::<F>::new_with_test_data(copy_events, max_copy_rows, test_data);
+
+        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+        prover.verify_par()
+    }
+
     /// Test copy circuit with the provided block witness
     #[cfg(test)]
-    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = CopyCircuit::<F>::new_with_test_data(
+    pub fn test_copy_circuit_from_block<F: Field>(
+        k: u32,
+        block: Block<F>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        test_copy_circuit::<F>(
+            k,
             block.copy_events,
             block.circuits_params.max_copy_rows,
             CopyCircuitTestData {
@@ -859,16 +877,13 @@ pub mod dev {
                 rws: block.rws,
                 bytecodes: block.bytecodes,
             },
-        );
-
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        prover.verify_par()
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::dev::test_copy_circuit;
+    use super::dev::test_copy_circuit_from_block;
     use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
@@ -877,6 +892,7 @@ mod tests {
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
+    use halo2_proofs::dev::VerifyFailure;
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::{TestContext, MOCK_ACCOUNTS};
@@ -1016,77 +1032,132 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(14, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(10, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_extcodecopy() {
         let builder = gen_extcodecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(14, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(20, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
     }
 
     #[test]
-    fn copy_circuit_tx_log() {
+    fn copy_circuit_valid_tx_log() {
         let builder = gen_tx_log_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(10, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
     }
 
-    // // TODO: replace these with deterministic failure tests
-    // fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block) {
-    //     debug_assert!(!block.copy_events.is_empty());
-    //     debug_assert!(!block.copy_events[0].steps.is_empty());
-    //
-    //     let copy_event = &mut block.copy_events[0];
-    //     let mut rng = rand::thread_rng();
-    //     let rand_idx = (0..copy_event.steps.len()).choose(&mut rng).unwrap();
-    //     let (is_read_step, mut perturbed_step) = match rng.gen::<f32>() {
-    //         f if f < 0.5 => (true, copy_event.steps[rand_idx].0.clone()),
-    //         _ => (false, copy_event.steps[rand_idx].1.clone()),
-    //     };
-    //     match rng.gen::<f32>() {
-    //         _ => perturbed_step.value = rng.gen(),
-    //     }
-    //
-    //         copy_event.bytes[rand_idx] = perturbed_step;
-    // }
+    #[test]
+    fn copy_circuit_invalid_calldatacopy() {
+        let mut builder = gen_calldatacopy_data();
 
-    // #[test]
-    // fn copy_circuit_invalid_calldatacopy() {
-    //     let mut builder = gen_calldatacopy_data();
-    //     perturb_tag(&mut builder.block);
-    //     let block = block_convert(&builder.block, &builder.code_db);
-    //     assert!(test_copy_circuit(10, block).is_err());
-    // }
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    // #[test]
-    // fn copy_circuit_invalid_codecopy() {
-    //     let mut builder = gen_codecopy_data();
-    //     perturb_tag(&mut builder.block);
-    //     let block = block_convert(&builder.block, &builder.code_db);
-    //     assert!(test_copy_circuit(10, block).is_err());
-    // }
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
-    // #[test]
-    // fn copy_circuit_invalid_sha3() {
-    //     let mut builder = gen_sha3_data();
-    //     perturb_tag(&mut builder.block);
-    //     let block = block_convert(&builder.block, &builder.code_db);
-    //     assert!(test_copy_circuit(20, block).is_err());
-    // }
+        assert_error_matches(
+            test_copy_circuit_from_block(14, block),
+            vec!["Memory lookup", "Tx calldata lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_codecopy() {
+        let mut builder = gen_codecopy_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(10, block),
+            vec!["Memory lookup", "Bytecode lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_extcodecopy() {
+        let mut builder = gen_extcodecopy_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(14, block),
+            vec!["Memory lookup", "Bytecode lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_sha3() {
+        let mut builder = gen_sha3_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(14, block),
+            vec!["Memory lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_tx_log() {
+        let mut builder = gen_tx_log_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(10, block),
+            vec!["Memory lookup", "TxLog lookup"],
+        );
+    }
+
+    fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>) {
+        let errors = result.expect_err("result is not an error");
+        assert_eq!(errors.len(), names.len(), "{:?}", errors);
+        for i in 0..names.len() {
+            match &errors[i] {
+                VerifyFailure::Lookup {
+                    name: lookup_name, ..
+                } => {
+                    assert_eq!(lookup_name, &names[i])
+                }
+                VerifyFailure::ConstraintNotSatisfied { .. } => panic!(),
+                VerifyFailure::CellNotAssigned { .. } => panic!(),
+                VerifyFailure::ConstraintPoisoned { .. } => panic!(),
+                VerifyFailure::Permutation { .. } => panic!(),
+            }
+        }
+    }
 }
