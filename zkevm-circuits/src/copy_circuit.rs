@@ -799,21 +799,18 @@ pub mod dev {
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit;
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::evm_circuit::witness::block_convert;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
         mock::BlockData,
     };
-    use eth_types::{bytecode, geth_types::GethData, Word};
-    use halo2_proofs::dev::MockProver;
+    use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
+    use mock::{TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
-
-    use crate::copy_circuit::CopyCircuit;
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let length = 0x0fffusize;
