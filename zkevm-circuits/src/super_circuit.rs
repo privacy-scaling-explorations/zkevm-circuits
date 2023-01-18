@@ -253,6 +253,7 @@ impl<
 
         let rlp_circuit = RlpCircuitConfig::configure(meta, &rlp_table, &challenges);
         log_circuit_info(meta, "rlp");
+
         let pi_circuit = PiCircuitConfig::new(
             meta,
             PiCircuitConfigArgs {
@@ -265,8 +266,8 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-
         log_circuit_info(meta, "pi");
+
         let tx_circuit = TxCircuitConfig::new(
             meta,
             TxCircuitConfigArgs {
@@ -286,8 +287,8 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-
         log_circuit_info(meta, "bytecode");
+
         let copy_circuit = CopyCircuitConfig::new(
             meta,
             CopyCircuitConfigArgs {
@@ -321,11 +322,11 @@ impl<
                 challenges: challenges.clone(),
             },
         );
-
         log_circuit_info(meta, "state");
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
 
+        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
         log_circuit_info(meta, "exp");
+
         let evm_circuit = EvmCircuitConfig::new(
             meta,
             EvmCircuitConfigArgs {
@@ -339,8 +340,10 @@ impl<
                 exp_table,
             },
         );
-
         log_circuit_info(meta, "evm");
+
+        #[cfg(feature = "onephase")]
+        debug_assert_eq!(meta.max_phase(), 0);
 
         Self::Config {
             block_table,

@@ -53,7 +53,12 @@ pub use halo2_proofs::halo2curves::{
     },
     secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
 };
-use halo2_proofs::plonk::{Fixed, SecondPhase};
+use halo2_proofs::plonk::Fixed;
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 19;
