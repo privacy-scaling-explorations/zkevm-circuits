@@ -53,7 +53,7 @@ pub use halo2_proofs::halo2curves::{
     },
     secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
 };
-use halo2_proofs::plonk::Fixed;
+use halo2_proofs::plonk::{Fixed, SecondPhase};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 19;
@@ -162,7 +162,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
         let q_enable = meta.fixed_column();
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
         let rlp_tag = meta.advice_column();
-        let value_inv = meta.advice_column();
+        let value_inv = meta.advice_column_in(SecondPhase);
         let is_calldata = meta.advice_column(); // to reduce degree
         let lookup_conditions = [
             LookupCondition::TxCalldata,
@@ -735,7 +735,11 @@ impl<F: Field> TxCircuitConfig<F> {
         let mut conditions = HashMap::<LookupCondition, Value<F>>::new();
         conditions.insert(LookupCondition::TxCalldata, {
             let is_data_length = tag == CallDataLength;
-            value.map(|value| F::from((!value.is_zero_vartime() && is_data_length) as u64))
+            if is_data_length {
+                value.map(|value| F::from(!value.is_zero_vartime() as u64))
+            } else {
+                Value::known(F::zero())
+            }
         });
         conditions.insert(LookupCondition::Tag, {
             let set = [
