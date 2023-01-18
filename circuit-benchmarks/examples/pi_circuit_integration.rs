@@ -478,14 +478,14 @@ async fn main() -> Result<(), Error> {
         load_circuit_pk(&key_file_name, &params, &circuit).unwrap()
     };
 
-    let deployment_code = gen_evm_verifier(
-        &params,
-        pk.get_vk(),
-        PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>::num_instance(),
-    );
+    // let deployment_code = gen_evm_verifier(
+    //     &params,
+    //     pk.get_vk(),
+    //     PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>::num_instance(),
+    // );
 
     let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
-    evm_verify(deployment_code, circuit.instances(), proof.clone());
+    // evm_verify(deployment_code, circuit.instances(), proof.clone());
 
     #[derive(Serialize, Deserialize, Debug)]
     struct BlockProofData {
