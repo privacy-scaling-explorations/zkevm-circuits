@@ -98,7 +98,7 @@ fi
 if [ -n "$STEP_TESTS" ]; then
     for testname in $ARG_TESTS; do
         echo "+ Running test group $testname"
-	cargo test --profile release --test $(echo $testname | sed -e 's/::/ /g') --all-features --features $testname -- --nocapture
+	cargo test --profile release --test $(echo $testname | sed -e 's/::/ /g') --all-features -- --nocapture
     done
 fi
 
