@@ -59,6 +59,7 @@ mod error_oog_constant;
 mod error_oog_static_memory;
 mod error_stack;
 mod exp;
+mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
 mod gas;
@@ -81,6 +82,7 @@ mod push;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
+mod sar;
 mod sdiv_smod;
 mod selfbalance;
 mod sha3;
@@ -121,6 +123,7 @@ use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
+use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
 use extcodesize::ExtcodesizeGadget;
 use gas::GasGadget;
@@ -142,6 +145,7 @@ use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
 use returndatasize::ReturnDataSizeGadget;
+use sar::SarGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
 use shl_shr::ShlShrGadget;
@@ -216,6 +220,7 @@ pub(crate) struct ExecutionConfig<F> {
     exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     extcodesize_gadget: ExtcodesizeGadget<F>,
+    extcodecopy_gadget: ExtcodecopyGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
     iszero_gadget: IsZeroGadget<F>,
@@ -233,12 +238,11 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     return_revert_gadget: ReturnRevertGadget<F>,
+    sar_gadget: SarGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
-    sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
-    extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
@@ -1111,6 +1115,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::RETURN_REVERT => assign_exec_step!(self.return_revert_gadget),
             ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
             ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
+            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
@@ -1119,7 +1124,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
@@ -1226,13 +1230,17 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            // expensive function call
-            Self::check_rw_lookup(
-                &assigned_stored_expressions,
-                step,
-                block,
-                region.challenges(),
-            );
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    step,
+                    block,
+                    region.challenges(),
+                );
+            }
         }
         //}
         Ok(())
@@ -1265,6 +1273,14 @@ impl<F: Field> ExecutionConfig<F> {
         block: &Block<F>,
         challenges: &Challenges<Value<F>>,
     ) {
+        let mut evm_randomness = F::zero();
+        challenges.evm_word().map(|v| evm_randomness = v);
+        let mut lookup_randomness = F::zero();
+        challenges.lookup_input().map(|v| lookup_randomness = v);
+        if evm_randomness.is_zero_vartime() || lookup_randomness.is_zero_vartime() {
+            // challenges not ready
+            return;
+        }
         let mut assigned_rw_values = Vec::new();
         // Reversion lookup expressions have different ordering compared to rw table,
         // making it a bit complex to check,
@@ -1284,12 +1300,11 @@ impl<F: Field> ExecutionConfig<F> {
             .table_assignments()
             .iter()
             .map(|rw| {
-                challenges
-                    .evm_word()
-                    .map(|randomness| rw.table_assignment_aux(randomness).rlc(randomness))
+                rw.table_assignment_aux(evm_randomness)
+                    .rlc(lookup_randomness)
             })
             .fold(BTreeSet::<F>::new(), |mut set, value| {
-                value.map(|value| set.insert(value));
+                set.insert(value);
                 set
             });
 
@@ -1298,12 +1313,11 @@ impl<F: Field> ExecutionConfig<F> {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
-        challenges.evm_word().map(|randomness| {
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(randomness);
-            let rlc = table_assignments.rlc(randomness);
+            let table_assignments = rw.table_assignment_aux(evm_randomness);
+            let rlc = table_assignments.rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
                     "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",
@@ -1315,6 +1329,5 @@ impl<F: Field> ExecutionConfig<F> {
                     step.execution_state);
             }
         }
-    });
     }
 }
