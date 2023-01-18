@@ -441,7 +441,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         // The `+ 2` is used to take into account the two extra empty copy rows needed
         // to satisfy the query at `Rotation(2)` performed inside of the
         // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
-        // Accomulation gate.
+        // Accumulation gate.
         assert!(copy_rows_needed + 2 <= block.circuits_params.max_copy_rows);
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
@@ -839,6 +839,7 @@ mod tests {
             block.clone(),
             CircuitsParams {
                 max_rws: 8192,
+                max_copy_rows: 8192 + 2,
                 ..Default::default()
             },
         )
@@ -910,6 +911,7 @@ mod tests {
             block.clone(),
             CircuitsParams {
                 max_rws: 2000,
+                max_copy_rows: 0x200 * 2 + 2,
                 ..Default::default()
             },
         )
