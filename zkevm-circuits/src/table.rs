@@ -562,7 +562,15 @@ impl DynamicTableColumns for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([0; 7].map(|_| meta.advice_column()))
+        Self([
+            meta.advice_column(),
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column(),
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column_in(SecondPhase),
+        ])
     }
 
     pub(crate) fn assign<F: Field>(
@@ -798,7 +806,7 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column(),
+            value: meta.advice_column_in(SecondPhase),
         }
     }
 

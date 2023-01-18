@@ -105,13 +105,11 @@ pub fn test_circuits_witness_block(
     }
 
     // run state circuit test
-    // TODO: use randomness as one of the circuit public input, since randomness in
-    // state circuit and evm circuit must be same
     if config.enable_state_circuit_test {
-        const N_ROWS: usize = 1 << 16;
-        let state_circuit = StateCircuit::<Fr>::new(block.rws, N_ROWS);
-        let power_of_randomness = state_circuit.instance();
-        let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
+        let n_rows: usize = block.rws.0.values().flatten().count() + 10;
+        let state_circuit = StateCircuit::<Fr>::new(block.rws, n_rows);
+        let instance = state_circuit.instance();
+        let prover = MockProver::<Fr>::run(17, &state_circuit, instance).unwrap();
         // Skip verification of Start rows to accelerate testing
         let non_start_rows_len = state_circuit
             .rows
@@ -119,8 +117,8 @@ pub fn test_circuits_witness_block(
             .filter(|rw| !matches!(rw, Rw::Start { .. }))
             .count();
         prover.verify_at_rows(
-            N_ROWS - non_start_rows_len..N_ROWS,
-            N_ROWS - non_start_rows_len..N_ROWS,
+            n_rows - non_start_rows_len..n_rows,
+            n_rows - non_start_rows_len..n_rows,
         )?
     }
 
