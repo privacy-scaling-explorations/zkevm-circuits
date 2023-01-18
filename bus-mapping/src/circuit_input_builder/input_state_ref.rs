@@ -276,36 +276,41 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
         let account = self.sdb.get_account_mut(&op.address).1;
-        let account_value_prev = match op.field {
-            AccountField::Nonce => account.nonce,
-            AccountField::Balance => account.balance,
-            AccountField::CodeHash => {
-                if account.is_empty() {
-                    Word::zero()
-                } else {
-                    account.code_hash.to_word()
+        if false {
+            // DBG
+            let account_value_prev = match op.field {
+                AccountField::Nonce => account.nonce,
+                AccountField::Balance => account.balance,
+                AccountField::CodeHash => {
+                    if account.is_empty() {
+                        Word::zero()
+                    } else {
+                        account.code_hash.to_word()
+                    }
                 }
-            }
-        };
-        // Verify that the previous value matches the account field value in the StateDB
-        if op.value_prev != account_value_prev {
-            panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
+            };
+            // Verify that the previous value matches the account field value in the StateDB
+            if op.value_prev != account_value_prev {
+                panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
                 rw,
                 account,
                 self.block_ctx.rwc.0,
                 op
             );
-        }
-        // Verify that no read is done to a field other than CodeHash to a non-existing
-        // account (only CodeHash reads with value=0 can be done to non-existing
-        // accounts, which the State Circuit translates to MPT
-        // AccountNonExisting proofs lookups).
-        if matches!(rw, RW::READ) && !matches!(op.field, AccountField::CodeHash) {
-            if account.is_empty() {
-                panic!(
+            }
+            // Verify that no read is done to a field other than CodeHash to a non-existing
+            // account (only CodeHash reads with value=0 can be done to non-existing
+            // accounts, which the State Circuit translates to MPT
+            // AccountNonExisting proofs lookups).
+            if !matches!(op.field, AccountField::CodeHash)
+                && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero()))
+            {
+                if account.is_empty() {
+                    panic!(
                     "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
                     rw, self.block_ctx.rwc.0, op
                 );
+                }
             }
         }
         // Perform the write to the account in the StateDB

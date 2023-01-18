@@ -424,6 +424,15 @@ pub mod test {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        // for step in &block.txs[0].steps {
+        //     println!(
+        //         "DBG step {:?} rwc: {}",
+        //         step.execution_state, step.rw_counter
+        //     );
+        //     for rw_ref in &step.rw_indices {
+        //         println!("    - {:?}", block.rws[*rw_ref]);
+        //     }
+        // }
         run_test_circuit(block)
     }
 
