@@ -1,44 +1,36 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
-    step::ExecutionState,
-    util::{
-        common_gadget::RestoreContextGadget,
-        constraint_builder::{
-            ConstraintBuilder, StepStateTransition,
-            Transition::{Delta, Same},
-        },
-        from_bytes,
-        math_gadget::{BatchedIsZeroGadget, IsEqualGadget, IsZeroGadget, LtGadget},
-        memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-        select, sum, CachedRegion, Cell, CellType, Word,
-    },
-    witness::{Block, Call, ExecStep, Transaction},
-};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            common_gadget::{CommonCallGadget, RestoreContextGadget},
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
+            math_gadget::LtGadget,
+            CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    witness::Rw,
+};
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
+use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCallGadget<F> {
     opcode: Cell<F>,
     tx_id: Cell<F>,
     is_static: Cell<F>,
-    gas: Word<F>,
-    callee_address: Word<F>,
-    value: Word<F>,
+    call: CommonCallGadget<F, false>,
     is_warm: Cell<F>,
-    value_is_zero: IsZeroGadget<F>,
-    cd_address: MemoryAddressGadget<F>,
-    rd_address: MemoryAddressGadget<F>,
-    memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
     balance: Word<F>,
-    callee_nonce: Cell<F>,
-    phase2_callee_code_hash: Cell<F>,
-    is_empty_nonce_and_balance: BatchedIsZeroGadget<F, 2>,
-    is_empty_code_hash: IsEqualGadget<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
@@ -60,76 +52,30 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             OpcodeId::CALL.expr(),
         );
 
-        let gas_word = cb.query_word_rlc();
-        let callee_address_word = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
-        let cd_offset = cb.query_cell();
-        let cd_length = cb.query_word_rlc();
-        let rd_offset = cb.query_cell();
-        let rd_length = cb.query_word_rlc();
-        let balance = cb.query_word_rlc();
         let rw_counter_end_of_reversion = cb.query_cell();
-
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
-
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
-
-        // Lookup values from stack
-        cb.stack_pop(gas_word.expr());
-        cb.stack_pop(callee_address_word.expr());
-        cb.stack_pop(value.expr());
-        cb.stack_pop(cd_offset.expr());
-        cb.stack_pop(cd_length.expr());
-        cb.stack_pop(rd_offset.expr());
-        cb.stack_pop(rd_length.expr());
-        cb.stack_push(0.expr());
-
-        // Recomposition of random linear combination to integer
-        let callee_address =
-            from_bytes::expr(&callee_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        let cd_address = MemoryAddressGadget::construct(cb, cd_offset, cd_length);
-        let rd_address = MemoryAddressGadget::construct(cb, rd_offset, rd_length);
-        let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [cd_address.address(), rd_address.address()]);
+        let call_gadget = CommonCallGadget::construct(cb, 1.expr(), 0.expr(), 0.expr());
 
         // Add callee to access list
         let is_warm = cb.query_bool();
-        cb.account_access_list_read(tx_id.expr(), callee_address.clone(), is_warm.expr());
+        cb.account_access_list_read(
+            tx_id.expr(),
+            call_gadget.callee_address_expr(),
+            is_warm.expr(),
+        );
 
-        let value_is_zero = IsZeroGadget::construct(cb, sum::expr(&value.cells));
-        let has_value = 1.expr() - value_is_zero.expr();
+        let balance = cb.query_word_rlc();
         cb.account_read(
-            callee_address.clone(),
+            call_gadget.callee_address_expr(),
             AccountFieldTag::Balance,
             balance.expr(),
         );
 
         // Verify gas cost
-        let [callee_nonce, phase2_callee_code_hash] = [
-            (AccountFieldTag::Nonce, CellType::StoragePhase1),
-            (AccountFieldTag::CodeHash, CellType::StoragePhase2),
-        ]
-        .map(|(field_tag, cell_type)| {
-            let value = cb.query_cell_with_type(cell_type);
-            cb.account_read(callee_address.clone(), field_tag, value.expr());
-            value
-        });
-        let is_empty_nonce_and_balance =
-            BatchedIsZeroGadget::construct(cb, [callee_nonce.expr(), balance.expr()]);
-        let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
-        let is_empty_account = is_empty_nonce_and_balance.expr() * is_empty_code_hash.expr();
-        // Sum up gas cost
-        let gas_cost = select::expr(
-            is_warm.expr(),
-            GasCost::WARM_ACCESS.expr(),
-            GasCost::COLD_ACCOUNT_ACCESS.expr(),
-        ) + has_value
-            * (GasCost::CALL_WITH_VALUE.expr() + is_empty_account * GasCost::NEW_ACCOUNT.expr())
-            + memory_expansion.gas_cost();
+        let gas_cost = call_gadget.gas_cost_expr(cb, is_warm.expr(), 1.expr());
 
-        // Check if the amount of gas available is less than the amount of gas
-        // required
+        // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
             "gas left is less than gas required ",
@@ -160,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(16.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(15.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
@@ -193,19 +139,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             opcode,
             tx_id,
             is_static,
-            gas: gas_word,
-            callee_address: callee_address_word,
-            value,
+            call: call_gadget,
             is_warm,
-            value_is_zero,
-            cd_address,
-            rd_address,
-            memory_expansion,
             balance,
-            callee_nonce,
-            phase2_callee_code_hash,
-            is_empty_nonce_and_balance,
-            is_empty_code_hash,
             insufficient_gas,
             rw_counter_end_of_reversion,
             restore_context,
@@ -222,9 +158,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-        self.opcode
-            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-
         let [tx_id, is_static] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].call_context_value());
         let stack_index = 2;
@@ -240,12 +173,37 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         .map(|idx| block.rws[idx].stack_value());
 
         let (is_warm, is_warm_prev) = block.rws[step.rw_indices[10]].tx_access_list_value_pair();
-        let [callee_balance_pair, (callee_nonce, _), (callee_code_hash, _)] = [
-            step.rw_indices[11],
-            step.rw_indices[12],
-            step.rw_indices[13],
-        ]
-        .map(|idx| block.rws[idx].account_value_pair());
+        let callee_balance_pair = block.rws[step.rw_indices[11]].account_value_pair();
+        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[12]] {
+            Rw::Account {
+                field_tag: AccountFieldTag::CodeHash,
+                value,
+                ..
+            } => (value.to_le_bytes(), true),
+            Rw::Account {
+                field_tag: AccountFieldTag::NonExisting,
+                ..
+            } => (*EMPTY_HASH_LE, false),
+            _ => unreachable!(),
+        };
+        let callee_code_hash_word = region.word_rlc(U256::from_little_endian(&callee_code_hash));
+        let memory_expansion_gas_cost = self.call.assign(
+            region,
+            offset,
+            gas,
+            callee_address,
+            value,
+            U256::from(0),
+            cd_offset,
+            cd_length,
+            rd_offset,
+            rd_length,
+            step.memory_word_size(),
+            callee_code_hash_word,
+        )?;
+
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx_id.low_u64())))?;
@@ -253,78 +211,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.is_static
             .assign(region, offset, Value::known(F::from(is_static.low_u64())))?;
 
-        self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
-        self.callee_address
-            .assign(region, offset, Some(callee_address.to_le_bytes()))?;
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-
-        self.value_is_zero
-            .assign(region, offset, sum::value(&value.to_le_bytes()))?;
-
-        let cd_address = self
-            .cd_address
-            .assign(region, offset, cd_offset, cd_length)?;
-        let rd_address = self
-            .rd_address
-            .assign(region, offset, rd_offset, rd_length)?;
-        let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
-            region,
-            offset,
-            step.memory_word_size(),
-            [cd_address, rd_address],
-        )?;
 
         // new assignment
         self.balance
             .assign(region, offset, Some(callee_balance_pair.0.to_le_bytes()))?;
-
-        self.callee_nonce.assign(
-            region,
-            offset,
-            Value::known(
-                callee_nonce
-                    .to_scalar()
-                    .expect("unexpected U256 -> Scalar conversion failure"),
-            ),
-        )?;
-        self.phase2_callee_code_hash
-            .assign(region, offset, region.word_rlc(callee_code_hash))?;
-        let is_empty_nonce_and_balance = self.is_empty_nonce_and_balance.assign_value(
-            region,
-            offset,
-            [
-                Value::known(F::from(callee_nonce.low_u64())),
-                region.word_rlc(callee_balance_pair.1),
-            ],
-        )?;
-        let is_empty_code_hash = self.is_empty_code_hash.assign_value(
-            region,
-            offset,
-            region.word_rlc(callee_code_hash),
-            region.empty_hash_rlc(),
-        )?;
-        let is_empty_account = is_empty_nonce_and_balance * is_empty_code_hash;
         let has_value = !value.is_zero();
-        let gas_cost = if is_warm_prev {
-            Value::known(F::from(GasCost::WARM_ACCESS.as_u64()))
-        } else {
-            Value::known(F::from(GasCost::COLD_ACCOUNT_ACCESS.as_u64()))
-        } + if has_value {
-            Value::known(F::from(GasCost::CALL_WITH_VALUE.as_u64()))
-                + is_empty_account * Value::known(F::from(GasCost::NEW_ACCOUNT.as_u64()))
-        } else {
-            Value::known(F::from(0))
-        } + Value::known(F::from(memory_expansion_gas_cost));
+        let gas_cost = self.call.cal_gas_cost_for_assignment(
+            memory_expansion_gas_cost,
+            is_warm_prev,
+            true,
+            has_value,
+            !callee_exists,
+        )?;
 
         self.insufficient_gas.assign_value(
             region,
             offset,
             Value::known(F::from(step.gas_left)),
-            gas_cost,
+            Value::known(F::from(gas_cost)),
         )?;
 
         self.rw_counter_end_of_reversion.assign(
@@ -334,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         )?;
 
         self.restore_context
-            .assign(region, offset, block, call, step, 16)?;
+            .assign(region, offset, block, call, step, 15)?;
         Ok(())
     }
 }

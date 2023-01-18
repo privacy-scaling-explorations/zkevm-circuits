@@ -76,7 +76,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         });
 
         // look up bytecode length
-        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let code_length = cb.query_cell();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let dest_value = from_bytes::expr(&destination.cells);
 
         let within_range = LtGadget::construct(cb, dest_value.expr(), code_length.expr());
