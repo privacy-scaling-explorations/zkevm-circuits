@@ -66,21 +66,26 @@ use crate::mpt_circuit::{MptCircuit, MptCircuitConfig, MptCircuitConfigArgs};
 #[cfg(feature = "zktrie")]
 use crate::table::PoseidonTable;
 
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
+
 use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
 use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RlpTable, RwTable,
     TxTable,
 };
 
-use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{log2_ceil, SubCircuit, SubCircuitConfig};
 use crate::witness::{block_convert, Block, SignedTransaction};
 use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Expression},
+    circuit::{Layouter, SimpleFloorPlanner},
+    plonk::{Circuit, ConstraintSystem, Error},
 };
 
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
@@ -164,7 +169,7 @@ impl<
         let num_rows_evm_circuit = {
             let mut cs = ConstraintSystem::default();
             let config = Self::configure(&mut cs);
-            config.evm_circuit.get_num_rows_required(block)
+            config.0.evm_circuit.get_num_rows_required(block)
         };
         let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         log::debug!(
@@ -186,7 +191,10 @@ impl<
         const MAX_RWS: usize,
     > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>
 {
-    type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>;
+    type Config = (
+        SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>,
+        Challenges,
+    );
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -236,11 +244,8 @@ impl<
         let keccak_table = KeccakTable::construct(meta);
         log_circuit_info(meta, "keccak");
 
-        let challenges = Challenges::mock(
-            Expression::Constant(F::from(MOCK_RANDOMNESS)),
-            Expression::Constant(F::from(MOCK_RANDOMNESS) * F::from(0x10)),
-            Expression::Constant(F::from(MOCK_RANDOMNESS) * F::from(0x100)),
-        );
+        let challenges_config = Challenges::construct(meta);
+        let challenges = challenges_config.exprs(meta);
 
         let keccak_circuit = KeccakCircuitConfig::new(
             meta,
@@ -345,7 +350,7 @@ impl<
         #[cfg(feature = "onephase")]
         debug_assert_eq!(meta.max_phase(), 0);
 
-        Self::Config {
+        let config = SuperCircuitConfig::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS> {
             block_table,
             mpt_table,
             tx_table,
@@ -361,7 +366,9 @@ impl<
             exp_circuit,
             #[cfg(feature = "zktrie")]
             mpt_circuit,
-        }
+        };
+
+        (config, challenges_config)
     }
 
     fn synthesize(
@@ -369,12 +376,10 @@ impl<
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        let (config, challenges) = config;
+        let challenges = challenges.values(&mut layouter);
+
         let block = self.evm_circuit.block.as_ref().unwrap();
-        let challenges = Challenges::mock(
-            Value::known(block.randomness),
-            Value::known(block.randomness * F::from(0x10)),
-            Value::known(block.randomness * F::from(0x100)),
-        );
 
         // PI circuit had the hardcoded constants for RegionIndex of block table
         // and tx table (which are 0 and 1).

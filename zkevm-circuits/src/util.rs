@@ -48,6 +48,41 @@ pub struct Challenges<T = Challenge> {
     lookup_input: T,
 }
 
+/// ..
+#[derive(Default, Clone, Copy, Debug)]
+pub struct MockChallenges {
+    evm_word: u64,
+    keccak_input: u64,
+    lookup_input: u64,
+}
+
+impl MockChallenges {
+    /// ..
+    pub fn construct<F: FieldExt>(_meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            evm_word: 0x10000,
+            keccak_input: 0x100000,
+            lookup_input: 0x1000000,
+        }
+    }
+    /// ..
+    pub fn exprs<F: FieldExt>(&self, _meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+        Challenges {
+            evm_word: Expression::Constant(F::from(self.evm_word)),
+            keccak_input: Expression::Constant(F::from(self.keccak_input)),
+            lookup_input: Expression::Constant(F::from(self.lookup_input)),
+        }
+    }
+    /// ..
+    pub fn values<F: FieldExt>(&self, _layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+        Challenges {
+            evm_word: Value::known(F::from(self.evm_word)),
+            keccak_input: Value::known(F::from(self.keccak_input)),
+            lookup_input: Value::known(F::from(self.lookup_input)),
+        }
+    }
+}
+
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
