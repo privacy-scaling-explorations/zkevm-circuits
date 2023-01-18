@@ -347,7 +347,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
-    let nonce_prev = state.sdb.increase_nonce(&caller_address);
+    let nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
     state.account_write(
         &mut exec_step,
         caller_address,
@@ -519,15 +519,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
     let effective_refund =
         refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
-    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    caller_account.balance = caller_balance;
-
     state.account_write(
         &mut exec_step,
         call.caller_address,
@@ -537,14 +535,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     )?;
 
     let effective_tip = state.tx.gas_price - state.block.base_fee;
-    let (found, coinbase_account) = state.sdb.get_account_mut(&state.block.coinbase);
+    let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    coinbase_account.balance = coinbase_balance;
     state.account_write(
         &mut exec_step,
         state.block.coinbase,

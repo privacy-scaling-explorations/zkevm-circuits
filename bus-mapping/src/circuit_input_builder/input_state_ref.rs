@@ -262,7 +262,7 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
-    fn sanity_check_account_op(&mut self, rw: RW, op: &AccountOp) {
+    fn update_check_sdb_account(&mut self, rw: RW, op: &AccountOp) {
         if matches!(rw, RW::READ) {
             if op.value_prev != op.value {
                 panic!(
@@ -271,7 +271,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 )
             }
         }
-        let account = self.sdb.get_account(&op.address).1;
+        let account = self.sdb.get_account_mut(&op.address).1;
+        /*
         let account_value_prev = match op.field {
             AccountField::Nonce => account.nonce,
             AccountField::Balance => account.balance,
@@ -291,12 +292,21 @@ impl<'a> CircuitInputStateRef<'a> {
                 op
             );
         }
-        if !matches!(op.field, AccountField::CodeHash) {
+        if matches!(rw, RW::READ) && !matches!(op.field, AccountField::CodeHash) {
             if account.is_empty() {
                 panic!(
                     "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
                     rw, self.block_ctx.rwc.0, op
                 );
+            }
+        }
+        */
+        // Perform the write to the account in the StateDB
+        if matches!(rw, RW::WRITE) {
+            match op.field {
+                AccountField::Nonce => account.nonce = op.value,
+                AccountField::Balance => account.balance = op.value,
+                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
             }
         }
     }
@@ -316,7 +326,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value_prev: Word,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.sanity_check_account_op(RW::READ, &op);
+        self.update_check_sdb_account(RW::READ, &op);
         self.push_op(step, RW::READ, op);
         Ok(())
     }
@@ -336,7 +346,7 @@ impl<'a> CircuitInputStateRef<'a> {
         value_prev: Word,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.sanity_check_account_op(RW::WRITE, &op);
+        self.update_check_sdb_account(RW::WRITE, &op);
         self.push_op(step, RW::WRITE, op);
         Ok(())
     }
