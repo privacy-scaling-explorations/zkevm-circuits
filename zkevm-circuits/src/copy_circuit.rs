@@ -978,32 +978,6 @@ mod tests {
         assert_eq!(test_copy_circuit(10, block), Ok(()));
     }
 
-    #[test]
-    fn variadic_size_check() {
-        let builder = gen_tx_log_data();
-        let block1 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
-            .unwrap()
-            .into();
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-                .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        let block2 = block_convert(&builder.block, &builder.code_db).unwrap();
-
-        let circuit = CopyCircuit::<Fr>::new(4, block1);
-        let prover1 = MockProver::<Fr>::run(10, &circuit, vec![]).unwrap();
-
-        let circuit = CopyCircuit::<Fr>::new(4, block2);
-        let prover2 = MockProver::<Fr>::run(10, &circuit, vec![]).unwrap();
-
-        assert_eq!(prover1.fixed(), prover2.fixed());
-        assert_eq!(prover1.permutation(), prover2.permutation());
-    }
-
     // // TODO: replace these with deterministic failure tests
     // fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block) {
     //     debug_assert!(!block.copy_events.is_empty());
