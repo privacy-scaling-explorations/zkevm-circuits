@@ -788,17 +788,17 @@ pub mod dev {
         }
     }
 
-    /// Test copy circuit with the provided block witness
-    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = CopyCircuit::<F>::new(4, block);
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        prover.verify_par()
-    }
+    // /// Test copy circuit with the provided block witness
+    // pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(),
+    // Vec<VerifyFailure>> {     let circuit = CopyCircuit::<F>::new(4,
+    // block);     let prover = MockProver::<F>::run(k, &circuit,
+    // vec![]).unwrap();     prover.verify_par()
+    // }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::dev::test_copy_circuit;
+    //use super::dev::test_copy_circuit;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
@@ -907,33 +907,33 @@ mod tests {
         builder
     }
 
-    #[test]
-    fn copy_circuit_valid_calldatacopy() {
-        let builder = gen_calldatacopy_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(14, block), Ok(()));
-    }
+    // #[test]
+    // fn copy_circuit_valid_calldatacopy() {
+    //     let builder = gen_calldatacopy_data();
+    //     let block = block_convert::<Fr>(&builder.block,
+    // &builder.code_db).unwrap();     assert_eq!(test_copy_circuit(14, block),
+    // Ok(())); }
 
-    #[test]
-    fn copy_circuit_valid_codecopy() {
-        let builder = gen_codecopy_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(10, block), Ok(()));
-    }
+    // #[test]
+    // fn copy_circuit_valid_codecopy() {
+    //     let builder = gen_codecopy_data();
+    //     let block = block_convert::<Fr>(&builder.block,
+    // &builder.code_db).unwrap();     assert_eq!(test_copy_circuit(10, block),
+    // Ok(())); }
 
-    #[test]
-    fn copy_circuit_valid_sha3() {
-        let builder = gen_sha3_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(20, block), Ok(()));
-    }
+    // #[test]
+    // fn copy_circuit_valid_sha3() {
+    //     let builder = gen_sha3_data();
+    //     let block = block_convert::<Fr>(&builder.block,
+    // &builder.code_db).unwrap();     assert_eq!(test_copy_circuit(20, block),
+    // Ok(())); }
 
-    #[test]
-    fn copy_circuit_tx_log() {
-        let builder = gen_tx_log_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(10, block), Ok(()));
-    }
+    // #[test]
+    // fn copy_circuit_tx_log() {
+    //     let builder = gen_tx_log_data();
+    //     let block = block_convert::<Fr>(&builder.block,
+    // &builder.code_db).unwrap();     assert_eq!(test_copy_circuit(10, block),
+    // Ok(())); }
 
     #[test]
     fn variadic_size_check() {

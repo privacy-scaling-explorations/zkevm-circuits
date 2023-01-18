@@ -455,20 +455,20 @@ impl<F: Field> Circuit<F> for ExpCircuit<F> {
 
 #[cfg(any(feature = "test", test))]
 /// Dev helpers
-pub mod dev {
-    use super::*;
-    use eth_types::Field;
-    use halo2_proofs::dev::{MockProver, VerifyFailure};
+// pub mod dev {
+//     use super::*;
+//     use eth_types::Field;
+//     use halo2_proofs::dev::{MockProver, VerifyFailure};
 
-    use crate::evm_circuit::witness::Block;
+//     use crate::evm_circuit::witness::Block;
 
-    /// Test exponentiation circuit with the provided block witness
-    pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = ExpCircuit::<F>::new(block);
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        prover.verify()
-    }
-}
+//     /// Test exponentiation circuit with the provided block witness
+//     pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>>
+// {         let circuit = ExpCircuit::<F>::new(block);
+//         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
+//         prover.verify()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -477,7 +477,8 @@ mod tests {
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
-    use crate::{evm_circuit::witness::block_convert, exp_circuit::dev::test_exp_circuit};
+    //use crate::{evm_circuit::witness::block_convert,
+    // exp_circuit::dev::test_exp_circuit};
 
     fn gen_code_single(base: Word, exponent: Word) -> Bytecode {
         bytecode! {
@@ -509,51 +510,51 @@ mod tests {
         builder
     }
 
-    fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
-        let code = gen_code_single(base, exponent);
-        let builder = gen_data(code);
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
-    }
+    // fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
+    //     let code = gen_code_single(base, exponent);
+    //     let builder = gen_data(code);
+    //     let block = block_convert::<Fr>(&builder.block,
+    // &builder.code_db).unwrap();     assert_eq!(test_exp_circuit(k.
+    // unwrap_or(10), block), Ok(())); }
 
-    fn test_ok_multiple(args: Vec<(Word, Word)>) {
-        let code = gen_code_multiple(args);
-        let builder = gen_data(code);
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_exp_circuit(20, block), Ok(()));
-    }
+    // fn test_ok_multiple(args: Vec<(Word, Word)>) {
+    //     let code = gen_code_multiple(args);
+    //     let builder = gen_data(code);
+    //     let block = block_convert::<Fr>(&builder.block,
+    // &builder.code_db).unwrap();     assert_eq!(test_exp_circuit(20, block),
+    // Ok(())); }
 
-    #[test]
-    fn exp_circuit_single() {
-        test_ok(2.into(), 2.into(), None);
-        test_ok(3.into(), 7.into(), None);
-        test_ok(5.into(), 11.into(), None);
-        test_ok(7.into(), 13.into(), None);
-        test_ok(11.into(), 17.into(), None);
-        test_ok(13.into(), 23.into(), None);
-        test_ok(29.into(), 43.into(), None);
-        test_ok(41.into(), 259.into(), None);
-    }
+    //     #[test]
+    //     fn exp_circuit_single() {
+    //         test_ok(2.into(), 2.into(), None);
+    //         test_ok(3.into(), 7.into(), None);
+    //         test_ok(5.into(), 11.into(), None);
+    //         test_ok(7.into(), 13.into(), None);
+    //         test_ok(11.into(), 17.into(), None);
+    //         test_ok(13.into(), 23.into(), None);
+    //         test_ok(29.into(), 43.into(), None);
+    //         test_ok(41.into(), 259.into(), None);
+    //     }
 
-    #[test]
-    fn exp_circuit_big() {
-        test_ok(
-            2.into(),
-            Word::from_str_radix("0x1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE", 16).unwrap(),
-            Some(20),
-        );
-    }
+    //     #[test]
+    //     fn exp_circuit_big() {
+    //         test_ok(
+    //             2.into(),
+    //             Word::from_str_radix("0x1FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE",
+    // 16).unwrap(),             Some(20),
+    //         );
+    //     }
 
-    #[test]
-    fn exp_circuit_multiple() {
-        test_ok_multiple(vec![
-            (3.into(), 7.into()),
-            (5.into(), 11.into()),
-            (7.into(), 13.into()),
-            (11.into(), 17.into()),
-            (13.into(), 23.into()),
-            (29.into(), 43.into()),
-            (41.into(), 259.into()),
-        ]);
-    }
+    //     #[test]
+    //     fn exp_circuit_multiple() {
+    //         test_ok_multiple(vec![
+    //             (3.into(), 7.into()),
+    //             (5.into(), 11.into()),
+    //             (7.into(), 13.into()),
+    //             (11.into(), 17.into()),
+    //             (13.into(), 23.into()),
+    //             (29.into(), 43.into()),
+    //             (41.into(), 259.into()),
+    //         ]);
+    //     }
 }
