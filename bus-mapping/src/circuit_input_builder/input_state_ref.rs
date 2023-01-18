@@ -20,7 +20,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    evm_unimplemented, Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -765,7 +765,7 @@ impl<'a> CircuitInputStateRef<'a> {
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
-            OpEnum::AccountDestructed(_) => unimplemented!(),
+            OpEnum::AccountDestructed(_) => evm_unimplemented!(),
             _ => unreachable!(),
         };
     }

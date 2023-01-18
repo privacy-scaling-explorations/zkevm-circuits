@@ -203,3 +203,30 @@ macro_rules! define_range_index_variants {
         }
     };
 }
+
+/// TODO
+#[cfg(feature = "warn-unimplemented")]
+#[macro_export]
+macro_rules! evm_unimplemented {
+    () => {
+        log::warn!("not implemented")
+    };
+    ($($arg:tt)+) => {
+        log_warn!("not implemented: {}", format_args!($($arg)+))
+    };
+}
+
+/// TODO
+#[cfg(not(feature = "warn-unimplemented"))]
+#[macro_export]
+macro_rules! evm_unimplemented {
+    () => {
+        [()].iter().for_each(|_| panic!("not implemented"))
+    };
+    ($($arg:tt)+) => {
+        {
+            let msg = format!("not implemented: {}",format_args!($($arg)+));
+            [()].iter().for_each(|_| panic!("not implemented: {}", msg))
+        }
+    };
+}

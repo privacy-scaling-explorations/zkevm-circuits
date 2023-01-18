@@ -4,9 +4,8 @@ use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
-use eth_types::{GethExecStep, ToWord, Word};
+use eth_types::{evm_unimplemented, GethExecStep, ToWord, Word};
 use keccak256::EMPTY_HASH;
-use log::warn;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -204,7 +203,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         ) {
             // 1. Call to precompiled.
             (false, true, _) => {
-                warn!("Call to precompiled is left unimplemented");
+                evm_unimplemented!("Call to precompiled is left unimplemented");
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.

@@ -10,7 +10,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
 use config::Config;
-use log::{error, info};
+use log::info;
 use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
@@ -98,8 +98,10 @@ fn go() -> Result<()> {
         run_single_test(test, circuits_config)?;
         return Ok(());
     }
+    dbg!();
 
     let config = Config::load()?;
+    dbg!();
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -118,12 +120,10 @@ fn go() -> Result<()> {
         }
         return Ok(());
     }
-
     if let Some(test_id) = args.inspect {
         // Test only one and return
         let mut state_tests_filtered: Vec<_> =
             state_tests.iter().filter(|t| t.id == test_id).collect();
-
         if state_tests_filtered.is_empty() {
             info!(
                 "Test '{}' not found but found some that partially matches:",
@@ -213,6 +213,6 @@ fn go() -> Result<()> {
 
 fn main() {
     if let Err(err) = go() {
-        error!("{}", err);
+        eprintln!("Error found {}", err);
     }
 }
