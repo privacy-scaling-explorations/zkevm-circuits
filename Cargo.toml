@@ -17,14 +17,12 @@ members = [
 # halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { path = "../../dev/halo2/halo2_proofs" }
-
+halo2_proofs = { path = "../halo2/halo2_proofs" }
 [patch."https://github.com/privacy-scaling-explorations/halo2wrong.git"]
-ecdsa = { path = "../halo2wrong/ecdsa" }
-ecc = { path = "../halo2wrong/ecc" }
-maingate = { path = "../halo2wrong/maingate" }
-integer = { path = "../halo2wrong/integer" }
-
+ecdsa = { path = "/home/dev/git/zkevm/halo2wrong/ecdsa" }
+ecc = { path = "/home/dev/git/zkevm/halo2wrong/ecc" }
+maingate = { path = "/home/dev/git/zkevm/halo2wrong/maingate" }
+integer = { path = "/home/dev/git/zkevm/halo2wrong/integer" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]
