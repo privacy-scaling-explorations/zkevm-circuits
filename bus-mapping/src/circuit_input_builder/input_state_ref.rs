@@ -451,7 +451,7 @@ impl<'a> CircuitInputStateRef<'a> {
         );
         let sender_balance = sender_account.balance - value - fee;
         log::trace!(
-            "balance update: {:?} {:?}->{:?}",
+            "sender balance update: {:?} {:?}->{:?}",
             sender,
             sender_balance_prev,
             sender_balance
@@ -471,7 +471,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
         log::trace!(
-            "balance update: {:?} {:?}->{:?}",
+            "receiver balance update: {:?} {:?}->{:?}",
             receiver,
             receiver_balance_prev,
             receiver_balance

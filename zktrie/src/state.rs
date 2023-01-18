@@ -143,6 +143,8 @@ impl ZktrieState {
             );
             if store_proof.key.is_some() {
                 acc.storage.insert(*key, *store_proof.data.as_ref());
+            } else {
+                acc.storage.insert(*key, U256::zero());
             }
         }
 

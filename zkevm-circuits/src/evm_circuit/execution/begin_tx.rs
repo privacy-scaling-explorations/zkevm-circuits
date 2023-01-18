@@ -169,18 +169,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
-        cb.account_write(
+        cb.account_read(
             call_callee_address.expr(),
             AccountFieldTag::CodeHash,
             phase2_code_hash.expr(),
-            phase2_code_hash.expr(),
-            None,
         );
 
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
-        cb.condition(is_empty_code_hash.expr(), |cb| {
+        let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code_hash.expr();
+        cb.condition(native_transfer, |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),
@@ -210,7 +209,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
+        let normal_contract_call =
+            not::expr(tx_is_create.expr()) * not::expr(is_empty_code_hash.expr());
+
+        cb.condition(normal_contract_call, |cb| {
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),

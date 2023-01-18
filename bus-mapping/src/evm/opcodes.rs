@@ -417,8 +417,15 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
-    let (_, _callee_account) = state.sdb.get_account(&call.address);
-    let code_hash = call.code_hash; // callee_account.code_hash;
+    let (_exists, callee_account) = state.sdb.get_account(&call.address);
+    let code_hash = callee_account.code_hash;
+    state.account_read(
+        &mut exec_step,
+        call.address,
+        AccountField::CodeHash,
+        code_hash.to_word(),
+        code_hash.to_word(),
+    )?;
 
     // There are 4 branches from here.
     match (
@@ -431,9 +438,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             state.account_write(
                 &mut exec_step,
                 call.address,
-                AccountField::CodeHash,
-                call.code_hash.to_word(),
-                call.code_hash.to_word(),
+                AccountField::Nonce,
+                1.into(),
+                0.into(),
             )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
@@ -472,14 +479,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
-            state.account_write(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                code_hash.to_word(),
-                code_hash.to_word(),
-            )?;
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 return Ok(exec_step);

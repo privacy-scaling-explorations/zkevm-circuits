@@ -187,15 +187,15 @@ impl MptUpdate {
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug, Copy, PartialOrd, Ord)]
 enum Key {
-    Account {
-        address: Address,
-        field_tag: AccountFieldTag,
-    },
     AccountStorage {
         tx_id: usize,
         address: Address,
         storage_key: Word,
         exists: bool,
+    },
+    Account {
+        address: Address,
+        field_tag: AccountFieldTag,
     },
 }
 
