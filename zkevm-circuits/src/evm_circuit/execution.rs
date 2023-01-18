@@ -13,7 +13,7 @@ use crate::{
     table::LookupTable,
     util::{query_expression, Challenges, Expr},
 };
-use eth_types::Field;
+use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -1222,7 +1222,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.invalid_opcode_gadget)
             }
 
-            _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
+            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
