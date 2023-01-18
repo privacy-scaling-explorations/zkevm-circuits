@@ -29,6 +29,7 @@ pub mod table;
 #[cfg(any(feature = "test", test))]
 pub mod test_util;
 
+#[macro_use]
 pub mod circuit_tools;
 pub mod tx_circuit;
 pub mod util;

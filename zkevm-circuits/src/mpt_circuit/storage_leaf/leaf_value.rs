@@ -13,9 +13,7 @@ use crate::{
     mpt_circuit::{
         helpers::{get_num_bytes_short, MPTConstraintBuilder},
         param::{
-            ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, HASH_WIDTH, IS_STORAGE_MOD_POS,
-            LEAF_VALUE_C_IND, LEAF_VALUE_S_IND,
+            BRANCH_ROWS_NUM, HASH_WIDTH, IS_STORAGE_MOD_POS, LEAF_VALUE_C_IND, LEAF_VALUE_S_IND,
         },
         MPTContext,
     },
@@ -138,24 +136,16 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let value = ctx.value;
         let r = ctx.r.clone();
 
+        let rot_key = -1;
+        let rot_s = if is_s { 0 } else { -2 };
         let leaf_value_pos = if is_s {
             LEAF_VALUE_S_IND
         } else {
             LEAF_VALUE_C_IND
         };
-        let storage_offset = if is_s {
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND
-        } else {
-            ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND
-        };
         let rot_branch = -STORAGE_LEAF_ROWS;
         let rot_branch_init = -leaf_value_pos - BRANCH_ROWS_NUM;
         let rot_branch_child_prev = rot_branch_init - EXTENSION_ROWS_NUM - 1;
-        // Storage Leaf -> Account Leaf, back to back
-        let rot_storage_root = -leaf_value_pos - ACCOUNT_LEAF_ROWS + storage_offset;
-        let rot_storage_root_prev = rot_storage_root - BRANCH_ROWS_NUM;
-        let rot_key = -1;
-        let rot_s = if is_s { 0 } else { -2 };
 
         circuit!([meta, cb.base], {
             let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
@@ -210,10 +200,11 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 is_long => 1.expr() + get_num_bytes_short(a!(s_main.rlp2)),
             };
 
-            // Make sure the RLP encoding is correct
-            let len = leaf.len(meta, &mut cb.base, ctx.clone());
+            // Make sure the RLP encoding is correct.
+            // storage = [key, value]
+            let len = leaf.num_bytes(meta, &mut cb.base);
             ifx! {not!(is_leaf_placeholder) => {
-                let key_num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                let key_num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
                 require!(len => key_num_bytes.expr() + value_num_bytes.expr());
             }};
 
@@ -231,9 +222,9 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     72, 224, 27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
                 ];
                 ifx!{is_placeholder_without_branch => {
-                    for (byte, empty_byte) in s_main.bytes.iter().zip(empty_trie_hash.iter()) {
-                        require!(a!(*byte, rot_storage_root) => empty_byte);
-                    }
+                    let storage_root_rlc = leaf.storage_root_in_account_above(meta);
+                    let empty_root_rlc = empty_trie_hash.iter().map(|v| v.expr()).collect::<Vec<_>>().rlc(&r);
+                    require!(storage_root_rlc => empty_root_rlc);
                 }}
             } elsex {
                 ifx!{not_first_level, not!(is_modified_node_empty.expr()) => {
@@ -271,9 +262,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     // Note: storage leaf in the first level cannot be shorter than 32 bytes (it is always hashed).
                     // Note: if leaf is a placeholder, the root in the account leaf needs to be the empty trie hash.
                     ifx!{not!(is_placeholder_without_branch) => {
-                        // Note: storage root is always in `s_main.bytes`.
-                        let hash_rlc = s_main.bytes(meta, rot_storage_root).rlc(&r);
-                        require!((1, a!(accs.acc_s.rlc), len, hash_rlc) => @"keccak");
+                        let storage_root_rlc = leaf.storage_root_in_account_above(meta);
+                        require!((1, a!(accs.acc_s.rlc), len, storage_root_rlc) => @"keccak");
                     }}
                 } elsex {
                     /* Hash of the only storage leaf which is after a placeholder is storage trie root */
@@ -289,9 +279,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     // Only check if there is an account above the leaf.
                     // if account is directly above storage leaf, there is no placeholder branch
                     ifx!{branch.is_below_account(meta), branch.is_placeholder() => {
-                        // Note: storage root is always in `s_main.bytes`.
-                        let hash_rlc = s_main.bytes(meta, rot_storage_root_prev).rlc(&r);
-                        require!((1, a!(accs.acc_s.rlc), len, hash_rlc) => @"keccak");
+                        let storage_root_rlc = branch.storage_root_in_account_above(meta);
+                        require!((1, a!(accs.acc_s.rlc), len, storage_root_rlc) => @"keccak");
                     }}
                 }}
             }}

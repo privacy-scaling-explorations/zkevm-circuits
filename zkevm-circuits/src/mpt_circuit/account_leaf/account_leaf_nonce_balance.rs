@@ -66,8 +66,6 @@ The whole account leaf looks like:
 [0,160,86,232,31,23,27,204,85,166,255,131,69,230,146,192,248,110,91,72,224,27,153,108,173,192,1,98,47,181,227,99,180,33,0,160,197,210,70,1,134,247,35,60,146,126,125,178,220,199,3,192,229,0,182,83,202,130,39,59,123,250,216,4,93,133,164,122]
 [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
-account leaf = [key, [nonce, balance, storage, codehash]]
-
 [248,112,157,59,158,160,175,159,65,212,107,23,98,208,38,205,150,63,244,2,185,
 236,246,95,240,224,191,229,27,102,202,231,184,80 There are 112
 bytes after the first two bytes. 157 means the key is 29 (157 -
@@ -185,15 +183,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!((FixedTableTag::RMult, num_bytes.expr() + mult_offset.expr(), mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
 
                 // Go from the value rlc to the data rlc
-                let rlc = account.to_data_rlc(
-                    meta,
-                    &mut cb.base,
-                    ctx.clone(),
-                    ctx.main(is_s),
-                    value_rlc,
-                    is_long,
-                    0,
-                );
+                let rlc =
+                    account.to_data_rlc(meta, &mut cb.base, ctx.main(is_s), value_rlc, is_long, 0);
                 (rlc, num_bytes)
             };
             let (nonce_rlc, nonce_num_bytes) = calc_rlc(
@@ -225,7 +216,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 + account.nonce_balance_rlc(
                     meta,
                     &mut cb.base,
-                    ctx.clone(),
                     nonce_rlc.expr(),
                     balance_rlc.expr(),
                     mult_prev.expr(),
@@ -235,6 +225,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             require!(account_rlc => rlc);
 
             // Check the RLP encoding consistency.
+            // RlP encoding: account = [key, [nonce, balance, storage, codehash]]
             // The only exception is when `is_non_existing_account_proof = 1` &
             // `is_wrong_leaf = 0`. In this case the value does not matter as
             // the account leaf is only a placeholder and does not use
@@ -251,8 +242,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
                 require!(a!(c_main.rlp2) => nonce_num_bytes.expr() + balance_num_bytes.expr() + (2 * (1 + 32)).expr());
                 // Now check that the the key and value list length matches the account length.
-                let len = account.len(meta, &mut cb.base, ctx.clone());
-                let key_num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                let len = account.num_bytes(meta, &mut cb.base);
+                let key_num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base);
                 // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
                 let value_list_num_bytes = a!(s_main.rlp2) + 2.expr();
                 // Account length needs to equal all key bytes and all values list bytes.

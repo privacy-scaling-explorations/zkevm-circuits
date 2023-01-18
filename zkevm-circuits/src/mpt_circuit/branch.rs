@@ -17,8 +17,8 @@ use crate::{
     circuit_tools::{DataTransition, LRCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
-    mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{helpers::get_num_bytes_list_short, storage_leaf::StorageLeaf},
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{
@@ -142,7 +142,6 @@ impl<F: FieldExt> BranchConfig<F> {
         let denoter = ctx.denoter;
         let r = ctx.r.clone();
 
-        let c160_inv = Expression::Constant(F::from(160_u64).invert().unwrap());
         circuit!([meta, cb.base], {
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
@@ -240,32 +239,30 @@ impl<F: FieldExt> BranchConfig<F> {
                 ifx!{is_branch_child => {
                      // Keep track of how many branch bytes we've processed.
                     for is_s in [true, false] {
-                        let rlp1 = a!(ctx.main(is_s).rlp1);
-                        let rlp2 = a!(ctx.main(is_s).rlp2);
                         // Calculate the number of bytes on this row.
                         let num_bytes = ifx!{a!(denoter.is_not_hashed(is_s)) => {
-                            a!(ctx.main(is_s).bytes[0]) - 192.expr() + 1.expr()
+                            get_num_bytes_list_short(a!(ctx.main(is_s).bytes[0]))
                         } elsex {
                             // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
                             // non-nil node (1 or 33 respectively).
-                            rlp2.expr() * c160_inv.expr() * 32.expr() + 1.expr()
+                            a!(ctx.main(is_s).rlp2) * invert!(160) * 32.expr() + 1.expr()
                         }};
                         // Fetch the number of bytes left from the previous row.
                         // TODO(Brecht): just store it in branch init in its own column.
                         let num_bytes_left = ifx!{is_branch_init.prev() => {
                             // Length of branch without initial rlp bytes
-                            BranchNodeInfo::new(meta, ctx.clone(), is_s, -1).raw_len()
+                            BranchNodeInfo::new(meta, ctx.clone(), is_s, -1).len(meta)
                         } elsex {
                             // Simply stored in rlp1 otherwise
                             a!(ctx.main(is_s).rlp1, -1)
                         }};
                         // Update number of bytes left
-                        require!(rlp1 => num_bytes_left - num_bytes.expr());
+                        require!(a!(ctx.main(is_s).rlp1) => num_bytes_left - num_bytes.expr());
                         // In the final branch child `rlp1` needs to be 1 (because RLP length
                         // specifies also ValueNode which occupies 1 byte).
                         // TODO: ValueNode
                         ifx!{is_last_child => {
-                            require!(rlp1 => 1);
+                            require!(a!(ctx.main(is_s).rlp1) => 1);
                         }}
                     }
 

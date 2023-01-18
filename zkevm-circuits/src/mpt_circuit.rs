@@ -573,6 +573,8 @@ impl<F: FieldExt> MPTConfig<F> {
                 }}
 
                 /* Mult checks */
+                // TODO(Brecht): manually optimized lookups for now, but the constraint builder can
+                // automatically do this. Shouldn't be too hard hopefully.
                 for tag in ["mult", "mult2"] {
                     let lookups = cb.base.lookups.iter().cloned().filter(|lookup| lookup.tag == tag).collect::<Vec<_>>();
                     let optimize = true;

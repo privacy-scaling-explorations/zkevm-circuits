@@ -142,7 +142,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                         (0.expr(), 1.expr(), false.expr())
                     }};
                     // Check that the stored RLC is correct
-                    let key_rlc = leaf_prev.key_rlc(meta, &mut cb.base, ctx.clone(), key_mult_prev, is_key_odd.expr(), 1.expr(), false);
+                    let key_rlc = leaf_prev.key_rlc(meta, &mut cb.base, key_mult_prev, is_key_odd.expr(), 1.expr(), false);
                     require!(a!(accs.key.mult) => key_rlc_prev.expr() + key_rlc);
 
                     // TODO(Brecht): Somehow we need to use the flags on the key_c row to calculate these and the RLC

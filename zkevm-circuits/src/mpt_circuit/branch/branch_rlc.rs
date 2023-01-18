@@ -108,7 +108,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             let branch_rlc = DataTransition::new(meta, branch_acc.rlc);
             ifx! {a!(is_not_hashed) => {
                 // When a branch child is not empty and is not hashed, a list is stored in the branch and
-                // we have `bytes[0] - 192` bytes in a row. We need to add these bytes to the RLC.
+                // we have `bytes[0] - RLP_LIST_SHORT` bytes in a row. We need to add these bytes to the RLC.
                 // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
                 let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..34].to_vec().rlc_chain(&r, branch_mult.prev());
                 require!(branch_rlc => rlc);
@@ -123,7 +123,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 // While hashed nodes have `RLP_HASH_VALUE at `rlp2` and then any byte at `bytes`.
                 require!(a!(main.rlp2) => [0, RLP_HASH_VALUE]);
 
-                let is_empty = (RLP_HASH_VALUE.expr() - a!(main.rlp2)) * Expression::Constant(F::from(RLP_HASH_VALUE as u64).invert().unwrap());
+                let is_empty = (RLP_HASH_VALUE.expr() - a!(main.rlp2)) * invert!(RLP_HASH_VALUE);
                 let (rlc, mult) = ifx!{is_empty => {
                     require!(a!(main.bytes[0]) => RLP_NIL);
                     // There's only have one byte (128 at `bytes[0]`) that needs to be added to the RLC.

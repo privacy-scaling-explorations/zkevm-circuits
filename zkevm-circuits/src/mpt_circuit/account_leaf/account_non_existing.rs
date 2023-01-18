@@ -124,6 +124,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         let rot_first_branch = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
         let rot_branch_init = rot_first_branch - 1;
 
+        //TODO(Brecht): reuse/change
         let add_wrong_leaf_constraints =
             |meta: &mut VirtualCells<F>, cb: &mut MPTConstraintBuilder<F>| {
                 circuit!([meta, cb.base], {
@@ -207,7 +208,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
 
             // RLC bytes zero check
             let leaf = AccountLeafInfo::new(meta, ctx.clone(), 0);
-            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
             cb.set_length(num_bytes - 2.expr());
         });
 

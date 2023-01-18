@@ -141,7 +141,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let codehash = DataTransition::new(meta, accs.c_mod_node_rlc);
                 require!(codehash => c_main.bytes(meta, 0).rlc(&r));
                 // The full account leaf RLC
-                let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, &mut cb.base, ctx.clone(), storage_root.expr(), codehash.expr(), mult_prev.expr(), 0);
+                let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, &mut cb.base, storage_root.expr(), codehash.expr(), mult_prev.expr(), 0);
                 require!(account_rlc => rlc);
 
                 // Check if the account is in the branch above.
@@ -187,7 +187,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // Do the lookup
                 ifx!{do_lookup => {
                     let leaf = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-                    let leaf_len = leaf.len(meta, &mut cb.base, ctx.clone());
+                    let leaf_len = leaf.num_bytes(meta, &mut cb.base);
                     require!((1, account_rlc, leaf_len, hash_rlc) => @"keccak");
                 }}
 

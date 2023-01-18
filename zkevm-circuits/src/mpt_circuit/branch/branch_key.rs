@@ -10,12 +10,9 @@ use crate::{
     circuit,
     circuit_tools::DataTransition,
     evm_circuit::util::rlc,
+    mpt_circuit::MPTContext,
     mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
     mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
-    mpt_circuit::{
-        helpers::{get_len_short, get_num_bytes_short},
-        MPTContext,
-    },
 };
 
 /*
@@ -152,7 +149,6 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
         circuit!([meta, cb.base], {
-            let c16inv = Expression::Constant(F::from(16).invert().unwrap());
             let not_first_level = a!(position_cols.not_first_level);
             let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
             let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init_prev);
@@ -180,18 +176,18 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 }};
 
                 // Get the length of the key
-                let key_len = ifx!{branch.is_extension() => {
-                    let len = get_len_short(a!(s_main.rlp2, -1));
+                // If the resulting key is odd then subtract 1 so we still use the previous multiplier.
+                // TODO(Brecht): is_long_even_c1 needs -1 while it should be even?
+                let key_num_bytes_for_mult = ifx!{branch.is_extension() => {
+                    let key_len = branch.ext_key_len(meta, -1);
                     matchx! {
-                        branch.is_long_even() + branch.is_long_odd_c1.expr() => len.expr() - 1.expr(),
-                        branch.is_long_odd_c16 => len.expr(),
-                        branch.is_short_c16 => 1.expr(),
-                        branch.is_short_c1 => 0.expr(),
+                        branch.is_ext_even() - branch.is_long_even_c1.expr() => key_len.expr(),
+                        branch.is_ext_odd() + branch.is_long_even_c1.expr() => key_len.expr() - 1.expr(),
                     }
                 }};
-                // Get the multiplier for this length
+                // Get the multiplier for this key length
                 let mult_diff = a!(mult_diff, rot_first_child);
-                require!((FixedTableTag::RMult, key_len, mult_diff) => @"mult");
+                require!((FixedTableTag::RMult, key_num_bytes_for_mult, mult_diff) => @"mult");
 
                 // Calculate the extension node key RLC when in an extension node
                 let key_rlc_post_ext = key_rlc_prev.expr() + ifx!{branch.is_extension() => {
@@ -220,7 +216,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                                 &s_main.bytes.iter().skip(1).zip(s_main.bytes.iter()).map(|(byte, second_nibble)| {
                                     let byte = a!(byte, -1);
                                     let second_nibble = a!(second_nibble);
-                                    let first_nibble = (byte.expr() - second_nibble.expr()) * c16inv.expr();
+                                    let first_nibble = (byte.expr() - second_nibble.expr()) * invert!(16);
                                     // In this constraint we check whether the list of `second_nibbles` is correct.
                                     // For example having `first_nibble = 9 = ((9*16 + 5) - 5) / 16` we check:
                                     // `s_main.bytes[1] = first_nibble * 16 + 5`.
@@ -269,18 +265,18 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 require!(key_rlc => key_rlc_post_ext.expr() + modified_node_index.expr() * mult.expr() * rlc_mult.expr());
                 require!(key_mult => mult.expr() * mult_mult.expr());
 
-                // Update `is_c16`.
+                // Update `is_key_odd`.
                 ifx!{after_first_level => {
                     ifx!{branch.is_extension() => {
                         // We need to take account the nibbles of the extension node.
-                        // `is_c16` alternates when there's an even number of nibbles, remains the same otherwise
+                        // `is_key_odd` alternates when there's an even number of nibbles, remains the same otherwise
                         ifx!{branch.is_even() => {
                             require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
                         } elsex {
                             require!(branch.is_key_odd() => branch_prev.is_key_odd());
                         }}
                     } elsex {
-                        // `is_c16` simply alernates for regular branches.
+                        // `is_key_odd` simply alernates for regular branches.
                         require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
                     }}
                 } elsex {
@@ -296,17 +292,9 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 cb.set_range_s(FixedTableTag::RangeKeyLen16.expr());
             }}
 
-            // RLC bytes zero check
-            ifx! {f!(position_cols.q_not_first_ext_s), a!(ctx.branch.is_extension_node_s) => {
-                ifx!{branch.is_short() => {
-                    // We need to ensure `s_main.bytes` are all 0 when short - the only nibble is in `s_main.rlp2`.
-                    // TODO(Brecht): this can currently be removed
-                    cb.set_length_s(0.expr());
-                }}
-                ifx!{branch.is_long() => {
-                    // `s_main.bytes[i] = 0` after last extension node nibble, ctx.rlp_bytes()[3..35]
-                    cb.set_length(get_num_bytes_short(a!(s_main.bytes[0])));
-                }}
+            ifx! {f!(position_cols.q_not_first_ext_s), a!(ctx.branch.is_extension_node_s), branch.is_extension() => {
+                // RLC bytes zero check
+                cb.set_length(branch.ext_num_rlp_bytes(meta) + branch.ext_key_num_bytes(meta) - 2.expr());
             }}
         });
 

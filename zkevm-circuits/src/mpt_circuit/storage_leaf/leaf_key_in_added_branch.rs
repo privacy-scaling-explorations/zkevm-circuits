@@ -218,12 +218,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc_prev = key_rlc_prev + a!(drifted_pos, rot_branch_child) * drifted_pos_mult;
                 // Calculate the key RLC
-                let key_rlc = key_rlc_prev.expr() + leaf.key_rlc(meta, &mut cb.base, ctx.clone(), key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
+                let key_rlc = key_rlc_prev.expr() + leaf.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
 
                 // Check zero bytes and mult_diff
                 ifx!{branch.is_s_or_c_placeholder() => {
                     // Num bytes used in RLC
-                    let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                    let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
                     // Multiplier is number of bytes
                     require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
                     // RLC bytes zero check (subtract RLP bytes used)
@@ -259,7 +259,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 };
                 require!(stored_key_rlc => key_rlc);
                 ifx! {do_lookup => {
-                    let len = leaf.len(meta, &mut cb.base, ctx.clone());
+                    let len = leaf.num_bytes(meta, &mut cb.base);
                     require!((1, mod_rlc, len, mod_hash) => @"keccak");
                 }}
             }}

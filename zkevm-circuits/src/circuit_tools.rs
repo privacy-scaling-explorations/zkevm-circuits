@@ -522,6 +522,14 @@ impl<F: FieldExt, E: Expressable<F>> LRCable<F> for Vec<E> {
     }
 }
 
+/// Creates a dummy constraint builder that cannot be used to add constraints.
+#[macro_export]
+macro_rules! _cb {
+    () => {{
+        ConstraintBuilder::<F>::new(0)
+    }};
+}
+
 /// Constraint builder macros
 #[macro_export]
 macro_rules! circuit {
@@ -713,6 +721,13 @@ macro_rules! circuit {
         macro_rules! not {
             ($expr:expr) => {{
                 gadgets::util::not::expr($expr.expr())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! invert {
+            ($expr:expr) => {{
+                Expression::Constant(F::from($expr as u64).invert().unwrap())
             }};
         }
 

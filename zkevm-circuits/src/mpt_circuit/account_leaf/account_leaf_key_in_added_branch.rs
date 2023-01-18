@@ -142,26 +142,26 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     // Calculate rlc
                     // Nonce data rlc
                     let nonce_stored = a!(accs.s_mod_node_rlc, rot_nonce);
-                    let nonce_rlc = account.to_data_rlc(meta, &mut cb.base, ctx.clone(), ctx.s_main, nonce_stored, account.is_nonce_long(), rot_nonce);
+                    let nonce_rlc = account.to_data_rlc(meta, &mut cb.base, ctx.s_main, nonce_stored, account.is_nonce_long(), rot_nonce);
                     // Balance data rlc
                     let balance_stored = a!(accs.c_mod_node_rlc, rot_nonce);
-                    let balance_rlc = account.to_data_rlc(meta, &mut cb.base, ctx.clone(), ctx.c_main, balance_stored, account.is_balance_long(), rot_nonce);
+                    let balance_rlc = account.to_data_rlc(meta, &mut cb.base, ctx.c_main, balance_stored, account.is_balance_long(), rot_nonce);
                     let mult_prev = a!(accs.acc_s.mult);
                     let mult_nonce = a!(accs.acc_c.rlc, rot_nonce);
                     let mult_balance = a!(accs.key.mult, rot_nonce);
-                    let rlc = a!(accs.acc_s.rlc) + account.nonce_balance_rlc(meta, &mut cb.base, ctx.clone(), nonce_rlc.expr(), balance_rlc.expr(), mult_prev.expr(), mult_nonce.expr(), rot_nonce);
+                    let rlc = a!(accs.acc_s.rlc) + account.nonce_balance_rlc(meta, &mut cb.base, nonce_rlc.expr(), balance_rlc.expr(), mult_prev.expr(), mult_nonce.expr(), rot_nonce);
                     // Add storage/codehash rlc
                     let storage_rlc = a!(accs.s_mod_node_rlc, rot_storage);
                     let codehash_rlc = a!(accs.c_mod_node_rlc, rot_storage);
                     let mult_prev = mult_prev.expr() * mult_nonce.expr() * mult_balance.expr();
-                    let rlc = rlc + account.storage_codehash_rlc(meta, &mut cb.base, ctx.clone(), storage_rlc.expr(), codehash_rlc.expr(), mult_prev.expr(), rot_storage);
+                    let rlc = rlc + account.storage_codehash_rlc(meta, &mut cb.base, storage_rlc.expr(), codehash_rlc.expr(), mult_prev.expr(), rot_storage);
 
                     // Check that `mod_node_rlc` in a placeholder branch contains the hash of the drifted leaf.
                     // (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
                     // is checked in `branch.rs`)
                     ifx!{branch.is_placeholder() => {
                         let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                        let len = account.len(meta, &mut cb.base, ctx.clone());
+                        let len = account.num_bytes(meta, &mut cb.base);
                         require!((1, rlc, len, a!(accs.mod_node_rlc(is_s), rot_first_child)) => @"keccak");
                     }}
                 }
@@ -204,7 +204,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 // RLC bytes zero check
                 let leaf = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+                let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
                 cb.set_length(num_bytes.expr() - 2.expr());
                 // Update `mult_diff`
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");

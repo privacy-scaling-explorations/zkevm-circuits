@@ -1,14 +1,12 @@
-use gadgets::util::{or, Expr};
+use gadgets::util::Expr;
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     circuit,
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::{
-        get_num_rlp_bytes_selectors, get_rlp_meta_bytes, get_rlp_value_bytes, MPTConstraintBuilder,
-    },
-    mpt_circuit::MPTContext,
+    mpt_circuit::helpers::MPTConstraintBuilder,
+    mpt_circuit::{helpers::BranchNodeInfo, MPTContext},
 };
 
 /*
@@ -88,33 +86,22 @@ impl<F: FieldExt> BranchInitConfig<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        let s_main = ctx.s_main;
         let accs = ctx.accumulators;
-        let r = ctx.r;
-
-        let rot = Rotation::cur();
+        let r = ctx.r.clone();
         circuit!([meta, cb.base], {
             for is_s in [true, false] {
-                // Boolean checks
-                let rlp_meta_bytes = get_rlp_meta_bytes(meta, s_main.clone(), is_s, rot);
-                for selector in rlp_meta_bytes.iter() {
-                    require!(selector => bool);
-                }
-                // There should never be `rlp1, rlp2: 0, 0`
-                // (we only have three cases, there is no case with both being 0).
-                require!(or::expr(&rlp_meta_bytes) => true);
-
-                // The RLC of the init branch comprises 1, 2, or 3 bytes.
-                // Here we check that stored rlc/mult values are correct.
-                let num_rlp_byte_selectors = get_num_rlp_bytes_selectors(rlp_meta_bytes);
-                let rlp = get_rlp_value_bytes(meta, s_main.clone(), is_s, rot);
-                for (idx, selector) in num_rlp_byte_selectors.into_iter().enumerate() {
-                    ifx! {selector => {
-                        // Check branch accumulator in row 0
-                        require!(a!(accs.acc(is_s).rlc) => rlc::expr(&rlp[..idx+1], &r));
-                        require!(a!(accs.acc(is_s).mult) => r[idx]);
-                    }}
-                }
+                let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, 0);
+                // Selector constraints
+                branch.init_selector_checks(meta, &mut cb.base);
+                // Check that stored rlc/mult values are correct.
+                let rlp = branch.rlp_bytes(meta);
+                let (rlc, mult) = matchx! {
+                    branch.is_branch_short(meta) => (rlc::expr(&rlp[..1], &r), r[0].expr()),
+                    branch.is_branch_long(meta) => (rlc::expr(&rlp[..2], &r), r[1].expr()),
+                    branch.is_branch_very_long(meta) => (rlc::expr(&rlp[..3], &r), r[2].expr()),
+                };
+                require!(a!(accs.acc(is_s).rlc) => rlc);
+                require!(a!(accs.acc(is_s).mult) => mult);
             }
         });
 

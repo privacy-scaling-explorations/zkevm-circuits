@@ -3,12 +3,8 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::LRCable,
     evm_circuit::util::rlc,
-    mpt_circuit::param::{
-        ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ARITY, EXTENSION_ROWS_NUM, RLP_NIL,
-    },
+    mpt_circuit::param::{ARITY, EXTENSION_ROWS_NUM, RLP_NIL},
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
         MPTContext,
@@ -101,11 +97,8 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         // When a branch is in the first level of the storage trie, we need to check whether
                         // the branch hash matches the storage root.
                         // Note: A branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                        let storage_offset = if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND};
-                        let rot_into_storage_root = rot_branch_init - ACCOUNT_LEAF_ROWS + storage_offset;
-                        // Note: storage root is always in s_main.bytes.
-                        let storage_root_rlc = ctx.s_main.bytes(meta, rot_into_storage_root).rlc(&ctx.r);
-                        require!((1, branch_rlc, branch.len(), storage_root_rlc) => @"keccak");
+                        let storage_root_rlc = branch.storage_root_in_account_above(meta);
+                        require!((1, branch_rlc, branch.num_bytes(meta), storage_root_rlc) => @"keccak");
                     } elsex {
                         // Here the branch is in some other branch
                         let mod_node_hash_rlc = a!(ctx.accumulators.mod_node_rlc(is_s), rot_branch_child_prev);
@@ -116,7 +109,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                         } elsex {
                             /* Hashed branch hash in parent branch */
                             // We need to check that `hash(branch) = parent_branch_modified_node`.
-                            require!((1, branch_rlc, branch.len(), mod_node_hash_rlc) => @"keccak");
+                            require!((1, branch_rlc, branch.num_bytes(meta), mod_node_hash_rlc) => @"keccak");
                         }}
                     }}
                 } elsex {
@@ -124,7 +117,7 @@ impl<F: FieldExt> BranchHashInParentConfig<F> {
                     // When branch is in the first level of the account trie, we need to check that
                     // `hash(branch) = account_trie_root`.
                     // Note: branch in the first level cannot be shorter than 32 bytes (it is always hashed).
-                    require!((1, branch_rlc, branch.len(), a!(ctx.inter_root(is_s))) => @"keccak");
+                    require!((1, branch_rlc, branch.num_bytes(meta), a!(ctx.inter_root(is_s))) => @"keccak");
                 }}
             }}
         });

@@ -180,7 +180,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 + leaf.key_rlc(
                     meta,
                     &mut cb.base,
-                    ctx.clone(),
                     key_mult_prev,
                     is_key_odd.expr(),
                     1.expr(),
@@ -195,14 +194,13 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 + ifx! {not!(leaf.is_below_account(meta)) => {
                     a!(denoter.sel(is_s), rot_first_child)
                 }};
-            let num_nibbles =
-                leaf.num_key_nibbles(meta, &mut cb.base, ctx.clone(), is_key_odd.expr());
+            let num_nibbles = leaf.num_key_nibbles(meta, &mut cb.base, is_key_odd.expr());
             ifx! {not!(is_leaf_placeholder) => {
                 require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
             }}
 
             // Num bytes used in RLC
-            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base, ctx.clone());
+            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
             // Multiplier is number of bytes
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check (subtract 2 RLP bytes used)
