@@ -435,9 +435,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            // debug info will remove.
-            println!("come to is_create: {}, call.code_hash {:?}, callee account code hash {:?} ",  call.is_create(),
-            call.code_hash.to_word(), code_hash);
+            // TODO: debug info will remove.
+            println!(
+                "come to is_create: {}, call.code_hash {:?}, callee account code hash {:?} ",
+                call.is_create(),
+                call.code_hash.to_word(),
+                code_hash
+            );
 
             state.account_write(
                 &mut exec_step,
@@ -483,6 +487,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
+            // TODO: debug info will remove
             println!("come to is_empty_code_hash:  {}", is_empty_code_hash);
 
             // 3. Call to account with empty code.
