@@ -260,7 +260,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Balance
                 //   - Write Account Balance
                 //   - Read Account CodeHash
-                rw_counter: Delta(11.expr()),
+                rw_counter: Delta(10.expr()),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
@@ -270,7 +270,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             not::expr(tx_is_create.expr()) * not::expr(is_empty_code_hash.expr());
 
         cb.condition(normal_contract_call, |cb| {
-            
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
@@ -321,7 +320,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(24.expr()),
+                rw_counter: Delta(23.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),

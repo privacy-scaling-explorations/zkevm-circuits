@@ -485,14 +485,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (_, _, is_empty_code_hash) => {
             println!("come to is_empty_code_hash:  {}", is_empty_code_hash);
 
-            state.account_write(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                code_hash.to_word(),
-                code_hash.to_word(),
-            )?;
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 return Ok(exec_step);
