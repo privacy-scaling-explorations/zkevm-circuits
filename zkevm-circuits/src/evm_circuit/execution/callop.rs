@@ -705,6 +705,7 @@ mod test {
     use itertools::Itertools;
     use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
     use mock::TestContext;
+    use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
@@ -876,13 +877,14 @@ mod test {
         ];
         let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
 
-        for ((opcode, stack), callee) in TEST_CALL_OPCODES
+        TEST_CALL_OPCODES
             .iter()
             .cartesian_product(stacks.into_iter())
             .cartesian_product(callees.into_iter())
-        {
-            test_ok(caller(opcode, stack, true), callee);
-        }
+            .par_bridge()
+            .for_each(|((opcode, stack), callee)| {
+                test_ok(caller(opcode, stack, true), callee);
+            });
     }
 
     #[derive(Clone, Copy, Debug, Default)]
