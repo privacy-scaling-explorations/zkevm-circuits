@@ -1345,7 +1345,7 @@ impl<F: Field> ExecutionConfig<F> {
         let assigned_stored_expressions = self.assign_stored_expressions(region, offset, step)?;
 
         // enable with `RUST_LOG=debug`
-        if log::log_enabled!(log::Level::Debug) {
+        //if log::log_enabled!(log::Level::Debug) {
             let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
                 && step.rw_indices.is_empty();
             if !is_padding_step {
@@ -1359,7 +1359,7 @@ impl<F: Field> ExecutionConfig<F> {
                     block,
                     region.challenges(),
                 );
-            }
+           // }
         }
         Ok(())
     }

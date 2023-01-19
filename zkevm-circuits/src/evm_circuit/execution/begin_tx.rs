@@ -43,6 +43,11 @@ pub(crate) struct BeginTxGadget<F> {
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
+    // use to check call_callee_address with keccak(rlp(account, nonce))
+    // keccak_input: Cell<F>,
+    // keccak_input_length: Cell<F>,s
+    // keccak_output: Word<F>,
+    //*/
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -82,6 +87,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
 
         let call_callee_address = cb.query_cell();
+        // let keccak_input = cb.query_cell();
+        // let keccak_input_length = cb.query_cell();
+
+
         cb.condition(tx_is_create.expr(), |_cb| {
             // TODO: require call_callee_address to be
             // address(keccak(rlp([tx_caller_address, tx_nonce])))
@@ -164,7 +173,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
-        // TODO: Handle creation transaction
         // TODO: Handle precompiled
 
         // Read code_hash of callee
@@ -174,6 +182,70 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             AccountFieldTag::CodeHash,
             phase2_code_hash.expr(),
         );
+
+        // Handle creation transaction
+        // tx_is_create = true when tx.to = none
+        cb.condition(tx_is_create.expr(), |cb| {
+            for (field_tag, value) in [
+                (CallContextFieldTag::Depth, 1.expr()),
+                (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
+                (
+                    CallContextFieldTag::CalleeAddress,
+                    call_callee_address.expr(),
+                ),
+                (CallContextFieldTag::CallDataOffset, 0.expr()),
+                (
+                    CallContextFieldTag::CallDataLength,
+                    tx_call_data_length.expr(),
+                ),
+                (CallContextFieldTag::Value, tx_value.expr()),
+                (CallContextFieldTag::IsStatic, 0.expr()),
+                (CallContextFieldTag::LastCalleeId, 0.expr()),
+                (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
+                (CallContextFieldTag::IsRoot, 1.expr()),
+                (CallContextFieldTag::IsCreate, tx_is_create.expr()),
+                (CallContextFieldTag::CodeHash, phase2_code_hash.expr()),
+            ] {
+                cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
+            }
+
+            cb.require_step_state_transition(StepStateTransition {
+                // 23 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance
+                //   - Write Account Balance
+                //   - Read Account CodeHash
+                //   - Write CallContext Depth
+                //   - Write CallContext CallerAddress
+                //   - Write CallContext CalleeAddress
+                //   - Write CallContext CallDataOffset
+                //   - Write CallContext CallDataLength
+                //   - Write CallContext Value
+                //   - Write CallContext IsStatic
+                //   - Write CallContext LastCalleeId
+                //   - Write CallContext LastCalleeReturnDataOffset
+                //   - Write CallContext LastCalleeReturnDataLength
+                //   - Write CallContext IsRoot
+                //   - Write CallContext IsCreate
+                //   - Write CallContext CodeHash
+                rw_counter: Delta(23.expr()),
+                call_id: To(call_id.expr()),
+                is_root: To(true.expr()),
+                is_create: To(tx_is_create.expr()),
+                code_hash: To(phase2_code_hash.expr()),
+                gas_left: To(gas_left.clone()),
+                reversible_write_counter: To(2.expr()),
+                log_id: To(0.expr()),
+                ..StepStateTransition::new_context()
+            });
+        });
 
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
@@ -307,7 +379,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        
         let gas_fee = tx.gas_price * tx.gas;
+        println!("tx is create :{}, rw_counter {}, callid {}, txid {}, tx_steps {}", tx.is_create,
+        step.rw_counter, call.id, tx.id, tx.steps.len());
+        for _step in tx.steps.clone() {
+            println!("step {:?}", _step.execution_state);
+        }
 
         let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
             [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
@@ -599,7 +677,7 @@ mod test {
 
     // TODO: Enable this test once we have support for contract deployment from
     // BeginTx.
-    #[ignore]
+    // #[ignore]
     #[test]
     fn begin_tx_deploy() {
         let code = bytecode! {
