@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -322,9 +322,9 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < lookup_column_count {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -765,7 +765,6 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
                         Table::Block => block_table,
-                        Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
@@ -775,6 +774,14 @@ impl<F: Field> ExecutionConfig<F> {
                         column.expr(),
                         rlc::expr(&table_expressions, &lookup_powers_of_randomness),
                     )]
+                });
+            }
+        }
+        for column in cell_manager.columns().iter() {
+            if let CellType::LookupByte = column.cell_type {
+                meta.lookup_any("Byte lookup", |meta| {
+                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
+                    vec![(column.expr(), byte_table_expression)]
                 });
             }
         }
@@ -1259,9 +1266,9 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            assigned.value().map(|v| {
+            assigned.map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v));
+                assigned_stored_expressions.push((name, v));
             });
         }
         Ok(assigned_stored_expressions)
