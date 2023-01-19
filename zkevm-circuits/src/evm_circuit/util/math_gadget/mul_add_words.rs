@@ -168,10 +168,10 @@ mod tests {
 
     impl<F: Field> MathGadgetContainer<F> for MulAddGadgetContainer<F> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
-            let b = cb.query_word();
-            let c = cb.query_word();
-            let d = cb.query_word();
+            let a = cb.query_word_rlc();
+            let b = cb.query_word_rlc();
+            let c = cb.query_word_rlc();
+            let d = cb.query_word_rlc();
             let carry = cb.query_cell();
             let math_gadget = MulAddWordsGadget::<F>::construct(cb, [&a, &b, &c, &d]);
             cb.require_equal("carry is correct", math_gadget.overflow(), carry.expr());

@@ -169,28 +169,34 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let not_last_two_rows = 1.expr()
                 - meta.query_advice(is_last, Rotation::cur())
                 - meta.query_advice(is_last, Rotation::next());
-            cb.condition(not_last_two_rows, |cb| {
-                cb.require_equal(
-                    "rows[0].id == rows[2].id",
-                    meta.query_advice(id, Rotation::cur()),
-                    meta.query_advice(id, Rotation(2)),
-                );
-                cb.require_equal(
-                    "rows[0].tag == rows[2].tag",
-                    tag.value(Rotation::cur())(meta),
-                    tag.value(Rotation(2))(meta),
-                );
-                cb.require_equal(
-                    "rows[0].addr + 1 == rows[2].addr",
-                    meta.query_advice(addr, Rotation::cur()) + 1.expr(),
-                    meta.query_advice(addr, Rotation(2)),
-                );
-                cb.require_equal(
-                    "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
-                    meta.query_advice(src_addr_end, Rotation::cur()),
-                    meta.query_advice(src_addr_end, Rotation(2)),
-                );
-            });
+            cb.condition(
+                not_last_two_rows
+                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
+                        meta,
+                    ))),
+                |cb| {
+                    cb.require_equal(
+                        "rows[0].id == rows[2].id",
+                        meta.query_advice(id, Rotation::cur()),
+                        meta.query_advice(id, Rotation(2)),
+                    );
+                    cb.require_equal(
+                        "rows[0].tag == rows[2].tag",
+                        tag.value(Rotation::cur())(meta),
+                        tag.value(Rotation(2))(meta),
+                    );
+                    cb.require_equal(
+                        "rows[0].addr + 1 == rows[2].addr",
+                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                        meta.query_advice(addr, Rotation(2)),
+                    );
+                    cb.require_equal(
+                        "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
+                        meta.query_advice(src_addr_end, Rotation::cur()),
+                        meta.query_advice(src_addr_end, Rotation(2)),
+                    );
+                },
+            );
 
             let rw_diff = and::expr([
                 or::expr([
@@ -254,7 +260,10 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 ]),
             );
             cb.condition(
-                not::expr(meta.query_advice(is_last, Rotation::next())),
+                not::expr(meta.query_advice(is_last, Rotation::next()))
+                    * (not::expr(tag.value_equals(CopyDataType::Padding, Rotation::cur())(
+                        meta,
+                    ))),
                 |cb| {
                     cb.require_equal(
                         "bytes_left == bytes_left_next + 1 for non-last step",
@@ -308,7 +317,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.require_equal(
                 "rows[2].value == rows[0].value * r + rows[1].value",
                 meta.query_advice(value, Rotation(2)),
-                meta.query_advice(value, Rotation::cur()) * challenges.evm_word()
+                meta.query_advice(value, Rotation::cur()) * challenges.keccak_input()
                     + meta.query_advice(value, Rotation::next()),
             );
 
@@ -423,6 +432,18 @@ impl<F: Field> CopyCircuitConfig<F> {
         block: &Block<F>,
         challenges: Challenges<Value<F>>,
     ) -> Result<(), Error> {
+        let copy_rows_needed = block
+            .copy_events
+            .iter()
+            .map(|c| c.bytes.len() * 2)
+            .sum::<usize>();
+
+        // The `+ 2` is used to take into account the two extra empty copy rows needed
+        // to satisfy the query at `Rotation(2)` performed inside of the
+        // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
+        // Accumulation gate.
+        assert!(copy_rows_needed + 2 <= block.circuits_params.max_copy_rows);
+
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
@@ -497,11 +518,16 @@ impl<F: Field> CopyCircuitConfig<F> {
                         offset += 1;
                     }
                 }
-                // pad two rows in the end to satisfy Halo2 cell assignment check
-                for _ in 0..2 {
-                    self.assign_padding_row(&mut region, offset, &tag_chip)?;
+
+                for _ in 0..block.circuits_params.max_copy_rows - copy_rows_needed - 2 {
+                    self.assign_padding_row(&mut region, offset, false, &tag_chip, &lt_chip)?;
                     offset += 1;
                 }
+
+                self.assign_padding_row(&mut region, offset, true, &tag_chip, &lt_chip)?;
+                offset += 1;
+                self.assign_padding_row(&mut region, offset, true, &tag_chip, &lt_chip)?;
+
                 Ok(())
             },
         )
@@ -511,15 +537,24 @@ impl<F: Field> CopyCircuitConfig<F> {
         &self,
         region: &mut Region<F>,
         offset: usize,
+        is_last_two: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
+        lt_chip: &LtChip<F, 8>,
     ) -> Result<(), Error> {
-        // q_enable
-        region.assign_fixed(
-            || "q_enable",
-            self.q_enable,
-            offset,
-            || Value::known(F::zero()),
-        )?;
+        if !is_last_two {
+            // q_enable
+            region.assign_fixed(
+                || "q_enable",
+                self.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
+            // q_step
+            if offset % 2 == 0 {
+                self.q_step.enable(region, offset)?;
+            }
+        }
+
         // is_first
         region.assign_advice(
             || format!("assign is_first {}", offset),
@@ -553,7 +588,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             || format!("assign src_addr_end {}", offset),
             self.copy_table.src_addr_end,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::one()),
         )?;
         // bytes_left
         region.assign_advice(
@@ -605,7 +640,10 @@ impl<F: Field> CopyCircuitConfig<F> {
             || Value::known(F::zero()),
         )?;
         // tag
-        tag_chip.assign(region, offset, &CopyDataType::default())?;
+        tag_chip.assign(region, offset, &CopyDataType::Padding)?;
+        // Assing LT gadget
+
+        lt_chip.assign(region, offset, F::zero(), F::one())?;
         Ok(())
     }
 }
@@ -646,8 +684,16 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block.copy_events.iter().map(|c| c.bytes.len() * 2).sum()
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block
+                .copy_events
+                .iter()
+                .map(|c| c.bytes.len() * 2)
+                .sum::<usize>()
+                + 2,
+            block.circuits_params.max_copy_rows,
+        )
     }
 
     /// Make the assignments to the CopyCircuit
@@ -753,18 +799,18 @@ pub mod dev {
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit;
+    use crate::evm_circuit::test::rand_bytes;
+    use crate::evm_circuit::witness::block_convert;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
         mock::BlockData,
     };
-    use eth_types::{bytecode, geth_types::GethData, Word};
+    use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
-
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
+    use mock::{TestContext, MOCK_ACCOUNTS};
+    use pretty_assertions::assert_eq;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let length = 0x0fffusize;
@@ -793,6 +839,7 @@ mod tests {
             block.clone(),
             CircuitsParams {
                 max_rws: 8192,
+                max_copy_rows: 8192 + 2,
                 ..Default::default()
             },
         )
@@ -820,6 +867,42 @@ mod tests {
         builder
     }
 
+    fn gen_extcodecopy_data() -> CircuitInputBuilder {
+        let external_address = MOCK_ACCOUNTS[0];
+        let code = bytecode! {
+            PUSH1(0x30usize)
+            PUSH1(0x0usize)
+            PUSH1(0x0usize)
+            PUSH20(external_address.to_word())
+            EXTCODECOPY
+            STOP
+        };
+        let code_ext = rand_bytes(0x0fffusize);
+        let test_ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[1]).code(code.clone());
+
+                accs[1].address(external_address).code(code_ext.clone());
+
+                accs[2]
+                    .address(MOCK_ACCOUNTS[2])
+                    .balance(Word::from(1u64 << 20));
+            },
+            |mut txs, accs| {
+                txs[0].to(accs[0].address).from(accs[2].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     fn gen_sha3_data() -> CircuitInputBuilder {
         let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
         let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
@@ -828,6 +911,7 @@ mod tests {
             block.clone(),
             CircuitsParams {
                 max_rws: 2000,
+                max_copy_rows: 0x200 * 2 + 2,
                 ..Default::default()
             },
         )
@@ -870,6 +954,13 @@ mod tests {
         let builder = gen_codecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit(10, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_valid_extcodecopy() {
+        let builder = gen_extcodecopy_data();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(test_copy_circuit(14, block), Ok(()));
     }
 
     #[test]

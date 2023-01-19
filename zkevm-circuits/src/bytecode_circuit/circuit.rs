@@ -761,12 +761,15 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block
-            .bytecodes
-            .values()
-            .map(|bytecode| bytecode.bytes.len() + 1)
-            .sum()
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block
+                .bytecodes
+                .values()
+                .map(|bytecode| bytecode.bytes.len() + 1)
+                .sum(),
+            block.circuits_params.max_bytecode,
+        )
     }
 
     /// Make the assignments to the TxCircuit
@@ -777,7 +780,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, true)
+        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
     }
 }
 
@@ -791,7 +794,6 @@ mod tests {
     use bus_mapping::evm::OpcodeId;
     use eth_types::{Bytecode, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
-
 
     /// Verify unrolling code
     #[test]

@@ -73,11 +73,9 @@ impl Opcode for OOGCall {
         );
 
         let (_, callee_account) = state.sdb.get_account(&call_address);
-        let callee_nonce = callee_account.nonce;
         let callee_code_hash = callee_account.code_hash;
         for (field, value) in [
             (AccountField::Balance, callee_account.balance),
-            (AccountField::Nonce, callee_nonce),
             (AccountField::CodeHash, callee_code_hash.to_word()),
         ] {
             state.account_read(&mut exec_step, call_address, field, value, value)?;

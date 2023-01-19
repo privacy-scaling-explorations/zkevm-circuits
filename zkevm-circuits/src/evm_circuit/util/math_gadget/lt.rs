@@ -1,6 +1,7 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, CachedRegion, Cell,
+        constraint_builder::ConstraintBuilder, from_bytes, pow_of_two, transpose_val_ret,
+        CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -82,6 +83,19 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
 
     pub(crate) fn diff_bytes(&self) -> Vec<Cell<F>> {
         self.diff.to_vec()
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: Value<F>,
+        rhs: Value<F>,
+    ) -> Result<Value<(F, Vec<u8>)>, Error> {
+        transpose_val_ret(
+            lhs.zip(rhs)
+                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
+        )
     }
 }
 

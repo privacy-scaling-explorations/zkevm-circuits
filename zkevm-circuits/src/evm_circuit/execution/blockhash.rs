@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKHASH;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let block_number = cb.query_rlc();
+        let block_number = cb.query_word_rlc();
         cb.stack_pop(block_number.expr());
 
         let current_block_number = cb.query_cell();
@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             257.expr() + from_bytes::expr(&block_number.cells),
         );
 
-        let block_hash = cb.query_rlc();
+        let block_hash = cb.query_word_rlc();
         cb.condition(block_lt.expr() * diff_lt.expr(), |cb| {
             cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
