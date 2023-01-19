@@ -932,7 +932,7 @@ mod tests {
         test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled.clone()], true);
         // Change the code_hash on the first position (header row)
         {
-            let mut invalid = unrolled.clone();
+            let mut invalid = unrolled;
             invalid.rows[0].code_hash += Word::one();
             trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
             test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
