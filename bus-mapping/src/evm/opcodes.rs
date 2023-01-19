@@ -391,24 +391,25 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let code_hash = callee_account.code_hash;
+    let callee_code_hash = call.code_hash;
+    let callee_exists = !state.sdb.get_account(&call.address).1.is_empty();
+    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+        (
+            callee_code_hash.to_word(),
+            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        )
+    } else {
+        (Word::zero(), true)
+    };
 
     // There are 4 branches from here.
     match (
         call.is_create(),
         state.is_precompiled(&call.address),
-        code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        is_empty_code_hash,
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                call.code_hash.to_word(),
-                call.code_hash.to_word(),
-            )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
@@ -447,8 +448,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 &mut exec_step,
                 call.address,
                 AccountField::CodeHash,
-                code_hash.to_word(),
-                code_hash.to_word(),
+                callee_code_hash_word,
+                callee_code_hash_word,
             )?;
 
             // 3. Call to account with empty code.
@@ -479,7 +480,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeHash, code_hash.to_word()),
+                (CallContextField::CodeHash, callee_code_hash_word),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
