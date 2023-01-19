@@ -792,9 +792,6 @@ mod tests {
     use eth_types::{Bytecode, Word};
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    fn get_randomness<F: Field>() -> F {
-        F::from(123456)
-    }
 
     /// Verify unrolling code
     #[test]
