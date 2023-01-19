@@ -276,8 +276,8 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
         let account = self.sdb.get_account_mut(&op.address).1;
-        if false {
-            // DBG
+        // Here starts the sanity check
+        if true {
             let account_value_prev = match op.field {
                 AccountField::Nonce => account.nonce,
                 AccountField::Balance => account.balance,

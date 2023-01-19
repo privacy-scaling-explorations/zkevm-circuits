@@ -253,9 +253,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
+                let transfer_rwc_delta =
+                    is_call.expr() * not::expr(call_value_is_zero.expr()) * 2.expr();
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
-                    + is_call.expr() * call_value_is_zero.expr() * 2.expr()
+                    + transfer_rwc_delta.clone()
                     + is_callcode.expr()
                     + is_delegatecall.expr() * 2.expr();
                 cb.require_step_state_transition(StepStateTransition {
@@ -267,8 +269,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                             - gas_cost.clone(),
                     ),
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
-                    // For CALL opcode, `transfer` invocation has two account write.
-                    reversible_write_counter: Delta(1.expr() + is_call.expr() * 2.expr()),
+                    // For CALL opcode, `transfer` invocation has two account write if value is not
+                    // zero.
+                    reversible_write_counter: Delta(1.expr() + transfer_rwc_delta),
                     ..StepStateTransition::default()
                 });
             },
@@ -389,9 +392,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 // caller address and value (+2).
                 //
                 // No extra lookups for STATICCALL opcode.
+                let transfer_rwc_delta =
+                    is_call.expr() * not::expr(call_value_is_zero.expr()) * 2.expr();
                 let rw_counter_delta = 41.expr()
                     + is_call.expr() * 1.expr()
-                    + is_call.expr() * call_value_is_zero.expr() * 2.expr()
+                    + transfer_rwc_delta.clone()
                     + is_callcode.expr()
                     + is_delegatecall.expr() * 2.expr();
                 cb.require_step_state_transition(StepStateTransition {
@@ -401,8 +406,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     is_create: To(false.expr()),
                     code_hash: To(call_gadget.phase2_callee_code_hash.expr()),
                     gas_left: To(callee_gas_left),
-                    // For CALL opcode, `transfer` invocation has two account write.
-                    reversible_write_counter: To(is_call.expr() * 2.expr()),
+                    // For CALL opcode, `transfer` invocation has two account write if value is not
+                    // zero.
+                    reversible_write_counter: To(transfer_rwc_delta),
                     ..StepStateTransition::new_context()
                 });
             },
