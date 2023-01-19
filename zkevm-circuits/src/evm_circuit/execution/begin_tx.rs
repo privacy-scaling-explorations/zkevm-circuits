@@ -234,7 +234,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
         let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code_hash.expr();
-        cb.condition(native_transfer.expr(), |cb| {
+        cb.condition(native_transfer, |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),
@@ -651,9 +651,8 @@ mod test {
         assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
-    // TODO: Enable this test once we have support for contract deployment from
+    // Enable this test once we have support for contract deployment from
     // BeginTx.
-    // #[ignore]
     #[test]
     fn begin_tx_deploy() {
         let code = bytecode! {
