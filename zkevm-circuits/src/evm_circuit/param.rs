@@ -1,7 +1,7 @@
 use super::table::Table;
 
 // Step dimension
-pub(crate) const STEP_WIDTH: usize = 128;
+pub(crate) const STEP_WIDTH: usize = 140;
 /// Step height
 pub const MAX_STEP_HEIGHT: usize = 21;
 /// The height of the state of a step, used by gates that connect two
@@ -11,10 +11,10 @@ pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
 // Number of phase2 columns
-pub(crate) const N_PHASE2_COLUMNS: usize = 2;
+pub(crate) const N_PHASE2_COLUMNS: usize = 10;
 
 // Number of phase3 columns
-pub(crate) const N_PHASE3_COLUMNS: usize = 1;
+pub(crate) const N_PHASE3_COLUMNS: usize = 10;
 
 // Number of copy columns
 pub(crate) const N_COPY_COLUMNS: usize = 2;

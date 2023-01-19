@@ -274,7 +274,8 @@ impl CellType {
         use Expression::*;
         match expr {
             Challenge(challenge) => challenge.phase() + 1,
-            Constant(_) | Selector(_) | Fixed(_) | Advice(_) | Instance(_) => 0,
+            Constant(_) | Selector(_) | Fixed(_) | Instance(_) => 0,
+            Advice(query) => query.phase(),
             Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
             Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
         }

@@ -91,16 +91,9 @@ impl<F: Field + Hashable> SubCircuit<F> for MptCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        _challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.0.load_mpt_table(
-            layouter,
-            challenges.evm_word().inner,
-            self.0.ops.as_slice(),
-            self.0.mpt_table.iter().copied(),
-            self.0.calcs,
-        )?;
         config
             .0
             .synthesize_core(layouter, self.0.ops.iter(), self.0.calcs)
@@ -153,6 +146,13 @@ impl<F: Field + Hashable> Circuit<F> for MptCircuit<F> {
         config.0.load_hash_table(
             &mut layouter,
             self.0.ops.iter().flat_map(|op| op.hash_traces()),
+            self.0.calcs,
+        )?;
+        config.0.load_mpt_table(
+            &mut layouter,
+            challenges.evm_word().inner,
+            self.0.ops.as_slice(),
+            self.0.mpt_table.iter().copied(),
             self.0.calcs,
         )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
