@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            CachedRegion, Cell, CellType, RandomLinearCombination,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
-        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_condition = cb.query_cell_phase2();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",

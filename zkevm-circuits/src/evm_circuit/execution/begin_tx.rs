@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            not, CachedRegion, Cell, CellType, Word,
+            not, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -168,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Handle precompiled
 
         // Read code_hash of callee
-        let phase2_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_code_hash = cb.query_cell_phase2();
         cb.account_read(
             call_callee_address.expr(),
             AccountFieldTag::CodeHash,
