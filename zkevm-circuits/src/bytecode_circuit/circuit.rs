@@ -488,6 +488,15 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
         let length = F::from(bytecode.bytes.len() as u64);
 
+        // Code hash with challenge is calculated only using the first row of the
+        // bytecode (header row), the rest of the code_hash in other rows are ignored.
+        let code_hash = challenges.evm_word().map(|challenge| {
+            RandomLinearCombination::<F, 32>::random_linear_combine(
+                bytecode.rows[0].code_hash.to_le_bytes(),
+                challenge,
+            )
+        });
+
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {
                 log::error!(
@@ -497,15 +506,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 );
                 return Err(Error::Synthesis);
             }
-
-            // TODO: why different code_hash for each row? Is this going to produce the same
-            // result for every row?
-            let code_hash = challenges.evm_word().map(|challenge| {
-                RandomLinearCombination::<F, 32>::random_linear_combine(
-                    row.code_hash.to_le_bytes(),
-                    challenge,
-                )
-            });
 
             // Track which byte is an opcode and which is push
             // data
@@ -930,26 +930,16 @@ mod tests {
         let bytecode = vec![8u8, 2, 3, 8, 9, 7, 128];
         let unrolled = unroll(bytecode);
         test_bytecode_circuit_unrolled::<Fr>(k, vec![unrolled.clone()], true);
-        // Change the code_hash on the first position
+        // Change the code_hash on the first position (header row)
         {
             let mut invalid = unrolled.clone();
             invalid.rows[0].code_hash += Word::one();
+            trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
             test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
         }
-        // Change the code_hash on another position
-        {
-            let mut invalid = unrolled.clone();
-            invalid.rows[4].code_hash += Word::one();
-            test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
-        }
-        // Change all the hashes so it doesn't match the keccak lookup code_hash
-        {
-            let mut invalid = unrolled;
-            for row in invalid.rows.iter_mut() {
-                row.code_hash = Word::one();
-            }
-            test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
-        }
+        // TODO: other rows code_hash are ignored by the witness generation, to
+        // test other rows invalid code_hash, we would need to inject an evil
+        // witness.
     }
 
     /// Test invalid index

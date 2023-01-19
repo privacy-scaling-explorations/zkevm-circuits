@@ -91,5 +91,6 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
             error!("{}", failure);
         }
     }
-    assert_eq!(result.is_ok(), success);
+    let error_msg = if success { "valid" } else { "invalid" };
+    assert_eq!(result.is_ok(), success, "proof must be {}", error_msg);
 }
