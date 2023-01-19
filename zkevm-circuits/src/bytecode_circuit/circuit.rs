@@ -475,7 +475,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region: &mut Region<'_, F>,
         bytecode: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
-        push_rindex_is_zero_chip: &IsZeroChip<F>,
+        push_data_left_is_zero_chip: &IsZeroChip<F>,
         empty_hash: Value<F>,
         offset: &mut usize,
         last_row_offset: usize,
@@ -530,7 +530,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             if *offset < last_row_offset {
                 self.set_row(
                     region,
-                    push_rindex_is_zero_chip,
+                    push_data_left_is_zero_chip,
                     *offset,
                     true,
                     *offset == last_row_offset,
@@ -566,7 +566,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             if *offset == last_row_offset {
                 self.set_padding_row(
                     region,
-                    push_rindex_is_zero_chip,
+                    push_data_left_is_zero_chip,
                     empty_hash,
                     *offset,
                     last_row_offset,
