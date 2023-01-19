@@ -26,7 +26,6 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     is_static: Cell<F>,
     call: CommonCallGadget<F, false>,
     is_warm: Cell<F>,
-    // balance: Word<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
@@ -137,7 +136,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_static,
             call: call_gadget,
             is_warm,
-            // balance,
             insufficient_gas,
             rw_counter_end_of_reversion,
             restore_context,
@@ -200,9 +198,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        // new assignment
-        // self.balance
-        //     .assign(region, offset, Some(callee_balance_pair.0.to_le_bytes()))?;
         let has_value = !value.is_zero();
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,

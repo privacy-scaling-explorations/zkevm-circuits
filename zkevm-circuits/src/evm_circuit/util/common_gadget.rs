@@ -504,7 +504,6 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         } else {
             0.expr()
         });
-        // DBG rwc=45
 
         // Recomposition of random linear combination to integer
         let gas_is_u64 = IsZeroGadget::construct(cb, sum::expr(&gas_word.cells[N_BYTES_GAS..]));

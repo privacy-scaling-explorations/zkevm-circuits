@@ -97,7 +97,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         cb.range_lookup(depth.expr(), 1024);
 
-        // DBG: callee_address CodeHash read
         let call_gadget = CommonCallGadget::construct(
             cb,
             is_call.expr(),
@@ -126,7 +125,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // Add callee to access list
         let is_warm = cb.query_bool();
         let is_warm_prev = cb.query_bool();
-        // DBG rwc=14
         cb.account_access_list_write(
             tx_id.expr(),
             call_gadget.callee_address_expr(),
@@ -136,7 +134,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // Propagate rw_counter_end_of_reversion and is_persistent
-        // DBG rwc=15,16
         let mut callee_reversion_info = cb.reversion_info_write(Some(callee_call_id.expr()));
         cb.require_equal(
             "callee_is_persistent == is_persistent ⋅ is_success",
@@ -159,7 +156,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         let caller_balance_word = cb.query_word_rlc();
-        // DBG rwc=17
         cb.account_read(
             caller_address.expr(),
             AccountFieldTag::Balance,
@@ -496,8 +492,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let callee_code_hash = block.rws[step.rw_indices[13 + rw_offset]]
             .account_value_pair()
             .0;
-        // let callee_code_hash = eth_types::Word::one(); // DBG
-        // dbg!(&callee_code_hash);
         let callee_exists = !callee_code_hash.is_zero();
 
         let (is_warm, is_warm_prev) =
@@ -512,7 +506,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // check if it is insufficient balance case.
         // get caller balance
         let (caller_balance, _) = block.rws[step.rw_indices[17 + rw_offset]].account_value_pair();
-        // dbg!(&caller_balance);
         self.caller_balance_word
             .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
         self.is_insufficient_balance
@@ -530,8 +523,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             } else {
                 ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
             };
-        // dbg!(&caller_balance_pair);
-        // dbg!(&callee_balance_pair);
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -757,19 +748,13 @@ mod test {
         ];
         let callees = [callee(bytecode! {}), callee(bytecode! { STOP })];
 
-        for (((opcode_idx, opcode), (stack_idx, stack)), (callee_idx, callee)) in TEST_CALL_OPCODES
+        for ((opcode, stack), callee) in TEST_CALL_OPCODES
             .iter()
-            .enumerate()
-            .cartesian_product(stacks.into_iter().enumerate())
-            .cartesian_product(callees.into_iter().enumerate())
+            .cartesian_product(stacks.into_iter())
+            .cartesian_product(callees.into_iter())
         {
-            dbg!(opcode_idx, stack_idx, callee_idx);
             test_ok(caller(opcode, stack, true), callee);
         }
-        // test_ok(
-        //     caller(&TEST_CALL_OPCODES[0], stacks[1], true),
-        //     callees[0].clone(),
-        // );
     }
 
     #[derive(Clone, Copy, Debug, Default)]
