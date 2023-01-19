@@ -621,11 +621,6 @@ impl<F: Field> ExecutionConfig<F> {
             lookup_powers_of_randomness,
             G::EXECUTION_STATE,
         );
-        log::debug!(
-            "max inner degree of {:?} is {:?}",
-            G::EXECUTION_STATE,
-            cb.max_inner_degree
-        );
 
         let gadget = G::configure(&mut cb);
 

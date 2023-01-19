@@ -206,11 +206,9 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                 config
                     .math_gadget_container
                     .assign_gadget_container(&self.witnesses, cached_region)?;
-
                 for stored_expr in &config.stored_expressions {
                     stored_expr.assign(cached_region, offset)?;
                 }
-
                 Ok(())
             },
         )?;

@@ -278,7 +278,6 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     condition: Option<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
-    pub(crate) max_inner_degree: (&'static str, usize),
 }
 
 impl<'a, F: Field> ConstraintBuilder<'a, F> {
@@ -312,7 +311,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             stored_expressions: Vec::new(),
             word_powers_of_randomness,
             lookup_powers_of_randomness,
-            max_inner_degree: ("", 0),
         }
     }
 
@@ -1504,9 +1502,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         expr: Expression<F>,
         max_degree: usize,
     ) -> Expression<F> {
-        if expr.degree() > self.max_inner_degree.1 {
-            self.max_inner_degree = (name, expr.degree());
-        }
         if expr.degree() > max_degree {
             match expr {
                 Expression::Negated(poly) => {
