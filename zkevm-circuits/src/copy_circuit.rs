@@ -512,18 +512,16 @@ impl<F: Field> CopyCircuitConfig<F> {
         max_copy_rows: usize,
         challenges: Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let copy_rows_needed = copy_events
-            .iter()
-            .map(|c| c.bytes.len() * 2)
-            .sum::<usize>();
+        let copy_rows_needed = copy_events.iter().map(|c| c.bytes.len() * 2).sum::<usize>();
 
         // The `+ 2` is used to take into account the two extra empty copy rows needed
         // to satisfy the query at `Rotation(2)` performed inside of the
         // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
         // Accumulation gate.
         assert!(copy_rows_needed + 2 <= max_copy_rows);
-            let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
-            let lt_chip = LtChip::construct(self.addr_lt_addr_end);
+
+        let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
+        let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
         layouter.assign_region(
             || "assign copy table",
@@ -682,7 +680,7 @@ pub struct CopyCircuitTestData {
 }
 
 /// Copy Circuit
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CopyCircuit<F: Field> {
     /// Copy events
     pub copy_events: Vec<CopyEvent>,
@@ -707,7 +705,11 @@ impl<F: Field> CopyCircuit<F> {
 
     /// Return a new CopyCircuit with test data
     #[cfg(test)]
-    pub fn new_with_test_data(copy_events: Vec<CopyEvent>, max_copy_rows: usize, test_data: CopyCircuitTestData) -> Self {
+    pub fn new_with_test_data(
+        copy_events: Vec<CopyEvent>,
+        max_copy_rows: usize,
+        test_data: CopyCircuitTestData,
+    ) -> Self {
         Self {
             copy_events,
             max_copy_rows,
@@ -717,23 +719,14 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-impl<F: Field> Default for CopyCircuit<F> {
-    fn default() -> Self {
-        Self {
-            copy_events: vec![],
-            max_copy_rows: usize::default(),
-            _marker: PhantomData::default(),
-            #[cfg(test)]
-            test_data: CopyCircuitTestData::default(),
-        }
-    }
-}
-
 impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(block.clone().copy_events, block.circuits_params.max_copy_rows)
+        Self::new(
+            block.clone().copy_events,
+            block.circuits_params.max_copy_rows,
+        )
     }
 
     /// Return the minimum number of rows required to prove the block
