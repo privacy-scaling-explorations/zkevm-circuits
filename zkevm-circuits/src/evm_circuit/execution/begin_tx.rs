@@ -104,8 +104,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // Verify nonce
-        // Increase caller's nonce.
-        // (tx caller's nonce always increases even tx ends with error)
         let nonce = cb.query_cell();
         let nonce_prev = cb.query_cell();
         cb.account_write(
@@ -116,7 +114,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
         let is_nonce_valid = IsZeroGadget::construct(cb, tx_nonce.expr() - nonce_prev.expr());
-        // bump the account nonce if the tx is valid
+        // Increment the account nonce only if the tx is valid
         cb.require_equal(
             "nonce, nonce_prev and invalid_tx_tx",
             nonce.expr(),
@@ -432,19 +430,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.gas_not_enough
             .assign(region, offset, F::from(tx.gas), F::from(step.gas_cost))?;
 
-        let add_tx_value_and_mul_gas_fee_by_gas = tx.value + gas_fee;
+        let total_eth_cost = tx.value + gas_fee;
         self.total_eth_cost.assign(
             region,
             offset,
             [tx.value, gas_fee],
-            add_tx_value_and_mul_gas_fee_by_gas,
+            total_eth_cost,
         )?;
 
         self.balance_not_enough.assign(
             region,
             offset,
             caller_balance_pair.1,
-            add_tx_value_and_mul_gas_fee_by_gas,
+            total_eth_cost,
         )?;
 
         let (intrinsic_tx_value, intrinsic_gas_fee) = if tx.invalid_tx == 0 {
