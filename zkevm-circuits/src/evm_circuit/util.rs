@@ -434,28 +434,6 @@ pub(crate) mod rlc {
     }
 }
 
-/// Returns the dot product of the two inputs.
-pub(crate) mod dot {
-    use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
-
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(a: &[E], b: &[E]) -> Expression<F> {
-        a.iter()
-            .zip(b.iter())
-            .fold(0.expr(), |acc, (a, b)| acc + a.expr() * b.expr())
-    }
-
-    pub(crate) fn value<'a, F: FieldExt, I>(a: I, b: I) -> F
-    where
-        I: IntoIterator<Item = &'a F>,
-        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
-    {
-        a.into_iter()
-            .zip(b.into_iter())
-            .fold(F::zero(), |acc, (&a, &b)| acc + a * b)
-    }
-}
-
 /// Returns the scalar product of the two inputs.
 pub(crate) mod scalar_mult {
     use crate::util::Expr;

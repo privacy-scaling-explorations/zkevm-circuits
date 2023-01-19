@@ -144,71 +144,50 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, &mut cb.base, storage_root.expr(), codehash.expr(), mult_prev.expr(), 0);
                 require!(account_rlc => rlc);
 
-                // Check if the account is in the branch above.
-                let root = a!(inter_root);
+                // Check if the account is in its parent.
                 let (do_lookup, hash_rlc) = ifx!{a!(position_cols.not_first_level) => {
                     let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
                     ifx!{branch.is_placeholder() => {
                         ifx!{a!(position_cols.not_first_level, rot_last_child) => {
-                            /* Hash of an account leaf when branch placeholder */
-                            // When there is a placeholder branch above the account leaf (it means the account leaf
-                            // drifted into newly added branch, this branch did not exist in `S` proof), the hash of the leaf
-                            // needs to be checked to be at the proper position in the branch above the placeholder branch.
-                            // Note: a placeholder leaf cannot appear when there is a branch placeholder
-                            // (a placeholder leaf appears when there is no leaf at certain position, while branch placeholder
-                            // appears when there is a leaf and it drifts down into a newly added branch).
+                            // Hash of an account leaf when branch placeholder
+                            // Check if we're in the branch above the placeholder branch.
                             (true.expr(), a!(accs.mod_node_rlc(is_s), rot_last_child_prev))
                         } elsex {
-                            /* Hash of an account leaf compared to root when branch placeholder in the first level */
-                            // When there is a placeholder branch above the account leaf (it means the account leaf
-                            // drifted into newly added branch, this branch did not exist in `S` proof) in the first level,
-                            // the hash of the leaf needs to be checked to be the state root.
-                            (true.expr(), root.expr())
+                            // Hash of an account leaf compared to root when branch placeholder in the first level
+                            (true.expr(), a!(inter_root))
                         }}
                     } elsex {
-                        /* Hash of an account leaf in a branch */
-                        // Hash of an account leaf needs to appear (when not in first level) at the proper position in the
-                        // parent branch.
-                        // Note: the placeholder leaf appears when a new account is created (in this case there was
-                        // no leaf before and we add a placeholder). There are no constraints for
-                        // a placeholder leaf, it is added only to maintain the parallel layout.
-                        // Rotate into any of the branch children rows:
+                        // Hash of an account leaf in a branch
+                        // Check is skipped for placeholder leafs which are dummy leafs
                         let is_placeholder_leaf = a!(denoter.sel(is_s), rot_last_child);
                         ifx!{not!(is_placeholder_leaf) => {
                             (true.expr(), a!(accs.mod_node_rlc(is_s), rot_last_child))
                         }}
                     }}
                 } elsex {
-                    /* Account first level leaf without branch - compared to state root */
-                    // Check hash of an account leaf to be state root when the leaf is without a branch (the leaf
-                    // is in the first level).
-                    (true.expr(), root.expr())
+                    // Account first level leaf without branch - compared to state root
+                    (true.expr(), a!(inter_root))
                 }};
                 // Do the lookup
                 ifx!{do_lookup => {
-                    let leaf = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-                    let leaf_len = leaf.num_bytes(meta, &mut cb.base);
-                    require!((1, account_rlc, leaf_len, hash_rlc) => @"keccak");
+                    let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
+                    let account_num_bytes = account.num_bytes(meta, &mut cb.base);
+                    require!((1, account_rlc, account_num_bytes, hash_rlc) => @"keccak");
                 }}
 
                 if !is_s {
-                    // To enable lookup for codehash modification we need to have S codehash
-                    // and C codehash in the same row.
-                    // For this reason, S codehash RLC is copied to `value_prev` column in C row.
+                    // To enable external lookups we need to have some data in the same row.
                     require!(a!(value_prev) => codehash.prev());
-                    // To enable lookup for codehash modification we need to have S codehash
-                    // and C codehash in the same row (`value_prev`, `value` columns).
-                    // C codehash RLC is copied to `value` column in C row.
                     require!(a!(value) => codehash);
                     // Note: we do not check whether codehash is copied properly as only one of the
                     // `S` or `C` proofs are used for a lookup.
-                    // TODO(Brecht): Is the note above true? This is done for nonce/balance
+                    // TODO(Brecht): Is the note above true? It is done for nonce/balance
 
                     // Check that there is only one modification.
                     // Note: For `is_non_existing_account_proof` we do not need this constraint,
                     // `S` and `C` proofs are the same and we need to do a lookup into only one
                     // (the other one could really be whatever).
-                    // TODO(Brecht): I think should be able to remove this if by changing the
+                    // TODO(Brecht): I think we should be able to remove this by changing the
                     // witness
                     ifx!{not!(a!(proof_type.is_account_delete_mod)) => {
                         // Storage root needs to remain the same when not modifying the storage root

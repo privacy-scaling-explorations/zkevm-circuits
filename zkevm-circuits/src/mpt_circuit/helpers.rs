@@ -5,7 +5,8 @@ use crate::{
     circuit_tools::{Conditionable, ConstraintBuilder, DataTransition, LRCable},
     evm_circuit::util::rlc,
     mpt_circuit::param::{
-        KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT,
+        EXTENSION_ROWS_NUM, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE,
+        RLP_LIST_LONG, RLP_LIST_SHORT, RLP_NIL, RLP_SHORT,
     },
     util::Expr,
 };
@@ -24,7 +25,7 @@ use super::{
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_C_EXT_LONGER_THAN_55_POS,
         IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_LONGER_THAN_55_POS,
-        IS_S_EXT_NODE_NON_HASHED_POS, KEY_TERMINAL_PREFIX_ODD, NIBBLES_COUNTER_POS,
+        IS_S_EXT_NODE_NON_HASHED_POS, KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, NIBBLES_COUNTER_POS,
     },
     FixedTableTag, MPTContext,
 };
@@ -157,24 +158,26 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     }
 
     pub(crate) fn is_extension(&self) -> Expression<F> {
-        self.is_even() + self.is_odd()
+        self.is_ext_key_part_even() + self.is_ext_key_part_odd()
     }
 
-    // Combinations that make the key even
-    pub(crate) fn is_ext_even(&self) -> Expression<F> {
+    // Returns if the key after adding the extension part is even
+    pub(crate) fn is_key_post_ext_even(&self) -> Expression<F> {
         self.is_short_c16.expr() + self.is_long_even_c1.expr() + self.is_long_odd_c16.expr()
     }
 
-    // Combinations that make the key odd
-    pub(crate) fn is_ext_odd(&self) -> Expression<F> {
+    // Returns if the key after adding the extension part is odd
+    pub(crate) fn is_key_post_ext_odd(&self) -> Expression<F> {
         self.is_short_c1.expr() + self.is_long_even_c16.expr() + self.is_long_odd_c1.expr()
     }
 
-    pub(crate) fn is_even(&self) -> Expression<F> {
+    // Returns if the part of the key in an extension node is even
+    pub(crate) fn is_ext_key_part_even(&self) -> Expression<F> {
         self.is_long_even_c16.expr() + self.is_long_even_c1.expr()
     }
 
-    pub(crate) fn is_odd(&self) -> Expression<F> {
+    // Returns if the part of the key in an extension node is odd
+    pub(crate) fn is_ext_key_part_odd(&self) -> Expression<F> {
         self.is_long_odd() + self.is_short()
     }
 
@@ -183,7 +186,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     }
 
     pub(crate) fn is_long_even(&self) -> Expression<F> {
-        self.is_even()
+        self.is_ext_key_part_even()
     }
 
     pub(crate) fn is_short(&self) -> Expression<F> {
@@ -333,13 +336,20 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         })
     }
 
-    /// Length of the key (excluding RLP bytes)
+    /// Number of bytes in the extension node
     /// Uses data on the current row!
-    pub(crate) fn ext_len(&self, _meta: &mut VirtualCells<F>) -> Expression<F> {
+    pub(crate) fn ext_num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        let rot_s = if self.is_s { 0 } else { -1 };
+        self.ext_num_rlp_bytes(meta) + self.ext_len(meta, rot_s)
+    }
+
+    /// Length of the extension node (excluding RLP bytes)
+    /// Uses data on the current row!
+    pub(crate) fn ext_len(&self, _meta: &mut VirtualCells<F>, rel_rot: i32) -> Expression<F> {
         circuit!([_meta, _cb!()], {
             matchx! {
-                self.is_short() + self.is_long() => get_len_list_short(a!(self.ctx.s_main.rlp1)),
-                self.is_longer_than_55 => get_len_short(a!(self.ctx.s_main.bytes[0])),
+                self.is_short() + self.is_long() => get_len_list_short(a!(self.ctx.s_main.rlp1, rel_rot)),
+                self.is_longer_than_55 => get_len_short(a!(self.ctx.s_main.bytes[0], rel_rot)),
             }
         })
     }
@@ -401,6 +411,109 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     pub(crate) fn contains_hashed_branch(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         circuit!([meta, _cb!()], {
             a!(self.ctx.c_main.rlp2) * invert!(RLP_HASH_VALUE)
+        })
+    }
+
+    pub(crate) fn require_in_parent(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+    ) {
+        circuit!([meta, cb], {
+            // The branch or extension node data
+            let (rlc, num_bytes, is_branch_non_hashed) = ifx! {self.is_extension() => {
+                // Note: acc_c in both cases.
+                let ext_rlc = a!(self.ctx.accumulators.acc_c.rlc);
+                (ext_rlc, self.ext_num_bytes(meta), self.is_ext_non_hashed())
+            } elsex {
+                let acc = self.ctx.accumulators.acc(self.is_s);
+                // TODO: acc currently doesn't have branch ValueNode info
+                let branch_rlc = rlc::expr(
+                    &[a!(acc.rlc), RLP_NIL.expr()],
+                    &[a!(acc.mult)],
+                );
+                (branch_rlc, self.num_bytes(meta), self.is_branch_non_hashed())
+            }};
+            // Check against the value expected in the parent
+            ifx! {not!(self.is_placeholder()) => {
+                ifx!{a!(self.ctx.position_cols.not_first_level) => {
+                    ifx!{self.is_below_account(meta) => {
+                        // Branch in first level of storage trie - hash compared to the storage root
+                        let storage_root_rlc = self.storage_root_in_account_above(meta);
+                        require!((1, rlc, num_bytes, storage_root_rlc) => @"keccak");
+                    } elsex {
+                        // Here the branch is in some other branch
+                        let rot_branch_child_prev = self.rot_branch_init - EXTENSION_ROWS_NUM - 1;
+                        let mod_node_hash_rlc = a!(self.ctx.accumulators.mod_node_rlc(self.is_s), rot_branch_child_prev);
+                        ifx!{is_branch_non_hashed => {
+                            // Non-hashed branch hash in parent branch
+                            require!(rlc => mod_node_hash_rlc);
+                        } elsex {
+                            // Hashed branch hash in parent branch
+                            require!((1, rlc, num_bytes, mod_node_hash_rlc) => @"keccak");
+                        }}
+                    }}
+                } elsex {
+                    // Branch in first level of account trie - hash compared to root
+                    require!((1, rlc, num_bytes, a!(self.ctx.inter_root(self.is_s))) => @"keccak");
+                }}
+            }}
+        });
+    }
+
+    /// Key data is read from the current row, not at rot_key!
+    pub(crate) fn ext_key_rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        key_mult_prev: Expression<F>,
+    ) -> Expression<F> {
+        circuit!([meta, cb], {
+            let mult_first_odd = ifx! {self.is_key_even() => { 16.expr() } elsex { 1.expr() }};
+            let calc_rlc = |meta: &mut VirtualCells<F>,
+                            cb: &mut ConstraintBuilder<F>,
+                            bytes: &[Expression<F>],
+                            key_mult_first_even: Expression<F>| {
+                ext_key_rlc(
+                    meta,
+                    cb,
+                    self.ctx.clone(),
+                    bytes,
+                    key_mult_prev.expr(),
+                    self.is_ext_key_part_odd(),
+                    mult_first_odd.expr(),
+                    key_mult_first_even,
+                )
+            };
+            matchx! {
+                self.is_long_odd_c1.expr() + self.is_long_even_c1.expr() => {
+                    // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
+                    // Note that there can be at max 31 key bytes because 32 same bytes would mean
+                    // the two keys being the same - update operation, not splitting into extension node.
+                    // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
+                    // is not used (when even number of nibbles).
+                    let mut key_bytes = vec![a!(self.ctx.s_main.bytes[0], -1)];
+                    key_bytes.append(&mut self.ctx.s_main.bytes.iter().skip(1).zip(self.ctx.s_main.bytes.iter()).map(|(byte, byte_hi)| {
+                        let byte = a!(byte, -1);
+                        let nibble_hi = a!(byte_hi);
+                        let nibble_lo = (byte.expr() - nibble_hi.expr()) * invert!(16);
+                        // Check that `nibble_hi` is correct.
+                        require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
+                        // Collect bytes
+                        (nibble_hi.expr() * 16.expr() * self.ctx.r[0].expr()) + nibble_lo.expr()
+                    }).collect::<Vec<_>>());
+                    calc_rlc(meta, cb, &key_bytes, 1.expr())
+                },
+                self.is_long_odd_c16.expr() + self.is_long_even_c16.expr() => {
+                    let additional_mult = ifx! {self.is_long_odd_c16 => { self.ctx.r[0].expr() } elsex { 1.expr() }};
+                    let key_bytes = self.ctx.s_main.bytes(meta, -1);
+                    calc_rlc(meta, cb, &key_bytes, additional_mult)
+                },
+                self.is_short() => {
+                    let key_bytes = vec![a!(self.ctx.s_main.rlp2, -1)];
+                    calc_rlc(meta, cb, &key_bytes, 1.expr())
+                },
+            }
         })
     }
 }
@@ -532,7 +645,7 @@ impl<F: FieldExt> StorageLeafInfo<F> {
                             cb: &mut ConstraintBuilder<F>,
                             range: Range<usize>,
                             is_key_odd: Expression<F>| {
-                key_rlc(
+                leaf_key_rlc(
                     meta,
                     cb,
                     self.ctx.clone(),
@@ -758,7 +871,7 @@ impl<F: FieldExt> AccountLeafInfo<F> {
     }
 }
 
-pub(crate) fn key_rlc<F: FieldExt>(
+pub(crate) fn leaf_key_rlc<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     cb: &mut ConstraintBuilder<F>,
     ctx: MPTContext<F>,
@@ -780,9 +893,37 @@ pub(crate) fn key_rlc<F: FieldExt>(
     })
 }
 
+pub(crate) fn ext_key_rlc<F: FieldExt>(
+    _meta: &mut VirtualCells<F>,
+    cb: &mut ConstraintBuilder<F>,
+    ctx: MPTContext<F>,
+    bytes: &[Expression<F>],
+    key_mult_prev: Expression<F>,
+    is_odd: Expression<F>,
+    rlc_mult_first_odd: Expression<F>,
+    key_mult_first_odd: Expression<F>,
+) -> Expression<F> {
+    circuit!([_meta, cb], {
+        // Add the odd nibble first if we have one.
+        let first_byte = bytes[0].clone();
+        let (rlc, mult) = ifx! {is_odd => {
+            (get_ext_odd_nibble(first_byte.expr()) * rlc_mult_first_odd * key_mult_prev.expr(), key_mult_prev.expr() * key_mult_first_odd.expr())
+        } elsex {
+            require!(first_byte => KEY_PREFIX_EVEN);
+            (0.expr(), key_mult_prev.expr())
+        }};
+        rlc + bytes[1..].to_vec().rlc_chain(&ctx.r, mult.expr())
+    })
+}
+
 pub(crate) fn get_terminal_odd_nibble<F: FieldExt>(byte: Expression<F>) -> Expression<F> {
     // The odd nible is stored in the same byte as the prefix
     byte - KEY_TERMINAL_PREFIX_ODD.expr()
+}
+
+pub(crate) fn get_ext_odd_nibble<F: FieldExt>(byte: Expression<F>) -> Expression<F> {
+    // The odd nible is stored in the same byte as the prefix
+    byte - KEY_PREFIX_ODD.expr()
 }
 
 pub(crate) fn get_len_short<F: FieldExt>(byte: Expression<F>) -> Expression<F> {

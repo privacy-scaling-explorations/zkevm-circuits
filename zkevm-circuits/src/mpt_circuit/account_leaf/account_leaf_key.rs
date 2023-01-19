@@ -14,7 +14,7 @@ use crate::{
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{get_num_nibbles, key_rlc, AccountLeafInfo, MPTConstraintBuilder},
+        helpers::{get_num_nibbles, leaf_key_rlc, AccountLeafInfo, MPTConstraintBuilder},
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG},
         FixedTableTag,
     },
@@ -154,11 +154,11 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             let is_branch_placeholder =
                 ifx! {a!(position_cols.not_first_level) => { branch.is_placeholder() }};
             let (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd) = ifx! {is_branch_placeholder => {
-                // Update key parity
+                // Get new key parity
                 let is_key_odd = matchx! {
                     not!(branch.is_extension()) => branch.is_key_even(),
-                    branch.is_ext_even() => branch.is_key_odd(),
-                    branch.is_ext_odd() => branch.is_key_even(),
+                    branch.is_key_post_ext_even() => branch.is_key_odd(),
+                    branch.is_key_post_ext_odd() => branch.is_key_even(),
                 };
 
                 // Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
@@ -199,7 +199,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             // Calculate the key RLC
             let key_rlc = key_rlc_prev
-                + key_rlc(
+                + leaf_key_rlc(
                     meta,
                     &mut cb.base,
                     ctx.clone(),

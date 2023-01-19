@@ -12,12 +12,11 @@ use crate::{
     circuit_tools::{DataTransition, LRCable},
     evm_circuit::util::rlc,
     mpt_circuit::{
-        helpers::{get_num_bytes_list_short, get_num_nibbles},
+        helpers::get_num_nibbles,
         param::{ARITY, C_RLP_START, C_START, HASH_WIDTH, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_NIL},
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
-        param::EXTENSION_ROWS_NUM,
         witness_row::MptWitnessRow,
         MPTContext,
     },
@@ -207,7 +206,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
         let rot_s = if is_s { 0 } else { -1 };
         let rot_last_child = rot_s - 1;
         let rot_branch_init = rot_last_child - (ARITY as i32);
-        let rot_branch_child_prev = rot_branch_init - EXTENSION_ROWS_NUM - 1;
 
         circuit!([meta, cb.base], {
             let not_first_level = a!(position_cols.not_first_level);
@@ -224,12 +222,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // `short` means there is only one nibble in the extension node, `long` means
             // there are at least two. `even` means the number of nibbles is
             // even, `odd` means the number of nibbles is odd. `c16` means that
-            // above the branch there are even number of nibbles (the same as
-            // saying that `modified_node` of the branch needs to be multiplied
-            // by 16 in the computation of the key RLC), `c1` means that above
-            // the branch there are odd number of nibbles (the same as saying
-            // that `modified_node` of the branch needs to be multiplied by 1 in
-            // the computation of the key RLC).
+            // above the branch there are even number of nibbles, `c1` means that above
+            // the branch there are odd number of nibbles.
             let type_selectors_c1 = [
                 ext.is_short_c1.expr(),
                 ext.is_long_even_c1.expr(),
@@ -259,20 +253,14 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // RLP encoding checks: [key, branch]
             // In C we have nibbles, we check below only for S.
             if is_s {
-                // Even implies long and implies s_main.bytes[0] = 0
-                // This prevents the attacker to set the number of nibbles to be even
-                // when it is not even.
-                ifx! {ext.is_even() => {
-                    require!(a!(s_main.bytes[0]) => 0);
-                }}
                 ifx! {ext.is_longer_than_55 => {
                     require!(a!(s_main.rlp1) => RLP_LIST_LONG + 1);
                 }}
                 // Verify that the lenghts are consistent.
-                require!(ext.ext_len(meta) => ext.ext_key_num_bytes(meta) + ext.ext_branch_num_bytes(meta));
+                require!(ext.ext_len(meta, 0) => ext.ext_key_num_bytes(meta) + ext.ext_branch_num_bytes(meta));
             }
 
-            // Check whether branch is in the extension node.
+            // Check that the branch is in the extension node.
             // The intermediate RLC after `s_main` bytes needs to be properly computed.
             // s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
             // However, to make space for nibble witnesses, we put nibbles in
@@ -294,6 +282,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // RLC bytes zero check
                 cb.set_length_c(ext.ext_branch_num_bytes(meta));
             }}
+
             // We check that the branch hash RLC (computed over the first 17 rows)
             // corresponds to the extension node RLC stored in the extension node row.
             // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
@@ -311,54 +300,19 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             }}
 
             // Check if the extension node is in its parent.
-            // Note: acc_c in both cases.
-            let ext_rlc = a!(accs.acc_c.rlc);
-            let ext_len = get_num_bytes_list_short(a!(s_main.rlp1, rot_s));
-            ifx! {not_first_level => {
-                ifx!{not!(ext.is_placeholder()) => {
-                    // Only check if there is an account above the leaf.
-                    // rot_into_branch_init - 1 because we are in the last branch child
-                    // (rot_into_branch_init takes us to branch init).
-                    ifx!{ext.is_below_account(meta) => {
-                        /* Extension node in first level of storage trie - hash compared to the storage root */
-                        // When extension node is in the first level of the storage trie, we need to check whether
-                        // `hash(ext_node) = storage_trie_root`. We do this by checking whether
-                        // `(ext_node_RLC, storage_trie_root_RLC)` is in the keccak table.
-                        // Note: extension node in the first level cannot be shorter than 32 bytes (it is always hashed).
-                        let storage_root_rlc = ext.storage_root_in_account_above(meta);
-                        require!((1, ext_rlc, ext_len, storage_root_rlc) => @"keccak");
-                    } elsex {
-                        let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_branch_child_prev);
-                        ifx!{ext.is_ext_non_hashed() => {
-                            /* Extension node in parent branch (non-hashed extension node) */
-                            // When an extension node is not hashed, we do not check whether it is in a parent
-                            // branch using a lookup (see above), instead we need to check whether the branch child
-                            // at `modified_node` position is exactly the same as the extension node.
-                            require!(ext_rlc => mod_node_hash_rlc);
-                        } elsex {
-                            /* Extension node hash in parent branch */
-                            // Check whether the extension node hash is in the parent branch.
-                            // That means we check whether
-                            // `(extension_node_RLC, node_hash_RLC)` is in the keccak table where `node` is a parent
-                            // branch child at `modified_node` position.
-                            require!((1, ext_rlc, ext_len, mod_node_hash_rlc) => @"keccak");
-                        }}
-                    }}
-                }}
-            } elsex {
-                /* Branch in first level of account trie - hash compared to root */
-                // In the first level of the account trie the extension node hash
-                // needs to be match the trie root.
-                // Note: the branch counterpart is implemented in `branch_hash_in_parent.rs`.
-                require!((1, ext_rlc, ext_len, a!(ctx.inter_root(is_s))) => @"keccak");
-            }}
+            ext.require_in_parent(meta, &mut cb.base);
 
             // Update the number of nibbles processed up till this point.
             if is_s {
                 // Calculate the number of bytes
                 let key_len = ext.ext_key_len(meta, 0);
                 // Calculate the number of nibbles
-                let num_nibbles = get_num_nibbles(meta, &mut cb.base, key_len.expr(), ext.is_odd());
+                let num_nibbles = get_num_nibbles(
+                    meta,
+                    &mut cb.base,
+                    key_len.expr(),
+                    ext.is_ext_key_part_odd(),
+                );
                 // Make sure the nibble counter is updated correctly
                 let nibbles_count_prev = ifx! {not!(ext.is_below_account(meta)), not_first_level.expr() => {
                     ext.nibbles_counter().prev()

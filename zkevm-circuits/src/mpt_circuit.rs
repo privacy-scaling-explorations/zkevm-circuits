@@ -31,9 +31,8 @@ use account_leaf::{
     account_non_existing::AccountNonExistingConfig, AccountLeaf, AccountLeafCols,
 };
 use branch::{
-    branch_hash_in_parent::BranchHashInParentConfig, branch_init::BranchInitConfig,
-    branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig, extension_node::ExtensionNodeConfig,
-    Branch, BranchCols, BranchConfig,
+    branch_init::BranchInitConfig, branch_key::BranchKeyConfig, branch_rlc::BranchRLCConfig,
+    extension_node::ExtensionNodeConfig, Branch, BranchCols, BranchConfig,
 };
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
 use proof_chain::ProofChainConfig;
@@ -438,11 +437,6 @@ impl<F: FieldExt> MPTConfig<F> {
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), true);
                     BranchRLCConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
-                // - Last child
-                ifx!{f!(position_cols.q_not_first), a!(branch.is_last_child) => {
-                    BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), true);
-                    BranchHashInParentConfig::configure(meta, &mut cb, ctx.clone(), false);
-                }}
                 // BRANCH.IS_EXTENSION_NODE_S
                 let ext_node_config_s;
                 let is_extension_node = BranchNodeInfo::new(meta, ctx.clone(), true, -BRANCH_ROWS_NUM + 2).is_extension();
@@ -635,6 +629,8 @@ impl<F: FieldExt> MPTConfig<F> {
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
             cb.base.generate_lookups(meta, &["fixed", "keccak"]);
+        } else if disable_lookups == 1 {
+            cb.base.generate_lookups(meta, &["keccak"]);
         }
 
         println!("num lookups: {}", meta.lookups().len());

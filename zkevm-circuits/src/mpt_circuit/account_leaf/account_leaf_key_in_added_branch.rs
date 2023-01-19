@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     mpt_circuit::{
-        helpers::{key_rlc, BranchNodeInfo},
+        helpers::{leaf_key_rlc, BranchNodeInfo},
         param::{
             ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
             ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
@@ -199,7 +199,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc = key_rlc_prev +
                     a!(drifted_pos, rot_first_child) * drifted_pos_mult +
-                    key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr());
+                    leaf_key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr());
                 require!(stored_key_rlc => key_rlc);
 
                 // RLC bytes zero check

@@ -11,7 +11,7 @@ use crate::{
     circuit,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{key_rlc, BranchNodeInfo},
+        helpers::{leaf_key_rlc, BranchNodeInfo},
         param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
     },
     mpt_circuit::{
@@ -186,7 +186,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                         // it automatically means the account leaf is not in the first level.
                         (0.expr(), 1.expr(), false.expr())
                     }};
-                    let key_rlc = key_rlc_prev + key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev, is_key_odd, 1.expr());
+                    let key_rlc = key_rlc_prev + leaf_key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev, is_key_odd, 1.expr());
                     require!(a!(address_rlc) => key_rlc);
                     // Key RLC needs to be different
                     add_wrong_leaf_constraints(meta, cb);

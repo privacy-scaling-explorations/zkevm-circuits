@@ -1,4 +1,3 @@
-pub mod branch_hash_in_parent;
 pub mod branch_init;
 pub mod branch_key;
 pub mod branch_rlc;
@@ -17,7 +16,6 @@ use crate::{
     circuit_tools::{DataTransition, LRCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
-    mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{helpers::get_num_bytes_list_short, storage_leaf::StorageLeaf},
     mpt_circuit::{
         helpers::BranchNodeInfo,
@@ -30,6 +28,7 @@ use crate::{
             NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
         },
     },
+    mpt_circuit::{param::RLP_HASH_VALUE, witness_row::MptWitnessRow},
     mpt_circuit::{MPTConfig, ProofValues},
     util::Expr,
 };
@@ -229,7 +228,7 @@ impl<F: FieldExt> BranchConfig<F> {
                             });
                             // There are constraints which ensure there is only 0 or 160 at rlp2 for
                             // branch children.
-                            require!(sum_rlp2 => 320);
+                            require!(sum_rlp2 => (RLP_HASH_VALUE as u64) * 2);
                         }}
                     }}
                 }
@@ -237,7 +236,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
             ifx! {q_not_first => {
                 ifx!{is_branch_child => {
-                     // Keep track of how many branch bytes we've processed.
+                    // Keep track of how many branch bytes we've processed.
                     for is_s in [true, false] {
                         // Calculate the number of bytes on this row.
                         let num_bytes = ifx!{a!(denoter.is_not_hashed(is_s)) => {
@@ -245,12 +244,12 @@ impl<F: FieldExt> BranchConfig<F> {
                         } elsex {
                             // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
                             // non-nil node (1 or 33 respectively).
-                            a!(ctx.main(is_s).rlp2) * invert!(160) * 32.expr() + 1.expr()
+                            a!(ctx.main(is_s).rlp2) * invert!(RLP_HASH_VALUE) * 32.expr() + 1.expr()
                         }};
                         // Fetch the number of bytes left from the previous row.
                         // TODO(Brecht): just store it in branch init in its own column.
                         let num_bytes_left = ifx!{is_branch_init.prev() => {
-                            // Length of branch without initial rlp bytes
+                            // Length of full branch
                             BranchNodeInfo::new(meta, ctx.clone(), is_s, -1).len(meta)
                         } elsex {
                             // Simply stored in rlp1 otherwise
@@ -344,15 +343,16 @@ impl<F: FieldExt> BranchConfig<F> {
                 // the regular parallel branch.
                 // - When `S` branch is NOT a placeholder, `s_main.bytes RLC` corresponds to the value
                 // stored in `accumulators.s_mod_node_rlc` in `is_modified` row.
-                // Note that `s_hash_rlc` is a bit misleading naming, because sometimes the branch
-                // child is not hashed (shorter than 32 bytes), but in this case we need to compute
-                // the RLC too - the same computation is used (stored in variable `s_hash_rlc`), but
-                // we check in `branch_rlc` that the non-hashed child is of the appropriate length
-                // (the length is specified by `rlp2`) and that there are 0s after the last branch child byte.
-                // The same applies for `c_hash_rlc`.
                 ifx!{is_last_child => {
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
                     let mut branch = BranchNodeInfo::new(meta, ctx.clone(), true, -(ARITY as i32));
+
+                    // Check if the branch is in its parent.
+                    // Extension node is handled in `extension_node.rs`.
+                    ifx! {not!(branch.is_extension()) => {
+                        branch.require_in_parent(meta, &mut cb.base);
+                    }}
+
                     for rot in -(ARITY as i32)+1..=0 {
                         for is_s in [true, false] {
                             branch.set_is_s(is_s);

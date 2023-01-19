@@ -128,17 +128,6 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                     require!(a!(main.bytes[0]) => RLP_NIL);
                     // There's only have one byte (128 at `bytes[0]`) that needs to be added to the RLC.
                     let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..3].to_vec().rlc_chain(&r, branch_mult.prev());
-
-                    // No further constraints needed for non-empty nodes besides `rlp2 = 160`
-                    // and values to be bytes.
-                    // Note: The attacker could put 160 in an empty node (the constraints
-                    // above does not / cannot prevent this) and thus try to
-                    // modify the branch RLC (used for checking the hash of a branch), like:
-                    // [0, 160, 128, 0, ..., 0]
-                    // But then the constraints related to the branch RLP length would fail -
-                    // the length of RLP bytes in such a row would then be `32 + 1 = 160 - 128 + 1`
-                    // instead of `1`.
-
                     (rlc, r[0].expr())
                 } elsex {
                     // When a branch child is non-empty and hashed, we have 33 bytes in a row.
