@@ -186,6 +186,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Handle creation transaction
         // tx_is_create = true when tx.to = none
         cb.condition(tx_is_create.expr(), |cb| {
+            cb.account_write(
+                call_callee_address.expr(),
+                AccountFieldTag::Nonce,
+                1.expr(),
+                0.expr(),
+                None,
+            );
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
                 (CallContextFieldTag::CallerAddress, tx_caller_address.expr()),
@@ -204,42 +211,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 1.expr()),
-                (CallContextFieldTag::IsCreate, tx_is_create.expr()),
-                (CallContextFieldTag::CodeHash, phase2_code_hash.expr()),
+                (CallContextFieldTag::IsCreate, 1.expr()),
+                //(CallContextFieldTag::CodeHash, phase2_code_hash.expr()),
+                (CallContextFieldTag::CodeHash, cb.curr.state.code_hash.expr()),
+
             ] {
                 cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 23 reads and writes:
-                //   - Write CallContext TxId
-                //   - Write CallContext RwCounterEndOfReversion
-                //   - Write CallContext IsPersistent
-                //   - Write CallContext IsSuccess
-                //   - Write Account Nonce
-                //   - Write TxAccessListAccount
-                //   - Write TxAccessListAccount
-                //   - Write Account Balance
-                //   - Write Account Balance
-                //   - Read Account CodeHash
-                //   - Write CallContext Depth
-                //   - Write CallContext CallerAddress
-                //   - Write CallContext CalleeAddress
-                //   - Write CallContext CallDataOffset
-                //   - Write CallContext CallDataLength
-                //   - Write CallContext Value
-                //   - Write CallContext IsStatic
-                //   - Write CallContext LastCalleeId
-                //   - Write CallContext LastCalleeReturnDataOffset
-                //   - Write CallContext LastCalleeReturnDataLength
-                //   - Write CallContext IsRoot
-                //   - Write CallContext IsCreate
-                //   - Write CallContext CodeHash
-                rw_counter: Delta(23.expr()),
+                rw_counter: Delta(24.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
-                code_hash: To(phase2_code_hash.expr()),
+                code_hash: To(cb.curr.state.code_hash.expr()),
                 gas_left: To(gas_left.clone()),
                 reversible_write_counter: To(2.expr()),
                 log_id: To(0.expr()),
@@ -251,7 +236,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
         let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code_hash.expr();
-        cb.condition(native_transfer, |cb| {
+        cb.condition(native_transfer.expr(), |cb| {
             cb.require_equal(
                 "Tx to account with empty code should be persistent",
                 reversion_info.is_persistent(),
@@ -275,7 +260,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Balance
                 //   - Write Account Balance
                 //   - Read Account CodeHash
-                rw_counter: Delta(10.expr()),
+                rw_counter: Delta(11.expr()),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
@@ -285,6 +270,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             not::expr(tx_is_create.expr()) * not::expr(is_empty_code_hash.expr());
 
         cb.condition(normal_contract_call, |cb| {
+            
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
@@ -335,7 +321,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(23.expr()),
+                rw_counter: Delta(24.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -381,15 +367,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         
         let gas_fee = tx.gas_price * tx.gas;
-        println!("tx is create :{}, rw_counter {}, callid {}, txid {}, tx_steps {}", tx.is_create,
-        step.rw_counter, call.id, tx.id, tx.steps.len());
-        for _step in tx.steps.clone() {
-            println!("step {:?}", _step.execution_state);
-        }
+       
 
         let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
             [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
                 .map(|idx| block.rws[idx].account_value_pair());
+
+        // TODO: debug info will remove
+        println!("tx is create :{}, rw_counter {}, callid {}, txid {}, tx_steps {}, code hash {} 
+        empty code hash {:?}", tx.is_create,
+        step.rw_counter, call.id, tx.id, tx.steps.len(), 
+        call.code_hash,
+        region.word_rlc(callee_code_hash).inner.unwrap() == region.empty_hash_rlc().inner.unwrap(),
+        );
+
+        for _step in tx.steps.clone() {
+            println!("step {:?}", _step.execution_state);
+        }
+        println!("second step {:?}", tx.steps.clone()[1].rw_counter);
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -464,7 +459,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             gas_fee,
         )?;
         self.phase2_code_hash
-            .assign(region, offset, region.word_rlc(callee_code_hash))?;
+             .assign(region, offset, // if tx.is_create{
+            //     region.word_rlc(call.code_hash)
+            // }else {
+                region.word_rlc(callee_code_hash)
+            //}
+            )?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
