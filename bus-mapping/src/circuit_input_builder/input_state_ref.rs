@@ -269,13 +269,11 @@ impl<'a> CircuitInputStateRef<'a> {
         let account = self.sdb.get_account_mut(&op.address).1;
         // -- sanity check begin --
         // Verify that a READ doesn't change the field value
-        if matches!(rw, RW::READ) {
-            if op.value_prev != op.value {
-                panic!(
-                    "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
-                    self.block_ctx.rwc.0, op
-                )
-            }
+        if matches!(rw, RW::READ) && op.value_prev != op.value {
+            panic!(
+                "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
+                self.block_ctx.rwc.0, op
+            )
         }
         let account_value_prev = match op.field {
             AccountField::Nonce => account.nonce,
@@ -301,15 +299,14 @@ impl<'a> CircuitInputStateRef<'a> {
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
         // AccountNonExisting proofs lookups).
-        if !matches!(op.field, AccountField::CodeHash)
-            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero()))
+        if (!matches!(op.field, AccountField::CodeHash)
+            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
+            && account.is_empty()
         {
-            if account.is_empty() {
-                panic!(
-                    "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
-                    rw, self.block_ctx.rwc.0, op
-                );
-            }
+            panic!(
+                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+                rw, self.block_ctx.rwc.0, op
+            );
         }
         // -- sanity check end --
         // Perform the write to the account in the StateDB
