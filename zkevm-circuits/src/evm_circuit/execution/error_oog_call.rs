@@ -102,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(13.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(14.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -221,7 +221,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         )?;
 
         self.restore_context
-            .assign(region, offset, block, call, step, 13)?;
+            .assign(region, offset, block, call, step, 14)?;
         Ok(())
     }
 }
