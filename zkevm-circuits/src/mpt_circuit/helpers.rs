@@ -20,8 +20,9 @@ use halo2_proofs::{
 use super::{
     columns::MainCols,
     param::{
-        ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_ROWS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM,
+        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_ROWS,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
+        ACCOUNT_NON_EXISTING_IND, BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_C_EXT_LONGER_THAN_55_POS,
         IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_LONGER_THAN_55_POS,
@@ -137,6 +138,15 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             is_branch_c_placeholder,
             nibbles_counter,
         }
+    }
+
+    pub(crate) fn contains_placeholder_leaf(
+        &self,
+        meta: &mut VirtualCells<F>,
+        is_s: bool,
+    ) -> Expression<F> {
+        // All children contain the same data so we just jump to the first child here
+        contains_placeholder_leaf(meta, self.ctx.clone(), is_s, self.rot_branch_init + 1)
     }
 
     /// Adds selector constraints for branch init
@@ -546,6 +556,11 @@ impl<F: FieldExt> StorageLeafInfo<F> {
         }
     }
 
+    // Override the rotation while keeping the length flags intact
+    pub(crate) fn set_rot_key(&mut self, rot_key: i32) {
+        self.rot_key = rot_key;
+    }
+
     pub(crate) fn has_no_nibble(&self) -> Expression<F> {
         self.flag1.expr() * self.flag2.expr()
     }
@@ -597,12 +612,8 @@ impl<F: FieldExt> StorageLeafInfo<F> {
     }
 
     /// Length of the key (excluding RLP bytes)
-    pub(crate) fn key_len(
-        &self,
-        _meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        circuit!([_meta, cb], {
+    pub(crate) fn key_len(&self, _meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([_meta, _cb!()], {
             matchx! {
                 self.is_very_short() => 1.expr(), // 1 byte in s_rlp2
                 self.is_short() => get_len_short(a!(self.ctx.s_main.rlp2, self.rot_key)),
@@ -617,7 +628,7 @@ impl<F: FieldExt> StorageLeafInfo<F> {
         meta: &mut VirtualCells<F>,
         cb: &mut ConstraintBuilder<F>,
     ) -> Expression<F> {
-        self.num_rlp_bytes(meta, cb) + self.key_len(meta, cb)
+        self.num_rlp_bytes(meta, cb) + self.key_len(meta)
     }
 
     pub(crate) fn num_key_nibbles(
@@ -626,7 +637,7 @@ impl<F: FieldExt> StorageLeafInfo<F> {
         cb: &mut ConstraintBuilder<F>,
         is_key_odd: Expression<F>,
     ) -> Expression<F> {
-        let key_len = self.key_len(meta, cb);
+        let key_len = self.key_len(meta);
         get_num_nibbles(meta, cb, key_len, is_key_odd)
     }
 
@@ -702,6 +713,24 @@ impl<F: FieldExt> StorageLeafInfo<F> {
             .bytes(meta, rot_storage_root)
             .rlc(&self.ctx.r)
     }
+
+    pub(crate) fn is_placeholder(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+    ) -> Expression<F> {
+        let rot_parent = if self.is_s { -1 } else { -3 };
+        let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
+        circuit!([meta, cb], {
+            ifx! {self.is_below_account(meta) => {
+                // TODO(Brecht): do we check this value somehow someplace?
+                a!(self.ctx.denoter.sel(self.is_s), 1)
+            } elsex {
+                let branch = BranchNodeInfo::new(meta, self.ctx.clone(), self.is_s, rot_branch_init);
+                branch.contains_placeholder_leaf(meta, self.is_s)
+            }}
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -725,6 +754,19 @@ impl<F: FieldExt> AccountLeafInfo<F> {
             is_balance_long,
             _marker: PhantomData,
         }
+    }
+
+    pub(crate) fn is_wrong_leaf(&self, meta: &mut VirtualCells<F>, is_s: bool) -> Expression<F> {
+        let rot_non_existing = ACCOUNT_NON_EXISTING_IND
+            - if is_s {
+                ACCOUNT_LEAF_KEY_S_IND
+            } else {
+                ACCOUNT_LEAF_KEY_C_IND
+            };
+        meta.query_advice(
+            self.ctx.s_main.rlp1,
+            Rotation(self.rot_key + rot_non_existing),
+        )
     }
 
     pub(crate) fn is_nonce_long(&self) -> Expression<F> {
@@ -757,12 +799,8 @@ impl<F: FieldExt> AccountLeafInfo<F> {
     }
 
     /// Returns the length of the key
-    pub(crate) fn key_len(
-        &self,
-        _meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        circuit!([_meta, _cb], {
+    pub(crate) fn key_len(&self, _meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([_meta, _cb!()], {
             get_len_short(a!(self.ctx.s_main.bytes[0], self.rot_key))
         })
     }
@@ -773,7 +811,7 @@ impl<F: FieldExt> AccountLeafInfo<F> {
         meta: &mut VirtualCells<F>,
         cb: &mut ConstraintBuilder<F>,
     ) -> Expression<F> {
-        self.num_rlp_bytes(meta, cb) + self.key_len(meta, cb)
+        self.num_rlp_bytes(meta, cb) + self.key_len(meta)
     }
 
     /// Number of RLP bytes for leaf and key
@@ -869,6 +907,35 @@ impl<F: FieldExt> AccountLeafInfo<F> {
             .bytes(meta, rot_storage_root)
             .rlc(&self.ctx.r)
     }
+
+    // Will use data on the current row!
+    pub(crate) fn key_rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        key_mult_prev: Expression<F>,
+        is_key_odd: Expression<F>,
+        key_mult_first_even: Expression<F>,
+    ) -> Expression<F> {
+        leaf_key_rlc(
+            meta,
+            cb,
+            self.ctx.clone(),
+            3..36,
+            key_mult_prev.expr(),
+            is_key_odd,
+            key_mult_first_even,
+        )
+    }
+}
+
+pub(crate) fn contains_placeholder_leaf<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    ctx: MPTContext<F>,
+    is_s: bool,
+    rot_branch_child: i32,
+) -> Expression<F> {
+    meta.query_advice(ctx.denoter.sel(is_s), Rotation(rot_branch_child))
 }
 
 pub(crate) fn leaf_key_rlc<F: FieldExt>(

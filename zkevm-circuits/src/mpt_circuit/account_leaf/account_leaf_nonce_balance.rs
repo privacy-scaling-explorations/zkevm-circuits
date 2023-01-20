@@ -16,8 +16,8 @@ use crate::{
         helpers::AccountLeafInfo,
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-            ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_NON_EXISTING_IND, C_START, HASH_WIDTH,
-            RLP_LIST_LONG, RLP_LONG, S_START,
+            ACCOUNT_LEAF_NONCE_BALANCE_S_IND, C_START, HASH_WIDTH, RLP_LIST_LONG, RLP_LONG,
+            S_START,
         },
     },
     mpt_circuit::{
@@ -137,11 +137,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
         } else {
             -(ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND)
         };
-        let rot_non_existing = if is_s {
-            -ACCOUNT_LEAF_NONCE_BALANCE_S_IND
-        } else {
-            -ACCOUNT_LEAF_NONCE_BALANCE_C_IND
-        } + ACCOUNT_NON_EXISTING_IND;
         let rot_s = if is_s {
             0
         } else {
@@ -150,7 +145,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
 
         circuit!([meta, cb.base], {
             let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-            let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
 
             // The two string RLP bytes stored in the s RLP bytes.
             // The two list RLP bytes are stored in the c RLP bytes.
@@ -232,7 +226,7 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // `s_main.rlp1` and `s_main.rlp2`.
             //  TODO(Brecht): Can we remove this if by just making this pass in this special
             // case?
-            ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(is_wrong_leaf)])) => {
+            ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(account.is_wrong_leaf(meta, is_s))])) => {
                 // We always store between 55 and 256 bytes of data in the values list.
                 require!(a!(s_main.rlp1) => RLP_LONG + 1);
                 // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
@@ -253,14 +247,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             // To enable lookups for balance modification we need to have S balance and C
             // balance in the same row.
             if is_s {
-                // Copy S nonce RLC to `value_prev` column.
                 require!(a!(value_prev) => nonce);
             } else {
-                // Copy C nonce RLC to `value` column S row.
                 require!(a!(value, rot_s) => nonce);
-                // Copy S balance RLC to `value_prev` column in C row.
                 require!(a!(value_prev) => balance.prev());
-                // Copy C balance RLC to `value` column in C row.
                 require!(a!(value) => balance);
             }
 

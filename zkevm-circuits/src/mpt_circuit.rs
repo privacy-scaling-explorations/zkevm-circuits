@@ -313,6 +313,9 @@ pub(crate) struct ProofValues<F> {
     pub(crate) balance_value_s: F,
     pub(crate) before_account_leaf: bool,
     pub(crate) nibbles_num: usize,
+
+    pub(crate) account_key_rlc: F,
+    pub(crate) storage_key_rlc: F,
 }
 
 impl<F: FieldExt> ProofValues<F> {
@@ -1176,6 +1179,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 self.account_non_existing.assign(
                                     &mut region,
                                     self,
+                                    &mut pv,
                                     witness,
                                     offset,
                                 );

@@ -16,7 +16,6 @@ use crate::{
     circuit_tools::{DataTransition, LRCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
-    mpt_circuit::{helpers::get_num_bytes_list_short, storage_leaf::StorageLeaf},
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{
@@ -27,6 +26,10 @@ use crate::{
             IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_S_BRANCH_NON_HASHED_POS,
             NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
         },
+    },
+    mpt_circuit::{
+        helpers::{contains_placeholder_leaf, get_num_bytes_list_short},
+        storage_leaf::StorageLeaf,
     },
     mpt_circuit::{param::RLP_HASH_VALUE, witness_row::MptWitnessRow},
     mpt_circuit::{MPTConfig, ProofValues},
@@ -286,7 +289,7 @@ impl<F: FieldExt> BranchConfig<F> {
                     // - `modified_node_index`
                     // - `drifted_pos`
                     // - `mod_node_hash_rlc`
-                    // - `is_modified_child_empty`
+                    // - `contains_placeholder_leaf`
                     ifx!{a!(branch.node_index) => {
                         // `modified_node_index` needs to be the same for all branch children.
                         require!(modified_node_index => modified_node_index.prev());
@@ -298,11 +301,11 @@ impl<F: FieldExt> BranchConfig<F> {
                         }}
                         for is_s in [true, false] {
                             let mod_node_hash_rlc = ctx.accumulators.mod_node_rlc(is_s);
-                            let is_modified_child_empty = ctx.denoter.sel(is_s);
                             // mod_node_hash_rlc the same for all branch children
                             require!(a!(mod_node_hash_rlc) => a!(mod_node_hash_rlc, -1));
                             // Selector for the modified child being empty the same for all branch children
-                            require!(a!(is_modified_child_empty) => a!(is_modified_child_empty, -1));
+                            require!(contains_placeholder_leaf(meta, ctx.clone(), is_s, 0)
+                                => contains_placeholder_leaf(meta, ctx.clone(), is_s, -1));
                         }
                     }}
                 }}

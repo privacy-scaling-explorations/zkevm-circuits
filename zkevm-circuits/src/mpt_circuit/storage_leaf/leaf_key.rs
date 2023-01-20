@@ -138,7 +138,6 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         is_s: bool,
     ) -> Self {
         let accs = ctx.accumulators;
-        let denoter = ctx.denoter;
 
         let rot_parent = if is_s { -1 } else { -3 };
         let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
@@ -147,17 +146,17 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
 
         circuit!([meta, cb.base], {
-            let leaf = StorageLeafInfo::new(meta, ctx.clone(), is_s, 0);
+            let storage = StorageLeafInfo::new(meta, ctx.clone(), is_s, 0);
 
             // The two flag values need to be boolean.
-            require!(leaf.flag1 => bool);
-            require!(leaf.flag2 => bool);
+            require!(storage.flag1 => bool);
+            require!(storage.flag2 => bool);
 
             // Calculate and store the leaf data RLC
             require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
             // Get the key data from the branch above (if any)
-            let (key_rlc_prev, key_mult_prev, is_key_odd, nibbles_count_prev) = ifx! {not!(leaf.is_below_account(meta)) => {
+            let (key_rlc_prev, key_mult_prev, is_key_odd, nibbles_count_prev) = ifx! {not!(storage.is_below_account(meta)) => {
                 let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
                 ifx!{branch.is_placeholder() => {
                     ifx!{not!(branch.is_below_account(meta)) => {
@@ -177,7 +176,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             // Calculate and store the key RLC.
             let key_rlc = key_rlc_prev.expr()
-                + leaf.key_rlc(
+                + storage.key_rlc(
                     meta,
                     &mut cb.base,
                     key_mult_prev,
@@ -189,18 +188,15 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES (except in a
             // placeholder leaf).
-            let is_in_first_level = a!(denoter.sel(is_s), 1);
-            let is_leaf_placeholder = is_in_first_level
-                + ifx! {not!(leaf.is_below_account(meta)) => {
-                    a!(denoter.sel(is_s), rot_first_child)
-                }};
-            let num_nibbles = leaf.num_key_nibbles(meta, &mut cb.base, is_key_odd.expr());
-            ifx! {not!(is_leaf_placeholder) => {
+            // TODO(Brecht): why not in placeholder leaf?
+            let is_placeholder = storage.is_placeholder(meta, &mut cb.base);
+            ifx! {not!(is_placeholder) => {
+                let num_nibbles = storage.num_key_nibbles(meta, &mut cb.base, is_key_odd.expr());
                 require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
             }}
 
             // Num bytes used in RLC
-            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
+            let num_bytes = storage.num_bytes_on_key_row(meta, &mut cb.base);
             // Multiplier is number of bytes
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check (subtract 2 RLP bytes used)
@@ -319,6 +315,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
                 || Value::known(key_rlc_new),
             )
             .ok();
+        pv.storage_key_rlc = key_rlc_new;
 
         // Store key_rlc into rlc2 to be later set in leaf value C row (to enable
         // lookups):

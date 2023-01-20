@@ -9,12 +9,12 @@ use std::marker::PhantomData;
 use crate::{
     circuit,
     circuit_tools::{DataTransition, LRCable},
+    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
     mpt_circuit::{
-        helpers::get_num_bytes_list_short,
+        helpers::{contains_placeholder_leaf, get_num_bytes_list_short},
         param::{RLP_HASH_VALUE, RLP_NIL},
         FixedTableTag,
     },
-    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
 };
 
 /*
@@ -96,13 +96,11 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
-        let branch = ctx.branch;
         let main = ctx.main(is_s);
         let branch_acc = ctx.accumulators.acc(is_s);
         let is_not_hashed = ctx.denoter.is_not_hashed(is_s);
-        let is_modified_child_empty = ctx.denoter.sel(is_s);
         let node_mult_diff = ctx.accumulators.node_mult_diff(is_s);
-        let r = ctx.r;
+        let r = ctx.r.clone();
         circuit!([meta, cb.base], {
             let branch_mult = DataTransition::new(meta, branch_acc.mult);
             let branch_rlc = DataTransition::new(meta, branch_acc.rlc);
@@ -143,9 +141,9 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             // added, we have empty branch child in `S` proof and hash of a
             // newly added leaf at the parallel position in `C` proof.
             // That means we have empty node in `S` proof at `modified_node`.
-            // When this happens, we denote this situation by having `sel = 1`.
+            // When this happens, we denote this situation by having a placeholder leaf.
             // In this case we need to make sure the node is seen as empty.
-            ifx! {a!(branch.is_modified), a!(is_modified_child_empty) => {
+            ifx! {a!(ctx.branch.is_modified), contains_placeholder_leaf(meta, ctx.clone(), is_s, 0) => {
                 require!(a!(is_not_hashed) => false);
                 require!(a!(main.rlp2) => 0);
             }}

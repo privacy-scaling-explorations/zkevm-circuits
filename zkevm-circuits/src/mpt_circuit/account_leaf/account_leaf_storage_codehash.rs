@@ -14,8 +14,8 @@ use crate::{
         helpers::{AccountLeafInfo, BranchNodeInfo, MPTConstraintBuilder},
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM,
-            C_START, HASH_WIDTH, IS_CODEHASH_MOD_POS, RLP_HASH_VALUE, S_START,
+            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_START, HASH_WIDTH,
+            IS_CODEHASH_MOD_POS, RLP_HASH_VALUE, S_START,
         },
         MPTContext,
     },
@@ -89,13 +89,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         let accs = ctx.accumulators;
         let value_prev = ctx.value_prev;
         let value = ctx.value;
-        let denoter = ctx.denoter;
 
-        let rot_non_existing = -(if is_s {
-            ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND
-        } else {
-            ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND
-        } - ACCOUNT_NON_EXISTING_IND);
         let rot_nonce_balance = -2;
         let rot_key = -if is_s {
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND - ACCOUNT_LEAF_KEY_S_IND
@@ -123,9 +117,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
                 // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
                 // has a nil.
-                let is_wrong_leaf = a!(s_main.rlp1, rot_non_existing);
                 // TODO(Brecht): Can we remove this if by just making this pass in this special case?
-                ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(is_wrong_leaf)])) => {
+                ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(account.is_wrong_leaf(meta, is_s))])) => {
                     // Storage root and codehash are always 32-byte hashes.
                     require!(a!(s_main.rlp2) => RLP_HASH_VALUE);
                     require!(a!(c_main.rlp2) => RLP_HASH_VALUE);
@@ -159,8 +152,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     } elsex {
                         // Hash of an account leaf in a branch
                         // Check is skipped for placeholder leafs which are dummy leafs
-                        let is_placeholder_leaf = a!(denoter.sel(is_s), rot_last_child);
-                        ifx!{not!(is_placeholder_leaf) => {
+                        ifx!{not!(branch.contains_placeholder_leaf(meta, is_s)) => {
                             (true.expr(), a!(accs.mod_node_rlc(is_s), rot_last_child))
                         }}
                     }}

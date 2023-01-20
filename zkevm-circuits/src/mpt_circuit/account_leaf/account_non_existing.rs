@@ -11,17 +11,15 @@ use crate::{
     circuit,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{leaf_key_rlc, BranchNodeInfo},
+        helpers::{bytes_into_rlc, BranchNodeInfo},
         param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
+        ProofValues,
     },
     mpt_circuit::{
         helpers::{AccountLeafInfo, MPTConstraintBuilder},
         MPTContext,
     },
-    mpt_circuit::{
-        param::{ACCOUNT_LEAF_KEY_C_IND, IS_NON_EXISTING_ACCOUNT_POS},
-        MPTConfig,
-    },
+    mpt_circuit::{param::IS_NON_EXISTING_ACCOUNT_POS, MPTConfig},
 };
 
 /*
@@ -89,15 +87,20 @@ Note that the selector (being 1 in this case) at `s_main.rlp1` specifies whether
 Lookups:
 The `non_existing_account_proof` lookup is enabled in `ACCOUNT_NON_EXISTING` row.
 
-When `non_existing_account_proof` proof type (which can be of two subtypes:
-with wrong leaf and without wrong leaf, more about it below), the
-`is_wrong_leaf` flag specifies whether the subtype is with wrong
-leaf or not. When `non_existing_account_proof` without wrong leaf
-the proof contains only branches and a placeholder account leaf.
-In this case, it is checked that there is nil in the parent branch
-at the proper position (see `account_non_existing`). Note that we need
-(placeholder) account leaf for lookups and to know when to check
-that parent branch has a nil.
+Differently than for the other proofs, the account-non-existing proof compares `address_rlc`
+with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
+The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
+set of nibbles is the same) where we are proving there is no account.
+If there would be an account at the specified address, it would be positioned in the branch where
+the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
+Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
+
+/* Non existing account proof leaf address RLC (leaf in first level) */
+Ensuring that the account does not exist when there is only one account in the state trie.
+Note 1: The hash of the only account is checked to be the state root.
+Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
+above. That is because when there is a branch (with nil object) in the first level,
+it automatically means the account leaf is not in the first level.
 
 */
 
@@ -114,102 +117,51 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
     ) -> Self {
         let proof_type = ctx.proof_type;
         let not_first_level = ctx.position_cols.not_first_level;
-        let s_main = ctx.s_main;
         let accs = ctx.accumulators;
-        // should be the same as sel2 as both parallel proofs are the same for
-        // non_existing_account_proof
-        let sel1 = ctx.denoter.sel1;
         let address_rlc = ctx.address_rlc;
 
+        let rot_key_s = -ACCOUNT_NON_EXISTING_IND;
         let rot_first_branch = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
         let rot_branch_init = rot_first_branch - 1;
 
-        //TODO(Brecht): reuse/change
-        let add_wrong_leaf_constraints =
-            |meta: &mut VirtualCells<F>, cb: &mut MPTConstraintBuilder<F>| {
-                circuit!([meta, cb.base], {
-                    let rlc = a!(accs.key.rlc);
-                    let rlc_prev = a!(accs.key.mult);
-                    let diff_inv = a!(accs.acc_s.rlc);
-                    // TODO(Brecht): should we store these RLC values?
-                    // We compute the RLC of the key bytes in the ACCOUNT_NON_EXISTING row. We check
-                    // whether the computed value is the same as the one stored
-                    // in `accs.key.mult` column.
-                    require!(rlc => ctx.rlc(meta, 3..36, 0));
-                    // We compute the RLC of the key bytes in the ACCOUNT_LEAF_KEY row. We check
-                    // whether the computed value is the same as the one stored
-                    // in `accs.key.rlc` column.
-                    // TODO(Brecht): This does not rotate to ACCOUNT_LEAF_KEY like the comment says?
-                    require!(rlc_prev => ctx.rlc(meta, 3..36, -1));
-                    // The address in the ACCOUNT_LEAF_KEY row and the address in the
-                    // ACCOUNT_NON_EXISTING row are different.
-                    // If the difference is 0 there is no inverse.
-                    require!((rlc - rlc_prev) * diff_inv => 1);
-                });
-            };
-
-        // Checks that account_non_existing_row contains the nibbles that give
-        // address_rlc (after considering modified_node in branches/extension
-        // nodes above). Note: currently, for non_existing_account proof S and C
-        // proofs are the same, thus there is never a placeholder branch.
         circuit!([meta, cb.base], {
-            // Wrong leaf has a meaning only for non existing account proof. For this proof,
-            // there are two cases: 1. A leaf is returned that is not at the
-            // required address (wrong leaf). 2. A branch is returned as the
-            // last element of getProof and there is nil object at address position.
-            // Placeholder account leaf is added in this case.
-            let is_wrong_leaf = a!(s_main.rlp1);
+            let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key_s);
+
             // Make sure is_wrong_leaf is boolean
-            require!(is_wrong_leaf => bool);
+            require!(account.is_wrong_leaf(meta, true) => bool);
 
             ifx! {a!(proof_type.is_non_existing_account_proof) => {
-                ifx! {is_wrong_leaf => {
+                ifx! {account.is_wrong_leaf(meta, true) => {
+                    // Note: currently, for non_existing_account proof S and C
+                    // proofs are the same, thus there is never a placeholder branch.
                     let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx! {a!(not_first_level) => {
-                        // Differently than for the other proofs, the account-non-existing proof compares `address_rlc`
-                        // with the address stored in `ACCOUNT_NON_EXISTING` row, not in `ACCOUNT_LEAF_KEY` row.
-                        // The crucial thing is that we have a wrong leaf at the address (not exactly the same, just some starting
-                        // set of nibbles is the same) where we are proving there is no account.
-                        // If there would be an account at the specified address, it would be positioned in the branch where
-                        // the wrong account is positioned. Note that the position is determined by the starting set of nibbles.
-                        // Once we add the remaining nibbles to the starting ones, we need to obtain the enquired address.
-                        // There is a complementary constraint which makes sure the remaining nibbles are different for wrong leaf
-                        // and the non-existing account (in the case of wrong leaf, while the case with nil being in branch
-                        // is different).
                         let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
                         (a!(accs.key.rlc, rot_first_branch), a!(accs.key.mult, rot_first_branch), branch.is_key_odd())
                     } elsex {
-                        /* Non existing account proof leaf address RLC (leaf in first level) */
-                        // Ensuring that the account does not exist when there is only one account in the state trie.
-                        // Note 1: The hash of the only account is checked to be the state root in `account_leaf_storage_codehash.rs`.
-                        // Note 2: There is no nil_object case checked in this gate, because it is covered in the gate
-                        // above. That is because when there is a branch (with nil object) in the first level,
-                        // it automatically means the account leaf is not in the first level.
                         (0.expr(), 1.expr(), false.expr())
                     }};
-                    let key_rlc = key_rlc_prev + leaf_key_rlc(meta, &mut cb.base, ctx.clone(), 3..36, key_mult_prev, is_key_odd, 1.expr());
-                    require!(a!(address_rlc) => key_rlc);
-                    // Key RLC needs to be different
-                    add_wrong_leaf_constraints(meta, cb);
-                    // The address of the wrong leaf and the enquired address are of the same length.
-                    // This constraint is to prevent the attacker to prove that some account does not exist by setting
-                    // some arbitrary number of nibbles in the account leaf which would lead to a desired RLC.
-                    require!(a!(s_main.bytes[0]) => a!(s_main.bytes[0], -1));
+                    // Calculate the key and check it's the address as requested in the lookup
+                    let key_rlc_wrong = key_rlc_prev + account.key_rlc(meta, &mut cb.base, key_mult_prev, is_key_odd, 1.expr());
+                    require!(a!(address_rlc) => key_rlc_wrong);
+                    // Now make sure this address is different than the one of the leaf
+                    let diff_inv = a!(accs.acc_s.rlc);
+                    require!((a!(address_rlc) - a!(accs.key.rlc, rot_key_s)) * diff_inv => 1);
+                    // Make sure the lengths of the keys are the same
+                    let account_wrong = AccountLeafInfo::new(meta, ctx.clone(), 0);
+                    require!(account_wrong.key_len(meta) => account.key_len(meta));
+                    // RLC bytes zero check
+                    let leaf = AccountLeafInfo::new(meta, ctx.clone(), 0);
+                    let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
+                    cb.set_length(num_bytes - 2.expr());
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                    // Note that the constraints in `branch.rs` ensure that `sel1` is 1 if and only if there is a nil object
-                    // at `modified_node` position. We check that in case of no wrong leaf in
-                    // the non-existing-account proof, `is_nil_object` is 1.
-                    require!(a!(sel1, rot_first_branch) => true);
+                    let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+                    require!(branch.contains_placeholder_leaf(meta, true) => true);
                 }}
             } elsex {
                 // is_wrong_leaf needs to be false when not in non_existing_account proof
-                require!(is_wrong_leaf => false);
+                require!(account.is_wrong_leaf(meta, true) => false);
             }};
-
-            // RLC bytes zero check
-            let leaf = AccountLeafInfo::new(meta, ctx.clone(), 0);
-            let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
-            cb.set_length(num_bytes - 2.expr());
         });
 
         AccountNonExistingConfig {
@@ -221,42 +173,15 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
+        pv: &mut ProofValues<F>,
         witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
-        let leaf_key_c =
-            &witness[offset - (ACCOUNT_NON_EXISTING_IND - ACCOUNT_LEAF_KEY_C_IND) as usize];
         let row = &witness[offset];
-        let key_len = leaf_key_c.get_byte(2) as usize - 128;
-        let mut sum = F::zero();
-        let mut sum_prev = F::zero();
-        let mut mult = F::one();
-        for i in 0..key_len {
-            sum += F::from(row.get_byte(3 + i) as u64) * mult;
-            sum_prev += F::from(leaf_key_c.get_byte(3 + i) as u64) * mult;
-            mult *= mpt_config.randomness;
-        }
-        let mut diff_inv = F::zero();
-        if sum != sum_prev {
-            diff_inv = F::invert(&(sum - sum_prev)).unwrap();
-        }
-
-        region
-            .assign_advice(
-                || "assign sum".to_string(),
-                mpt_config.accumulators.key.rlc,
-                offset,
-                || Value::known(sum),
-            )
-            .ok();
-        region
-            .assign_advice(
-                || "assign sum prev".to_string(),
-                mpt_config.accumulators.key.mult,
-                offset,
-                || Value::known(sum_prev),
-            )
-            .ok();
+        let address_rlc = bytes_into_rlc(row.address_bytes(), mpt_config.randomness);
+        let diff_inv = (address_rlc - pv.account_key_rlc)
+            .invert()
+            .unwrap_or(F::zero());
         region
             .assign_advice(
                 || "assign diff inv".to_string(),

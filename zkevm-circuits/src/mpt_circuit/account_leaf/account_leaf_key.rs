@@ -14,7 +14,7 @@ use crate::{
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{get_num_nibbles, leaf_key_rlc, AccountLeafInfo, MPTConstraintBuilder},
+        helpers::{get_num_nibbles, AccountLeafInfo, MPTConstraintBuilder},
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG},
         FixedTableTag,
     },
@@ -131,7 +131,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
         let address_rlc = ctx.address_rlc;
-        let sel_2 = ctx.denoter.sel2;
 
         // key rlc is in the first branch node
         let rot_first_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
@@ -180,16 +179,6 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
                 (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd)
             } elsex {
-                // The computed key RLC needs to be the same as the value in `address_rlc` column.
-                // This seems to be redundant (we could write one constraint instead of two:
-                // `key_rlc_acc - address_rlc = 0`), but note that `key_rlc` is used in
-                // `account_leaf_key_in_added_branch` and in cases when there is a placeholder branch
-                // we have `key_rlc - address_rlc != 0` because `key_rlc` is computed for the branch
-                // that is parallel to the placeholder branch.
-                ifx!{not!(a!(proof_type.is_non_existing_account_proof)) => {
-                    require!(a!(accs.key.rlc) => a!(address_rlc));
-                }}
-
                 ifx! {a!(position_cols.not_first_level)  => {
                     (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.nibbles_counter().expr(), branch.is_key_odd())
                 } elsex {
@@ -199,11 +188,9 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             // Calculate the key RLC
             let key_rlc = key_rlc_prev
-                + leaf_key_rlc(
+                + account.key_rlc(
                     meta,
                     &mut cb.base,
-                    ctx.clone(),
-                    3..36,
                     key_mult_prev.expr(),
                     is_key_odd.expr(),
                     1.expr(),
@@ -211,7 +198,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             require!(a!(accs.key.rlc) => key_rlc);
 
             // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
-            let key_len = account.key_len(meta, &mut cb.base);
+            let key_len = account.key_len(meta);
             let num_nibbles =
                 get_num_nibbles(meta, &mut cb.base, key_len.expr(), is_key_odd.expr());
             require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
@@ -222,6 +209,17 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check
             cb.set_length(num_bytes.expr() - 2.expr());
+
+            // The computed key RLC needs to be the same as the value in `address_rlc`
+            // column. This seems to be redundant (we could write one constraint
+            // instead of two: `key_rlc_acc - address_rlc = 0`), but note that
+            // `key_rlc` is used in `account_leaf_key_in_added_branch` and in
+            // cases when there is a placeholder branch we have `key_rlc -
+            // address_rlc != 0` because `key_rlc` is computed for the branch
+            // that is parallel to the placeholder branch.
+            ifx! {not!(is_branch_placeholder), not!(a!(proof_type.is_non_existing_account_proof)) => {
+                require!(a!(address_rlc) => a!(accs.key.rlc));
+            }}
 
             /* Account delete */
             // We need to make sure there is no leaf when account is deleted. Two possible
@@ -238,13 +236,10 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // so there will always be a branch / extension node (and thus placeholder
             // branch).
             if !is_s {
-                // is_leaf_placeholder is stored in branch children: sel1 for S, sel2 for C.
-                let is_leaf_placeholder = a!(sel_2, rot_first_child);
                 // Note: this constraint suffices because the proper transition from branch to a
-                // leaf (2. case) is checked by constraints in
-                // account_leaf_key_in_added_branch.
+                // leaf (2. case) is checked by constraints in account_leaf_key_in_added_branch.
                 ifx! {a!(proof_type.is_account_delete_mod) => {
-                    require!(or::expr([is_leaf_placeholder, branch.is_placeholder()]) => true);
+                    require!(or::expr([branch.contains_placeholder_leaf(meta, is_s), branch.is_placeholder()]) => true);
                 }}
             }
         });
@@ -304,6 +299,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         }
 
         mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
+        pv.account_key_rlc = key_rlc_new;
         region
             .assign_advice(
                 || "assign key_rlc".to_string(),

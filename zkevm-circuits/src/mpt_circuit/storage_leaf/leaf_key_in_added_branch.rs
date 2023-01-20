@@ -184,11 +184,11 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
             let is_in_first_storage_level = ctx.is_account(meta, rot_parent);
             ifx! {not!(is_in_first_storage_level) => {
                 let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-                let leaf = StorageLeafInfo::new(meta, ctx.clone(), true, 0);
+                let storage = StorageLeafInfo::new(meta, ctx.clone(), true, 0);
 
                 // The two flag values need to be boolean.
-                require!(leaf.flag1 => bool);
-                require!(leaf.flag2 => bool);
+                require!(storage.flag1 => bool);
+                require!(storage.flag2 => bool);
 
                 // Calculate and store the leaf data RLC
                 require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
@@ -218,12 +218,12 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc_prev = key_rlc_prev + a!(drifted_pos, rot_branch_child) * drifted_pos_mult;
                 // Calculate the key RLC
-                let key_rlc = key_rlc_prev.expr() + leaf.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
+                let key_rlc = key_rlc_prev.expr() + storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
 
                 // Check zero bytes and mult_diff
                 ifx!{branch.is_s_or_c_placeholder() => {
                     // Num bytes used in RLC
-                    let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
+                    let num_bytes = storage.num_bytes_on_key_row(meta, &mut cb.base);
                     // Multiplier is number of bytes
                     require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
                     // RLC bytes zero check (subtract RLP bytes used)
@@ -259,7 +259,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 };
                 require!(stored_key_rlc => key_rlc);
                 ifx! {do_lookup => {
-                    let len = leaf.num_bytes(meta, &mut cb.base);
+                    let len = storage.num_bytes(meta, &mut cb.base);
                     require!((1, mod_rlc, len, mod_hash) => @"keccak");
                 }}
             }}

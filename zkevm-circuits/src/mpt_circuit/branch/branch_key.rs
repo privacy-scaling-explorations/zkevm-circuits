@@ -233,7 +233,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     }}
                 }}
 
-                // We need to check that `second_nibbles` are between 0 and 15.
+                // We need to check that the nibbles we stored in s are between 0 and 15.
                 cb.set_range_s(FixedTableTag::RangeKeyLen16.expr());
             }}
 
