@@ -765,7 +765,7 @@ impl<'a> CircuitInputStateRef<'a> {
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
-            OpEnum::AccountDestructed(_) => evm_unimplemented!(),
+            OpEnum::AccountDestructed(_) => evm_unimplemented!("AccountDestructed"),
             _ => unreachable!(),
         };
     }

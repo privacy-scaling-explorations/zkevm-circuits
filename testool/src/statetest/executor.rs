@@ -30,7 +30,7 @@ pub enum StateTestError {
         expected: U256,
         found: U256,
     },
-    #[error("SkipTesstMaxGasLimit({0})")]
+    #[error("SkipTestMaxGasLimit({0})")]
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
@@ -193,7 +193,7 @@ pub fn run_test(
         ));
     }
 
-    if geth_traces[0].gas.0 > suite.max_gas {
+    if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
         return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
     }
 

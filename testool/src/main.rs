@@ -6,6 +6,7 @@ mod statetest;
 mod utils;
 
 use crate::config::TestSuite;
+use crate::statetest::ResultLevel;
 use anyhow::{bail, Result};
 use clap::Parser;
 use compiler::Compiler;
@@ -50,7 +51,7 @@ struct Args {
 
     /// Cache execution results
     #[clap(long)]
-    cache: bool,
+    cache: Option<String>,
 
     /// Generates log and and html file with info.
     #[clap(long)]
@@ -68,8 +69,6 @@ struct Args {
     #[clap(short, long)]
     v: bool,
 }
-
-const RESULT_CACHE: &str = "result.cache";
 
 fn run_single_test(test: StateTest, circuits_config: CircuitsConfig) -> Result<()> {
     println!("{}", &test);
@@ -98,10 +97,8 @@ fn go() -> Result<()> {
         run_single_test(test, circuits_config)?;
         return Ok(());
     }
-    dbg!();
 
     let config = Config::load()?;
-    dbg!();
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -139,10 +136,6 @@ fn go() -> Result<()> {
     };
 
     if args.report {
-        if args.cache {
-            bail!("--cache is not compartible with --report");
-        }
-
         let git_hash = utils::current_git_commit()?;
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -159,8 +152,18 @@ fn go() -> Result<()> {
             REPORT_FOLDER, args.suite, timestamp, git_hash
         );
 
-        let mut results = Results::with_cache(PathBuf::from(csv_filename))?;
-
+        // when running a report, the tests result of the containing cache file
+        // are used, but removing all Ignored tests
+        let mut results = if let Some(cache_filename) = args.cache {
+            let mut results = Results::from_file(PathBuf::from(cache_filename))?;
+            results
+                .tests
+                .retain(|_, test| test.level != ResultLevel::Ignored);
+            results
+        } else {
+            Results::default()
+        };
+        results.set_cache(PathBuf::from(csv_filename));
         run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
 
         // filter non-csv files and files from the same commit
@@ -190,8 +193,8 @@ fn go() -> Result<()> {
         report.print_tty()?;
         info!("{}", html_filename);
     } else {
-        let mut results = if args.cache {
-            Results::with_cache(PathBuf::from(RESULT_CACHE))?
+        let mut results = if let Some(cache_filename) = args.cache {
+            Results::with_cache(PathBuf::from(cache_filename))?
         } else {
             Results::default()
         };
