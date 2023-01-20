@@ -402,15 +402,6 @@ impl<
             &challenges,
         )?;
 
-        // TODO: if we have mpt circuit, mpt table should be assigned within it
-        // rather than being loaded externally
-        // TODO: use challenge API here??
-        config.mpt_table.load(
-            &mut layouter,
-            &self.state_circuit.updates,
-            challenges.evm_word(),
-        )?;
-
         self.keccak_circuit
             .synthesize_sub(&config.keccak_circuit, &challenges, &mut layouter)?;
         self.bytecode_circuit.synthesize_sub(
@@ -435,6 +426,13 @@ impl<
             self.mpt_circuit
                 .synthesize_sub(&config.mpt_circuit, &challenges, &mut layouter)?;
         }
+
+        // TODO: move it above, beside xxtable?
+        config.mpt_table.load(
+            &mut layouter,
+            &self.state_circuit.updates,
+            challenges.evm_word(),
+        )?;
 
         self.state_circuit
             .synthesize_sub(&config.state_circuit, &challenges, &mut layouter)?;
