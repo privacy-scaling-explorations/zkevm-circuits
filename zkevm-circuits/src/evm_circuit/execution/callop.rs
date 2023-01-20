@@ -155,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let caller_balance_word = cb.query_word_rlc();
         cb.account_read(
-            callee_address.expr(),
+            caller_address.expr(),
             AccountFieldTag::Balance,
             caller_balance_word.expr(),
         );
@@ -488,8 +488,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         self.is_insufficient_balance
             .assign(region, offset, caller_balance, value)?;
 
-        let is_insufficient = value > caller_balance;
-
+        let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
         // only call opcode do transfer in sucessful case.
         let (caller_balance_pair, callee_balance_pair) = if is_call & !is_insufficient {
             rw_offset += 2;
