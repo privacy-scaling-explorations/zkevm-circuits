@@ -3,9 +3,9 @@ use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-/// An MPT update whose validility is proved by the MptCircuit
+/// An MPT update whose validity is proved by the MptCircuit
 #[derive(Debug, Clone, Copy)]
 pub struct MptUpdate {
     key: Key,
@@ -33,19 +33,27 @@ impl MptUpdate {
 
 /// All the MPT updates in the MptCircuit, accessible by their key
 #[derive(Default, Clone, Debug)]
-pub struct MptUpdates(HashMap<Key, MptUpdate>);
+pub struct MptUpdates {
+    old_root: Word,
+    updates: BTreeMap<Key, MptUpdate>,
+}
 
 /// The field element encoding of an MPT update, which is used by the MptTable
 #[derive(Debug, Clone, Copy)]
 pub struct MptUpdateRow<F>(pub(crate) [F; 7]);
 
 impl MptUpdates {
+    pub(crate) fn old_root(&self) -> Word {
+        self.old_root
+    }
+
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
-        key(row).map(|key| *self.0.get(&key).expect("missing key in mpt updates"))
+        key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
     }
 
     pub(crate) fn mock_from(rows: &[Rw]) -> Self {
-        let map: HashMap<_, _> = rows
+        let mock_old_root = Word::from(0xcafeu64);
+        let map: BTreeMap<_, _> = rows
             .iter()
             .group_by(|row| key(row))
             .into_iter()
@@ -60,22 +68,25 @@ impl MptUpdates {
                     key_exists,
                     MptUpdate {
                         key,
-                        old_root: Word::from(i as u64),
-                        new_root: Word::from(i as u64 + 1),
+                        old_root: Word::from(i as u64) + mock_old_root,
+                        new_root: Word::from(i as u64 + 1) + mock_old_root,
                         old_value: value_prev(first),
                         new_value: value(last),
                     },
                 )
             })
             .collect();
-        MptUpdates(map)
+        MptUpdates {
+            updates: map,
+            old_root: mock_old_root,
+        }
     }
 
     pub(crate) fn table_assignments<F: Field>(
         &self,
         randomness: Value<F>,
     ) -> Vec<MptUpdateRow<Value<F>>> {
-        self.0
+        self.updates
             .values()
             .map(|update| {
                 let (new_root, old_root) = randomness
@@ -125,7 +136,7 @@ impl MptUpdate {
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone, Debug, Copy)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug, Copy, PartialOrd, Ord)]
 enum Key {
     Account {
         address: Address,
