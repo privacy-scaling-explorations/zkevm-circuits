@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -123,7 +122,7 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     storage_wrong.set_rot_key(0);
                     require!(storage_wrong.key_len(meta) => storage.key_len(meta));
                     // RLC bytes zero check (subtract 2 for first two RLP bytes)
-                    let num_bytes = storage.num_bytes_on_key_row(meta, &mut cb.base);
+                    let num_bytes = storage.num_bytes_on_key_row(meta);
                     cb.set_length(num_bytes - 2.expr());
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.

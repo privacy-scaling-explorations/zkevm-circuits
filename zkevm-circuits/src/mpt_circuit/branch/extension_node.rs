@@ -1,4 +1,3 @@
-use gadgets::util::{not, sum, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -235,7 +234,10 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 ext.is_long_odd_c16.expr(),
             ];
             let type_selectors = [type_selectors_c1.clone(), type_selectors_c16.clone()].concat();
-            let misc_selectors = [ext.is_longer_than_55.expr(), ext.is_ext_non_hashed.expr()];
+            let misc_selectors = [
+                ext.is_longer_than_55_s.expr(),
+                ext.is_ext_not_hashed_s.expr(),
+            ];
 
             ifx! {a!(ctx.branch.is_init) => {
                 // Check that the selectors are boolean
@@ -253,7 +255,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // RLP encoding checks: [key, branch]
             // In C we have nibbles, we check below only for S.
             if is_s {
-                ifx! {ext.is_longer_than_55 => {
+                ifx! {ext.is_longer_than_55_s => {
                     require!(a!(s_main.rlp1) => RLP_LIST_LONG + 1);
                 }}
                 // Verify that the lenghts are consistent.

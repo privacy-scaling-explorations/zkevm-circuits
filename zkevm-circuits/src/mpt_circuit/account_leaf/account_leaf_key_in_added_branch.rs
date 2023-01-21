@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -100,7 +99,6 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         // used for mult_diff_nonce, but it caused PoisonedConstraint
         // in extension_node_key
         let accs = ctx.accumulators;
-        let drifted_pos = ctx.branch.drifted_pos;
         let r = ctx.r.clone();
 
         let rot_ext = -ACCOUNT_DRIFTED_LEAF_IND - 1;
@@ -113,8 +111,8 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         circuit!([meta, cb.base], {
             let mut branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
 
-            // drifted leaf appears only when there is a placeholder branch
-            ifx! {branch.is_s_or_c_placeholder() => {
+            // A drifted leaf appears only when there is a placeholder branch
+            ifx! {branch.is_placeholder_s_or_c() => {
                 // Calculate and store the leaf data RLC
                 require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
@@ -123,7 +121,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
                 // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
-                // the `drifted_pos` in the parent branch.
+                // the `drifted_index` in the parent branch.
                 for is_s in [false, true] {
                     branch.set_is_s(is_s);
 
@@ -161,8 +159,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                     // is checked in `branch.rs`)
                     ifx!{branch.is_placeholder() => {
                         let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                        let len = account.num_bytes(meta, &mut cb.base);
-                        require!((1, rlc, len, a!(accs.mod_node_rlc(is_s), rot_first_child)) => @"keccak");
+                        require!((1, rlc, account.num_bytes(meta), a!(accs.mod_node_rlc(is_s), rot_first_child)) => @"keccak");
                     }}
                 }
 
@@ -192,18 +189,17 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
 
                 // Check that the RLC is calculated correctly
                 let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                let stored_key_rlc = ifx!{branch.is_s_placeholder() => {
+                let stored_key_rlc = ifx!{branch.is_placeholder_s() => {
                     a!(accs.key.rlc, rot_key_s)
                 } elsex {
                     a!(accs.key.rlc, rot_key_c)
                 }};
-                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
                 let key_rlc = key_rlc_prev +
-                    a!(drifted_pos, rot_first_child) * drifted_pos_mult +
+                    branch.drifted_nibble_rlc(meta, &mut cb.base, key_mult_prev.expr()) +
                     account.key_rlc(meta, &mut cb.base, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr());
                 require!(stored_key_rlc => key_rlc);
                 // RLC bytes zero check
-                let num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base);
+                let num_bytes = account.num_bytes_on_key_row(meta);
                 cb.set_length(num_bytes.expr() - 2.expr());
                 // Update `mult_diff`
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");

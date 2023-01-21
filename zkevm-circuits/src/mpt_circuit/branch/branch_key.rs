@@ -1,4 +1,3 @@
-use gadgets::util::{not, sum, Expr};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -146,7 +145,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
             let not_first_level = a!(position_cols.not_first_level);
             let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
             let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init_prev);
-            let modified_node_index = a!(ctx.branch.modified_node_index, rot_first_child);
+            let modified_index = a!(ctx.branch.modified_index, rot_first_child);
             let key_rlc =
                 DataTransition::new_with_rot(meta, key.rlc, rot_first_child_prev, rot_first_child);
             let key_mult =
@@ -207,7 +206,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     // The least significant nibble is added, update the multiplier for the next nibble
                     (1.expr(), r[0].expr())
                 }};
-                require!(key_rlc => key_rlc_post_ext.expr() + modified_node_index.expr() * mult.expr() * rlc_mult.expr());
+                require!(key_rlc => key_rlc_post_ext.expr() + modified_index.expr() * mult.expr() * rlc_mult.expr());
                 require!(key_mult => mult.expr() * mult_mult.expr());
 
                 // Update key parity

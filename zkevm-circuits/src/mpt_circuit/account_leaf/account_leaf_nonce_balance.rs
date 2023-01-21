@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -236,8 +235,8 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
                 require!(a!(c_main.rlp2) => nonce_num_bytes.expr() + balance_num_bytes.expr() + (2 * (1 + 32)).expr());
                 // Now check that the the key and value list length matches the account length.
-                let len = account.num_bytes(meta, &mut cb.base);
-                let key_num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base);
+                let len = account.num_bytes(meta);
+                let key_num_bytes = account.num_bytes_on_key_row(meta);
                 // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
                 let value_list_num_bytes = a!(s_main.rlp2) + 2.expr();
                 // Account length needs to equal all key bytes and all values list bytes.

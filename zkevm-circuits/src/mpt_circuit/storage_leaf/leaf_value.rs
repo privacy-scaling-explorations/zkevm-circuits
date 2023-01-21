@@ -1,4 +1,3 @@
-use gadgets::util::{not, sum, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -131,7 +130,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
     ) -> Self {
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
-        let denoter = ctx.denoter;
         let value_prev = ctx.value_prev;
         let value = ctx.value;
         let r = ctx.r.clone();
@@ -150,9 +148,6 @@ impl<F: FieldExt> LeafValueConfig<F> {
         circuit!([meta, cb.base], {
             let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
             let storage = StorageLeafInfo::new(meta, ctx.clone(), is_s, rot_key);
-
-            let is_modified_node_empty = a!(denoter.sel(is_s), rot_branch);
-            let is_placeholder_without_branch = a!(denoter.sel(is_s));
 
             let is_long = a!(accs.s_mod_node_rlc);
             let is_short = a!(accs.c_mod_node_rlc);
@@ -195,23 +190,23 @@ impl<F: FieldExt> LeafValueConfig<F> {
             // ensure that the value is set to 0 in the placeholder leaf. For
             // example when adding a new storage leaf to the trie, we have an empty child in
             // `S` proof and non-empty in `C` proof.
-            ifx! {is_modified_node_empty => {
+            ifx! {branch.contains_placeholder_leaf(meta, is_s) => {
                 require!(a!(s_main.rlp1) => 0);
             }}
 
             // Make sure the RLP encoding is correct.
             // storage = [key, value]
-            let num_bytes = storage.num_bytes(meta, &mut cb.base);
+            let num_bytes = storage.num_bytes(meta);
             // TODO(Brecht): modify the witness for empty placeholder leafs to have valid
             // RLP encoding
-            ifx! {not!(is_modified_node_empty) => {
-                let key_num_bytes = storage.num_bytes_on_key_row(meta, &mut cb.base);
+            ifx! {not!(branch.contains_placeholder_leaf(meta, is_s)) => {
+                let key_num_bytes = storage.num_bytes_on_key_row(meta);
                 require!(num_bytes => key_num_bytes.expr() + value_num_bytes.expr());
             }};
 
             // Check that the storage leaf is in its parent.
             ifx! {storage.is_below_account(meta) => {
-                ifx!{is_placeholder_without_branch => {
+                ifx!{storage.is_placeholder_without_branch(meta) => {
                     // Hash of the only storage leaf which is placeholder requires empty storage root
                     let empty_root_rlc = EMPTY_TRIE_HASH.iter().map(|v| v.expr()).collect::<Vec<_>>().rlc(&r);
                     let storage_root_rlc = storage.storage_root_in_account_above(meta);
@@ -222,8 +217,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     require!((1, a!(accs.acc_s.rlc), num_bytes, storage_root_rlc) => @"keccak");
                 }}
             } elsex {
-                // TODO(Brecht): how does is_modified_node_empty really impact these checks?
-                ifx!{not!(is_modified_node_empty.expr()) => {
+                // TODO(Brecht): how does contains_placeholder_leaf really impact these checks?
+                ifx!{not!(branch.contains_placeholder_leaf(meta, is_s)) => {
                     ifx!{branch.is_placeholder() => {
                         ifx!{branch.is_below_account(meta) => {
                             // Hash of the only storage leaf which is after a placeholder is storage trie root

@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -151,7 +150,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     require!(account_wrong.key_len(meta) => account.key_len(meta));
                     // RLC bytes zero check
                     let leaf = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                    let num_bytes = leaf.num_bytes_on_key_row(meta, &mut cb.base);
+                    let num_bytes = leaf.num_bytes_on_key_row(meta);
                     cb.set_length(num_bytes - 2.expr());
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.

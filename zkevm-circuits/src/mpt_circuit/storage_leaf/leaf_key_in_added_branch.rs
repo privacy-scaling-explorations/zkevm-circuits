@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{arithmetic::FieldExt, circuit::Region, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -167,7 +166,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
     ) -> Self {
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
-        let drifted_pos = ctx.branch.drifted_pos;
         let r = ctx.r.clone();
 
         let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
@@ -193,9 +191,9 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // Calculate and store the leaf data RLC
                 require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
-                // We need the intermediate key RLC right before `drifted_pos` is added to it.
+                // We need the intermediate key RLC right before `drifted_index` is added to it.
                 // If the branch parallel to the placeholder branch is an extension node,
-                // we have the intermediate RLC stored in the extension node `accumulators.key.rlc`.
+                // we have the intermediate RLC stored in the extension node `accs.key.rlc`.
                 let (key_rlc_prev, key_mult_prev) = ifx! {not!(is_in_first_storage_level) => {
                     ifx!{branch.is_extension() => {
                         let key_mult_prev = ifx!{branch.is_below_account(meta) => {
@@ -214,26 +212,25 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 } elsex {
                     (0.expr(), 1.expr())
                 }};
-                // Add the nibble from the branch
-                let drifted_pos_mult = key_mult_prev.expr() * ifx!{branch.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
-                let key_rlc_prev = key_rlc_prev + a!(drifted_pos, rot_branch_child) * drifted_pos_mult;
                 // Calculate the key RLC
-                let key_rlc = key_rlc_prev.expr() + storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
+                let key_rlc = key_rlc_prev.expr() +
+                    branch.drifted_nibble_rlc(meta, &mut cb.base, key_mult_prev.expr()) +
+                    storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
 
                 // Check zero bytes and mult_diff
-                ifx!{branch.is_s_or_c_placeholder() => {
+                ifx!{branch.is_placeholder_s_or_c() => {
                     // Num bytes used in RLC
-                    let num_bytes = storage.num_bytes_on_key_row(meta, &mut cb.base);
+                    let num_bytes = storage.num_bytes_on_key_row(meta);
                     // Multiplier is number of bytes
                     require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
                     // RLC bytes zero check (subtract RLP bytes used)
                     cb.set_length(num_bytes.expr() - 2.expr());
                 }}
 
-                // Check that the drifted leaf is unchanged and is stored at `drifted_pos`.
+                // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
                 let mult = a!(accs.acc_s.mult);
                 let (stored_key_rlc, mod_rlc, do_lookup, mod_hash) = matchx! {
-                    branch.is_branch_s_placeholder => {
+                    branch.is_placeholder_s() => {
                         /* Leaf key in added branch: neighbour leaf in the added branch (S) */
                         // `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
                         // in a new branch.
@@ -243,7 +240,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                         // `modified_node` (the leaf that has been added).
                         (a!(accs.key.rlc, rot_key_s), rlc, true.expr(), a!(accs.mod_node_rlc(true), rot_branch_child))
                     },
-                    branch.is_branch_c_placeholder => {
+                    branch.is_placeholder_c() => {
                         /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
                         // `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
                         // has been deleted (and there were only two leaves, so the branch was deleted).
@@ -253,14 +250,13 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                         // `modified_node` (the leaf that is to be deleted).
                         (a!(accs.key.rlc, rot_key_c), rlc, true.expr(), a!(accs.mod_node_rlc(false), rot_branch_child))
                     },
-                    not!(branch.is_s_or_c_placeholder()) => {
+                    not!(branch.is_placeholder_s_or_c()) => {
                         (key_rlc.expr(), 0.expr(), false.expr(), 0.expr())
                     },
                 };
                 require!(stored_key_rlc => key_rlc);
                 ifx! {do_lookup => {
-                    let len = storage.num_bytes(meta, &mut cb.base);
-                    require!((1, mod_rlc, len, mod_hash) => @"keccak");
+                    require!((1, mod_rlc, storage.num_bytes(meta), mod_hash) => @"keccak");
                 }}
             }}
         });

@@ -1,6 +1,5 @@
 use super::{helpers::MPTConstraintBuilder, MPTContext};
-use crate::{circuit, circuit_tools::DataTransition, util::Expr};
-use gadgets::util::{not, or, sum};
+use crate::{circuit, circuit_tools::DataTransition};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -62,7 +61,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let is_branch_child = DataTransition::new(meta, branch.is_child);
             let is_last_branch_child = DataTransition::new(meta, branch.is_last_child);
             let is_modified = DataTransition::new(meta, branch.is_modified);
-            let is_at_drifted_pos = DataTransition::new(meta, branch.is_at_drifted_pos);
+            let is_drifted = DataTransition::new(meta, branch.is_drifted);
 
             let proof_type_id = DataTransition::new(meta, proof_type.proof_type);
             let is_storage_mod = DataTransition::new(meta, proof_type.is_storage_mod);
@@ -116,7 +115,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                     is_last_branch_child.expr(),
                     is_branch_child.expr(),
                     is_modified.expr(),
-                    is_at_drifted_pos.expr(),
+                    is_drifted.expr(),
                     sel1.expr(),
                     sel2.expr(),
                 ];

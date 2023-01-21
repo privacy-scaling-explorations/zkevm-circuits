@@ -1,4 +1,3 @@
-use gadgets::util::Expr;
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 

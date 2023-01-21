@@ -371,7 +371,7 @@ pub trait Selectable<F> {
     fn select(&self, condition: Expression<F>, other: &Self) -> Self;
     /// Returns itself if the condition holds, else zero
     fn conditional(&self, condition: Expression<F>) -> Self;
-    /// Adds 2 Selectable together
+    /// Adds 2 Selectables together
     fn add_expr(&self, other: &Self) -> Self;
     /// Creates a vector of Expressions representing itself
     fn to_vec(&self) -> Vec<Expression<F>>;
@@ -407,7 +407,8 @@ impl<F: FieldExt> Selectable<F> for Expression<F> {
     }
 }
 
-/// Implementation trait `Expr` for type able to be casted to u64
+/// Implementation trait `Selectable` for type able to be casted to an
+/// expression
 #[macro_export]
 macro_rules! impl_selectable {
     ($type:ty, $v:expr) => {
@@ -530,172 +531,192 @@ macro_rules! _cb {
     }};
 }
 
-/// Constraint builder macros
+/// Concats arguments with preamble consisting of the originating file and line.
+#[macro_export]
+macro_rules! concat_with_preamble {
+    ($($args:expr),* $(,)?) => {{
+        concat!(
+            file!(),
+            ":",
+            line!(),
+            ": ",
+            $(
+                $args,
+            )*
+        )
+    }};
+}
+
+/// _require
+#[macro_export]
+macro_rules! _require {
+    ($cb:expr, $lhs:expr => bool) => {{
+        $cb.require_boolean(
+            concat_with_preamble!(
+                stringify!($lhs),
+                " => ",
+                "bool",
+            ),
+            $lhs.expr(),
+        );
+    }};
+
+    ($cb:expr, $lhs:expr => $rhs:expr) => {{
+        let description = concat_with_preamble!(
+            stringify!($lhs),
+            " => ",
+            stringify!($rhs)
+        );
+        _require!($cb, description, $lhs => $rhs)
+    }};
+
+    ($cb:expr, $descr:expr, $lhs:expr => $rhs:expr) => {{
+        let rhs = $rhs.to_expr_vec();
+        if rhs.len() == 1 {
+            $cb.require_equal(
+                Box::leak($descr.to_string().into_boxed_str()),
+                $lhs.expr(),
+                rhs[0].expr(),
+            );
+        } else {
+            $cb.require_in_set(
+                Box::leak($descr.to_string().into_boxed_str()),
+                $lhs.expr(),
+                rhs.clone(),
+            );
+        }
+    }};
+
+    // Lookup using a tuple
+    ($cb:expr, ($($v:expr),+) => @$tag:expr) => {{
+        $cb.lookup(
+            concat_with_preamble!(
+                "(",
+                $(
+                    stringify!($v),
+                    ", ",
+                )*
+                ") => @",
+                stringify!($tag),
+            ),
+            $tag.to_string(),
+            vec![$($v.expr(),)*],
+        );
+    }};
+    ($cb:expr, $descr:expr, ($($v:expr),+)  => @$tag:expr) => {{
+        $cb.lookup(
+            Box::leak($descr.into_boxed_str()),
+            $tag.to_string(),
+            vec![$($v.expr(),)*],
+        );
+    }};
+
+    // Lookup using an array
+    ($cb:expr, $values:expr => @$tag:expr) => {{
+        $cb.lookup(
+            concat_with_preamble!(
+                stringify!($values),
+                " => @",
+                stringify!($tag),
+            ),
+            $tag.to_string(),
+            $values.clone(),
+        );
+    }};
+    ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
+        $cb.lookup(
+            Box::leak($descr.into_boxed_str()),
+            $tag.to_string(),
+            $values.clone(),
+        );
+    }};
+
+    // Put values in a lookup table using a tuple
+    ($cb:expr, @$tag:expr => ($($v:expr),+)) => {{
+        $cb.lookup_table(
+            concat_with_preamble!(
+                "@",
+                stringify!($tag),
+                " => (",
+                $(
+                    stringify!($v),
+                    ", ",
+                )*
+                ")",
+            ),
+            $tag.to_string(),
+            vec![$($v.expr(),)*],
+        );
+    }};
+    // Put values in a lookup table using an array
+    ($cb:expr, @$tag:expr => $values:expr) => {{
+        $cb.lookup_table(
+            concat_with_preamble!(
+                "@",
+                stringify!($tag),
+                " => (",
+                stringify!($values),
+                ")",
+            ),
+            $tag.to_string(),
+            $values,
+        );
+    }};
+}
+
+/// matchx
+#[macro_export]
+macro_rules! _matchx {
+    ($cb:expr, $($condition:expr => $when:expr),* $(,)?)  => {{
+        let mut conditions = Vec::new();
+        let mut cases = Vec::new();
+        $(
+            $cb.push_condition($condition.expr());
+            let ret = $when.clone();
+            $cb.pop_condition();
+            cases.push(($condition.expr(), ret));
+            conditions.push($condition.expr());
+        )*
+        _require!($cb, sum::expr(&conditions) => 1);
+        cases.apply_conditions()
+    }};
+}
+
+/// ifx
+#[macro_export]
+macro_rules! _ifx {
+    ($cb:expr, $($condition:expr),* => $when_true:block $(elsex $when_false:block)?)  => {{
+        let condition = and::expr([$($condition.expr()),*]);
+
+        $cb.push_condition(condition.expr());
+        let ret_true = $when_true.clone();
+        $cb.pop_condition();
+
+        #[allow(unused_assignments, unused_mut)]
+        let mut ret = ret_true.conditional(condition.expr());
+        $(
+            $cb.push_condition(not::expr(condition.expr()));
+            let ret_false = $when_false;
+            $cb.pop_condition();
+
+            ret = ret_true.select(condition.expr(), &ret_false);
+        )*
+        ret
+    }};
+}
+
+/// Circuit builder macros
+/// Nested macro's can't do repetition (https://github.com/rust-lang/rust/issues/35853)
+/// so we expose a couple of permutations here manually.
 #[macro_export]
 macro_rules! circuit {
     ([$meta:expr, $cb:expr], $content:block) => {{
         #[allow(unused_imports)]
-        use gadgets::util::and;
+        use $crate::{concat_with_preamble, _require, _matchx, _ifx};
         #[allow(unused_imports)]
-        use crate::circuit_tools::Selectable;
+        use gadgets::util::{and, not, or, sum, Expr};
         #[allow(unused_imports)]
-        use crate::circuit_tools::Expressable;
-        #[allow(unused_imports)]
-        use crate::circuit_tools::Conditionable;
-        // Nested macro's can't do repetition... (https://github.com/rust-lang/rust/issues/35853)
-        #[allow(unused_macros)]
-        macro_rules! ifx {
-            ($condition:expr => $when_true:block elsex $when_false:block) => {{
-                $cb.push_condition($condition.expr());
-                let ret_true = $when_true;
-                $cb.pop_condition();
-
-                $cb.push_condition(not::expr($condition.expr()));
-                let ret_false = $when_false;
-                $cb.pop_condition();
-
-                ret_true.select($condition.expr(), &ret_false)
-            }};
-            ($condition_a:expr, $condition_b:expr => $when_true:block elsex $when_false:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
-
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true;
-                $cb.pop_condition();
-
-                $cb.push_condition(not::expr(condition.expr()));
-                let ret_false = $when_false;
-                $cb.pop_condition();
-
-                ret_true.select(condition.expr(), &ret_false)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block elsex $when_false:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
-
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true;
-                $cb.pop_condition();
-
-                $cb.push_condition(not::expr(condition.expr()));
-                let ret_false = $when_false;
-                $cb.pop_condition();
-
-                ret_true.select(condition.expr(), &ret_false)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
-
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true;
-                $cb.pop_condition();
-
-                $cb.push_condition(not::expr(condition.expr()));
-                let ret_false = $when_false;
-                $cb.pop_condition();
-
-                ret_true.select(condition.expr(), &ret_false)
-            }};
-
-            ($condition:expr => $when_true:block) => {{
-                $cb.push_condition($condition.expr());
-                let ret_true = $when_true.clone();
-                $cb.pop_condition();
-
-                ret_true.conditional($condition.expr())
-            }};
-            ($condition_a:expr, $condition_b:expr => $when_true:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr()]);
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true.clone();
-                $cb.pop_condition();
-
-                ret_true.conditional(condition.expr())
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr()]);
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true.clone();
-                $cb.pop_condition();
-
-                ret_true.conditional(condition.expr())
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr()]);
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true.clone();
-                $cb.pop_condition();
-
-                ret_true.conditional(condition.expr())
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr => $when_true:block) => {{
-                let condition = and::expr([$condition_a.expr(), $condition_b.expr(), $condition_c.expr(), $condition_d.expr(), $condition_e.expr()]);
-                $cb.push_condition(condition.expr());
-                let ret_true = $when_true.clone();
-                $cb.pop_condition();
-
-                ret_true.conditional(condition.expr())
-            }};
-        }
-
-        #[allow(unused_macros)]
-        macro_rules! matchx {
-            ($condition_a:expr => $when_a:expr,) => {{
-                $cb.push_condition($condition_a.expr());
-                let ret_a = $when_a.clone();
-                $cb.pop_condition();
-
-                require!($condition_a.expr() => 1);
-                ret_a.conditional($condition_a.expr())
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr,) => {{
-                $cb.push_condition($condition_a.expr());
-                let ret_a = $when_a.clone();
-                $cb.pop_condition();
-
-                $cb.push_condition($condition_b.expr());
-                let ret_b = $when_b.clone();
-                $cb.pop_condition();
-
-                require!($condition_a.expr() + $condition_b.expr() => 1);
-                vec![($condition_a.expr(), ret_a), ($condition_b.expr(), ret_b)].apply_conditions()
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr,) => {{
-                $cb.push_condition($condition_a.expr());
-                let ret_a = $when_a.clone();
-                $cb.pop_condition();
-
-                $cb.push_condition($condition_b.expr());
-                let ret_b = $when_b.clone();
-                $cb.pop_condition();
-
-                $cb.push_condition($condition_c.expr());
-                let ret_c = $when_c.clone();
-                $cb.pop_condition();
-
-                require!($condition_a.expr() + $condition_b.expr() + $condition_c.expr() => 1);
-                vec![($condition_a.expr(), ret_a), ($condition_b.expr(), ret_b), ($condition_c.expr(), ret_c)].apply_conditions()
-            }};
-            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr,) => {{
-                $cb.push_condition($condition_a.expr());
-                let ret_a = $when_a.clone();
-                $cb.pop_condition();
-
-                $cb.push_condition($condition_b.expr());
-                let ret_b = $when_b.clone();
-                $cb.pop_condition();
-
-                $cb.push_condition($condition_c.expr());
-                let ret_c = $when_c.clone();
-                $cb.pop_condition();
-
-                $cb.push_condition($condition_d.expr());
-                let ret_d = $when_d.clone();
-                $cb.pop_condition();
-
-                require!($condition_a.expr() + $condition_b.expr() + $condition_c.expr() + $condition_d.expr() => 1);
-                vec![($condition_a.expr(), ret_a), ($condition_b.expr(), ret_b), ($condition_c.expr(), ret_c), ($condition_d.expr(), ret_d)].apply_conditions()
-            }};
-        }
+        use crate::circuit_tools::{Conditionable, Expressable, Selectable};
 
         #[allow(unused_macros)]
         macro_rules! f {
@@ -734,173 +755,95 @@ macro_rules! circuit {
         #[allow(unused_macros)]
         macro_rules! require {
             ($lhs:expr => bool) => {{
-                $cb.require_boolean(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": ",
-                        stringify!($lhs),
-                        " in ",
-                        stringify!($rhs),
-                    ),
-                    $lhs.expr(),
-                );
+                _require!($cb, $lhs => bool);
             }};
 
             ($lhs:expr => $rhs:expr) => {{
-                let rhs = $rhs.to_expr_vec();
-                let description = concat!(
-                    file!(),
-                    ":",
-                    line!(),
-                    ": ",
-                    stringify!($lhs),
-                    " => ",
-                    stringify!($rhs)
-                );
-                if rhs.len() == 1 {
-                    $cb.require_equal(
-                        description,
-                        $lhs.expr(),
-                        rhs[0].expr(),
-                    );
-                } else {
-                    $cb.require_in_set(
-                        description,
-                        $lhs.expr(),
-                        rhs.clone(),
-                    );
-                }
+                _require!($cb, $lhs => $rhs);
             }};
+
             ($name:expr, $lhs:expr => $rhs:expr) => {{
-                let description = format!("{}:{}[{}]: {} => {}",  file!(), line!(), $name, stringify!($lhs), stringify!($rhs));
-                let rhs = $rhs.to_expr_vec();
-                if rhs.len() == 1 {
-                    $cb.require_equal(
-                        Box::leak(description.into_boxed_str()),
-                        $lhs.expr(),
-                        rhs[0].expr(),
-                    );
-                } else {
-                    $cb.require_in_set(
-                        Box::leak(description.into_boxed_str()),
-                        $lhs.expr(),
-                        rhs.clone(),
-                    );
-                }
+                _require!($cb, $name, $lhs => $rhs);
+            }};
+
+            (($a:expr) => @$tag:expr) => {{
+                _require!($cb, ($a) => @$tag);
+            }};
+
+            (($a:expr, $b:expr) => @$tag:expr) => {{
+                _require!($cb, ($a, $b) => @$tag);
             }};
 
             (($a:expr, $b:expr, $c:expr) => @$tag:expr) => {{
-                $cb.lookup(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": (",
-                        stringify!($a),
-                        ", ",
-                        stringify!($b),
-                        ", ",
-                        stringify!($c),
-                        ") => @",
-                        stringify!($tag),
-                    ),
-                    $tag.to_string(),
-                    vec![$a.expr(), $b.expr(), $c.expr()],
-                );
+                _require!($cb, ($a, $b, $c) => @$tag);
             }};
 
             (($a:expr, $b:expr, $c:expr, $d:expr) => @$tag:expr) => {{
-                $cb.lookup(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": (",
-                        stringify!($a),
-                        ", ",
-                        stringify!($b),
-                        ", ",
-                        stringify!($c),
-                        ", ",
-                        stringify!($d),
-                        ") => @",
-                        stringify!($tag),
-                    ),
-                    $tag.to_string(),
-                    vec![$a.expr(), $b.expr(), $c.expr(), $d.expr()],
-                );
+                _require!($cb, ($a, $b, $c, $d) => @$tag);
             }};
 
             ($values:expr => @$tag:expr) => {{
-                $cb.lookup(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": ",
-                        stringify!($values),
-                        " => @",
-                        stringify!($tag),
-                    ),
-                    $tag.to_string(),
-                    $values.clone(),
-                );
-            }};
-
-            ($descr:expr, ($a:expr, $b:expr, $c:expr) => @$tag:expr) => {{
-                $cb.lookup(
-                    Box::leak($descr.into_boxed_str()),
-                    $tag.to_string(),
-                    vec![$a.expr(), $b.expr(), $c.expr()],
-                );
+                _require!($cb, $values => @$tag);
             }};
 
             ($descr:expr, $values:expr => @$tag:expr) => {{
-                $cb.lookup(
-                    Box::leak($descr.into_boxed_str()),
-                    $tag.to_string(),
-                    $values.clone(),
-                );
+                _require!($cb, $descr, $values => @$tag);
             }};
 
             (@$tag:expr => ($a:expr, $b:expr, $c:expr)) => {{
-                $cb.lookup_table(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": @",
-                        stringify!($tag),
-                        " => (",
-                        stringify!($a),
-                        ", ",
-                        stringify!($b),
-                        ", ",
-                        stringify!($c),
-                        ")",
-                    ),
-                    $tag.to_string(),
-                    vec![$a.expr(), $b.expr(), $c.expr()],
-                );
+                _require!($cb, @$tag => ($a, $b, $c));
             }};
 
-            (@$tag:expr => $a:expr) => {{
-                $cb.lookup_table(
-                    concat!(
-                        file!(),
-                        ":",
-                        line!(),
-                        ": @",
-                        stringify!($tag),
-                        " => (",
-                        stringify!($a),
-                        ")",
-                    ),
-                    $tag.to_string(),
-                    $a,
-                );
+            (@$tag:expr => $values:expr) => {{
+                _require!($cb, @$tag => $values);
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! ifx {
+            ($condition:expr => $when_true:block elsex $when_false:block) => {{
+                _ifx!($cb, $condition => $when_true elsex $when_false)
+            }};
+            ($condition_a:expr, $condition_b:expr => $when_true:block elsex $when_false:block) => {{
+                _ifx!($cb, $condition_a, $condition_b => $when_true elsex $when_false)
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block elsex $when_false:block) => {{
+                _ifx!($cb, $condition_a, $condition_b, $condition_c => $when_true elsex $when_false)
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
+                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d => $when_true elsex $when_false)
+            }};
+
+            ($condition:expr => $when_true:block) => {{
+                _ifx!($cb, $condition => $when_true)
+            }};
+            ($condition_a:expr, $condition_b:expr => $when_true:block) => {{
+                _ifx!($cb, $condition_a, $condition_b => $when_true)
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr => $when_true:block) => {{
+                _ifx!($cb, $condition_a, $condition_b, $condition_c => $when_true)
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block) => {{
+                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d => $when_true)
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr => $when_true:block) => {{
+                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d, $condition_e => $when_true)
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! matchx {
+            ($condition_a:expr => $when_a:expr,) => {{
+                _matchx!($cb, $condition_a => $when_a)
+            }};
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr,) => {{
+                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b)
+            }};
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr,) => {{
+                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c)
+            }};
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr,) => {{
+                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c, $condition_d => $when_d,)
             }};
         }
 

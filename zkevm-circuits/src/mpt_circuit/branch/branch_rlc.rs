@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Expression, VirtualCells},

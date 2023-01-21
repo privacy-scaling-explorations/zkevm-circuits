@@ -1,4 +1,3 @@
-use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -204,7 +203,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
 
             // Num bytes used in RLC
-            let num_bytes = account.num_bytes_on_key_row(meta, &mut cb.base);
+            let num_bytes = account.num_bytes_on_key_row(meta);
             // Update `mult_diff`
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check

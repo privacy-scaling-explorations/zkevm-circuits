@@ -1,9 +1,6 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
-use gadgets::{
-    impl_expr,
-    util::{sum, Expr},
-};
+use gadgets::{impl_expr, util::Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},

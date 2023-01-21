@@ -10,7 +10,7 @@ use crate::{
     },
     util::Expr,
 };
-use gadgets::util::{and, not, or};
+use gadgets::util::{and, not};
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Expression, VirtualCells},
@@ -22,7 +22,7 @@ use super::{
     param::{
         ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_ROWS,
         ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
-        ACCOUNT_NON_EXISTING_IND, BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM,
+        ACCOUNT_NON_EXISTING_IND, ARITY, BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_C_EXT_LONGER_THAN_55_POS,
         IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_LONGER_THAN_55_POS,
@@ -46,13 +46,16 @@ pub(crate) struct BranchNodeInfo<F> {
     pub(crate) is_long_even_c1: Expression<F>,
     pub(crate) is_long_odd_c16: Expression<F>,
     pub(crate) is_long_odd_c1: Expression<F>,
-    pub(crate) is_longer_than_55: Expression<F>,
-    pub(crate) is_branch_non_hashed: Expression<F>,
-    pub(crate) is_ext_non_hashed: Expression<F>,
+    pub(crate) is_longer_than_55_s: Expression<F>,
+    pub(crate) is_longer_than_55_c: Expression<F>,
+    pub(crate) is_not_hashed_s: Expression<F>,
+    pub(crate) is_not_hashed_c: Expression<F>,
+    pub(crate) is_ext_not_hashed_s: Expression<F>,
+    pub(crate) is_ext_not_hashed_c: Expression<F>,
     pub(crate) is_c1: Expression<F>,
     pub(crate) is_c16: Expression<F>,
-    pub(crate) is_branch_s_placeholder: Expression<F>,
-    pub(crate) is_branch_c_placeholder: Expression<F>,
+    pub(crate) is_placeholder_s: Expression<F>,
+    pub(crate) is_placeholder_c: Expression<F>,
     pub(crate) nibbles_counter: DataTransition<F>,
 }
 
@@ -68,49 +71,25 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     ) -> Self {
         let s_main = ctx.s_main;
         let rot = Rotation(rot_branch_init);
-        let is_short_c16 = meta.query_advice(s_main.bytes[IS_EXT_SHORT_C16_POS - RLP_NUM], rot);
-        let is_short_c1 = meta.query_advice(s_main.bytes[IS_EXT_SHORT_C1_POS - RLP_NUM], rot);
-        let is_long_even_c16 =
-            meta.query_advice(s_main.bytes[IS_EXT_LONG_EVEN_C16_POS - RLP_NUM], rot);
-        let is_long_even_c1 =
-            meta.query_advice(s_main.bytes[IS_EXT_LONG_EVEN_C1_POS - RLP_NUM], rot);
-        let is_long_odd_c16 =
-            meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C16_POS - RLP_NUM], rot);
-        let is_long_odd_c1 = meta.query_advice(s_main.bytes[IS_EXT_LONG_ODD_C1_POS - RLP_NUM], rot);
 
-        let is_longer_than_55 = meta.query_advice(
-            s_main.bytes[if is_s {
-                IS_S_EXT_LONGER_THAN_55_POS
-            } else {
-                IS_C_EXT_LONGER_THAN_55_POS
-            } - RLP_NUM],
-            rot,
-        );
-        let is_ext_non_hashed = meta.query_advice(
-            s_main.bytes[if is_s {
-                IS_S_EXT_NODE_NON_HASHED_POS
-            } else {
-                IS_C_EXT_NODE_NON_HASHED_POS
-            } - RLP_NUM],
-            rot,
-        );
+        let mut get_value = |pos| meta.query_advice(s_main.bytes[pos - RLP_NUM], rot);
 
-        let is_branch_non_hashed = meta.query_advice(
-            s_main.bytes[if is_s {
-                IS_S_BRANCH_NON_HASHED_POS
-            } else {
-                IS_C_BRANCH_NON_HASHED_POS
-            } - RLP_NUM],
-            rot,
-        );
-
-        let is_c1 = meta.query_advice(s_main.bytes[IS_BRANCH_C1_POS - RLP_NUM], rot);
-        let is_c16 = meta.query_advice(s_main.bytes[IS_BRANCH_C16_POS - RLP_NUM], rot);
-
-        let is_branch_s_placeholder =
-            meta.query_advice(s_main.bytes[IS_BRANCH_S_PLACEHOLDER_POS - RLP_NUM], rot);
-        let is_branch_c_placeholder =
-            meta.query_advice(s_main.bytes[IS_BRANCH_C_PLACEHOLDER_POS - RLP_NUM], rot);
+        let is_short_c16 = get_value(IS_EXT_SHORT_C16_POS);
+        let is_short_c1 = get_value(IS_EXT_SHORT_C1_POS);
+        let is_long_even_c16 = get_value(IS_EXT_LONG_EVEN_C16_POS);
+        let is_long_even_c1 = get_value(IS_EXT_LONG_EVEN_C1_POS);
+        let is_long_odd_c16 = get_value(IS_EXT_LONG_ODD_C16_POS);
+        let is_long_odd_c1 = get_value(IS_EXT_LONG_ODD_C1_POS);
+        let is_longer_than_55_s = get_value(IS_S_EXT_LONGER_THAN_55_POS);
+        let is_longer_than_55_c = get_value(IS_C_EXT_LONGER_THAN_55_POS);
+        let is_ext_not_hashed_s = get_value(IS_S_EXT_NODE_NON_HASHED_POS);
+        let is_ext_not_hashed_c = get_value(IS_C_EXT_NODE_NON_HASHED_POS);
+        let is_not_hashed_s = get_value(IS_S_BRANCH_NON_HASHED_POS);
+        let is_not_hashed_c = get_value(IS_C_BRANCH_NON_HASHED_POS);
+        let is_c1 = get_value(IS_BRANCH_C1_POS);
+        let is_c16 = get_value(IS_BRANCH_C16_POS);
+        let is_placeholder_s = get_value(IS_BRANCH_S_PLACEHOLDER_POS);
+        let is_placeholder_c = get_value(IS_BRANCH_C_PLACEHOLDER_POS);
 
         let nibbles_counter = DataTransition::new_with_rot(
             meta,
@@ -129,13 +108,16 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             is_long_even_c1,
             is_long_odd_c16,
             is_long_odd_c1,
-            is_longer_than_55,
-            is_branch_non_hashed,
-            is_ext_non_hashed,
+            is_longer_than_55_s,
+            is_longer_than_55_c,
+            is_not_hashed_s,
+            is_not_hashed_c,
+            is_ext_not_hashed_s,
+            is_ext_not_hashed_c,
             is_c1,
             is_c16,
-            is_branch_s_placeholder,
-            is_branch_c_placeholder,
+            is_placeholder_s,
+            is_placeholder_c,
             nibbles_counter,
         }
     }
@@ -145,8 +127,13 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         meta: &mut VirtualCells<F>,
         is_s: bool,
     ) -> Expression<F> {
-        // All children contain the same data so we just jump to the first child here
-        contains_placeholder_leaf(meta, self.ctx.clone(), is_s, self.rot_branch_init + 1)
+        // All children contain the same data so we just jump to the last child here
+        contains_placeholder_leaf(
+            meta,
+            self.ctx.clone(),
+            is_s,
+            self.rot_branch_init + (ARITY as i32) - 1,
+        )
     }
 
     /// Adds selector constraints for branch init
@@ -215,32 +202,56 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         self.is_c16.expr()
     }
 
-    pub(crate) fn is_s_placeholder(&self) -> Expression<F> {
-        self.is_branch_s_placeholder.expr()
+    pub(crate) fn is_placeholder_s(&self) -> Expression<F> {
+        self.is_placeholder_s.expr()
     }
 
-    pub(crate) fn is_c_placeholder(&self) -> Expression<F> {
-        self.is_branch_c_placeholder.expr()
+    pub(crate) fn is_placeholder_c(&self) -> Expression<F> {
+        self.is_placeholder_c.expr()
     }
 
     pub(crate) fn is_placeholder(&self) -> Expression<F> {
         if self.is_s {
-            self.is_s_placeholder()
+            self.is_placeholder_s()
         } else {
-            self.is_c_placeholder()
+            self.is_placeholder_c()
         }
     }
 
-    pub(crate) fn is_s_or_c_placeholder(&self) -> Expression<F> {
-        self.is_s_placeholder() + self.is_c_placeholder()
+    pub(crate) fn is_placeholder_s_or_c(&self) -> Expression<F> {
+        self.is_placeholder_s() + self.is_placeholder_c()
     }
 
-    pub(crate) fn is_branch_non_hashed(&self) -> Expression<F> {
-        self.is_branch_non_hashed.expr()
+    pub(crate) fn is_not_hashed_s(&self) -> Expression<F> {
+        self.is_not_hashed_s.expr()
     }
 
-    pub(crate) fn is_ext_non_hashed(&self) -> Expression<F> {
-        self.is_ext_non_hashed.expr()
+    pub(crate) fn is_not_hashed_c(&self) -> Expression<F> {
+        self.is_not_hashed_c.expr()
+    }
+
+    pub(crate) fn is_not_hashed(&self) -> Expression<F> {
+        if self.is_s {
+            self.is_not_hashed_s()
+        } else {
+            self.is_not_hashed_c()
+        }
+    }
+
+    pub(crate) fn is_ext_not_hashed_s(&self) -> Expression<F> {
+        self.is_ext_not_hashed_s.expr()
+    }
+
+    pub(crate) fn is_ext_not_hashed_c(&self) -> Expression<F> {
+        self.is_ext_not_hashed_c.expr()
+    }
+
+    pub(crate) fn is_ext_not_hashed(&self) -> Expression<F> {
+        if self.is_s {
+            self.is_ext_not_hashed_s()
+        } else {
+            self.is_ext_not_hashed_c()
+        }
     }
 
     pub(crate) fn nibbles_counter(&self) -> DataTransition<F> {
@@ -359,7 +370,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         circuit!([_meta, _cb!()], {
             matchx! {
                 self.is_short() + self.is_long() => get_len_list_short(a!(self.ctx.s_main.rlp1, rel_rot)),
-                self.is_longer_than_55 => get_len_short(a!(self.ctx.s_main.bytes[0], rel_rot)),
+                self.is_longer_than_55_s => get_len_short(a!(self.ctx.s_main.bytes[0], rel_rot)),
             }
         })
     }
@@ -369,7 +380,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         circuit!([_meta, _cb!()], {
             matchx! {
                 self.is_short() + self.is_long() => 1.expr(),
-                self.is_longer_than_55 => 2.expr(),
+                self.is_longer_than_55_s => 2.expr(),
             }
         })
     }
@@ -381,7 +392,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             matchx! {
                 self.is_short() => 1.expr(), // Only a single nibble (stored in s_rlp2)
                 self.is_long() => get_len_short(a!(self.ctx.s_main.rlp2, rel_rot)),
-                self.is_longer_than_55 => get_len_short(a!(self.ctx.s_main.bytes[0], rel_rot)),
+                self.is_longer_than_55_s => get_len_short(a!(self.ctx.s_main.bytes[0], rel_rot)),
             }
         })
     }
@@ -393,7 +404,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             matchx! (
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
-                self.is_longer_than_55 => 2.expr(),
+                self.is_longer_than_55_s => 2.expr(),
             ) + self.ext_key_len(meta, 0)
         })
     }
@@ -434,7 +445,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             let (rlc, num_bytes, is_branch_non_hashed) = ifx! {self.is_extension() => {
                 // Note: acc_c in both cases.
                 let ext_rlc = a!(self.ctx.accumulators.acc_c.rlc);
-                (ext_rlc, self.ext_num_bytes(meta), self.is_ext_non_hashed())
+                (ext_rlc, self.ext_num_bytes(meta), self.is_ext_not_hashed())
             } elsex {
                 let acc = self.ctx.accumulators.acc(self.is_s);
                 // TODO: acc currently doesn't have branch ValueNode info
@@ -442,7 +453,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
                     &[a!(acc.rlc), RLP_NIL.expr()],
                     &[a!(acc.mult)],
                 );
-                (branch_rlc, self.num_bytes(meta), self.is_branch_non_hashed())
+                (branch_rlc, self.num_bytes(meta), self.is_not_hashed())
             }};
             // Check against the value expected in the parent
             ifx! {not!(self.is_placeholder()) => {
@@ -526,6 +537,21 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             }
         })
     }
+
+    pub(crate) fn drifted_nibble_rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        key_mult_prev: Expression<F>,
+    ) -> Expression<F> {
+        circuit!([meta, cb], {
+            // Add the nibble from the branch (drifted_index is set to the same value for
+            // all children)
+            let drifted_mult =
+                key_mult_prev.expr() * ifx! {self.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
+            a!(self.ctx.branch.drifted_index, self.rot_branch_init + 1) * drifted_mult
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -582,12 +608,8 @@ impl<F: FieldExt> StorageLeafInfo<F> {
     }
 
     /// Returns the total length of the leaf (including RLP bytes)
-    pub(crate) fn num_bytes(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        circuit!([meta, cb], {
+    pub(crate) fn num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
             ifx! {self.is_long() => {
                 2.expr() + a!(self.ctx.s_main.rlp2, self.rot_key)
             } elsex {
@@ -597,12 +619,8 @@ impl<F: FieldExt> StorageLeafInfo<F> {
     }
 
     /// Number of RLP bytes for leaf and key
-    pub(crate) fn num_rlp_bytes(
-        &self,
-        _meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        circuit!([meta, cb], {
+    pub(crate) fn num_rlp_bytes(&self, _meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
             matchx! {
                 self.is_very_short() => 1.expr(),
                 self.is_short() => 2.expr(),
@@ -623,12 +641,8 @@ impl<F: FieldExt> StorageLeafInfo<F> {
     }
 
     /// Number of bytes of RLP (including list RLP bytes) and key
-    pub(crate) fn num_bytes_on_key_row(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        self.num_rlp_bytes(meta, cb) + self.key_len(meta)
+    pub(crate) fn num_bytes_on_key_row(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        self.num_rlp_bytes(meta) + self.key_len(meta)
     }
 
     pub(crate) fn num_key_nibbles(
@@ -714,21 +728,26 @@ impl<F: FieldExt> StorageLeafInfo<F> {
             .rlc(&self.ctx.r)
     }
 
-    pub(crate) fn is_placeholder(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
+    pub(crate) fn is_placeholder(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         let rot_parent = if self.is_s { -1 } else { -3 };
         let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
-        circuit!([meta, cb], {
+        circuit!([meta, _cb!()], {
             ifx! {self.is_below_account(meta) => {
-                // TODO(Brecht): do we check this value somehow someplace?
-                a!(self.ctx.denoter.sel(self.is_s), 1)
+                self.is_placeholder_without_branch(meta)
             } elsex {
-                let branch = BranchNodeInfo::new(meta, self.ctx.clone(), self.is_s, rot_branch_init);
+                let branch = BranchNodeInfo::new(meta, self.ctx.clone(), self.is_s, self.rot_key + rot_branch_init);
                 branch.contains_placeholder_leaf(meta, self.is_s)
             }}
+        })
+    }
+
+    pub(crate) fn is_placeholder_without_branch(
+        &self,
+        meta: &mut VirtualCells<F>,
+    ) -> Expression<F> {
+        let rot_value = 1;
+        circuit!([meta, _cb!()], {
+            a!(self.ctx.denoter.sel(self.is_s), self.rot_key + rot_value)
         })
     }
 }
@@ -777,23 +796,15 @@ impl<F: FieldExt> AccountLeafInfo<F> {
         self.is_balance_long.expr()
     }
 
-    pub(crate) fn nonce_len(
-        &self,
-        meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        circuit!([meta, _cb], {
+    pub(crate) fn nonce_len(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
             2.expr() + a!(self.ctx.s_main.rlp2, self.rot_key)
         })
     }
 
     /// Returns the total length of the leaf (including RLP bytes)
-    pub(crate) fn num_bytes(
-        &self,
-        meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        circuit!([meta, _cb], {
+    pub(crate) fn num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
             2.expr() + a!(self.ctx.s_main.rlp2, self.rot_key)
         })
     }
@@ -806,20 +817,12 @@ impl<F: FieldExt> AccountLeafInfo<F> {
     }
 
     /// Number of bytes of RLP (including list RLP bytes) and key
-    pub(crate) fn num_bytes_on_key_row(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
-        self.num_rlp_bytes(meta, cb) + self.key_len(meta)
+    pub(crate) fn num_bytes_on_key_row(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        self.num_rlp_bytes(meta) + self.key_len(meta)
     }
 
     /// Number of RLP bytes for leaf and key
-    pub(crate) fn num_rlp_bytes(
-        &self,
-        _meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
-    ) -> Expression<F> {
+    pub(crate) fn num_rlp_bytes(&self, _meta: &mut VirtualCells<F>) -> Expression<F> {
         // 2 RLP bytes + 1 byte that contains the key length.
         3.expr()
     }

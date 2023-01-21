@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -163,7 +162,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // Do the lookup
                 ifx!{do_lookup => {
                     let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-                    let account_num_bytes = account.num_bytes(meta, &mut cb.base);
+                    let account_num_bytes = account.num_bytes(meta);
                     require!((1, account_rlc, account_num_bytes, hash_rlc) => @"keccak");
                 }}
 

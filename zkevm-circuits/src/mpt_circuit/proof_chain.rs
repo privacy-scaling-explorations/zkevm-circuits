@@ -1,4 +1,3 @@
-use gadgets::util::{not, or, Expr};
 use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
@@ -106,6 +105,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // `start_root`/`final_root` can change only in the first row of the first level.
                     // We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
                     // that means when `not_first_level` goes from 1 to 0.
+                    // TODO(Brecht): strange condition
                     ifx!{not_first_level.prev() - (not_first_level.cur() + 1.expr())  => {
                         require!(start_root => start_root.prev());
                         require!(final_root => final_root.prev());

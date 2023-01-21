@@ -1,4 +1,3 @@
-use gadgets::util::{not, Expr};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -189,14 +188,13 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES (except in a
             // placeholder leaf).
             // TODO(Brecht): why not in placeholder leaf?
-            let is_placeholder = storage.is_placeholder(meta, &mut cb.base);
-            ifx! {not!(is_placeholder) => {
+            ifx! {not!(storage.is_placeholder(meta)) => {
                 let num_nibbles = storage.num_key_nibbles(meta, &mut cb.base, is_key_odd.expr());
                 require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
             }}
 
             // Num bytes used in RLC
-            let num_bytes = storage.num_bytes_on_key_row(meta, &mut cb.base);
+            let num_bytes = storage.num_bytes_on_key_row(meta);
             // Multiplier is number of bytes
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check (subtract 2 RLP bytes used)

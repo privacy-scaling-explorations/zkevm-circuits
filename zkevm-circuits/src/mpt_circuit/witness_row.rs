@@ -200,23 +200,23 @@ impl<F: FieldExt> MptWitnessRow<F> {
 
         region.assign_advice(
             || "assign modified node".to_string(),
-            mpt_config.branch.modified_node_index,
+            mpt_config.branch.modified_index,
             offset,
-            || Value::known(F::from(branch.modified_node as u64)),
+            || Value::known(F::from(branch.modified_index as u64)),
         )?;
 
         region.assign_advice(
-            || "assign drifted_pos".to_string(),
-            mpt_config.branch.drifted_pos,
+            || "assign drifted_index".to_string(),
+            mpt_config.branch.drifted_index,
             offset,
-            || Value::known(F::from(branch.drifted_pos as u64)),
+            || Value::known(F::from(branch.drifted_index as u64)),
         )?;
 
         region.assign_advice(
-            || "assign is_at_drifted_pos".to_string(),
-            mpt_config.branch.is_at_drifted_pos,
+            || "assign is_drifted".to_string(),
+            mpt_config.branch.is_drifted,
             offset,
-            || Value::known(F::from((branch.drifted_pos == branch.node_index) as u64)),
+            || Value::known(F::from((branch.drifted_index == branch.node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -257,7 +257,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             || "assign is_modified".to_string(),
             mpt_config.branch.is_modified,
             offset,
-            || Value::known(F::from((branch.modified_node == branch.node_index) as u64)),
+            || Value::known(F::from((branch.modified_index == branch.node_index) as u64)),
         )?;
 
         region.assign_advice(
@@ -434,8 +434,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
             is_branch_child: true,
             is_last_branch_child: pv.node_index == 15,
             node_index: pv.node_index,
-            modified_node: pv.modified_node,
-            drifted_pos: pv.drifted_pos,
+            modified_index: pv.modified_node,
+            drifted_index: pv.drifted_pos,
             ..Default::default()
         };
 
