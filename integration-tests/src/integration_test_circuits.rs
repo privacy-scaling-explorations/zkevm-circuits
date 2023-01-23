@@ -26,6 +26,7 @@ use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
 use zkevm_circuits::evm_circuit::test::get_test_degree;
+use zkevm_circuits::evm_circuit::EvmCircuit;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
@@ -42,6 +43,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     keccak_padding: None,
 };
 
+const EVM_CIRCUIT_DEGREE: u32 = 18;
 const STATE_CIRCUIT_DEGREE: u32 = 17;
 const TX_CIRCUIT_DEGREE: u32 = 20;
 const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
@@ -61,6 +63,15 @@ lazy_static! {
 }
 
 lazy_static! {
+    static ref EVM_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+        let block = new_empty_block();
+        let circuit = EvmCircuit::<Fr>::new_from_block(&block);
+        let general_params = get_general_params(EVM_CIRCUIT_DEGREE);
+
+        let verifying_key =
+            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
+        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
+    };
     static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = StateCircuit::<Fr>::new_from_block(&block);
@@ -245,13 +256,25 @@ pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
 
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
-    let degree = get_test_degree(&block);
+    let should_degree = get_test_degree(&block);
+    if EVM_CIRCUIT_DEGREE < should_degree {
+        panic!(
+            "EVM_CIRCUIT_DEGREE set to {} but block requires {}",
+            EVM_CIRCUIT_DEGREE, should_degree
+        )
+    }
+
     let circuit = get_test_cicuit_from_block(block);
 
     if actual {
-        test_actual(degree, circuit, vec![], None);
+        test_actual(
+            EVM_CIRCUIT_DEGREE,
+            circuit,
+            vec![],
+            Some((*EVM_CIRCUIT_KEY).clone()),
+        );
     } else {
-        test_mock(degree, &circuit, vec![]);
+        test_mock(EVM_CIRCUIT_DEGREE, &circuit, vec![]);
     }
 }
 
