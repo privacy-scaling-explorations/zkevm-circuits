@@ -35,14 +35,21 @@ pub(crate) struct Cell<F> {
     column: Column<Advice>,
     // relative position to selector for synthesis
     rotation: usize,
+    cell_column_index: usize,
 }
 
 impl<F: FieldExt> Cell<F> {
-    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>, rotation: usize) -> Self {
+    pub(crate) fn new(
+        meta: &mut VirtualCells<F>,
+        column: Column<Advice>,
+        rotation: usize,
+        cell_column_index: usize,
+    ) -> Self {
         Self {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
             column,
             rotation,
+            cell_column_index,
         }
     }
 
@@ -325,7 +332,7 @@ impl<F: FieldExt> CellManager<F> {
         query_expression(meta, |meta| {
             for c in 0..width {
                 for r in 0..height {
-                    cells.push(Cell::new(meta, advices[c], height_offset + r));
+                    cells.push(Cell::new(meta, advices[c], height_offset + r, c));
                 }
                 columns.push(CellColumn {
                     index: c,
