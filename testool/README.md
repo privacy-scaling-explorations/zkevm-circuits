@@ -70,7 +70,7 @@ In the config file you define `[[suite]]`s that defines how tests will be execut
 
 - `id` is the identifier of the suite. The default suite is called `default`.
 - `max_steps` the maximum number of executed opcodes. If this is reached, the test is marked to be ignored.
-- `max_gas` the maximum gas of a test. If the is reached, the test is marked to be ignored. Put a `0` if you do not want to limit it.
+- `max_gas` the maximum gas of a test. If the specified maximum gas is reached, the test is marked to be ignored. Put a `0` if you do not want to limit it.
 - you should define also only one of these parameters:
    - `allow_tests` with the list of tests or test sets to execute. All others will be excluded. Test sets should be prefixed with `&`
    - `ignore_tests` with the list of test or test sets to ignore. All others will be included. Test sets should be prefixed with `&`
