@@ -433,7 +433,7 @@ impl<F: Field> CopyCircuitConfig<F> {
     pub fn assign_copy_event(
         &self,
         region: &mut Region<F>,
-        mut offset: usize,
+        offset: &mut usize,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
         challenges: Challenges<Value<F>>,
@@ -454,7 +454,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                     region.assign_advice(
                         || format!("{} at row: {}", label, offset),
                         *column,
-                        offset,
+                        *offset,
                         || value,
                     )?;
                 }
@@ -462,13 +462,13 @@ impl<F: Field> CopyCircuitConfig<F> {
 
             // q_step
             if is_read {
-                self.q_step.enable(region, offset)?;
+                self.q_step.enable(region, *offset)?;
             }
             // q_enable
             region.assign_fixed(
                 || "q_enable",
                 self.q_enable,
-                offset,
+                *offset,
                 || Value::known(F::one()),
             )?;
 
@@ -478,27 +478,27 @@ impl<F: Field> CopyCircuitConfig<F> {
                 .zip_eq(circuit_row)
             {
                 region.assign_advice(
-                    || format!("{} at row: {}", label, offset),
+                    || format!("{} at row: {}", label, *offset),
                     *column,
-                    offset,
+                    *offset,
                     || value,
                 )?;
             }
 
             //tag
-            tag_chip.assign(region, offset, tag)?;
+            tag_chip.assign(region, *offset, tag)?;
 
             // lt chip
             if is_read {
                 lt_chip.assign(
                     region,
-                    offset,
+                    *offset,
                     F::from(copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64),
                     F::from(copy_event.src_addr_end),
                 )?;
             }
 
-            offset += 1;
+            *offset += 1;
         }
 
         Ok(())
@@ -530,23 +530,20 @@ impl<F: Field> CopyCircuitConfig<F> {
                 for copy_event in copy_events.iter() {
                     self.assign_copy_event(
                         &mut region,
-                        offset,
+                        &mut offset,
                         &tag_chip,
                         &lt_chip,
                         challenges,
                         copy_event,
                     )?;
-                    offset += 2 * copy_event.bytes.len();
                 }
 
                 for _ in 0..max_copy_rows - copy_rows_needed - 2 {
-                    self.assign_padding_row(&mut region, offset, false, &tag_chip, &lt_chip)?;
-                    offset += 1;
+                    self.assign_padding_row(&mut region, &mut offset, false, &tag_chip, &lt_chip)?;
                 }
 
-                self.assign_padding_row(&mut region, offset, true, &tag_chip, &lt_chip)?;
-                offset += 1;
-                self.assign_padding_row(&mut region, offset, true, &tag_chip, &lt_chip)?;
+                self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
+                self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
 
                 Ok(())
             },
@@ -556,7 +553,7 @@ impl<F: Field> CopyCircuitConfig<F> {
     fn assign_padding_row(
         &self,
         region: &mut Region<F>,
-        offset: usize,
+        offset: &mut usize,
         is_last_two: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
@@ -566,104 +563,106 @@ impl<F: Field> CopyCircuitConfig<F> {
             region.assign_fixed(
                 || "q_enable",
                 self.q_enable,
-                offset,
+                *offset,
                 || Value::known(F::one()),
             )?;
             // q_step
-            if offset % 2 == 0 {
-                self.q_step.enable(region, offset)?;
+            if *offset % 2 == 0 {
+                self.q_step.enable(region, *offset)?;
             }
         }
 
         // is_first
         region.assign_advice(
-            || format!("assign is_first {}", offset),
+            || format!("assign is_first {}", *offset),
             self.copy_table.is_first,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // is_last
         region.assign_advice(
-            || format!("assign is_last {}", offset),
+            || format!("assign is_last {}", *offset),
             self.is_last,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // id
         region.assign_advice(
-            || format!("assign id {}", offset),
+            || format!("assign id {}", *offset),
             self.copy_table.id,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // addr
         region.assign_advice(
-            || format!("assign addr {}", offset),
+            || format!("assign addr {}", *offset),
             self.copy_table.addr,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // src_addr_end
         region.assign_advice(
-            || format!("assign src_addr_end {}", offset),
+            || format!("assign src_addr_end {}", *offset),
             self.copy_table.src_addr_end,
-            offset,
+            *offset,
             || Value::known(F::one()),
         )?;
         // bytes_left
         region.assign_advice(
-            || format!("assign bytes_left {}", offset),
+            || format!("assign bytes_left {}", *offset),
             self.copy_table.bytes_left,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // value
         region.assign_advice(
-            || format!("assign value {}", offset),
+            || format!("assign value {}", *offset),
             self.value,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // rlc_acc
         region.assign_advice(
-            || format!("assign rlc_acc {}", offset),
+            || format!("assign rlc_acc {}", *offset),
             self.copy_table.rlc_acc,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // is_code
         region.assign_advice(
-            || format!("assign is_code {}", offset),
+            || format!("assign is_code {}", *offset),
             self.is_code,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // is_pad
         region.assign_advice(
-            || format!("assign is_pad {}", offset),
+            || format!("assign is_pad {}", *offset),
             self.is_pad,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // rw_counter
         region.assign_advice(
-            || format!("assign rw_counter {}", offset),
+            || format!("assign rw_counter {}", *offset),
             self.copy_table.rw_counter,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // rwc_inc_left
         region.assign_advice(
-            || format!("assign rwc_inc_left {}", offset),
+            || format!("assign rwc_inc_left {}", *offset),
             self.copy_table.rwc_inc_left,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // tag
-        tag_chip.assign(region, offset, &CopyDataType::Padding)?;
-        // Assing LT gadget
+        tag_chip.assign(region, *offset, &CopyDataType::Padding)?;
+        // Assign LT gadget
+        lt_chip.assign(region, *offset, F::zero(), F::one())?;
 
-        lt_chip.assign(region, offset, F::zero(), F::one())?;
+        *offset += 1;
+
         Ok(())
     }
 }
