@@ -276,7 +276,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, 1, 32, 255, 32>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, 1, 32, 255, 32, 0x100>::build(geth_data).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
