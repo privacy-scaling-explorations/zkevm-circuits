@@ -285,7 +285,6 @@ impl<F: FieldExt> BranchConfig<F> {
                         branch.require_in_parent(meta, &mut cb.base);
                     }}
 
-                    // TODO(Brecht): check `mod_node_rlc` use
                     // - For a branch placeholder we do not have any constraints. However, in the parallel
                     // (regular) branch we have an additional constraint (besides `is_modified` row
                     // corresponding to `mod_nod_hash_rlc`) in this case: `is_drifted` `main.bytes` RLC

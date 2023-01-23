@@ -170,14 +170,13 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     (1.expr(), a!(ctx.main(is_s).bytes[0]))
                 }};
                 require!(data => value_rlc);
-                // RLC bytes zero check
-                cb.set_length_sc(is_s, num_bytes.expr());
+                // RLC bytes zero check (+2 because data starts at bytes[0])
+                cb.set_length_sc(is_s, 2.expr() + num_bytes.expr());
                 // Get the correct multiplier for the length
                 require!((FixedTableTag::RMult, num_bytes.expr() + mult_offset.expr(), mult_diff) => @format!("mult{}", if is_s {""} else {"2"}));
 
                 // Go from the value rlc to the data rlc
-                let rlc =
-                    account.to_data_rlc(meta, &mut cb.base, ctx.main(is_s), value_rlc, is_long, 0);
+                let rlc = account.to_data_rlc(meta, ctx.main(is_s), value_rlc, is_long, 0);
                 (rlc, num_bytes)
             };
             let (nonce_rlc, nonce_num_bytes) = calc_rlc(
@@ -208,7 +207,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             let rlc = account_rlc.prev()
                 + account.nonce_balance_rlc(
                     meta,
-                    &mut cb.base,
                     nonce_rlc.expr(),
                     balance_rlc.expr(),
                     mult_prev.expr(),

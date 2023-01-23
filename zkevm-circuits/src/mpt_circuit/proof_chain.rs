@@ -103,16 +103,14 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // TODO(Brecht): No constraint for transition back to 0 seems a bit dangerous
 
                     // `start_root`/`final_root` can change only in the first row of the first level.
-                    // We check that it stays the same always except when `not_first_level_prev = not_first_level_cur + 1`,
-                    // that means when `not_first_level` goes from 1 to 0.
-                    // TODO(Brecht): strange condition
+                    // We check that it stays the same always except when `not_first_level` goes from 1 to 0.
                     ifx!{not_first_level.prev() - (not_first_level.cur() + 1.expr())  => {
                         require!(start_root => start_root.prev());
                         require!(final_root => final_root.prev());
                     }}
                     // When we go from one modification to another, the previous `final_root` needs to be
                     // the same as the current `start_root`.
-                    ifx!{not_first_level.prev(), not!(not_first_level.cur())  => {
+                    ifx!{not_first_level.prev(), not!(not_first_level)  => {
                         require!(start_root => final_root.prev());
                     }}
 
@@ -139,13 +137,12 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     // but in this case `address_rlc` needs to be set.
                     // Ensuring that the storage proof cannot be used without the account proof - in case the storage
                     // proof would consist only of a storage leaf.
-                    ifx!{is_branch_init.expr() + is_storage_leaf_key_s.expr(), not!(not_first_level.cur())  => {
+                    ifx!{not!(not_first_level), is_branch_init.expr() + is_storage_leaf_key_s.expr() => {
                         require!(address_rlc => 0);
                     }}
                     // It needs to be ensured that `address_rlc` changes only at the first row of the account leaf
                     // or in the branch init row if it is in the first level.
-                    // TODO(Brecht): strange condition
-                    ifx!{not!(is_account_leaf_key_s), or::expr([not!(is_branch_init.expr()), not_first_level.expr()]) => {
+                    ifx!{not!(or::expr([is_account_leaf_key_s.expr(), and::expr([not!(not_first_level), is_branch_init.expr()])])) => {
                         require!(address_rlc => address_rlc.prev());
                     }}
                 }}

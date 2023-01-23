@@ -281,8 +281,8 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             } elsex {
                 let rlc = ext_rlc.prev() + c_main.expr(meta, 0)[2..].to_vec().rlc_chain(&r, mult.expr());
                 require!(ext_rlc => rlc);
-                // RLC bytes zero check
-                cb.set_length_c(ext.ext_branch_num_bytes(meta));
+                // RLC bytes zero check (+2 because data starts at bytes[0])
+                cb.set_length_c(2.expr() + ext.ext_branch_num_bytes(meta));
             }}
 
             // We check that the branch hash RLC (computed over the first 17 rows)
@@ -309,12 +309,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Calculate the number of bytes
                 let key_len = ext.ext_key_len(meta, 0);
                 // Calculate the number of nibbles
-                let num_nibbles = get_num_nibbles(
-                    meta,
-                    &mut cb.base,
-                    key_len.expr(),
-                    ext.is_ext_key_part_odd(),
-                );
+                let num_nibbles = get_num_nibbles(meta, key_len.expr(), ext.is_ext_key_part_odd());
                 // Make sure the nibble counter is updated correctly
                 let nibbles_count_prev = ifx! {not!(ext.is_below_account(meta)), not_first_level.expr() => {
                     ext.nibbles_counter().prev()

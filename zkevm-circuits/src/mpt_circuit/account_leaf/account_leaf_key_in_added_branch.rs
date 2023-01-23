@@ -13,7 +13,7 @@ use crate::{
         },
     },
     mpt_circuit::{
-        helpers::{AccountLeafInfo, MPTConstraintBuilder},
+        helpers::{get_parent_rlc_state, AccountLeafInfo, MPTConstraintBuilder},
         FixedTableTag,
     },
     mpt_circuit::{MPTConfig, MPTContext, ProofValues},
@@ -95,114 +95,103 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
     ) -> Self {
         let not_first_level = ctx.position_cols.not_first_level;
         let s_main = ctx.s_main;
-        // accs.acc_c contains mult_diff_nonce, initially key_rlc was
-        // used for mult_diff_nonce, but it caused PoisonedConstraint
-        // in extension_node_key
         let accs = ctx.accumulators;
         let r = ctx.r.clone();
 
-        let rot_ext = -ACCOUNT_DRIFTED_LEAF_IND - 1;
-        let rot_branch_init = -ACCOUNT_DRIFTED_LEAF_IND - BRANCH_ROWS_NUM;
+        let rot_parent = -ACCOUNT_DRIFTED_LEAF_IND - 1;
+        let rot_branch_init = rot_parent + 1 - BRANCH_ROWS_NUM;
         let rot_first_child = rot_branch_init + 1;
-        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_key_s = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_S_IND);
         let rot_key_c = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_KEY_C_IND);
+        let rot_nonce_s = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND);
+        let rot_nonce_c = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_NONCE_BALANCE_C_IND);
+        let rot_storage_s = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND);
+        let rot_storage_c = -(ACCOUNT_DRIFTED_LEAF_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND);
 
         circuit!([meta, cb.base], {
-            let mut branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+            let drifted_account = AccountLeafInfo::new(meta, ctx.clone(), 0);
 
             // A drifted leaf appears only when there is a placeholder branch
             ifx! {branch.is_placeholder_s_or_c() => {
-                // Calculate and store the leaf data RLC
-                require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
+                // Calculate and store the leaf RLC (RLP + key)
+                let drifted_rlc = a!(accs.acc_s.rlc);
+                require!(drifted_rlc => ctx.rlc(meta, 0..36, 0));
 
                 // `s_rlp1` is always RLP_LIST_LONG + 1 because the account leaf is always > 55 bytes (and < 256)
                 require!(a!(s_main.rlp1) => RLP_LIST_LONG + 1);
-
-                // We take the leaf RLC computed in the key row, we then add nonce/balance and storage root/codehash
-                // to get the final RLC of the drifted leaf. We then check whether the drifted leaf is at
-                // the `drifted_index` in the parent branch.
-                for is_s in [false, true] {
-                    branch.set_is_s(is_s);
-
-                    // Nonce balance S
-                    // Nonce balance C
-                    // Storage codehash S
-                    // Storage codehash C
-                    // Drifted leaf
-
-                    let rot_nonce = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_NONCE_BALANCE_S_IND} else {ACCOUNT_LEAF_NONCE_BALANCE_C_IND});
-                    let rot_storage = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND} else {ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND});
-                    let rot_key = -(ACCOUNT_DRIFTED_LEAF_IND - if is_s {ACCOUNT_LEAF_KEY_S_IND} else {ACCOUNT_LEAF_KEY_C_IND});
-
-                    let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-
-                    // Calculate rlc
-                    // Nonce data rlc
-                    let nonce_stored = a!(accs.s_mod_node_rlc, rot_nonce);
-                    let nonce_rlc = account.to_data_rlc(meta, &mut cb.base, ctx.s_main, nonce_stored, account.is_nonce_long(), rot_nonce);
-                    // Balance data rlc
-                    let balance_stored = a!(accs.c_mod_node_rlc, rot_nonce);
-                    let balance_rlc = account.to_data_rlc(meta, &mut cb.base, ctx.c_main, balance_stored, account.is_balance_long(), rot_nonce);
-                    let mult_prev = a!(accs.acc_s.mult);
-                    let mult_nonce = a!(accs.acc_c.rlc, rot_nonce);
-                    let mult_balance = a!(accs.key.mult, rot_nonce);
-                    let rlc = a!(accs.acc_s.rlc) + account.nonce_balance_rlc(meta, &mut cb.base, nonce_rlc.expr(), balance_rlc.expr(), mult_prev.expr(), mult_nonce.expr(), rot_nonce);
-                    // Add storage/codehash rlc
-                    let storage_rlc = a!(accs.s_mod_node_rlc, rot_storage);
-                    let codehash_rlc = a!(accs.c_mod_node_rlc, rot_storage);
-                    let mult_prev = mult_prev.expr() * mult_nonce.expr() * mult_balance.expr();
-                    let rlc = rlc + account.storage_codehash_rlc(meta, &mut cb.base, storage_rlc.expr(), codehash_rlc.expr(), mult_prev.expr(), rot_storage);
-
-                    // Check that `mod_node_rlc` in a placeholder branch contains the hash of the drifted leaf.
-                    // (that this value corresponds to the value in the non-placeholder branch at `drifted_pos`
-                    // is checked in `branch.rs`)
-                    ifx!{branch.is_placeholder() => {
-                        let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                        require!((1, rlc, account.num_bytes(meta), a!(accs.mod_node_rlc(is_s), rot_first_child)) => @"keccak");
-                    }}
-                }
 
                 // The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
                 // the drift - the nibbles are the same in both cases, the difference is that before the
                 // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
                 // position in a branch or/and nibbles of the extension node.
-                let is_branch_placeholder_in_first_level = not!(a!(not_first_level, rot_branch_init));
-                let key_rlc_prev = ifx!{branch.is_extension() => {
-                    a!(accs.key.rlc, rot_ext)
-                } elsex {
-                    ifx!{not!(is_branch_placeholder_in_first_level) => {
-                        a!(accs.key.rlc, rot_first_child_prev)
-                    }}
-                }};
-                let key_mult_prev = ifx!{is_branch_placeholder_in_first_level => {
-                    1.expr()
-                } elsex {
-                    a!(accs.key.mult, rot_first_child_prev)
-                }};
-                let key_mult_prev = key_mult_prev.expr() * ifx!{branch.is_extension() => {
-                    // Get the mult_diff from the extension node.
-                    a!(accs.mult_diff, rot_first_child)
-                } elsex {
-                    1.expr()
-                }};
-
-                // Check that the RLC is calculated correctly
-                let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
-                let stored_key_rlc = ifx!{branch.is_placeholder_s() => {
-                    a!(accs.key.rlc, rot_key_s)
-                } elsex {
-                    a!(accs.key.rlc, rot_key_c)
-                }};
-                let key_rlc = key_rlc_prev +
+                let is_branch_in_first_level = not!(a!(not_first_level, rot_branch_init));
+                let (key_rlc_prev, key_mult_prev) = get_parent_rlc_state(meta, ctx.clone(), is_branch_in_first_level, rot_parent);
+                // Calculate the drifted key RLC
+                let drifted_key_rlc = key_rlc_prev +
                     branch.drifted_nibble_rlc(meta, &mut cb.base, key_mult_prev.expr()) +
-                    account.key_rlc(meta, &mut cb.base, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr());
-                require!(stored_key_rlc => key_rlc);
+                    drifted_account.key_rlc(meta, &mut cb.base, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr());
+
                 // RLC bytes zero check
-                let num_bytes = account.num_bytes_on_key_row(meta);
-                cb.set_length(num_bytes.expr() - 2.expr());
+                let num_bytes = drifted_account.num_bytes_on_key_row(meta);
+                cb.set_length(num_bytes.expr());
                 // Update `mult_diff`
+                let mult = a!(accs.acc_s.mult);
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
+
+                // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
+                let mut calc_rlc = |is_s| {
+                    let rot_key = if is_s { rot_key_s } else { rot_key_c };
+                    let rot_nonce = if is_s { rot_nonce_s } else { rot_nonce_c };
+                    let rot_storage = if is_s { rot_storage_s } else { rot_storage_c };
+
+                    let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
+
+                    // Calculate the drifted leaf rlc
+                    // Nonce data rlc
+                    let nonce_stored = a!(accs.s_mod_node_rlc, rot_nonce);
+                    let nonce_rlc = account.to_data_rlc(meta, ctx.s_main, nonce_stored, account.is_nonce_long(), rot_nonce);
+                    // Balance data rlc
+                    let balance_stored = a!(accs.c_mod_node_rlc, rot_nonce);
+                    let balance_rlc = account.to_data_rlc(meta, ctx.c_main, balance_stored, account.is_balance_long(), rot_nonce);
+                    let mult_nonce = a!(accs.acc_c.rlc, rot_nonce);
+                    let mult_balance = a!(accs.key.mult, rot_nonce);
+                    let rlc = drifted_rlc.expr() + account.nonce_balance_rlc(meta, nonce_rlc.expr(), balance_rlc.expr(), mult.expr(), mult_nonce.expr(), rot_nonce);
+                    // Add storage/codehash rlc
+                    let storage_rlc = a!(accs.s_mod_node_rlc, rot_storage);
+                    let codehash_rlc = a!(accs.c_mod_node_rlc, rot_storage);
+                    let mult_prev = mult.expr() * mult_nonce.expr() * mult_balance.expr();
+                    let rlc = rlc + account.storage_codehash_rlc(meta, storage_rlc.expr(), codehash_rlc.expr(), mult_prev.expr(), rot_storage);
+
+                    (true.expr(), a!(accs.key.rlc, rot_key), rlc, a!(accs.mod_node_rlc(is_s), rot_first_child))
+                };
+                let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
+                    branch.is_placeholder_s() => {
+                        // Neighbour leaf in the added branch
+                        // - `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+                        // in a new branch.
+                        // - `s_mod_node_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                        // This is because `c_mod_node_rlc` in the added branch stores the hash of
+                        // `modified_index` (the leaf that has been added).
+                        calc_rlc(true)
+                    },
+                    branch.is_placeholder_c() => {
+                        // Neighbour leaf in the deleted branch
+                        // -`leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+                        // has been deleted (and there were only two leaves, so the branch was deleted).
+                        // - `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                        // This is because `s_mod_node_rlc` in the deleted branch stores the hash of
+                        // `modified_index` (the leaf that is to be deleted).
+                        calc_rlc(false)
+                    },
+                    _ => (false.expr(), 0.expr(), 0.expr(), 0.expr()),
+                };
+                ifx! {do_checks => {
+                    // The key of the drifted leaf needs to match the key of the leaf
+                    require!(key_rlc => drifted_key_rlc);
+                    // The drifted leaf needs to be stored in the branch at `drifted_index`.
+                    require!((1, drifted_rlc, drifted_account.num_bytes(meta), mod_hash) => @"keccak");
+                }}
             }}
         });
 

@@ -8,7 +8,7 @@ use crate::{
         param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
     },
     mpt_circuit::{
-        helpers::{BranchNodeInfo, MPTConstraintBuilder},
+        helpers::{get_parent_rlc_state, BranchNodeInfo, MPTConstraintBuilder},
         param::{LEAF_VALUE_C_IND, LEAF_VALUE_S_IND},
         witness_row::MptWitnessRow,
         FixedTableTag, MPTContext,
@@ -169,8 +169,6 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         let r = ctx.r.clone();
 
         let rot_branch_init = -LEAF_DRIFTED_IND - BRANCH_ROWS_NUM;
-        let rot_first_child = rot_branch_init + 1;
-        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_parent = -LEAF_DRIFTED_IND - 1;
         let rot_branch_child = -BRANCH_ROWS_NUM + 2;
         let rot_key_s = -(LEAF_DRIFTED_IND - LEAF_KEY_S_IND);
@@ -179,84 +177,74 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
         let rot_value_c = -(LEAF_DRIFTED_IND - LEAF_VALUE_C_IND);
 
         circuit!([meta, cb.base], {
-            let is_in_first_storage_level = ctx.is_account(meta, rot_parent);
-            ifx! {not!(is_in_first_storage_level) => {
+            let storage = StorageLeafInfo::new(meta, ctx.clone(), true, rot_key_s);
+            ifx! {not!(storage.is_below_account(meta)) => {
                 let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-                let storage = StorageLeafInfo::new(meta, ctx.clone(), true, 0);
+                let drifted_storage = StorageLeafInfo::new(meta, ctx.clone(), true, 0);
 
                 // The two flag values need to be boolean.
-                require!(storage.flag1 => bool);
-                require!(storage.flag2 => bool);
+                require!(drifted_storage.flag1 => bool);
+                require!(drifted_storage.flag2 => bool);
 
-                // Calculate and store the leaf data RLC
-                require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
+                // Calculate and store the leaf RLC (RLP + key)
+                let drifted_rlc = a!(accs.acc_s.rlc);
+                require!(drifted_rlc => ctx.rlc(meta, 0..36, 0));
 
                 // We need the intermediate key RLC right before `drifted_index` is added to it.
                 // If the branch parallel to the placeholder branch is an extension node,
                 // we have the intermediate RLC stored in the extension node `accs.key.rlc`.
-                let (key_rlc_prev, key_mult_prev) = ifx! {not!(is_in_first_storage_level) => {
-                    ifx!{branch.is_extension() => {
-                        let key_mult_prev = ifx!{branch.is_below_account(meta) => {
-                            1.expr()
-                        } elsex {
-                            a!(accs.key.mult, rot_first_child_prev)
-                        }};
-                        (a!(accs.key.rlc, rot_parent), key_mult_prev * a!(accs.mult_diff, rot_first_child))
-                    } elsex {
-                        ifx!{branch.is_below_account(meta) => {
-                            (0.expr(), 1.expr())
-                        } elsex {
-                            (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
-                        }}
-                    }}
-                } elsex {
-                    (0.expr(), 1.expr())
-                }};
-                // Calculate the key RLC
-                let key_rlc = key_rlc_prev.expr() +
+                let is_branch_in_first_level = branch.is_below_account(meta);
+                let (key_rlc_prev, key_mult_prev) = get_parent_rlc_state(meta, ctx.clone(), is_branch_in_first_level, rot_parent);
+                // Calculate the drifted key RLC
+                let drifted_key_rlc = key_rlc_prev.expr() +
                     branch.drifted_nibble_rlc(meta, &mut cb.base, key_mult_prev.expr()) +
-                    storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
+                    drifted_storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
 
                 // Check zero bytes and mult_diff
+                let mult = a!(accs.acc_s.mult);
                 ifx!{branch.is_placeholder_s_or_c() => {
                     // Num bytes used in RLC
-                    let num_bytes = storage.num_bytes_on_key_row(meta);
+                    let num_bytes = drifted_storage.num_bytes_on_key_row(meta);
                     // Multiplier is number of bytes
-                    require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
-                    // RLC bytes zero check (subtract RLP bytes used)
-                    cb.set_length(num_bytes.expr() - 2.expr());
+                    require!((FixedTableTag::RMult, num_bytes.expr(), mult) => @"mult");
+                    // RLC bytes zero check
+                    cb.set_length(num_bytes.expr());
                 }}
 
                 // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                let mult = a!(accs.acc_s.mult);
-                let (stored_key_rlc, mod_rlc, do_lookup, mod_hash) = matchx! {
+                let mut calc_rlc = |is_s| {
+                    let rot_key = if is_s { rot_key_s } else { rot_key_c };
+                    let rot_value = if is_s { rot_value_s } else { rot_value_c };
+                    // Complete the drifted leaf rlc by adding the bytes on the value row
+                    let drifted_lrc = drifted_rlc.expr() + s_main.rlc_chain(meta, rot_value, &r, mult.expr());
+                    (true.expr(), a!(accs.key.rlc, rot_key), drifted_lrc, a!(accs.mod_node_rlc(is_s), rot_branch_child))
+                };
+                let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
                     branch.is_placeholder_s() => {
-                        /* Leaf key in added branch: neighbour leaf in the added branch (S) */
-                        // `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
+                        // Neighbour leaf in the added branch
+                        // - `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
                         // in a new branch.
-                        let rlc = a!(accs.acc_s.rlc) + s_main.rlc_chain(meta, rot_value_s, &r, mult.expr());
-                        // `s_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-                        // This is because `c_mod_node_hash_rlc` in the added branch stores the hash of
-                        // `modified_node` (the leaf that has been added).
-                        (a!(accs.key.rlc, rot_key_s), rlc, true.expr(), a!(accs.mod_node_rlc(true), rot_branch_child))
+                        // - `s_mod_node_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                        // This is because `c_mod_node_rlc` in the added branch stores the hash of
+                        // `modified_index` (the leaf that has been added).
+                        calc_rlc(true)
                     },
                     branch.is_placeholder_c() => {
-                        /* Leaf key in added branch: neighbour leaf in the deleted branch (C) */
-                        // `leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
+                        // Neighbour leaf in the deleted branch
+                        // -`leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
                         // has been deleted (and there were only two leaves, so the branch was deleted).
-                        let rlc = a!(accs.acc_s.rlc) + s_main.rlc_chain(meta, rot_value_c, &r, mult.expr());
-                        // `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-                        // This is because `s_mod_node_hash_rlc` in the deleted branch stores the hash of
-                        // `modified_node` (the leaf that is to be deleted).
-                        (a!(accs.key.rlc, rot_key_c), rlc, true.expr(), a!(accs.mod_node_rlc(false), rot_branch_child))
+                        // - `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
+                        // This is because `s_mod_node_rlc` in the deleted branch stores the hash of
+                        // `modified_index` (the leaf that is to be deleted).
+                        calc_rlc(false)
                     },
-                    not!(branch.is_placeholder_s_or_c()) => {
-                        (key_rlc.expr(), 0.expr(), false.expr(), 0.expr())
-                    },
+                    _ => (false.expr(), 0.expr(), 0.expr(), 0.expr()),
                 };
-                require!(stored_key_rlc => key_rlc);
-                ifx! {do_lookup => {
-                    require!((1, mod_rlc, storage.num_bytes(meta), mod_hash) => @"keccak");
+                ifx! {do_checks => {
+                    // The key of the drifted leaf needs to match the key of the leaf
+                    require!(key_rlc => drifted_key_rlc);
+                    // The drifted leaf needs to be stored in the branch at `drifted_index`.
+                    require!((1, drifted_rlc, drifted_storage.num_bytes(meta), mod_hash) => @"keccak");
                 }}
             }}
         });

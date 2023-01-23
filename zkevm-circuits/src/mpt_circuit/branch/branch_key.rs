@@ -238,7 +238,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
             ifx! {f!(position_cols.q_not_first_ext_s), a!(ctx.branch.is_extension_node_s), branch.is_extension() => {
                 // RLC bytes zero check
-                cb.set_length(branch.ext_num_rlp_bytes(meta) + branch.ext_key_num_bytes(meta) - 2.expr());
+                cb.set_length(branch.ext_num_rlp_bytes(meta) + branch.ext_key_num_bytes(meta));
             }}
         });
 

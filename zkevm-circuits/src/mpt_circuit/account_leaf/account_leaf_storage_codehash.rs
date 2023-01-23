@@ -133,7 +133,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 let codehash = DataTransition::new(meta, accs.c_mod_node_rlc);
                 require!(codehash => c_main.bytes(meta, 0).rlc(&r));
                 // The full account leaf RLC
-                let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, &mut cb.base, storage_root.expr(), codehash.expr(), mult_prev.expr(), 0);
+                let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, storage_root.expr(), codehash.expr(), mult_prev.expr(), 0);
                 require!(account_rlc => rlc);
 
                 // Check if the account is in its parent.

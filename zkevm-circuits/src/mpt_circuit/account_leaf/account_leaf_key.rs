@@ -126,7 +126,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         is_s: bool,
     ) -> Self {
         let proof_type = ctx.proof_type;
-        let position_cols = ctx.position_cols;
+        let not_first_level = ctx.position_cols.not_first_level;
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
         let address_rlc = ctx.address_rlc;
@@ -149,36 +149,25 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
             // Get the previous key data, which depends on the branch being a placeholder.
-            let is_branch_placeholder =
-                ifx! {a!(position_cols.not_first_level) => { branch.is_placeholder() }};
+            let is_branch_placeholder = ifx! {a!(not_first_level) => { branch.is_placeholder() }};
             let (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd) = ifx! {is_branch_placeholder => {
-                // Get new key parity
+                // Get the new key parity
                 let is_key_odd = matchx! {
                     not!(branch.is_extension()) => branch.is_key_even(),
                     branch.is_key_post_ext_even() => branch.is_key_odd(),
                     branch.is_key_post_ext_odd() => branch.is_key_even(),
                 };
 
-                // Although `key_rlc` is not compared to `address_rlc` in the case when the leaf
-                // is below the placeholder branch (`address_rlc` is compared to the parallel leaf `key_rlc`),
-                // we still need properly computed `key_rlc` to reuse it in `account_leaf_key_in_added_branch`.
-                // Note: `key_rlc - address_rlc != 0` when placeholder branch.
-                let is_placeholder_branch_in_first_level = not!(a!(position_cols.not_first_level, rot_branch_init));
-                let (key_rlc_prev, key_mult_prev) = ifx!{not!(is_placeholder_branch_in_first_level) => {
-                    (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
+                let is_branch_in_first_level = not!(a!(not_first_level, rot_branch_init));
+                let (key_rlc_prev, key_mult_prev, nibbles_count_prev) = ifx!{not!(is_branch_in_first_level) => {
+                    (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev), branch.nibbles_counter().prev())
                 } elsex {
-                    (0.expr(), 1.expr())
+                    (0.expr(), 1.expr(), 0.expr())
                 }};
-
-                // Note that when the leaf is in the first level (but positioned after the placeholder
-                // in the circuit), there is no branch above the placeholder branch from where
-                // `nibbles_count` is to be retrieved. In that case `nibbles_count = 0`.
-                let is_not_branch_in_first_level = a!(position_cols.not_first_level, rot_first_child);
-                let nibbles_count_prev = ifx!{is_not_branch_in_first_level => { branch.nibbles_counter().prev() }};
 
                 (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd)
             } elsex {
-                ifx! {a!(position_cols.not_first_level)  => {
+                ifx! {a!(not_first_level)  => {
                     (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.nibbles_counter().expr(), branch.is_key_odd())
                 } elsex {
                     (0.expr(), 1.expr(), 0.expr(), false.expr())
@@ -198,8 +187,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
             let key_len = account.key_len(meta);
-            let num_nibbles =
-                get_num_nibbles(meta, &mut cb.base, key_len.expr(), is_key_odd.expr());
+            let num_nibbles = get_num_nibbles(meta, key_len.expr(), is_key_odd.expr());
             require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
 
             // Num bytes used in RLC
@@ -207,20 +195,18 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // Update `mult_diff`
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check
-            cb.set_length(num_bytes.expr() - 2.expr());
+            cb.set_length(num_bytes.expr());
 
             // The computed key RLC needs to be the same as the value in `address_rlc`
-            // column. This seems to be redundant (we could write one constraint
-            // instead of two: `key_rlc_acc - address_rlc = 0`), but note that
-            // `key_rlc` is used in `account_leaf_key_in_added_branch` and in
-            // cases when there is a placeholder branch we have `key_rlc -
+            // column. Note that `key_rlc` is used in `account_leaf_key_in_added_branch` and
+            // in cases when there is a placeholder branch we have `key_rlc -
             // address_rlc != 0` because `key_rlc` is computed for the branch
             // that is parallel to the placeholder branch.
             ifx! {not!(is_branch_placeholder), not!(a!(proof_type.is_non_existing_account_proof)) => {
                 require!(a!(address_rlc) => a!(accs.key.rlc));
             }}
 
-            /* Account delete */
+            // Account delete
             // We need to make sure there is no leaf when account is deleted. Two possible
             // cases:
             // - 1. Account leaf is deleted and there is a nil object in

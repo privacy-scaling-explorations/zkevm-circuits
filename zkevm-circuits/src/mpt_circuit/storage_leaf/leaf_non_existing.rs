@@ -121,9 +121,9 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     let mut storage_wrong = StorageLeafInfo::new(meta, ctx.clone(), true, rot_key_c);
                     storage_wrong.set_rot_key(0);
                     require!(storage_wrong.key_len(meta) => storage.key_len(meta));
-                    // RLC bytes zero check (subtract 2 for first two RLP bytes)
+                    // RLC bytes zero check
                     let num_bytes = storage.num_bytes_on_key_row(meta);
-                    cb.set_length(num_bytes - 2.expr());
+                    cb.set_length(num_bytes);
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
                     let branch = BranchNodeInfo::new(meta, ctx.clone(), false, rot_branch_init);

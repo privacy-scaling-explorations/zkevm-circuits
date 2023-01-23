@@ -442,7 +442,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     ) {
         circuit!([meta, cb], {
             // The branch or extension node data
-            let (rlc, num_bytes, is_branch_non_hashed) = ifx! {self.is_extension() => {
+            let (rlc, num_bytes, is_not_hashed) = ifx! {self.is_extension() => {
                 // Note: acc_c in both cases.
                 let ext_rlc = a!(self.ctx.accumulators.acc_c.rlc);
                 (ext_rlc, self.ext_num_bytes(meta), self.is_ext_not_hashed())
@@ -466,7 +466,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
                         // Here the branch is in some other branch
                         let rot_branch_child_prev = self.rot_branch_init - EXTENSION_ROWS_NUM - 1;
                         let mod_node_hash_rlc = a!(self.ctx.accumulators.mod_node_rlc(self.is_s), rot_branch_child_prev);
-                        ifx!{is_branch_non_hashed => {
+                        ifx!{is_not_hashed => {
                             // Non-hashed branch hash in parent branch
                             require!(rlc => mod_node_hash_rlc);
                         } elsex {
@@ -648,11 +648,10 @@ impl<F: FieldExt> StorageLeafInfo<F> {
     pub(crate) fn num_key_nibbles(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
         is_key_odd: Expression<F>,
     ) -> Expression<F> {
         let key_len = self.key_len(meta);
-        get_num_nibbles(meta, cb, key_len, is_key_odd)
+        get_num_nibbles(meta, key_len, is_key_odd)
     }
 
     /// Key data is read from the current row, not at rot_key!
@@ -830,14 +829,13 @@ impl<F: FieldExt> AccountLeafInfo<F> {
     pub(crate) fn nonce_balance_rlc(
         &self,
         meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
         nonce_rlc: Expression<F>,
         balance_rlc: Expression<F>,
         mult_prev: Expression<F>,
         mult_nonce: Expression<F>,
         rot_nonce: i32,
     ) -> Expression<F> {
-        circuit!([meta, _cb], {
+        circuit!([meta, _cb!()], {
             rlc::expr(
                 &[
                     a!(self.ctx.s_main.rlp1, rot_nonce),
@@ -857,13 +855,12 @@ impl<F: FieldExt> AccountLeafInfo<F> {
     pub(crate) fn storage_codehash_rlc(
         &self,
         meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
         storage_rlc: Expression<F>,
         codehash_rlc: Expression<F>,
         mult_prev: Expression<F>,
         rot_storage: i32,
     ) -> Expression<F> {
-        circuit!([meta, _cb], {
+        circuit!([meta, _cb!()], {
             rlc::expr(
                 &[
                     a!(self.ctx.s_main.rlp2, rot_storage),
@@ -886,13 +883,12 @@ impl<F: FieldExt> AccountLeafInfo<F> {
     pub(crate) fn to_data_rlc(
         &self,
         meta: &mut VirtualCells<F>,
-        _cb: &mut ConstraintBuilder<F>,
         main: MainCols<F>,
         value_rlc: Expression<F>,
         is_long: Expression<F>,
         rot_nonce: i32,
     ) -> Expression<F> {
-        circuit!([meta, _cb], {
+        circuit!([meta, _cb!()], {
             ifx! {is_long => {
                 a!(main.bytes[0], rot_nonce) + value_rlc.expr() * self.ctx.r[0].expr()
             } elsex {
@@ -1016,15 +1012,48 @@ pub(crate) fn get_num_bytes_list_short<F: FieldExt>(byte: Expression<F>) -> Expr
 
 pub(crate) fn get_num_nibbles<F: FieldExt>(
     _meta: &mut VirtualCells<F>,
-    cb: &mut ConstraintBuilder<F>,
     key_len: Expression<F>,
     is_key_odd: Expression<F>,
 ) -> Expression<F> {
-    circuit!([meta, cb], {
+    circuit!([meta, _cb!()], {
         ifx! {is_key_odd => {
             key_len.expr() * 2.expr() - 1.expr()
         } elsex {
             (key_len.expr() - 1.expr()) * 2.expr()
+        }}
+    })
+}
+
+// The key RLC of the drifted leaf needs to be the same as the key RLC of the
+// leaf before the drift - the nibbles are the same in both cases, the
+// difference is that before the drift some nibbles are stored in the leaf key,
+// while after the drift these nibbles are used as position in a branch or/and
+// nibbles of the extension node.
+pub(crate) fn get_parent_rlc_state<F: FieldExt>(
+    meta: &mut VirtualCells<F>,
+    ctx: MPTContext<F>,
+    is_first_level: Expression<F>,
+    rot_parent: i32,
+) -> (Expression<F>, Expression<F>) {
+    let accs = ctx.accumulators;
+    let rot_branch_init = rot_parent + 1 - BRANCH_ROWS_NUM;
+    let rot_first_child = rot_branch_init + 1;
+    let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+    circuit!([meta, _cb!()], {
+        let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+        ifx! {branch.is_extension() => {
+            let key_mult_prev = ifx!{is_first_level => {
+                1.expr()
+            } elsex {
+                a!(accs.key.mult, rot_first_child_prev)
+            }};
+            (a!(accs.key.rlc, rot_parent), key_mult_prev * a!(accs.mult_diff, rot_first_child))
+        } elsex {
+            ifx!{is_first_level => {
+                (0.expr(), 1.expr())
+            } elsex {
+                (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev))
+            }}
         }}
     })
 }
@@ -1065,6 +1094,7 @@ pub struct MPTConstraintBuilder<F> {
 impl<F: FieldExt> MPTConstraintBuilder<F> {
     const DEFAULT_LENGTH_S: usize = 34;
     const DEFAULT_LENGTH_C: usize = 32;
+    const NUM_BYTES_SKIP: usize = 2; // RLP bytes never need to be zero checked
     const DEFAULT_RANGE: FixedTableTag = FixedTableTag::RangeKeyLen256;
 
     pub(crate) fn new(max_degree: usize) -> Self {
@@ -1080,14 +1110,14 @@ impl<F: FieldExt> MPTConstraintBuilder<F> {
     pub(crate) fn set_length_s(&mut self, length: Expression<F>) {
         self.length_s.push((
             self.base.get_condition_expr(),
-            Self::DEFAULT_LENGTH_S.expr() - length,
+            Self::DEFAULT_LENGTH_S.expr() - (length - Self::NUM_BYTES_SKIP.expr()),
         ));
     }
 
     pub(crate) fn set_length_c(&mut self, length: Expression<F>) {
         self.length_c.push((
             self.base.get_condition_expr(),
-            Self::DEFAULT_LENGTH_C.expr() - length,
+            Self::DEFAULT_LENGTH_C.expr() - (length - Self::NUM_BYTES_SKIP.expr()),
         ));
     }
 

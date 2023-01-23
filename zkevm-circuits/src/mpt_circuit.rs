@@ -44,6 +44,7 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
+    circuit_tools::merge_lookups,
     evm_circuit::util::rlc,
     mpt_circuit::helpers::{extend_rand, BranchNodeInfo, MPTConstraintBuilder},
     table::{DynamicTableColumns, KeccakTable},
@@ -570,21 +571,10 @@ impl<F: FieldExt> MPTConfig<F> {
                 // TODO(Brecht): manually optimized lookups for now, but the constraint builder can
                 // automatically do this. Shouldn't be too hard hopefully.
                 for tag in ["mult", "mult2"] {
-                    let lookups = cb.base.lookups.iter().cloned().filter(|lookup| lookup.tag == tag).collect::<Vec<_>>();
+                    let lookups = cb.base.get_lookups(&[tag]);
                     let optimize = true;
                     if optimize {
-                        let selector = sum::expr(lookups.iter().map(|lookup| lookup.condition.expr()));
-                        // Sanity checks (can be removed, here for safety)
-                        require!(selector => bool);
-                        // Merge
-                        let max_length = lookups.iter().map(|lookup| lookup.values.len()).max().unwrap();
-                        let mut values = vec![0.expr(); max_length];
-                        for (idx, value) in values.iter_mut().enumerate() {
-                            *value = sum::expr(
-                                lookups
-                                    .iter()
-                                    .map(|lookup| lookup.condition.expr() * lookup.values[idx].expr()));
-                        }
+                        let (_, values) = merge_lookups(&mut cb.base, lookups);
                         require!(values => @"fixed");
                     } else {
                         for lookup in lookups.iter() {

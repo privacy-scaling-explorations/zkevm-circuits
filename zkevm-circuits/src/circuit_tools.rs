@@ -252,6 +252,14 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         });
     }
 
+    pub(crate) fn get_lookups<S: AsRef<str>>(&self, tags: &[S]) -> Vec<LookupData<F>> {
+        self.lookups
+            .iter()
+            .cloned()
+            .filter(|lookup| tags.iter().any(|tag| lookup.tag == tag.as_ref()))
+            .collect::<Vec<_>>()
+    }
+
     pub(crate) fn get_lookup_table<S: AsRef<str>>(&self, tag: S) -> Vec<Expression<F>> {
         let lookups = self
             .lookup_tables
@@ -270,6 +278,48 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         }
         table
     }
+
+    pub(crate) fn print_stats(&self) {
+        let mut expressions = self.constraints.clone();
+        expressions.sort_by(|a, b| a.1.degree().cmp(&b.1.degree()));
+        for (name, expr) in expressions.iter() {
+            println!("'{}': {}", name, expr.degree());
+        }
+    }
+}
+
+pub(crate) fn merge_lookups<F: FieldExt>(
+    cb: &mut ConstraintBuilder<F>,
+    lookups: Vec<LookupData<F>>,
+) -> (Expression<F>, Vec<Expression<F>>) {
+    merge_values(
+        cb,
+        lookups
+            .iter()
+            .map(|lookup| (lookup.condition.clone(), lookup.values.clone()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub(crate) fn merge_values<F: FieldExt>(
+    cb: &mut ConstraintBuilder<F>,
+    values: Vec<(Expression<F>, Vec<Expression<F>>)>,
+) -> (Expression<F>, Vec<Expression<F>>) {
+    let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
+    // Sanity checks (can be removed, here for safety)
+    crate::circuit!([meta, cb], {
+        require!(selector => bool);
+    });
+    // Merge
+    let max_length = values.iter().map(|(_, values)| values.len()).max().unwrap();
+    let mut merged_values = vec![0.expr(); max_length];
+    let default_value = 0.expr();
+    for (idx, value) in merged_values.iter_mut().enumerate() {
+        *value = sum::expr(values.iter().map(|(condition, values)| {
+            condition.expr() * values.get(idx).unwrap_or_else(|| &default_value).expr()
+        }));
+    }
+    (selector, merged_values)
 }
 
 pub(crate) fn select<F: FieldExt>(
@@ -547,6 +597,21 @@ macro_rules! concat_with_preamble {
     }};
 }
 
+/// Can be used to mark a specific branch as unreachable
+#[macro_export]
+macro_rules! _unreachablex {
+    ($cb:expr $(,$descr:expr)?) => {{
+        let descr = concat_with_preamble!(
+            "unreachable executed",
+            $(
+                ": ",
+                $descr,
+            )*
+        );
+        _require!($cb, descr, true => false)
+    }};
+}
+
 /// _require
 #[macro_export]
 macro_rules! _require {
@@ -667,7 +732,7 @@ macro_rules! _require {
 /// matchx
 #[macro_export]
 macro_rules! _matchx {
-    ($cb:expr, $($condition:expr => $when:expr),* $(,)?)  => {{
+    ($cb:expr, $($condition:expr => $when:expr),* $(, _ => $catch_all:expr)? $(,)?)  => {{
         let mut conditions = Vec::new();
         let mut cases = Vec::new();
         $(
@@ -677,6 +742,16 @@ macro_rules! _matchx {
             cases.push(($condition.expr(), ret));
             conditions.push($condition.expr());
         )*
+
+        $(
+            let catch_all_condition = not::expr(sum::expr(&conditions));
+            $cb.push_condition(catch_all_condition.expr());
+            let ret = $catch_all;
+            $cb.pop_condition();
+            cases.push((catch_all_condition.expr(), ret));
+            conditions.push(catch_all_condition.expr());
+        )*
+
         _require!($cb, sum::expr(&conditions) => 1);
         cases.apply_conditions()
     }};
@@ -712,7 +787,7 @@ macro_rules! _ifx {
 macro_rules! circuit {
     ([$meta:expr, $cb:expr], $content:block) => {{
         #[allow(unused_imports)]
-        use $crate::{concat_with_preamble, _require, _matchx, _ifx};
+        use $crate::{concat_with_preamble, _require, _matchx, _ifx, _unreachablex};
         #[allow(unused_imports)]
         use gadgets::util::{and, not, or, sum, Expr};
         #[allow(unused_imports)]
@@ -844,6 +919,20 @@ macro_rules! circuit {
             }};
             ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, $condition_c:expr => $when_c:expr, $condition_d:expr => $when_d:expr,) => {{
                 _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c, $condition_d => $when_d,)
+            }};
+
+            ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, _ => $catch_all:expr,) => {{
+                _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, _ => $catch_all,)
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! unreachablex {
+            () => {{
+                _unreachablex!($cb)
+            }};
+            ($arg:expr) => {{
+                _unreachablex!($cb, $arg)
             }};
         }
 

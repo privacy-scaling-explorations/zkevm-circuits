@@ -232,22 +232,22 @@ impl<F: FieldExt> LeafValueConfig<F> {
                             require!((1, rlc, num_bytes, mod_node_hash_rlc) => @"keccak");
                         }}
                     } elsex {
-                        let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_branch);
+                        let mod_node_rlc = a!(accs.mod_node_rlc(is_s), rot_branch);
                         let not_hashed = a!(accs.acc_c.rlc, -1);
                         ifx!{not_hashed => {
                             // Non-hashed leaf in parent
-                            // When leaf is not hashed, the `mod_node_hash_rlc` stores the RLC of the leaf bytes.
-                            require!(a!(accs.acc_s.rlc) => mod_node_hash_rlc);
+                            // When leaf is not hashed, the `mod_node_rlc` stores the RLC of the leaf bytes.
+                            require!(a!(accs.acc_s.rlc) => mod_node_rlc);
                         } elsex {
                             // Leaf hash in parent
-                            require!((1, a!(accs.acc_s.rlc), num_bytes, mod_node_hash_rlc) => @"keccak");
+                            require!((1, a!(accs.acc_s.rlc), num_bytes, mod_node_rlc) => @"keccak");
                         }}
                     }}
                 }}
             }}
 
             // Set the number of bytes used
-            cb.set_length_s(value_num_bytes - 2.expr());
+            cb.set_length_s(value_num_bytes);
         });
 
         LeafValueConfig {

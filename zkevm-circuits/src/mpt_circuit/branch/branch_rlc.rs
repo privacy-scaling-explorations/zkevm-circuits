@@ -109,9 +109,9 @@ impl<F: FieldExt> BranchRLCConfig<F> {
                 // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
                 let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..34].to_vec().rlc_chain(&r, branch_mult.prev());
                 require!(branch_rlc => rlc);
-
+                // RLC bytes zero check (+2 because data starts at bytes[0])
                 let num_bytes = get_num_bytes_list_short(a!(main.bytes[0]));
-                cb.set_length_sc(is_s, num_bytes.expr());
+                cb.set_length_sc(is_s, 2.expr() + num_bytes.expr());
                 // We need to check that the multiplier changes according to `num_bytes` and update it.
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(node_mult_diff)) => @format!("mult{}", if is_s {""} else {"2"}));
                 require!(branch_mult => branch_mult.prev() * a!(node_mult_diff));
