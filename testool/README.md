@@ -70,8 +70,7 @@ In the config file you define `[[suite]]`s that defines how tests will be execut
 
 - `id` is the identifier of the suite. The default suite is called `default`.
 - `max_steps` the maximum number of executed opcodes. If this is reached, the test is marked to be ignored.
-- `max_gas` the maximum gas of a test. If the is reached, the test is marked to be ignored.
-- `unimplemented_opcodes`, if any of these opcodes are found in the execution trace, the test is marked to be ignored.
+- `max_gas` the maximum gas of a test. If the is reached, the test is marked to be ignored. Put a `0` if you do not want to limit it.
 - you should define also only one of these parameters:
    - `allow_tests` with the list of tests or test sets to execute. All others will be excluded. Test sets should be prefixed with `&`
    - `ignore_tests` with the list of test or test sets to ignore. All others will be included. Test sets should be prefixed with `&`
@@ -95,7 +94,7 @@ Sometimes there are some files or specific tests that we want to disable at all.
 When the command line parameter `--report` is defined, it automatically: 
 
 - After the execution, a two files are created in the `report` folder. They are
-   - `<timestamp>-<git_commit>.hml` with the browse-able results of the execution.
+   - `<timestamp>-<git_commit>.hml` with the browseable results of the execution.
    - `<timestamp>-<git_commit>.csv` with the raw results of the execution
 - The HTML file also contains the diff with the previous result. The previous result file is the more recent csv file with different commit from the current one
 
