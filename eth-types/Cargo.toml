@@ -25,4 +25,5 @@ num-bigint = { version = "0.4" }
 strum_macros = "0.24"
 strum = "0.24"
 
-
+[features]
+warn-unimplemented = []
