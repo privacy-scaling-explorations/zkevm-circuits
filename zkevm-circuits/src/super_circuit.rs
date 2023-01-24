@@ -374,7 +374,7 @@ impl<
         let tx_circuit = TxCircuit::new_from_block(&block);
         let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
-        let copy_circuit = CopyCircuit::new_from_block(&block);
+        let copy_circuit = CopyCircuit::new_from_block_no_external(&block);
         let exp_circuit = ExpCircuit::new_from_block(&block);
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
 
