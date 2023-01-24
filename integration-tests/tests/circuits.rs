@@ -1,39 +1,39 @@
 macro_rules! declare_tests {
-    (($name:ident, $block_tag:expr),$mock:expr) => {
+    (($name:ident, $block_tag:expr),$real_prover:expr) => {
         paste! {
             #[tokio::test]
             async fn [<serial_test_evm_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_evm_circuit_block(*block_num, $mock).await;
+                test_evm_circuit_block(*block_num, $real_prover).await;
             }
 
             #[tokio::test]
             async fn [<serial_test_state_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_state_circuit_block(*block_num, $mock).await;
+                test_state_circuit_block(*block_num, $real_prover).await;
             }
 
             #[tokio::test]
             async fn [<serial_test_tx_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_tx_circuit_block(*block_num, $mock).await;
+                test_tx_circuit_block(*block_num, $real_prover).await;
             }
 
             #[tokio::test]
             async fn [<serial_test_bytecode_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_bytecode_circuit_block(*block_num, $mock).await;
+                test_bytecode_circuit_block(*block_num, $real_prover).await;
             }
 
             #[tokio::test]
             async fn [<serial_test_copy_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_copy_circuit_block(*block_num, $mock).await;
+                test_copy_circuit_block(*block_num, $real_prover).await;
             }
         }
     };
@@ -49,7 +49,7 @@ macro_rules! unroll_tests {
             };
             use integration_tests::log_init;
             $(
-                declare_tests! ($arg, false) ;
+                declare_tests! ($arg, true) ;
             )*
         }
 
@@ -61,7 +61,7 @@ macro_rules! unroll_tests {
             };
             use integration_tests::log_init;
             $(
-                declare_tests! ($arg, true) ;
+                declare_tests! ($arg, false) ;
             )*
         }
     }
