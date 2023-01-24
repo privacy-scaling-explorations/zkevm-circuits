@@ -30,12 +30,10 @@ pub enum StateTestError {
         expected: U256,
         found: U256,
     },
-    #[error("SkipTesstMaxGasLimit({0})")]
+    #[error("SkipTestMaxGasLimit({0})")]
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
-    #[error("SkipUnimplemented({0})")]
-    SkipUnimplemented(String),
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: bool },
 }
@@ -44,9 +42,7 @@ impl StateTestError {
     pub fn is_skip(&self) -> bool {
         matches!(
             self,
-            StateTestError::SkipUnimplemented(_)
-                | StateTestError::SkipTestMaxSteps(_)
-                | StateTestError::SkipTestMaxGasLimit(_)
+            StateTestError::SkipTestMaxSteps(_) | StateTestError::SkipTestMaxGasLimit(_)
         )
     }
 }
@@ -177,12 +173,6 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
-    if st.to.is_none() {
-        return Err(StateTestError::SkipUnimplemented(
-            "TransactionCreation".to_string(),
-        ));
-    }
-
     let geth_traces = external_tracer::trace(&trace_config);
     if st.exception {
         if geth_traces.is_ok() {
@@ -203,35 +193,8 @@ pub fn run_test(
         ));
     }
 
-    // we are not checking here geth_traces[0].failed, since
-    // there are some tests that makes the tx failing
-    // (eg memory filler tests)
-
-    if let Some(step) = geth_traces[0]
-        .struct_logs
-        .iter()
-        .find(|step| suite.unimplemented_opcodes.contains(&step.op))
-    {
-        return Err(StateTestError::SkipUnimplemented(format!(
-            "OPCODE {:?}",
-            step.op
-        )));
-    }
-
-    if geth_traces[0].gas.0 > suite.max_gas {
+    if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
         return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
-    }
-
-    if let Some(acc) = st.pre.get(&st.to.unwrap()) {
-        if acc.code.0.is_empty() {
-            return Err(StateTestError::SkipUnimplemented(
-                "Calling to empty accounts unimplemented (1)".to_string(),
-            ));
-        }
-    } else {
-        return Err(StateTestError::SkipUnimplemented(
-            "Calling to empty accounts unimplemented (2)".to_string(),
-        ));
     }
 
     let transactions = trace_config
@@ -287,6 +250,7 @@ pub fn run_test(
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
+            max_copy_rows: 55000,
             keccak_padding: None,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -312,7 +276,7 @@ pub fn run_test(
         geth_data.sign(&wallets);
 
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, 1, 32, 255>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, 1, 32, 255, 32>::build(geth_data).unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();

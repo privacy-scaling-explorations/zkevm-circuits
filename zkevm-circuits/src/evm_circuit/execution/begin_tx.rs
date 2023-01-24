@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -20,7 +20,6 @@ use crate::{
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -39,7 +38,7 @@ pub(crate) struct BeginTxGadget<F> {
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
-    code_hash: Cell<F>,
+    phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
 }
 
@@ -150,21 +149,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Handle precompiled
 
         // Read code_hash of callee
-        let code_hash = cb.query_cell();
+        let phase2_code_hash = cb.query_cell_phase2();
         cb.account_read(
             tx_callee_address.expr(),
             AccountFieldTag::CodeHash,
-            code_hash.expr(),
+            phase2_code_hash.expr(),
         );
 
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            code_hash.expr(),
-            Word::random_linear_combine_expr(
-                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                cb.power_of_randomness(),
-            ),
-        );
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
         cb.condition(is_empty_code_hash.expr(), |cb| {
             cb.require_equal(
@@ -214,7 +207,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 1.expr()),
                 (CallContextFieldTag::IsCreate, tx_is_create.expr()),
-                (CallContextFieldTag::CodeHash, code_hash.expr()),
+                (CallContextFieldTag::CodeHash, phase2_code_hash.expr()),
             ] {
                 cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
             }
@@ -248,7 +241,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
-                code_hash: To(code_hash.expr()),
+                code_hash: To(phase2_code_hash.expr()),
                 gas_left: To(gas_left),
                 reversible_write_counter: To(2.expr()),
                 log_id: To(0.expr()),
@@ -272,7 +265,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             reversion_info,
             sufficient_gas_left,
             transfer_with_gas_fee,
-            code_hash,
+            phase2_code_hash,
             is_empty_code_hash,
         }
     }
@@ -346,19 +339,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.value,
             gas_fee,
         )?;
-        self.code_hash.assign(
+        self.phase2_code_hash
+            .assign(region, offset, region.word_rlc(callee_code_hash))?;
+        self.is_empty_code_hash.assign_value(
             region,
             offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        self.is_empty_code_hash.assign(
-            region,
-            offset,
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
+            region.word_rlc(callee_code_hash),
+            region.empty_hash_rlc(),
         )?;
         Ok(())
     }

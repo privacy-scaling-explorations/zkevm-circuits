@@ -2,19 +2,23 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-use crate::evm_circuit::{
-    param::{MAX_STEP_HEIGHT, STEP_WIDTH},
-    step::{ExecutionState, Step},
-    table::{FixedTableTag, Table},
-    util::{
-        constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr, StoredExpression,
-    },
-    Advice, Column, Fixed,
-};
 use crate::table::LookupTable;
-use crate::util::power_of_randomness_from_instance;
+use crate::{
+    evm_circuit::{
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+        step::{ExecutionState, Step},
+        table::{FixedTableTag, Table},
+        util::{
+            constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr,
+            StoredExpression, LOOKUP_CONFIG,
+        },
+        Advice, Column, Fixed,
+    },
+    util::Challenges,
+};
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
+use halo2_proofs::plonk::{FirstPhase, SecondPhase, ThirdPhase};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
@@ -63,52 +67,72 @@ where
     stored_expressions: Vec<StoredExpression<F>>,
     math_gadget_container: G,
     _marker: PhantomData<F>,
-    power_of_randomness: [Expression<F>; 31],
+    challenges: Challenges<Expression<F>>,
 }
 
-pub(crate) struct UnitTestMathGadgetBaseCircuit<F, G> {
+pub(crate) struct UnitTestMathGadgetBaseCircuit<G> {
     size: usize,
     witnesses: Vec<Word>,
-    randomness: F,
     _marker: PhantomData<G>,
 }
 
-impl<F: Field, G> UnitTestMathGadgetBaseCircuit<F, G> {
-    fn new(size: usize, witnesses: Vec<Word>, randomness: F) -> Self {
+impl<G> UnitTestMathGadgetBaseCircuit<G> {
+    fn new(size: usize, witnesses: Vec<Word>) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size,
             witnesses,
-            randomness,
             _marker: PhantomData,
         }
     }
 }
 
-impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseCircuit<F, G> {
-    type Config = UnitTestMathGadgetBaseCircuitConfig<F, G>;
+impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseCircuit<G> {
+    type Config = (UnitTestMathGadgetBaseCircuitConfig<F, G>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         UnitTestMathGadgetBaseCircuit {
             size: 0,
             witnesses: vec![],
-            randomness: F::from(123456u64),
             _marker: PhantomData,
         }
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let challenges = Challenges::construct(meta);
+        let challenges_exprs = challenges.exprs(meta);
+
         let q_usable = meta.selector();
         let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
+
+        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
+        let advices = [(); STEP_WIDTH]
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                    meta.advice_column_in(ThirdPhase)
+                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                    meta.advice_column_in(SecondPhase)
+                } else {
+                    meta.advice_column_in(FirstPhase)
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
         let step_curr = Step::new(meta, advices, 0, false);
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let power_of_randomness = power_of_randomness_from_instance(meta);
-
+        let evm_word_powers_of_randomness = challenges_exprs.evm_word_powers_of_randomness();
+        let lookup_input_powers_of_randomness =
+            challenges_exprs.lookup_input_powers_of_randomness();
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next,
-            &power_of_randomness,
+            &challenges_exprs,
+            &evm_word_powers_of_randomness,
+            &lookup_input_powers_of_randomness,
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
@@ -133,23 +157,26 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(
                             column.expr(),
-                            rlc::expr(&table_expressions, &power_of_randomness),
+                            rlc::expr(&table_expressions, &lookup_input_powers_of_randomness),
                         )]
                     });
                 }
             }
         }
 
-        UnitTestMathGadgetBaseCircuitConfig::<F, G> {
-            q_usable,
-            fixed_table,
-            advices,
-            step: step_curr,
-            stored_expressions,
-            math_gadget_container,
-            _marker: PhantomData,
-            power_of_randomness,
-        }
+        (
+            UnitTestMathGadgetBaseCircuitConfig::<F, G> {
+                q_usable,
+                fixed_table,
+                advices,
+                step: step_curr,
+                stored_expressions,
+                math_gadget_container,
+                _marker: PhantomData,
+                challenges: challenges_exprs,
+            },
+            challenges,
+        )
     }
 
     fn synthesize(
@@ -157,15 +184,16 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
+        let (config, challenges) = config;
+        let challenge_values = challenges.values(&mut layouter);
         layouter.assign_region(
             || "assign test container",
             |mut region| {
                 let offset = 0;
                 config.q_usable.enable(&mut region, offset)?;
-                let power_of_randomness = generate_power_of_randomness(self.randomness);
                 let cached_region = &mut CachedRegion::<'_, '_, F>::new(
                     &mut region,
-                    power_of_randomness.try_into().unwrap(),
+                    &challenge_values,
                     config.advices.to_vec(),
                     MAX_STEP_HEIGHT * 3,
                     offset,
@@ -229,14 +257,9 @@ pub(crate) fn test_math_gadget_container<F: Field, G: MathGadgetContainer<F>>(
     expected_success: bool,
 ) {
     const K: usize = 12;
-    let randomness = F::from(123456u64);
-    let power_of_randomness_instances: Vec<Vec<F>> = generate_power_of_randomness(randomness)
-        .iter()
-        .map(|power_of_randomn: &F| vec![*power_of_randomn; (1 << K) - 64])
-        .collect();
-    let circuit = UnitTestMathGadgetBaseCircuit::<F, G>::new(K, witnesses, randomness);
+    let circuit = UnitTestMathGadgetBaseCircuit::<G>::new(K, witnesses);
 
-    let prover = MockProver::<F>::run(K as u32, &circuit, power_of_randomness_instances).unwrap();
+    let prover = MockProver::<F>::run(K as u32, &circuit, vec![]).unwrap();
     if expected_success {
         assert_eq!(prover.verify(), Ok(()));
     } else {

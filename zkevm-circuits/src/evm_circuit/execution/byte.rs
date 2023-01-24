@@ -33,8 +33,8 @@ impl<F: Field> ExecutionGadget<F> for ByteGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BYTE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let index = cb.query_word();
-        let value = cb.query_word();
+        let index = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
 
         // If any of the non-LSB bytes of the index word are non-zero we never
         // need to copy any bytes. So just sum all the non-LSB byte

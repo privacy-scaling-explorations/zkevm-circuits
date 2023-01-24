@@ -456,12 +456,15 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block
-            .exp_events
-            .iter()
-            .map(|e| e.steps.len() * OFFSET_INCREMENT)
-            .sum()
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        (
+            block
+                .exp_events
+                .iter()
+                .map(|e| e.steps.len() * OFFSET_INCREMENT)
+                .sum(),
+            block.exp_circuit_pad_to,
+        )
     }
 
     /// Make the assignments to the ExpCircuit

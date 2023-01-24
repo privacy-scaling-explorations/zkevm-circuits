@@ -11,7 +11,7 @@ use crate::{
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, CachedRegion, Cell, RandomLinearCombination, Word,
+            not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -19,10 +19,9 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{Field, ToScalar};
+use eth_types::{Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ReturnRevertGadget<F> {
@@ -57,8 +56,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let offset = cb.query_cell();
-        let length = cb.query_rlc();
+        let offset = cb.query_cell_phase2();
+        let length = cb.query_word_rlc();
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
         let range = MemoryAddressGadget::construct(cb, offset, length);
@@ -100,7 +99,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             cb.condition(is_contract_deployment.clone(), |cb| {
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
-                let code_hash = cb.query_cell();
+                let code_hash = cb.query_cell_phase2();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
@@ -121,16 +120,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 .map(|tag| cb.call_context(None, tag));
                 let mut reversion_info = cb.reversion_info_read(None);
 
-                let empty_code_hash_rlc = Word::random_linear_combine_expr(
-                    (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                    cb.power_of_randomness(),
-                );
-
                 cb.account_write(
                     address.expr(),
                     AccountFieldTag::CodeHash,
                     code_hash.expr(),
-                    empty_code_hash_rlc,
+                    cb.empty_hash_rlc(),
                     Some(&mut reversion_info),
                 );
 
@@ -256,9 +250,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         )?;
 
         let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
-        let range = self
-            .range
-            .assign(region, offset, memory_offset, length, block.randomness)?;
+        let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
 
@@ -290,10 +282,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             self.code_hash.assign(
                 region,
                 offset,
-                Value::known(RandomLinearCombination::random_linear_combine(
-                    code_hash,
-                    block.randomness,
-                )),
+                region.word_rlc(U256::from_little_endian(&code_hash)),
             )?;
         }
 
