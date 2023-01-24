@@ -33,5 +33,5 @@ pretty_assertions = "1.0.0"
 default = []
 rpc = []
 circuit_input_builder = []
-circuits_actual = []
-circuits_mock = []
+circuits = []
+mock_prover = []
