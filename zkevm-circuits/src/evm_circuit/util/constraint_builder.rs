@@ -266,8 +266,8 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
-    word_powers_of_randomness: &'a [Expression<F>; 31],
-    lookup_powers_of_randomness: &'a [Expression<F>; 12],
+    word_powers_of_randomness: [Expression<F>; 31],
+    lookup_powers_of_randomness: [Expression<F>; 12],
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
@@ -285,10 +285,11 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         curr: Step<F>,
         next: Step<F>,
         challenges: &'a Challenges<Expression<F>>,
-        word_powers_of_randomness: &'a [Expression<F>; 31],
-        lookup_powers_of_randomness: &'a [Expression<F>; 12],
         execution_state: ExecutionState,
     ) -> Self {
+        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness::<31>();
+        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness::<12>();
+
         Self {
             max_degree: MAX_DEGREE,
             curr,
@@ -379,7 +380,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
-        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.word_powers_of_randomness)
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), &self.word_powers_of_randomness)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -423,7 +424,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
-        RandomLinearCombination::random_linear_combine_expr(bytes, self.word_powers_of_randomness)
+        RandomLinearCombination::random_linear_combine_expr(bytes, &self.word_powers_of_randomness)
     }
 
     pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
@@ -1435,7 +1436,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         let compressed_expr = self.split_expression(
             "Lookup compression",
-            rlc::expr(&lookup.input_exprs(), self.lookup_powers_of_randomness),
+            rlc::expr(&lookup.input_exprs(), &self.lookup_powers_of_randomness),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));

@@ -124,15 +124,10 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
 
         let step_curr = Step::new(meta, advices, 0, false);
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let evm_word_powers_of_randomness = challenges_exprs.evm_word_powers_of_randomness();
-        let lookup_input_powers_of_randomness =
-            challenges_exprs.lookup_input_powers_of_randomness();
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next,
             &challenges_exprs,
-            &evm_word_powers_of_randomness,
-            &lookup_input_powers_of_randomness,
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
