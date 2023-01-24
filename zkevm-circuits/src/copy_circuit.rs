@@ -2,9 +2,10 @@
 //! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
 //! etc.
 
-use bus_mapping::circuit_input_builder::{CopyDataType, NumberOrHash};
-
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use eth_types::Field;
+#[cfg(test)]
+use eth_types::Word;
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -19,12 +20,12 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
+#[cfg(test)]
+use std::collections::HashMap;
+use std::marker::PhantomData;
 
 use crate::{
-    evm_circuit::{
-        util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
-        witness::Block,
-    },
+    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,
@@ -32,6 +33,9 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
+
+#[cfg(test)]
+use crate::witness::{Bytecode, RwMap, Transaction};
 
 /// Encode the type `NumberOrHash` into a field element
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
@@ -425,108 +429,121 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 }
 
 impl<F: Field> CopyCircuitConfig<F> {
-    /// Assign a witness block to the Copy Circuit.
-    pub fn assign_block(
+    /// Assign an individual copy event to the Copy Circuit.
+    pub fn assign_copy_event(
+        &self,
+        region: &mut Region<F>,
+        offset: &mut usize,
+        tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
+        lt_chip: &LtChip<F, 8>,
+        challenges: Challenges<Value<F>>,
+        copy_event: &CopyEvent,
+    ) -> Result<(), Error> {
+        for (step_idx, (tag, table_row, circuit_row)) in
+            CopyTable::assignments(copy_event, challenges)
+                .iter()
+                .enumerate()
+        {
+            let is_read = step_idx % 2 == 0;
+
+            // Copy table assignments
+            for (column, &(value, label)) in self.copy_table.columns().iter().zip_eq(table_row) {
+                // Leave sr_addr_end and bytes_left unassigned when !is_read
+                if !is_read && (label == "src_addr_end" || label == "bytes_left") {
+                } else {
+                    region.assign_advice(
+                        || format!("{} at row: {}", label, offset),
+                        *column,
+                        *offset,
+                        || value,
+                    )?;
+                }
+            }
+
+            // q_step
+            if is_read {
+                self.q_step.enable(region, *offset)?;
+            }
+            // q_enable
+            region.assign_fixed(
+                || "q_enable",
+                self.q_enable,
+                *offset,
+                || Value::known(F::one()),
+            )?;
+
+            // is_last, value, is_pad, is_code
+            for (column, &(value, label)) in [self.is_last, self.value, self.is_pad, self.is_code]
+                .iter()
+                .zip_eq(circuit_row)
+            {
+                region.assign_advice(
+                    || format!("{} at row: {}", label, *offset),
+                    *column,
+                    *offset,
+                    || value,
+                )?;
+            }
+
+            //tag
+            tag_chip.assign(region, *offset, tag)?;
+
+            // lt chip
+            if is_read {
+                lt_chip.assign(
+                    region,
+                    *offset,
+                    F::from(copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64),
+                    F::from(copy_event.src_addr_end),
+                )?;
+            }
+
+            *offset += 1;
+        }
+
+        Ok(())
+    }
+
+    /// Assign vec of copy events
+    pub fn assign_copy_events(
         &self,
         layouter: &mut impl Layouter<F>,
-        block: &Block<F>,
+        copy_events: &[CopyEvent],
+        max_copy_rows: usize,
         challenges: Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let copy_rows_needed = block
-            .copy_events
-            .iter()
-            .map(|c| c.bytes.len() * 2)
-            .sum::<usize>();
+        let copy_rows_needed = copy_events.iter().map(|c| c.bytes.len() * 2).sum::<usize>();
 
         // The `+ 2` is used to take into account the two extra empty copy rows needed
         // to satisfy the query at `Rotation(2)` performed inside of the
         // `rows[2].value == rows[0].value * r + rows[1].value` requirement in the RLC
         // Accumulation gate.
-        assert!(copy_rows_needed + 2 <= block.circuits_params.max_copy_rows);
+        assert!(copy_rows_needed + 2 <= max_copy_rows);
 
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
-        let copy_table_columns = self.copy_table.columns();
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
                 let mut offset = 0;
-                for copy_event in block.copy_events.iter() {
-                    for (step_idx, (tag, table_row, circuit_row)) in
-                        CopyTable::assignments(copy_event, challenges)
-                            .iter()
-                            .enumerate()
-                    {
-                        let is_read = step_idx % 2 == 0;
-                        // Copy table assignments
-                        for (column, &(value, label)) in copy_table_columns.iter().zip_eq(table_row)
-                        {
-                            // Leave sr_addr_end and bytes_left unassigned when !is_read
-                            if !is_read && (label == "src_addr_end" || label == "bytes_left") {
-                            } else {
-                                region.assign_advice(
-                                    || format!("{} at row: {}", label, offset),
-                                    *column,
-                                    offset,
-                                    || value,
-                                )?;
-                            }
-                        }
-
-                        // q_step
-                        if is_read {
-                            self.q_step.enable(&mut region, offset)?;
-                        }
-                        // q_enable
-                        region.assign_fixed(
-                            || "q_enable",
-                            self.q_enable,
-                            offset,
-                            || Value::known(F::one()),
-                        )?;
-
-                        // is_last, value, is_pad, is_code
-                        for (column, &(value, label)) in
-                            [self.is_last, self.value, self.is_pad, self.is_code]
-                                .iter()
-                                .zip_eq(circuit_row)
-                        {
-                            region.assign_advice(
-                                || format!("{} at row: {}", label, offset),
-                                *column,
-                                offset,
-                                || value,
-                            )?;
-                        }
-
-                        //tag
-                        tag_chip.assign(&mut region, offset, tag)?;
-
-                        // lt chip
-                        if is_read {
-                            lt_chip.assign(
-                                &mut region,
-                                offset,
-                                F::from(
-                                    copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64,
-                                ),
-                                F::from(copy_event.src_addr_end),
-                            )?;
-                        }
-
-                        offset += 1;
-                    }
+                for copy_event in copy_events.iter() {
+                    self.assign_copy_event(
+                        &mut region,
+                        &mut offset,
+                        &tag_chip,
+                        &lt_chip,
+                        challenges,
+                        copy_event,
+                    )?;
                 }
 
-                for _ in 0..block.circuits_params.max_copy_rows - copy_rows_needed - 2 {
-                    self.assign_padding_row(&mut region, offset, false, &tag_chip, &lt_chip)?;
-                    offset += 1;
+                for _ in 0..max_copy_rows - copy_rows_needed - 2 {
+                    self.assign_padding_row(&mut region, &mut offset, false, &tag_chip, &lt_chip)?;
                 }
 
-                self.assign_padding_row(&mut region, offset, true, &tag_chip, &lt_chip)?;
-                offset += 1;
-                self.assign_padding_row(&mut region, offset, true, &tag_chip, &lt_chip)?;
+                self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
+                self.assign_padding_row(&mut region, &mut offset, true, &tag_chip, &lt_chip)?;
 
                 Ok(())
             },
@@ -536,7 +553,7 @@ impl<F: Field> CopyCircuitConfig<F> {
     fn assign_padding_row(
         &self,
         region: &mut Region<F>,
-        offset: usize,
+        offset: &mut usize,
         is_last_two: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
@@ -546,132 +563,157 @@ impl<F: Field> CopyCircuitConfig<F> {
             region.assign_fixed(
                 || "q_enable",
                 self.q_enable,
-                offset,
+                *offset,
                 || Value::known(F::one()),
             )?;
             // q_step
-            if offset % 2 == 0 {
-                self.q_step.enable(region, offset)?;
+            if *offset % 2 == 0 {
+                self.q_step.enable(region, *offset)?;
             }
         }
 
         // is_first
         region.assign_advice(
-            || format!("assign is_first {}", offset),
+            || format!("assign is_first {}", *offset),
             self.copy_table.is_first,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // is_last
         region.assign_advice(
-            || format!("assign is_last {}", offset),
+            || format!("assign is_last {}", *offset),
             self.is_last,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // id
         region.assign_advice(
-            || format!("assign id {}", offset),
+            || format!("assign id {}", *offset),
             self.copy_table.id,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // addr
         region.assign_advice(
-            || format!("assign addr {}", offset),
+            || format!("assign addr {}", *offset),
             self.copy_table.addr,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // src_addr_end
         region.assign_advice(
-            || format!("assign src_addr_end {}", offset),
+            || format!("assign src_addr_end {}", *offset),
             self.copy_table.src_addr_end,
-            offset,
+            *offset,
             || Value::known(F::one()),
         )?;
         // bytes_left
         region.assign_advice(
-            || format!("assign bytes_left {}", offset),
+            || format!("assign bytes_left {}", *offset),
             self.copy_table.bytes_left,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // value
         region.assign_advice(
-            || format!("assign value {}", offset),
+            || format!("assign value {}", *offset),
             self.value,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // rlc_acc
         region.assign_advice(
-            || format!("assign rlc_acc {}", offset),
+            || format!("assign rlc_acc {}", *offset),
             self.copy_table.rlc_acc,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // is_code
         region.assign_advice(
-            || format!("assign is_code {}", offset),
+            || format!("assign is_code {}", *offset),
             self.is_code,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // is_pad
         region.assign_advice(
-            || format!("assign is_pad {}", offset),
+            || format!("assign is_pad {}", *offset),
             self.is_pad,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // rw_counter
         region.assign_advice(
-            || format!("assign rw_counter {}", offset),
+            || format!("assign rw_counter {}", *offset),
             self.copy_table.rw_counter,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // rwc_inc_left
         region.assign_advice(
-            || format!("assign rwc_inc_left {}", offset),
+            || format!("assign rwc_inc_left {}", *offset),
             self.copy_table.rwc_inc_left,
-            offset,
+            *offset,
             || Value::known(F::zero()),
         )?;
         // tag
-        tag_chip.assign(region, offset, &CopyDataType::Padding)?;
-        // Assing LT gadget
+        tag_chip.assign(region, *offset, &CopyDataType::Padding)?;
+        // Assign LT gadget
+        lt_chip.assign(region, *offset, F::zero(), F::one())?;
 
-        lt_chip.assign(region, offset, F::zero(), F::one())?;
+        *offset += 1;
+
         Ok(())
     }
 }
 
-/// Copy Circuit
-#[derive(Clone, Debug)]
-pub struct CopyCircuit<F: Field> {
-    /// Block
-    pub block: Option<Block<F>>,
-    /// Max number of transactions supported
+/// Struct for test data, specifies values for related lookup tables
+#[cfg(test)]
+#[derive(Clone, Debug, Default)]
+pub struct CopyCircuitTestData {
     pub max_txs: usize,
+    pub txs: Vec<Transaction>,
+    pub max_rws: usize,
+    pub rws: RwMap,
+    pub bytecodes: HashMap<Word, Bytecode>,
+}
+
+/// Copy Circuit
+#[derive(Clone, Debug, Default)]
+pub struct CopyCircuit<F: Field> {
+    /// Copy events
+    pub copy_events: Vec<CopyEvent>,
+    /// Max number of rows in copy circuit
+    pub max_copy_rows: usize,
+    _marker: PhantomData<F>,
+    #[cfg(test)]
+    pub test_data: CopyCircuitTestData,
 }
 
 impl<F: Field> CopyCircuit<F> {
     /// Return a new CopyCircuit
-    pub fn new(max_txs: usize, block: Block<F>) -> Self {
+    pub fn new(copy_events: Vec<CopyEvent>, max_copy_rows: usize) -> Self {
         Self {
-            block: Some(block),
-            max_txs,
+            copy_events,
+            max_copy_rows,
+            _marker: PhantomData::default(),
+            #[cfg(test)]
+            test_data: CopyCircuitTestData::default(),
         }
     }
-}
 
-impl<F: Field> Default for CopyCircuit<F> {
-    fn default() -> Self {
+    /// Return a new CopyCircuit with test data
+    #[cfg(test)]
+    pub fn new_with_test_data(
+        copy_events: Vec<CopyEvent>,
+        max_copy_rows: usize,
+        test_data: CopyCircuitTestData,
+    ) -> Self {
         Self {
-            block: Some(Block::default()),
-            max_txs: usize::default(),
+            copy_events,
+            max_copy_rows,
+            _marker: PhantomData::default(),
+            test_data,
         }
     }
 }
@@ -680,7 +722,10 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(block.circuits_params.max_txs, block.clone())
+        Self::new(
+            block.clone().copy_events,
+            block.circuits_params.max_copy_rows,
+        )
     }
 
     /// Return the minimum number of rows required to prove the block
@@ -703,8 +748,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        let block = self.block.as_ref().unwrap();
-        config.assign_block(layouter, block, *challenges)
+        config.assign_copy_events(layouter, &self.copy_events, self.max_copy_rows, *challenges)
     }
 }
 
@@ -713,14 +757,17 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
 pub mod dev {
     use super::*;
     use eth_types::Field;
+    #[cfg(test)]
+    use halo2_proofs::dev::{MockProver, VerifyFailure};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem},
     };
 
+    #[cfg(test)]
+    use crate::witness::Block;
+
     use crate::{
-        evm_circuit::witness::Block,
         table::{BytecodeTable, RwTable, TxTable},
         util::Challenges,
     };
@@ -763,42 +810,72 @@ pub mod dev {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), halo2_proofs::plonk::Error> {
-            let block = self.block.as_ref().unwrap();
             let challenge_values = config.1.values(&mut layouter);
 
-            config
-                .0
-                .tx_table
-                .load(&mut layouter, &block.txs, self.max_txs, &challenge_values)?;
+            #[cfg(test)]
+            config.0.tx_table.load(
+                &mut layouter,
+                &self.test_data.txs,
+                self.test_data.max_txs,
+                &challenge_values,
+            )?;
 
-            // TODO: RW table can't be passed `Challenges<Value<F>>` until the EVM circuit
-            // is not migrated to the challenge API.
+            #[cfg(test)]
             config.0.rw_table.load(
                 &mut layouter,
-                &block.rws.table_assignments(),
-                block.circuits_params.max_rws,
+                &self.test_data.rws.table_assignments(),
+                self.test_data.max_rws,
                 challenge_values.evm_word(),
             )?;
+
+            #[cfg(test)]
             config.0.bytecode_table.load(
                 &mut layouter,
-                block.bytecodes.values(),
+                self.test_data.bytecodes.values(),
                 &challenge_values,
             )?;
             self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
         }
     }
 
-    /// Test copy circuit with the provided block witness
-    pub fn test_copy_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = CopyCircuit::<F>::new(4, block);
+    /// Test copy circuit from copy events and test data
+    #[cfg(test)]
+    pub fn test_copy_circuit<F: Field>(
+        k: u32,
+        copy_events: Vec<CopyEvent>,
+        max_copy_rows: usize,
+        test_data: CopyCircuitTestData,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        let circuit = CopyCircuit::<F>::new_with_test_data(copy_events, max_copy_rows, test_data);
+
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_par()
+    }
+
+    /// Test copy circuit with the provided block witness
+    #[cfg(test)]
+    pub fn test_copy_circuit_from_block<F: Field>(
+        k: u32,
+        block: Block<F>,
+    ) -> Result<(), Vec<VerifyFailure>> {
+        test_copy_circuit::<F>(
+            k,
+            block.copy_events,
+            block.circuits_params.max_copy_rows,
+            CopyCircuitTestData {
+                max_txs: block.circuits_params.max_txs,
+                txs: block.txs,
+                max_rws: block.circuits_params.max_rws,
+                rws: block.rws,
+                bytecodes: block.bytecodes,
+            },
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::dev::test_copy_circuit;
+    use super::dev::test_copy_circuit_from_block;
     use crate::evm_circuit::test::rand_bytes;
     use crate::evm_circuit::witness::block_convert;
     use bus_mapping::evm::{gen_sha3_code, MemoryKind};
@@ -807,6 +884,7 @@ mod tests {
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
+    use halo2_proofs::dev::VerifyFailure;
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::{TestContext, MOCK_ACCOUNTS};
@@ -946,77 +1024,132 @@ mod tests {
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(14, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_codecopy() {
         let builder = gen_codecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(10, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_extcodecopy() {
         let builder = gen_extcodecopy_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(14, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
     }
 
     #[test]
     fn copy_circuit_valid_sha3() {
         let builder = gen_sha3_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(20, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
     }
 
     #[test]
-    fn copy_circuit_tx_log() {
+    fn copy_circuit_valid_tx_log() {
         let builder = gen_tx_log_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit(10, block), Ok(()));
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
     }
 
-    // // TODO: replace these with deterministic failure tests
-    // fn perturb_tag(block: &mut bus_mapping::circuit_input_builder::Block) {
-    //     debug_assert!(!block.copy_events.is_empty());
-    //     debug_assert!(!block.copy_events[0].steps.is_empty());
-    //
-    //     let copy_event = &mut block.copy_events[0];
-    //     let mut rng = rand::thread_rng();
-    //     let rand_idx = (0..copy_event.steps.len()).choose(&mut rng).unwrap();
-    //     let (is_read_step, mut perturbed_step) = match rng.gen::<f32>() {
-    //         f if f < 0.5 => (true, copy_event.steps[rand_idx].0.clone()),
-    //         _ => (false, copy_event.steps[rand_idx].1.clone()),
-    //     };
-    //     match rng.gen::<f32>() {
-    //         _ => perturbed_step.value = rng.gen(),
-    //     }
-    //
-    //         copy_event.bytes[rand_idx] = perturbed_step;
-    // }
+    #[test]
+    fn copy_circuit_invalid_calldatacopy() {
+        let mut builder = gen_calldatacopy_data();
 
-    // #[test]
-    // fn copy_circuit_invalid_calldatacopy() {
-    //     let mut builder = gen_calldatacopy_data();
-    //     perturb_tag(&mut builder.block);
-    //     let block = block_convert(&builder.block, &builder.code_db);
-    //     assert!(test_copy_circuit(10, block).is_err());
-    // }
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
 
-    // #[test]
-    // fn copy_circuit_invalid_codecopy() {
-    //     let mut builder = gen_codecopy_data();
-    //     perturb_tag(&mut builder.block);
-    //     let block = block_convert(&builder.block, &builder.code_db);
-    //     assert!(test_copy_circuit(10, block).is_err());
-    // }
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
-    // #[test]
-    // fn copy_circuit_invalid_sha3() {
-    //     let mut builder = gen_sha3_data();
-    //     perturb_tag(&mut builder.block);
-    //     let block = block_convert(&builder.block, &builder.code_db);
-    //     assert!(test_copy_circuit(20, block).is_err());
-    // }
+        assert_error_matches(
+            test_copy_circuit_from_block(14, block),
+            vec!["Memory lookup", "Tx calldata lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_codecopy() {
+        let mut builder = gen_codecopy_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(10, block),
+            vec!["Memory lookup", "Bytecode lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_extcodecopy() {
+        let mut builder = gen_extcodecopy_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(14, block),
+            vec!["Memory lookup", "Bytecode lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_sha3() {
+        let mut builder = gen_sha3_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(14, block),
+            vec!["Memory lookup"],
+        );
+    }
+
+    #[test]
+    fn copy_circuit_invalid_tx_log() {
+        let mut builder = gen_tx_log_data();
+
+        // modify first byte of first copy event
+        builder.block.copy_events[0].bytes[0].0 =
+            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
+
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        assert_error_matches(
+            test_copy_circuit_from_block(10, block),
+            vec!["Memory lookup", "TxLog lookup"],
+        );
+    }
+
+    fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>) {
+        let errors = result.expect_err("result is not an error");
+        assert_eq!(errors.len(), names.len(), "{:?}", errors);
+        for i in 0..names.len() {
+            match &errors[i] {
+                VerifyFailure::Lookup {
+                    name: lookup_name, ..
+                } => {
+                    assert_eq!(lookup_name, &names[i])
+                }
+                VerifyFailure::ConstraintNotSatisfied { .. } => panic!(),
+                VerifyFailure::CellNotAssigned { .. } => panic!(),
+                VerifyFailure::ConstraintPoisoned { .. } => panic!(),
+                VerifyFailure::Permutation { .. } => panic!(),
+            }
+        }
+    }
 }
