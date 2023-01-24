@@ -468,11 +468,12 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         rlc::expr(&bytes, power_of_randomness)
     }
 
-    pub(crate) fn new(cells: [Cell<F>; N], power_of_randomness: &[Expression<F>]) -> Self {
+    pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
+        let power_of_randomness = Self::powers_of::<N>(randomness);
         Self {
             expression: Self::random_linear_combine_expr(
                 cells.clone().map(|cell| cell.expr()),
-                power_of_randomness,
+                &power_of_randomness,
             ),
             cells,
         }
@@ -493,6 +494,16 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
                 })
                 .collect()
         })
+    }
+
+    fn powers_of<const S: usize>(base: Expression<F>) -> [Expression<F>; S] {
+        std::iter::successors(base.clone().into(), |power| {
+            (base.clone() * power.clone()).into()
+        })
+        .take(S)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
     }
 }
 
