@@ -6,7 +6,7 @@ pub mod extension_node;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
@@ -17,8 +17,9 @@ use crate::{
     circuit_tools::{DataTransition, LRCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
+    mpt_circuit::{helpers::contains_placeholder_leaf, storage_leaf::StorageLeaf},
     mpt_circuit::{
-        helpers::BranchNodeInfo,
+        helpers::{BranchChildInfo, BranchNodeInfo},
         param::{
             BRANCH_0_C_START, BRANCH_0_KEY_POS, BRANCH_0_S_START, BRANCH_ROWS_NUM, C_RLP_START,
             C_START, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_C_PLACEHOLDER_POS,
@@ -26,10 +27,6 @@ use crate::{
             IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
             IS_EXT_SHORT_C1_POS, NIBBLES_COUNTER_POS, RLP_NUM, S_RLP_START, S_START,
         },
-    },
-    mpt_circuit::{
-        helpers::{contains_placeholder_leaf, get_num_bytes_list_short},
-        storage_leaf::StorageLeaf,
     },
     mpt_circuit::{param::RLP_HASH_VALUE, witness_row::MptWitnessRow},
     mpt_circuit::{MPTConfig, ProofValues},
@@ -137,13 +134,10 @@ impl<F: FieldExt> BranchConfig<F> {
         let c_main = ctx.c_main;
         let accs = ctx.accumulators;
         let branch = ctx.branch;
-        let denoter = ctx.denoter;
         let r = ctx.r.clone();
 
         circuit!([meta, cb.base], {
             let q_not_first = f!(position_cols.q_not_first);
-            let not_first_level = a!(position_cols.not_first_level);
-
             let drifted_index = DataTransition::new(meta, branch.drifted_index);
             let node_index = DataTransition::new(meta, branch.node_index);
             let modified_index = DataTransition::new(meta, branch.modified_index);
@@ -157,25 +151,16 @@ impl<F: FieldExt> BranchConfig<F> {
                 // These selectors are only stored in branch init rows
                 ifx!{is_branch_init => {
                     let branch = BranchNodeInfo::new(meta, ctx.clone(), true, 0);
-
                     // Boolean checks
                     for selector in [branch.is_placeholder_s(), branch.is_placeholder_c(), branch.is_not_hashed_s(), branch.is_not_hashed_c()] {
                         require!(selector => bool);
                     }
-                    // The `nibbles_counter` cell in a branch init row stores the number of
-                    // nibbles used up to this point (up to this branch). If a regular branch, the counter increases only
-                    // by 1 as only one nibble is used to determine the position of `modified_node` in a branch.
-                    // On the contrary, when it is an extension node the counter increases by the number of nibbles
-                    // in the extension key and the additional nibble for the position in a branch (this constraint
-                    // is in `extension_node.rs` though).
+                    // Update the nibble counter
                     ifx!{not!(branch.is_extension()) => {
-                        ifx!{not!(branch.is_below_account(meta)), not_first_level => {
-                            // Only check if there is an account above the branch.
-                            require!(branch.nibbles_counter() => branch.nibbles_counter().prev() + 1.expr());
-                        } elsex {
-                            // If branch is in the first level of the account/storage trie, `nibbles_count` needs to be 1.
-                            require!(branch.nibbles_counter() => 1);
-                        }}
+                        let nibbles_counter_prev = ifx!{not!(branch.is_at_tree_top(meta)) => {
+                            branch.nibbles_counter().prev()
+                        }};
+                        require!(branch.nibbles_counter() => nibbles_counter_prev + 1.expr());
                     }}
                 }}
             }}
@@ -184,14 +169,9 @@ impl<F: FieldExt> BranchConfig<F> {
                 ifx!{is_branch_child => {
                     // Keep track of how many branch bytes we've processed.
                     for is_s in [true, false] {
-                        // Calculate the number of bytes on this row.
-                        let num_bytes = ifx!{a!(denoter.is_not_hashed(is_s)) => {
-                            get_num_bytes_list_short(a!(ctx.main(is_s).bytes[0]))
-                        } elsex {
-                            // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
-                            // non-nil node (1 or 33 respectively).
-                            a!(ctx.main(is_s).rlp2) * invert!(RLP_HASH_VALUE) * 32.expr() + 1.expr()
-                        }};
+                        let child = BranchChildInfo::new(meta, ctx.clone(), is_s, 0);
+                        // Get the number of bytes used by the current branch.
+                        let num_bytes = child.num_bytes(meta);
                         // Fetch the number of bytes left from the previous row.
                         // TODO(Brecht): just store it in branch init in its own column.
                         let num_bytes_left = ifx!{is_branch_init.prev() => {
@@ -273,7 +253,6 @@ impl<F: FieldExt> BranchConfig<F> {
                         require!(is_last_child.prev() => true);
                     }}
                 }}
-
 
                 ifx!{is_last_child => {
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
@@ -544,27 +523,38 @@ impl<F: FieldExt> BranchConfig<F> {
         let mut node_mult_diff_s = F::one();
         let mut node_mult_diff_c = F::one();
 
-        if row.get_byte(S_RLP_START + 1) == 160 {
+        let len = if row.get_byte(S_RLP_START + 1) == 160 {
             pv.rlp_len_rem_s -= 33;
+            33
         } else if row.get_byte(S_RLP_START + 1) == 0 && row.get_byte(S_START) > 192 {
             let len = 1 + (row.get_byte(S_START) as i32 - 192);
             pv.rlp_len_rem_s -= len;
-            for _ in 0..len {
-                node_mult_diff_s *= mpt_config.randomness;
-            }
+            len
         } else if row.get_byte(S_RLP_START + 1) == 0 {
             pv.rlp_len_rem_s -= 1;
+            1
+        } else {
+            0
+        };
+        for _ in 0..len {
+            node_mult_diff_s *= mpt_config.randomness;
         }
-        if row.get_byte(C_RLP_START + 1) == 160 {
+
+        let len = if row.get_byte(C_RLP_START + 1) == 160 {
             pv.rlp_len_rem_c -= 33;
+            33
         } else if row.get_byte(C_RLP_START + 1) == 0 && row.get_byte(C_START) > 192 {
             let len = 1 + (row.get_byte(C_START) as i32 - 192);
             pv.rlp_len_rem_c -= len;
-            for _ in 0..len {
-                node_mult_diff_c *= mpt_config.randomness;
-            }
+            len
         } else if row.get_byte(C_RLP_START + 1) == 0 {
             pv.rlp_len_rem_c -= 1;
+            1
+        } else {
+            0
+        };
+        for _ in 0..len {
+            node_mult_diff_c *= mpt_config.randomness;
         }
 
         region.assign_advice(

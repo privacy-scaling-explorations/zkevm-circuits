@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ops::Range};
 
 use crate::{
     _cb, circuit,
-    circuit_tools::{Conditionable, ConstraintBuilder, DataTransition, LRCable},
+    circuit_tools::{Conditionable, ConstraintBuilder, DataTransition, LRCable, LrcChainable},
     evm_circuit::util::rlc,
     mpt_circuit::param::{
         EXTENSION_ROWS_NUM, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE,
@@ -59,9 +59,6 @@ pub(crate) struct BranchNodeInfo<F> {
     pub(crate) nibbles_counter: DataTransition<F>,
 }
 
-// To reduce the expression degree, we pack together multiple information.
-// Constraints for the selectors are in `extension_node.rs`.
-// Note: even and odd refers to number of nibbles that are compactly encoded.
 impl<F: FieldExt> BranchNodeInfo<F> {
     pub(crate) fn new(
         meta: &mut VirtualCells<F>,
@@ -155,26 +152,26 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     }
 
     pub(crate) fn is_extension(&self) -> Expression<F> {
-        self.is_ext_key_part_even() + self.is_ext_key_part_odd()
+        self.is_key_part_in_ext_even() + self.is_key_part_in_ext_odd()
     }
 
-    // Returns if the key after adding the extension part is even
+    /// Returns if the key after adding the extension part is even
     pub(crate) fn is_key_post_ext_even(&self) -> Expression<F> {
         self.is_short_c16.expr() + self.is_long_even_c1.expr() + self.is_long_odd_c16.expr()
     }
 
-    // Returns if the key after adding the extension part is odd
+    /// Returns if the key after adding the extension part is odd
     pub(crate) fn is_key_post_ext_odd(&self) -> Expression<F> {
         self.is_short_c1.expr() + self.is_long_even_c16.expr() + self.is_long_odd_c1.expr()
     }
 
-    // Returns if the part of the key in an extension node is even
-    pub(crate) fn is_ext_key_part_even(&self) -> Expression<F> {
+    /// Returns if the part of the key in an extension node is even
+    pub(crate) fn is_key_part_in_ext_even(&self) -> Expression<F> {
         self.is_long_even_c16.expr() + self.is_long_even_c1.expr()
     }
 
-    // Returns if the part of the key in an extension node is odd
-    pub(crate) fn is_ext_key_part_odd(&self) -> Expression<F> {
+    /// Returns if the part of the key in an extension node is odd
+    pub(crate) fn is_key_part_in_ext_odd(&self) -> Expression<F> {
         self.is_long_odd() + self.is_short()
     }
 
@@ -183,7 +180,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     }
 
     pub(crate) fn is_long_even(&self) -> Expression<F> {
-        self.is_ext_key_part_even()
+        self.is_key_part_in_ext_even()
     }
 
     pub(crate) fn is_short(&self) -> Expression<F> {
@@ -194,10 +191,12 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         self.is_long_even() + self.is_long_odd()
     }
 
+    /// Returns if the key up till and including this branch is even.
     pub(crate) fn is_key_even(&self) -> Expression<F> {
         self.is_c1.expr()
     }
 
+    /// Returns if the key up till and including this branch is odd.
     pub(crate) fn is_key_odd(&self) -> Expression<F> {
         self.is_c16.expr()
     }
@@ -254,6 +253,8 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         }
     }
 
+    /// Number of key nibbles processed up till and including the current
+    /// branch.
     pub(crate) fn nibbles_counter(&self) -> DataTransition<F> {
         self.nibbles_counter.clone()
     }
@@ -264,6 +265,18 @@ impl<F: FieldExt> BranchNodeInfo<F> {
 
     pub(crate) fn is_below_account(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         self.ctx.is_account(meta, self.rot_branch_init - 1)
+    }
+
+    pub(crate) fn is_at_tree_top(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            or::expr(&[
+                not!(a!(
+                    self.ctx.position_cols.not_first_level,
+                    self.rot_branch_init
+                )),
+                self.is_below_account(meta),
+            ])
+        })
     }
 
     pub(crate) fn storage_root_in_account_above(
@@ -449,10 +462,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             } elsex {
                 let acc = self.ctx.accumulators.acc(self.is_s);
                 // TODO: acc currently doesn't have branch ValueNode info
-                let branch_rlc = rlc::expr(
-                    &[a!(acc.rlc), RLP_NIL.expr()],
-                    &[a!(acc.mult)],
-                );
+                let branch_rlc = (a!(acc.rlc), a!(acc.mult)).rlc_chain(RLP_NIL.expr());
                 (branch_rlc, self.num_bytes(meta), self.is_not_hashed())
             }};
             // Check against the value expected in the parent
@@ -501,7 +511,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
                     self.ctx.clone(),
                     bytes,
                     key_mult_prev.expr(),
-                    self.is_ext_key_part_odd(),
+                    self.is_key_part_in_ext_odd(),
                     mult_first_odd.expr(),
                     key_mult_first_even,
                 )
@@ -538,6 +548,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         })
     }
 
+    /// Add the nibble from the drifted branch
     pub(crate) fn drifted_nibble_rlc(
         &self,
         meta: &mut VirtualCells<F>,
@@ -550,6 +561,104 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             let drifted_mult =
                 key_mult_prev.expr() * ifx! {self.is_key_odd() => { 16.expr() } elsex { 1.expr() }};
             a!(self.ctx.branch.drifted_index, self.rot_branch_init + 1) * drifted_mult
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct BranchChildInfo<F> {
+    pub(crate) is_s: bool,
+    pub(crate) ctx: MPTContext<F>,
+    pub(crate) rot_branch: i32,
+}
+
+impl<F: FieldExt> BranchChildInfo<F> {
+    pub(crate) fn new(
+        _meta: &mut VirtualCells<F>,
+        ctx: MPTContext<F>,
+        is_s: bool,
+        rot_branch: i32,
+    ) -> Self {
+        BranchChildInfo {
+            is_s,
+            ctx: ctx.clone(),
+            rot_branch,
+        }
+    }
+
+    /// Returns the total length of the leaf (including RLP bytes)
+    pub(crate) fn num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            ifx! {self.is_hashed(meta) => {
+                // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
+                // non-nil node (1 or 33 respectively).
+                a!(self.ctx.main(self.is_s).rlp2) * invert!(RLP_HASH_VALUE) * 32.expr() + 1.expr()
+            } elsex {
+                get_num_bytes_list_short(a!(self.ctx.main(self.is_s).bytes[0]))
+            }}
+        })
+    }
+
+    pub(crate) fn is_hashed(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            not!(a!(
+                self.ctx.denoter.is_not_hashed(self.is_s),
+                self.rot_branch
+            ))
+        })
+    }
+
+    pub(crate) fn rlc(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+    ) -> Expression<F> {
+        let main = self.ctx.main(self.is_s);
+        let r = self.ctx.r.clone();
+        circuit!([meta, cb], {
+            ifx! {not!(self.is_hashed(meta)) => {
+                // When a branch child is not empty and is not hashed, a list is stored in the branch and
+                // we have `bytes[0] - RLP_LIST_SHORT` bytes in a row. We need to add these bytes to the RLC.
+                // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
+                main.expr(meta, self.rot_branch)[2..34].rlc(&r)
+            } elsex {
+                ifx!{self.is_empty(meta) => {
+                    require!(a!(main.bytes[0]) => RLP_NIL);
+                    // There's only one byte (128 at `bytes[0]`) that needs to be added to the RLC.
+                    main.expr(meta, self.rot_branch)[2..3].rlc(&r)
+                } elsex {
+                    // When a branch child is non-empty and hashed, we have 33 bytes in a row.
+                    main.expr(meta, self.rot_branch)[1..34].rlc(&r)
+                }}
+            }}
+        })
+    }
+
+    /// Branch data starts at a different offset, this will return the number of
+    /// bytes from the start
+    pub(crate) fn num_bytes_on_row(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            ifx!(self.is_hashed(meta) => {
+                2.expr()
+            } elsex {
+                ifx!{self.is_empty(meta) => {
+                    2.expr()
+                } elsex {
+                    1.expr()
+                }}
+            }) + self.num_bytes(meta)
+        })
+    }
+
+    /// Only usable when the child isn't hashed!
+    pub(crate) fn is_empty(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        let main = self.ctx.main(self.is_s);
+        circuit!([meta, _cb!()], {
+            // Empty nodes have 0 at `rlp2`, have `RLP_NIL` at `bytes[0]` and 0 everywhere
+            // else. While hashed nodes have `RLP_HASH_VALUE at `rlp2` and then
+            // any byte at `bytes`.
+            require!(a!(main.rlp2, self.rot_branch) => [0, RLP_HASH_VALUE]);
+            (RLP_HASH_VALUE.expr() - a!(main.rlp2, self.rot_branch)) * invert!(RLP_HASH_VALUE)
         })
     }
 }
@@ -950,12 +1059,12 @@ pub(crate) fn leaf_key_rlc<F: FieldExt>(
         // Add the odd nibble first if we have one.
         let first_byte = a!(ctx.s_main.rlp_bytes()[range.start]);
         let (rlc, mult) = ifx! {is_key_odd => {
-            (get_terminal_odd_nibble(first_byte.expr()) * key_mult_prev.expr(), key_mult_prev.expr() * ctx.r[0].expr())
+            (get_terminal_odd_nibble(first_byte.expr()) * key_mult_prev.expr(), ctx.r[0].expr())
         } elsex {
             require!(first_byte => KEY_TERMINAL_PREFIX_EVEN);
-            (0.expr(), key_mult_prev.expr() * key_mult_first_even.expr())
+            (0.expr(), key_mult_first_even.expr())
         }};
-        rlc + ctx.rlc_chain(meta, range.start + 1..range.end, 0, mult.expr())
+        (rlc, key_mult_prev * mult).rlc_chain(ctx.rlc(meta, range.start + 1..range.end, 0))
     })
 }
 
@@ -973,12 +1082,12 @@ pub(crate) fn ext_key_rlc<F: FieldExt>(
         // Add the odd nibble first if we have one.
         let first_byte = bytes[0].clone();
         let (rlc, mult) = ifx! {is_odd => {
-            (get_ext_odd_nibble(first_byte.expr()) * rlc_mult_first_odd * key_mult_prev.expr(), key_mult_prev.expr() * key_mult_first_odd.expr())
+            (get_ext_odd_nibble(first_byte.expr()) * key_mult_prev.expr() * rlc_mult_first_odd, key_mult_first_odd.expr())
         } elsex {
             require!(first_byte => KEY_PREFIX_EVEN);
-            (0.expr(), key_mult_prev.expr())
+            (0.expr(), 1.expr())
         }};
-        rlc + bytes[1..].to_vec().rlc_chain(&ctx.r, mult.expr())
+        (rlc, key_mult_prev * mult).rlc_chain(bytes[1..].rlc(&ctx.r))
     })
 }
 

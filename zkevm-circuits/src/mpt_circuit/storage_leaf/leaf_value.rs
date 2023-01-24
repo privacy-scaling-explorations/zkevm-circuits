@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable},
+    circuit_tools::{DataTransition, LRCable, LrcChainable},
     mpt_circuit::{
         helpers::{get_num_bytes_short, MPTConstraintBuilder},
         param::{
@@ -167,7 +167,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 (a!(s_main.rlp1), a!(s_main.rlp1) * mult_prev.expr())
             } elsex {
                 let value_rlc = s_main.bytes(meta, 0).rlc(&r);
-                let leaf_rlc = [a!(s_main.rlp1), a!(s_main.rlp2), value_rlc.expr()].to_vec().rlc_chain(&r, mult_prev.expr());
+                let leaf_rlc = (0.expr(), mult_prev.expr()).rlc_chain([a!(s_main.rlp1), a!(s_main.rlp2), value_rlc.expr()].rlc(&r));
                 (value_rlc, leaf_rlc)
             }};
             require!(value_rlc => new_value_rlc);
@@ -227,7 +227,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         } elsex {
                             // Leaf hash in parent (branch placeholder)
                             // Check if we're in the branch above the placeholder branch.
-                            let rlc = a!(accs.acc_s.rlc, -1) + s_main.rlc_chain(meta, 0, &r, mult_prev.expr());
+                            let rlc = (a!(accs.acc_s.rlc, -1), mult_prev.expr()).rlc_chain(s_main.rlc(meta, 0, &r));
                             let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_branch_child_prev);
                             require!((1, rlc, num_bytes, mod_node_hash_rlc) => @"keccak");
                         }}

@@ -169,18 +169,20 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 }};
 
                 // Calculate the extension node key RLC when in an extension node
-                let key_rlc_post_ext = key_rlc_prev.expr() + ifx!{branch.is_extension() => {
+                let key_rlc_post_ext = ifx!{branch.is_extension() => {
                     let key_rlc_ext = DataTransition::new(meta, key.rlc);
+                    // Extension key rlc
+                    let ext_key_rlc = key_rlc_prev.expr() + branch.ext_key_rlc(meta, &mut cb.base, key_mult_prev.expr());
                     // Currently, the extension node S and extension node C both have the same key RLC -
                     // however, sometimes extension node can be replaced by a shorter extension node
                     // (in terms of nibbles), this is still to be implemented.
                     // TODO: extension nodes of different nibbles length
                     require!(key_rlc_ext => key_rlc_ext.prev());
-                    // Extension key rlc
-                    let ext_key_rlc = branch.ext_key_rlc(meta, &mut cb.base, key_mult_prev.expr());
-                    // TODO(Brecht): don't store it?
-                    require!(key_rlc_ext => key_rlc_prev.expr() + ext_key_rlc.expr());
+                    // Store it
+                    require!(key_rlc_ext => ext_key_rlc);
                     ext_key_rlc.expr()
+                } elsex {
+                    key_rlc_prev.expr()
                 }};
 
                 // Get the length of the key
@@ -206,7 +208,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     // The least significant nibble is added, update the multiplier for the next nibble
                     (1.expr(), r[0].expr())
                 }};
-                require!(key_rlc => key_rlc_post_ext.expr() + modified_index.expr() * mult.expr() * rlc_mult.expr());
+                require!(key_rlc => key_rlc_post_ext.expr() + modified_index.expr() * rlc_mult.expr() * mult.expr());
                 require!(key_mult => mult.expr() * mult_mult.expr());
 
                 // Update key parity
@@ -214,7 +216,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     ifx!{branch.is_extension() => {
                         // We need to take account the nibbles of the extension node.
                         // The parity alternates when there's an even number of nibbles, remains the same otherwise
-                        ifx!{branch.is_ext_key_part_even() => {
+                        ifx!{branch.is_key_part_in_ext_even() => {
                             require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
                         } elsex {
                             require!(branch.is_key_odd() => branch_prev.is_key_odd());
@@ -226,7 +228,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 } elsex {
                     // In the first level we just have to ensure the initial values are set.
                     ifx!{branch.is_extension() => {
-                        require!(branch.is_key_odd() => branch.is_ext_key_part_even());
+                        require!(branch.is_key_odd() => branch.is_key_part_in_ext_even());
                     } elsex {
                         require!(branch.is_key_odd() => true);
                     }}

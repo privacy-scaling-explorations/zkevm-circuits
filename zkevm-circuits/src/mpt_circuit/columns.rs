@@ -92,16 +92,6 @@ impl<F: FieldExt> MainCols<F> {
         self.expr(meta, rot).rlc(r)
     }
 
-    pub(crate) fn rlc_chain(
-        &self,
-        meta: &mut VirtualCells<F>,
-        rot: i32,
-        r: &Vec<Expression<F>>,
-        mult: Expression<F>,
-    ) -> Expression<F> {
-        self.expr(meta, rot).rlc_chain(r, mult)
-    }
-
     pub(crate) fn bytes(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
         self.bytes
             .iter()

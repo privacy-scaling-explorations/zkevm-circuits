@@ -434,24 +434,6 @@ pub(crate) mod rlc {
     }
 }
 
-/// Returns the scalar product of the two inputs.
-pub(crate) mod scalar_mult {
-    use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
-
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(a: &[E], c: E) -> Vec<Expression<F>> {
-        a.iter().map(|a| a.expr() * c.expr()).collect::<Vec<_>>()
-    }
-
-    pub(crate) fn value<'a, F: FieldExt, I>(a: I, c: F) -> Vec<F>
-    where
-        I: IntoIterator<Item = &'a F>,
-        <I as IntoIterator>::IntoIter: DoubleEndedIterator,
-    {
-        a.into_iter().map(|&a| a * c).collect::<Vec<_>>()
-    }
-}
-
 /// Returns 2**by as FieldExt
 pub(crate) fn pow_of_two<F: FieldExt>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])

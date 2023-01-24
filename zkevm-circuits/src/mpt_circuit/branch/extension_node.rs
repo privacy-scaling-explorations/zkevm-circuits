@@ -8,11 +8,11 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable},
-    evm_circuit::util::rlc,
+    circuit_tools::{DataTransition, LRCable, LrcChainable},
     mpt_circuit::{
         helpers::get_num_nibbles,
         param::{ARITY, C_RLP_START, C_START, HASH_WIDTH, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_NIL},
+        FixedTableTag,
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
@@ -246,7 +246,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }
                 // For extension nodes exactly 1 type selector needs to be enabled.
                 require!(sum::expr(&type_selectors) => 1);
-                // `is_c16` and `is_c1` selectors are set using the extension node type selector data.
+                // `is_key_odd` and `is_key_even` selectors are set using the extension node type selector data.
                 // (while in case of a regular branch the extension node selectors do not hold this information).
                 require!(ext.is_key_even() => sum::expr(&type_selectors_c1));
                 require!(ext.is_key_odd() => sum::expr(&type_selectors_c16));
@@ -262,54 +262,58 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 require!(ext.ext_len(meta, 0) => ext.ext_key_num_bytes(meta) + ext.ext_branch_num_bytes(meta));
             }
 
-            // Check that the branch is in the extension node.
+            // Calculate the extension node RLC.
             // The intermediate RLC after `s_main` bytes needs to be properly computed.
             // s_rlp1, s_rlp2, s_bytes need to be the same in both extension rows.
             // However, to make space for nibble witnesses, we put nibbles in
             // extension row C s_bytes. So we use s_bytes from S row.
-            let rlc = s_main.expr(meta, rot_s).rlc(&r);
             // TODO(Brecht): Do we need to store the RLC here? we can just use `rlc`
             // directly below...
-            require!(ext_rlc.prev() => rlc);
-            // Check whether the extension node RLC is properly computed.
-            // The RLC is used to check whether the extension node is a node at the
-            // appropriate position in the parent node.
+            require!(ext_rlc.prev() => s_main.expr(meta, rot_s).rlc(&r));
+            // TODO(Brecht): mult is not constrained?
             let mult = a!(accs.acc_s.mult);
-            ifx! {ext.contains_hashed_branch(meta) => {
-                let rlc = ext_rlc.prev() + c_main.expr(meta, 0)[1..].to_vec().rlc_chain(&r, mult.expr());
-                require!(ext_rlc => rlc);
+            //let num_bytes_on_key_row = ext.ext_num_rlp_bytes(meta) +
+            // ext.ext_key_num_bytes(meta); We need to check that the multiplier
+            // changes according to `num_bytes_on_key_row` and update it.
+            // require!((FixedTableTag::RMult, num_bytes_on_key_row, mult) => @"mult2");
+
+            let rlc = ifx! {ext.contains_hashed_branch(meta) => {
+                c_main.expr(meta, 0)[1..].rlc(&r)
             } elsex {
-                let rlc = ext_rlc.prev() + c_main.expr(meta, 0)[2..].to_vec().rlc_chain(&r, mult.expr());
-                require!(ext_rlc => rlc);
                 // RLC bytes zero check (+2 because data starts at bytes[0])
                 cb.set_length_c(2.expr() + ext.ext_branch_num_bytes(meta));
-            }}
 
-            // We check that the branch hash RLC (computed over the first 17 rows)
-            // corresponds to the extension node RLC stored in the extension node row.
-            // TODO: acc currently doesn't have branch ValueNode info (which 128 if nil)
-            let branch_rlc = rlc::expr(
-                &[a!(accs.acc(is_s).rlc, rot_last_child), RLP_NIL.expr()],
-                &[a!(accs.acc(is_s).mult, rot_last_child)],
-            );
-            let rlc = c_main.bytes(meta, 0).rlc(&r);
+                c_main.expr(meta, 0)[2..].rlc(&r)
+            }};
+            require!(ext_rlc => (ext_rlc.prev(), mult.expr()).rlc_chain(rlc));
+
+            // We check that the branch hash RLC corresponds to the extension node RLC
+            // stored in the extension node row. TODO: acc currently doesn't
+            // have branch ValueNode info (which 128 if nil)
+            let branch_rlc = (
+                a!(accs.acc(is_s).rlc, rot_last_child),
+                a!(accs.acc(is_s).mult, rot_last_child),
+            )
+                .rlc_chain(RLP_NIL.expr());
+            let branch_rlc_in_ext = c_main.bytes(meta, 0).rlc(&r);
             ifx! {ext.contains_hashed_branch(meta) => {
                 // Check that `(branch_rlc, extension_node_hash_rlc`) in in the keccak table.
-                require!((1, branch_rlc, ext.num_bytes(meta), rlc) => @"keccak");
+                require!((1, branch_rlc, ext.num_bytes(meta), branch_rlc_in_ext) => @"keccak");
             } elsex {
-                // Check if the RLC matches.
-                require!(branch_rlc => rlc);
+                // Check if the RLC matches
+                require!(branch_rlc => branch_rlc_in_ext);
             }}
 
             // Check if the extension node is in its parent.
             ext.require_in_parent(meta, &mut cb.base);
 
-            // Update the number of nibbles processed up till this point.
+            // Update the number of nibbles processed up to this point.
             if is_s {
                 // Calculate the number of bytes
                 let key_len = ext.ext_key_len(meta, 0);
                 // Calculate the number of nibbles
-                let num_nibbles = get_num_nibbles(meta, key_len.expr(), ext.is_ext_key_part_odd());
+                let num_nibbles =
+                    get_num_nibbles(meta, key_len.expr(), ext.is_key_part_in_ext_odd());
                 // Make sure the nibble counter is updated correctly
                 let nibbles_count_prev = ifx! {not!(ext.is_below_account(meta)), not_first_level.expr() => {
                     ext.nibbles_counter().prev()

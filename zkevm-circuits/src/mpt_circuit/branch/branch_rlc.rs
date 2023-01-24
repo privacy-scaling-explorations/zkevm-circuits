@@ -1,18 +1,13 @@
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    plonk::{Expression, VirtualCells},
-    poly::Rotation,
-};
+use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable},
-    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
+    circuit_tools::{DataTransition, LrcChainable},
+    mpt_circuit::{helpers::contains_placeholder_leaf, FixedTableTag},
     mpt_circuit::{
-        helpers::{contains_placeholder_leaf, get_num_bytes_list_short},
-        param::{RLP_HASH_VALUE, RLP_NIL},
-        FixedTableTag,
+        helpers::{BranchChildInfo, MPTConstraintBuilder},
+        MPTContext,
     },
 };
 
@@ -96,44 +91,23 @@ impl<F: FieldExt> BranchRLCConfig<F> {
         is_s: bool,
     ) -> Self {
         let main = ctx.main(is_s);
-        let branch_acc = ctx.accumulators.acc(is_s);
-        let is_not_hashed = ctx.denoter.is_not_hashed(is_s);
-        let node_mult_diff = ctx.accumulators.node_mult_diff(is_s);
-        let r = ctx.r.clone();
+        let branch = ctx.accumulators.acc(is_s);
+        let mult_diff = ctx.accumulators.node_mult_diff(is_s);
         circuit!([meta, cb.base], {
-            let branch_mult = DataTransition::new(meta, branch_acc.mult);
-            let branch_rlc = DataTransition::new(meta, branch_acc.rlc);
-            ifx! {a!(is_not_hashed) => {
-                // When a branch child is not empty and is not hashed, a list is stored in the branch and
-                // we have `bytes[0] - RLP_LIST_SHORT` bytes in a row. We need to add these bytes to the RLC.
-                // For example we have 6 bytes in the following child: `[0,0,198,132,48,0,0,0,1,...]`.
-                let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..34].to_vec().rlc_chain(&r, branch_mult.prev());
-                require!(branch_rlc => rlc);
-                // RLC bytes zero check (+2 because data starts at bytes[0])
-                let num_bytes = get_num_bytes_list_short(a!(main.bytes[0]));
-                cb.set_length_sc(is_s, 2.expr() + num_bytes.expr());
-                // We need to check that the multiplier changes according to `num_bytes` and update it.
-                require!((FixedTableTag::RMult, num_bytes.expr(), a!(node_mult_diff)) => @format!("mult{}", if is_s {""} else {"2"}));
-                require!(branch_mult => branch_mult.prev() * a!(node_mult_diff));
-            } elsex {
-                // Empty nodes have 0 at `rlp2`, have `RLP_NIL` at `bytes[0]` and 0 everywhere else.
-                // While hashed nodes have `RLP_HASH_VALUE at `rlp2` and then any byte at `bytes`.
-                require!(a!(main.rlp2) => [0, RLP_HASH_VALUE]);
+            let child = BranchChildInfo::new(meta, ctx.clone(), is_s, 0);
+            let branch_mult = DataTransition::new(meta, branch.mult);
+            let branch_rlc = DataTransition::new(meta, branch.rlc);
 
-                let is_empty = (RLP_HASH_VALUE.expr() - a!(main.rlp2)) * invert!(RLP_HASH_VALUE);
-                let (rlc, mult) = ifx!{is_empty => {
-                    require!(a!(main.bytes[0]) => RLP_NIL);
-                    // There's only have one byte (128 at `bytes[0]`) that needs to be added to the RLC.
-                    let rlc = branch_rlc.prev() + main.expr(meta, 0)[2..3].to_vec().rlc_chain(&r, branch_mult.prev());
-                    (rlc, r[0].expr())
-                } elsex {
-                    // When a branch child is non-empty and hashed, we have 33 bytes in a row.
-                    let rlc = branch_rlc.prev() + main.expr(meta, 0)[1..34].to_vec().rlc_chain(&r, branch_mult.prev());
-                    (rlc, r[32].expr())
-                }};
-                require!(branch_rlc => rlc);
-                require!(branch_mult => branch_mult.prev() * mult);
-            }}
+            // Calculate the RLC
+            let rlc = child.rlc(meta, &mut cb.base);
+            require!(branch_rlc => (branch_rlc.prev(), branch_mult.prev()).rlc_chain(rlc));
+            require!(branch_mult => branch_mult.prev() * a!(mult_diff));
+
+            // RLC bytes zero check
+            cb.set_length_sc(is_s, child.num_bytes_on_row(meta));
+            // We need to check that the multiplier changes according to `num_bytes` and
+            // update it.
+            require!((FixedTableTag::RMult, child.num_bytes(meta), a!(mult_diff)) => @format!("mult{}", if is_s {""} else {"2"}));
 
             // When a value is being added (and reverse situation when deleted) to the trie
             // and there is no other leaf at the position where it is to be
@@ -143,7 +117,7 @@ impl<F: FieldExt> BranchRLCConfig<F> {
             // When this happens, we denote this situation by having a placeholder leaf.
             // In this case we need to make sure the node is seen as empty.
             ifx! {a!(ctx.branch.is_modified), contains_placeholder_leaf(meta, ctx.clone(), is_s, 0) => {
-                require!(a!(is_not_hashed) => false);
+                require!(child.is_hashed(meta) => true);
                 require!(a!(main.rlp2) => 0);
             }}
         });

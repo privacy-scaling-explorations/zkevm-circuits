@@ -137,7 +137,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 cb.set_length(num_bytes.expr());
                 // Update `mult_diff`
                 let mult = a!(accs.acc_s.mult);
-                require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
+                require!((FixedTableTag::RMult, num_bytes.expr(), mult) => @"mult");
 
                 // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
                 let mut calc_rlc = |is_s| {

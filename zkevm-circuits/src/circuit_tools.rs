@@ -1,9 +1,6 @@
 //! Circuit utilities
 
-use crate::{
-    evm_circuit::util::{rlc, scalar_mult},
-    util::Expr,
-};
+use crate::{evm_circuit::util::rlc, util::Expr};
 use gadgets::util::{and, select, sum};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -559,17 +556,29 @@ impl<F: FieldExt, E: Selectable<F>> Conditionable<F, E> for Vec<(Expression<F>, 
 pub trait LRCable<F> {
     /// Returns the LRC of itself
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F>;
-    /// Returns the LRC of itself with a starting multiplier
-    fn rlc_chain(&self, r: &[Expression<F>], mult: Expression<F>) -> Expression<F>;
 }
 
 impl<F: FieldExt, E: Expressable<F>> LRCable<F> for Vec<E> {
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
         rlc::expr(&self.to_expr_vec(), r)
     }
+}
 
-    fn rlc_chain(&self, r: &[Expression<F>], mult: Expression<F>) -> Expression<F> {
-        rlc::expr(&scalar_mult::expr(&self.to_expr_vec(), mult.expr()), &r)
+impl<F: FieldExt, E: Expressable<F>> LRCable<F> for [E] {
+    fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
+        rlc::expr(&self.to_expr_vec(), r)
+    }
+}
+
+/// Trait around LRC
+pub trait LrcChainable<F> {
+    /// Returns the LRC of itself with a starting lrc/multiplier
+    fn rlc_chain(&self, other: Expression<F>) -> Expression<F>;
+}
+
+impl<F: FieldExt> LrcChainable<F> for (Expression<F>, Expression<F>) {
+    fn rlc_chain(&self, other: Expression<F>) -> Expression<F> {
+        self.0.expr() + self.1.expr() * other.expr()
     }
 }
 

@@ -1,6 +1,6 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
-use gadgets::{impl_expr, util::Expr};
+use gadgets::impl_expr;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -158,22 +158,6 @@ impl<F: FieldExt> MPTContext<F> {
             &self.rlp_bytes()[range]
                 .iter()
                 .map(|&byte| meta.query_advice(byte, Rotation(rot)))
-                .collect::<Vec<_>>(),
-            &self.r,
-        )
-    }
-
-    pub(crate) fn rlc_chain(
-        &self,
-        meta: &mut VirtualCells<F>,
-        range: Range<usize>,
-        rot: i32,
-        mult: Expression<F>,
-    ) -> Expression<F> {
-        rlc::expr(
-            &self.rlp_bytes()[range]
-                .iter()
-                .map(|&byte| mult.expr() * meta.query_advice(byte, Rotation(rot)))
                 .collect::<Vec<_>>(),
             &self.r,
         )
