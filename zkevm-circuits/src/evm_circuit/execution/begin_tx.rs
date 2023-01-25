@@ -216,7 +216,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 23 reads and writes:
+                // 22-23 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -226,7 +226,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write TxAccessListAccount
                 //   - Write Account Balance
                 //   - Write Account Balance
-                //   - Read Account CodeHash
+                //   - Read Account CodeHash (only if tx is not create)
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
                 //   - Write CallContext CalleeAddress

@@ -100,6 +100,9 @@ impl<'a> CircuitInputStateRef<'a> {
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
+        if let OpEnum::Account(op) = op.clone().into_enum() {
+            self.check_update_sdb_account(rw, &op)
+        }
         let op_ref =
             self.block
                 .container
@@ -334,7 +337,6 @@ impl<'a> CircuitInputStateRef<'a> {
         value_prev: Word,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.check_update_sdb_account(RW::READ, &op);
         self.push_op(step, RW::READ, op);
         Ok(())
     }
@@ -354,7 +356,6 @@ impl<'a> CircuitInputStateRef<'a> {
         value_prev: Word,
     ) -> Result<(), Error> {
         let op = AccountOp::new(address, field, value, value_prev);
-        self.check_update_sdb_account(RW::WRITE, &op);
         self.push_op(step, RW::WRITE, op);
         Ok(())
     }

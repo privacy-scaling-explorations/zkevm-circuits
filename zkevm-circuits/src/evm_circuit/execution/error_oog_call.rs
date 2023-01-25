@@ -60,14 +60,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
-        // TODO: Why is calle balance read here? There's no constraint related to this
-        // balance let balance = cb.query_word_rlc();
-        // cb.account_read(
-        //     call_gadget.callee_address_expr(),
-        //     AccountFieldTag::Balance,
-        //     balance.expr(),
-        // );
-
         // Verify gas cost
         let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), 1.expr());
 
