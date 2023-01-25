@@ -275,8 +275,19 @@ pub fn run_test(
     } else {
         geth_data.sign(&wallets);
 
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+        let circuits_params = CircuitsParams {
+            max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_rws: 256,
+            max_copy_rows: 256,
+            max_bytecode: 512,
+            keccak_padding: None,
+        };
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, 1, 32, 255, 32, 0x100>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)
+                .unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
