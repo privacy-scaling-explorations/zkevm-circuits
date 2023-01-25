@@ -743,8 +743,6 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
-        let lookup_powers_of_randomness: [Expression<F>; 31] =
-            challenges.lookup_input_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -763,7 +761,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, &lookup_powers_of_randomness),
+                        rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
             }

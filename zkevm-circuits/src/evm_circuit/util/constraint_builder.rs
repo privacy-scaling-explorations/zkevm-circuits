@@ -266,8 +266,6 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
     challenges: &'a Challenges<Expression<F>>,
-    word_powers_of_randomness: [Expression<F>; 31],
-    lookup_powers_of_randomness: [Expression<F>; 12],
     execution_state: ExecutionState,
     constraints: Constraints<F>,
     rw_counter_offset: Expression<F>,
@@ -287,9 +285,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         challenges: &'a Challenges<Expression<F>>,
         execution_state: ExecutionState,
     ) -> Self {
-        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness::<31>();
-        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness::<12>();
-
         Self {
             max_degree: MAX_DEGREE,
             curr,
@@ -310,8 +305,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             condition: None,
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
-            word_powers_of_randomness,
-            lookup_powers_of_randomness,
         }
     }
 
@@ -1436,7 +1429,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         let compressed_expr = self.split_expression(
             "Lookup compression",
-            rlc::expr(&lookup.input_exprs(), &self.lookup_powers_of_randomness),
+            rlc::expr(&lookup.input_exprs(), self.challenges.lookup_input()),
             MAX_DEGREE - IMPLICIT_DEGREE,
         );
         self.store_expression(name, compressed_expr, CellType::Lookup(lookup.table()));

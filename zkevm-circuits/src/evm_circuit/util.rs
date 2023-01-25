@@ -465,14 +465,12 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         bytes: [Expression<F>; N],
         randomness: Expression<F>,
     ) -> Expression<F> {
-        let power_of_randomness = Self::powers_of::<N>(randomness);
-        rlc::expr(&bytes, &power_of_randomness)
+        rlc::expr(&bytes, randomness)
     }
 
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
-        let power_of_randomness = Self::powers_of::<N>(randomness);
         Self {
-            expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), &power_of_randomness),
+            expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), randomness),
             cells,
         }
     }
@@ -556,12 +554,8 @@ pub(crate) mod rlc {
     use crate::util::Expr;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(
-        expressions: &[E],
-        power_of_randomness: &[E],
-    ) -> Expression<F> {
-        let randomness = power_of_randomness[1].expr();
-        gen(expressions.iter().map(|e| e.expr()), randomness)
+    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
+        gen(expressions.iter().map(|e| e.expr()), randomness.expr())
     }
 
     pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
@@ -570,7 +564,6 @@ pub(crate) mod rlc {
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
         let values = values.into_iter().map(|v| F::from(*v as u64));
-        //let values = values.map(|v| &v.clone());
 
         gen(values, randomness)
     }
@@ -582,10 +575,7 @@ pub(crate) mod rlc {
         V: Clone + Add<Output = V> + Mul<Output = V>,
     {
         let mut values = values.into_iter().rev();
-
-        let Some(init) = values.next() else {
-            panic!("values should not be empty");
-        };
+        let init = values.next().expect("values should not be empty");
 
         values.fold(init, |acc, value| acc * randomness.clone() + value)
     }

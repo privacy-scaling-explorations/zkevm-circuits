@@ -152,10 +152,7 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(
                             column.expr(),
-                            rlc::expr(
-                                &table_expressions,
-                                &challenges_exprs.lookup_input_powers_of_randomness::<12>(),
-                            ),
+                            rlc::expr(&table_expressions, challenges_exprs.lookup_input()),
                         )]
                     });
                 }
