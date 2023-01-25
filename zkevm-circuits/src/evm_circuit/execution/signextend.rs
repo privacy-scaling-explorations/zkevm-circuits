@@ -111,8 +111,6 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // enabled need to be changed to the sign byte.
         // When a byte was selected all the **following** bytes need to be
         // replaced (hence the `selectors[idx - 1]`).
-        let powers_of_randomness: [Expression<F>; 31] =
-            cb.challenges().evm_word_powers_of_randomness();
         let result = Word::random_linear_combine_expr(
             array_init(|idx| {
                 if idx == 0 {
@@ -125,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
                     )
                 }
             }),
-            &powers_of_randomness,
+            cb.challenges().evm_word(),
         );
 
         // Pop the byte index and the value from the stack, push the result on
