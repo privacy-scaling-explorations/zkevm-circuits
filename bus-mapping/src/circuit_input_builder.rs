@@ -131,6 +131,7 @@ impl<'a> CircuitInputBuilder {
         &mut self,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
+        is_invalid: bool,
     ) -> Result<Transaction, Error> {
         let call_id = self.block_ctx.rwc.0;
 
@@ -145,7 +146,14 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
+        Transaction::new(
+            call_id,
+            &self.sdb,
+            &mut self.code_db,
+            eth_tx,
+            is_success,
+            is_invalid,
+        )
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion
@@ -245,7 +253,7 @@ impl<'a> CircuitInputBuilder {
         geth_trace: &GethExecTrace,
         is_last_tx: bool,
     ) -> Result<(), Error> {
-        let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
+        let mut tx = self.new_tx(eth_tx, !geth_trace.failed, geth_trace.invalid)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
         // TODO: Move into gen_associated_steps with

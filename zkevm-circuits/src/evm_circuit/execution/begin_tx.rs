@@ -41,8 +41,11 @@ pub(crate) struct BeginTxGadget<F> {
     effective_gas_fee: Word<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
+    tx_is_invalid: Cell<F>,
+    tx_access_list_gas_cost: Cell<F>,
     nonce: Cell<F>,
     nonce_prev: Cell<F>,
+    is_nonce_valid: IsEqualGadget<F>,
     reversion_info: ReversionInfo<F>,
     gas_not_enough: LtGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
@@ -76,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             reversion_info.is_persistent(),
         );
 
-        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, is_tx_invalid, tx_access_list_gas_cost] =
+        let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost, tx_is_invalid, tx_access_list_gas_cost] =
             [
                 TxContextFieldTag::Nonce,
                 TxContextFieldTag::Gas,
@@ -113,12 +116,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             nonce_prev.expr(),
             None,
         );
-        let is_nonce_valid = IsZeroGadget::construct(cb, tx_nonce.expr() - nonce_prev.expr());
+        let is_nonce_valid = IsEqualGadget::construct(cb, tx_nonce.expr(), nonce_prev.expr());
         // Increment the account nonce only if the tx is valid
         cb.require_equal(
-            "nonce, nonce_prev and invalid_tx_tx",
+            "update nonce",
             nonce.expr(),
-            nonce_prev.expr() + 1.expr() - is_tx_invalid.expr(),
+            nonce_prev.expr() + 1.expr() - tx_is_invalid.expr(),
         );
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
@@ -164,19 +167,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // expects words instead of expressions for tx_value and gas_fee
         let effective_tx_value = cb.query_word_rlc();
         let effective_gas_fee = cb.query_word_rlc();
-        cb.condition(is_tx_invalid.expr(), |cb| {
+        cb.condition(tx_is_invalid.expr(), |cb| {
             cb.require_equal(
                 "effective_tx_value == 0",
                 effective_tx_value.expr(),
-                true.expr(),
+                0.expr(),
             );
-            cb.require_equal(
-                "effective_gas_fee == 0",
-                effective_gas_fee.expr(),
-                true.expr(),
-            );
+            cb.require_equal("effective_gas_fee == 0", effective_gas_fee.expr(), 0.expr());
         });
-        cb.condition(not::expr(is_tx_invalid.expr()), |cb| {
+        cb.condition(not::expr(tx_is_invalid.expr()), |cb| {
             cb.require_equal(
                 "effective_tx_value == tx_value",
                 effective_tx_value.expr(),
@@ -199,19 +198,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
         let sender_balance_prev = transfer_with_gas_fee.sender.balance_prev();
-        let add_tx_value_and_mul_gas_fee_by_gas = cb.query_word_rlc();
+        let total_eth_cost_sum = cb.query_word_rlc();
         let total_eth_cost = AddWordsGadget::construct(
             cb,
             [tx_value.clone(), gas_fee.product().clone()],
-            add_tx_value_and_mul_gas_fee_by_gas.clone(),
+            total_eth_cost_sum,
         );
 
         // Check if the account ETH balance is sufficient
-        let balance_not_enough = LtWordGadget::construct(
-            cb,
-            sender_balance_prev,
-            &add_tx_value_and_mul_gas_fee_by_gas,
-        );
+        let balance_not_enough =
+            LtWordGadget::construct(cb, sender_balance_prev, total_eth_cost.sum());
 
         // A transaction is invalid when
         // - The transaction requires more ETH than the transaction needs
@@ -226,7 +222,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 gas_not_enough.expr(),
                 not::expr(is_nonce_valid.expr()),
             ]),
-            is_tx_invalid.expr(),
+            tx_is_invalid.expr(),
         );
 
         // TODO: Handle creation transaction
@@ -243,40 +239,37 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
-        cb.condition(
-            or::expr([is_empty_code_hash.expr(), is_tx_invalid.expr()]),
-            |cb| {
-                cb.require_equal(
-                    "Tx to account with empty code should be persistent",
-                    reversion_info.is_persistent(),
-                    1.expr(),
-                );
-                cb.require_equal(
-                    "Go to EndTx when Tx to account with empty code",
-                    cb.next.execution_state_selector([ExecutionState::EndTx]),
-                    1.expr(),
-                );
+        let do_not_run_code = or::expr([is_empty_code_hash.expr(), tx_is_invalid.expr()]);
+        cb.condition(do_not_run_code.expr(), |cb| {
+            cb.require_equal(
+                "Tx to account with empty code should be persistent",
+                reversion_info.is_persistent(),
+                1.expr(),
+            );
+            cb.require_equal(
+                "Go to EndTx when Tx to account with empty code",
+                cb.next.execution_state_selector([ExecutionState::EndTx]),
+                1.expr(),
+            );
 
-                cb.require_step_state_transition(StepStateTransition {
-                    // 10 reads and writes:
-                    //   - Write CallContext TxId
-                    //   - Write CallContext RwCounterEndOfReversion
-                    //   - Write CallContext IsPersistent
-                    //   - Write CallContext IsSuccess
-                    //   - Write Account Nonce
-                    //   - Write TxAccessListAccount
-                    //   - Write TxAccessListAccount
-                    //   - Write Account Balance
-                    //   - Write Account Balance
-                    //   - Read Account CodeHash
-                    rw_counter: Delta(10.expr()),
-                    call_id: To(call_id.expr()),
-                    ..StepStateTransition::any()
-                });
-            },
-        );
-
-        cb.condition(1.expr() - is_empty_code_hash.expr(), |cb| {
+            cb.require_step_state_transition(StepStateTransition {
+                // 10 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance
+                //   - Write Account Balance
+                //   - Read Account CodeHash
+                rw_counter: Delta(10.expr()),
+                call_id: To(call_id.expr()),
+                ..StepStateTransition::any()
+            });
+        });
+        cb.condition(not::expr(do_not_run_code.expr()), |cb| {
             // Setup first call's context.
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
@@ -351,8 +344,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             effective_gas_fee,
             tx_call_data_length,
             tx_call_data_gas_cost,
+            tx_is_invalid,
+            tx_access_list_gas_cost,
             nonce,
             nonce_prev,
+            is_nonce_valid,
             reversion_info,
             gas_not_enough,
             transfer_with_gas_fee,
@@ -373,9 +369,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-        let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
-            [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
-                .map(|idx| block.rws[idx].account_value_pair());
+        let [caller_nonce_pair, caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
+            [4, 7, 8, 9].map(|idx| block.rws[step.rw_indices[idx]].account_value_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -416,10 +411,30 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(F::from(tx.call_data_gas_cost)),
         )?;
+        self.tx_is_invalid
+            .assign(region, offset, Value::known(F::from(tx.invalid_tx)))?;
+        self.tx_access_list_gas_cost.assign(
+            region,
+            offset,
+            Value::known(F::from(tx.access_list_gas_cost)),
+        )?;
+
+        let (nonce, nonce_prev) = caller_nonce_pair;
         self.nonce
-            .assign(region, offset, Value::known(F::from(tx.nonce + 1)))?;
-        self.nonce_prev
-            .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+            .assign(region, offset, Value::known(nonce.to_scalar().unwrap()))?;
+        self.nonce_prev.assign(
+            region,
+            offset,
+            Value::known(nonce_prev.to_scalar().unwrap()),
+        )?;
+
+        self.is_nonce_valid.assign(
+            region,
+            offset,
+            tx.nonce.to_scalar().unwrap(),
+            nonce_prev.to_scalar().unwrap(),
+        )?;
+
         self.reversion_info.assign(
             region,
             offset,
@@ -427,25 +442,23 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.is_persistent,
         )?;
 
+        let intrinsic_gas = select::value(
+            F::from(tx.is_create),
+            F::from(GasCost::CREATION_TX.as_u64()),
+            F::from(GasCost::TX.as_u64()),
+        ) + F::from(tx.call_data_gas_cost)
+            + F::from(tx.access_list_gas_cost);
         self.gas_not_enough
-            .assign(region, offset, F::from(tx.gas), F::from(step.gas_cost))?;
+            .assign(region, offset, F::from(tx.gas), intrinsic_gas)?;
 
         let total_eth_cost = tx.value + gas_fee;
-        self.total_eth_cost.assign(
-            region,
-            offset,
-            [tx.value, gas_fee],
-            total_eth_cost,
-        )?;
+        self.total_eth_cost
+            .assign(region, offset, [tx.value, gas_fee], total_eth_cost)?;
 
-        self.balance_not_enough.assign(
-            region,
-            offset,
-            caller_balance_pair.1,
-            total_eth_cost,
-        )?;
+        self.balance_not_enough
+            .assign(region, offset, caller_balance_pair.1, total_eth_cost)?;
 
-        let (intrinsic_tx_value, intrinsic_gas_fee) = if tx.invalid_tx == 0 {
+        let (intrinsic_tx_value, intrinsic_gas_fee) = if tx.invalid_tx == false {
             (tx.value, gas_fee)
         } else {
             (U256::zero(), U256::zero())
@@ -604,7 +617,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn begin_tx_invalid_nonce() {
         // The nonce of the account doing the transaction is not correct
         // Use the same nonce value for two transactions.
@@ -617,18 +629,18 @@ mod test {
             STOP
         };
 
-        let block: GethData = TestContext::<2, 2>::new(
+        let block: GethData = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
                 accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
             },
             |mut txs, _| {
-                txs[0].to(to).from(from).nonce(multibyte_nonce);
-                txs[1]
+                //txs[0].to(to).from(from).nonce(Word::from(1));
+                txs[0]
                     .to(to)
                     .from(from)
-                    .nonce(multibyte_nonce)
+                    .nonce(Word::from(0))
                     .invalid_tx(Word::from(1));
             },
             |block, _| block,
@@ -640,7 +652,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn begin_tx_not_enough_eth() {
         // The account does not have enough ETH to pay for eth_value + tx_gas *
         // tx_gas_price.
@@ -678,7 +689,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn begin_tx_insufficient_gas() {
         let multibyte_nonce = Word::from(1);
 

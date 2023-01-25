@@ -34,7 +34,7 @@ pub struct Transaction {
     /// The gas cost for transaction call data
     pub call_data_gas_cost: u64,
     /// Invalid tx
-    pub invalid_tx: u64,
+    pub invalid_tx: bool,
     /// AccessListGasCost
     pub access_list_gas_cost: u64,
     /// The calls made in the transaction

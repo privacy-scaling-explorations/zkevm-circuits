@@ -398,6 +398,8 @@ pub struct ResultGethExecTrace {
 /// before the step is executed.
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
+    /// True when the tx could not execute
+    pub invalid: bool,
     /// Used gas
     pub gas: Gas,
     /// True when the transaction has failed.
@@ -516,6 +518,7 @@ mod tests {
         assert_eq!(
             trace,
             GethExecTrace {
+                invalid: false,
                 gas: Gas(26809),
                 failed: false,
                 return_value: "".to_owned(),

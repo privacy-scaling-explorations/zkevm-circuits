@@ -20,6 +20,7 @@ import (
 // while replaying a transaction in debug mode as well as transaction
 // execution status, the amount of gas used and the return value
 type ExecutionResult struct {
+	Invalid     bool           `json:"invalid"`
 	Gas         uint64         `json:"gas"`
 	Failed      bool           `json:"failed"`
 	ReturnValue string         `json:"returnValue"`
@@ -219,16 +220,25 @@ func Trace(config TraceConfig) ([]*ExecutionResult, error) {
 
 		result, err := core.ApplyMessage(evm, message, new(core.GasPool).AddGas(message.Gas()))
 		if err != nil {
-			return nil, fmt.Errorf("Failed to apply config.Transactions[%d]: %w", i, err)
-		}
-		stateDB.Finalise(true)
+			executionResults[i] = &ExecutionResult{
+				Invalid:     true,
+				Gas:         0,
+				Failed:      false,
+				ReturnValue: fmt.Sprintf("%v", err),
+				StructLogs:  []StructLogRes{},
+			}
+		} else {
+			stateDB.Finalise(true)
 
-		executionResults[i] = &ExecutionResult{
-			Gas:         result.UsedGas,
-			Failed:      result.Failed(),
-			ReturnValue: fmt.Sprintf("%x", result.ReturnData),
-			StructLogs:  FormatLogs(tracer.StructLogs()),
+			executionResults[i] = &ExecutionResult{
+				Invalid:     false,
+				Gas:         result.UsedGas,
+				Failed:      result.Failed(),
+				ReturnValue: fmt.Sprintf("%x", result.ReturnData),
+				StructLogs:  FormatLogs(tracer.StructLogs()),
+			}
 		}
+
 	}
 
 	return executionResults, nil
