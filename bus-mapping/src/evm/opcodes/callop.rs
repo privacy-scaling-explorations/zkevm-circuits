@@ -89,6 +89,25 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (call.is_success as u64).into(),
         )?;
 
+        let callee_code_hash = call.code_hash;
+        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
+
+        let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+            (
+                callee_code_hash.to_word(),
+                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            )
+        } else {
+            (Word::zero(), true)
+        };
+        state.account_read(
+            &mut exec_step,
+            callee_address,
+            AccountField::CodeHash,
+            callee_code_hash_word,
+            callee_code_hash_word,
+        )?;
+
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
             &mut exec_step,
@@ -140,11 +159,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             caller_balance,
         )?;
 
-        let callee_code_hash = call.code_hash;
-        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
-
-        // Transfer value only for CALL opcode. only when insufficient_balance = false.
-        if call.kind == CallKind::Call && !insufficient_balance {
+        // Transfer value only for CALL opcode, insufficient_balance = false
+        // and value > 0.
+        if call.kind == CallKind::Call && !insufficient_balance && !call.value.is_zero() {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -152,22 +169,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 call.value,
             )?;
         }
-
-        let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
-            (
-                callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-            )
-        } else {
-            (Word::zero(), true)
-        };
-        state.account_read(
-            &mut exec_step,
-            callee_address,
-            AccountField::CodeHash,
-            callee_code_hash_word,
-            callee_code_hash_word,
-        )?;
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).

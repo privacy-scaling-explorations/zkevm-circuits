@@ -100,6 +100,9 @@ impl<'a> CircuitInputStateRef<'a> {
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
+        if let OpEnum::Account(op) = op.clone().into_enum() {
+            self.check_update_sdb_account(rw, &op)
+        }
         let op_ref =
             self.block
                 .container
@@ -262,6 +265,63 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// First check the validity and consistency of the rw operation against the
+    /// account in the StateDB, then if the rw operation is a write, apply
+    /// it to the corresponding account in the StateDB.
+    fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
+        let account = self.sdb.get_account_mut(&op.address).1;
+        // -- sanity check begin --
+        // Verify that a READ doesn't change the field value
+        if matches!(rw, RW::READ) && op.value_prev != op.value {
+            panic!(
+                "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
+                self.block_ctx.rwc.0, op
+            )
+        }
+        let account_value_prev = match op.field {
+            AccountField::Nonce => account.nonce,
+            AccountField::Balance => account.balance,
+            AccountField::CodeHash => {
+                if account.is_empty() {
+                    Word::zero()
+                } else {
+                    account.code_hash.to_word()
+                }
+            }
+        };
+        // Verify that the previous value matches the account field value in the StateDB
+        if op.value_prev != account_value_prev {
+            panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
+                rw,
+                account,
+                self.block_ctx.rwc.0,
+                op
+            );
+        }
+        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // account (only CodeHash reads with value=0 can be done to non-existing
+        // accounts, which the State Circuit translates to MPT
+        // AccountNonExisting proofs lookups).
+        if (!matches!(op.field, AccountField::CodeHash)
+            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
+            && account.is_empty()
+        {
+            panic!(
+                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+                rw, self.block_ctx.rwc.0, op
+            );
+        }
+        // -- sanity check end --
+        // Perform the write to the account in the StateDB
+        if matches!(rw, RW::WRITE) {
+            match op.field {
+                AccountField::Nonce => account.nonce = op.value,
+                AccountField::Balance => account.balance = op.value,
+                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
+            }
+        }
+    }
+
     /// Push a read type [`AccountOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter), and then
@@ -276,11 +336,8 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::READ,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.push_op(step, RW::READ, op);
         Ok(())
     }
 
@@ -298,11 +355,8 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::WRITE,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.push_op(step, RW::WRITE, op);
         Ok(())
     }
 
@@ -759,7 +813,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     AccountField::Nonce => account.nonce = op.value,
                     AccountField::Balance => account.balance = op.value,
                     AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
-                    AccountField::NonExisting => (),
                 }
             }
             OpEnum::TxRefund(op) => {
