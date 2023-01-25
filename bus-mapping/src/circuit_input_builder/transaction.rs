@@ -198,7 +198,7 @@ pub struct Transaction {
     /// Signature
     pub signature: Signature,
     /// Invalid tx
-    pub invalid_tx: u64,
+    pub invalid_tx: bool,
     /// AccessListGasCost
     pub access_list_gas_cost: u64,
     /// Calls made in the transaction
@@ -241,7 +241,7 @@ impl Transaction {
                 s: Word::zero(),
                 v: 0,
             },
-            invalid_tx: 0,
+            invalid_tx: false,
             access_list_gas_cost: 0,
             calls: Vec::new(),
             steps: Vec::new(),
@@ -255,6 +255,7 @@ impl Transaction {
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
+        is_invalid: bool,
     ) -> Result<Self, Error> {
         let (found, _) = sdb.get_account(&eth_tx.from);
         if !found {
@@ -320,7 +321,7 @@ impl Transaction {
                 r: eth_tx.r,
                 s: eth_tx.s,
             },
-            invalid_tx: 0,
+            invalid_tx: is_invalid,
             access_list_gas_cost: 0, // TODO: support (EIP 2930) type TX
         })
     }
