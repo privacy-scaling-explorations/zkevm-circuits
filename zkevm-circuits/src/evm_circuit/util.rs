@@ -491,16 +491,6 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
                 .collect()
         })
     }
-
-    fn powers_of<const S: usize>(base: Expression<F>) -> [Expression<F>; S] {
-        std::iter::successors(base.clone().into(), |power| {
-            (base.clone() * power.clone()).into()
-        })
-        .take(S)
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap()
-    }
 }
 
 impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {

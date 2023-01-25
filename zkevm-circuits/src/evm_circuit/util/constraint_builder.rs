@@ -417,7 +417,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
-        RandomLinearCombination::random_linear_combine_expr(bytes, self.challenges.evm_word())
+        rlc::expr(&bytes, self.challenges.evm_word())
     }
 
     pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
