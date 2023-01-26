@@ -4,7 +4,9 @@ use halo2_proofs::circuit::Value;
 use sha3::{Digest, Keccak256};
 
 use crate::{
-    evm_circuit::util::RandomLinearCombination, table::BytecodeFieldTag, util::Challenges,
+    evm_circuit::util::{rlc, RandomLinearCombination},
+    table::BytecodeFieldTag,
+    util::Challenges,
 };
 
 /// Bytecode
