@@ -7,10 +7,10 @@ use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
 use crate::evm_circuit::util::rlc;
-use crate::util::build_tx_log_address;
-use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+use crate::table::{
+    AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
 };
+use crate::util::build_tx_log_address;
 
 /// Rw constainer for a witness block
 #[derive(Debug, Default, Clone)]

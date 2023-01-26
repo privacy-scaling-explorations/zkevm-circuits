@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    evm_circuit::util::{rlc},
-    table::BlockContextFieldTag,
-};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,

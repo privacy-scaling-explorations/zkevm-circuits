@@ -3,11 +3,7 @@ use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::circuit::Value;
 use sha3::{Digest, Keccak256};
 
-use crate::{
-    evm_circuit::util::{rlc},
-    table::BytecodeFieldTag,
-    util::Challenges,
-};
+use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
 
 /// Bytecode
 #[derive(Clone, Debug)]
