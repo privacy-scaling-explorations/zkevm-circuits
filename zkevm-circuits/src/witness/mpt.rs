@@ -1,5 +1,5 @@
 use crate::evm_circuit::util::rlc;
-use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
+use crate::evm_circuit::{witness::Rw};
 use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;

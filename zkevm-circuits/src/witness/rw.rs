@@ -9,7 +9,6 @@ use itertools::Itertools;
 use crate::evm_circuit::util::rlc;
 use crate::util::build_tx_log_address;
 use crate::{
-    evm_circuit::util::RandomLinearCombination,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
 };
 

@@ -24,7 +24,7 @@ use std::marker::PhantomData;
 
 use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
-    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
+    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,

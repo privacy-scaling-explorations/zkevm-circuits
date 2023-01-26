@@ -3,7 +3,7 @@ use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::circuit::Value;
 
 use crate::{
-    evm_circuit::util::{rlc, RandomLinearCombination},
+    evm_circuit::util::{rlc},
     table::TxContextFieldTag,
     util::Challenges,
 };

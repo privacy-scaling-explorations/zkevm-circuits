@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::util::{
         and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select,
-        RandomLinearCombination,
     },
     table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},

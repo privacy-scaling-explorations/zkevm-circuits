@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    evm_circuit::util::{rlc, RandomLinearCombination},
+    evm_circuit::util::{rlc},
     table::BlockContextFieldTag,
 };
 use bus_mapping::{
