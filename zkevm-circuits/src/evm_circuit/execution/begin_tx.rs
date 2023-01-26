@@ -13,7 +13,7 @@ use crate::{
                 AddWordsGadget, IsEqualGadget, IsZeroGadget, LtGadget, LtWordGadget,
                 MulWordByU64Gadget,
             },
-            select, CachedRegion, Cell, CellType, Word,
+            not, or, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +21,6 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{not, or};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
@@ -162,6 +161,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
+        // TODO: If value is 0, skip transfer, just like callop.
         // Transfer value from caller to callee
         // Use cb.query_word as TransferWithGasFeeGadget
         // expects words instead of expressions for tx_value and gas_fee
@@ -229,12 +229,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Handle precompiled
 
         // Read code_hash of callee
-        let phase2_code_hash = cb.query_cell_with_type(CellType::StoragePhase2);
-        cb.account_read(
-            tx_callee_address.expr(),
-            AccountFieldTag::CodeHash,
-            phase2_code_hash.expr(),
-        );
+        let phase2_code_hash = cb.query_cell_phase2();
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
+            cb.account_read(
+                tx_callee_address.expr(),
+                AccountFieldTag::CodeHash,
+                phase2_code_hash.expr(),
+            );
+        });
 
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
@@ -293,7 +295,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 23 reads and writes:
+                // 22-23 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -303,7 +305,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write TxAccessListAccount
                 //   - Write Account Balance
                 //   - Write Account Balance
-                //   - Read Account CodeHash
+                //   - Read Account CodeHash (only if tx is not create)
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
                 //   - Write CallContext CalleeAddress
@@ -317,7 +319,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(23.expr()),
+                rw_counter: Delta(22.expr() + (1.expr() - tx_is_create.expr())),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -369,8 +371,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-        let [caller_nonce_pair, caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
-            [4, 7, 8, 9].map(|idx| block.rws[step.rw_indices[idx]].account_value_pair());
+        let [caller_nonce_pair, caller_balance_pair, callee_balance_pair] =
+            [step.rw_indices[4], step.rw_indices[7], step.rw_indices[8]].map(|idx| block.rws[idx].account_value_pair());
+        let callee_code_hash = if tx.is_create {
+            call.code_hash
+        } else {
+            block.rws[step.rw_indices[9]].account_value_pair().0
+        };
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;

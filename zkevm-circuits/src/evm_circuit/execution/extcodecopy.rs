@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let opcode = cb.query_cell();
 
         let external_address = cb.query_word_rlc();
-        let memory_offset = cb.query_cell();
+        let memory_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let memory_length = cb.query_word_rlc();
 
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        let code_hash = cb.query_cell_phase2();
         cb.account_read(
             from_bytes::expr(&external_address.cells),
             AccountFieldTag::CodeHash,
@@ -119,6 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             stack_pointer: Transition::Delta(4.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
             gas_left: Transition::Delta(-gas_cost),
+            reversible_write_counter: Transition::Delta(1.expr()),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
@@ -183,22 +184,22 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[8]]
-            .table_assignment_aux(block.randomness)
-            .value;
+        let code_hash = block.rws[step.rw_indices[8]].account_value_pair().0;
         self.code_hash
-            .assign(region, offset, Value::known(code_hash))?;
+            .assign(region, offset, region.word_rlc(code_hash))?;
 
-        let (code, _) = block.rws[step.rw_indices[8]].account_value_pair();
-        let bytecode = block
-            .bytecodes
-            .get(&code)
-            .expect("could not find external bytecode");
-        self.code_size.assign(
-            region,
-            offset,
-            Value::known(F::from(bytecode.bytes.len() as u64)),
-        )?;
+        let bytecode_len = if code_hash.is_zero() {
+            0
+        } else {
+            block
+                .bytecodes
+                .get(&code_hash)
+                .expect("could not find external bytecode")
+                .bytes
+                .len()
+        };
+        self.code_size
+            .assign(region, offset, Value::known(F::from(bytecode_len as u64)))?;
 
         self.copy_rwc_inc.assign(
             region,
@@ -266,28 +267,37 @@ mod test {
             });
         }
         code.append(&bytecode! {
-            PUSH20(external_address.to_word())
-            PUSH32(memory_offset)
-            PUSH32(data_offset)
             PUSH32(length)
+            PUSH32(data_offset)
+            PUSH32(memory_offset)
+            PUSH20(external_address.to_word())
             #[start]
             EXTCODECOPY
             STOP
         });
 
-        let test_ctx = TestContext::<2, 1>::new(
+        let test_ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .code(code);
-
                 accs[1]
                     .address(address!("0x0000000000000000000000000000000000000010"))
                     .balance(Word::from(1u64 << 20));
+                accs[2].address(external_address);
+                if let Some(external_account) = external_account {
+                    accs[2]
+                        .balance(external_account.balance)
+                        .nonce(external_account.nonce)
+                        .code(external_account.code);
+                }
             },
             |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[1].address);
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(1_000_000.into());
             },
             |block, _tx| block.number(0x1111111),
         )
