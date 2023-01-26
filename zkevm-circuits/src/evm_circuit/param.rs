@@ -11,13 +11,12 @@ pub(crate) const STEP_STATE_HEIGHT: usize = 1;
 pub(crate) const N_CELLS_STEP_STATE: usize = 11;
 
 // Number of phase2 columns
-pub(crate) const N_PHASE2_COLUMNS: usize = 2;
-
-// Number of phase3 columns
-pub(crate) const N_PHASE3_COLUMNS: usize = 1;
+pub(crate) const N_PHASE2_COLUMNS: usize = 3;
 
 // Number of copy columns
 pub(crate) const N_COPY_COLUMNS: usize = 2;
+
+pub(crate) const N_BYTE_LOOKUPS: usize = 24;
 
 /// Lookups done per row.
 pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
@@ -26,7 +25,6 @@ pub(crate) const LOOKUP_CONFIG: &[(Table, usize)] = &[
     (Table::Rw, 8),
     (Table::Bytecode, 4),
     (Table::Block, 1),
-    (Table::Byte, 24),
     (Table::Copy, 1),
     (Table::Keccak, 1),
     (Table::Exp, 1),
