@@ -930,6 +930,9 @@ macro_rules! circuit {
                 _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, $condition_c => $when_c, $condition_d => $when_d,)
             }};
 
+            ($condition_a:expr => $when_a:expr, _ => $catch_all:expr,) => {{
+                _matchx!($cb, $condition_a => $when_a, _ => $catch_all,)
+            }};
             ($condition_a:expr => $when_a:expr, $condition_b:expr => $when_b:expr, _ => $catch_all:expr,) => {{
                 _matchx!($cb, $condition_a => $when_a, $condition_b => $when_b, _ => $catch_all,)
             }};

@@ -162,10 +162,10 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
                 // Get the previous values from the previous branch. In the first level use initial values.
                 let after_first_level = not_first_level.expr() * not!(branch.is_below_account(meta));
-                let (key_rlc_prev, key_mult_prev) = ifx!{after_first_level => {
-                    (key_rlc.prev(), key_mult.prev())
+                let (key_rlc_prev, key_mult_prev, is_key_odd_prev) = ifx!{after_first_level => {
+                    (key_rlc.prev(), key_mult.prev(), branch_prev.is_key_odd())
                 } elsex {
-                    (0.expr(), 1.expr())
+                    (0.expr(), 1.expr(), false.expr())
                 }};
 
                 // Calculate the extension node key RLC when in an extension node
@@ -186,14 +186,10 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 }};
 
                 // Get the length of the key
-                // If the resulting key is odd then subtract 1 so we still use the previous multiplier.
-                // TODO(Brecht): is_long_even_c1 needs -1 while it should be even?
                 let key_num_bytes_for_mult = ifx!{branch.is_extension() => {
+                    // Unless both parts of the key are odd, subtract 1 from the key length.
                     let key_len = branch.ext_key_len(meta, -1);
-                    matchx! {
-                        branch.is_key_post_ext_even() - branch.is_long_even_c1.expr() => key_len.expr(),
-                        branch.is_key_post_ext_odd() + branch.is_long_even_c1.expr() => key_len.expr() - 1.expr(),
-                    }
+                    key_len - ifx! {not!(is_key_odd_prev * branch.is_key_part_in_ext_odd()) => { 1.expr() }}
                 }};
                 // Get the multiplier for this key length
                 let mult_diff = a!(mult_diff, rot_first_child);
@@ -201,14 +197,14 @@ impl<F: FieldExt> BranchKeyConfig<F> {
 
                 // Now update the key RLC and multiplier for the branch nibble.
                 let mult = key_mult_prev.expr() * mult_diff.expr();
-                let (rlc_mult, mult_mult) = ifx!{branch.is_key_odd() => {
-                    // The least significant nibble still needs to be added using the same multiplier
+                let (nibble_mult, mult_mult) = ifx!{branch.is_key_odd() => {
+                    // The nibble will be added as the most significant nibble using the same multiplier
                     (16.expr(), 1.expr())
                 } elsex {
-                    // The least significant nibble is added, update the multiplier for the next nibble
+                    // The nibble will be added as the least significant nibble, the multiplier needs to advance
                     (1.expr(), r[0].expr())
                 }};
-                require!(key_rlc => key_rlc_post_ext.expr() + modified_index.expr() * rlc_mult.expr() * mult.expr());
+                require!(key_rlc => key_rlc_post_ext.expr() + modified_index.expr() * nibble_mult.expr() * mult.expr());
                 require!(key_mult => mult.expr() * mult_mult.expr());
 
                 // Update key parity
@@ -217,13 +213,13 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                         // We need to take account the nibbles of the extension node.
                         // The parity alternates when there's an even number of nibbles, remains the same otherwise
                         ifx!{branch.is_key_part_in_ext_even() => {
-                            require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
+                            require!(branch.is_key_odd() => branch_prev.is_key_even());
                         } elsex {
                             require!(branch.is_key_odd() => branch_prev.is_key_odd());
                         }}
                     } elsex {
                         // The parity simply alernates for regular branches.
-                        require!(branch.is_key_odd() => not!(branch_prev.is_key_odd()));
+                        require!(branch.is_key_odd() => branch_prev.is_key_even());
                     }}
                 } elsex {
                     // In the first level we just have to ensure the initial values are set.

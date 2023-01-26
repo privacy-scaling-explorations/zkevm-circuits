@@ -135,6 +135,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         let rot_first_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
         let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_branch_init = rot_first_child - 1;
+        let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
 
         circuit!([meta, cb.base], {
             let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
@@ -151,21 +152,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // Get the previous key data, which depends on the branch being a placeholder.
             let is_branch_placeholder = ifx! {a!(not_first_level) => { branch.is_placeholder() }};
             let (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd) = ifx! {is_branch_placeholder => {
-                // Get the new key parity
-                let is_key_odd = matchx! {
-                    not!(branch.is_extension()) => branch.is_key_even(),
-                    branch.is_key_post_ext_even() => branch.is_key_odd(),
-                    branch.is_key_post_ext_odd() => branch.is_key_even(),
-                };
-
                 let is_branch_in_first_level = not!(a!(not_first_level, rot_branch_init));
-                let (key_rlc_prev, key_mult_prev, nibbles_count_prev) = ifx!{not!(is_branch_in_first_level) => {
-                    (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev), branch.nibbles_counter().prev())
+                ifx!{not!(is_branch_in_first_level) => {
+                    let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init_prev);
+                    (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev), branch_prev.nibbles_counter().expr(), branch_prev.is_key_odd())
                 } elsex {
-                    (0.expr(), 1.expr(), 0.expr())
-                }};
-
-                (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd)
+                    (0.expr(), 1.expr(), 0.expr(), false.expr())
+                }}
             } elsex {
                 ifx! {a!(not_first_level)  => {
                     (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.nibbles_counter().expr(), branch.is_key_odd())

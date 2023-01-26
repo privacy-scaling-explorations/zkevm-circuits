@@ -151,42 +151,39 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         });
     }
 
+    /// Returns true if this is a branch with an extension mode
     pub(crate) fn is_extension(&self) -> Expression<F> {
         self.is_key_part_in_ext_even() + self.is_key_part_in_ext_odd()
     }
 
-    /// Returns if the key after adding the extension part is even
-    pub(crate) fn is_key_post_ext_even(&self) -> Expression<F> {
-        self.is_short_c16.expr() + self.is_long_even_c1.expr() + self.is_long_odd_c16.expr()
-    }
-
-    /// Returns if the key after adding the extension part is odd
-    pub(crate) fn is_key_post_ext_odd(&self) -> Expression<F> {
-        self.is_short_c1.expr() + self.is_long_even_c16.expr() + self.is_long_odd_c1.expr()
-    }
-
-    /// Returns if the part of the key in an extension node is even
+    /// Returns if the part of the key in the extension node is even
     pub(crate) fn is_key_part_in_ext_even(&self) -> Expression<F> {
         self.is_long_even_c16.expr() + self.is_long_even_c1.expr()
     }
 
-    /// Returns if the part of the key in an extension node is odd
+    /// Returns if the part of the key in the extension node is odd
     pub(crate) fn is_key_part_in_ext_odd(&self) -> Expression<F> {
         self.is_long_odd() + self.is_short()
     }
 
+    // If more than 1 nibble is stored in the extension node and the key part in the
+    // extension node is odd
     pub(crate) fn is_long_odd(&self) -> Expression<F> {
         self.is_long_odd_c16.expr() + self.is_long_odd_c1.expr()
     }
 
+    // If more than 1 nibble is stored in the extension node and the key part in the
+    // extension node is even
     pub(crate) fn is_long_even(&self) -> Expression<F> {
         self.is_key_part_in_ext_even()
     }
 
+    // If a single nibble is stored in the extension node
     pub(crate) fn is_short(&self) -> Expression<F> {
         self.is_short_c16.expr() + self.is_short_c1.expr()
     }
 
+    // If more than 1 nibble is stored in the extension node
     pub(crate) fn is_long(&self) -> Expression<F> {
         self.is_long_even() + self.is_long_odd()
     }

@@ -178,8 +178,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     // Note: For `is_non_existing_account_proof` we do not need this constraint,
                     // `S` and `C` proofs are the same and we need to do a lookup into only one
                     // (the other one could really be whatever).
-                    // TODO(Brecht): I think we should be able to remove this by changing the
-                    // witness
                     ifx!{not!(a!(proof_type.is_account_delete_mod)) => {
                         // Storage root needs to remain the same when not modifying the storage root
                         ifx!{not!(a!(proof_type.is_storage_mod)) => {

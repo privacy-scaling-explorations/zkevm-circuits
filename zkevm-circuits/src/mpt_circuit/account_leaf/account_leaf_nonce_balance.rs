@@ -256,8 +256,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 // Note: For `is_non_existing_account_proof` we do not need this constraint,
                 // `S` and `C` proofs are the same and we need to do a lookup into only one
                 // (the other one could really be whatever).
-                // TODO(Brecht): I think should be able to remove this if by changing the
-                // witness
                 ifx! {not!(a!(proof_type.is_account_delete_mod)) => {
                     // Nonce needs to remain the same when not modifying the nonce
                     ifx!{not!(a!(proof_type.is_nonce_mod)) => {

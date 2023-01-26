@@ -12,7 +12,6 @@ use crate::{
     mpt_circuit::{
         helpers::get_num_nibbles,
         param::{ARITY, C_RLP_START, C_START, HASH_WIDTH, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_NIL},
-        FixedTableTag,
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
