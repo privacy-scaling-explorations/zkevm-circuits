@@ -187,7 +187,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     pub fn word_rlc(&self, n: U256) -> Value<F> {
         self.challenges
             .evm_word()
-            .map(|r| Word::random_linear_combine(n.to_le_bytes(), r))
+            .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
     pub fn empty_hash_rlc(&self) -> Value<F> {
         self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
@@ -456,10 +456,6 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
 
 impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
-
-    pub(crate) fn random_linear_combine(bytes: [u8; N], randomness: F) -> F {
-        rlc::value(&bytes, randomness)
-    }
 
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
         Self {

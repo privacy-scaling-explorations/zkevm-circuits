@@ -30,9 +30,9 @@ impl Bytecode {
     ) -> Vec<[Value<F>; 5]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), challenge)
-        });
+        let hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge));
 
         rows.push([
             hash,

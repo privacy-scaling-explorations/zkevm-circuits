@@ -1,3 +1,4 @@
+use crate::evm_circuit::util::rlc;
 use crate::evm_circuit::{util::RandomLinearCombination, witness::Rw};
 use crate::table::{AccountFieldTag, ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
@@ -116,7 +117,7 @@ impl MptUpdate {
                 field_tag: AccountFieldTag::Nonce | AccountFieldTag::NonExisting,
                 ..
             } => x.to_scalar().unwrap(),
-            _ => RandomLinearCombination::random_linear_combine(x.to_le_bytes(), word_randomness),
+            _ => rlc::value(&x.to_le_bytes(), word_randomness),
         };
 
         (assign(self.new_value), assign(self.old_value))
@@ -124,14 +125,8 @@ impl MptUpdate {
 
     pub(crate) fn root_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         (
-            RandomLinearCombination::random_linear_combine(
-                self.new_root.to_le_bytes(),
-                word_randomness,
-            ),
-            RandomLinearCombination::random_linear_combine(
-                self.old_root.to_le_bytes(),
-                word_randomness,
-            ),
+            rlc::value(&self.new_root.to_le_bytes(), word_randomness),
+            rlc::value(&self.old_root.to_le_bytes(), word_randomness),
         )
     }
 }
@@ -194,10 +189,7 @@ impl Key {
         match self {
             Self::Account { .. } => F::zero(),
             Self::AccountStorage { storage_key, .. } => {
-                RandomLinearCombination::random_linear_combine(
-                    storage_key.to_le_bytes(),
-                    randomness,
-                )
+                rlc::value(&storage_key.to_le_bytes(), randomness)
             }
         }
     }

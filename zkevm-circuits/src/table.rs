@@ -764,8 +764,8 @@ impl KeccakTable {
         keccak.update(input);
         let output = keccak.digest();
         let output_rlc = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::<F, 32>::random_linear_combine(
-                Word::from_big_endian(output.as_slice()).to_le_bytes(),
+            rlc::value(
+                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
                 challenge,
             )
         });
