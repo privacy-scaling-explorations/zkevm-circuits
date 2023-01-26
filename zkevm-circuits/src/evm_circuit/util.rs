@@ -461,13 +461,6 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
         rlc::value(&bytes, randomness)
     }
 
-    pub(crate) fn random_linear_combine_expr(
-        bytes: [Expression<F>; N],
-        randomness: Expression<F>,
-    ) -> Expression<F> {
-        rlc::expr(&bytes, randomness)
-    }
-
     pub(crate) fn new(cells: [Cell<F>; N], randomness: Expression<F>) -> Self {
         Self {
             expression: rlc::expr(&cells.clone().map(|cell| cell.expr()), randomness),

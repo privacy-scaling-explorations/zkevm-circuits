@@ -8,7 +8,7 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            select, sum, CachedRegion, Cell, Word,
+            rlc, select, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -108,8 +108,8 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
         // enabled need to be changed to the sign byte.
         // When a byte was selected all the **following** bytes need to be
         // replaced (hence the `selectors[idx - 1]`).
-        let result = Word::random_linear_combine_expr(
-            array_init(|idx| {
+        let result = rlc::expr(
+            &array_init::<_, _, 32>(|idx| {
                 if idx == 0 {
                     value.cells[idx].expr()
                 } else {
