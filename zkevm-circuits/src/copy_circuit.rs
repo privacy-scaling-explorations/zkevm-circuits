@@ -4,7 +4,6 @@
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use eth_types::Field;
-#[cfg(test)]
 use eth_types::Word;
 use gadgets::{
     binary_number::BinaryNumberChip,
@@ -20,10 +19,10 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-#[cfg(test)]
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc, RandomLinearCombination},
     table::{
@@ -33,9 +32,6 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-
-#[cfg(test)]
-use crate::witness::{Bytecode, RwMap, Transaction};
 
 /// Encode the type `NumberOrHash` into a field element
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
@@ -665,14 +661,18 @@ impl<F: Field> CopyCircuitConfig<F> {
     }
 }
 
-/// Struct for test data, specifies values for related lookup tables
-#[cfg(test)]
+/// Struct for external data, specifies values for related lookup tables
 #[derive(Clone, Debug, Default)]
-pub struct CopyCircuitTestData {
+pub struct ExternalData {
+    /// TxCircuit -> max_txs
     pub max_txs: usize,
+    /// TxCircuit -> txs
     pub txs: Vec<Transaction>,
+    /// StateCircuit -> max_rws
     pub max_rws: usize,
+    /// StateCircuit -> rws
     pub rws: RwMap,
+    /// BytecodeCircuit -> bytecodes
     pub bytecodes: HashMap<Word, Bytecode>,
 }
 
@@ -684,8 +684,8 @@ pub struct CopyCircuit<F: Field> {
     /// Max number of rows in copy circuit
     pub max_copy_rows: usize,
     _marker: PhantomData<F>,
-    #[cfg(test)]
-    pub test_data: CopyCircuitTestData,
+    /// Data for external lookup tables
+    pub external_data: ExternalData,
 }
 
 impl<F: Field> CopyCircuit<F> {
@@ -695,24 +695,33 @@ impl<F: Field> CopyCircuit<F> {
             copy_events,
             max_copy_rows,
             _marker: PhantomData::default(),
-            #[cfg(test)]
-            test_data: CopyCircuitTestData::default(),
+            external_data: ExternalData::default(),
         }
     }
 
-    /// Return a new CopyCircuit with test data
-    #[cfg(test)]
-    pub fn new_with_test_data(
+    /// Return a new CopyCircuit with external data
+    pub fn new_with_external_data(
         copy_events: Vec<CopyEvent>,
         max_copy_rows: usize,
-        test_data: CopyCircuitTestData,
+        external_data: ExternalData,
     ) -> Self {
         Self {
             copy_events,
             max_copy_rows,
             _marker: PhantomData::default(),
-            test_data,
+            external_data,
         }
+    }
+
+    /// Return a new CopyCircuit from a block without the external data required
+    /// to assign lookup tables.  This constructor is only suitable to be
+    /// used by the SuperCircuit, which already assigns the external lookup
+    /// tables.
+    pub fn new_from_block_no_external(block: &witness::Block<F>) -> Self {
+        Self::new(
+            block.copy_events.clone(),
+            block.circuits_params.max_copy_rows,
+        )
     }
 }
 
@@ -720,9 +729,16 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        Self::new(
-            block.clone().copy_events,
+        Self::new_with_external_data(
+            block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
+            ExternalData {
+                max_txs: block.circuits_params.max_txs,
+                txs: block.txs.clone(),
+                max_rws: block.circuits_params.max_rws,
+                rws: block.rws.clone(),
+                bytecodes: block.bytecodes.clone(),
+            },
         )
     }
 
@@ -810,26 +826,23 @@ pub mod dev {
         ) -> Result<(), halo2_proofs::plonk::Error> {
             let challenge_values = config.1.values(&mut layouter);
 
-            #[cfg(test)]
             config.0.tx_table.load(
                 &mut layouter,
-                &self.test_data.txs,
-                self.test_data.max_txs,
+                &self.external_data.txs,
+                self.external_data.max_txs,
                 &challenge_values,
             )?;
 
-            #[cfg(test)]
             config.0.rw_table.load(
                 &mut layouter,
-                &self.test_data.rws.table_assignments(),
-                self.test_data.max_rws,
+                &self.external_data.rws.table_assignments(),
+                self.external_data.max_rws,
                 challenge_values.evm_word(),
             )?;
 
-            #[cfg(test)]
             config.0.bytecode_table.load(
                 &mut layouter,
-                self.test_data.bytecodes.values(),
+                self.external_data.bytecodes.values(),
                 &challenge_values,
             )?;
             self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
@@ -842,9 +855,10 @@ pub mod dev {
         k: u32,
         copy_events: Vec<CopyEvent>,
         max_copy_rows: usize,
-        test_data: CopyCircuitTestData,
+        external_data: ExternalData,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let circuit = CopyCircuit::<F>::new_with_test_data(copy_events, max_copy_rows, test_data);
+        let circuit =
+            CopyCircuit::<F>::new_with_external_data(copy_events, max_copy_rows, external_data);
 
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify_par()
@@ -860,7 +874,7 @@ pub mod dev {
             k,
             block.copy_events,
             block.circuits_params.max_copy_rows,
-            CopyCircuitTestData {
+            ExternalData {
                 max_txs: block.circuits_params.max_txs,
                 txs: block.txs,
                 max_rws: block.circuits_params.max_rws,

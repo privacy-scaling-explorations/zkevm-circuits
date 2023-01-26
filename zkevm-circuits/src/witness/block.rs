@@ -56,6 +56,21 @@ pub struct Block<F> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
+impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+                for rw_ref in &step.rw_indices {
+                    println!("  - {:?}", self.rws[*rw_ref]);
+                }
+            }
+        }
+    }
+}
 /// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
