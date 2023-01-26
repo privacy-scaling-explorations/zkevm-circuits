@@ -11,10 +11,9 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
-    GethExecStep, ToAddress, ToWord, Word,
+    evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
 use keccak256::EMPTY_HASH;
-use log::warn;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -238,19 +237,19 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
         OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
-            warn!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
+            evm_unimplemented!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CREATE => {
-            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<false>::gen_associated_ops
         }
         OpcodeId::CREATE2 => {
-            warn!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<true>::gen_associated_ops
         }
         _ => {
-            warn!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             Dummy::gen_associated_ops
         }
     }
@@ -265,7 +264,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         // more future errors place here
         _ => {
-            warn!("TODO: error state {:?} not implemented", error);
+            evm_unimplemented!("TODO: error state {:?} not implemented", error);
             None
         }
     }
@@ -351,13 +350,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
-    let nonce_prev = state.sdb.increase_nonce(&caller_address);
+    let nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
     state.account_write(
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        (nonce_prev + 1).into(),
-        nonce_prev.into(),
+        nonce_prev + 1,
+        nonce_prev,
     )?;
 
     // Add caller and callee into access list
@@ -395,24 +394,25 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Get code_hash of callee
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let code_hash = callee_account.code_hash;
+    let callee_code_hash = call.code_hash;
+    let callee_exists = !state.sdb.get_account(&call.address).1.is_empty();
+    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+        (
+            callee_code_hash.to_word(),
+            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        )
+    } else {
+        (Word::zero(), true)
+    };
 
     // There are 4 branches from here.
     match (
         call.is_create(),
         state.is_precompiled(&call.address),
-        code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        is_empty_code_hash,
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                call.code_hash.to_word(),
-                call.code_hash.to_word(),
-            )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
@@ -443,7 +443,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         }
         // 2. Call to precompiled.
         (_, true, _) => {
-            warn!("Call to precompiled is left unimplemented");
+            evm_unimplemented!("Call to precompiled is left unimplemented");
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
@@ -451,8 +451,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 &mut exec_step,
                 call.address,
                 AccountField::CodeHash,
-                code_hash.to_word(),
-                code_hash.to_word(),
+                callee_code_hash_word,
+                callee_code_hash_word,
             )?;
 
             // 3. Call to account with empty code.
@@ -483,7 +483,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeHash, code_hash.to_word()),
+                (CallContextField::CodeHash, callee_code_hash_word),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -523,15 +523,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
     let effective_refund =
         refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
-    let (found, caller_account) = state.sdb.get_account_mut(&call.caller_address);
+    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
     if !found {
         return Err(Error::AccountNotFound(call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    caller_account.balance = caller_balance;
-
     state.account_write(
         &mut exec_step,
         call.caller_address,
@@ -541,14 +539,13 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     )?;
 
     let effective_tip = state.tx.gas_price - state.block.base_fee;
-    let (found, coinbase_account) = state.sdb.get_account_mut(&state.block.coinbase);
+    let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    coinbase_account.balance = coinbase_balance;
     state.account_write(
         &mut exec_step,
         state.block.coinbase,

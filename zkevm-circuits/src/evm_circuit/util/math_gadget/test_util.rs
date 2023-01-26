@@ -5,12 +5,12 @@ use strum::IntoEnumIterator;
 use crate::table::LookupTable;
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::{FixedTableTag, Table},
         util::{
             constraint_builder::ConstraintBuilder, rlc, CachedRegion, CellType, Expr,
-            StoredExpression,
+            StoredExpression, LOOKUP_CONFIG,
         },
         Advice, Column, Fixed,
     },
@@ -18,6 +18,7 @@ use crate::{
 };
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
+use halo2_proofs::plonk::{FirstPhase, SecondPhase, ThirdPhase};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
@@ -98,13 +99,31 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let q_usable = meta.selector();
-        let fixed_table = [(); 4].map(|_| meta.fixed_column());
-        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
-        let step_curr = Step::new(meta, advices, 0, false);
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         let challenges = Challenges::construct(meta);
         let challenges_exprs = challenges.exprs(meta);
+
+        let q_usable = meta.selector();
+        let fixed_table = [(); 4].map(|_| meta.fixed_column());
+
+        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
+        let advices = [(); STEP_WIDTH]
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                    meta.advice_column_in(ThirdPhase)
+                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                    meta.advice_column_in(SecondPhase)
+                } else {
+                    meta.advice_column_in(FirstPhase)
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let step_curr = Step::new(meta, advices, 0, false);
+        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         let evm_word_powers_of_randomness = challenges_exprs.evm_word_powers_of_randomness();
         let lookup_input_powers_of_randomness =
             challenges_exprs.lookup_input_powers_of_randomness();
