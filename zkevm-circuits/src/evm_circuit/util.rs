@@ -545,7 +545,11 @@ pub(crate) mod rlc {
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
-        gen(expressions.iter().map(|e| e.expr()), randomness.expr())
+        if !expressions.is_empty() {
+            gen(expressions.iter().map(|e| e.expr()), randomness.expr())
+        } else {
+            0.expr()
+        }
     }
 
     pub(crate) fn value<'a, F: FieldExt, I>(values: I, randomness: F) -> F
@@ -553,9 +557,15 @@ pub(crate) mod rlc {
         I: IntoIterator<Item = &'a u8>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
     {
-        let values = values.into_iter().map(|v| F::from(*v as u64));
-
-        gen(values, randomness)
+        let values = values
+            .into_iter()
+            .map(|v| F::from(*v as u64))
+            .collect::<Vec<F>>();
+        if !values.is_empty() {
+            gen(values, randomness)
+        } else {
+            F::zero()
+        }
     }
 
     pub(crate) fn gen<V, I>(values: I, randomness: V) -> V
