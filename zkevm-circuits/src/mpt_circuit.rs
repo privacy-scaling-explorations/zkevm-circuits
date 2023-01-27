@@ -293,6 +293,8 @@ pub(crate) struct ProofValues<F> {
     pub(crate) rlc2: F,
     pub(crate) nonce_value_s: F,
     pub(crate) balance_value_s: F,
+    pub(crate) storage_root_value_s: F,
+    pub(crate) codehash_value_s: F,
     pub(crate) before_account_leaf: bool,
     pub(crate) nibbles_num: usize,
 
@@ -563,7 +565,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     } else {
                         for lookup in lookups.iter() {
                             ifx!{lookup.condition => {
-                                require!(lookup.description.to_string(), lookup.values => @"fixed");
+                                require!(lookup.description, lookup.values => @"fixed");
                             }}
                         }
                     }

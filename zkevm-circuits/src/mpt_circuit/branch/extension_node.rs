@@ -12,6 +12,7 @@ use crate::{
     mpt_circuit::{
         helpers::get_num_nibbles,
         param::{ARITY, C_RLP_START, C_START, HASH_WIDTH, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_NIL},
+        FixedTableTag,
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, MPTConstraintBuilder},
@@ -258,7 +259,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                     require!(a!(s_main.rlp1) => RLP_LIST_LONG + 1);
                 }}
                 // Verify that the lenghts are consistent.
-                require!(ext.ext_len(meta, 0) => ext.ext_key_num_bytes(meta) + ext.ext_branch_num_bytes(meta));
+                require!(ext.ext_len(meta, 0) => ext.ext_key_num_bytes(meta, 0) + ext.ext_branch_num_bytes(meta));
             }
 
             // Calculate the extension node RLC.
@@ -269,12 +270,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
             // TODO(Brecht): Do we need to store the RLC here? we can just use `rlc`
             // directly below...
             require!(ext_rlc.prev() => s_main.expr(meta, rot_s).rlc(&r));
-            // TODO(Brecht): mult is not constrained?
+            // Update the multiplier with the number of bytes on the first row
             let mult = a!(accs.acc_s.mult);
-            //let num_bytes_on_key_row = ext.ext_num_rlp_bytes(meta) +
-            // ext.ext_key_num_bytes(meta); We need to check that the multiplier
-            // changes according to `num_bytes_on_key_row` and update it.
-            // require!((FixedTableTag::RMult, num_bytes_on_key_row, mult) => @"mult2");
+            require!((FixedTableTag::RMult, ext.ext_num_bytes_on_key_row(meta, rot_s), mult) => @"mult2");
 
             let rlc = ifx! {ext.contains_hashed_branch(meta) => {
                 c_main.expr(meta, 0)[1..].rlc(&r)
@@ -296,7 +294,7 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 .rlc_chain(RLP_NIL.expr());
             let branch_rlc_in_ext = c_main.bytes(meta, 0).rlc(&r);
             ifx! {ext.contains_hashed_branch(meta) => {
-                // Check that `(branch_rlc, extension_node_hash_rlc`) in in the keccak table.
+                // Check that `(branch_rlc, extension_node_hash_rlc`) is in the keccak table.
                 require!((1, branch_rlc, ext.num_bytes(meta), branch_rlc_in_ext) => @"keccak");
             } elsex {
                 // Check if the RLC matches

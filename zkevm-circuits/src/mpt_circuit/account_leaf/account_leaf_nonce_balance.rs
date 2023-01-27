@@ -241,11 +241,10 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                 require!(len => key_num_bytes + value_list_num_bytes);
             }}
 
-            // To enable lookups for balance modification we need to have S balance and C
-            // balance in the same row.
-            if is_s {
-                require!(a!(value_prev) => nonce);
-            } else {
+            // To enable lookups we need to have the previous/current nonce/balance on the
+            // same row
+            if !is_s {
+                require!(a!(value_prev, rot_s) => nonce.prev());
                 require!(a!(value, rot_s) => nonce);
                 require!(a!(value_prev) => balance.prev());
                 require!(a!(value) => balance);
@@ -389,16 +388,6 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             acc_account = pv.acc_account_s;
             acc_mult_account = pv.acc_mult_account_s;
 
-            // assign nonce S RLC in ACCOUNT_LEAF_NONCE_BALANCE_S row.
-            region
-                .assign_advice(
-                    || "assign value_prev".to_string(),
-                    mpt_config.value_prev,
-                    offset,
-                    || Value::known(pv.rlc1),
-                )
-                .ok();
-
             if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
                 region
                     .assign_advice(
@@ -413,15 +402,40 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             acc_account = pv.acc_account_c;
             acc_mult_account = pv.acc_mult_account_c;
 
+            let nonce_value_c = pv.rlc1;
+            let balance_value_c = pv.rlc2;
+
+            if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
+                region
+                    .assign_advice(
+                        || "assign which lookup type enabled".to_string(),
+                        mpt_config.proof_type.proof_type,
+                        offset,
+                        || Value::known(F::from(2_u64)),
+                    )
+                    .ok();
+            }
+
+            let offset_s = offset
+                - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND) as usize;
+
+            // assign nonce S RLC in ACCOUNT_LEAF_NONCE_BALANCE_S row.
+            region
+                .assign_advice(
+                    || "assign nonce S".to_string(),
+                    mpt_config.value_prev,
+                    offset_s,
+                    || Value::known(pv.nonce_value_s),
+                )
+                .ok();
+
             // Assign nonce C RLC in ACCOUNT_LEAF_NONCE_BALANCE_S row.
             region
                 .assign_advice(
                     || "assign nonce C".to_string(),
                     mpt_config.value,
-                    offset
-                        - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND)
-                            as usize,
-                    || Value::known(pv.rlc1), // rlc1 is nonce
+                    offset_s,
+                    || Value::known(nonce_value_c),
                 )
                 .ok();
 
@@ -441,20 +455,9 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
                     || "assign balance C".to_string(),
                     mpt_config.value,
                     offset,
-                    || Value::known(pv.rlc2), // rlc2 is balance
+                    || Value::known(balance_value_c),
                 )
                 .ok();
-
-            if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
-                region
-                    .assign_advice(
-                        || "assign which lookup type enabled".to_string(),
-                        mpt_config.proof_type.proof_type,
-                        offset,
-                        || Value::known(F::from(2_u64)),
-                    )
-                    .ok();
-            }
         }
 
         // s_rlp1, s_rlp2

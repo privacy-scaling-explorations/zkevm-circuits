@@ -102,6 +102,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         } - BRANCH_ROWS_NUM;
         let rot_last_child = rot_branch_init + (ARITY as i32);
         let rot_last_child_prev = rot_last_child - BRANCH_ROWS_NUM;
+        let rot_s = if is_s {
+            0
+        } else {
+            -(ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
+        };
 
         // Note: differently as in storage leaf value (see empty_trie
         // there), the placeholder leaf never appears in the first level here,
@@ -162,22 +167,17 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // Do the lookup
                 ifx!{do_lookup => {
                     let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-                    let account_num_bytes = account.num_bytes(meta);
-                    require!((1, account_rlc, account_num_bytes, hash_rlc) => @"keccak");
+                    require!((1, account_rlc, account.num_bytes(meta), hash_rlc) => @"keccak");
                 }}
 
                 if !is_s {
-                    // To enable external lookups we need to have some data in the same row.
+                    // To enable lookups we need to have the previous/current storage root/code hash on the same row.
+                    require!(a!(value_prev, rot_s) => storage_root.prev());
+                    require!(a!(value, rot_s) => storage_root);
                     require!(a!(value_prev) => codehash.prev());
                     require!(a!(value) => codehash);
-                    // Note: we do not check whether codehash is copied properly as only one of the
-                    // `S` or `C` proofs are used for a lookup.
-                    // TODO(Brecht): Is the note above true? It is done for nonce/balance
 
-                    // Check that there is only one modification.
-                    // Note: For `is_non_existing_account_proof` we do not need this constraint,
-                    // `S` and `C` proofs are the same and we need to do a lookup into only one
-                    // (the other one could really be whatever).
+                    // Check that there is only one modification (except when the account is being deleted).
                     ifx!{not!(a!(proof_type.is_account_delete_mod)) => {
                         // Storage root needs to remain the same when not modifying the storage root
                         ifx!{not!(a!(proof_type.is_storage_mod)) => {
@@ -222,19 +222,11 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     (C_START, HASH_WIDTH),
                 )
                 .ok();
+            pv.storage_root_value_s = pv.rlc1;
+            pv.codehash_value_s = pv.rlc2;
         } else {
             pv.acc_s = pv.acc_nonce_balance_c;
             pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
-
-            // assign code hash S
-            region
-                .assign_advice(
-                    || "assign value prev".to_string(),
-                    mpt_config.value_prev,
-                    offset,
-                    || Value::known(pv.rlc2),
-                )
-                .ok();
 
             // assign storage root RLC and code hash RLC for this row
             pv.rlc1 = F::zero();
@@ -250,15 +242,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 )
                 .ok();
 
-            // assign code hash C in value column
-            region
-                .assign_advice(
-                    || "assign value".to_string(),
-                    mpt_config.value,
-                    offset,
-                    || Value::known(pv.rlc2),
-                )
-                .ok();
+            let storage_root_value_c = pv.rlc1;
+            let codehash_value_c = pv.rlc2;
 
             if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
                 region
@@ -270,6 +255,50 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                     )
                     .ok();
             }
+
+            let offset_s = offset
+                - (ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
+                    as usize;
+
+            // Assign storage root S
+            region
+                .assign_advice(
+                    || "assign storage root S".to_string(),
+                    mpt_config.value_prev,
+                    offset_s,
+                    || Value::known(pv.storage_root_value_s),
+                )
+                .ok();
+
+            // Assign storage root C
+            region
+                .assign_advice(
+                    || "assign code hash C".to_string(),
+                    mpt_config.value,
+                    offset_s,
+                    || Value::known(storage_root_value_c),
+                )
+                .ok();
+
+            // Assign code hash S
+            region
+                .assign_advice(
+                    || "assign code hash S".to_string(),
+                    mpt_config.value_prev,
+                    offset,
+                    || Value::known(pv.codehash_value_s),
+                )
+                .ok();
+
+            // Assign code hash C
+            region
+                .assign_advice(
+                    || "assign code hash C".to_string(),
+                    mpt_config.value,
+                    offset,
+                    || Value::known(codehash_value_c),
+                )
+                .ok();
         }
         // storage
         mpt_config.compute_acc_and_mult(

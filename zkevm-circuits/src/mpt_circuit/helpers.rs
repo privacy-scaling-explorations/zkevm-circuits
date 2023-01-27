@@ -409,14 +409,27 @@ impl<F: FieldExt> BranchNodeInfo<F> {
 
     /// Number of bytes of the key (including RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn ext_key_num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+    pub(crate) fn ext_key_num_bytes(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rel_rot: i32,
+    ) -> Expression<F> {
         circuit!([meta, _cb!()], {
             matchx! (
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
                 self.is_longer_than_55_s => 2.expr(),
-            ) + self.ext_key_len(meta, 0)
+            ) + self.ext_key_len(meta, rel_rot)
         })
+    }
+
+    /// Number of bytes of RLP (including list RLP bytes) and key
+    pub(crate) fn ext_num_bytes_on_key_row(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rel_rot: i32,
+    ) -> Expression<F> {
+        self.ext_num_rlp_bytes(meta) + self.ext_key_num_bytes(meta, rel_rot)
     }
 
     /// Length of the included branch (excluding RLP bytes)

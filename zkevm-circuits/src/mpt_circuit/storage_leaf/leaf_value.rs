@@ -173,7 +173,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             require!(value_rlc => new_value_rlc);
             require!(leaf_rlc => leaf_rlc.prev() + new_leaf_rlc);
 
-            // To enable external lookups we need to have some data in the same row.
+            // To enable external lookups we need to have the key and the previous/current
+            // value on the same row.
             if !is_s {
                 require!(a!(accs.key.mult) => a!(accs.key.rlc, rot_key));
                 require!(a!(value_prev) => value_rlc.prev());

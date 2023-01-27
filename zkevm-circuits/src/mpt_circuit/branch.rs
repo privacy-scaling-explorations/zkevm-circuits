@@ -192,12 +192,10 @@ impl<F: FieldExt> BranchConfig<F> {
                     }
 
                     // Check that `is_modified` is enabled for the correct branch child.
-                    // TODO(Brecht): this does not force `is_modified` to be enabled anywhere
                     ifx!{is_modified => {
                         require!(node_index => modified_index);
                     }}
                     // Check that `is_drifted` is enabled for the correct branch child.
-                    // TODO(Brecht): this does not force `is_drifted` to be enabled anywhere
                     ifx!{is_drifted => {
                         require!(node_index => drifted_index);
                     }}
@@ -257,6 +255,16 @@ impl<F: FieldExt> BranchConfig<F> {
                 ifx!{is_last_child => {
                     // Rotations could be avoided but we would need additional is_branch_placeholder column.
                     let mut branch = BranchNodeInfo::new(meta, ctx.clone(), true, -(ARITY as i32));
+
+                    // `is_modified` needs to be set to 1 at exactly 1 branch child
+                    let is_modified_values = (0..ARITY).map(|rot| a!(ctx.branch.is_modified, -(rot as i32))).collect::<Vec<_>>();
+                    require!(sum::expr(&is_modified_values) => 1);
+
+                    ifx!{branch.is_placeholder() => {
+                        // `is_drifted` needs to be set to 1 at exactly 1 branch child
+                        let is_drifted_values = (0..ARITY).map(|rot| a!(ctx.branch.is_drifted, -(rot as i32))).collect::<Vec<_>>();
+                        require!(sum::expr(&is_drifted_values) => 1);
+                    }}
 
                     // Check if the branch is in its parent.
                     // Extension node is handled in `extension_node.rs`.

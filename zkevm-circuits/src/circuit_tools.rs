@@ -699,7 +699,7 @@ macro_rules! _require {
     }};
     ($cb:expr, $descr:expr, $values:expr => @$tag:expr) => {{
         $cb.lookup(
-            Box::leak($descr.into_boxed_str()),
+            Box::leak($descr.to_string().into_boxed_str()),
             $tag.to_string(),
             $values.clone(),
         );

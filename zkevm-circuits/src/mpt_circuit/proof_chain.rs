@@ -100,7 +100,6 @@ impl<F: FieldExt> ProofChainConfig<F> {
                     ifx!{not!(is_branch_init), not!(is_account_leaf_key_s), not!(is_storage_leaf_key_s) => {
                         require!(not_first_level => not_first_level.prev());
                     }}
-                    // TODO(Brecht): No constraint for transition back to 0 seems a bit dangerous
 
                     // `start_root`/`final_root` can change only in the first row of the first level.
                     // We check that it stays the same always except when `not_first_level` goes from 1 to 0.
