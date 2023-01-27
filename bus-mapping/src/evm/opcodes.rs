@@ -349,7 +349,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let nonce_prev = state.sdb.get_account(&caller_address).1.nonce.as_u64();
     // Increase caller's nonce when the tx is not invalid
     let nonce = if !state.tx.invalid_tx {
-        state.sdb.increase_nonce(&caller_address) + 1
+       // state.sdb.increase_nonce(&caller_address) + 1
+       nonce_prev + 1
     } else {
         nonce_prev
     };
@@ -510,6 +511,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
 pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_end_tx_step();
+
     let call = state.tx.calls()[0].clone();
 
     state.call_context_read(
@@ -561,13 +563,16 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    state.account_write(
-        &mut exec_step,
-        state.block.coinbase,
-        AccountField::Balance,
-        coinbase_balance,
-        coinbase_balance_prev,
-    )?;
+
+    // if !state.tx.invalid_tx {
+        state.account_write(
+            &mut exec_step,
+            state.block.coinbase,
+            AccountField::Balance,
+            coinbase_balance,
+            coinbase_balance_prev,
+        )?;
+    // }
 
     // handle tx receipt tag
     state.tx_receipt_write(
