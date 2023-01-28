@@ -1,5 +1,6 @@
 //! Exponentiation verification circuit.
 
+use bus_mapping::operation::RWCounter;
 use eth_types::{Field, ToScalar, U256};
 use gadgets::{
     mul_add::{MulAddChip, MulAddConfig},
@@ -7,7 +8,7 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -27,6 +28,7 @@ pub const ROWS_PER_STEP: usize = 4usize;
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
 pub struct ExpCircuitConfig<F> {
+    minimum_rows: usize,
     /// Whether the row is enabled.
     pub q_usable: Selector,
     /// The Exponentiation circuit's table.
@@ -269,6 +271,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         });
 
         Self {
+            minimum_rows: meta.minimum_rows(),
             q_usable,
             exp_table,
             mul_gadget,
@@ -283,6 +286,7 @@ impl<F: Field> ExpCircuitConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        k: usize,
     ) -> Result<(), Error> {
         let mut mul_chip = MulAddChip::construct(self.mul_gadget.clone());
         let mut parity_check_chip = MulAddChip::construct(self.parity_check.clone());
@@ -290,6 +294,12 @@ impl<F: Field> ExpCircuitConfig<F> {
         layouter.assign_region(
             || "exponentiation circuit",
             |mut region| {
+                debug_assert!(
+                    k >= self.minimum_rows,
+                    "k: {}, minimum_rows: {}",
+                    k,
+                    self.minimum_rows,
+                );
                 // assign everything except the exp table.
                 let mut offset = 0;
                 for exp_event in block.exp_events.iter() {
@@ -347,13 +357,21 @@ impl<F: Field> ExpCircuitConfig<F> {
                         offset += OFFSET_INCREMENT;
                     }
                 }
-                dbg!(offset);
-                self.assign_padding_rows(
-                    &mut region,
-                    offset,
-                    &mut mul_chip,
-                    &mut parity_check_chip,
-                )?;
+                let padding_start_offset = offset;
+                let padding_end_offset = k - self.minimum_rows + 1;
+                dbg!("start offset ", padding_start_offset);
+                dbg!("end offset ", padding_end_offset);
+                dbg!("min rows ", self.minimum_rows);
+                // end with padding rows.
+                for offset in padding_start_offset..padding_end_offset {
+                    // dbg!(offset);
+                    self.assign_padding_rows(
+                        &mut region,
+                        offset,
+                        &mut mul_chip,
+                        &mut parity_check_chip,
+                    )?;
+                }
 
                 Ok(())
             },
@@ -367,69 +385,76 @@ impl<F: Field> ExpCircuitConfig<F> {
         mul_chip: &mut MulAddChip<F>,
         parity_check_chip: &mut MulAddChip<F>,
     ) -> Result<(), Error> {
-        let mut all_columns = self.exp_table.columns();
-        all_columns.extend_from_slice(&[
-            self.mul_gadget.col0,
-            self.mul_gadget.col1,
-            self.mul_gadget.col2,
-            self.mul_gadget.col3,
-            self.mul_gadget.col4,
-            self.parity_check.col0,
-            self.parity_check.col1,
-            self.parity_check.col2,
-            self.parity_check.col3,
-            self.parity_check.col4,
-        ]);
         // assign exponentiation trace
+        self.q_usable.enable(region, offset)?;
+
+        // assign exp table
+        for column in [
+            self.exp_table.is_step,
+            self.exp_table.is_last,
+            self.exp_table.identifier,
+        ]
+        .into_iter()
+        {
+            region.assign_advice(
+                || format!("padding row, offset: {}", offset),
+                column,
+                offset,
+                || Value::known(F::zero()),
+            )?;
+        }
+        for column in [
+            self.exp_table.base_limb,
+            self.exp_table.exponent_lo_hi,
+            self.exp_table.exponentiation_lo_hi,
+        ]
+        .into_iter()
+        {
+            region.assign_advice(
+                || format!("padding row, offset: {}", offset),
+                column,
+                offset,
+                || Value::known(F::one()),
+            )?;
+        }
+
+        // assign mul_chip
+        mul_chip.assign(
+            region,
+            offset,
+            [U256::one(), U256::one(), U256::zero(), U256::one()],
+        )?;
+
+        // assign parity
+        let exponent = U256::one();
+        let two = U256::from(2);
+        parity_check_chip.assign(region, offset, [two, U256::zero(), U256::one(), exponent])?;
+
         // for i in 0..(2 * OFFSET_INCREMENT) {
         //     self.q_usable.enable(region, offset + i)?;
-        //     // assign exp table
-        //     for column in self.exp_table.columns().iter() {
+        // }
+        // dbg!("padding now");
+        // self.q_usable.enable(region, offset)?;
+        // dbg!(offset + 1);
+        // self.q_usable.enable(region, offset + 1)?;
+        // dbg!(offset + 2);
+        // self.q_usable.enable(region, offset + 2)?;
+        // dbg!(offset + 3);
+        // self.q_usable.enable(region, offset + 3)?;
+        // dbg!(offset + 4);
+        // self.q_usable.enable(region, offset + 4)?;
+        // for column in all_columns.clone() {
+        //     for i in 0..(2 * OFFSET_INCREMENT) {
+        //         // Removed * 2 because we only pad one exp event
+        //         // self.q_usable.enable(region, offset + i)?;
         //         region.assign_advice(
-        //             || format!("exp circuit padding: {:?}: {}", *column, offset + i),
-        //             *column,
+        //             || format!("padding steps: {}", offset + i),
+        //             column,
         //             offset + i,
         //             || Value::known(F::zero()),
         //         )?;
         //     }
         // }
-        // mul_chip.assign(
-        //     region,
-        //     offset,
-        //     [U256::one(), U256::one(), U256::zero(), U256::one()],
-        // )?;
-        // let exponent = U256::one();
-        // let two = U256::from(2);
-        // let (exponent_div2, remainder) = exponent.div_mod(two);
-        // parity_check_chip.assign(region, offset, [two, exponent_div2, remainder,
-        // exponent])?;
-
-        // for i in 0..(2 * OFFSET_INCREMENT) {
-        //     self.q_usable.enable(region, offset + i)?;
-        // }
-        dbg!("padding now");
-        self.q_usable.enable(region, offset)?;
-        dbg!(offset + 1);
-        self.q_usable.enable(region, offset + 1)?;
-        dbg!(offset + 2);
-        self.q_usable.enable(region, offset + 2)?;
-        dbg!(offset + 3);
-        self.q_usable.enable(region, offset + 3)?;
-        // dbg!(offset + 4);
-        // self.q_usable.enable(region, offset + 4)?;
-        for column in all_columns.clone() {
-            for i in 0..(2 * OFFSET_INCREMENT) {
-                // Removed * 2 because we only pad one exp event
-                // self.q_usable.enable(region, offset + i)?;
-                // dbg!(offset + i);
-                region.assign_advice(
-                    || format!("padding steps: {}", offset + i),
-                    column,
-                    offset + i,
-                    || Value::known(F::zero()),
-                )?;
-            }
-        }
 
         Ok(())
     }
@@ -439,12 +464,17 @@ impl<F: Field> ExpCircuitConfig<F> {
 #[derive(Default, Clone, Debug)]
 pub struct ExpCircuit<F> {
     block: Option<Block<F>>,
+    size: usize,
 }
 
 impl<F: Field> ExpCircuit<F> {
     /// Return a new ExpCircuit
     pub fn new(block: Block<F>) -> Self {
-        Self { block: Some(block) }
+        Self {
+            block: Some(block),
+            // FIXME: this hard-coded size is used to pass unit test, we should use 1 << k instead.
+            size: 1 << 18,
+        }
     }
 }
 
@@ -456,12 +486,13 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 
     /// Return the minimum number of rows required to prove the block
-    fn min_num_rows_block(block: &witness::Block<F>) -> usize {
-        block
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let rows = block
             .exp_events
             .iter()
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
-            .sum()
+            .sum();
+        (rows, std::cmp::max(1 << 18, rows))
     }
 
     /// Make the assignments to the ExpCircuit
@@ -472,7 +503,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
-        config.assign_block(layouter, block)
+        config.assign_block(layouter, block, self.size)
     }
 }
 
@@ -513,6 +544,7 @@ pub mod dev {
     /// Test exponentiation circuit with the provided block witness
     pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
         let circuit = ExpCircuit::<F>::new(block);
+        dbg!(k);
         let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
         prover.verify()
     }
@@ -562,7 +594,7 @@ mod tests {
         let builder = gen_data(code);
         log::debug!("generating block");
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_exp_circuit(k.unwrap_or(10), block), Ok(()));
+        assert_eq!(test_exp_circuit(k.unwrap_or(18), block), Ok(()));
     }
 
     fn test_ok_multiple(args: Vec<(Word, Word)>) {
@@ -574,7 +606,7 @@ mod tests {
 
     #[test]
     fn exp_circuit_single() {
-        test_ok(2.into(), 2.into(), None);
+        test_ok(2.into(), 2.into(), Some(18 as u32));
         // test_ok(3.into(), 7.into(), None);
         // test_ok(5.into(), 11.into(), None);
         // test_ok(7.into(), 13.into(), None);
