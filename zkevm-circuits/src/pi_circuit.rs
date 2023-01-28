@@ -10,6 +10,7 @@ use eth_types::H256;
 use eth_types::{Field, ToBigEndian, Word};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Fixed, Instance};
+use halo2_proofs::plonk::{Instance};
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;

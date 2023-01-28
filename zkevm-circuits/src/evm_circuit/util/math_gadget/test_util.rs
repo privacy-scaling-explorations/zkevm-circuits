@@ -31,6 +31,7 @@ use halo2_proofs::plonk::ThirdPhase;
 
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
+use halo2_proofs::plonk::{FirstPhase, SecondPhase, ThirdPhase};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
@@ -121,9 +122,9 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < lookup_column_count {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)

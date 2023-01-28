@@ -53,6 +53,8 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Max ammount of rows that the CopyCircuit can have.
+    pub max_copy_rows: usize,
     /// Maximum number of inner blocks in a batch
     pub max_inner_blocks: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
@@ -71,6 +73,9 @@ impl Default for CircuitsParams {
             max_txs: 1,
             max_calldata: 256,
             max_inner_blocks: 64,
+            // TODO: Check whether this value is correct or we should increase/decrease based on
+            // this lib tests
+            max_copy_rows: 1000,
             max_bytecode: 512,
             keccak_padding: None,
         }
