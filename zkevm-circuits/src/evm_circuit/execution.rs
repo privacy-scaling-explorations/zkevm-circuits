@@ -193,7 +193,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    height_map: HashMap<ExecutionState, usize>,
+    pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
@@ -569,15 +569,6 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
-        self.height_map.get(&execution_state).copied()
-    }
-
-    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        self.get_step_height_option(execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -871,7 +862,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = self.get_step_height(step.execution_state);
+                    let height = step.execution_state.get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -902,7 +893,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
-                    let height = self.get_step_height(ExecutionState::EndBlock);
+                    let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -929,7 +920,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = self.get_step_height(ExecutionState::EndBlock);
+                let height = ExecutionState::EndBlock.get_step_height();
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(
