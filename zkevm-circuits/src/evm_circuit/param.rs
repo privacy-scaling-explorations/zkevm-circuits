@@ -69,6 +69,7 @@ pub(crate) const N_BYTES_GAS: usize = N_BYTES_U64;
 pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 
 lazy_static::lazy_static! {
+    // Step slot height in evm circuit
     pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
 }
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
