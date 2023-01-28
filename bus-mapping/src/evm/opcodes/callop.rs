@@ -120,6 +120,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         let caller_balance = sender_account.balance;
         let insufficient_balance = call.value > caller_balance;
+        let is_depth_ok = geth_step.depth < 1025;
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -136,8 +137,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let callee_code_hash = call.code_hash;
         let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
 
-        // Transfer value only for CALL opcode. only when insufficient_balance = false.
-        if call.kind == CallKind::Call && !insufficient_balance {
+        // Transfer value only for CALL opcode.
+        // only when insufficient_balance = false and error_depth = false
+        if call.kind == CallKind::Call && !insufficient_balance && is_depth_ok {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -198,17 +200,16 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
         match (
-            insufficient_balance,
             state.is_precompiled(&call.address),
-            is_empty_code_hash,
+            is_empty_code_hash || insufficient_balance || !is_depth_ok,
         ) {
             // 1. Call to precompiled.
-            (false, true, _) => {
+            (true, _) => {
                 warn!("Call to precompiled is left unimplemented");
                 Ok(vec![exec_step])
             }
-            // 2. Call to account with empty code.
-            (false, _, true) => {
+            // 2. Call to account with empty code or insufficient_balance or error_depth
+            (_, true) => {
                 for (field, value) in [
                     (CallContextField::LastCalleeId, 0.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
@@ -220,7 +221,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
-            (false, _, false) => {
+            (_, false) => {
                 for (field, value) in [
                     (
                         CallContextField::ProgramCounter,
@@ -283,19 +284,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 Ok(vec![exec_step])
             }
-
-            // 4. insufficient balance or error depth cases.
-            (true, _, _) => {
-                for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                ] {
-                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
-                }
-                state.handle_return(geth_step)?;
-                Ok(vec![exec_step])
-            } //
         }
     }
 }
