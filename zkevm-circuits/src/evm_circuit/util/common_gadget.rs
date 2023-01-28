@@ -476,9 +476,9 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         let gas_word = cb.query_word_rlc();
         let callee_address_word = cb.query_word_rlc();
         let value = cb.query_word_rlc();
-        let cd_offset = cb.query_cell();
+        let cd_offset = cb.query_cell_phase2();
         let cd_length = cb.query_word_rlc();
-        let rd_offset = cb.query_cell();
+        let rd_offset = cb.query_cell_phase2();
         let rd_length = cb.query_word_rlc();
         let is_success = cb.query_bool();
 

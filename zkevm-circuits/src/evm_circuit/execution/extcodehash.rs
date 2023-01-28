@@ -8,7 +8,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            from_bytes, CachedRegion, Cell, Word,
+            from_bytes, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -50,13 +50,16 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
         cb.stack_push(code_hash.expr());
 
-        let gas_cost = is_warm.expr() * GasCost::WARM_ACCESS.expr()
-            + (1.expr() - is_warm.expr()) * GasCost::COLD_ACCOUNT_ACCESS.expr();
+        let gas_cost = select::expr(
+            is_warm.expr(),
+            GasCost::WARM_ACCESS.expr(),
+            GasCost::COLD_ACCOUNT_ACCESS.expr(),
+        );
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
@@ -103,13 +106,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             call.is_persistent,
         )?;
 
-        let is_warm = match GasCost::from(step.gas_cost) {
-            GasCost::COLD_ACCOUNT_ACCESS => 0,
-            GasCost::WARM_ACCESS => 1,
-            _ => unreachable!(),
-        };
+        let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash

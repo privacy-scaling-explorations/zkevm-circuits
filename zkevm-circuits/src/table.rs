@@ -245,7 +245,7 @@ impl From<RwTableTag> for usize {
 }
 
 /// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
     /// Nonce field
     Nonce = 1,
@@ -534,9 +534,8 @@ impl MptTable {
         updates: &MptUpdates,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, &MptUpdateRow([Value::known(F::zero()); 7]))?;
         for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
-            self.assign(region, offset + 1, row)?;
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }
