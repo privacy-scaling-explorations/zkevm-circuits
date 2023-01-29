@@ -4,7 +4,6 @@ use bus_mapping::{
     evm::OpcodeId,
     operation,
 };
-use eth_types::evm_unimplemented;
 
 use crate::{
     evm_circuit::{

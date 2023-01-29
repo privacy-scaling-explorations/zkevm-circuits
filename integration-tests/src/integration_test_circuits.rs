@@ -366,11 +366,15 @@ pub async fn test_super_circuit_block(block_num: u64) {
     .await
     .unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
-    let (k, circuit, instance) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>::build_from_circuit_input_builder(
-            &builder,
-        )
-        .unwrap();
+    let (k, circuit, instance) = SuperCircuit::<
+        Fr,
+        MAX_TXS,
+        MAX_CALLDATA,
+        MAX_INNER_BLOCKS,
+        MAX_RWS,
+        MAX_COPY_ROWS,
+    >::build_from_circuit_input_builder(&builder)
+    .unwrap();
     // TODO: add actual prover
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify_par();

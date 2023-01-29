@@ -175,13 +175,7 @@ impl<'a> CircuitInputBuilder {
             ),
         );
 
-        Transaction::new(
-            call_id,
-            &mut self.sdb,
-            &mut self.code_db,
-            eth_tx,
-            is_success,
-        )
+        Transaction::new(call_id, &self.sdb, &mut self.code_db, eth_tx, is_success)
     }
 
     /// Iterate over all generated CallContext RwCounterEndOfReversion

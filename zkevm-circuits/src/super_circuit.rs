@@ -190,7 +190,8 @@ impl<
         const MAX_INNER_BLOCKS: usize,
         const MAX_RWS: usize,
         const MAX_COPY_ROWS: usize,
-    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
+    > Circuit<F>
+    for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>
 {
     type Config = (
         SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>,
@@ -554,19 +555,20 @@ impl<
         #[cfg(feature = "zktrie")]
         let mpt_circuit = MptCircuit::new_from_block(&block);
 
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS> {
-            evm_circuit,
-            state_circuit,
-            tx_circuit,
-            pi_circuit,
-            bytecode_circuit,
-            copy_circuit,
-            exp_circuit,
-            keccak_circuit,
-            rlp_circuit,
-            #[cfg(feature = "zktrie")]
-            mpt_circuit,
-        };
+        let circuit =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS> {
+                evm_circuit,
+                state_circuit,
+                tx_circuit,
+                pi_circuit,
+                bytecode_circuit,
+                copy_circuit,
+                exp_circuit,
+                keccak_circuit,
+                rlp_circuit,
+                #[cfg(feature = "zktrie")]
+                mpt_circuit,
+            };
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
@@ -656,9 +658,15 @@ mod super_circuit_tests {
     >(
         block: GethData,
     ) {
-        let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS:build(block)
-                .unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<
+            Fr,
+            MAX_TXS,
+            MAX_CALLDATA,
+            MAX_INNER_BLOCKS,
+            MAX_RWS,
+            MAX_COPY_ROWS,
+        >::build(block)
+        .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
@@ -811,7 +819,9 @@ mod super_circuit_tests {
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
         const MAX_COPY_ROWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(block);
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 
     #[ignore]
@@ -822,7 +832,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 
     #[ignore]
@@ -834,7 +847,9 @@ mod super_circuit_tests {
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
         const MAX_COPY_ROWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(block);
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
     #[ignore]
     #[test]
@@ -844,7 +859,10 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 320;
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS>(block);
+        const MAX_COPY_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
     #[ignore]
     #[test]
@@ -855,6 +873,8 @@ mod super_circuit_tests {
         const MAX_INNER_BLOCKS: usize = 1;
         const MAX_RWS: usize = 256;
         const MAX_COPY_ROWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(block);
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MAX_RWS, MAX_COPY_ROWS>(
+            block,
+        );
     }
 }

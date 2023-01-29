@@ -23,7 +23,6 @@ use halo2_proofs::{
 };
 use halo2_proofs::{circuit::Layouter, poly::Rotation};
 
-use halo2_proofs::plonk::FirstPhase;
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]

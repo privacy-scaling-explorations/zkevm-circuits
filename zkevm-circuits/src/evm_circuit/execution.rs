@@ -837,7 +837,7 @@ impl<F: Field> ExecutionConfig<F> {
         if evm_rows == 0 {
             for transaction in &block.txs {
                 for step in &transaction.steps {
-                    num_rows += self.get_step_height(step.execution_state);
+                    num_rows += step.execution_state.get_step_height();
                 }
             }
             num_rows += 1; // EndBlock

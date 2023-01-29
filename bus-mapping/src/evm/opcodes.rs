@@ -367,10 +367,10 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Increase caller's nonce
     let caller_address = call.caller_address;
-    let mut nonce_prev = state.sdb.increase_nonce(&caller_address);
-    debug_assert!(nonce_prev <= state.tx.nonce);
-    while nonce_prev < state.tx.nonce {
-        nonce_prev = state.sdb.increase_nonce(&caller_address);
+    let mut nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
+    debug_assert!(nonce_prev <= state.tx.nonce.into());
+    while nonce_prev < state.tx.nonce.into() {
+        nonce_prev = state.sdb.increase_nonce(&caller_address).into();
         log::warn!("[debug] increase nonce to {}", nonce_prev);
     }
     state.account_write(
@@ -406,6 +406,21 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
+    // Get code_hash of callee
+    let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_exists = !callee_account.is_empty();
+    let code_hash = callee_account.code_hash;
+    let callee_code_hash = call.code_hash;
+    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+        debug_assert_eq!(callee_code_hash, code_hash);
+        (
+            callee_code_hash.to_word(),
+            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+        )
+    } else {
+        (Word::zero(), true)
+    };
+
     // Transfer with fee
     state.transfer_with_fee(
         &mut exec_step,
@@ -415,26 +430,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         state.tx.gas_price * state.tx.gas,
     )?;
 
-    // Get code_hash of callee
-    //let (_exists, callee_account) = state.sdb.get_account(&call.address);
-    let callee_code_hash = call.code_hash;
-    let callee_exists = !state.sdb.get_account(&call.address).1.is_empty();
-    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
-        (
-            callee_code_hash.to_word(),
-            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-        )
-    } else {
-        (Word::zero(), true)
-    };
     state.account_read(
         &mut exec_step,
         call.address,
         AccountField::CodeHash,
-        code_hash.to_word(),
-        code_hash.to_word(),
+        callee_code_hash_word,
+        callee_code_hash_word,
     )?;
-    
 
     // There are 4 branches from here.
     match (
@@ -445,8 +447,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         // 1. Creation transaction.
         (true, _, _) => {
             state.account_write(
-            	&mut exec_step,
-            	call.address,
+                &mut exec_step,
+                call.address,
                 AccountField::Nonce,
                 1.into(),
                 0.into(),

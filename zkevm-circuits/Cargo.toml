@@ -28,10 +28,10 @@ mpt-zktrie = { path = "../zktrie" }
 keccak256 = { path = "../keccak256"}
 log = "0.4"
 env_logger = "0.9"
-ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
-ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
-maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
-integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
+ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+ecc =       { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
 libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 rlp = "0.5.1"

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
 use crate::evm_circuit::{
-    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+    param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
     step::{ExecutionState, Step},
     table::{FixedTableTag, Table},
     util::{
@@ -31,7 +31,6 @@ use halo2_proofs::plonk::ThirdPhase;
 
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
-use halo2_proofs::plonk::{FirstPhase, SecondPhase, ThirdPhase};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,

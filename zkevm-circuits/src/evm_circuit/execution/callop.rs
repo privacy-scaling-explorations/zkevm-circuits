@@ -723,8 +723,8 @@ mod test {
     use itertools::Itertools;
     use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
     use mock::TestContext;
-    use rayon::prelude::{ParallelBridge, ParallelIterator};
     use pretty_assertions::assert_eq;
+    use rayon::prelude::{ParallelBridge, ParallelIterator};
     use std::default::Default;
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
