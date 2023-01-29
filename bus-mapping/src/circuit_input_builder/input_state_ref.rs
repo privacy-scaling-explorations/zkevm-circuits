@@ -304,7 +304,8 @@ impl<'a> CircuitInputStateRef<'a> {
         // AccountNonExisting proofs lookups).
         if (!matches!(op.field, AccountField::CodeHash)
             && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
-            && account.is_empty() && !self.tx.invalid_tx
+            && account.is_empty()
+            && !self.tx.invalid_tx
         {
             panic!(
                 "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",

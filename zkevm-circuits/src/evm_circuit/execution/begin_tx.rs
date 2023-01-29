@@ -372,7 +372,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
         let [caller_nonce_pair, caller_balance_pair, callee_balance_pair] =
-            [step.rw_indices[4], step.rw_indices[7], step.rw_indices[8]].map(|idx| block.rws[idx].account_value_pair());
+            [step.rw_indices[4], step.rw_indices[7], step.rw_indices[8]]
+                .map(|idx| block.rws[idx].account_value_pair());
         let callee_code_hash = if tx.is_create {
             call.code_hash
         } else {
@@ -465,7 +466,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.balance_not_enough
             .assign(region, offset, caller_balance_pair.1, total_eth_cost)?;
 
-        let (intrinsic_tx_value, intrinsic_gas_fee) = if tx.invalid_tx == false {
+        let (intrinsic_tx_value, intrinsic_gas_fee) = if !tx.invalid_tx {
             (tx.value, gas_fee)
         } else {
             (U256::zero(), U256::zero())
