@@ -423,6 +423,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (Word::zero(), true)
     };
 
+    state.account_read(
+        &mut exec_step,
+        call.address,
+        AccountField::CodeHash,
+        callee_code_hash_word,
+        callee_code_hash_word,
+    )?;
     // Transfer with fee
     state.transfer_with_fee(
         &mut exec_step,
@@ -430,14 +437,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         call.address,
         call.value,
         state.tx.gas_price * state.tx.gas,
-    )?;
-
-    state.account_read(
-        &mut exec_step,
-        call.address,
-        AccountField::CodeHash,
-        callee_code_hash_word,
-        callee_code_hash_word,
     )?;
 
     // There are 4 branches from here.

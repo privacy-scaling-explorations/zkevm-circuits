@@ -156,6 +156,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
+        // Read code_hash of callee
+        let phase2_code_hash = cb.query_cell_phase2();
+        cb.account_read(
+            call_callee_address.expr(),
+            AccountFieldTag::CodeHash,
+            phase2_code_hash.expr(),
+        );
+
         // TODO: If value is 0, skip transfer, just like callop.
         // Transfer value from caller to callee
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
@@ -169,14 +177,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: Handle creation transaction
         // TODO: Handle precompiled
-
-        // Read code_hash of callee
-        let phase2_code_hash = cb.query_cell_phase2();
-        cb.account_read(
-            call_callee_address.expr(),
-            AccountFieldTag::CodeHash,
-            phase2_code_hash.expr(),
-        );
 
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
@@ -314,13 +314,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
         let [caller_balance_pair, callee_balance_pair] =
-            [step.rw_indices[7], step.rw_indices[8]].map(|idx| block.rws[idx].account_value_pair());
+            [step.rw_indices[8], step.rw_indices[9]].map(|idx| block.rws[idx].account_value_pair());
         #[allow(clippy::if_same_then_else)]
         let callee_code_hash = if tx.is_create {
             //call.code_hash
-            block.rws[step.rw_indices[9]].account_value_pair().0
+            block.rws[step.rw_indices[7]].account_value_pair().0
         } else {
-            block.rws[step.rw_indices[9]].account_value_pair().0
+            block.rws[step.rw_indices[7]].account_value_pair().0
         };
 
         self.tx_id
