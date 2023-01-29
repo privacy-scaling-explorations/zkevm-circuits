@@ -100,6 +100,7 @@ impl From<&ExecError> for ExecutionState {
 impl From<&circuit_input_builder::ExecStep> for ExecutionState {
     fn from(step: &circuit_input_builder::ExecStep) -> Self {
         if let Some(error) = step.error.as_ref() {
+            //log::info!("EXECERR {:?}", error);
             return error.into();
         }
         match step.exec_state {

@@ -281,29 +281,31 @@ pub fn gen_associated_ops(
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq
-        match check_level {
-            1 => {
-                if state.call_ctx()?.memory != geth_steps[0].memory {
-                    log::error!("wrong mem: {:?} goes wrong. len in state {}, len in step0 {}. state mem {:?} step mem {:?}",
-                     opcode_id,
-                     &state.call_ctx()?.memory.len(),
-                     &geth_steps[0].memory.len(),
-                     &state.call_ctx()?.memory,
-                     &geth_steps[0].memory);
-                    state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
-                }
-            }
-            2 => {
-                assert_eq!(
-                    &state.call_ctx()?.memory,
-                    &geth_steps[0].memory,
-                    "last step of {:?} goes wrong. len in state {}, len in step0 {}",
+        if check_level >= 1 {
+            #[allow(clippy::collapsible_else_if)]
+            if state.call_ctx()?.memory != geth_steps[0].memory {
+                log::error!(
+                    "wrong mem before {:?}. len in state {}, len in step {}",
                     opcode_id,
                     &state.call_ctx()?.memory.len(),
                     &geth_steps[0].memory.len(),
                 );
+                log::error!("state mem {:?}", &state.call_ctx()?.memory);
+                log::error!("step  mem {:?}", &geth_steps[0].memory);
+
+                for i in 0..std::cmp::min(
+                    state.call_ctx()?.memory.0.len(),
+                    geth_steps[0].memory.0.len(),
+                ) {
+                    if state.call_ctx()?.memory.0[i] != geth_steps[0].memory.0[i] {
+                        log::error!("diff at {}", i);
+                    }
+                }
+                if check_level >= 2 {
+                    panic!("mem wrong");
+                }
+                state.call_ctx_mut()?.memory = geth_steps[0].memory.clone();
             }
-            _ => {}
         }
     }
 

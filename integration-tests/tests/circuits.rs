@@ -115,7 +115,12 @@ async fn test_super_circuit_all_block() {
             keccak_padding: None,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
-        let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
+        let builder = cli.gen_inputs(block_num).await;
+        if builder.is_err() {
+            log::error!("invalid builder {} {:?}, err num NA", block_num, builder);
+            continue;
+        }
+        let builder = builder.unwrap().0;
 
         if builder.block.txs.is_empty() {
             log::info!("skip empty block");

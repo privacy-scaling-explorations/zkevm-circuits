@@ -250,7 +250,7 @@ impl<'a> CircuitInputBuilder {
         }
         if handle_rwc_reversion {
             self.set_value_ops_call_context_rwc_eor();
-            self.set_end_block();
+            self.set_end_block()?;
         }
         log::info!(
             "handling block done, total gas {:?}",
@@ -260,7 +260,7 @@ impl<'a> CircuitInputBuilder {
     }
 
     /// ..
-    pub fn set_end_block(&mut self) {
+    pub fn set_end_block(&mut self) -> Result<(), Error> {
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
@@ -289,12 +289,14 @@ impl<'a> CircuitInputBuilder {
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
-            assert!(
-                total_rws + 1 <= max_rws,
-                "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
-                total_rws,
-                max_rws
-            );
+            if total_rws + 1 > max_rws {
+                log::error!(
+                    "total_rws + 1 > max_rws, total_rws={}, max_rws={}",
+                    total_rws,
+                    max_rws
+                );
+                return Err(Error::InternalError("rws not enough"));
+            };
         }
         push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
         push_op(
@@ -306,6 +308,7 @@ impl<'a> CircuitInputBuilder {
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
         self.block.block_steps.end_block_last = end_block_last;
+        Ok(())
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
@@ -506,11 +509,6 @@ pub fn get_dummy_tx_hash(chain_id: u64) -> H256 {
     let (tx, sig) = get_dummy_tx(chain_id);
 
     let tx_hash = keccak256(tx.rlp_signed(&sig));
-    log::debug!(
-        "DUMMY TX HASH for CHAIN_ID({}): {}",
-        chain_id,
-        hex::encode(tx_hash)
-    );
 
     H256(tx_hash)
 }
@@ -523,6 +521,12 @@ fn keccak_inputs_pi_circuit(
 ) -> Vec<u8> {
     // TODO: add history hashes and state roots
     let dummy_tx_hash = get_dummy_tx_hash(chain_id);
+
+    log::debug!(
+        "DUMMY TX HASH for CHAIN_ID({}): {}",
+        chain_id,
+        hex::encode(dummy_tx_hash.to_fixed_bytes())
+    );
 
     let result = block_headers
         .iter()

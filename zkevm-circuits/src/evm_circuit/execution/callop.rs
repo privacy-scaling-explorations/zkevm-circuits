@@ -50,10 +50,11 @@ pub(crate) struct CallOpGadget<F> {
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
     is_code_address_zero: IsZeroGadget<F>,
     is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
-    // FIXME: free cells
-    gas_cost: Cell<F>,
+    // FIXME: free cells, only used in empty codehash (empty account and precompiles)
+    step_gas_cost: Cell<F>,
     // used only in precompiled contracts
-    return_len_cell: Cell<F>,
+    return_data_len: Cell<F>,
+    return_data_copy_size: MinMaxGadget<F, N_BYTES_GAS>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -227,12 +228,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             not::expr(is_code_address_zero.expr()),
             is_precompile_lt.expr(),
         ]);
-        let return_len_cell = cb.query_cell();
-        let precompile_memory_writes = 2.expr() * is_precompile.expr() * return_len_cell.expr();
+        let return_data_len = cb.query_cell();
+        let return_data_copy_size = MinMaxGadget::<F, N_BYTES_GAS>::construct(
+            cb,
+            return_data_len.expr(),
+            call_gadget.rd_address.length(),
+        );
+        let precompile_memory_writes =
+            is_precompile.expr() * (return_data_len.expr() + return_data_copy_size.min());
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
-        let gas_cost_cell = cb.query_cell();
+        let step_gas_cost = cb.query_cell();
         let memory_expansion = call_gadget.memory_expansion.clone();
 
         cb.condition(
@@ -264,7 +271,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
                     (
                         CallContextFieldTag::LastCalleeReturnDataLength,
-                        return_len_cell.expr(),
+                        return_data_len.expr(),
                     ),
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, value);
@@ -297,7 +304,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     rw_counter: Delta(rw_counter_delta),
                     program_counter: Delta(1.expr()),
                     stack_pointer: Delta(stack_pointer_delta.expr()),
-                    gas_left: Delta(-gas_cost_cell.expr()),
+                    gas_left: Delta(-step_gas_cost.expr()),
 
                     memory_word_size: To(memory_expansion.next_memory_word_size()),
                     // For CALL opcode, `transfer` invocation has two account write.
@@ -467,8 +474,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             capped_callee_gas_left,
             is_code_address_zero,
             is_precompile_lt,
-            return_len_cell,
-            gas_cost: gas_cost_cell,
+            return_data_len,
+            return_data_copy_size,
+            step_gas_cost,
         }
     }
 
@@ -558,19 +566,29 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .account_value_pair()
             .0;
         let callee_exists = !callee_code_hash.is_zero();
-        if is_precompile {
-            let last_caller_return_data_length_rw = block.rws[step.rw_indices[20 + rw_offset]];
+
+        let return_data_len = if is_precompile {
+            let return_data_len_rw = block.rws[step.rw_indices[20 + rw_offset]];
             assert_eq!(
-                last_caller_return_data_length_rw.field_tag().unwrap(),
+                return_data_len_rw.field_tag().unwrap(),
                 CallContextFieldTag::LastCalleeReturnDataLength as u64
             );
-            let return_len = last_caller_return_data_length_rw.call_context_value();
-            self.return_len_cell.assign(
-                region,
-                offset,
-                Value::known(F::from(return_len.as_u64())),
-            )?;
-        }
+            return_data_len_rw.call_context_value()
+        } else {
+            0.into()
+        };
+        self.return_data_len.assign(
+            region,
+            offset,
+            Value::known(F::from(return_data_len.as_u64())),
+        )?;
+        self.return_data_copy_size.assign(
+            region,
+            offset,
+            F::from(return_data_len.as_u64()),
+            F::from(rd_length.as_u64()),
+        )?;
+
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.is_call.assign(
@@ -678,7 +696,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             !callee_exists,
         )?;
         let gas_available = step.gas_left - gas_cost;
-        self.gas_cost
+        self.step_gas_cost
             .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;
@@ -688,7 +706,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             F::from(gas.low_u64()),
             F::from(gas_available - gas_available / 64),
         )?;
-
         Ok(())
     }
 }

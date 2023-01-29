@@ -315,7 +315,11 @@ impl Transaction {
             eth_tx.transaction_type,
             eth_tx.transaction_index,
             eth_tx.hash,
-            eth_tx
+            {
+                let mut debug_tx = eth_tx.clone();
+                debug_tx.input.0.clear();
+                debug_tx
+            }
         );
         Ok(Self {
             block_num: eth_tx.block_number.unwrap().as_u64(),

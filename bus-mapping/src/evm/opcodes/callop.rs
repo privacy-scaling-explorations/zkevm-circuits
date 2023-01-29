@@ -254,9 +254,16 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     &caller_ctx.memory.0[args_offset..args_offset + args_length],
                     callee_gas_left,
                 );
+                log::trace!(
+                    "precompile return data len {} gas {}",
+                    result.len(),
+                    contract_gas_cost
+                );
                 caller_ctx.return_data = result.clone();
                 let length = min(result.len(), ret_length);
-                caller_ctx.memory.extend_at_least(ret_offset + length);
+                if length != 0 {
+                    caller_ctx.memory.extend_at_least(ret_offset + length);
+                }
                 caller_ctx.memory.0[ret_offset..ret_offset + length]
                     .copy_from_slice(&result[..length]);
                 for (field, value) in [
