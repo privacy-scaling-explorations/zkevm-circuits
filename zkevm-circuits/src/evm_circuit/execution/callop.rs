@@ -582,7 +582,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
             };
 
-
         let return_data_len = if is_precompile {
             let return_data_len_rw = block.rws[step.rw_indices[20 + rw_offset]];
             assert_eq!(

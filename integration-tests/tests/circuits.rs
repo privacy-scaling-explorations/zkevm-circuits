@@ -13,12 +13,6 @@ macro_rules! declare_tests {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 test_state_circuit_block(*block_num, $real_prover).await;
-        let builder = cli.gen_inputs(block_num).await;
-        if builder.is_err() {
-            log::error!("invalid builder {} {:?}, err num NA", block_num, builder);
-            continue;
-        }
-        let builder = builder.unwrap().0;
             }
 
             #[tokio::test]
