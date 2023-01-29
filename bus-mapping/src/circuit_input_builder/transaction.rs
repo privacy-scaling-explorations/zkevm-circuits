@@ -255,7 +255,7 @@ impl Transaction {
     /// Create a new Self.
     pub fn new(
         call_id: usize,
-        sdb: &mut StateDB,
+        sdb: &StateDB,
         code_db: &mut CodeDB,
         eth_tx: &eth_types::Transaction,
         is_success: bool,
@@ -291,8 +291,6 @@ impl Transaction {
             // Contract creation
             let code_hash = code_db.insert(eth_tx.input.to_vec());
             let address = get_contract_address(eth_tx.from, eth_tx.nonce);
-            let prev_nonce = sdb.increase_nonce(&address);
-            debug_assert_eq!(prev_nonce, 0);
             Call {
                 call_id,
                 kind: CallKind::Create,
