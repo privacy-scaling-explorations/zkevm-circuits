@@ -1,6 +1,6 @@
 //! Testing utilities
 
-use std::{marker::PhantomData, ops::DerefMut};
+
 
 use crate::{
     evm_circuit::{
@@ -9,16 +9,15 @@ use crate::{
     },
     state_circuit::StateCircuit,
     util::SubCircuit,
-    witness::{block_convert, Block, Rw},
+    witness::{Block, Rw},
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::{GethData, Transaction};
 use ethers_core::{
     types::{NameOrAddress, TransactionRequest},
-    utils::Geth,
 };
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::dev::{MockProver, VerifyFailure};
+use halo2_proofs::dev::{MockProver};
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 use rand::{CryptoRng, Rng};
@@ -112,7 +111,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     pub fn run(self) {
-        let mut block: Block<Fr> = if self.block.is_some() {
+        let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
@@ -137,13 +136,13 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         };
 
         // Fetch Bytecode TestConfig
-        let mut config = self.bytecode_config.unwrap_or_default();
+        let config = self.bytecode_config.unwrap_or_default();
 
         // Run evm circuit test
         if config.enable_evm_circuit_test {
             let k = get_test_degree(&block);
 
-            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
+            let (_active_gate_rows, _active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
@@ -162,7 +161,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let power_of_randomness = state_circuit.instance();
             let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
             // Skip verification of Start rows to accelerate testing
-            let non_start_rows_len = state_circuit
+            let _non_start_rows_len = state_circuit
                 .rows
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))

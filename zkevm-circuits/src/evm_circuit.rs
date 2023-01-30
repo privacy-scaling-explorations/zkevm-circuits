@@ -274,14 +274,12 @@ pub mod test {
         exp_circuit::OFFSET_INCREMENT,
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::Challenges,
-        witness::block_convert,
     };
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use eth_types::{geth_types::GethData, Field, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
+    use eth_types::{Field, Word};
+    
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
         plonk::{Circuit, ConstraintSystem, Error},
     };
     use rand::{
@@ -464,11 +462,11 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
-    use super::test::*;
+    
     use super::*;
     use crate::test_util::CircuitTestBuilder;
-    use crate::{evm_circuit::step::ExecutionState, witness::block_convert};
-    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
+    use crate::{evm_circuit::step::ExecutionState};
+    
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::{helpers::*, TestContext};

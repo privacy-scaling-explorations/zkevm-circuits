@@ -220,15 +220,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::witness::block_convert;
+    
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode};
     use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
     use eth_types::{Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
     use itertools::Itertools;
     use mock::TestContext;
-    use pretty_assertions::assert_eq;
+    
     use std::default::Default;
 
     #[derive(Clone, Copy, Debug, Default)]

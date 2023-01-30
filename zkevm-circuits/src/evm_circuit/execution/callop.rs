@@ -644,12 +644,12 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::{Account, GethData};
+    use eth_types::geth_types::{Account};
     use eth_types::{address, bytecode, Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
     use itertools::Itertools;
     use mock::TestContext;
-    use pretty_assertions::assert_eq;
+    
     use std::default::Default;
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[

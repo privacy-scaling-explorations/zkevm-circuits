@@ -181,14 +181,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::witness::block_convert;
+    
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
     };
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
 
     use mock::TestContext;
 

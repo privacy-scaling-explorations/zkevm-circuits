@@ -206,8 +206,8 @@ mod test {
 
     #[test]
     fn mulmod_simple() {
-        test_u32(7, 12, 10, None);
-        test_u32(7, 1, 10, None);
+        test_ok_u32(7, 12, 10, None);
+        test_ok_u32(7, 1, 10, None);
     }
 
     #[test]

@@ -91,7 +91,7 @@ mod test {
     use crate::evm_circuit::test::rand_bytes;
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
     use itertools::Itertools;
     use mock::TestContext;
 

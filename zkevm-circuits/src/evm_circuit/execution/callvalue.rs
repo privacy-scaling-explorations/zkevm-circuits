@@ -10,7 +10,6 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    test_util::CircuitTestBuilder,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;

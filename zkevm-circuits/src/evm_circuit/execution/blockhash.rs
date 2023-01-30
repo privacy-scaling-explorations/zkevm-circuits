@@ -149,7 +149,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, geth_types::GethData, U256};
+    use eth_types::{bytecode, U256};
     use mock::test_ctx::{helpers::*, TestContext};
 
     fn test_ok(block_number: usize, current_block_number: u64) {

@@ -363,9 +363,9 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
-        self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word,
+        self, bytecode, evm_types::GasCost, word, Bytecode, Word,
     };
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
