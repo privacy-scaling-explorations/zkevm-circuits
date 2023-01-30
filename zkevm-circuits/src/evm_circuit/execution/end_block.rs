@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{test_circuits_witness_block, BytecodeTestConfig};
+    use crate::test_util::{BytecodeTestConfig, CircuitTestBuilder};
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::bytecode;
     use eth_types::geth_types::GethData;
@@ -167,10 +167,7 @@ mod test {
         block.evm_circuit_pad_to = evm_circuit_pad_to;
 
         // finish required tests using this witness block
-        assert_eq!(
-            test_circuits_witness_block(block, BytecodeTestConfig::default()),
-            Ok(())
-        );
+        CircuitTestBuilder::<2, 1>::empty().block(block).run();
     }
 
     // Test where the EVM circuit contains an exact number of rows corresponding to

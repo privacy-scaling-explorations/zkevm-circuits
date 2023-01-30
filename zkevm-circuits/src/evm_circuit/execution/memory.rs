@@ -175,10 +175,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, BytecodeTestConfig},
-    };
+    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_word, test_util::BytecodeTestConfig};
     use eth_types::bytecode;
     use eth_types::evm_types::{GasCost, OpcodeId};
     use eth_types::Word;
@@ -214,7 +212,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, Some(test_config)), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
     #[test]

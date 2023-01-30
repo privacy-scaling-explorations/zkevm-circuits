@@ -168,7 +168,7 @@ mod test {
 
     use crate::{
         evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, BytecodeTestConfig},
+        test_util::{BytecodeTestConfig, CircuitTestBuilder},
     };
 
     use eth_types::{bytecode, Word};
@@ -215,7 +215,10 @@ mod test {
                 enable_state_circuit_test: true,
                 ..Default::default()
             };
-            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
+            CircuitTestBuilder::empty()
+                .test_ctx(ctx)
+                .config(test_config)
+                .run();
         }
     }
 

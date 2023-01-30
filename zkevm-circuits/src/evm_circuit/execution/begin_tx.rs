@@ -360,7 +360,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word,
@@ -397,7 +397,7 @@ mod test {
 
     fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
@@ -417,12 +417,12 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
+    // TODO: Use `mock` crate.
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
@@ -469,7 +469,7 @@ mod test {
             STOP
         };
 
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
@@ -480,10 +480,9 @@ mod test {
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
     #[test]
@@ -513,7 +512,7 @@ mod test {
 
     #[test]
     fn begin_tx_no_code() {
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -529,15 +528,14 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
     #[test]
     fn begin_tx_no_account() {
-        let block: GethData = TestContext::<1, 1>::new(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -552,10 +550,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
     // TODO: Enable this test once we have support for contract deployment from
@@ -573,7 +570,7 @@ mod test {
             PUSH1(0)
             RETURN
         };
-        let block: GethData = TestContext::<1, 1>::new(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -588,9 +585,8 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 }

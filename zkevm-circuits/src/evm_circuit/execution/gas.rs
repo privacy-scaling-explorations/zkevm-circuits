@@ -87,8 +87,8 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{
-        evm_circuit::{test::run_test_circuit, witness::block_convert},
-        test_util::{run_test_circuits, BytecodeTestConfig},
+        evm_circuit::witness::block_convert,
+        test_util::{BytecodeTestConfig, CircuitTestBuilder},
     };
     use bus_mapping::mock::BlockData;
     use eth_types::{address, bytecode, geth_types::GethData, Word};
@@ -101,13 +101,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::empty()
+            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
+            .run();
     }
 
     #[test]
@@ -159,6 +155,9 @@ mod test {
         assert_eq!(block.txs.len(), 1);
         assert_eq!(block.txs[0].steps.len(), 4);
         block.txs[0].steps[2].gas_left -= 1;
-        assert!(run_test_circuit(block).is_err());
+        CircuitTestBuilder::<2, 1>::empty()
+            .block(block)
+            .evm_checks(Box::new(|prover| assert!(prover.verify_par().is_err())))
+            .run();
     }
 }

@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, Bytecode, ToWord, Word, U256};
     use lazy_static::lazy_static;
@@ -239,7 +239,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
     fn test_internal_ok(
@@ -309,6 +309,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 }

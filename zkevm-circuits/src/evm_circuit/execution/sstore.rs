@@ -530,8 +530,7 @@ fn calc_expected_tx_refund(
 #[cfg(test)]
 mod test {
 
-    use crate::test_util::{run_test_circuits, BytecodeTestConfig};
-
+    use crate::test_util::{BytecodeTestConfig, CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
 
@@ -637,11 +636,14 @@ mod test {
                 |block, _txs| block,
             )
             .unwrap();
-            let test_config = BytecodeTestConfig {
-                enable_state_circuit_test: true,
-                ..Default::default()
-            };
-            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
+
+            CircuitTestBuilder::empty()
+                .test_ctx(ctx)
+                .config(BytecodeTestConfig {
+                    enable_state_circuit_test: true,
+                    ..Default::default()
+                })
+                .run();
         }
     }
 }

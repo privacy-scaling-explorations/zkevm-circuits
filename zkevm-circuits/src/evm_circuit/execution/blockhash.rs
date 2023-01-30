@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::test_circuits_block_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, geth_types::GethData, U256};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -169,16 +169,15 @@ mod test {
         for i in range {
             history_hashes.push(U256::from(0xbeefcafeu64 + i));
         }
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             Some(history_hashes),
             account_0_code_account_1_no_code(code),
             tx_from_1_to_0,
             |block, _tx| block.number(current_block_number),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        test_circuits_block_geth_data_default(block).unwrap();
+        CircuitTestBuilder::empty().test_ctx(ctx).run()
     }
 
     #[test]

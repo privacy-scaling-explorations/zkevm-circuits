@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -99,13 +99,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<1, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::empty()
+            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
+            .run();
     }
 
     #[test]

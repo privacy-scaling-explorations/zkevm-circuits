@@ -120,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::test_circuits_block_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode,
         geth_types::{Account, GethData},
@@ -158,7 +158,7 @@ mod test {
         });
 
         // Execute the bytecode and get trace
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -182,10 +182,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        test_circuits_block_geth_data_default(block).unwrap();
+        CircuitTestBuilder::empty().test_ctx(ctx).run();
     }
 
     #[test]
