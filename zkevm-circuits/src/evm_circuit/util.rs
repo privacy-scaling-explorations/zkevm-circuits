@@ -243,11 +243,11 @@ impl<F: FieldExt> StoredExpression<F> {
                     fixed_query.rotation(),
                 ))
             },
-            &|advide_query| {
+            &|advice_query| {
                 Value::known(region.get_advice(
                     offset,
-                    advide_query.column_index(),
-                    advide_query.rotation(),
+                    advice_query.column_index(),
+                    advice_query.rotation(),
                 ))
             },
             &|_| unimplemented!("instance column"),
