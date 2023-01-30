@@ -1,4 +1,5 @@
 use crate::{get_client, GenDataOutput};
+use async_once::AsyncOnce;
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
@@ -63,15 +64,19 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref EVM_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let block = new_empty_block();
+    static ref EVM_CIRCUIT_KEY: AsyncOnce<ProvingKey<G1Affine>> = AsyncOnce::new(async {
+        let block_tag = "Transfer 0";
+        let block_num = GEN_DATA.blocks.get(block_tag).unwrap();
+        let (builder, _) = gen_inputs(*block_num).await;
+
+        let block = block_convert(&builder.block, &builder.code_db).unwrap();
         let circuit = EvmCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(EVM_CIRCUIT_DEGREE);
 
         let verifying_key =
             keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    };
+    });
     static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = StateCircuit::<Fr>::new_from_block(&block);
@@ -267,12 +272,9 @@ pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
     let circuit = get_test_cicuit_from_block(block);
 
     if actual {
-        test_actual(
-            EVM_CIRCUIT_DEGREE,
-            circuit,
-            vec![],
-            Some((*EVM_CIRCUIT_KEY).clone()),
-        );
+        let key = EVM_CIRCUIT_KEY.get().await.clone();
+
+        test_actual(EVM_CIRCUIT_DEGREE, circuit, vec![], Some(key));
     } else {
         test_mock(EVM_CIRCUIT_DEGREE, &circuit, vec![]);
     }
