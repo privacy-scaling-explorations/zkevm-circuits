@@ -449,7 +449,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 call.address,
                 AccountField::CodeHash,
                 callee_code_hash_word,
-                callee_code_hash_word,
             )?;
 
             // 3. Call to account with empty code.
@@ -620,7 +619,6 @@ fn dummy_gen_selfdestruct_ops(
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: receiver,
