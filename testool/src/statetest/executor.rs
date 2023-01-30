@@ -270,8 +270,12 @@ pub fn run_test(
             gas_limit: u64::MAX,
         };
 
-        zkevm_circuits::test_util::test_circuits_witness_block(block, config)
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+        zkevm_circuits::test_util::CircuitTestBuilder::empty()
+            .config(config)
+            .block(block)
+            .run();
+
+        Ok(())
     } else {
         geth_data.sign(&wallets);
 
