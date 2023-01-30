@@ -1,13 +1,22 @@
 //! Testing utilities
 
+use std::{marker::PhantomData, ops::DerefMut};
+
 use crate::{
+    evm_circuit::{
+        test::{get_test_cicuit_from_block, get_test_degree},
+        EvmCircuit,
+    },
     state_circuit::StateCircuit,
     util::SubCircuit,
     witness::{block_convert, Block, Rw},
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::{GethData, Transaction};
-use ethers_core::types::{NameOrAddress, TransactionRequest};
+use ethers_core::{
+    types::{NameOrAddress, TransactionRequest},
+    utils::Geth,
+};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::{MockProver, VerifyFailure};
 use halo2_proofs::halo2curves::bn256::Fr;
@@ -42,92 +51,135 @@ impl Default for BytecodeTestConfig {
     }
 }
 
-/// Test circuit
-pub fn run_test_circuits<const NACC: usize, const NTX: usize>(
-    test_ctx: TestContext<NACC, NTX>,
-    config: Option<BytecodeTestConfig>,
-) -> Result<(), Vec<VerifyFailure>> {
-    let block: GethData = test_ctx.into();
-    let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-            .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-
-    // build a witness block from trace result
-    let block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-
-    // finish required tests according to config using this witness block
-    test_circuits_witness_block(block, config.unwrap_or_default())
+pub(crate) struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
+    test_ctx: Option<TestContext<NACC, NTX>>,
+    bytecode_config: Option<BytecodeTestConfig>,
+    circuit_params: Option<CircuitsParams>,
+    block: Option<Block<Fr>>,
+    evm_checks: Option<Box<dyn Fn(MockProver<Fr>)>>,
+    state_checks: Option<Box<dyn Fn(MockProver<Fr>)>>,
+    block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
 
-/// Test circuit with big circuit parameters
-pub fn run_test_circuits_with_params<const NACC: usize, const NTX: usize>(
-    test_ctx: TestContext<NACC, NTX>,
-    config: Option<BytecodeTestConfig>,
-    circuits_params: CircuitsParams,
-) -> Result<(), Vec<VerifyFailure>> {
-    let block: GethData = test_ctx.into();
-    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
-        .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-
-    // build a witness block from trace result
-    let block = crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
-
-    // finish required tests according to config using this witness block
-    test_circuits_witness_block(block, config.unwrap_or_default())
-}
-
-/// Test circuit using a witness block and default circuits parameters
-pub fn test_circuits_block_geth_data_default(block: GethData) -> Result<(), Vec<VerifyFailure>> {
-    let mut builder =
-        BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-            .new_circuit_input_builder();
-    builder
-        .handle_block(&block.eth_block, &block.geth_traces)
-        .unwrap();
-    let block = block_convert(&builder.block, &builder.code_db).unwrap();
-    test_circuits_witness_block(block, BytecodeTestConfig::default())
-}
-
-/// Test circuit using a witness block
-pub fn test_circuits_witness_block(
-    block: Block<Fr>,
-    config: BytecodeTestConfig,
-) -> Result<(), Vec<VerifyFailure>> {
-    // run evm circuit test
-    if config.enable_evm_circuit_test {
-        crate::evm_circuit::test::run_test_circuit::<Fr>(block.clone())?;
+impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
+    pub fn empty() -> Self {
+        CircuitTestBuilder {
+            test_ctx: None,
+            bytecode_config: None,
+            circuit_params: None,
+            block: None,
+            evm_checks: Some(Box::new(|prover| prover.assert_satisfied_par())),
+            state_checks: Some(Box::new(|prover| prover.assert_satisfied_par())),
+            block_modifiers: vec![],
+        }
     }
 
-    // run state circuit test
-    // TODO: use randomness as one of the circuit public input, since randomness in
-    // state circuit and evm circuit must be same
-    if config.enable_state_circuit_test {
-        const N_ROWS: usize = 1 << 16;
-        let state_circuit = StateCircuit::<Fr>::new(block.rws, N_ROWS);
-        let power_of_randomness = state_circuit.instance();
-        let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
-        // Skip verification of Start rows to accelerate testing
-        let non_start_rows_len = state_circuit
-            .rows
-            .iter()
-            .filter(|rw| !matches!(rw, Rw::Start { .. }))
-            .count();
-        prover.verify_at_rows(
-            N_ROWS - non_start_rows_len..N_ROWS,
-            N_ROWS - non_start_rows_len..N_ROWS,
-        )?
+    pub fn test_ctx(mut self, ctx: TestContext<NACC, NTX>) -> Self {
+        self.test_ctx = Some(ctx);
+        self
     }
 
-    Ok(())
+    pub fn config(mut self, config: BytecodeTestConfig) -> Self {
+        self.bytecode_config = Some(config);
+        self
+    }
+
+    pub fn params(mut self, params: CircuitsParams) -> Self {
+        self.circuit_params = Some(params);
+        self
+    }
+
+    pub fn block(mut self, block: Block<Fr>) -> Self {
+        self.block = Some(block);
+        self
+    }
+
+    pub fn state_checks(mut self, state_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
+        self.state_checks = Some(state_checks);
+        self
+    }
+
+    pub fn evm_checks(mut self, evm_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
+        self.evm_checks = Some(evm_checks);
+        self
+    }
+
+    pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>)>) -> Self {
+        self.block_modifiers.push(modifier);
+        self
+    }
 }
 
-/// generate rand tx for pi circuit
+impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
+    pub fn run(self) {
+        let mut block: Block<Fr> = if self.block.is_some() {
+            self.block.unwrap()
+        } else if self.test_ctx.is_some() {
+            let block: GethData = self.test_ctx.unwrap().into();
+            let mut builder = BlockData::new_from_geth_data_with_params(
+                block.clone(),
+                self.circuit_params.unwrap_or_default(),
+            )
+            .new_circuit_input_builder();
+            builder
+                .handle_block(&block.eth_block, &block.geth_traces)
+                .unwrap();
+            // Build a witness block from trace result.
+            let mut block =
+                crate::witness::block_convert(&builder.block, &builder.code_db).unwrap();
+
+            for modifier_fn in self.block_modifiers {
+                modifier_fn.as_ref()(&mut block);
+            }
+            block
+        } else {
+            panic!("No attribute to build a block was passed to the CircuitTestBuilder")
+        };
+
+        // Fetch Bytecode TestConfig
+        let mut config = self.bytecode_config.unwrap_or_default();
+
+        // Run evm circuit test
+        if config.enable_evm_circuit_test {
+            let k = get_test_degree(&block);
+
+            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
+
+            let circuit = get_test_cicuit_from_block(block.clone());
+            let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+            //prover.verify_at_rows_par(active_gate_rows.into_iter(),
+            // active_lookup_rows.into_iter())
+            self.evm_checks.unwrap().as_ref()(prover)
+        }
+
+        // Run state circuit test
+        // TODO: use randomness as one of the circuit public input, since randomness in
+        // state circuit and evm circuit must be same
+        if config.enable_state_circuit_test {
+            const N_ROWS: usize = 1 << 16;
+            let state_circuit = StateCircuit::<Fr>::new(block.rws, N_ROWS);
+            let power_of_randomness = state_circuit.instance();
+            let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
+            // Skip verification of Start rows to accelerate testing
+            let non_start_rows_len = state_circuit
+                .rows
+                .iter()
+                .filter(|rw| !matches!(rw, Rw::Start { .. }))
+                .count();
+
+            // prover
+            //     .verify_at_rows(
+            //         N_ROWS - non_start_rows_len..N_ROWS,
+            //         N_ROWS - non_start_rows_len..N_ROWS,
+            //     )
+            //     .unwrap()
+            self.state_checks.unwrap().as_ref()(prover);
+        }
+    }
+}
+
+/// generate rand tx for pi circuit -> TODO: Move to `mock`.
 pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64, has_calldata: bool) -> Transaction {
     let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
     let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
