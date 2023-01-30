@@ -401,7 +401,7 @@ max_rotation {}",
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let (config, challenges) = config;
+        let (mut config, challenges) = config;
         let challenges = challenges.values(&mut layouter);
 
         let block = self.evm_circuit.block.as_ref().unwrap();
@@ -471,6 +471,8 @@ max_rotation {}",
             .synthesize_sub(&config.rlp_circuit, &challenges, &mut layouter)?;
         self.tx_circuit
             .synthesize_sub(&config.tx_circuit, &challenges, &mut layouter)?;
+
+        config.pi_circuit.state_roots = self.state_circuit.exports.borrow().clone();
         self.pi_circuit
             .synthesize_sub(&config.pi_circuit, &challenges, &mut layouter)?;
         Ok(())
