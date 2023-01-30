@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    evm_circuit::util::rlc,
+    circuit_tools::RLCable,
     mpt_circuit::helpers::MPTConstraintBuilder,
     mpt_circuit::{helpers::BranchNodeInfo, MPTContext},
 };
@@ -95,9 +95,9 @@ impl<F: FieldExt> BranchInitConfig<F> {
                 // Check that stored rlc/mult values are correct.
                 let rlp = branch.rlp_bytes(meta);
                 let (rlc, mult) = matchx! {
-                    branch.is_branch_short(meta) => (rlc::expr(&rlp[..1], &r), r[0].expr()),
-                    branch.is_branch_long(meta) => (rlc::expr(&rlp[..2], &r), r[1].expr()),
-                    branch.is_branch_very_long(meta) => (rlc::expr(&rlp[..3], &r), r[2].expr()),
+                    branch.is_branch_short(meta) => (rlp[..1].rlc(&r), r[0].expr()),
+                    branch.is_branch_long(meta) => (rlp[..2].rlc(&r), r[1].expr()),
+                    branch.is_branch_very_long(meta) => (rlp[..3].rlc(&r), r[2].expr()),
                 };
                 require!(a!(accs.acc(is_s).rlc) => rlc);
                 require!(a!(accs.acc(is_s).mult) => mult);

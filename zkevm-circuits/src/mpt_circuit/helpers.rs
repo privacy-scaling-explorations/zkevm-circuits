@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ops::Range};
 
 use crate::{
     _cb, circuit,
-    circuit_tools::{Conditionable, ConstraintBuilder, DataTransition, LRCable, LrcChainable},
+    circuit_tools::{Conditionable, ConstraintBuilder, DataTransition, RLCChainable, RLCable},
     evm_circuit::util::rlc,
     mpt_circuit::param::{
         EXTENSION_ROWS_NUM, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE,
@@ -242,7 +242,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         self.is_ext_not_hashed_c.expr()
     }
 
-    pub(crate) fn is_ext_not_hashed(&self) -> Expression<F> {
+    pub(crate) fn ext_is_not_hashed(&self) -> Expression<F> {
         if self.is_s {
             self.is_ext_not_hashed_s()
         } else {
@@ -468,7 +468,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
             let (rlc, num_bytes, is_not_hashed) = ifx! {self.is_extension() => {
                 // Note: acc_c in both cases.
                 let ext_rlc = a!(self.ctx.accumulators.acc_c.rlc);
-                (ext_rlc, self.ext_num_bytes(meta), self.is_ext_not_hashed())
+                (ext_rlc, self.ext_num_bytes(meta), self.ext_is_not_hashed())
             } elsex {
                 let acc = self.ctx.accumulators.acc(self.is_s);
                 // TODO: acc currently doesn't have branch ValueNode info

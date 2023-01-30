@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable, LrcChainable},
+    circuit_tools::{DataTransition, RLCChainable, RLCable},
     mpt_circuit::{
         helpers::{get_num_bytes_short, MPTConstraintBuilder},
         param::{
@@ -163,7 +163,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
             let leaf_rlc = DataTransition::new(meta, accs.acc_s.rlc);
             let value_rlc = DataTransition::new_with_rot(meta, accs.acc_c.rlc, rot_s, 0);
             let mult_prev = a!(accs.acc_s.mult, rot_key);
-            let (new_value_rlc, new_leaf_rlc) = ifx! {is_short => {
+            let (new_value_rlc, leaf_rlc_part) = ifx! {is_short => {
                 (a!(s_main.rlp1), a!(s_main.rlp1) * mult_prev.expr())
             } elsex {
                 let value_rlc = s_main.bytes(meta, 0).rlc(&r);
@@ -171,7 +171,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 (value_rlc, leaf_rlc)
             }};
             require!(value_rlc => new_value_rlc);
-            require!(leaf_rlc => leaf_rlc.prev() + new_leaf_rlc);
+            require!(leaf_rlc => leaf_rlc.prev() + leaf_rlc_part);
 
             // To enable external lookups we need to have the key and the previous/current
             // value on the same row.
@@ -215,7 +215,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 } elsex {
                     // Hash of the only storage leaf is storage trie root
                     let storage_root_rlc = storage.storage_root_in_account_above(meta);
-                    require!((1, a!(accs.acc_s.rlc), num_bytes, storage_root_rlc) => @"keccak");
+                    require!((1, leaf_rlc, num_bytes, storage_root_rlc) => @"keccak");
                 }}
             } elsex {
                 // TODO(Brecht): how does contains_placeholder_leaf really impact these checks?
@@ -224,7 +224,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         ifx!{branch.is_below_account(meta) => {
                             // Hash of the only storage leaf which is after a placeholder is storage trie root
                             let storage_root_rlc = branch.storage_root_in_account_above(meta);
-                            require!((1, a!(accs.acc_s.rlc), num_bytes, storage_root_rlc) => @"keccak");
+                            require!((1, leaf_rlc, num_bytes, storage_root_rlc) => @"keccak");
                         } elsex {
                             // Leaf hash in parent (branch placeholder)
                             // Check if we're in the branch above the placeholder branch.
@@ -238,10 +238,10 @@ impl<F: FieldExt> LeafValueConfig<F> {
                         ifx!{not_hashed => {
                             // Non-hashed leaf in parent
                             // When leaf is not hashed, the `mod_node_rlc` stores the RLC of the leaf bytes.
-                            require!(a!(accs.acc_s.rlc) => mod_node_rlc);
+                            require!(leaf_rlc => mod_node_rlc);
                         } elsex {
                             // Leaf hash in parent
-                            require!((1, a!(accs.acc_s.rlc), num_bytes, mod_node_rlc) => @"keccak");
+                            require!((1, leaf_rlc, num_bytes, mod_node_rlc) => @"keccak");
                         }}
                     }}
                 }}

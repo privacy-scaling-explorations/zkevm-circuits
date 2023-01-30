@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable},
+    circuit_tools::{DataTransition, RLCable},
     mpt_circuit::MPTContext,
     mpt_circuit::{helpers::get_num_bytes_short, FixedTableTag},
     mpt_circuit::{

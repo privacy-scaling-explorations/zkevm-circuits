@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LrcChainable},
+    circuit_tools::{DataTransition, RLCChainable},
     mpt_circuit::{helpers::contains_placeholder_leaf, FixedTableTag},
     mpt_circuit::{
         helpers::{BranchChildInfo, MPTConstraintBuilder},

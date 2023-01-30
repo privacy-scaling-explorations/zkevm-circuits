@@ -164,6 +164,7 @@ impl_expr!(bool);
 impl_expr!(u8);
 impl_expr!(u64);
 impl_expr!(usize);
+impl_expr!(isize);
 impl_expr!(OpcodeId, OpcodeId::as_u8);
 impl_expr!(GasCost, GasCost::as_u64);
 

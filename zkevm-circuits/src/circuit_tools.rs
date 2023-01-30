@@ -1,5 +1,4 @@
 //! Circuit utilities
-
 use crate::{evm_circuit::util::rlc, util::Expr};
 use gadgets::util::{and, select, sum};
 use halo2_proofs::{
@@ -339,6 +338,14 @@ pub trait Expressable<F> {
     fn to_expr_vec(&self) -> Vec<Expression<F>>;
 }
 
+impl<F: FieldExt> Expressable<F> for std::ops::Range<isize> {
+    fn to_expr_vec(&self) -> Vec<Expression<F>> {
+        self.clone()
+            .map(|e| e.to_expr_vec()[0].expr())
+            .collect::<Vec<_>>()
+    }
+}
+
 impl<F: FieldExt, E: Expressable<F>> Expressable<F> for Vec<E> {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
         self.iter()
@@ -409,6 +416,7 @@ impl_expressable!(u8);
 impl_expressable!(i32);
 impl_expressable!(u64);
 impl_expressable!(usize);
+impl_expressable!(isize);
 impl_expressable!(Expression<F>);
 impl_expressable!(DataTransition<F>);
 
@@ -552,34 +560,75 @@ impl<F: FieldExt, E: Selectable<F>> Conditionable<F, E> for Vec<(Expression<F>, 
     }
 }
 
-/// Trait around LRC
-pub trait LRCable<F> {
-    /// Returns the LRC of itself
+/// Trait around RLC
+pub trait RLCable<F> {
+    /// Returns the RLC of itself
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F>;
 }
 
-impl<F: FieldExt, E: Expressable<F>> LRCable<F> for Vec<E> {
+impl<F: FieldExt, E: Expressable<F>> RLCable<F> for Vec<E> {
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
         rlc::expr(&self.to_expr_vec(), r)
     }
 }
 
-impl<F: FieldExt, E: Expressable<F>> LRCable<F> for [E] {
+impl<F: FieldExt, E: Expressable<F>> RLCable<F> for [E] {
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
         rlc::expr(&self.to_expr_vec(), r)
     }
 }
 
-/// Trait around LRC
-pub trait LrcChainable<F> {
-    /// Returns the LRC of itself with a starting lrc/multiplier
+/// Trait around RLC
+pub trait RLCChainable<F> {
+    /// Returns the RLC of itself with a starting rlc/multiplier
     fn rlc_chain(&self, other: Expression<F>) -> Expression<F>;
 }
 
-impl<F: FieldExt> LrcChainable<F> for (Expression<F>, Expression<F>) {
+impl<F: FieldExt> RLCChainable<F> for (Expression<F>, Expression<F>) {
     fn rlc_chain(&self, other: Expression<F>) -> Expression<F> {
         self.0.expr() + self.1.expr() * other.expr()
     }
+}
+
+/// require_parser
+#[macro_export]
+macro_rules! require_parser {
+    {
+        $cb:expr,
+        lhs = ($($lhs:tt)*)
+        rest = (== $($rhs:tt)*)
+    } => {
+        let description = $crate::concat_with_preamble!(
+            stringify!($($lhs)*),
+            " == ",
+            stringify!($($rhs)*)
+        );
+        $crate::_require!($cb, description, $($lhs)* => $($rhs)*)
+    };
+
+    {
+        $cb:expr,
+        lhs = ($($lhs:tt)*)
+        rest = ($next:tt $($rest:tt)*)
+    } => {
+        $crate::require_parser! {
+            $cb,
+            lhs = ($($lhs)* $next)
+            rest = ($($rest)*)
+        }
+    };
+}
+
+/// _require2
+#[macro_export]
+macro_rules! _require2 {
+    ($cb:expr, $($rest:tt)*) => {{
+        $crate::require_parser! {
+            $cb,
+            lhs = ()
+            rest = ($($rest)*)
+        }
+    }};
 }
 
 /// Creates a dummy constraint builder that cannot be used to add constraints.
@@ -739,6 +788,10 @@ macro_rules! _require {
 }
 
 /// matchx
+/// Supports `_` which works the same as in the normal `match`: if none of the
+/// other arms are active the `_` arm will be executed and so can be used to
+/// return some default values or could also be marked as unreachable (using the
+/// unreachablex! macro).
 #[macro_export]
 macro_rules! _matchx {
     ($cb:expr, $($condition:expr => $when:expr),* $(, _ => $catch_all:expr)? $(,)?)  => {{
@@ -761,7 +814,13 @@ macro_rules! _matchx {
             conditions.push(catch_all_condition.expr());
         )*
 
+        // All conditions need to be boolean
+        for condition in conditions.iter() {
+            _require!($cb, condition => bool);
+        }
+        // Exactly 1 case needs to be enabled
         _require!($cb, sum::expr(&conditions) => 1);
+
         cases.apply_conditions()
     }};
 }
@@ -779,6 +838,9 @@ macro_rules! _ifx {
         #[allow(unused_assignments, unused_mut)]
         let mut ret = ret_true.conditional(condition.expr());
         $(
+            // In if/else cases, the condition needs to be boolean
+            _require!($cb, condition => bool);
+
             $cb.push_condition(not::expr(condition.expr()));
             let ret_false = $when_false;
             $cb.pop_condition();

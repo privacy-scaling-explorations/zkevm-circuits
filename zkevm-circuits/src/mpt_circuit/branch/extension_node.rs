@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable, LrcChainable},
+    circuit_tools::{DataTransition, RLCChainable, RLCable},
     mpt_circuit::{
         helpers::get_num_nibbles,
         param::{ARITY, C_RLP_START, C_START, HASH_WIDTH, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_NIL},

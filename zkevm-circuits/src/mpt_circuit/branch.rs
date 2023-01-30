@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use super::{helpers::MPTConstraintBuilder, param::ARITY, MPTContext};
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, LRCable},
+    circuit_tools::{DataTransition, RLCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::{helpers::contains_placeholder_leaf, storage_leaf::StorageLeaf},

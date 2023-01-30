@@ -218,7 +218,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                             require!(branch.is_key_odd() => branch_prev.is_key_odd());
                         }}
                     } elsex {
-                        // The parity simply alernates for regular branches.
+                        // The parity simply alternates for regular branches.
                         require!(branch.is_key_odd() => branch_prev.is_key_even());
                     }}
                 } elsex {

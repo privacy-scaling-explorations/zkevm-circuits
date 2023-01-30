@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::LrcChainable,
+    circuit_tools::RLCChainable,
     mpt_circuit::{
         helpers::StorageLeafInfo,
         param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
@@ -217,8 +217,8 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                     let rot_key = if is_s { rot_key_s } else { rot_key_c };
                     let rot_value = if is_s { rot_value_s } else { rot_value_c };
                     // Complete the drifted leaf rlc by adding the bytes on the value row
-                    let drifted_lrc = (drifted_rlc.expr(), mult.expr()).rlc_chain(s_main.rlc(meta, rot_value, &r));
-                    (true.expr(), a!(accs.key.rlc, rot_key), drifted_lrc, a!(accs.mod_node_rlc(is_s), rot_branch_child))
+                    let drifted_rlc = (drifted_rlc.expr(), mult.expr()).rlc_chain(s_main.rlc(meta, rot_value, &r));
+                    (true.expr(), a!(accs.key.rlc, rot_key), drifted_rlc, a!(accs.mod_node_rlc(is_s), rot_branch_child))
                 };
                 let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
                     branch.is_placeholder_s() => {
