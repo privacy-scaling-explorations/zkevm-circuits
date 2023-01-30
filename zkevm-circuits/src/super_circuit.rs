@@ -141,11 +141,7 @@ impl<
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = {
-            let mut cs = ConstraintSystem::default();
-            let config = Self::configure(&mut cs);
-            config.evm_circuit.get_num_rows_required(block)
-        };
+        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
         let num_rows_tx_circuit = TxCircuitConfig::<F>::get_num_rows_required(MAX_TXS);
         num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
@@ -374,7 +370,7 @@ impl<
         let tx_circuit = TxCircuit::new_from_block(&block);
         let pi_circuit = PiCircuit::new_from_block(&block);
         let bytecode_circuit = BytecodeCircuit::new_from_block(&block);
-        let copy_circuit = CopyCircuit::new_from_block(&block);
+        let copy_circuit = CopyCircuit::new_from_block_no_external(&block);
         let exp_circuit = ExpCircuit::new_from_block(&block);
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
 

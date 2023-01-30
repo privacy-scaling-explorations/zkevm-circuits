@@ -9,7 +9,7 @@ use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
 };
-use halo2_proofs::plonk::Instance;
+use halo2_proofs::plonk::{Instance, SecondPhase};
 
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
@@ -227,18 +227,18 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let tag = tx_table.tag;
         let index = tx_table.index;
         let tx_id_inv = meta.advice_column();
-        let tx_value_inv = meta.advice_column();
+        let tx_value_inv = meta.advice_column_in(SecondPhase);
         let tx_id_diff_inv = meta.advice_column();
         // The difference of tx_id of adjacent rows in calldata part of tx table
         // lies in the interval [0, 2^16] if their tx_id both do not equal to zero.
         // We do not use 2^8 for the reason that a large block may have more than
         // 2^8 transfer transactions which have 21000*2^8 (~ 5.376M) gas.
         let fixed_u16 = meta.fixed_column();
-        let calldata_gas_cost = meta.advice_column();
+        let calldata_gas_cost = meta.advice_column_in(SecondPhase);
         let is_final = meta.advice_column();
 
-        let raw_public_inputs = meta.advice_column();
-        let rpi_rlc_acc = meta.advice_column();
+        let raw_public_inputs = meta.advice_column_in(SecondPhase);
+        let rpi_rlc_acc = meta.advice_column_in(SecondPhase);
         let rand_rpi = meta.advice_column();
         let q_not_end = meta.selector();
         let q_end = meta.selector();
