@@ -414,7 +414,11 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let code_hash = callee_account.code_hash;
     let callee_code_hash = call.code_hash;
     let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
-        debug_assert_eq!(callee_code_hash, code_hash);
+        debug_assert_eq!(
+            callee_code_hash, code_hash,
+            "call.address {:?} callee_account {:?}",
+            call.address, callee_account
+        );
         (
             callee_code_hash.to_word(),
             callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,

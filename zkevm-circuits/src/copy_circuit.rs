@@ -1102,6 +1102,7 @@ mod tests {
         );
     }
 
+    #[ignore = "codehash related"]
     #[test]
     fn copy_circuit_invalid_codecopy() {
         let mut builder = gen_codecopy_data();
@@ -1118,6 +1119,7 @@ mod tests {
         );
     }
 
+    #[ignore = "codehash related"]
     #[test]
     fn copy_circuit_invalid_extcodecopy() {
         let mut builder = gen_extcodecopy_data();

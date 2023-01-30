@@ -803,7 +803,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         for proof in proofs {
             let mut storage = HashMap::new();
             for storage_proof in proof.storage_proof {
-                storage.insert(storage_proof.key, storage_proof.value);
+                if !storage_proof.value.is_zero() {
+                    storage.insert(storage_proof.key, storage_proof.value);
+                }
             }
             log::trace!(
                 "statedb set_account {:?} balance {:?}",
