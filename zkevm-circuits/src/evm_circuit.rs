@@ -386,32 +386,21 @@ pub mod test {
         }
     }
 
-    pub fn run_test_circuit_geth_data_default<F: Field>(
-        block: GethData,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-                .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        run_test_circuit(block)
+    impl<F: Field> EvmCircuit<F> {
+        pub fn get_num_rows_required(block: &Block<F>) -> usize {
+            let mut cs = ConstraintSystem::default();
+            let config = EvmCircuit::<F>::configure(&mut cs);
+            config.0.get_num_rows_required(block)
+        }
+
+        pub fn get_active_rows(block: &Block<F>) -> (Vec<usize>, Vec<usize>) {
+            let mut cs = ConstraintSystem::default();
+            let config = EvmCircuit::<F>::configure(&mut cs);
+            config.0.get_active_rows(block)
+        }
     }
 
-    pub fn run_test_circuit_geth_data<F: Field>(
-        block: GethData,
-        circuits_params: CircuitsParams,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), circuits_params)
-            .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        run_test_circuit(block)
-    }
-
+    // TODO: Move this to `Block` under cfg[test]
     pub fn get_test_degree<F: Field>(block: &Block<F>) -> u32 {
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(block);
@@ -471,22 +460,13 @@ pub mod test {
 
         EvmCircuit::<F>::new_dev(block, fixed_table_tags)
     }
-
-    pub fn run_test_circuit<F: Field>(block: Block<F>) -> Result<(), Vec<VerifyFailure>> {
-        let k = get_test_degree(&block);
-
-        let (active_gate_rows, active_lookup_rows) = EvmCircuit::<F>::get_active_rows(&block);
-
-        let circuit = get_test_cicuit_from_block(block);
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        prover.verify_at_rows_par(active_gate_rows.into_iter(), active_lookup_rows.into_iter())
-    }
 }
 
 #[cfg(test)]
 mod evm_circuit_stats {
     use super::test::*;
     use super::*;
+    use crate::test_util::CircuitTestBuilder;
     use crate::{evm_circuit::step::ExecutionState, witness::block_convert};
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
@@ -494,31 +474,19 @@ mod evm_circuit_stats {
     use mock::test_ctx::{helpers::*, TestContext};
     use strum::IntoEnumIterator;
 
-    fn get_empty_witness_block() -> Block<Fr> {
-        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
-            .unwrap()
-            .into();
-        let mut builder =
-            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
-                .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-
-        block_convert(&builder.block, &builder.code_db).unwrap()
-    }
-
     #[test]
     pub fn empty_evm_circuit_no_padding() {
-        let block = get_empty_witness_block();
-        run_test_circuit(block).unwrap();
+        CircuitTestBuilder::empty()
+            .test_ctx(TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap())
+            .run();
     }
 
     #[test]
     pub fn empty_evm_circuit_with_padding() {
-        let mut block = get_empty_witness_block();
-        block.evm_circuit_pad_to = (1 << 18) - 100;
-        run_test_circuit(block).unwrap();
+        CircuitTestBuilder::empty()
+            .test_ctx(TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap())
+            .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+            .run();
     }
 
     /// This function prints to stdout a table with all the implemented states
