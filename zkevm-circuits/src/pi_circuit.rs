@@ -1560,12 +1560,11 @@ fn raw_public_inputs_col<F: Field>(
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
-
-    use crate::test_util::rand_tx;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
+    use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1609,16 +1608,15 @@ mod pi_circuit_test {
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-
         let mut public_data = PublicData::default();
         let chain_id = 1337u64;
         public_data.chain_id = Word::from(chain_id);
 
         let n_tx = 4;
         for i in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, i & 2 == 0));
-            public_data.transactions.push(eth_tx);
+            public_data
+                .transactions
+                .push(CORRECT_MOCK_TXS[i].clone().into());
         }
 
         let k = 17;

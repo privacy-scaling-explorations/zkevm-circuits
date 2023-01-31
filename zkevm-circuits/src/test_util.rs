@@ -1,7 +1,5 @@
 //! Testing utilities
 
-
-
 use crate::{
     evm_circuit::{
         test::{get_test_cicuit_from_block, get_test_degree},
@@ -13,11 +11,9 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::{GethData, Transaction};
-use ethers_core::{
-    types::{NameOrAddress, TransactionRequest},
-};
+use ethers_core::types::{NameOrAddress, TransactionRequest};
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::dev::{MockProver};
+use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
 use rand::{CryptoRng, Rng};
@@ -50,7 +46,8 @@ impl Default for BytecodeTestConfig {
     }
 }
 
-pub(crate) struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
+#[cfg(feature = "test")]
+pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     bytecode_config: Option<BytecodeTestConfig>,
     circuit_params: Option<CircuitsParams>,
@@ -142,7 +139,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         if config.enable_evm_circuit_test {
             let k = get_test_degree(&block);
 
-            let (_active_gate_rows, _active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
+            let (_active_gate_rows, _active_lookup_rows) =
+                EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
@@ -175,48 +173,5 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             //     .unwrap()
             self.state_checks.unwrap().as_ref()(prover);
         }
-    }
-}
-
-/// generate rand tx for pi circuit -> TODO: Move to `mock`.
-pub fn rand_tx<R: Rng + CryptoRng>(mut rng: R, chain_id: u64, has_calldata: bool) -> Transaction {
-    let wallet0 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-    let wallet1 = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-    let from = wallet0.address();
-    let to = wallet1.address();
-    let data = if has_calldata {
-        let mut data = b"helloworld".to_vec();
-        data[0] = 0;
-        data[2] = 0;
-        data
-    } else {
-        vec![]
-    };
-    let tx = TransactionRequest::new()
-        .chain_id(chain_id)
-        .from(from)
-        .to(to)
-        .nonce(3)
-        .value(1000)
-        .data(data)
-        .gas(500_000)
-        .gas_price(1234);
-    let sig = wallet0.sign_transaction_sync(&tx.clone().into());
-    let to = tx.to.map(|to| match to {
-        NameOrAddress::Address(a) => a,
-        _ => unreachable!(),
-    });
-    Transaction {
-        from: tx.from.unwrap(),
-        to,
-        gas_limit: tx.gas.unwrap(),
-        gas_price: tx.gas_price.unwrap(),
-        value: tx.value.unwrap(),
-        call_data: tx.data.unwrap(),
-        nonce: tx.nonce.unwrap(),
-        v: sig.v,
-        r: sig.r,
-        s: sig.s,
-        ..Transaction::default()
     }
 }
