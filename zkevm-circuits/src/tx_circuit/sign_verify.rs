@@ -234,13 +234,8 @@ impl SignVerifyConfig {
             let [rlc, rlc_next] = [Rotation::cur(), Rotation::next()]
                 .map(|rotation| meta.query_advice(rlc, rotation));
             let inputs = [e, d, c, b, a, rlc];
-            let powers_of_challenge = iter::successors(challenge.clone().into(), |power| {
-                (challenge.clone() * power.clone()).into()
-            })
-            .take(inputs.len() - 1)
-            .collect_vec();
 
-            vec![q_rlc * (rlc_next - rlc::expr(&inputs, &powers_of_challenge))]
+            vec![q_rlc * (rlc_next - rlc::expr(&inputs, challenge))]
         });
     }
 }
