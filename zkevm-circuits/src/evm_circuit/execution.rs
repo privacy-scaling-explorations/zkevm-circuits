@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -193,7 +193,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    height_map: HashMap<ExecutionState, usize>,
+    pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
@@ -322,9 +322,9 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < lookup_column_count {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -565,15 +565,6 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
-        self.height_map.get(&execution_state).copied()
-    }
-
-    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        self.get_step_height_option(execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -753,7 +744,6 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
                         Table::Block => block_table,
-                        Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
@@ -763,6 +753,14 @@ impl<F: Field> ExecutionConfig<F> {
                         column.expr(),
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
+                });
+            }
+        }
+        for column in cell_manager.columns().iter() {
+            if let CellType::LookupByte = column.cell_type {
+                meta.lookup_any("Byte lookup", |meta| {
+                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
+                    vec![(column.expr(), byte_table_expression)]
                 });
             }
         }
@@ -852,7 +850,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = self.get_step_height(step.execution_state);
+                    let height = step.execution_state.get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -883,7 +881,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
-                    let height = self.get_step_height(ExecutionState::EndBlock);
+                    let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -910,7 +908,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = self.get_step_height(ExecutionState::EndBlock);
+                let height = ExecutionState::EndBlock.get_step_height();
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(
@@ -1247,9 +1245,9 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            assigned.value().map(|v| {
+            assigned.map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v));
+                assigned_stored_expressions.push((name, v));
             });
         }
         Ok(assigned_stored_expressions)
