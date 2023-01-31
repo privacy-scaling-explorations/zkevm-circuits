@@ -89,7 +89,7 @@ impl Transaction {
                     Value::known(F::zero()),
                     challenges
                         .evm_word()
-                        .map(|evm_word| rlc::value(&self.value.to_le_bytes(), evm_word)),
+                        .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
                 ],
                 [
                     Value::known(F::from(self.id as u64)),
