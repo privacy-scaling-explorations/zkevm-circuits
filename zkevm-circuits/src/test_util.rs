@@ -1,22 +1,17 @@
 //! Testing utilities
 
 use crate::{
-    evm_circuit::{
-        test::{get_test_cicuit_from_block, get_test_degree},
-        EvmCircuit,
-    },
+    evm_circuit::EvmCircuit,
     state_circuit::StateCircuit,
     util::SubCircuit,
     witness::{Block, Rw},
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-use eth_types::geth_types::{GethData};
-
+use eth_types::geth_types::GethData;
 
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
-
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -206,12 +201,12 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         // Run evm circuit test
         if config.enable_evm_circuit_test {
-            let k = get_test_degree(&block);
+            let k = block.get_test_degree();
 
             let (_active_gate_rows, _active_lookup_rows) =
                 EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             //prover.verify_at_rows_par(active_gate_rows.into_iter(),
