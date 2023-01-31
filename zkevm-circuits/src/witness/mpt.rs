@@ -54,6 +54,10 @@ impl MptUpdates {
         self.old_root
     }
 
+    pub(crate) fn new_root(&self) -> Word {
+        self.new_root
+    }
+
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
         key(row).map(|key| *self.updates.get(&key).expect("missing key in mpt updates"))
     }
@@ -94,6 +98,11 @@ impl MptUpdates {
             self.smt_traces.push(smt_trace);
             self.proof_types.push(proof_tip);
         }
+        log::debug!(
+            "mpt update roots (after zktrie) {:?} {:?}",
+            self.old_root,
+            self.new_root
+        );
     }
 
     pub(crate) fn from_rws_with_mock_state_roots(
@@ -101,6 +110,7 @@ impl MptUpdates {
         old_root: U256,
         new_root: U256,
     ) -> Self {
+        log::debug!("mpt update roots (mocking) {:?} {:?}", old_root, new_root);
         let rows_len = rows.len();
         let updates: BTreeMap<_, _> = rows
             .iter()

@@ -575,6 +575,11 @@ impl<F: Field> PiCircuitConfig<F> {
             .last_key_value()
             .map(|(_, blk)| blk.eth_block.state_root)
             .unwrap_or(public_data.prev_state_root);
+        log::debug!(
+            "assign pi circuit prev_state_root {:?} next_state_root {:?}",
+            public_data.prev_state_root,
+            next_state_root
+        );
         let next_state_cells = self.assign_field_in_pi(
             region,
             &mut offset,
@@ -589,6 +594,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // copy state roots to pi circuit when we are in super circuit.
         if self.state_roots.is_some() {
+            log::debug!("connect state roots {:?}", self.state_roots);
             let state_roots = self.state_roots.clone().unwrap();
             region.constrain_equal(
                 prev_state_cells[RPI_CELL_IDX].cell(),

@@ -138,6 +138,7 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
         );
         let mpt_proof_type = meta.advice_column_in(SecondPhase);
         let state_root = meta.advice_column_in(SecondPhase);
+        meta.enable_equality(state_root);
 
         let sort_keys = SortKeysConfig {
             tag,
