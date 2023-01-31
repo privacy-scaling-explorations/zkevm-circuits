@@ -245,14 +245,6 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let circuits_params = CircuitsParams {
-            max_txs: 1,
-            max_rws: 55000,
-            max_calldata: 5000,
-            max_bytecode: 5000,
-            max_copy_rows: 55000,
-            keccak_padding: None,
-        };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
         builder = block_data.new_circuit_input_builder();
@@ -264,14 +256,20 @@ pub fn run_test(
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
 
-        let config = BytecodeTestConfig {
-            enable_evm_circuit_test: true,
-            enable_state_circuit_test: true,
-            gas_limit: u64::MAX,
-        };
-
         zkevm_circuits::test_util::CircuitTestBuilder::empty()
-            .config(config)
+            .config(BytecodeTestConfig {
+                enable_evm_circuit_test: true,
+                enable_state_circuit_test: true,
+                gas_limit: u64::MAX,
+            })
+            .params(CircuitsParams {
+                max_txs: 1,
+                max_rws: 55000,
+                max_calldata: 5000,
+                max_bytecode: 5000,
+                max_copy_rows: 55000,
+                keccak_padding: None,
+            })
             .block(block)
             .run();
 
