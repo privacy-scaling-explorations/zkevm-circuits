@@ -67,7 +67,7 @@ impl Default for CircuitsParams {
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
             max_copy_rows: 1000,
-            max_exp_rows: 262144,
+            max_exp_rows: 2000,
             max_bytecode: 512,
             keccak_padding: None,
         }

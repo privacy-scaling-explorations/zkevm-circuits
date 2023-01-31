@@ -100,4 +100,13 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_foo_exp() {
+        let mut steps = Vec::new();
+        let base = 1.into();
+        let exponent = 2.into();
+        let exp = exp_by_squaring(base, exponent, &mut steps);
+        dbg!(base, exponent, exp, steps);
+    }
 }
