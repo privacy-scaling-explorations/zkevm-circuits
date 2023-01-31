@@ -10,13 +10,13 @@ use crate::{
     witness::{Block, Rw},
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-use eth_types::geth_types::{GethData, Transaction};
-use ethers_core::types::{NameOrAddress, TransactionRequest};
-use ethers_signers::{LocalWallet, Signer};
+use eth_types::geth_types::{GethData};
+
+
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
-use rand::{CryptoRng, Rng};
+
 
 #[cfg(test)]
 #[ctor::ctor]
