@@ -112,6 +112,7 @@ pub struct SuperCircuit<
     const MAX_CALLDATA: usize,
     const MAX_RWS: usize,
     const MAX_COPY_ROWS: usize,
+    const MAX_EXP_ROWS: usize,
 > {
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
@@ -137,7 +138,8 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_RWS: usize,
         const MAX_COPY_ROWS: usize,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>
+        const MAX_EXP_ROWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
@@ -157,7 +159,8 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_RWS: usize,
         const MAX_COPY_ROWS: usize,
-    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>
+        const MAX_EXP_ROWS: usize,
+    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>
 {
     type Config = SuperCircuitConfig<F, MAX_TXS, MAX_CALLDATA, MAX_RWS>;
     type FloorPlanner = SimpleFloorPlanner;
@@ -322,7 +325,8 @@ impl<
         const MAX_CALLDATA: usize,
         const MAX_RWS: usize,
         const MAX_COPY_ROWS: usize,
-    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>
+        const MAX_EXP_ROWS: usize,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -340,6 +344,7 @@ impl<
                 max_calldata: MAX_CALLDATA,
                 max_rws: MAX_RWS,
                 max_copy_rows: MAX_COPY_ROWS,
+                max_exp_rows: MAX_EXP_ROWS,
                 max_bytecode: 512,
                 keccak_padding: None,
             },
@@ -378,16 +383,17 @@ impl<
         let exp_circuit = ExpCircuit::new_from_block(&block);
         let keccak_circuit = KeccakCircuit::new_from_block(&block);
 
-        let circuit = SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS> {
-            evm_circuit,
-            state_circuit,
-            tx_circuit,
-            pi_circuit,
-            bytecode_circuit,
-            copy_circuit,
-            exp_circuit,
-            keccak_circuit,
-        };
+        let circuit =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS> {
+                evm_circuit,
+                state_circuit,
+                tx_circuit,
+                pi_circuit,
+                bytecode_circuit,
+                copy_circuit,
+                exp_circuit,
+                keccak_circuit,
+            };
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
@@ -440,7 +446,7 @@ mod super_circuit_tests {
     #[test]
     fn super_circuit_degree() {
         let mut cs = ConstraintSystem::<Fr>::default();
-        SuperCircuit::<_, 1, 32, 256, 32>::configure(&mut cs);
+        SuperCircuit::<_, 1, 32, 256, 32, 32>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
         assert!(cs.degree() <= 9);
@@ -451,12 +457,15 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize,
         const MAX_RWS: usize,
         const MAX_COPY_ROWS: usize,
+        const MAX_EXP_ROWS: usize,
     >(
         block: GethData,
     ) {
         let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>::build(block)
-                .unwrap();
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>::build(
+                block,
+            )
+            .unwrap();
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         let res = prover.verify_par();
         if let Err(err) = res {
@@ -561,7 +570,8 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_RWS: usize = 256;
         const MAX_COPY_ROWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>(block);
+        const MAX_EXP_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>(block);
     }
     #[ignore]
     #[test]
@@ -571,7 +581,8 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_RWS: usize = 256;
         const MAX_COPY_ROWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>(block);
+        const MAX_EXP_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>(block);
     }
     #[ignore]
     #[test]
@@ -581,6 +592,7 @@ mod super_circuit_tests {
         const MAX_CALLDATA: usize = 32;
         const MAX_RWS: usize = 256;
         const MAX_COPY_ROWS: usize = 256;
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>(block);
+        const MAX_EXP_ROWS: usize = 256;
+        test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS, MAX_EXP_ROWS>(block);
     }
 }
