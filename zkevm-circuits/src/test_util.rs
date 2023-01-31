@@ -46,7 +46,57 @@ impl Default for BytecodeTestConfig {
     }
 }
 
-#[cfg(feature = "test")]
+/// Struct used to easily generate tests for EVM &| State circuits being able to
+/// customize all of the steps involved in the testing itself.
+///
+/// By default, the tests run through `prover.assert_satisfied_par()` but the
+/// builder pattern provides functions that allow to pass different functions
+/// that the prover should execute when verifying the CTB correctness.
+///
+/// The CTB also includes a mechanism to recieve calls that will modify the
+/// block produced from the [`TestContext`] and apply them before starting to
+/// compute the proof.
+///
+/// ## Example:
+/// ```rust, no_run
+/// use eth_types::geth_types::Account;
+/// use eth_types::{address, bytecode, Address, Bytecode, ToWord, Word, U256, word};
+/// use mock::{TestContext, MOCK_ACCOUNTS, gwei, eth};
+/// use zkevm_circuits::test_util::CircuitTestBuilder;
+///     let code = bytecode! {
+/// // [ADDRESS, STOP]
+///     PUSH32(word!("
+/// 3000000000000000000000000000000000000000000000000000000000000000"))
+///     PUSH1(0)
+///     MSTORE
+///
+///     PUSH1(2)
+///     PUSH1(0)
+///     RETURN
+/// };
+/// let ctx = TestContext::<1, 1>::new(
+///     None,
+///     |accs| {
+///         accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+///     },
+///     |mut txs, _accs| {
+///         txs[0]
+///             .from(MOCK_ACCOUNTS[0])
+///             .gas_price(gwei(2))
+///             .gas(Word::from(0x10000))
+///             .value(eth(2))
+///             .input(code.into());
+///     },
+///     |block, _tx| block.number(0xcafeu64),
+/// )
+/// .unwrap();
+///
+/// CircuitTestBuilder::empty()
+///     .test_ctx(ctx)
+///     .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+///     .state_checks(Box::new(|prover| assert!(prover.verify_par().is_err())))
+///     .run();
+/// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     bytecode_config: Option<BytecodeTestConfig>,
@@ -58,6 +108,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
+    /// Generates an empty/set to default `CircuitTestBuilder`.
     pub fn empty() -> Self {
         CircuitTestBuilder {
             test_ctx: None,
@@ -70,36 +121,51 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         }
     }
 
+    /// Allows to procide a [`TestContext`] which will serve as the generator of
+    /// the Block.
     pub fn test_ctx(mut self, ctx: TestContext<NACC, NTX>) -> Self {
         self.test_ctx = Some(ctx);
         self
     }
 
+    /// Allows to pass a non-default [`BytecodeConfig`] to the builder.
     pub fn config(mut self, config: BytecodeTestConfig) -> Self {
         self.bytecode_config = Some(config);
         self
     }
 
+    /// Allows to pass a non-default [`CircuitParams`] to the builder.
+    /// This means that we can increase for example, the `max_rws` or `max_txs`.
     pub fn params(mut self, params: CircuitsParams) -> Self {
         self.circuit_params = Some(params);
         self
     }
 
+    /// Allows to pass a [`Block`] already built to the constructor.
     pub fn block(mut self, block: Block<Fr>) -> Self {
         self.block = Some(block);
         self
     }
 
+    /// Allows to provide checks different than the default ones for the State
+    /// Circuit verification.
     pub fn state_checks(mut self, state_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
         self.state_checks = Some(state_checks);
         self
     }
 
+    /// Allows to provide checks different than the default ones for the EVM
+    /// Circuit verification.
     pub fn evm_checks(mut self, evm_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
         self.evm_checks = Some(evm_checks);
         self
     }
 
+    /// Allows to provide modifier functions for the [`Block`] that will be
+    /// generated within this builder.
+    ///
+    /// That prevents to a lot of thests the need to build the block outside of
+    /// the builder because they need to modify something particular.
     pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>)>) -> Self {
         self.block_modifiers.push(modifier);
         self
@@ -107,6 +173,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 }
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
+    /// Triggers the `CircuitTestBuilder` to convert the [`TestContext`] if any,
+    /// into a [`Block`] and apply the default or provided block_modifiers or
+    /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
