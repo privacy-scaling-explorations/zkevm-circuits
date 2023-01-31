@@ -57,7 +57,7 @@ fn trim(s: &str, max_len: usize) -> &str {
     if s.len() > max_len {
         &s[0..max_len]
     } else {
-        &s
+        s
     }
 }
 
