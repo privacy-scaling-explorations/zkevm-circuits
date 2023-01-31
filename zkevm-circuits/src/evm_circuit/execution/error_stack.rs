@@ -345,8 +345,8 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block.unwrap()), Ok(()));
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(run_test_circuit(block), Ok(()));
     }
 
     fn callee(code: Bytecode) -> Account {
