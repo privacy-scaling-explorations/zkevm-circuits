@@ -20,7 +20,7 @@ impl Opcode for ErrorOOGLog {
         };
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
         // assert op code can only be Log*
-        assert!( [OpcodeId::LOG0, OpcodeId::LOG1, OpcodeId::LOG2,OpcodeId::LOG3,OpcodeId::LOG4].contains(geth_step.op));
+        assert!( [OpcodeId::LOG0, OpcodeId::LOG1, OpcodeId::LOG2,OpcodeId::LOG3,OpcodeId::LOG4].contains(&geth_step.op));
         let mstart = geth_step.stack.nth_last(0)?;
         let msize = geth_step.stack.nth_last(1)?;
 
