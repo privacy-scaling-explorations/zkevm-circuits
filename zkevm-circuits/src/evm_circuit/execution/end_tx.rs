@@ -312,7 +312,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{self, bytecode};
-    
+
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {

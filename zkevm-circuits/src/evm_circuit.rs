@@ -275,9 +275,9 @@ pub mod test {
         table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
         util::Challenges,
     };
-    
+
     use eth_types::{Field, Word};
-    
+
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         plonk::{Circuit, ConstraintSystem, Error},
@@ -462,11 +462,11 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
-    
+
     use super::*;
+    use crate::evm_circuit::step::ExecutionState;
     use crate::test_util::CircuitTestBuilder;
-    use crate::{evm_circuit::step::ExecutionState};
-    
+
     use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
     use halo2_proofs::halo2curves::bn256::Fr;
     use mock::test_ctx::{helpers::*, TestContext};

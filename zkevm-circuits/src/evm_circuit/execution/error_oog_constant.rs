@@ -152,13 +152,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
 #[cfg(test)]
 mod test {
-    
+
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
-        self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account, Address, ToWord, Word,
+        self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
+        Address, ToWord, Word,
     };
-    
 
     use mock::{
         eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,

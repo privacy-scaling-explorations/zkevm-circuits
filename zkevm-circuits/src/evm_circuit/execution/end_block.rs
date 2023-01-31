@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{CircuitTestBuilder};
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use eth_types::bytecode;
     use eth_types::geth_types::GethData;

@@ -122,9 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode,
-        geth_types::{Account},
-        Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;

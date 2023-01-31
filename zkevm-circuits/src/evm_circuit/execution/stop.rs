@@ -136,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 mod test {
     use crate::test_util::{BytecodeTestConfig, CircuitTestBuilder};
     use eth_types::{address, bytecode, Bytecode, Word};
-    
+
     use itertools::Itertools;
     use mock::TestContext;
 

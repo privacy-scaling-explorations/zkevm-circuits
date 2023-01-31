@@ -254,13 +254,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    
+
     use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode::Bytecode;
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
-    
+
     use mock::TestContext;
 
     fn test_invalid_jump(destination: usize, out_of_range: bool) {

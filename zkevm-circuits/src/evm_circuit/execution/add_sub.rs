@@ -108,8 +108,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
-    
-    
+
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
