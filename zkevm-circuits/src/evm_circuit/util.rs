@@ -540,7 +540,7 @@ pub(crate) mod rlc {
 
     pub(crate) fn expr<F: FieldExt, E: Expr<F>>(expressions: &[E], randomness: E) -> Expression<F> {
         if !expressions.is_empty() {
-            gen(expressions.iter().map(|e| e.expr()), randomness.expr())
+            generic(expressions.iter().map(|e| e.expr()), randomness.expr())
         } else {
             0.expr()
         }
@@ -556,13 +556,13 @@ pub(crate) mod rlc {
             .map(|v| F::from(*v as u64))
             .collect::<Vec<F>>();
         if !values.is_empty() {
-            gen(values, randomness)
+            generic(values, randomness)
         } else {
             F::zero()
         }
     }
 
-    pub(crate) fn gen<V, I>(values: I, randomness: V) -> V
+    fn generic<V, I>(values: I, randomness: V) -> V
     where
         I: IntoIterator<Item = V>,
         <I as IntoIterator>::IntoIter: DoubleEndedIterator,
