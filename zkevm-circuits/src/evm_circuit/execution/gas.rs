@@ -87,12 +87,11 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{
-        evm_circuit::witness::block_convert,
         test_util::{BytecodeTestConfig, CircuitTestBuilder},
     };
-    use bus_mapping::mock::BlockData;
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+    
+    use eth_types::{address, bytecode, Word};
+    
     use mock::TestContext;
 
     fn test_ok() {
@@ -121,7 +120,7 @@ mod test {
         let config = BytecodeTestConfig::default();
 
         // Create a custom tx setting Gas to
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -140,23 +139,18 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .expect("could not handle block tx");
-        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        // The above block has 2 steps (GAS and STOP). We forcefully assign a
-        // wrong `gas_left` value for the second step, to assert that
-        // the circuit verification fails for this scenario.
-        assert_eq!(block.txs.len(), 1);
-        assert_eq!(block.txs[0].steps.len(), 4);
-        block.txs[0].steps[2].gas_left -= 1;
         CircuitTestBuilder::<2, 1>::empty()
-            .block(block)
+            .test_ctx(ctx)
+            .block_modifier(Box::new(|block| {
+                // The above block has 2 steps (GAS and STOP). We forcefully assign a
+                // wrong `gas_left` value for the second step, to assert that
+                // the circuit verification fails for this scenario.
+                assert_eq!(block.txs.len(), 1);
+                assert_eq!(block.txs[0].steps.len(), 4);
+                block.txs[0].steps[2].gas_left -= 1;
+            }))
             .evm_checks(Box::new(|prover| assert!(prover.verify_par().is_err())))
             .run();
     }
