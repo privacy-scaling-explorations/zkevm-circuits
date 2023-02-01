@@ -166,11 +166,7 @@ impl<F: Field> SloadGasGadget<F> {
 #[cfg(test)]
 mod test {
 
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{BytecodeTestConfig, CircuitTestBuilder},
-    };
-
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
 
@@ -211,13 +207,8 @@ mod test {
                 |block, _txs| block,
             )
             .unwrap();
-            let test_config = BytecodeTestConfig {
-                enable_state_circuit_test: true,
-                ..Default::default()
-            };
-            CircuitTestBuilder::new_from_test_ctx(ctx)
-                .config(test_config)
-                .run();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 

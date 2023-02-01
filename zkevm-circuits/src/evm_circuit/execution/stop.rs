@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{BytecodeTestConfig, CircuitTestBuilder};
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Bytecode, Word};
 
     use itertools::Itertools;
@@ -162,12 +162,8 @@ mod test {
                 |block, _tx| block.number(0xcafeu64),
             )
             .unwrap();
-            CircuitTestBuilder::new_from_test_ctx(ctx)
-                .config(BytecodeTestConfig {
-                    enable_state_circuit_test: true,
-                    ..Default::default()
-                })
-                .run();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         } else {
             let ctx = TestContext::<3, 1>::new(
                 None,
@@ -204,12 +200,7 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::new_from_test_ctx(ctx)
-                .config(BytecodeTestConfig {
-                    enable_state_circuit_test: true,
-                    ..Default::default()
-                })
-                .run();
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         };
     }
 

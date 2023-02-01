@@ -86,11 +86,9 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::{BytecodeTestConfig, CircuitTestBuilder};
-
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Word};
-
-    use mock::TestContext;
+    use mock::{TestContext, MOCK_GASLIMIT};
 
     fn test_ok() {
         let bytecode = bytecode! {
@@ -116,8 +114,6 @@ mod test {
             STOP
         };
 
-        let config = BytecodeTestConfig::default();
-
         // Create a custom tx setting Gas to
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -134,7 +130,7 @@ mod test {
                 txs[0]
                     .to(accs[0].address)
                     .from(accs[1].address)
-                    .gas(Word::from(config.gas_limit));
+                    .gas(*MOCK_GASLIMIT);
             },
             |block, _tx| block.number(0xcafeu64),
         )

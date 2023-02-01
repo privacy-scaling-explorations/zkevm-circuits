@@ -20,27 +20,6 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
-/// Bytecode circuit test configuration
-#[derive(Debug, Clone)]
-pub struct BytecodeTestConfig {
-    /// Test EVM circuit
-    pub enable_evm_circuit_test: bool,
-    /// Test state circuit
-    pub enable_state_circuit_test: bool,
-    /// Gas limit
-    pub gas_limit: u64,
-}
-
-impl Default for BytecodeTestConfig {
-    fn default() -> Self {
-        Self {
-            enable_evm_circuit_test: true,
-            enable_state_circuit_test: true,
-            gas_limit: 1_000_000u64,
-        }
-    }
-}
-
 #[allow(clippy::type_complexity)]
 /// Struct used to easily generate tests for EVM &| State circuits being able to
 /// customize all of the steps involved in the testing itself.
@@ -94,7 +73,6 @@ impl Default for BytecodeTestConfig {
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
-    bytecode_config: Option<BytecodeTestConfig>,
     circuits_params: Option<CircuitsParams>,
     block: Option<Block<Fr>>,
     evm_checks: Box<dyn Fn(MockProver<Fr>)>,
@@ -107,7 +85,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     fn empty() -> Self {
         CircuitTestBuilder {
             test_ctx: None,
-            bytecode_config: None,
             circuits_params: None,
             block: None,
             evm_checks: Box::new(|prover| prover.assert_satisfied_par()),
@@ -132,12 +109,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// the Block.
     pub fn test_ctx(mut self, ctx: TestContext<NACC, NTX>) -> Self {
         self.test_ctx = Some(ctx);
-        self
-    }
-
-    /// Allows to pass a non-default [`BytecodeConfig`] to the builder.
-    pub fn config(mut self, config: BytecodeTestConfig) -> Self {
-        self.bytecode_config = Some(config);
         self
     }
 
@@ -213,11 +184,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
 
-        // Fetch Bytecode TestConfig
-        let config = self.bytecode_config.unwrap_or_default();
-
         // Run evm circuit test
-        if config.enable_evm_circuit_test {
+        {
             let k = block.get_test_degree();
 
             let (_active_gate_rows, _active_lookup_rows) =
@@ -234,7 +202,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // Run state circuit test
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
-        if config.enable_state_circuit_test {
+        {
             const N_ROWS: usize = 1 << 16;
             let state_circuit = StateCircuit::<Fr>::new(block.rws, N_ROWS);
             let power_of_randomness = state_circuit.instance();
