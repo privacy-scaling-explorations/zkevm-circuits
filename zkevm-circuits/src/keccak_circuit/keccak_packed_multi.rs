@@ -21,10 +21,16 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
+use itertools::Itertools;
 use log::{debug, trace};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::ParallelIterator;
 use std::{env::var, marker::PhantomData, vec};
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 
 const MAX_DEGREE: usize = 9;
 const ABSORB_LOOKUP_RANGE: usize = 3;
@@ -260,7 +266,7 @@ impl<F: FieldExt> CellManager<F> {
         let column = if column_idx < self.columns.len() {
             self.columns[column_idx].advice
         } else {
-            let advice = meta.advice_column();
+            let advice = meta.advice_column_in(SecondPhase);
             let mut expr = 0.expr();
             meta.create_gate("Query column", |meta| {
                 expr = meta.query_advice(advice, Rotation::cur());
@@ -2135,10 +2141,18 @@ pub fn multi_keccak<F: Field>(
             cell_values: Vec::new(),
         });
     }
+
     // Actual keccaks
+    let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
+    let inputs_num = bytes.len();
     for (idx, bytes) in bytes.iter().enumerate() {
         debug!("{}th keccak is of len {}", idx, bytes.len());
     }
+    let bytes: Vec<_> = bytes.iter().unique().collect();
+    let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
+    let inputs_num2 = bytes.len();
+    debug!("after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len {inputs_len}->{inputs_len2}");
+
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes
         .par_iter()
