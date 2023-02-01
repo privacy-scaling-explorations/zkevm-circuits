@@ -354,7 +354,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             ]))
         });
         meta.lookup_any(
-            "keccak256_table_lookup(cur.hash, cur.length, cur.value_rlc)",
+            "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
             |meta| {
                 let enable = and::expr(vec![
                     meta.query_fixed(q_enable, Rotation::cur()),
