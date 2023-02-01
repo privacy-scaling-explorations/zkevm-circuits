@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
-        table::{FixedTableTag, Lookup, RwValues, Table},
+        table::{FixedTableTag, Lookup, RwValues},
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
@@ -375,7 +375,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::Lookup(Table::Byte))
+        self.query_cell_with_type(CellType::LookupByte)
     }
 
     pub(crate) fn query_word_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
@@ -387,11 +387,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::Lookup(Table::Byte), count)
+        self.query_cells(CellType::LookupByte, count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
         self.query_cell_with_type(CellType::StoragePhase1)
+    }
+
+    pub(crate) fn query_cell_phase2(&mut self) -> Cell<F> {
+        self.query_cell_with_type(CellType::StoragePhase2)
     }
 
     pub(crate) fn query_copy_cell(&mut self) -> Cell<F> {
