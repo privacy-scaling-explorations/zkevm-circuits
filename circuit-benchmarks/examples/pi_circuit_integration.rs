@@ -26,12 +26,12 @@ use zkevm_circuits::util::SubCircuit;
 #[test]
 fn bench_pi_circuit_prover() {
     let degree: u32 = var("DEGREE")
-        .unwrap_or_else(|_| "15".to_string())
+        .unwrap_or_else(|_| "21".to_string())
         .parse()
         .expect("Cannot parse DEGREE env var as u32");
 
-    const MAX_TXS: usize = 10;
-    const MAX_CALLDATA: usize = 128;
+    const MAX_TXS: usize = 80;
+    const MAX_CALLDATA: usize = 65536*16;
 
     let mut rng = ChaCha20Rng::seed_from_u64(2);
     let randomness = Fr::random(&mut rng);
@@ -448,13 +448,13 @@ async fn main() -> Result<(), Error> {
     let config = ProverCmdConfig::parse();
     let provider = Http::from_str(&config.geth_url).expect("Http geth url");
     let geth_client = GethClient::new(provider);
-    const MAX_TXS: usize = 14;
-    const MAX_CALLDATA: usize = 10500;
+    const MAX_TXS: usize = 80;
+    const MAX_CALLDATA: usize = 1048576;
     let circuit_params = CircuitsParams {
         max_rws: 476052,
         max_txs: MAX_TXS,
         max_calldata: MAX_CALLDATA,
-        max_bytecode: 24634,
+        max_bytecode: 65536,
         keccak_padding: None,
     };
 
@@ -465,7 +465,7 @@ async fn main() -> Result<(), Error> {
     let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>(PiCircuit::new_from_block(&block));
     assert!(block.txs.len() <= MAX_TXS);
 
-    let degree = 18;
+    let degree = 21;
     let params = get_circuit_params::<0>(degree as usize);
 
     // let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(),

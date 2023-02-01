@@ -70,7 +70,8 @@ fn bench_super_circuit_prover() {
 
     block.sign(&wallets);
 
-    let (_, circuit, instance, _) = SuperCircuit::<_, 1, 32, 512>::build(block).unwrap();
+    type TestSuperCircuit = SuperCircuit::<Fr, 4, 32, 512>;
+    let (_, circuit, instance, _) = TestSuperCircuit::build(block).unwrap();
     let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
     // Bench setup generation
@@ -95,7 +96,7 @@ fn bench_super_circuit_prover() {
         Challenge255<G1Affine>,
         ChaChaRng,
         Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-        SuperCircuit<Fr, 1, 32, 512>,
+        TestSuperCircuit,
     >(
         &general_params,
         &pk,
