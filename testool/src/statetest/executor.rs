@@ -11,6 +11,7 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use zkevm_circuits::super_circuit::SuperCircuit;
+use zkevm_circuits::witness::Block;
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
@@ -245,28 +246,29 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
+        let block_data = BlockData::new_from_geth_data_with_params(
+            geth_data,
+            CircuitsParams {
+                max_txs: 1,
+                max_rws: 55000,
+                max_calldata: 5000,
+                max_bytecode: 5000,
+                max_copy_rows: 55000,
+                keccak_padding: None,
+            },
+        );
 
         builder = block_data.new_circuit_input_builder();
         builder
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        let mut block =
+        let mut block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
-
-        block.circuits_params = CircuitsParams {
-            max_txs: 1,
-            max_rws: 55000,
-            max_calldata: 5000,
-            max_bytecode: 5000,
-            max_copy_rows: 55000,
-            keccak_padding: None,
-        };
         block.txs.iter_mut().for_each(|tx| tx.gas = u64::MAX);
 
-        zkevm_circuits::test_util::CircuitTestBuilder::new_from_block(block).run();
+        zkevm_circuits::test_util::CircuitTestBuilder::<2, 1>::new_from_block(block).run();
         Ok(())
     } else {
         geth_data.sign(&wallets);

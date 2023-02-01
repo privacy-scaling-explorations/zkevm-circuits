@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    evm_circuit::{detect_fixed_table_tags, evm_circuit::util::rlc, EvmCircuit},
+    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
     table::BlockContextFieldTag,
 };
 use bus_mapping::{
