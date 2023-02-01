@@ -1025,39 +1025,26 @@ mod test {
 
     #[test]
     fn test_depth() {
-        let code = bytecode! {
-            PUSH32(word!("0x7f602060006000376000600060206000600060003561ffff5a03f16001030000"))
-            PUSH1(0x0)
-            MSTORE
-            PUSH32(word!("0x0060005260206000F30000000000000000000000000000000000000000000000"))
-            PUSH1(0x20)
-            MSTORE
-
-            PUSH1(0x40)
-            PUSH1(0x0)
-            PUSH1(0x0)
-            CREATE
-
-            DUP1
-            PUSH1(0x40)
-            MSTORE
-
-            PUSH1(0x0) // retSize
-            PUSH1(0x0) // retOffset
-            PUSH1(0x20) // argSize
-            PUSH1(0x40) // argOffset
-            PUSH1(0x0) // Value
-            DUP6
-            PUSH2(0xFF)
+        let callee_code = bytecode! {
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            ADDRESS
+            PUSH2(0xffff)
             GAS
             SUB
             CALL
+            PUSH1(0x01)
+            SUB
         };
+
         assert_eq!(
             run_test_circuits_with_params(
                 TestContext::<2, 1>::new(
                     None,
-                    account_0_code_account_1_no_code(code),
+                    account_0_code_account_1_no_code(callee_code),
                     |mut txs, accs| {
                         txs[0]
                             .to(accs[0].address)

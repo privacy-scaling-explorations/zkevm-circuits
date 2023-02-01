@@ -160,7 +160,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             caller_balance,
         )?;
 
-        let callee_code_hash = call.code_hash;
         let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
 
         // Transfer value only for CALL opcode.
