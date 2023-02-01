@@ -290,7 +290,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
 impl<F: Field> ExpCircuitConfig<F> {
     fn assign_step(
         &self,
-        mut region: &mut Region<F>,
+        region: &mut Region<F>,
         offset: usize,
         exponent: &mut U256,
         step: &ExpStep,
@@ -301,14 +301,10 @@ impl<F: Field> ExpCircuitConfig<F> {
         let (exponent_div2, remainder) = exponent.div_mod(two);
 
         for i in 0..OFFSET_INCREMENT {
-            self.q_usable.enable(&mut region, offset + i)?;
+            self.q_usable.enable(region, offset + i)?;
         }
-        mul_chip.assign(&mut region, offset, [step.a, step.b, U256::zero(), step.d])?;
-        parity_check_chip.assign(
-            &mut region,
-            offset,
-            [two, exponent_div2, remainder, *exponent],
-        )?;
+        mul_chip.assign(region, offset, [step.a, step.b, U256::zero(), step.d])?;
+        parity_check_chip.assign(region, offset, [two, exponent_div2, remainder, *exponent])?;
 
         // update reducing exponent
         if remainder.is_zero() {
@@ -323,11 +319,11 @@ impl<F: Field> ExpCircuitConfig<F> {
 
     fn assign_exp_event(
         &self,
-        mut region: &mut Region<F>,
+        region: &mut Region<F>,
         offset: &mut usize,
         exp_event: &ExpEvent,
-        mut mul_chip: &mut MulAddChip<F>,
-        mut parity_check_chip: &mut MulAddChip<F>,
+        mul_chip: &mut MulAddChip<F>,
+        parity_check_chip: &mut MulAddChip<F>,
     ) -> Result<(), Error> {
         let mut exponent = exp_event.exponent;
         for (step, step_assignments) in exp_event
@@ -338,12 +334,12 @@ impl<F: Field> ExpCircuitConfig<F> {
         {
             // assign everything except the exp table.
             self.assign_step(
-                &mut region,
+                region,
                 *offset,
                 &mut exponent,
                 step,
-                &mut mul_chip,
-                &mut parity_check_chip,
+                mul_chip,
+                parity_check_chip,
             )?;
             // assign exp table.
             for (i, assignment) in step_assignments.iter().enumerate() {
@@ -659,13 +655,13 @@ mod tests {
     #[test]
     fn exp_circuit_single() {
         test_ok(2.into(), 2.into(), None);
-        // test_ok(3.into(), 7.into(), None);
-        // test_ok(5.into(), 11.into(), None);
-        // test_ok(7.into(), 13.into(), None);
-        // test_ok(11.into(), 17.into(), None);
-        // test_ok(13.into(), 23.into(), None);
-        // test_ok(29.into(), 43.into(), None);
-        // test_ok(41.into(), 259.into(), None);
+        test_ok(3.into(), 7.into(), None);
+        test_ok(5.into(), 11.into(), None);
+        test_ok(7.into(), 13.into(), None);
+        test_ok(11.into(), 17.into(), None);
+        test_ok(13.into(), 23.into(), None);
+        test_ok(29.into(), 43.into(), None);
+        test_ok(41.into(), 259.into(), None);
     }
 
     #[test]
