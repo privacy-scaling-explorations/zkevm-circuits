@@ -310,7 +310,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(bytecode_table.code_hash, Rotation::cur()),
             );
 
-            // TODO: check this
             cb.require_equal(
                 "next.value_rlc == cur.value_rlc * randomness + next.value",
                 meta.query_advice(value_rlc, Rotation::next()),
@@ -362,19 +361,17 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                     is_byte_to_header(meta),
                 ]);
 
-                let lookup_columns = vec![value_rlc, length, bytecode_table.code_hash];
-
                 let mut constraints = vec![(
                     enable.clone(),
                     meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
                 )];
 
-                // TODO: perhaps write this explicitly so it is more readable the matching
-                // between collumns
-                for (i, column) in keccak_table.columns().iter().skip(1).enumerate() {
+                for (circuit_column, table_column) in
+                    keccak_table.match_columns(value_rlc, length, bytecode_table.code_hash)
+                {
                     constraints.push((
-                        enable.clone() * meta.query_advice(lookup_columns[i], Rotation::cur()),
-                        meta.query_advice(*column, Rotation::cur()),
+                        enable.clone() * meta.query_advice(circuit_column, Rotation::cur()),
+                        meta.query_advice(table_column, Rotation::cur()),
                     ))
                 }
 
