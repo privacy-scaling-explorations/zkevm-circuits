@@ -4,7 +4,8 @@ use crate::{
     error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
+        TxRefundOp, RW,
     },
     state_db::CodeDB,
     Error,
@@ -412,29 +413,42 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);
     let callee_exists = !callee_account.is_empty();
-    let code_hash = callee_account.code_hash;
-    let callee_code_hash = call.code_hash;
-    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
-        debug_assert_eq!(
-            callee_code_hash, code_hash,
-            "call.address {:?} callee_account {:?}",
-            call.address, callee_account
-        );
-        (
-            callee_code_hash.to_word(),
-            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-        )
-    } else {
-        (Word::zero(), true)
+    let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
+        (true, _) => (call.code_hash.to_word(), false),
+        (_, true) => {
+            debug_assert_eq!(
+                callee_account.code_hash, call.code_hash,
+                "callee account's code hash: {:?}, call's code hash: {:?}",
+                callee_account.code_hash, call.code_hash
+            );
+            (
+                call.code_hash.to_word(),
+                call.code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            )
+        }
+        (_, false) => (Word::zero(), true),
     };
 
-    state.account_read(
-        &mut exec_step,
-        call.address,
-        AccountField::CodeHash,
-        callee_code_hash_word,
-        callee_code_hash_word,
-    )?;
+    if state.tx.is_create() {
+        state.push_op_reversible(
+            &mut exec_step,
+            RW::WRITE,
+            AccountOp {
+                address: call.address,
+                field: AccountField::CodeHash,
+                value: callee_code_hash,
+                value_prev: Word::zero(),
+            },
+        )?;
+    } else {
+        state.account_read(
+            &mut exec_step,
+            call.address,
+            AccountField::CodeHash,
+            callee_code_hash,
+            callee_code_hash,
+        )?;
+    }
     // Transfer with fee
     state.transfer_with_fee(
         &mut exec_step,
@@ -452,14 +466,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            // TODO: debug info will remove.
-            println!(
-                "come to is_create: {}, call.code_hash {:?}, callee account code hash {:?} ",
-                call.is_create(),
-                call.code_hash.to_word(),
-                code_hash
-            );
-
             state.account_write(
                 &mut exec_step,
                 call.address,
@@ -492,7 +498,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, call.code_hash.to_word()),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -504,9 +510,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
-            // TODO: debug info will remove
-            println!("come to is_empty_code_hash:  {}", is_empty_code_hash);
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 // if the transfer values make an account from non-exist to exist
@@ -546,7 +549,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, call.is_create().to_word()),
-                (CallContextField::CodeHash, callee_code_hash_word),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
