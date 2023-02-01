@@ -96,8 +96,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )
         });
 
-        cb.range_lookup(depth.expr(), 1024);
-
         let call_gadget = CommonCallGadget::construct(
             cb,
             is_call.expr(),
