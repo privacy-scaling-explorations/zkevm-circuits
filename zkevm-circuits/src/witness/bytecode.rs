@@ -34,7 +34,7 @@ impl Bytecode {
 
         rows.push([
             hash,
-            Value::known(F::from(BytecodeFieldTag::Length as u64)),
+            Value::known(F::from(BytecodeFieldTag::Header as u64)),
             Value::known(F::zero()),
             Value::known(F::zero()),
             Value::known(F::from(self.bytes.len() as u64)),
