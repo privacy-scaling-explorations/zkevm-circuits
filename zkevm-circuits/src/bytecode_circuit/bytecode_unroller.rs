@@ -1,7 +1,5 @@
 use crate::{
-    evm_circuit::util::{
-        and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
-    },
+    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
     table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
@@ -449,12 +447,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                             return Err(Error::Synthesis);
                         }
 
-                        let code_hash = challenges.evm_word().map(|challenge| {
-                            RandomLinearCombination::<F, 32>::random_linear_combine(
-                                row.code_hash.to_le_bytes(),
-                                challenge,
-                            )
-                        });
+                        let code_hash = challenges
+                            .evm_word()
+                            .map(|challenge| rlc::value(&row.code_hash.to_le_bytes(), challenge));
 
                         // Track which byte is an opcode and which is push
                         // data

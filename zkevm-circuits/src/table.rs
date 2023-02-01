@@ -1,7 +1,7 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::util::{rlc, RandomLinearCombination};
+use crate::evm_circuit::util::rlc;
 use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
 use crate::impl_expr;
 use crate::util::build_tx_log_address;
@@ -772,8 +772,8 @@ impl KeccakTable {
         keccak.update(input);
         let output = keccak.digest();
         let output_rlc = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::<F, 32>::random_linear_combine(
-                Word::from_big_endian(output.as_slice()).to_le_bytes(),
+            rlc::value(
+                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
                 challenge,
             )
         });
