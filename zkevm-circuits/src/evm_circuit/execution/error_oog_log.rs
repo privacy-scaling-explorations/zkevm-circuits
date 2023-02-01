@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_MEMORY_WORD_SIZE,
+        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_GAS},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, Same},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell,
+            not, sum, CachedRegion, Cell, math_gadget::LtGadget,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -29,14 +29,15 @@ pub(crate) struct ErrorOOGLogGadget<F> {
     memory_address: MemoryAddressGadget<F>,
     // phase2_topics: [Cell<F>; 4],
     // topic_selectors: [Cell<F>; 4],
-
+    // constrain gas left is less than required
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
+    //insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
-    const NAME: &'static str = "LOG";
+    const NAME: &'static str = "ErrorOutOfGasLOG";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasLOG;
 
@@ -84,6 +85,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
 
+        // Check if the amount of gas available is less than the amount of gas
+        // required
+        // let insufficient_gas =
+        //     LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        // cb.require_equal(
+        //     "log* gas left is less than gas required ",
+        //     insufficient_gas.expr(),
+        //     1.expr(),
+        // );
+
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
@@ -130,6 +141,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             //phase2_topics,
             //topic_selectors,
             memory_expansion,
+            //insufficient_gas,
             rw_counter_end_of_reversion,
             restore_context,
         }
@@ -160,13 +172,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
+        // Gas insufficient check
+        // self.insufficient_gas.assign(
+        //     region,
+        //     offset,
+        //     F::from(step.gas_left),
+        //     F::from(step.gas_cost),
+        // )?;
+
+        println!(" gas left {}, gas cost {}", step.gas_left, step.gas_cost);
         self.rw_counter_end_of_reversion.assign(
             region,
             offset,
             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
         self.restore_context
-        .assign(region, offset, block, call, step, 3)?;
+        .assign(region, offset, block, call, step, 4)?;
 
         Ok(())
     }
@@ -174,96 +195,192 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
-    use mock::TestContext;
-    use rand::Rng;
+    use crate::evm_circuit::{
+        test::run_test_circuit, test::run_test_circuit_geth_data_default, witness::block_convert,
+    };
+    use bus_mapping::evm::OpcodeId;
+    use eth_types::{
+        self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
+        geth_types::GethData, Address, ToWord, Word,
+    };
+    use halo2_proofs::halo2curves::bn256::Fr;
 
-    use crate::test_util::run_test_circuits;
+    use mock::{
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS,
+    };
+
+    fn gas(call_data: &[u8]) -> Word {
+        Word::from(
+            GasCost::TX.as_u64()
+                + 2 * OpcodeId::PUSH32.constant_gas_cost().as_u64()
+                + call_data
+                    .iter()
+                    .map(|&x| if x == 0 { 4 } else { 16 })
+                    .sum::<u64>(),
+        )
+    }
+
+    fn test_oog_log(tx: eth_types::Transaction) {
+        let code = bytecode! {
+                PUSH1(0)
+                PUSH1(0)
+                PUSH1(100)
+                //LOG0
+                LOG1
+               
+        };
+     
+        // Get the execution steps from the external tracer
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            |mut txs, _accs| {
+                txs[0]
+                    .to(tx.to.unwrap())
+                    .from(tx.from)
+                    .gas_price(tx.gas_price.unwrap())
+                    .gas(tx.gas + 3)
+                    .input(tx.input)
+                    .value(tx.value);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
+        let from = MOCK_ACCOUNTS[1];
+        let to = MOCK_ACCOUNTS[0];
+        eth_types::Transaction {
+            from,
+            to: Some(to),
+            value,
+            gas: gas(&calldata),
+            gas_price: Some(gas_price),
+            input: calldata.into(),
+            ..Default::default()
+        }
+    }
 
     #[test]
-    fn log_gadget_simple() {
-        // zero topic: log0
-        test_log_ok(&[], false);
-        // one topic: log1
-        // test_log_ok(&[Word::from(0xA0)], true);
-        // // two topics: log2
-        // test_log_ok(&[Word::from(0xA0), Word::from(0xef)], true);
-        // // three topics: log3
-        // test_log_ok(
-        //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-        //     true,
-        // );
-        // // four topics: log4
-        // test_log_ok(
-        //     &[
-        //         Word::from(0xA0),
-        //         Word::from(0xef),
-        //         Word::from(0xb0),
-        //         Word::from(0x37),
-        //     ],
-        //     true,
-        // );
+    fn test_oog_log_root() {
+        // in root call , out of gas constant happens
+        test_oog_log(mock_tx(eth(1), gwei(2), vec![]));
     }
 
-    // test single log code and single copy log step
-    fn test_log_ok(topics: &[Word], is_persistent: bool) {
-        let mut pushdata = [0u8; 320];
-        rand::thread_rng().try_fill(&mut pushdata[..]).unwrap();
-        let mut code_prepare = prepare_code(&pushdata, 1);
-
-        let log_codes = [
-            OpcodeId::LOG0,
-            OpcodeId::LOG1,
-            OpcodeId::LOG2,
-            OpcodeId::LOG3,
-            OpcodeId::LOG4,
-        ];
-
-        let topic_count = topics.len();
-        let cur_op_code = log_codes[topic_count];
-
-        // use more than 256 for testing offset rlc
-        let mstart = 0x102usize;
-        let msize = 0x20usize;
-        let mut code = Bytecode::default();
-        // make dynamic topics push operations
-        for topic in topics {
-            code.push(32, *topic);
-        }
-        code.push(32, Word::from(msize));
-        code.push(32, Word::from(mstart));
-        code.write_op(cur_op_code);
-        if is_persistent {
-            code.write_op(OpcodeId::STOP);
-        } else {
-            // make current call failed with false persistent
-            code.write_op(OpcodeId::INVALID(0xfe));
-        }
-
-        code_prepare.append(&code);
-
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None
-            ),
-            Ok(()),
-        );
+    #[derive(Clone, Copy, Debug, Default)]
+    struct Stack {
+        gas: u64,
+        value: Word,
+        cd_offset: u64,
+        cd_length: u64,
+        rd_offset: u64,
+        rd_length: u64,
     }
 
-    /// prepare memory reading data
-    fn prepare_code(data: &[u8], offset: usize) -> Bytecode {
-        assert_eq!(data.len() % 32, 0);
-        // prepare memory data
-        let mut code = Bytecode::default();
-        for (i, d) in data.chunks(32).enumerate() {
-            code.push(32, Word::from_big_endian(d));
-            code.push(32, Word::from(offset + i * 32));
-            code.write_op(OpcodeId::MSTORE);
+    fn caller() -> Account {
+        let terminator = OpcodeId::REVERT;
+
+        let stack = Stack {
+            gas: 100,
+            cd_offset: 64,
+            cd_length: 320,
+            rd_offset: 0,
+            rd_length: 32,
+            ..Default::default()
+        };
+        let bytecode = bytecode! {
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            PUSH32(Word::from(stack.rd_length))
+            PUSH32(Word::from(stack.rd_offset))
+            PUSH32(Word::from(stack.cd_length))
+            PUSH32(Word::from(stack.cd_offset))
+            PUSH32(stack.value)
+            PUSH32(Address::repeat_byte(0xff).to_word())
+            PUSH32(Word::from(stack.gas))
+            CALL
+            .write_op(terminator)
+        };
+
+        Account {
+            address: Address::repeat_byte(0xfe),
+            balance: Word::from(10).pow(20.into()),
+            code: bytecode.to_vec().into(),
+            ..Default::default()
         }
-        code
     }
 
-///////////////////////
+    fn oog_log_internal_call(caller: Account, callee: Account) {
+        let block = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(caller.address)
+                    .code(caller.code)
+                    .nonce(caller.nonce)
+                    .balance(caller.balance);
+                accs[2]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
+            },
+            |mut txs, accs| {
+                txs[0]
+                    .from(accs[0].address)
+                    .to(accs[1].address)
+                    .gas(24000.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
+        let mut builder = block_data.new_circuit_input_builder();
+        builder
+            .handle_block(&block_data.eth_block, &block_data.geth_traces)
+            .unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(run_test_circuit(block), Ok(()));
+    }
 
+    fn callee(code: Bytecode) -> Account {
+        let code = code.to_vec();
+        let is_empty = code.is_empty();
+        Account {
+            address: Address::repeat_byte(0xff),
+            code: code.into(),
+            nonce: if is_empty { 0 } else { 1 }.into(),
+            balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_oog_log_internal() {
+        let bytecode = bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(10))
+            PUSH32(Word::from(224))
+            PUSH32(Word::from(1025))
+            PUSH32(Word::from(5089))
+            LOG2
+            STOP
+        };
+        let callee = callee(bytecode);
+        oog_log_internal_call(caller(), callee);
+    }
 }
