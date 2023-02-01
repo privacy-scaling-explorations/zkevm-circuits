@@ -211,7 +211,7 @@ mod test {
                 )
                 .unwrap();
                 if result.is_err() {
-                    assert_eq!(prover.verify(), result)
+                    assert_eq!(prover.verify_par(), result)
                 } else {
                     prover.assert_satisfied_par()
                 }

@@ -41,6 +41,7 @@ impl Default for BytecodeTestConfig {
     }
 }
 
+#[allow(clippy::type_complexity)]
 /// Struct used to easily generate tests for EVM &| State circuits being able to
 /// customize all of the steps involved in the testing itself.
 ///
@@ -95,10 +96,10 @@ impl Default for BytecodeTestConfig {
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     bytecode_config: Option<BytecodeTestConfig>,
-    circuit_params: Option<CircuitsParams>,
+    circuits_params: Option<CircuitsParams>,
     block: Option<Block<Fr>>,
-    evm_checks: Option<Box<dyn Fn(MockProver<Fr>)>>,
-    state_checks: Option<Box<dyn Fn(MockProver<Fr>)>>,
+    evm_checks: Box<dyn Fn(MockProver<Fr>)>,
+    state_checks: Box<dyn Fn(MockProver<Fr>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
 
@@ -108,15 +109,15 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         CircuitTestBuilder {
             test_ctx: None,
             bytecode_config: None,
-            circuit_params: None,
+            circuits_params: None,
             block: None,
-            evm_checks: Some(Box::new(|prover| prover.assert_satisfied_par())),
-            state_checks: Some(Box::new(|prover| prover.assert_satisfied_par())),
+            evm_checks: Box::new(|prover| prover.assert_satisfied_par()),
+            state_checks: Box::new(|prover| prover.assert_satisfied_par()),
             block_modifiers: vec![],
         }
     }
 
-    /// Allows to procide a [`TestContext`] which will serve as the generator of
+    /// Allows to produce a [`TestContext`] which will serve as the generator of
     /// the Block.
     pub fn test_ctx(mut self, ctx: TestContext<NACC, NTX>) -> Self {
         self.test_ctx = Some(ctx);
@@ -132,7 +133,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Allows to pass a non-default [`CircuitParams`] to the builder.
     /// This means that we can increase for example, the `max_rws` or `max_txs`.
     pub fn params(mut self, params: CircuitsParams) -> Self {
-        self.circuit_params = Some(params);
+        self.circuits_params = Some(params);
         self
     }
 
@@ -145,21 +146,22 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Allows to provide checks different than the default ones for the State
     /// Circuit verification.
     pub fn state_checks(mut self, state_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
-        self.state_checks = Some(state_checks);
+        self.state_checks = state_checks;
         self
     }
 
     /// Allows to provide checks different than the default ones for the EVM
     /// Circuit verification.
     pub fn evm_checks(mut self, evm_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
-        self.evm_checks = Some(evm_checks);
+        self.evm_checks = evm_checks;
         self
     }
 
+    #[allow(clippy::type_complexity)]
     /// Allows to provide modifier functions for the [`Block`] that will be
     /// generated within this builder.
     ///
-    /// That prevents to a lot of thests the need to build the block outside of
+    /// That removes the need in a lot of tests to build the block outside of
     /// the builder because they need to modify something particular.
     pub fn block_modifier(mut self, modifier: Box<dyn Fn(&mut Block<Fr>)>) -> Self {
         self.block_modifiers.push(modifier);
@@ -178,7 +180,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let block: GethData = self.test_ctx.unwrap().into();
             let mut builder = BlockData::new_from_geth_data_with_params(
                 block.clone(),
-                self.circuit_params.unwrap_or_default(),
+                self.circuits_params.unwrap_or_default(),
             )
             .new_circuit_input_builder();
             builder
@@ -211,7 +213,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             //prover.verify_at_rows_par(active_gate_rows.into_iter(),
             // active_lookup_rows.into_iter())
-            self.evm_checks.unwrap().as_ref()(prover)
+            self.evm_checks.as_ref()(prover)
         }
 
         // Run state circuit test
@@ -235,7 +237,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             //         N_ROWS - non_start_rows_len..N_ROWS,
             //     )
             //     .unwrap()
-            self.state_checks.unwrap().as_ref()(prover);
+            self.state_checks.as_ref()(prover);
         }
     }
 }
