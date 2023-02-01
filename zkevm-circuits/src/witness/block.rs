@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -53,6 +53,21 @@ pub struct Block<F> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
+impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+                for rw_ref in &step.rw_indices {
+                    println!("  - {:?}", self.rws[*rw_ref]);
+                }
+            }
+        }
+    }
+}
 /// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
@@ -97,12 +112,8 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::zero()),
-                    randomness.map(|randomness| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.difficulty.to_le_bytes(),
-                            randomness,
-                        )
-                    }),
+                    randomness
+                        .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -112,22 +123,14 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
                     Value::known(F::zero()),
-                    randomness.map(|randomness| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.base_fee.to_le_bytes(),
-                            randomness,
-                        )
-                    }),
+                    randomness
+                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(F::zero()),
-                    randomness.map(|randomness| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.chain_id.to_le_bytes(),
-                            randomness,
-                        )
-                    }),
+                    randomness
+                        .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
                 ],
             ],
             {
@@ -139,12 +142,8 @@ impl BlockContext {
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
                             Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            randomness.map(|randomness| {
-                                RandomLinearCombination::random_linear_combine(
-                                    hash.to_le_bytes(),
-                                    randomness,
-                                )
-                            }),
+                            randomness
+                                .map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
                         ]
                     })
                     .collect()

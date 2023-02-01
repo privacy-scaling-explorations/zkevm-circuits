@@ -3,9 +3,7 @@ use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::circuit::Value;
 use sha3::{Digest, Keccak256};
 
-use crate::{
-    evm_circuit::util::RandomLinearCombination, table::BytecodeFieldTag, util::Challenges,
-};
+use crate::{evm_circuit::util::rlc, table::BytecodeFieldTag, util::Challenges};
 
 /// Bytecode
 #[derive(Clone, Debug)]
@@ -30,9 +28,9 @@ impl Bytecode {
     ) -> Vec<[Value<F>; 5]> {
         let n = 1 + self.bytes.len();
         let mut rows = Vec::with_capacity(n);
-        let hash = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::random_linear_combine(self.hash.to_le_bytes(), challenge)
-        });
+        let hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(&self.hash.to_le_bytes(), challenge));
 
         rows.push([
             hash,

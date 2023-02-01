@@ -1,7 +1,7 @@
 //! Table definitions used cross-circuits
 
 use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::util::{rlc, RandomLinearCombination};
+use crate::evm_circuit::util::rlc;
 use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
 use crate::impl_expr;
 use crate::util::build_tx_log_address;
@@ -501,7 +501,15 @@ impl DynamicTableColumns for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([0; 7].map(|_| meta.advice_column()))
+        Self([
+            meta.advice_column(),               // Address
+            meta.advice_column_in(SecondPhase), // Storage key
+            meta.advice_column(),               // Proof type
+            meta.advice_column_in(SecondPhase), // New root
+            meta.advice_column_in(SecondPhase), // Old root
+            meta.advice_column_in(SecondPhase), // New value
+            meta.advice_column_in(SecondPhase), // Old value
+        ])
     }
 
     pub(crate) fn assign<F: Field>(
@@ -534,9 +542,8 @@ impl MptTable {
         updates: &MptUpdates,
         randomness: Value<F>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, &MptUpdateRow([Value::known(F::zero()); 7]))?;
         for (offset, row) in updates.table_assignments(randomness).iter().enumerate() {
-            self.assign(region, offset + 1, row)?;
+            self.assign(region, offset, row)?;
         }
         Ok(())
     }
@@ -676,7 +683,7 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column(),
+            value: meta.advice_column_in(SecondPhase),
         }
     }
 
@@ -763,8 +770,8 @@ impl KeccakTable {
         keccak.update(input);
         let output = keccak.digest();
         let output_rlc = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::<F, 32>::random_linear_combine(
-                Word::from_big_endian(output.as_slice()).to_le_bytes(),
+            rlc::value(
+                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
                 challenge,
             )
         });

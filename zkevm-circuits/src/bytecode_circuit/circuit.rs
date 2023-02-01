@@ -1,8 +1,6 @@
 use crate::{
-    evm_circuit::util::{
-        and, constraint_builder::BaseConstraintBuilder, not, or, select, RandomLinearCombination,
-    },
-    table::{BytecodeFieldTag, BytecodeTable, DynamicTableColumns, KeccakTable},
+    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
+    table::{BytecodeFieldTag, BytecodeTable, KeccakTable},
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -215,9 +213,9 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
-            let empty_hash = RandomLinearCombination::<F, 32>::random_linear_combine_expr(
-                EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
-                &challenges.evm_word_powers_of_randomness::<32>(),
+            let empty_hash = rlc::expr(
+                &EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
+                challenges.evm_word(),
             );
 
             cb.require_equal(
@@ -430,9 +428,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             last_row_offset
         );
 
-        let empty_hash = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::<F, 32>::random_linear_combine(*EMPTY_HASH_LE, challenge)
-        });
+        let empty_hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
 
         layouter.assign_region(
             || "assign bytecode",
@@ -487,12 +485,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         // Code hash with challenge is calculated only using the first row of the
         // bytecode (header row), the rest of the code_hash in other rows are ignored.
-        let code_hash = challenges.evm_word().map(|challenge| {
-            RandomLinearCombination::<F, 32>::random_linear_combine(
-                bytecode.rows[0].code_hash.to_le_bytes(),
-                challenge,
-            )
-        });
+        let code_hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge));
 
         for (idx, row) in bytecode.rows.iter().enumerate() {
             if fail_fast && *offset > last_row_offset {

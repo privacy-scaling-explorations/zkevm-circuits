@@ -9,8 +9,8 @@ use halo2_proofs::{
 };
 use keccak256::plain::Keccak;
 
-use crate::table::TxLogFieldTag;
 use crate::witness;
+use crate::{evm_circuit::util::rlc, table::TxLogFieldTag};
 use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
@@ -28,7 +28,7 @@ pub(crate) fn query_expression<F: FieldExt, T>(
 }
 
 pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
-    crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
+    rlc::value(&bytes, randomness)
 }
 
 /// All challenges used in `SuperCircuit`.
