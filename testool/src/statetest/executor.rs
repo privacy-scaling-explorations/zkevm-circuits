@@ -273,7 +273,7 @@ pub fn run_test(
         block.txs.iter_mut().for_each(|tx| tx.gas = u64::MAX);
 
         test_circuits_witness_block(block)
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))
+            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
     } else {
         geth_data.sign(&wallets);
 
@@ -295,8 +295,8 @@ pub fn run_test(
         let prover = MockProver::run(k, &circuit, instance).unwrap();
         prover
             .verify_par()
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))
-    }?;
+            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+    };
 
     check_post(&builder, &post)?;
 

@@ -112,7 +112,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
-    /// Allows to pass a non-default [`CircuitParams`] to the builder.
+    /// Allows to pass a non-default [`CircuitsParams`] to the builder.
     /// This means that we can increase for example, the `max_rws` or `max_txs`.
     pub fn params(mut self, params: CircuitsParams) -> Self {
         assert!(
