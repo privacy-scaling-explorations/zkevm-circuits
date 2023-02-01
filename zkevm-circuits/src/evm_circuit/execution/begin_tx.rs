@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_GAS,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
             common_gadget::TransferWithGasFeeGadget,
@@ -19,9 +19,9 @@ use crate::{
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::get_contract_address;
-use gadgets::util::{or, select};
-use halo2_proofs::circuit::Value;
+use gadgets::util::{expr_from_bytes, or, select};
 use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Expression};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -45,11 +45,10 @@ pub(crate) struct BeginTxGadget<F> {
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
-    // TODO: use to check call_callee_address with keccak(rlp(account, nonce))
-    // keccak_input: Cell<F>,
-    // keccak_input_length: Cell<F>,
-    // keccak_output: Word<F>,
     is_zero_code_hash: IsZeroGadget<F>,
+    tx_caller_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
+    tx_callee_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
+    tx_nonce_bytes: [Cell<F>; N_BYTES_U64],
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -163,9 +162,37 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
+        let (tx_caller_address_bytes, tx_callee_address_bytes, tx_nonce_bytes) = (
+            array_init::array_init(|_| cb.query_byte()),
+            array_init::array_init(|_| cb.query_byte()),
+            array_init::array_init(|_| cb.query_byte()),
+        );
+        cb.require_equal(
+            "tx caller address equivalence",
+            tx_caller_address.expr(),
+            expr_from_bytes(&tx_caller_address_bytes),
+        );
+        cb.require_equal(
+            "tx callee address equivalence",
+            tx_callee_address.expr(),
+            expr_from_bytes(&tx_callee_address_bytes),
+        );
+        cb.require_equal(
+            "tx nonce equivalence",
+            tx_nonce.expr(),
+            expr_from_bytes(&tx_nonce_bytes),
+        );
         cb.condition(tx_is_create.expr(), |cb| {
-            // TODO: require call_callee_address to be
-            // address(keccak(rlp([tx_caller_address, tx_nonce])))
+            let tx_callee_exprs: [Expression<F>; N_BYTES_ACCOUNT_ADDRESS] = tx_callee_address_bytes
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            let _output_rlc = cb.word_rlc(tx_callee_exprs);
+            // TODO: calculate input_rlc: rlp([tx_caller_address, tx_nonce])
+            // TODO: calculate input_len: 1 + 20 + 1 + byte_size(tx_nonce)
+            // TODO: cb.keccak_table_lookup(input_rlc, input_len, output_rlc);
 
             cb.account_write(
                 call_callee_address.expr(),
@@ -391,6 +418,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             intrinsic_gas_cost,
             is_empty_code_hash,
             is_zero_code_hash,
+            // fields to support keccak lookup.
+            tx_caller_address_bytes,
+            tx_callee_address_bytes,
+            tx_nonce_bytes,
         }
     }
 
@@ -489,6 +520,29 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
         self.phase2_code_hash
             .assign(region, offset, region.word_rlc(callee_code_hash))?;
+        for (c, v) in self
+            .tx_caller_address_bytes
+            .iter()
+            .rev()
+            .zip(tx.caller_address.as_bytes().iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        }
+        for (c, v) in self
+            .tx_callee_address_bytes
+            .iter()
+            .rev()
+            .zip(tx.callee_address.as_bytes().iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        }
+        for (c, v) in self
+            .tx_nonce_bytes
+            .iter()
+            .zip(tx.nonce.to_le_bytes().iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        }
         self.is_empty_code_hash.assign_value(
             region,
             offset,
