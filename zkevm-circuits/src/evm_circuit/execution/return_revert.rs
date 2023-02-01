@@ -391,9 +391,10 @@ mod test {
             test_parameters.iter().cartesian_product(&[true, false])
         {
             let code = callee_bytecode(*is_return, *offset, *length);
-            CircuitTestBuilder::empty()
-                .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap())
-                .run();
+            CircuitTestBuilder::new_from_test_ctx(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+            )
+            .run();
         }
     }
 
@@ -444,7 +445,7 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::empty().test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 
@@ -467,7 +468,7 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::empty().test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 
@@ -517,7 +518,7 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::empty().test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 
@@ -568,6 +569,6 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

@@ -247,7 +247,7 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        let mut ctb = CircuitTestBuilder::empty().test_ctx(ctx);
+        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
         if !ok {
             ctb = ctb.evm_checks(Box::new(|prover| assert!(prover.verify_par().is_err())));
         };

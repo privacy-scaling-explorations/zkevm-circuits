@@ -199,9 +199,10 @@ mod test {
             STOP
         };
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -244,13 +245,14 @@ mod test {
         // append final stop op code
         bytecode.write_op(OpcodeId::STOP);
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
-            .params(CircuitsParams {
-                max_rws: 2048,
-                ..Default::default()
-            })
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .params(CircuitsParams {
+            max_rws: 2048,
+            ..Default::default()
+        })
+        .run();
     }
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -330,7 +332,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn callee(code: Bytecode) -> Account {

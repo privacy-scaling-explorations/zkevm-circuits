@@ -215,8 +215,7 @@ mod test {
                 enable_state_circuit_test: true,
                 ..Default::default()
             };
-            CircuitTestBuilder::empty()
-                .test_ctx(ctx)
+            CircuitTestBuilder::new_from_test_ctx(ctx)
                 .config(test_config)
                 .run();
         }

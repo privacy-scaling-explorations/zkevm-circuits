@@ -162,8 +162,7 @@ mod test {
                 |block, _tx| block.number(0xcafeu64),
             )
             .unwrap();
-            CircuitTestBuilder::empty()
-                .test_ctx(ctx)
+            CircuitTestBuilder::new_from_test_ctx(ctx)
                 .config(BytecodeTestConfig {
                     enable_state_circuit_test: true,
                     ..Default::default()
@@ -205,8 +204,7 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::empty()
-                .test_ctx(ctx)
+            CircuitTestBuilder::new_from_test_ctx(ctx)
                 .config(BytecodeTestConfig {
                     enable_state_circuit_test: true,
                     ..Default::default()

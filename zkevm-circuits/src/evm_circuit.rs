@@ -404,17 +404,19 @@ mod evm_circuit_stats {
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
+        )
+        .run();
     }
 
     #[test]
     pub fn empty_evm_circuit_with_padding() {
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap())
-            .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
+        )
+        .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+        .run();
     }
 
     /// This function prints to stdout a table with all the implemented states

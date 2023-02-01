@@ -86,12 +86,10 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        test_util::{BytecodeTestConfig, CircuitTestBuilder},
-    };
-    
+    use crate::test_util::{BytecodeTestConfig, CircuitTestBuilder};
+
     use eth_types::{address, bytecode, Word};
-    
+
     use mock::TestContext;
 
     fn test_ok() {
@@ -100,9 +98,10 @@ mod test {
             STOP
         };
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -141,8 +140,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::<2, 1>::empty()
-            .test_ctx(ctx)
+        CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
             .block_modifier(Box::new(|block| {
                 // The above block has 2 steps (GAS and STOP). We forcefully assign a
                 // wrong `gas_left` value for the second step, to assert that

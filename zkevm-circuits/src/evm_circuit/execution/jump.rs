@@ -106,9 +106,10 @@ mod test {
             STOP
         });
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn test_invalid_jump(destination: usize) {
@@ -126,9 +127,10 @@ mod test {
             STOP
         });
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

@@ -364,9 +364,10 @@ mod test {
 
         code_prepare.append(&code);
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     // test multi log op codes and multi copy log steps
@@ -415,9 +416,10 @@ mod test {
         code.write_op(OpcodeId::STOP);
         code_prepare.append(&code);
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     /// prepare memory reading data

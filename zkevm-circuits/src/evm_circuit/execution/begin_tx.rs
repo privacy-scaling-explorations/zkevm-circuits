@@ -417,7 +417,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     // TODO: Use `mock` crate.
@@ -480,7 +480,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -528,7 +528,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -550,7 +550,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     // TODO: Enable this test once we have support for contract deployment from
@@ -585,6 +585,6 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

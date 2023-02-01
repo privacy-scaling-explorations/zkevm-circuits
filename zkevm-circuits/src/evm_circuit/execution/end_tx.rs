@@ -316,8 +316,7 @@ mod test {
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
-        CircuitTestBuilder::empty()
-            .test_ctx(ctx)
+        CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_txs: 5,
                 ..Default::default()

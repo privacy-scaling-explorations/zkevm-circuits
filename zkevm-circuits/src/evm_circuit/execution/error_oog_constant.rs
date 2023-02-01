@@ -206,7 +206,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     // TODO: Use `mock` crate
@@ -309,7 +309,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn callee(code: Bytecode) -> Account {

@@ -256,7 +256,7 @@ pub fn run_test(
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
 
-        zkevm_circuits::test_util::CircuitTestBuilder::empty()
+        zkevm_circuits::test_util::CircuitTestBuilder::new_from_block(block)
             .config(BytecodeTestConfig {
                 enable_evm_circuit_test: true,
                 enable_state_circuit_test: true,
@@ -270,7 +270,6 @@ pub fn run_test(
                 max_copy_rows: 55000,
                 keccak_padding: None,
             })
-            .block(block)
             .run();
 
         Ok(())

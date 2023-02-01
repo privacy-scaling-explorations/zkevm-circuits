@@ -87,8 +87,7 @@ impl Default for BytecodeTestConfig {
 /// )
 /// .unwrap();
 ///
-/// CircuitTestBuilder::empty()
-///     .test_ctx(ctx)
+/// CircuitTestBuilder::new_from_test_ctx(ctx)
 ///     .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover| assert!(prover.verify_par().is_err())))
 ///     .run();
@@ -105,7 +104,7 @@ pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
 
 impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// Generates an empty/set to default `CircuitTestBuilder`.
-    pub fn empty() -> Self {
+    fn empty() -> Self {
         CircuitTestBuilder {
             test_ctx: None,
             bytecode_config: None,
@@ -115,6 +114,18 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             state_checks: Box::new(|prover| prover.assert_satisfied_par()),
             block_modifiers: vec![],
         }
+    }
+
+    /// Generates a CTBC from a [`TestContext`] passed with all the other fields
+    /// set to [`Default`].
+    pub fn new_from_test_ctx(ctx: TestContext<NACC, NTX>) -> Self {
+        Self::empty().test_ctx(ctx)
+    }
+
+    /// Generates a CTBC from a [`Block`] passed with all the other fields
+    /// set to [`Default`].
+    pub fn new_from_block(block: Block<Fr>) -> Self {
+        Self::empty().block(block)
     }
 
     /// Allows to produce a [`TestContext`] which will serve as the generator of

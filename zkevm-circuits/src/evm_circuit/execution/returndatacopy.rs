@@ -330,8 +330,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty()
-            .test_ctx(ctx)
+        CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 2048,
                 ..Default::default()

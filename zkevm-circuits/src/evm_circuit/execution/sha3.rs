@@ -168,13 +168,14 @@ mod tests {
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, _) = gen_sha3_code(offset, size, mem_kind);
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap())
-            .params(CircuitsParams {
-                max_rws: 5500,
-                ..Default::default()
-            })
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .params(CircuitsParams {
+            max_rws: 5500,
+            ..Default::default()
+        })
+        .run();
     }
 
     #[test]

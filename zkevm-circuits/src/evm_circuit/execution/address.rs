@@ -99,9 +99,10 @@ mod test {
             STOP
         };
 
-        CircuitTestBuilder::empty()
-            .test_ctx(TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap())
-            .run();
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn test_internal_ok(call_data_offset: usize, call_data_length: usize) {
@@ -148,7 +149,7 @@ mod test {
         )
         .unwrap();
 
-        CircuitTestBuilder::empty().test_ctx(ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

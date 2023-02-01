@@ -142,9 +142,9 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    
+
     use eth_types::bytecode;
-    
+
     use mock::TestContext;
 
     fn test_circuit(evm_circuit_pad_to: usize) {
@@ -156,8 +156,7 @@ mod test {
         let ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
 
         // finish required tests using this witness block
-        CircuitTestBuilder::<2, 1>::empty()
-            .test_ctx(ctx)
+        CircuitTestBuilder::<2, 1>::new_from_test_ctx(ctx)
             .block_modifier(Box::new(move |block| {
                 block.evm_circuit_pad_to = evm_circuit_pad_to
             }))
