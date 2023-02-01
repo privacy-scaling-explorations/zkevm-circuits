@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_MEMORY_WORD_SIZE, N_BYTES_GAS},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget,
@@ -9,29 +9,27 @@ use crate::{
                 ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
+            math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, math_gadget::LtGadget,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-    util::{build_tx_log_expression, Expr},
+    table::CallContextFieldTag,
+    util::Expr,
 };
-use array_init::array_init;
-use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, evm_types::OpcodeId, ToScalar};
-use eth_types::{Field, U256};
+use eth_types::Field;
+use eth_types::{evm_types::GasCost, evm_types::OpcodeId};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGLogGadget<F> {
+    opcode: Cell<F>,
     // memory address
     memory_address: MemoryAddressGadget<F>,
-    // phase2_topics: [Cell<F>; 4],
-    // topic_selectors: [Cell<F>; 4],
-    // constrain gas left is less than required
+    // constrain gas left is less than gas cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-    //insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -50,30 +48,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         cb.stack_pop(mstart.expr());
         cb.stack_pop(msize.expr());
 
-        // no need to check not in static call, since write protection error will handle it.
-
-        // constrain topics in logs
-        // let phase2_topics = array_init(|_| cb.query_cell_phase2());
-        // let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
-        // for (idx, topic) in phase2_topics.iter().enumerate() {
-        //     cb.condition(topic_selectors[idx].expr(), |cb| {
-        //         cb.stack_pop(topic.expr());
-        //     });
-        //     cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
-        //         cb.tx_log_lookup(
-        //             tx_id.expr(),
-        //             cb.curr.state.log_id.expr() + 1.expr(),
-        //             TxLogFieldTag::Topic,
-        //             idx.expr(),
-        //             topic.expr(),
-        //         );
-        //     });
-        // }
-
+        // Note: no need to check not in static call, since write protection error will
+        // handle it.
         let opcode = cb.query_cell();
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
 
-        // check memory copy
+        // check memory
         let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
 
         // Calculate the next memory size and the gas cost for this memory
@@ -81,19 +61,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
 
         let gas_cost = GasCost::LOG.as_u64().expr()
-            + GasCost::LOG.as_u64().expr() * topic_count.clone()
+            + GasCost::LOG.as_u64().expr() * topic_count
             + 8.expr() * memory_address.length()
             + memory_expansion.gas_cost();
 
         // Check if the amount of gas available is less than the amount of gas
         // required
-        // let insufficient_gas =
-        //     LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
-        // cb.require_equal(
-        //     "log* gas left is less than gas required ",
-        //     insufficient_gas.expr(),
-        //     1.expr(),
-        // );
+        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        cb.require_equal(
+            "log* gas left is less than gas required ",
+            insufficient_gas.expr(),
+            1.expr(),
+        );
 
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
@@ -137,11 +116,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             )
         });
         Self {
+            opcode,
             memory_address,
-            //phase2_topics,
-            //topic_selectors,
             memory_expansion,
-            //insufficient_gas,
+            insufficient_gas,
             rw_counter_end_of_reversion,
             restore_context,
         }
@@ -152,11 +130,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        tx: &Transaction,
+        _tx: &Transaction,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-
         let [memory_start, msize] =
             [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
 
@@ -169,25 +146,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
         let opcode = step.opcode.unwrap();
-        let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
+        self.opcode
+            .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+        let topic_count = opcode.postfix().expect("opcode with postfix") as u64;
         assert!(topic_count <= 4);
 
         // Gas insufficient check
-        // self.insufficient_gas.assign(
-        //     region,
-        //     offset,
-        //     F::from(step.gas_left),
-        //     F::from(step.gas_cost),
-        // )?;
+        self.insufficient_gas.assign(
+            region,
+            offset,
+            F::from(step.gas_left),
+            F::from(step.gas_cost),
+        )?;
 
-        println!(" gas left {}, gas cost {}", step.gas_left, step.gas_cost);
         self.rw_counter_end_of_reversion.assign(
             region,
             offset,
             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
         self.restore_context
-        .assign(region, offset, block, call, step, 4)?;
+            .assign(region, offset, block, call, step, 4)?;
 
         Ok(())
     }
@@ -225,11 +203,9 @@ mod test {
                 PUSH1(0)
                 PUSH1(0)
                 PUSH1(100)
-                //LOG0
-                LOG1
-               
+                LOG0
         };
-     
+
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
@@ -239,7 +215,7 @@ mod test {
                     .to(tx.to.unwrap())
                     .from(tx.from)
                     .gas_price(tx.gas_price.unwrap())
-                    .gas(tx.gas + 3)
+                    .gas(tx.gas + 5)
                     .input(tx.input)
                     .value(tx.value);
             },
@@ -266,8 +242,8 @@ mod test {
     }
 
     #[test]
+    // test oog log in root call
     fn test_oog_log_root() {
-        // in root call , out of gas constant happens
         test_oog_log(mock_tx(eth(1), gwei(2), vec![]));
     }
 
@@ -370,6 +346,7 @@ mod test {
     }
 
     #[test]
+    // test oog log in internal call
     fn test_oog_log_internal() {
         let bytecode = bytecode! {
             PUSH32(Word::from(0))
