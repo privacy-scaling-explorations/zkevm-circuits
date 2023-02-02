@@ -267,10 +267,9 @@ pub fn run_test(
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        let mut block: Block<Fr> =
+        let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
-        block.txs.iter_mut().for_each(|tx| tx.gas = u64::MAX);
 
         test_circuits_witness_block(block)
             .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
