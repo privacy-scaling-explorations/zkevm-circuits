@@ -178,15 +178,18 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// into a [`Block`] and apply the default or provided block_modifiers or
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
+        let params = if let Some(block) = self.block.as_ref() {
+            block.circuits_params.clone()
+        } else {
+            self.circuits_params.unwrap_or_default().clone()
+        };
+
         let block: Block<Fr> = if self.block.is_some() {
             self.block.unwrap()
         } else if self.test_ctx.is_some() {
             let block: GethData = self.test_ctx.unwrap().into();
-            let mut builder = BlockData::new_from_geth_data_with_params(
-                block.clone(),
-                self.circuits_params.unwrap_or_default(),
-            )
-            .new_circuit_input_builder();
+            let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+                .new_circuit_input_builder();
             builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
@@ -211,8 +214,6 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
-            //prover.verify_at_rows_par(active_gate_rows.into_iter(),
-            // active_lookup_rows.into_iter())
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
 
@@ -220,8 +221,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
         {
-            const N_ROWS: usize = 1 << 16;
-            let state_circuit = StateCircuit::<Fr>::new(block.rws, N_ROWS);
+            let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let power_of_randomness = state_circuit.instance();
             let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
             // Skip verification of Start rows to accelerate testing
@@ -230,7 +230,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
-            let rows = (N_ROWS - non_start_rows_len..N_ROWS).into_iter().collect();
+            let rows = (params.max_rws - non_start_rows_len..params.max_rws)
+                .into_iter()
+                .collect();
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }
