@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
             common_gadget::TransferWithGasFeeGadget,
@@ -9,7 +9,10 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
+            math_gadget::{
+                ByteSizeGadget, IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget,
+                RangeCheckGadget,
+            },
             not, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -49,6 +52,9 @@ pub(crate) struct BeginTxGadget<F> {
     tx_caller_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
     tx_callee_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
     tx_nonce_bytes: [Cell<F>; N_BYTES_U64],
+    tx_nonce_is_zero: IsZeroGadget<F>,
+    tx_nonce_lt_128: LtGadget<F, 1>,
+    tx_nonce_byte_size: ByteSizeGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -86,9 +92,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+        let tx_nonce_is_zero = IsZeroGadget::construct(cb, tx_nonce.expr());
+        let tx_nonce_lt_128 = LtGadget::construct(cb, tx_nonce.expr(), 128.expr());
 
         let call_callee_address = cb.query_cell();
-
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.require_equal(
                 "Tx to non-zero address",
@@ -167,6 +174,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             array_init::array_init(|_| cb.query_byte()),
             array_init::array_init(|_| cb.query_byte()),
         );
+        let tx_nonce_byte_size = ByteSizeGadget::construct(
+            cb,
+            tx_nonce_bytes
+                .iter()
+                .map(Expr::expr)
+                .chain(std::iter::repeat(0.expr()).take(N_BYTES_WORD - N_BYTES_U64))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        );
         cb.require_equal(
             "tx caller address equivalence",
             tx_caller_address.expr(),
@@ -183,6 +200,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             expr_from_bytes(&tx_nonce_bytes),
         );
         cb.condition(tx_is_create.expr(), |cb| {
+            // 1. calculate output_rlc
+            // this is simply RLC(tx_callee_address_bytes)
             let tx_callee_exprs: [Expression<F>; N_BYTES_ACCOUNT_ADDRESS] = tx_callee_address_bytes
                 .iter()
                 .map(Expr::expr)
@@ -190,8 +209,29 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .try_into()
                 .unwrap();
             let _output_rlc = cb.word_rlc(tx_callee_exprs);
-            // TODO: calculate input_rlc: rlp([tx_caller_address, tx_nonce])
-            // TODO: calculate input_len: 1 + 20 + 1 + byte_size(tx_nonce)
+
+            // 2. calculate input_len:
+            // if nonce in [0, 127]: input_len == 23
+            // else: input_len == 23 + byte_size(nonce)
+            let _input_len = select::expr(
+                tx_nonce_lt_128.expr(),
+                23.expr(),
+                23.expr() + tx_nonce_byte_size.byte_size(),
+            );
+
+            // TODO: verify input_rlc:
+            // RLP([tx_caller_address, tx_nonce])
+            //
+            // | prefix | addr-prefix | address  | nonce-prefix | nonce          |
+            // |--------|-------------|----------|--------------|----------------|
+            // | 1-byte | 1-byte      | 20-bytes | 0 or 1 byte  | n_bytes(nonce) |
+            //
+            // prefix == 192 + 21 + (1 if nonce < 128 else (1 + byte_size(nonce)))
+            // address-prefix == 148
+            // address == tx_caller_address_bytes
+            // nonce-prefix == if nonce >= 128: 128 + byte_size(nonce)
+            // nonce == tx_nonce_bytes
+
             // TODO: cb.keccak_table_lookup(input_rlc, input_len, output_rlc);
 
             cb.account_write(
@@ -422,6 +462,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address_bytes,
             tx_callee_address_bytes,
             tx_nonce_bytes,
+            tx_nonce_is_zero,
+            tx_nonce_lt_128,
+            tx_nonce_byte_size,
         }
     }
 
@@ -543,6 +586,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
+        self.tx_nonce_is_zero
+            .assign(region, offset, F::from(tx.nonce))?;
+        self.tx_nonce_lt_128
+            .assign(region, offset, F::from(tx.nonce), F::from(128u64))?;
+        self.tx_nonce_byte_size
+            .assign(region, offset, tx.nonce.into())?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
