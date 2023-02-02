@@ -924,7 +924,7 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
-                max_rws: 4500,
+                max_rws: 500,
                 ..Default::default()
             })
             .run();
