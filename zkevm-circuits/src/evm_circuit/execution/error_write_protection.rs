@@ -22,6 +22,7 @@ pub(crate) struct ErrorWriteProtectionGadget<F> {
     code_address: RLCWord<F>,
     value: RLCWord<F>,
     is_value_zero: IsZeroGadget<F>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -33,10 +34,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
-        let gas_word = cb.query_word();
-        let code_address_word = cb.query_word();
-        let value = cb.query_word();
+        let gas_word = cb.query_word_rlc();
+        let code_address_word = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
         let is_value_zero = IsZeroGadget::construct(cb, value.expr());
+        let rw_counter_end_of_reversion = cb.query_cell();
 
         // require_in_set method will spilit into more low degree expressions if exceed
         // max_degree. otherwise need to do fixed lookup for these opcodes
@@ -66,6 +68,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             cb.require_zero("value of call is not zero", is_value_zero.expr());
         });
 
+        // current call context is readonly
+        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsStatic, 1.expr());
+
+        // current call must be failed
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
         // constrain not root call as at least one previous staticcall preset.
@@ -74,6 +80,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             cb.curr.state.is_root.expr(),
         );
 
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
         // Restore caller state to next StepState
         let restore_context = RestoreContextGadget::construct(
             cb,
@@ -84,6 +96,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             0.expr(),
             0.expr(),
         );
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
 
         Self {
             opcode,
@@ -92,6 +112,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             code_address: code_address_word,
             value,
             is_value_zero,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -130,13 +151,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         )?;
         self.is_value_zero
             .assign(region, offset, sum::value(&value.to_le_bytes()))?;
+
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
         self.restore_context.assign(
             region,
             offset,
             block,
             call,
             step,
-            1 + (is_call as usize * 3),
+            3 + (is_call as usize * 3),
         )?;
         Ok(())
     }

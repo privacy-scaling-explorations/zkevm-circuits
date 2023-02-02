@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ORIGIN;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let origin = cb.query_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
+        let origin = cb.query_word_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);

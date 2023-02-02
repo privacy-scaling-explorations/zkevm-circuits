@@ -45,9 +45,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let memory_offset = cb.query_cell();
-        let data_offset = cb.query_rlc();
-        let length = cb.query_rlc();
+        let memory_offset = cb.query_cell_phase2();
+        let data_offset = cb.query_word_rlc();
+        let length = cb.query_word_rlc();
 
         // Pop memory_offset, data_offset, length from stack
         cb.stack_pop(memory_offset.expr());
@@ -172,9 +172,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
                 .map(|idx| block.rws[idx].stack_value());
-        let memory_address =
-            self.memory_address
-                .assign(region, offset, memory_offset, length, block.randomness)?;
+        let memory_address = self
+            .memory_address
+            .assign(region, offset, memory_offset, length)?;
         self.data_offset.assign(
             region,
             offset,

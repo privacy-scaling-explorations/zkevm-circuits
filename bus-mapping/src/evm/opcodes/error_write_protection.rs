@@ -1,7 +1,9 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::error::ExecError;
 use crate::evm::{Opcode, OpcodeId};
+use crate::operation::CallContextField;
 use crate::Error;
+
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
@@ -23,6 +25,7 @@ impl Opcode for ErrorWriteProtection {
         // assert error is targeting ExecError::WriteProtection.
         assert_eq!(exec_step.clone().error.unwrap(), ExecError::WriteProtection);
 
+        let current_call = state.call()?.clone();
         // assert op code can only be following codes
         assert!([
             OpcodeId::SSTORE,
@@ -49,6 +52,13 @@ impl Opcode for ErrorWriteProtection {
                 )?;
             }
         }
+
+        state.call_context_read(
+            &mut exec_step,
+            current_call.call_id,
+            CallContextField::IsStatic,
+            (current_call.is_static as u64).into(),
+        );
 
         // `IsSuccess` call context operation is added in gen_restore_context_ops
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;

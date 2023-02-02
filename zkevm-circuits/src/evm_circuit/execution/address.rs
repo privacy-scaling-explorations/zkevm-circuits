@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDRESS;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address = cb.query_rlc();
+        let address = cb.query_word_rlc();
 
         // Lookup callee address in call context.
         cb.call_context_lookup(

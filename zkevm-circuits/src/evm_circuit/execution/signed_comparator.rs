@@ -42,8 +42,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
 
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we

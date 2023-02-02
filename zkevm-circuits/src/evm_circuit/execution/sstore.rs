@@ -8,7 +8,7 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
-            not, select, CachedRegion, Cell, Word,
+            not, select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
 };
 
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -29,10 +29,10 @@ pub(crate) struct SstoreGadget<F> {
     is_static: Cell<F>,
     reversion_info: ReversionInfo<F>,
     callee_address: Cell<F>,
-    key: Cell<F>,
-    value: Cell<F>,
-    value_prev: Cell<F>,
-    original_value: Cell<F>,
+    phase2_key: Cell<F>,
+    phase2_value: Cell<F>,
+    phase2_value_prev: Cell<F>,
+    phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Cell<F>,
     gas_cost: SstoreGasGadget<F>,
@@ -56,23 +56,23 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let mut reversion_info = cb.reversion_info_read(None);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
-        let key = cb.query_cell();
+        let phase2_key = cb.query_cell_phase2();
         // Pop the key from the stack
-        cb.stack_pop(key.expr());
+        cb.stack_pop(phase2_key.expr());
 
-        let value = cb.query_cell();
+        let phase2_value = cb.query_cell_phase2();
         // Pop the value from the stack
-        cb.stack_pop(value.expr());
+        cb.stack_pop(phase2_value.expr());
 
-        let value_prev = cb.query_cell();
-        let original_value = cb.query_cell();
+        let phase2_value_prev = cb.query_cell_phase2();
+        let phase2_original_value = cb.query_cell_phase2();
         cb.account_storage_write(
             callee_address.expr(),
-            key.expr(),
-            value.expr(),
-            value_prev.expr(),
+            phase2_key.expr(),
+            phase2_value.expr(),
+            phase2_value_prev.expr(),
             tx_id.expr(),
-            original_value.expr(),
+            phase2_original_value.expr(),
             Some(&mut reversion_info),
         );
 
@@ -80,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         cb.account_storage_access_list_write(
             tx_id.expr(),
             callee_address.expr(),
-            key.expr(),
+            phase2_key.expr(),
             true.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
@@ -88,9 +88,9 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let gas_cost = SstoreGasGadget::construct(
             cb,
-            value.clone(),
-            value_prev.clone(),
-            original_value.clone(),
+            phase2_value.clone(),
+            phase2_value_prev.clone(),
+            phase2_original_value.clone(),
             is_warm.clone(),
         );
 
@@ -98,9 +98,9 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let tx_refund = SstoreTxRefundGadget::construct(
             cb,
             tx_refund_prev.clone(),
-            value.clone(),
-            value_prev.clone(),
-            original_value.clone(),
+            phase2_value.clone(),
+            phase2_value_prev.clone(),
+            phase2_original_value.clone(),
         );
         cb.tx_refund_write(
             tx_id.expr(),
@@ -125,10 +125,10 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             is_static,
             reversion_info,
             callee_address,
-            key,
-            value,
-            value_prev,
-            original_value,
+            phase2_key,
+            phase2_value,
+            phase2_value_prev,
+            phase2_original_value,
             is_warm,
             tx_refund_prev,
             gas_cost,
@@ -169,40 +169,16 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
         let [key, value] =
             [step.rw_indices[5], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
-        self.key.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                key.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        self.value.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                value.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.phase2_key
+            .assign(region, offset, region.word_rlc(key))?;
+        self.phase2_value
+            .assign(region, offset, region.word_rlc(value))?;
 
         let (_, value_prev, _, original_value) = block.rws[step.rw_indices[7]].storage_value_aux();
-        self.value_prev.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                value_prev.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        self.original_value.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                original_value.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.phase2_value_prev
+            .assign(region, offset, region.word_rlc(value_prev))?;
+        self.phase2_original_value
+            .assign(region, offset, region.word_rlc(original_value))?;
 
         let (_, is_warm) = block.rws[step.rw_indices[8]].tx_access_list_value_pair();
         self.is_warm
@@ -220,7 +196,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value_prev,
             original_value,
             is_warm,
-            block.randomness,
         )?;
 
         self.tx_refund.assign(
@@ -231,7 +206,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value,
             value_prev,
             original_value,
-            block.randomness,
         )?;
         Ok(())
     }
@@ -307,48 +281,28 @@ impl<F: Field> SstoreGasGadget<F> {
         value_prev: eth_types::Word,
         original_value: eth_types::Word,
         is_warm: bool,
-        randomness: F,
     ) -> Result<(), Error> {
-        self.value.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(value.to_le_bytes(), randomness)),
-        )?;
-        self.value_prev.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                value_prev.to_le_bytes(),
-                randomness,
-            )),
-        )?;
-        self.original_value.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                original_value.to_le_bytes(),
-                randomness,
-            )),
-        )?;
+        self.value.assign(region, offset, region.word_rlc(value))?;
+        self.value_prev
+            .assign(region, offset, region.word_rlc(value_prev))?;
+        self.original_value
+            .assign(region, offset, region.word_rlc(original_value))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-        self.value_eq_prev.assign(
+        self.value_eq_prev.assign_value(
             region,
             offset,
-            Word::random_linear_combine(value.to_le_bytes(), randomness),
-            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+            region.word_rlc(value),
+            region.word_rlc(value_prev),
         )?;
-        self.original_eq_prev.assign(
+        self.original_eq_prev.assign_value(
             region,
             offset,
-            Word::random_linear_combine(original_value.to_le_bytes(), randomness),
-            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+            region.word_rlc(original_value),
+            region.word_rlc(value_prev),
         )?;
-        self.original_is_zero.assign(
-            region,
-            offset,
-            Word::random_linear_combine(original_value.to_le_bytes(), randomness),
-        )?;
+        self.original_is_zero
+            .assign_value(region, offset, region.word_rlc(original_value))?;
         debug_assert_eq!(
             calc_expected_gas_cost(value, value_prev, original_value, is_warm),
             gas_cost
@@ -452,63 +406,40 @@ impl<F: Field> SstoreTxRefundGadget<F> {
         value: eth_types::Word,
         value_prev: eth_types::Word,
         original_value: eth_types::Word,
-        randomness: F,
     ) -> Result<(), Error> {
         self.tx_refund_old
             .assign(region, offset, Value::known(F::from(tx_refund_old)))?;
-        self.value.assign(
+        self.value.assign(region, offset, region.word_rlc(value))?;
+        self.value_prev
+            .assign(region, offset, region.word_rlc(value_prev))?;
+        self.original_value
+            .assign(region, offset, region.word_rlc(original_value))?;
+        self.value_prev_is_zero_gadget
+            .assign_value(region, offset, region.word_rlc(value_prev))?;
+        self.value_is_zero_gadget
+            .assign_value(region, offset, region.word_rlc(value))?;
+        self.original_is_zero_gadget.assign_value(
             region,
             offset,
-            Value::known(Word::random_linear_combine(value.to_le_bytes(), randomness)),
+            region.word_rlc(original_value),
         )?;
-        self.value_prev.assign(
+        self.original_eq_value_gadget.assign_value(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                value_prev.to_le_bytes(),
-                randomness,
-            )),
+            region.word_rlc(original_value),
+            region.word_rlc(value),
         )?;
-        self.original_value.assign(
+        self.prev_eq_value_gadget.assign_value(
             region,
             offset,
-            Value::known(Word::random_linear_combine(
-                original_value.to_le_bytes(),
-                randomness,
-            )),
+            region.word_rlc(value_prev),
+            region.word_rlc(value),
         )?;
-        self.value_prev_is_zero_gadget.assign(
+        self.original_eq_prev_gadget.assign_value(
             region,
             offset,
-            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
-        )?;
-        self.value_is_zero_gadget.assign(
-            region,
-            offset,
-            Word::random_linear_combine(value.to_le_bytes(), randomness),
-        )?;
-        self.original_is_zero_gadget.assign(
-            region,
-            offset,
-            Word::random_linear_combine(original_value.to_le_bytes(), randomness),
-        )?;
-        self.original_eq_value_gadget.assign(
-            region,
-            offset,
-            Word::random_linear_combine(original_value.to_le_bytes(), randomness),
-            Word::random_linear_combine(value.to_le_bytes(), randomness),
-        )?;
-        self.prev_eq_value_gadget.assign(
-            region,
-            offset,
-            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
-            Word::random_linear_combine(value.to_le_bytes(), randomness),
-        )?;
-        self.original_eq_prev_gadget.assign(
-            region,
-            offset,
-            Word::random_linear_combine(original_value.to_le_bytes(), randomness),
-            Word::random_linear_combine(value_prev.to_le_bytes(), randomness),
+            region.word_rlc(original_value),
+            region.word_rlc(value_prev),
         )?;
         debug_assert_eq!(
             calc_expected_tx_refund(tx_refund_old, value, value_prev, original_value),
