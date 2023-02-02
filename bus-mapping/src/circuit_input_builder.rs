@@ -34,7 +34,7 @@ use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
