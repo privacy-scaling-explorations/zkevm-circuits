@@ -544,7 +544,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             history_hashes,
             prev_state_root,
             eth_block,
-            self.circuits_params.clone(),
+            self.circuits_params,
         )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block(eth_block, geth_traces)?;

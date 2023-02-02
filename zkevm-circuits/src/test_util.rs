@@ -179,9 +179,9 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
     /// circuit checks to the provers generated for the State and EVM circuits.
     pub fn run(self) {
         let params = if let Some(block) = self.block.as_ref() {
-            block.circuits_params.clone()
+            block.circuits_params
         } else {
-            self.circuits_params.unwrap_or_default().clone()
+            self.circuits_params.unwrap_or_default()
         };
 
         let block: Block<Fr> = if self.block.is_some() {

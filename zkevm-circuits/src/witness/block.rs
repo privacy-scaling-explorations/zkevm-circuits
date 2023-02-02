@@ -266,7 +266,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params.clone(),
+        circuits_params: block.circuits_params,
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
