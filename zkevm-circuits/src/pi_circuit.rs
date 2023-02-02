@@ -1564,7 +1564,7 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use mock::CORRECT_MOCK_TXS;
+    use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1609,8 +1609,7 @@ mod pi_circuit_test {
         const MAX_CALLDATA: usize = 200;
 
         let mut public_data = PublicData::default();
-        let chain_id = 1337u64;
-        public_data.chain_id = Word::from(chain_id);
+        public_data.chain_id = *MOCK_CHAIN_ID;
 
         let n_tx = 4;
         for i in 0..n_tx {
