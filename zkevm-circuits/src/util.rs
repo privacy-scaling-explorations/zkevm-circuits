@@ -1,4 +1,5 @@
 //! Common utility traits and functions.
+use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
@@ -6,10 +7,11 @@ use halo2_proofs::{
         Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
     },
 };
+use keccak256::plain::Keccak;
 
 use crate::witness;
 use crate::{evm_circuit::util::rlc, table::TxLogFieldTag};
-use eth_types::{Field, ToAddress};
+use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
@@ -187,4 +189,22 @@ pub trait SubCircuitConfig<F: Field> {
 /// Ceiling of log_2(n)
 pub fn log2_ceil(n: usize) -> u32 {
     u32::BITS - (n as u32).leading_zeros() - (n & (n - 1) == 0) as u32
+}
+
+pub(crate) fn keccak(msg: &[u8]) -> Word {
+    let mut keccak = Keccak::default();
+    keccak.update(msg);
+    Word::from_big_endian(keccak.digest().as_slice())
+}
+
+pub(crate) fn is_push(byte: u8) -> bool {
+    OpcodeId::from(byte).is_push()
+}
+
+pub(crate) fn get_push_size(byte: u8) -> u64 {
+    if is_push(byte) {
+        byte as u64 - OpcodeId::PUSH1.as_u64() + 1
+    } else {
+        0u64
+    }
 }
