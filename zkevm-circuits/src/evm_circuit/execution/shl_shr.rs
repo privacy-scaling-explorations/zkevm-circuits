@@ -78,6 +78,11 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         );
 
         cb.require_zero(
+            "shf0 == shift.cells[0]",
+            shf0.expr() - shift.cells[0].expr(),
+        );
+
+        cb.require_zero(
             "shift == shift.cells[0] when divisor != 0",
             (1.expr() - divisor_is_zero.expr()) * (shift.expr() - shift.cells[0].expr()),
         );
