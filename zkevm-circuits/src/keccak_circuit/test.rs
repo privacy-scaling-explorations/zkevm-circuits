@@ -1,9 +1,7 @@
-use super::*;
+use crate::keccak_circuit::KeccakCircuit;
+use eth_types::Field;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use halo2_proofs::arithmetic::Field;
 use log::error;
-use crate::keccak_circuit::keccak_packed_multi::KeccakCircuit;
-
 
 fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
     let circuit = KeccakCircuit::new(Some(2usize.pow(k)), inputs);
@@ -32,4 +30,3 @@ fn packed_multi_keccak_simple() {
     ];
     verify::<Fr>(k, inputs, true);
 }
-

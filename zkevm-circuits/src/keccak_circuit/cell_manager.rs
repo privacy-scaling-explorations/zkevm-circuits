@@ -1,14 +1,13 @@
-use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
-    poly::Rotation,
-};
+use crate::keccak_circuit::util::extract_field;
+use crate::keccak_circuit::KeccakRegion;
+use gadgets::util::Expr;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::VirtualCells;
-use gadgets::util::Expr;
-use crate::keccak_circuit::keccak_packed_multi::KeccakRegion;
-use crate::keccak_circuit::util::extract_field;
-
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Advice, Column, ConstraintSystem, Expression},
+    poly::Rotation,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -107,9 +106,9 @@ pub(crate) struct CellColumn<F> {
 #[derive(Clone, Debug)]
 pub(crate) struct CellManager<F> {
     pub(crate) height: usize,
-    pub(crate)  columns: Vec<CellColumn<F>>,
-    pub(crate)  rows: Vec<usize>,
-    pub(crate)  num_unused_cells: usize,
+    pub(crate) columns: Vec<CellColumn<F>>,
+    pub(crate) rows: Vec<usize>,
+    pub(crate) num_unused_cells: usize,
 }
 
 impl<F: FieldExt> CellManager<F> {
