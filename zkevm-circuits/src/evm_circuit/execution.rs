@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
+        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -11,14 +11,17 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, Expr},
+    util::{query_expression, Challenges, Expr},
 };
-use eth_types::Field;
+use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, VirtualCells},
+    plonk::{
+        Advice, Column, ConstraintSystem, Error, Expression, FirstPhase, Fixed, SecondPhase,
+        Selector, ThirdPhase, VirtualCells,
+    },
     poly::Rotation,
 };
 use std::{
@@ -57,6 +60,7 @@ mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
 mod exp;
+mod extcodecopy;
 mod extcodehash;
 mod extcodesize;
 mod gas;
@@ -79,6 +83,7 @@ mod push;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
+mod sar;
 mod sdiv_smod;
 mod selfbalance;
 mod sha3;
@@ -120,6 +125,7 @@ use error_oog_constant::ErrorOOGConstantGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
+use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
 use extcodesize::ExtcodesizeGadget;
 use gas::GasGadget;
@@ -141,6 +147,7 @@ use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
 use returndatasize::ReturnDataSizeGadget;
+use sar::SarGadget;
 use sdiv_smod::SignedDivModGadget;
 use selfbalance::SelfbalanceGadget;
 use shl_shr::ShlShrGadget;
@@ -188,7 +195,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    height_map: HashMap<ExecutionState, usize>,
+    pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
@@ -215,6 +222,7 @@ pub(crate) struct ExecutionConfig<F> {
     exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
     extcodesize_gadget: ExtcodesizeGadget<F>,
+    extcodecopy_gadget: ExtcodecopyGadget<F>,
     gas_gadget: GasGadget<F>,
     gasprice_gadget: GasPriceGadget<F>,
     iszero_gadget: IsZeroGadget<F>,
@@ -232,12 +240,11 @@ pub(crate) struct ExecutionConfig<F> {
     pop_gadget: PopGadget<F>,
     push_gadget: PushGadget<F>,
     return_revert_gadget: ReturnRevertGadget<F>,
+    sar_gadget: SarGadget<F>,
     sdiv_smod_gadget: SignedDivModGadget<F>,
     selfbalance_gadget: SelfbalanceGadget<F>,
     sha3_gadget: Sha3Gadget<F>,
     shl_shr_gadget: ShlShrGadget<F>,
-    sar_gadget: DummyGadget<F, 2, 1, { ExecutionState::SAR }>,
-    extcodecopy_gadget: DummyGadget<F, 4, 0, { ExecutionState::EXTCODECOPY }>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
     create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
@@ -290,7 +297,7 @@ impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
-        power_of_randomness: [Expression<F>; 31],
+        challenges: Challenges<Expression<F>>,
         fixed_table: &dyn LookupTable<F>,
         byte_table: &dyn LookupTable<F>,
         tx_table: &dyn LookupTable<F>,
@@ -309,7 +316,24 @@ impl<F: Field> ExecutionConfig<F> {
         let num_rows_inv = meta.advice_column();
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
-        let advices = [(); STEP_WIDTH].map(|_| meta.advice_column());
+
+        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
+
+        let advices = [(); STEP_WIDTH]
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                if n < lookup_column_count {
+                    meta.advice_column_in(ThirdPhase)
+                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
+                    meta.advice_column_in(SecondPhase)
+                } else {
+                    meta.advice_column_in(FirstPhase)
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
 
         let step_curr = Step::new(meta, advices, 0, false);
         let mut height_map = HashMap::new();
@@ -396,7 +420,10 @@ impl<F: Field> ExecutionConfig<F> {
         });
 
         let mut stored_expressions_map = HashMap::new();
+
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
+        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness();
+        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -407,7 +434,9 @@ impl<F: Field> ExecutionConfig<F> {
                     num_rows_until_next_step,
                     q_step_first,
                     q_step_last,
-                    &power_of_randomness,
+                    &challenges,
+                    &word_powers_of_randomness,
+                    &lookup_powers_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut height_map,
@@ -417,6 +446,7 @@ impl<F: Field> ExecutionConfig<F> {
         }
 
         let cell_manager = step_curr.cell_manager.clone();
+
         let config = Self {
             q_usable,
             q_step,
@@ -534,20 +564,10 @@ impl<F: Field> ExecutionConfig<F> {
             copy_table,
             keccak_table,
             exp_table,
-            &power_of_randomness,
+            &challenges,
             &cell_manager,
         );
-
         config
-    }
-
-    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
-        self.height_map.get(&execution_state).copied()
-    }
-
-    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        self.get_step_height_option(execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -559,7 +579,9 @@ impl<F: Field> ExecutionConfig<F> {
         num_rows_until_next_step: Column<Advice>,
         q_step_first: Selector,
         q_step_last: Selector,
-        power_of_randomness: &[Expression<F>; 31],
+        challenges: &Challenges<Expression<F>>,
+        word_powers_of_randomness: &[Expression<F>; 31],
+        lookup_powers_of_randomness: &[Expression<F>; 12],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
@@ -571,7 +593,9 @@ impl<F: Field> ExecutionConfig<F> {
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
                 step_next.clone(),
-                power_of_randomness,
+                challenges,
+                word_powers_of_randomness,
+                lookup_powers_of_randomness,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
@@ -584,7 +608,9 @@ impl<F: Field> ExecutionConfig<F> {
         let mut cb = ConstraintBuilder::new(
             step_curr.clone(),
             step_next.clone(),
-            power_of_randomness,
+            challenges,
+            word_powers_of_randomness,
+            lookup_powers_of_randomness,
             G::EXECUTION_STATE,
         );
 
@@ -605,6 +631,7 @@ impl<F: Field> ExecutionConfig<F> {
             !height_map.contains_key(&G::EXECUTION_STATE),
             "execution state already configured"
         );
+
         height_map.insert(G::EXECUTION_STATE, height);
         debug_assert!(
             !stored_expressions_map.contains_key(&G::EXECUTION_STATE),
@@ -622,6 +649,7 @@ impl<F: Field> ExecutionConfig<F> {
         let sel_not_step_last: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> = &|meta| {
             meta.query_advice(q_step, Rotation::cur()) * not::expr(meta.query_selector(q_step_last))
         };
+
         for (selector, constraints) in [
             (sel_step, constraints.step),
             (sel_step_first, constraints.step_first),
@@ -714,9 +742,11 @@ impl<F: Field> ExecutionConfig<F> {
         copy_table: &dyn LookupTable<F>,
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
-        power_of_randomness: &[Expression<F>; 31],
+        challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
+        let lookup_powers_of_randomness: [Expression<F>; 31] =
+            challenges.lookup_input_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -727,7 +757,6 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
                         Table::Block => block_table,
-                        Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
@@ -735,11 +764,56 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, power_of_randomness),
+                        rlc::expr(&table_expressions, &lookup_powers_of_randomness),
                     )]
                 });
             }
         }
+        for column in cell_manager.columns().iter() {
+            if let CellType::LookupByte = column.cell_type {
+                meta.lookup_any("Byte lookup", |meta| {
+                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
+                    vec![(column.expr(), byte_table_expression)]
+                });
+            }
+        }
+    }
+
+    /// Assign columns related to step counter
+    fn assign_q_step(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        height: usize,
+    ) -> Result<(), Error> {
+        for idx in 0..height {
+            let offset = offset + idx;
+            self.q_usable.enable(region, offset)?;
+            region.assign_advice(
+                || "step selector",
+                self.q_step,
+                offset,
+                || Value::known(if idx == 0 { F::one() } else { F::zero() }),
+            )?;
+            let value = if idx == 0 {
+                F::zero()
+            } else {
+                F::from((height - idx) as u64)
+            };
+            region.assign_advice(
+                || "step height",
+                self.num_rows_until_next_step,
+                offset,
+                || Value::known(value),
+            )?;
+            region.assign_advice(
+                || "step height inv",
+                self.num_rows_inv,
+                offset,
+                || Value::known(value.invert().unwrap_or(F::zero())),
+            )?;
+        }
+        Ok(())
     }
 
     /// Assign block
@@ -749,16 +823,12 @@ impl<F: Field> ExecutionConfig<F> {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        let power_of_randomness = (1..32)
-            .map(|exp| block.randomness.pow(&[exp, 0, 0, 0]))
-            .collect::<Vec<F>>()
-            .try_into()
-            .unwrap();
-
         layouter.assign_region(
             || "Execution step",
             |mut region| {
+                log::info!("start execution step assignment");
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
@@ -775,47 +845,25 @@ impl<F: Field> ExecutionConfig<F> {
                 let mut steps = block
                     .txs
                     .iter()
-                    .flat_map(|tx| tx.steps.iter().map(move |step| (tx, step)))
+                    .flat_map(|tx| {
+                        tx.steps
+                            .iter()
+                            .map(move |step| (tx, &tx.calls[step.call_index], step))
+                    })
+                    .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
 
                 let evm_rows = block.evm_circuit_pad_to;
-                let exact = evm_rows == 0;
+                let no_padding = evm_rows == 0;
 
-                let mut no_next_step = false;
-                let mut get_next = |cur_state: ExecutionState, offset: &usize| match steps.next() {
-                    Some((transaction, step)) => Ok(Some((
-                        transaction,
-                        &transaction.calls[step.call_index],
-                        step,
-                    ))),
-                    None => {
-                        if no_next_step {
-                            return Ok(None);
-                        }
-
-                        let mut block_step = end_block_not_last;
-                        let cur_state_height = self.get_step_height(cur_state);
-                        if !exact && offset + cur_state_height >= evm_rows {
-                            log::error!(
-                                "evm circuit larger than evm_rows: {} >= {}",
-                                offset + cur_state_height,
-                                evm_rows
-                            );
-                            return Err(Error::Synthesis);
-                        }
-                        if exact || evm_rows - (offset + cur_state_height) == 1 {
-                            block_step = end_block_last;
-                            no_next_step = true;
-                        }
-
-                        Ok(Some((&dummy_tx, &last_call, block_step)))
+                // part1: assign real steps
+                loop {
+                    let (transaction, call, step) = steps.next().expect("should not be empty");
+                    let next = steps.peek();
+                    if next.is_none() {
+                        break;
                     }
-                };
-
-                let mut next = get_next(ExecutionState::BeginTx, &offset)?;
-                while let Some((transaction, call, step)) = next {
-                    next = get_next(step.execution_state, &offset)?;
-                    let height = self.get_step_height(step.execution_state);
+                    let height = step.execution_state.get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -826,41 +874,19 @@ impl<F: Field> ExecutionConfig<F> {
                         call,
                         step,
                         height,
-                        next,
-                        power_of_randomness,
+                        next.copied(),
+                        challenges,
                     )?;
 
                     // q_step logic
-                    for idx in 0..height {
-                        let offset = offset + idx;
-                        self.q_usable.enable(&mut region, offset)?;
-                        region.assign_advice(
-                            || "step selector",
-                            self.q_step,
-                            offset,
-                            || Value::known(if idx == 0 { F::one() } else { F::zero() }),
-                        )?;
-                        let value = if idx == 0 {
-                            F::zero()
-                        } else {
-                            F::from((height - idx) as u64)
-                        };
-                        region.assign_advice(
-                            || "step height",
-                            self.num_rows_until_next_step,
-                            offset,
-                            || Value::known(value),
-                        )?;
-                        region.assign_advice(
-                            || "step height inv",
-                            self.num_rows_inv,
-                            offset,
-                            || Value::known(value.invert().unwrap_or(F::zero())),
-                        )?;
-                    }
-                    offset += height;
+                    self.assign_q_step(&mut region, offset, height)?;
 
-                    if !exact && offset > evm_rows {
+                    offset += height;
+                }
+
+                // part2: assign non-last EndBlock steps when padding needed
+                if !no_padding {
+                    if offset >= evm_rows {
                         log::error!(
                             "evm circuit offset larger than padding: {} > {}",
                             offset,
@@ -868,13 +894,53 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
+                    let height = ExecutionState::EndBlock.get_step_height();
+                    debug_assert_eq!(height, 1);
+                    let last_row = evm_rows - 1;
+                    log::trace!(
+                        "assign non-last EndBlock in range [{},{})",
+                        offset,
+                        last_row
+                    );
+                    self.assign_same_exec_step_in_range(
+                        &mut region,
+                        offset,
+                        last_row,
+                        block,
+                        &dummy_tx,
+                        &last_call,
+                        end_block_not_last,
+                        height,
+                        challenges,
+                    )?;
 
-                    if next.is_none() {
-                        // Assert that EndBlock height is 1
-                        debug_assert_eq!(height, 1);
+                    for row_idx in offset..last_row {
+                        self.assign_q_step(&mut region, row_idx, height)?;
                     }
+                    offset = last_row;
                 }
 
+                // part3: assign the last EndBlock at offset `evm_rows - 1`
+                let height = ExecutionState::EndBlock.get_step_height();
+                debug_assert_eq!(height, 1);
+                log::trace!("assign last EndBlock at offset {}", offset);
+                self.assign_exec_step(
+                    &mut region,
+                    offset,
+                    block,
+                    &dummy_tx,
+                    &last_call,
+                    end_block_last,
+                    height,
+                    None,
+                    challenges,
+                )?;
+                self.assign_q_step(&mut region, offset, height)?;
+                // enable q_step_last
+                self.q_step_last.enable(&mut region, offset)?;
+                offset += height;
+
+                // part4:
                 // These are still referenced (but not used) in next rows
                 region.assign_advice(
                     || "step height",
@@ -889,13 +955,49 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                const END_BLOCK_HEIGHT: usize = 1;
-                self.q_step_last
-                    .enable(&mut region, offset - END_BLOCK_HEIGHT)?;
-
+                log::info!("finish execution step assignment");
                 Ok(())
             },
         )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign_same_exec_step_in_range(
+        &self,
+        region: &mut Region<'_, F>,
+        offset_begin: usize,
+        offset_end: usize,
+        block: &Block<F>,
+        transaction: &Transaction,
+        call: &Call,
+        step: &ExecStep,
+        height: usize,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        if offset_end <= offset_begin {
+            return Ok(());
+        }
+        assert_eq!(height, 1);
+        assert!(step.rw_indices.is_empty());
+        assert!(matches!(step.execution_state, ExecutionState::EndBlock));
+
+        // Disable access to next step deliberately for "repeatable" step
+        let region = &mut CachedRegion::<'_, '_, F>::new(
+            region,
+            challenges,
+            self.advices.to_vec(),
+            1,
+            offset_begin,
+        );
+        self.assign_exec_step_int(region, offset_begin, block, transaction, call, step)?;
+
+        region.replicate_assignment_for_range(
+            || format!("repeat {:?} rows", step.execution_state),
+            offset_begin + 1,
+            offset_end,
+        )?;
+
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -909,7 +1011,7 @@ impl<F: Field> ExecutionConfig<F> {
         step: &ExecStep,
         height: usize,
         next: Option<(&Transaction, &Call, &ExecStep)>,
-        power_of_randomness: [F; 31],
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         if !matches!(step.execution_state, ExecutionState::EndBlock) {
             log::trace!(
@@ -925,10 +1027,9 @@ impl<F: Field> ExecutionConfig<F> {
         // enough for 3 steps.
         let region = &mut CachedRegion::<'_, '_, F>::new(
             region,
-            power_of_randomness,
-            STEP_WIDTH,
+            challenges,
+            self.advices.to_vec(),
             MAX_STEP_HEIGHT * 3,
-            self.advices[0].index(),
             offset,
         );
 
@@ -1013,6 +1114,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::RETURN_REVERT => assign_exec_step!(self.return_revert_gadget),
             ExecutionState::RETURNDATASIZE => assign_exec_step!(self.returndatasize_gadget),
             ExecutionState::RETURNDATACOPY => assign_exec_step!(self.returndatacopy_gadget),
+            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::SCMP => assign_exec_step!(self.signed_comparator_gadget),
             ExecutionState::SDIV_SMOD => assign_exec_step!(self.sdiv_smod_gadget),
             ExecutionState::BLOCKCTXU64 => assign_exec_step!(self.block_ctx_u64_gadget),
@@ -1021,7 +1123,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::BLOCKHASH => assign_exec_step!(self.blockhash_gadget),
             ExecutionState::SELFBALANCE => assign_exec_step!(self.selfbalance_gadget),
             // dummy gadgets
-            ExecutionState::SAR => assign_exec_step!(self.sar_gadget),
             ExecutionState::EXTCODECOPY => assign_exec_step!(self.extcodecopy_gadget),
             ExecutionState::CREATE => assign_exec_step!(self.create_gadget),
             ExecutionState::CREATE2 => assign_exec_step!(self.create2_gadget),
@@ -1120,7 +1221,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.invalid_opcode_gadget)
             }
 
-            _ => unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
+            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1128,9 +1229,19 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            // expensive function call
-            Self::check_rw_lookup(&assigned_stored_expressions, step, block);
+            let is_padding_step = matches!(step.execution_state, ExecutionState::EndBlock)
+                && step.rw_indices.is_empty();
+            if !is_padding_step {
+                // expensive function call
+                Self::check_rw_lookup(
+                    &assigned_stored_expressions,
+                    step,
+                    block,
+                    region.challenges(),
+                );
+            }
         }
+        //}
         Ok(())
     }
 
@@ -1147,9 +1258,9 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            assigned.value().map(|v| {
+            assigned.map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v));
+                assigned_stored_expressions.push((name, v));
             });
         }
         Ok(assigned_stored_expressions)
@@ -1159,7 +1270,16 @@ impl<F: Field> ExecutionConfig<F> {
         assigned_stored_expressions: &[(String, F)],
         step: &ExecStep,
         block: &Block<F>,
+        challenges: &Challenges<Value<F>>,
     ) {
+        let mut evm_randomness = F::zero();
+        challenges.evm_word().map(|v| evm_randomness = v);
+        let mut lookup_randomness = F::zero();
+        challenges.lookup_input().map(|v| lookup_randomness = v);
+        if evm_randomness.is_zero_vartime() || lookup_randomness.is_zero_vartime() {
+            // challenges not ready
+            return;
+        }
         let mut assigned_rw_values = Vec::new();
         // Reversion lookup expressions have different ordering compared to rw table,
         // making it a bit complex to check,
@@ -1179,10 +1299,13 @@ impl<F: Field> ExecutionConfig<F> {
             .table_assignments()
             .iter()
             .map(|rw| {
-                rw.table_assignment_aux(block.randomness)
-                    .rlc(block.randomness)
+                rw.table_assignment_aux(evm_randomness)
+                    .rlc(lookup_randomness)
             })
-            .collect();
+            .fold(BTreeSet::<F>::new(), |mut set, value| {
+                set.insert(value);
+                set
+            });
 
         for (name, value) in assigned_rw_values.iter() {
             if !rlc_assignments.contains(value) {
@@ -1192,8 +1315,8 @@ impl<F: Field> ExecutionConfig<F> {
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let rw_idx = step.rw_indices[idx];
             let rw = block.rws[rw_idx];
-            let table_assignments = rw.table_assignment_aux(block.randomness);
-            let rlc = table_assignments.rlc(block.randomness);
+            let table_assignments = rw.table_assignment_aux(evm_randomness);
+            let rlc = table_assignments.rlc(lookup_randomness);
             if rlc != assigned_rw_value.1 {
                 log::error!(
                     "incorrect rw witness. lookup input name: \"{}\"\n{:?}\nrw: {:?}, rw index: {:?}, {}th rw of step {:?}",

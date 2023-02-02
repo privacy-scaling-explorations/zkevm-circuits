@@ -233,6 +233,10 @@ impl<F: Field> RwRow<F> {
             .rev()
             .fold(F::zero(), |acc, value| acc * randomness + value)
     }
+
+    pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
+        randomness.map(|randomness| self.rlc(randomness))
+    }
 }
 
 impl Rw {
@@ -687,7 +691,6 @@ impl From<&operation::OperationContainer> for RwMap {
                         AccountField::Nonce => AccountFieldTag::Nonce,
                         AccountField::Balance => AccountFieldTag::Balance,
                         AccountField::CodeHash => AccountFieldTag::CodeHash,
-                        AccountField::NonExisting => AccountFieldTag::NonExisting,
                     },
                     value: op.op().value,
                     value_prev: op.op().value_prev,

@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use zkevm_circuits::bytecode_circuit::bytecode_unroller::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
-use zkevm_circuits::evm_circuit::test::{get_test_degree, get_test_instance};
+use zkevm_circuits::evm_circuit::test::get_test_degree;
 use zkevm_circuits::evm_circuit::{test::get_test_cicuit_from_block, witness::block_convert};
 use zkevm_circuits::state_circuit::StateCircuit;
 use zkevm_circuits::super_circuit::SuperCircuit;
@@ -38,6 +38,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_txs: 4,
     max_calldata: 4000,
     max_bytecode: 4000,
+    max_copy_rows: 16384,
     keccak_padding: None,
 };
 
@@ -245,13 +246,12 @@ pub async fn test_evm_circuit_block(block_num: u64, actual: bool) {
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
 
     let degree = get_test_degree(&block);
-    let instance = get_test_instance(&block);
     let circuit = get_test_cicuit_from_block(block);
 
     if actual {
-        test_actual(degree, circuit, instance, None);
+        test_actual(degree, circuit, vec![], None);
     } else {
-        test_mock(degree, &circuit, instance);
+        test_mock(degree, &circuit, vec![]);
     }
 }
 
@@ -345,6 +345,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     const MAX_CALLDATA: usize = 512;
     const MAX_RWS: usize = 5888;
     const MAX_BYTECODE: usize = 5000;
+    const MAX_COPY_ROWS: usize = 5888;
 
     log::info!("test super circuit, block number: {}", block_num);
     let cli = get_client();
@@ -355,6 +356,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
             max_txs: MAX_TXS,
             max_calldata: MAX_CALLDATA,
             max_bytecode: MAX_BYTECODE,
+            max_copy_rows: MAX_COPY_ROWS,
             keccak_padding: None,
         },
     )
@@ -362,7 +364,7 @@ pub async fn test_super_circuit_block(block_num: u64) {
     .unwrap();
     let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
     let (k, circuit, instance) =
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MAX_RWS>::build_from_circuit_input_builder(
+        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_RWS, MAX_COPY_ROWS>::build_from_circuit_input_builder(
             &builder,
         )
         .unwrap();

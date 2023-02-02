@@ -7,7 +7,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{Address, Hash, Word};
+use eth_types::{evm_unimplemented, Address, Hash, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -104,7 +104,7 @@ impl Block {
     ) -> Result<Self, Error> {
         if eth_block.base_fee_per_gas.is_none() {
             // FIXME: resolve this once we have proper EIP-1559 support
-            log::warn!(
+            evm_unimplemented!(
                 "This does not look like a EIP-1559 block - base_fee_per_gas defaults to zero"
             );
         }

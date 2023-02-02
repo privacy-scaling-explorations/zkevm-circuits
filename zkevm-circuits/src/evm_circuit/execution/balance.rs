@@ -6,24 +6,27 @@ use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
     ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
-use crate::evm_circuit::util::{from_bytes, select, CachedRegion, Cell, RandomLinearCombination};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Rw, Transaction};
+use crate::evm_circuit::util::{
+    from_bytes, math_gadget::IsZeroGadget, not, select, CachedRegion, Cell, Word,
+};
+use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use crate::util::Expr;
 use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToAddress, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    address: RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>,
+    address_word: Word<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
+    code_hash: Cell<F>,
+    not_exists: IsZeroGadget<F>,
     balance: Cell<F>,
-    exists: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
@@ -32,38 +35,34 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BALANCE;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let address = cb.query_rlc();
-        cb.stack_pop(address.expr());
+        let address_word = cb.query_word_rlc();
+        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
+        cb.stack_pop(address_word.expr());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
         let is_warm = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
-            from_bytes::expr(&address.cells),
+            address.expr(),
             1.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
         );
-
-        let balance = cb.query_cell();
-        let exists = cb.query_bool();
+        let code_hash = cb.query_cell_phase2();
+        // For non-existing accounts the code_hash must be 0 in the rw_table.
+        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
+        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        let exists = not::expr(not_exists.expr());
+        let balance = cb.query_cell_phase2();
         cb.condition(exists.expr(), |cb| {
-            cb.account_read(
-                from_bytes::expr(&address.cells),
-                AccountFieldTag::Balance,
-                balance.expr(),
-            );
+            cb.account_read(address.expr(), AccountFieldTag::Balance, balance.expr());
         });
-        cb.condition(1.expr() - exists.expr(), |cb| {
-            cb.account_read(
-                from_bytes::expr(&address.cells),
-                AccountFieldTag::NonExisting,
-                0.expr(),
-            );
+        cb.condition(not_exists.expr(), |cb| {
+            cb.require_zero("balance is zero when non_exists", balance.expr());
         });
 
-        cb.stack_push(select::expr(exists.expr(), balance.expr(), 0.expr()));
+        cb.stack_push(balance.expr());
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -72,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(7.expr() + exists.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
@@ -85,12 +84,13 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         Self {
             same_context,
-            address,
+            address_word,
             reversion_info,
             tx_id,
             is_warm,
+            code_hash,
+            not_exists,
             balance,
-            exists,
         }
     }
 
@@ -105,10 +105,9 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let address = block.rws[step.rw_indices[0]].stack_value().to_address();
-        let mut address_bytes = address.0;
-        address_bytes.reverse();
-        self.address.assign(region, offset, Some(address_bytes))?;
+        let address = block.rws[step.rw_indices[0]].stack_value();
+        self.address_word
+            .assign(region, offset, Some(address.to_le_bytes()))?;
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -124,28 +123,18 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm)))?;
 
-        let (balance, exists) = match block.rws[step.rw_indices[5]] {
-            Rw::Account {
-                field_tag: AccountFieldTag::Balance,
-                value,
-                ..
-            } => (value, true),
-            Rw::Account {
-                field_tag: AccountFieldTag::NonExisting,
-                ..
-            } => (0.into(), false),
-            _ => unreachable!(),
+        let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
+        self.code_hash
+            .assign(region, offset, region.word_rlc(code_hash))?;
+        self.not_exists
+            .assign_value(region, offset, region.word_rlc(code_hash))?;
+        let balance = if code_hash.is_zero() {
+            eth_types::Word::zero()
+        } else {
+            block.rws[step.rw_indices[6]].account_value_pair().0
         };
-        self.balance.assign(
-            region,
-            offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                balance.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        self.exists
-            .assign(region, offset, Value::known(F::from(exists)))?;
+        self.balance
+            .assign(region, offset, region.word_rlc(balance))?;
 
         Ok(())
     }
@@ -159,6 +148,7 @@ mod test {
     use eth_types::{address, bytecode, Address, Bytecode, ToWord, Word, U256};
     use lazy_static::lazy_static;
     use mock::TestContext;
+    use pretty_assertions::assert_eq;
 
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");

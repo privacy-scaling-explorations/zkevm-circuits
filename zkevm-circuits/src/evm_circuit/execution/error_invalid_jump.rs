@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
-            CachedRegion, Cell, RandomLinearCombination, Word as RLCWord,
+            CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -32,8 +32,9 @@ pub(crate) struct ErrorInvalidJumpGadget<F> {
     within_range: LtGadget<F, N_BYTES_PROGRAM_COUNTER>,
     is_jump_dest: IsEqualGadget<F>,
     is_jumpi: IsEqualGadget<F>,
-    condition: Cell<F>,
+    phase2_condition: Cell<F>,
     is_condition_zero: IsZeroGadget<F>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -43,11 +44,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_rlc();
+        let destination = cb.query_word_rlc();
         let opcode = cb.query_cell();
         let value = cb.query_cell();
         let is_code = cb.query_cell();
-        let condition = cb.query_cell();
+        let rw_counter_end_of_reversion = cb.query_cell();
+        let phase2_condition = cb.query_cell_phase2();
 
         cb.require_in_set(
             "ErrorInvalidJump only happend in JUMP or JUMPI",
@@ -62,19 +64,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // first default this condition, if use will re-construct with real condition
         // value
-        let is_condition_zero = IsZeroGadget::construct(cb, condition.expr());
+        let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
 
         cb.condition(is_jumpi.expr(), |cb| {
-            cb.stack_pop(condition.expr());
+            cb.stack_pop(phase2_condition.expr());
             // if condition is zero, jump will not happen, so constrain condition not zero
             cb.require_zero("condition is not zero", is_condition_zero.expr());
         });
 
         // look up bytecode length
-        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let code_length = cb.query_cell();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let dest_value = from_bytes::expr(&destination.cells);
 
         let within_range = LtGadget::construct(cb, dest_value.expr(), code_length.expr());
@@ -95,6 +98,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -109,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(
-                    2.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
+                    3.expr() + is_jumpi.expr() + cb.curr.state.reversible_write_counter.expr(),
                 ),
 
                 ..StepStateTransition::any()
@@ -130,6 +140,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             )
         });
 
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
         Self {
             opcode,
             destination,
@@ -139,8 +158,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             within_range,
             is_jump_dest,
             is_jumpi,
-            condition,
+            phase2_condition,
             is_condition_zero,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -165,9 +185,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         } else {
             Word::zero()
         };
-        let condition_rlc =
-            RLCWord::random_linear_combine(condition.to_le_bytes(), block.randomness);
-
+        let condition_rlc = region.word_rlc(condition);
         self.destination.assign(
             region,
             offset,
@@ -218,13 +236,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             F::from(OpcodeId::JUMPI.as_u64()),
         )?;
 
-        self.condition
-            .assign(region, offset, Value::known(condition_rlc))?;
-        self.is_condition_zero
+        self.phase2_condition
             .assign(region, offset, condition_rlc)?;
+        self.is_condition_zero
+            .assign_value(region, offset, condition_rlc)?;
 
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 2 + is_jumpi as usize)?;
+            .assign(region, offset, block, call, step, 3 + is_jumpi as usize)?;
         Ok(())
     }
 }
@@ -238,6 +261,7 @@ mod test {
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     fn test_invalid_jump(destination: usize, out_of_range: bool) {
@@ -448,7 +472,7 @@ mod test {
         builder
             .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(run_test_circuit(block), Ok(()));
     }
 

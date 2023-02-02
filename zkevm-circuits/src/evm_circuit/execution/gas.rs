@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // The gas passed to a transaction is a 64-bit number.
-        let gas_left = cb.query_rlc();
+        let gas_left = cb.query_word_rlc();
 
         // The `gas_left` in the current state has to be deducted by the gas
         // used by the `GAS` opcode itself.
@@ -92,6 +92,7 @@ mod test {
     };
     use bus_mapping::mock::BlockData;
     use eth_types::{address, bytecode, geth_types::GethData, Word};
+    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     fn test_ok() {
@@ -150,7 +151,7 @@ mod test {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .expect("could not handle block tx");
-        let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
+        let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 
         // The above block has 2 steps (GAS and STOP). We forcefully assign a
         // wrong `gas_left` value for the second step, to assert that

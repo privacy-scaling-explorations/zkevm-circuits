@@ -35,6 +35,7 @@ pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     is_end_within_range: IsZeroGadget<F>,
     // when `end` not overflow, check if it exceeds return data size.
     is_end_exceed_length: LtGadget<F, N_BYTES_U64>,
+    rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
@@ -46,9 +47,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let memory_offset = cb.query_cell();
-        let data_offset = cb.query_word();
-        let length = cb.query_word();
-        let end = cb.query_word();
+        let data_offset = cb.query_word_rlc();
+        let length = cb.query_word_rlc();
+        let end = cb.query_word_rlc();
+        let rw_counter_end_of_reversion = cb.query_cell();
 
         let return_data_length = cb.query_cell();
 
@@ -103,6 +105,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -116,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(5.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(6.expr() + cb.curr.state.reversible_write_counter.expr()),
 
                 ..StepStateTransition::any()
             });
@@ -135,6 +143,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
                 0.expr(),
             )
         });
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
 
         Self {
             opcode,
@@ -144,6 +160,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             is_end_exceed_length,
             sum,
             return_data_length,
+            rw_counter_end_of_reversion,
             restore_context,
         }
     }
@@ -209,9 +226,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
                 end.to_scalar().unwrap(),
             )?;
         }
-
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 5)?;
+            .assign(region, offset, block, call, step, 6)?;
         Ok(())
     }
 }
