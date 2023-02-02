@@ -66,7 +66,7 @@ macro_rules! unroll_tests {
             super_circuit::SuperCircuit,
             tx_circuit::TxCircuit,
             evm_circuit::EvmCircuit,
-            bytecode_circuit::bytecode_unroller::BytecodeCircuit,
+            bytecode_circuit::circuit::BytecodeCircuit,
             copy_circuit::CopyCircuit
         };
         use halo2_proofs::halo2curves::bn256::Fr;
