@@ -10,6 +10,7 @@ use eth_types::{
     Word,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
+use mock::MOCK_CHAIN_ID;
 
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
@@ -68,7 +69,7 @@ pub struct ExtraValues {
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
@@ -83,6 +84,19 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
+}
+
+impl Default for PublicData {
+    fn default() -> Self {
+        PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            history_hashes: vec![],
+            transactions: vec![],
+            state_root: H256::zero(),
+            prev_state_root: H256::zero(),
+            block_constants: BlockConstants::default(),
+        }
+    }
 }
 
 impl PublicData {
@@ -1564,7 +1578,7 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
+    use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1609,7 +1623,6 @@ mod pi_circuit_test {
         const MAX_CALLDATA: usize = 200;
 
         let mut public_data = PublicData::default();
-        public_data.chain_id = *MOCK_CHAIN_ID;
 
         let n_tx = 4;
         for i in 0..n_tx {
