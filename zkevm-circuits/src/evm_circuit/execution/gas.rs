@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Word};
-    use mock::{TestContext, MOCK_GASLIMIT};
+    use mock::TestContext;
 
     fn test_ok() {
         let bytecode = bytecode! {
@@ -130,7 +130,7 @@ mod test {
                 txs[0]
                     .to(accs[0].address)
                     .from(accs[1].address)
-                    .gas(*MOCK_GASLIMIT);
+                    .gas(Word::from(1_000_000u64));
             },
             |block, _tx| block.number(0xcafeu64),
         )
@@ -145,7 +145,11 @@ mod test {
                 assert_eq!(block.txs[0].steps.len(), 4);
                 block.txs[0].steps[2].gas_left -= 1;
             }))
-            .evm_checks(Box::new(|prover| assert!(prover.verify_par().is_err())))
+            .evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }))
             .run();
     }
 }

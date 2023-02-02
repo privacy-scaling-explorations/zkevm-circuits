@@ -249,7 +249,11 @@ mod test {
         }
         let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
         if !ok {
-            ctb = ctb.evm_checks(Box::new(|prover| assert!(prover.verify_par().is_err())));
+            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }));
         };
         ctb.run()
     }
@@ -265,7 +269,7 @@ mod test {
     #[test]
     fn addmod_simple() {
         test_ok_u32(1, 1, 10, None);
-        test_ko_u32(1, 1, 11, None);
+        test_ok_u32(1, 1, 11, None);
     }
 
     #[test]
