@@ -105,10 +105,10 @@ pub(crate) struct CellColumn<F> {
 /// CellManager
 #[derive(Clone, Debug)]
 pub(crate) struct CellManager<F> {
-    pub(crate) height: usize,
-    pub(crate) columns: Vec<CellColumn<F>>,
-    pub(crate) rows: Vec<usize>,
-    pub(crate) num_unused_cells: usize,
+    height: usize,
+    columns: Vec<CellColumn<F>>,
+    rows: Vec<usize>,
+    num_unused_cells: usize,
 }
 
 impl<F: FieldExt> CellManager<F> {

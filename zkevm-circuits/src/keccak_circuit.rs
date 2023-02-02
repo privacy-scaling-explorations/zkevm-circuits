@@ -3,6 +3,7 @@ mod cell_manager;
 /// Keccak packed multi
 pub mod keccak_packed_multi;
 mod param;
+mod table;
 #[cfg(test)]
 mod test;
 /// Util
@@ -11,7 +12,7 @@ mod util;
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
 
-use self::{cell_manager::*, keccak_packed_multi::*, param::*, util::*};
+use self::{cell_manager::*, keccak_packed_multi::*, param::*, table::*, util::*};
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::KeccakTable,
