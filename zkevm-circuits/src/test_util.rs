@@ -68,15 +68,15 @@ fn init_env_logger() {
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
 ///     .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
-///     .state_checks(Box::new(|prover| assert!(prover.verify_par().is_err())))
+///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
 pub struct CircuitTestBuilder<const NACC: usize, const NTX: usize> {
     test_ctx: Option<TestContext<NACC, NTX>>,
     circuits_params: Option<CircuitsParams>,
     block: Option<Block<Fr>>,
-    evm_checks: Box<dyn Fn(MockProver<Fr>)>,
-    state_checks: Box<dyn Fn(MockProver<Fr>)>,
+    evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+    state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
     block_modifiers: Vec<Box<dyn Fn(&mut Block<Fr>)>>,
 }
 
@@ -87,8 +87,18 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             test_ctx: None,
             circuits_params: None,
             block: None,
-            evm_checks: Box::new(|prover| prover.assert_satisfied_par()),
-            state_checks: Box::new(|prover| prover.assert_satisfied_par()),
+            evm_checks: Box::new(|prover, gate_rows, lookup_rows| {
+                prover.assert_satisfied_at_rows_par(
+                    gate_rows.iter().cloned(),
+                    lookup_rows.iter().cloned(),
+                )
+            }),
+            state_checks: Box::new(|prover, gate_rows, lookup_rows| {
+                prover.assert_satisfied_at_rows_par(
+                    gate_rows.iter().cloned(),
+                    lookup_rows.iter().cloned(),
+                )
+            }),
             block_modifiers: vec![],
         }
     }
@@ -131,14 +141,20 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
     /// Allows to provide checks different than the default ones for the State
     /// Circuit verification.
-    pub fn state_checks(mut self, state_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
+    pub fn state_checks(
+        mut self,
+        state_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+    ) -> Self {
         self.state_checks = state_checks;
         self
     }
 
     /// Allows to provide checks different than the default ones for the EVM
     /// Circuit verification.
-    pub fn evm_checks(mut self, evm_checks: Box<dyn Fn(MockProver<Fr>)>) -> Self {
+    pub fn evm_checks(
+        mut self,
+        evm_checks: Box<dyn Fn(MockProver<Fr>, &Vec<usize>, &Vec<usize>)>,
+    ) -> Self {
         self.evm_checks = evm_checks;
         self
     }
@@ -196,7 +212,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             //prover.verify_at_rows_par(active_gate_rows.into_iter(),
             // active_lookup_rows.into_iter())
-            self.evm_checks.as_ref()(prover)
+            self.evm_checks.as_ref()(prover, &_active_gate_rows, &_active_lookup_rows)
         }
 
         // Run state circuit test
@@ -216,11 +232,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             // prover
             //     .verify_at_rows(
-            //         N_ROWS - non_start_rows_len..N_ROWS,
-            //         N_ROWS - non_start_rows_len..N_ROWS,
+            // N_ROWS - non_start_rows_len..N_ROWS,
+            // N_ROWS - non_start_rows_len..N_ROWS,
             //     )
             //     .unwrap()
-            self.state_checks.as_ref()(prover);
+            self.state_checks.as_ref()(prover, &vec![], &vec![]);
         }
     }
 }
