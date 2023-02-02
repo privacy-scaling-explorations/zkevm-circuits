@@ -139,6 +139,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
+    #[allow(clippy::type_complexity)]
     /// Allows to provide checks different than the default ones for the State
     /// Circuit verification.
     pub fn state_checks(
@@ -149,6 +150,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         self
     }
 
+    #[allow(clippy::type_complexity)]
     /// Allows to provide checks different than the default ones for the EVM
     /// Circuit verification.
     pub fn evm_checks(
@@ -204,15 +206,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         {
             let k = block.get_test_degree();
 
-            let (_active_gate_rows, _active_lookup_rows) =
-                EvmCircuit::<Fr>::get_active_rows(&block);
+            let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             //prover.verify_at_rows_par(active_gate_rows.into_iter(),
             // active_lookup_rows.into_iter())
-            self.evm_checks.as_ref()(prover, &_active_gate_rows, &_active_lookup_rows)
+            self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
         }
 
         // Run state circuit test
@@ -224,19 +225,14 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let power_of_randomness = state_circuit.instance();
             let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
             // Skip verification of Start rows to accelerate testing
-            let _non_start_rows_len = state_circuit
+            let non_start_rows_len = state_circuit
                 .rows
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
+            let rows = (N_ROWS - non_start_rows_len..N_ROWS).into_iter().collect();
 
-            // prover
-            //     .verify_at_rows(
-            // N_ROWS - non_start_rows_len..N_ROWS,
-            // N_ROWS - non_start_rows_len..N_ROWS,
-            //     )
-            //     .unwrap()
-            self.state_checks.as_ref()(prover, &vec![], &vec![]);
+            self.state_checks.as_ref()(prover, &rows, &rows);
         }
     }
 }
