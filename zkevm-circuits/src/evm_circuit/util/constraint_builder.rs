@@ -615,7 +615,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             "Bytecode (length)",
             Lookup::Bytecode {
                 hash: code_hash,
-                tag: BytecodeFieldTag::Length.expr(),
+                tag: BytecodeFieldTag::Header.expr(),
                 index: 0.expr(),
                 is_code: 0.expr(),
                 value,
