@@ -21,7 +21,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use ethers_core::utils::get_contract_address;
+use ethers_core::utils::{get_contract_address, keccak256};
 use gadgets::util::{expr_from_bytes, or, select, sum};
 use halo2_proofs::plonk::Error;
 use halo2_proofs::{circuit::Value, plonk::Expression};
@@ -57,7 +57,7 @@ pub(crate) struct BeginTxGadget<F> {
     is_empty_code_hash: IsEqualGadget<F>,
     is_zero_code_hash: IsZeroGadget<F>,
     tx_caller_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
-    tx_callee_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
+    caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
     tx_nonce_bytes: [Cell<F>; N_BYTES_U64],
     tx_nonce_is_zero: IsZeroGadget<F>,
     tx_nonce_lt_128: LtGadget<F, 8>,
@@ -176,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
-        let (tx_caller_address_bytes, tx_callee_address_bytes, tx_nonce_bytes) = (
+        let (tx_caller_address_bytes, caller_nonce_hash_bytes, tx_nonce_bytes) = (
             array_init::array_init(|_| cb.query_byte()),
             array_init::array_init(|_| cb.query_byte()),
             array_init::array_init(|_| cb.query_byte()),
@@ -196,11 +196,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address.expr(),
             expr_from_bytes(&tx_caller_address_bytes),
         );
-        cb.require_equal(
-            "tx callee address equivalence",
-            tx_callee_address.expr(),
-            expr_from_bytes(&tx_callee_address_bytes),
-        );
+        cb.condition(tx_is_create.expr(), |cb| {
+            cb.require_equal(
+                "call callee address equivalence",
+                call_callee_address.expr(),
+                expr_from_bytes(&caller_nonce_hash_bytes[0..N_BYTES_ACCOUNT_ADDRESS]),
+            );
+        });
         cb.condition(tx_nonce_lt_128.expr(), |cb| {
             cb.require_zero("tx nonce bytes unused", sum::expr(&tx_nonce_bytes));
         });
@@ -214,13 +216,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         cb.condition(tx_is_create.expr(), |cb| {
             // 1. calculate output_rlc
             // this is simply RLC(tx_callee_address_bytes, powers_of_randomness)
-            let tx_callee_exprs: [Expression<F>; N_BYTES_ACCOUNT_ADDRESS] = tx_callee_address_bytes
+            let caller_nonce_hash_exprs: [Expression<F>; N_BYTES_WORD] = caller_nonce_hash_bytes
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap();
-            let output_rlc = cb.word_rlc(tx_callee_exprs);
+            let output_rlc = cb.word_rlc(caller_nonce_hash_exprs);
 
             // 2. calculate input_len:
             // if nonce in [0, 127]: input_len == 23
@@ -519,7 +521,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_zero_code_hash,
             // fields to support keccak lookup.
             tx_caller_address_bytes,
-            tx_callee_address_bytes,
+            caller_nonce_hash_bytes,
             tx_nonce_bytes,
             tx_nonce_is_zero,
             tx_nonce_lt_128,
@@ -630,11 +632,19 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
+        let untrimmed_contract_addr = {
+            let mut stream = rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&tx.caller_address);
+            stream.append(&eth_types::U256::from(tx.nonce));
+            let rlp_encoding = stream.out().to_vec();
+            keccak256(&rlp_encoding)
+        };
         for (c, v) in self
-            .tx_callee_address_bytes
+            .caller_nonce_hash_bytes
             .iter()
             .rev()
-            .zip(tx.callee_address.as_bytes().iter())
+            .zip(untrimmed_contract_addr.iter())
         {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
@@ -646,7 +656,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             for (c, v) in self
                 .tx_nonce_bytes
                 .iter()
-                .zip(tx.nonce.to_le_bytes().iter())
+                .rev()
+                .zip(tx.nonce.to_be_bytes().iter())
             {
                 c.assign(region, offset, Value::known(F::from(*v as u64)))?;
             }
