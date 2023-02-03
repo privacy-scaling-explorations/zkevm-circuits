@@ -116,17 +116,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 // rlp1 is not used, rlp2 is used to store the first RLP byte.
                 let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
 
-                // When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
-                // and the constraints in this gate are not triggered. In that case it is checked
-                // that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
-                // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
-                // has a nil.
-                // TODO(Brecht): Can we remove this if by just making this pass in this special case?
-                ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(account.is_wrong_leaf(meta, is_s))])) => {
-                    // Storage root and codehash are always 32-byte hashes.
-                    require!(a!(s_main.rlp2) => RLP_HASH_VALUE);
-                    require!(a!(c_main.rlp2) => RLP_HASH_VALUE);
-                }}
+                // Storage root and codehash are always 32-byte hashes.
+                require!(a!(s_main.rlp2) => RLP_HASH_VALUE);
+                require!(a!(c_main.rlp2) => RLP_HASH_VALUE);
 
                 // RLC calculation
                 let account_rlc = DataTransition::new_with_rot(meta, accs.acc_s.rlc, rot_nonce_balance, 0);

@@ -216,30 +216,22 @@ impl<F: FieldExt> AccountLeafNonceBalanceConfig<F> {
             require!(account_rlc => rlc);
 
             // Check the RLP encoding consistency.
-            // RlP encoding: account = [key, [nonce, balance, storage, codehash]]
-            // The only exception is when `is_non_existing_account_proof = 1` &
-            // `is_wrong_leaf = 0`. In this case the value does not matter as
-            // the account leaf is only a placeholder and does not use
-            // `s_main.rlp1` and `s_main.rlp2`.
-            //  TODO(Brecht): Can we remove this if by just making this pass in this special
-            // case?
-            ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof), not!(account.is_wrong_leaf(meta, is_s))])) => {
-                // We always store between 55 and 256 bytes of data in the values list.
-                require!(a!(s_main.rlp1) => RLP_LONG + 1);
-                // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
-                require!(a!(s_main.rlp2) => a!(c_main.rlp2) + 2.expr());
-                // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
-                require!(a!(c_main.rlp1) => RLP_LIST_LONG + 1);
-                // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
-                require!(a!(c_main.rlp2) => nonce_num_bytes.expr() + balance_num_bytes.expr() + (2 * (1 + 32)).expr());
-                // Now check that the the key and value list length matches the account length.
-                let len = account.num_bytes(meta);
-                let key_num_bytes = account.num_bytes_on_key_row(meta);
-                // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
-                let value_list_num_bytes = a!(s_main.rlp2) + 2.expr();
-                // Account length needs to equal all key bytes and all values list bytes.
-                require!(len => key_num_bytes + value_list_num_bytes);
-            }}
+            // RLP encoding: account = [key, [nonce, balance, storage, codehash]]
+            // We always store between 55 and 256 bytes of data in the values list.
+            require!(a!(s_main.rlp1) => RLP_LONG + 1);
+            // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
+            require!(a!(s_main.rlp2) => a!(c_main.rlp2) + 2.expr());
+            // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
+            require!(a!(c_main.rlp1) => RLP_LIST_LONG + 1);
+            // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
+            require!(a!(c_main.rlp2) => nonce_num_bytes.expr() + balance_num_bytes.expr() + (2 * (1 + 32)).expr());
+            // Now check that the the key and value list length matches the account length.
+            let len = account.num_bytes(meta);
+            let key_num_bytes = account.num_bytes_on_key_row(meta);
+            // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
+            let value_list_num_bytes = a!(s_main.rlp2) + 2.expr();
+            // Account length needs to equal all key bytes and all values list bytes.
+            require!(len => key_num_bytes + value_list_num_bytes);
 
             // To enable lookups we need to have the previous/current nonce/balance on the
             // same row
