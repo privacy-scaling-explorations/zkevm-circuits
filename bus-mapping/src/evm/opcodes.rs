@@ -430,6 +430,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     };
 
     if state.tx.is_create() {
+        state.block.sha3_inputs.push({
+            let mut stream = rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&caller_address);
+            stream.append(&Word::from(nonce_prev));
+            stream.out().to_vec()
+        });
         state.push_op_reversible(
             &mut exec_step,
             RW::WRITE,
@@ -481,7 +488,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 ),
                 (
                     CallContextField::CalleeAddress,
-                    get_contract_address(call.caller_address, nonce_prev).to_word(),
+                    get_contract_address(caller_address, nonce_prev).to_word(),
                 ),
                 (
                     CallContextField::CallDataOffset,

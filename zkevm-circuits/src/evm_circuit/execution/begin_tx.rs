@@ -288,7 +288,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             ));
             let input_exprs: [Expression<F>; MAX_RLP_LEN_CONTRACT_CREATION_INPUT] =
                 input_exprs.try_into().unwrap();
-            let input_rlc = cb.word_rlc(input_exprs);
+            let input_rlc = cb.keccak_rlc(input_exprs);
 
             // 4. keccak table lookup
             cb.keccak_table_lookup(input_rlc, input_len, output_rlc);
