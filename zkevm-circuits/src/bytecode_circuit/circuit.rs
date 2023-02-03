@@ -8,9 +8,7 @@ use eth_types::{Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use keccak256::EMPTY_HASH_LE;
@@ -18,9 +16,14 @@ use log::trace;
 use std::vec;
 
 use super::{
-    bytecode_unroller::{unroll, UnrolledBytecode},
+    bytecode_unroller::{unroll_with_codehash, UnrolledBytecode},
     param::PUSH_TABLE_WIDTH,
 };
+
+#[cfg(feature = "onephase")]
+use halo2_proofs::plonk::FirstPhase as SecondPhase;
+#[cfg(not(feature = "onephase"))]
+use halo2_proofs::plonk::SecondPhase;
 
 #[derive(Clone, Debug)]
 /// Bytecode circuit configuration
@@ -731,7 +734,7 @@ impl<F: Field> BytecodeCircuit<F> {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .iter()
-            .map(|(_, b)| unroll(b.bytes.clone()))
+            .map(|(codehash, b)| unroll_with_codehash(*codehash, b.bytes.clone()))
             .collect();
         Self::new(bytecodes, bytecode_size)
     }
@@ -780,7 +783,10 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
 mod tests {
     use super::*;
     use crate::{
-        bytecode_circuit::{bytecode_unroller::BytecodeRow, dev::test_bytecode_circuit_unrolled},
+        bytecode_circuit::{
+            bytecode_unroller::{unroll, BytecodeRow},
+            dev::test_bytecode_circuit_unrolled,
+        },
         util::{is_push, keccak},
     };
     use bus_mapping::evm::OpcodeId;

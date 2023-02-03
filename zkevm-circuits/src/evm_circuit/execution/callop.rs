@@ -824,24 +824,20 @@ mod test {
 
         for test in tests {
             // Get the execution steps from the external tracer
-            let block: GethData = TestContext::<2, 1>::new(
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 account_0_code_account_1_no_code(test),
                 tx_from_1_to_0,
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into();
-            assert_eq!(
-                run_test_circuit_geth_data::<Fr>(
-                    block,
-                    CircuitsParams {
-                        max_rws: 4500,
-                        ..Default::default()
-                    }
-                ),
-                Ok(())
-            );
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_rws: 4500,
+                    ..Default::default()
+                })
+                .run();
         }
     }
 

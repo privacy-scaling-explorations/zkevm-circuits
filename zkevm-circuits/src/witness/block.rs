@@ -206,7 +206,7 @@ impl BlockContext {
         challenges: &Challenges<Value<F>>,
     ) -> Vec<[Value<F>; 3]> {
         let current_block_number = self.number.to_scalar().unwrap();
-        let evm_word_rand = challenges.evm_word();
+        let randomness = challenges.evm_word();
         [
             vec![
                 [

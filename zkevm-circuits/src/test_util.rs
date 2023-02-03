@@ -88,16 +88,16 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             circuits_params: None,
             block: None,
             evm_checks: Box::new(|prover, gate_rows, lookup_rows| {
-                prover.assert_satisfied_at_rows_par(
+                assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
-                )
+                ), Ok(()));
             }),
             state_checks: Box::new(|prover, gate_rows, lookup_rows| {
-                prover.assert_satisfied_at_rows_par(
+                assert_eq!(prover.verify_at_rows_par(
                     gate_rows.iter().cloned(),
                     lookup_rows.iter().cloned(),
-                )
+                ), Ok(()));
             }),
             block_modifiers: vec![],
         }
@@ -219,10 +219,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         // Run state circuit test
         {
-        let n_rows: usize = block.rws.0.values().flatten().count() + 10;
-        let state_circuit = StateCircuit::<Fr>::new(block.rws, n_rows);
-        let instance = state_circuit.instance();
-        let prover = MockProver::<Fr>::run(17, &state_circuit, instance).unwrap();
+            let n_rows: usize = block.rws.0.values().flatten().count() + 10;
+            let state_circuit = StateCircuit::<Fr>::new(block.rws, n_rows);
+            let instance = state_circuit.instance();
+            let prover = MockProver::<Fr>::run(17, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows

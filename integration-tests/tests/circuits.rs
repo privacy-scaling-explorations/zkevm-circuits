@@ -51,7 +51,7 @@ macro_rules! declare_tests {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 let pk = None;
-                test_circuit_at_block::<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>
+                test_circuit_at_block::<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>>
                     ("super", SUPER_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
             }
         }

@@ -44,6 +44,8 @@ pub const MAX_RWS: usize = 5888;
 pub const MAX_BYTECODE: usize = 5000;
 /// MAX_COPY_ROWS
 pub const MAX_COPY_ROWS: usize = 5888;
+/// MAX_INNER_BLOCKS
+pub const MAX_INNER_BLOCKS: usize = 64;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
@@ -284,9 +286,3 @@ pub async fn test_circuit_at_block<C: SubCircuit<Fr> + Circuit<Fr>>(
         test_mock(degree, &circuit, instance);
     }
 }
-    const MAX_INNER_BLOCKS: usize = 64;
-            max_inner_blocks: MAX_INNER_BLOCKS,
-        MAX_INNER_BLOCKS,
-        MAX_RWS,
-        MAX_COPY_ROWS,
-    >::build_from_circuit_input_builder(&builder)

@@ -3,7 +3,6 @@
 use std::iter;
 use std::marker::PhantomData;
 
-use mock::MOCK_CHAIN_ID;
 use crate::table::TxTable;
 use crate::table::{BlockTable, KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -11,6 +10,7 @@ use eth_types::{Field, ToBigEndian, Word};
 use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
+use mock::MOCK_CHAIN_ID;
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -59,11 +59,9 @@ impl Default for PublicData {
     fn default() -> Self {
         PublicData {
             chain_id: *MOCK_CHAIN_ID,
-            history_hashes: vec![],
             transactions: vec![],
-            state_root: H256::zero(),
             prev_state_root: H256::zero(),
-            block_constants: BlockConstants::default(),
+            block_ctxs: Default::default(),
         }
     }
 }
@@ -1103,7 +1101,6 @@ mod pi_circuit_test {
         halo2curves::bn256::Fr,
     };
     use mock::TestContext;
-    use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
 
     fn run<

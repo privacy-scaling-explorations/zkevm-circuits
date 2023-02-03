@@ -226,7 +226,7 @@ mod test {
         };
         let k = 4;
         let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
-        prover.assert_satisfied_par()
+        prover.assert_satisfied()
     }
 
     #[test]

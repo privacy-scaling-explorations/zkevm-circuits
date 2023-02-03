@@ -2,13 +2,8 @@ use crate::{
     table::BytecodeFieldTag,
     util::{get_push_size, keccak},
 };
-use eth_types::{Field, Word};
+use eth_types::{Field, Word, U256};
 use std::vec;
-
-#[cfg(feature = "onephase")]
-use halo2_proofs::plonk::FirstPhase as SecondPhase;
-#[cfg(not(feature = "onephase"))]
-use halo2_proofs::plonk::SecondPhase;
 
 /// Public data for the bytecode
 #[derive(Clone, Debug, PartialEq)]
@@ -26,49 +21,6 @@ pub struct UnrolledBytecode<F: Field> {
     pub(crate) bytes: Vec<u8>,
     pub(crate) rows: Vec<BytecodeRow<F>>,
 }
-        #[cfg(feature = "codehash")]
-            use crate::table::DynamicTableColumns;
-        let mut is_first_time = true;
-
-                if is_first_time {
-                    is_first_time = false;
-                    self.set_row(
-                        &mut region,
-                        &push_rindex_is_zero_chip,
-                        &length_is_zero_chip,
-                        last_row_offset,
-                        false,
-                        true,
-                        Value::known(F::zero()),
-                        F::from(BytecodeFieldTag::Padding as u64),
-                        F::zero(),
-                        F::one(),
-                        F::zero(),
-                        0,
-                        Value::known(F::zero()),
-                        F::zero(),
-                        F::zero(),
-                        true,
-                        true,
-                        F::zero(),
-                    )?;
-                    return Ok(());
-                }
-
-                        if idx == bytecode.rows.len() - 1 {
-                            log::trace!("bytecode len {}", bytecode.rows.len());
-                            log::trace!(
-                                "assign bytecode circuit at {}: codehash {:?}, rlc {:?}",
-                                offset,
-                                row.code_hash.to_le_bytes(),
-                                code_hash
-                            );
-                        }
-                        if idx == bytecode.rows.len() - 1 {
-                            log::trace!("assign bytecode circuit: input rlc {:?}", hash_input_rlc);
-                        }
-
-            log::debug!("bytecode circuit q_last at {}", offset);
 
 /// Get unrolled bytecode from raw bytes
 pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
@@ -106,9 +58,3 @@ pub fn unroll_with_codehash<F: Field>(code_hash: U256, bytes: Vec<u8>) -> Unroll
     }
     UnrolledBytecode { bytes, rows }
 }
-/// test module
-#[cfg(any(feature = "test", test))]
-        F::from(DEFAULT_RAND as u64)
-    #[ignore = "this test needs to set fail_fast to false"]
-    #[ignore]
-    #[ignore]
