@@ -3,6 +3,7 @@
 use std::iter;
 use std::marker::PhantomData;
 
+use mock::MOCK_CHAIN_ID;
 use crate::table::TxTable;
 use crate::table::{BlockTable, KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
@@ -42,7 +43,7 @@ const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
@@ -52,6 +53,19 @@ pub struct PublicData {
     pub block_ctxs: BlockContexts,
     /// Previous State Root
     pub prev_state_root: Hash,
+}
+
+impl Default for PublicData {
+    fn default() -> Self {
+        PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            history_hashes: vec![],
+            transactions: vec![],
+            state_root: H256::zero(),
+            prev_state_root: H256::zero(),
+            block_constants: BlockConstants::default(),
+        }
+    }
 }
 
 impl PublicData {
@@ -1080,7 +1094,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
-
     use crate::witness::block_convert;
     use bus_mapping::mock::BlockData;
     use eth_types::bytecode;
@@ -1090,6 +1103,7 @@ mod pi_circuit_test {
         halo2curves::bn256::Fr,
     };
     use mock::TestContext;
+    use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
 
     fn run<

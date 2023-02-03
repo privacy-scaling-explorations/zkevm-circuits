@@ -8,7 +8,6 @@ use eth_types::sign_types::{
 };
 use eth_types::{
     Address, Error, Field, Signature, ToBigEndian, ToLittleEndian, ToScalar, ToWord, Word, H256,
-};
 use ethers_core::types::TransactionRequest;
 use ethers_core::utils::keccak256;
 use halo2_proofs::circuit::Value;
@@ -157,12 +156,9 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
                 Value::known(F::zero()),
-                challenges.evm_word().map(|evm_word| {
-                    RandomLinearCombination::random_linear_combine(
-                        self.gas_price.to_le_bytes(),
-                        evm_word,
-                    )
-                }),
+                    challenges
+                        .evm_word()
+                        .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
@@ -186,12 +182,9 @@ impl Transaction {
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Value as u64)),
                 Value::known(F::zero()),
-                challenges.evm_word().map(|evm_word| {
-                    RandomLinearCombination::random_linear_combine(
-                        self.value.to_le_bytes(),
-                        evm_word,
-                    )
-                }),
+                    challenges
+                        .evm_word()
+                        .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
             ],
             [
                 Value::known(F::from(self.id as u64)),

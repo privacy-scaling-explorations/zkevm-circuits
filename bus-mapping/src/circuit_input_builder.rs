@@ -42,7 +42,7 @@ use std::iter;
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
@@ -863,7 +863,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     ) -> Result<CircuitInputBuilder, Error> {
         let block = BlockHead::new(self.chain_id, history_hashes, eth_block)?;
         let mut builder = CircuitInputBuilder::new_from_headers(
-            self.circuits_params.clone(),
+            self.circuits_params,
             sdb,
             code_db,
             &[block],
