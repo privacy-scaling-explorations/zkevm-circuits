@@ -1281,21 +1281,17 @@ impl ExpTable {
                                 || Value::known(value),
                             )?;
                         }
-                        if offset % OFFSET_INCREMENT == 0 {
-                            region.assign_fixed(
-                                || format!("exponentiation table row {} (step)", offset),
-                                self.is_step,
-                                offset,
-                                || Value::known(F::one()),
-                            )?;
+                        let is_step = if offset % OFFSET_INCREMENT == 0 {
+                            F::one()
                         } else {
-                            region.assign_fixed(
-                                || format!("exponentiation table row {} (non step)", offset),
-                                self.is_step,
-                                offset,
-                                || Value::known(F::zero()),
-                            )?;
-                        }
+                            F::zero()
+                        };
+                        region.assign_fixed(
+                            || format!("todo"),
+                            self.is_step,
+                            offset,
+                            || Value::known(is_step),
+                        )?;
                         offset += 1;
                     }
                 }

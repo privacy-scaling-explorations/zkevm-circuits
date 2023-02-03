@@ -10,6 +10,7 @@ use eth_types::{
     Word,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
+use mock::MOCK_CHAIN_ID;
 
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
@@ -68,7 +69,7 @@ pub struct ExtraValues {
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
@@ -83,6 +84,19 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
+}
+
+impl Default for PublicData {
+    fn default() -> Self {
+        PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            history_hashes: vec![],
+            transactions: vec![],
+            state_root: H256::zero(),
+            prev_state_root: H256::zero(),
+            block_constants: BlockConstants::default(),
+        }
+    }
 }
 
 impl PublicData {
@@ -1560,12 +1574,11 @@ fn raw_public_inputs_col<F: Field>(
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
-
-    use crate::test_util::rand_tx;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
+    use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1609,16 +1622,13 @@ mod pi_circuit_test {
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-
         let mut public_data = PublicData::default();
-        let chain_id = 1337u64;
-        public_data.chain_id = Word::from(chain_id);
 
         let n_tx = 4;
         for i in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, i & 2 == 0));
-            public_data.transactions.push(eth_tx);
+            public_data
+                .transactions
+                .push(CORRECT_MOCK_TXS[i].clone().into());
         }
 
         let k = 17;

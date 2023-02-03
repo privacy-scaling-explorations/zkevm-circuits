@@ -26,7 +26,7 @@ pub const OFFSET_INCREMENT: usize = 7usize;
 /// The number of rows required for the exponentiation table within the circuit
 /// for each step.
 pub const ROWS_PER_STEP: usize = 4usize;
-/// The gate "verify all but the last step" at constraint "base_limb[i] is the
+/// The gate "verify all but the last step" at constraint "`base_limb[i]` is the
 /// same across all steps" uses rotation 10 in `exp_table.base_limb` which is
 /// enabled with `q_usable`, which in turn is enabled in all steps.  This means
 /// this circuit requires these extra rows after the last enabled `q_usable`.
@@ -35,7 +35,6 @@ const UNUSABLE_EXP_ROWS: usize = 10usize;
 /// Layout for the Exponentiation circuit.
 #[derive(Clone, Debug)]
 pub struct ExpCircuitConfig<F> {
-    minimum_rows: usize,
     /// Whether the row is enabled.
     pub q_usable: Selector,
     /// The Exponentiation circuit's table.
@@ -75,7 +74,7 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             // base limbs MUST be the same across all steps. Since each step consumes 7 rows
             // (check MulAddChip), we check the current step's rotation `i`
             // against `i + 7`.
-            for i in 0..3 {
+            for i in 0..4 {
                 cb.require_equal(
                     "base_limb[i] is the same across all steps",
                     meta.query_advice(exp_table.base_limb, Rotation(i)),
@@ -278,7 +277,6 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
         });
 
         Self {
-            minimum_rows: meta.minimum_rows(),
             q_usable,
             exp_table,
             mul_gadget,
@@ -288,6 +286,71 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
 }
 
 impl<F: Field> ExpCircuitConfig<F> {
+    /// Assign witness to the exponentiation circuit.
+    pub fn assign_exp_events(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        exp_events: &[ExpEvent],
+        max_exp_steps: usize,
+    ) -> Result<(), Error> {
+        let mut mul_chip = MulAddChip::construct(self.mul_gadget.clone());
+        let mut parity_check_chip = MulAddChip::construct(self.parity_check.clone());
+        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
+        assert!(Self::min_num_rows(exp_events) <= max_exp_rows - UNUSABLE_EXP_ROWS);
+        layouter.assign_region(
+            || "exponentiation circuit",
+            |mut region| {
+                region.name_column(|| "exp_table.is_step", self.exp_table.is_step);
+                region.name_column(|| "exp_table.identifier", self.exp_table.identifier);
+                region.name_column(|| "exp_table.is_last", self.exp_table.is_last);
+                region.name_column(|| "exp_table.base_limb", self.exp_table.base_limb);
+                region.name_column(|| "exp_table.exponent_lo_hi", self.exp_table.exponent_lo_hi);
+                region.name_column(
+                    || "exp_table.exponentiation_lo_hi",
+                    self.exp_table.exponentiation_lo_hi,
+                );
+                // region.name_column(|| "q_usable", self.q_usable);
+                region.name_column(|| "mul_gadget.col0", self.mul_gadget.col0);
+                region.name_column(|| "mul_gadget.col1", self.mul_gadget.col1);
+                region.name_column(|| "mul_gadget.col2", self.mul_gadget.col2);
+                region.name_column(|| "mul_gadget.col3", self.mul_gadget.col3);
+                region.name_column(|| "mul_gadget.col4", self.mul_gadget.col4);
+                // region.name_column(|| "mul_gadget.overflow", self.mul_gadget.overflow);
+                region.name_column(|| "parity_check.col0", self.parity_check.col0);
+                region.name_column(|| "parity_check.col1", self.parity_check.col1);
+                region.name_column(|| "parity_check.col2", self.parity_check.col2);
+                region.name_column(|| "parity_check.col3", self.parity_check.col3);
+                region.name_column(|| "parity_check.col4", self.parity_check.col4);
+                // region.name_column(|| "parity_check.overflow", self.parity_check.overflow);
+                let mut offset = 0;
+                for exp_event in exp_events.iter() {
+                    self.assign_exp_event(
+                        &mut region,
+                        &mut offset,
+                        exp_event,
+                        &mut mul_chip,
+                        &mut parity_check_chip,
+                    )?;
+                }
+                // Fill the rest of the circuit with valid rows to achieve a constant assignment
+                // to the q_usable fixed column.
+                let pad_exp_event = ExpEvent::default();
+                while offset + OFFSET_INCREMENT <= max_exp_rows - UNUSABLE_EXP_ROWS {
+                    self.assign_exp_event(
+                        &mut region,
+                        &mut offset,
+                        &pad_exp_event,
+                        &mut mul_chip,
+                        &mut parity_check_chip,
+                    )?;
+                }
+
+                // Fill extra unused rows required by the rotations at the last `q_enable`.
+                self.assign_unused_rows(&mut region, offset)?;
+                Ok(())
+            },
+        )
+    }
     fn assign_step(
         &self,
         region: &mut Region<F>,
@@ -388,102 +451,24 @@ impl<F: Field> ExpCircuitConfig<F> {
             self.parity_check.col3,
             self.parity_check.col4,
         ]);
-        for column in all_columns {
-            for i in 0..UNUSABLE_EXP_ROWS {
+        for i in 0..UNUSABLE_EXP_ROWS {
+            for column in &all_columns {
                 region.assign_advice(
                     || format!("unused rows: {}", offset + i),
-                    column,
+                    *column,
                     offset + i,
                     || Value::known(F::zero()),
                 )?;
             }
+            region.assign_fixed(
+                || format!("unused rows: {}", offset + i),
+                self.exp_table.is_step,
+                offset + i,
+                || Value::known(F::zero()),
+            )?;
         }
 
         Ok(())
-    }
-    /// Assign witness to the exponentiation circuit.
-    pub fn assign_exp_events(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        exp_events: &[ExpEvent],
-        max_exp_steps: usize,
-    ) -> Result<(), Error> {
-        let mut mul_chip = MulAddChip::construct(self.mul_gadget.clone());
-        let mut parity_check_chip = MulAddChip::construct(self.parity_check.clone());
-        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
-        layouter.assign_region(
-            || "exponentiation circuit",
-            |mut region| {
-                region.name_column(|| "exp_table.is_step", self.exp_table.is_step);
-                region.name_column(|| "exp_table.identifier", self.exp_table.identifier);
-                region.name_column(|| "exp_table.is_last", self.exp_table.is_last);
-                region.name_column(|| "exp_table.base_limb", self.exp_table.base_limb);
-                region.name_column(|| "exp_table.exponent_lo_hi", self.exp_table.exponent_lo_hi);
-                region.name_column(
-                    || "exp_table.exponentiation_lo_hi",
-                    self.exp_table.exponentiation_lo_hi,
-                );
-                // region.name_column(|| "q_usable", self.q_usable);
-                region.name_column(|| "mul_gadget.col0", self.mul_gadget.col0);
-                region.name_column(|| "mul_gadget.col1", self.mul_gadget.col1);
-                region.name_column(|| "mul_gadget.col2", self.mul_gadget.col2);
-                region.name_column(|| "mul_gadget.col3", self.mul_gadget.col3);
-                region.name_column(|| "mul_gadget.col4", self.mul_gadget.col4);
-                // region.name_column(|| "mul_gadget.overflow", self.mul_gadget.overflow);
-                region.name_column(|| "parity_check.col0", self.parity_check.col0);
-                region.name_column(|| "parity_check.col1", self.parity_check.col1);
-                region.name_column(|| "parity_check.col2", self.parity_check.col2);
-                region.name_column(|| "parity_check.col3", self.parity_check.col3);
-                region.name_column(|| "parity_check.col4", self.parity_check.col4);
-                // region.name_column(|| "parity_check.overflow", self.parity_check.overflow);
-                debug_assert!(
-                    max_exp_rows >= self.minimum_rows,
-                    "max_exp_rows: {}, minimum_rows: {}",
-                    max_exp_rows,
-                    self.minimum_rows,
-                );
-                let mut offset = 0;
-                for exp_event in exp_events.iter() {
-                    self.assign_exp_event(
-                        &mut region,
-                        &mut offset,
-                        exp_event,
-                        &mut mul_chip,
-                        &mut parity_check_chip,
-                    )?;
-                }
-                assert!(offset <= max_exp_rows - UNUSABLE_EXP_ROWS);
-                dbg!(max_exp_rows);
-                dbg!(self.minimum_rows);
-                // Fill the rest of the circuit with valid rows to achieve a constant assignment
-                // to the q_usable fixed column.
-                let (one, two) = (U256::one(), U256::from(2u64));
-                let pad_exp_event = ExpEvent {
-                    identifier: 0,
-                    base: one,
-                    exponent: two,
-                    exponentiation: one,
-                    steps: vec![ExpStep {
-                        a: one,
-                        b: one,
-                        d: one,
-                    }],
-                };
-                while offset + OFFSET_INCREMENT <= max_exp_rows - UNUSABLE_EXP_ROWS {
-                    self.assign_exp_event(
-                        &mut region,
-                        &mut offset,
-                        &pad_exp_event,
-                        &mut mul_chip,
-                        &mut parity_check_chip,
-                    )?;
-                }
-
-                // Fill extra unused rows required by the rotations at the last `q_enable`.
-                self.assign_unused_rows(&mut region, offset)?;
-                Ok(())
-            },
-        )
     }
 
     fn min_num_rows(exp_events: &[ExpEvent]) -> usize {
@@ -640,7 +625,6 @@ mod tests {
     fn test_ok(base: Word, exponent: Word, k: Option<u32>) {
         let code = gen_code_single(base, exponent);
         let builder = gen_data(code);
-        log::debug!("generating block");
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         test_exp_circuit(k.unwrap_or(18), block);
     }
