@@ -22,9 +22,16 @@ use crate::{
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::get_contract_address;
-use gadgets::util::{expr_from_bytes, or, select};
+use gadgets::util::{expr_from_bytes, or, select, sum};
 use halo2_proofs::plonk::Error;
 use halo2_proofs::{circuit::Value, plonk::Expression};
+
+/// When calculating the contract address we take:
+///
+/// RLP([tx_caller_address, tx_nonce])
+///
+/// Defines the maximum length of the RLP-encoding.
+const MAX_RLP_LEN_CONTRACT_CREATION_INPUT: usize = 31;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -194,45 +201,97 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_callee_address.expr(),
             expr_from_bytes(&tx_callee_address_bytes),
         );
-        cb.require_equal(
-            "tx nonce equivalence",
-            tx_nonce.expr(),
-            expr_from_bytes(&tx_nonce_bytes),
-        );
+        cb.condition(tx_nonce_lt_128.expr(), |cb| {
+            cb.require_zero("tx nonce bytes unused", sum::expr(&tx_nonce_bytes));
+        });
+        cb.condition(not::expr(tx_nonce_lt_128.expr()), |cb| {
+            cb.require_equal(
+                "tx nonce bytes used => equivalence",
+                tx_nonce.expr(),
+                expr_from_bytes(&tx_nonce_bytes),
+            );
+        });
         cb.condition(tx_is_create.expr(), |cb| {
             // 1. calculate output_rlc
-            // this is simply RLC(tx_callee_address_bytes)
+            // this is simply RLC(tx_callee_address_bytes, powers_of_randomness)
             let tx_callee_exprs: [Expression<F>; N_BYTES_ACCOUNT_ADDRESS] = tx_callee_address_bytes
                 .iter()
                 .map(Expr::expr)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap();
-            let _output_rlc = cb.word_rlc(tx_callee_exprs);
+            let output_rlc = cb.word_rlc(tx_callee_exprs);
 
             // 2. calculate input_len:
             // if nonce in [0, 127]: input_len == 23
             // else: input_len == 23 + byte_size(nonce)
-            let _input_len = select::expr(
+            let input_len = select::expr(
                 tx_nonce_lt_128.expr(),
                 23.expr(),
                 23.expr() + tx_nonce_byte_size.byte_size(),
             );
 
-            // TODO: verify input_rlc:
-            // RLP([tx_caller_address, tx_nonce])
+            // 3. calculate input_rlc:
+            // RLC(RLP([tx_caller_address, tx_nonce]), powers_of_randomness)
+            //
+            // RLP-encoding:
             //
             // | prefix | addr-prefix | address  | nonce-prefix | nonce          |
             // |--------|-------------|----------|--------------|----------------|
-            // | 1-byte | 1-byte      | 20-bytes | 0 or 1 byte  | n_bytes(nonce) |
+            // | 1-byte | 1-byte      | 20-bytes | 1 byte       | n_bytes(nonce) |
             //
+            // where:
             // prefix == 192 + 21 + (1 if nonce < 128 else (1 + byte_size(nonce)))
             // address-prefix == 148
             // address == tx_caller_address_bytes
             // nonce-prefix == if nonce >= 128: 128 + byte_size(nonce)
-            // nonce == tx_nonce_bytes
+            // nonce == tx_nonce_bytes (without trailing zeros)
+            //
+            // populate the RLP([tx_caller_address, tx_nonce]) in little-endian order.
+            // max length of RLP encoding is 31.
+            let mut input_exprs = Vec::with_capacity(MAX_RLP_LEN_CONTRACT_CREATION_INPUT);
+            // nonce
+            input_exprs.extend_from_slice(
+                // tx nonce bytes will be zeros if nonce < 128. So prepending zeros will not affect
+                // the random linear combination.
+                tx_nonce_bytes
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            );
+            // nonce / nonce-prefix
+            input_exprs.push(select::expr(
+                tx_nonce_is_zero.expr(),
+                128.expr(),
+                select::expr(
+                    tx_nonce_lt_128.expr(),
+                    tx_nonce.expr(),
+                    128.expr() + tx_nonce_byte_size.byte_size(),
+                ),
+            ));
+            // address
+            input_exprs.extend_from_slice(
+                tx_caller_address_bytes
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            );
+            // addr-prefix
+            input_exprs.push(148.expr());
+            // prefix
+            input_exprs.push(select::expr(
+                tx_nonce_lt_128.expr(),
+                214.expr(),
+                214.expr() + tx_nonce_byte_size.byte_size(),
+            ));
+            let input_exprs: [Expression<F>; MAX_RLP_LEN_CONTRACT_CREATION_INPUT] =
+                input_exprs.try_into().unwrap();
+            let input_rlc = cb.word_rlc(input_exprs);
 
-            // TODO: cb.keccak_table_lookup(input_rlc, input_len, output_rlc);
+            // 4. keccak table lookup
+            cb.keccak_table_lookup(input_rlc, input_len, output_rlc);
 
             cb.account_write(
                 call_callee_address.expr(),
@@ -579,12 +638,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
-        for (c, v) in self
-            .tx_nonce_bytes
-            .iter()
-            .zip(tx.nonce.to_le_bytes().iter())
-        {
-            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+        if tx.nonce < 128u64 {
+            for c in self.tx_nonce_bytes.iter() {
+                c.assign(region, offset, Value::known(F::zero()))?;
+            }
+        } else {
+            for (c, v) in self
+                .tx_nonce_bytes
+                .iter()
+                .zip(tx.nonce.to_le_bytes().iter())
+            {
+                c.assign(region, offset, Value::known(F::from(*v as u64)))?;
+            }
         }
         self.tx_nonce_is_zero
             .assign(region, offset, F::from(tx.nonce))?;
