@@ -112,6 +112,7 @@ impl<F: Field> ByteSizeGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util;
     use eth_types::Word;
     use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::Error;
@@ -126,7 +127,16 @@ mod tests {
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
         fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
             let value_rlc = cb.query_word_rlc();
-            let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, &value_rlc);
+            let bytesize_gadget = ByteSizeGadget::<F>::construct(
+                cb,
+                value_rlc
+                    .cells
+                    .iter()
+                    .map(Expr::expr)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
             cb.require_equal(
                 "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),

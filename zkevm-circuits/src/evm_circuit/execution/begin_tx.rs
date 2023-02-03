@@ -60,7 +60,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_callee_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
     tx_nonce_bytes: [Cell<F>; N_BYTES_U64],
     tx_nonce_is_zero: IsZeroGadget<F>,
-    tx_nonce_lt_128: LtGadget<F, 1>,
+    tx_nonce_lt_128: LtGadget<F, 8>,
     tx_nonce_byte_size: ByteSizeGadget<F>,
 }
 
