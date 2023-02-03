@@ -817,7 +817,6 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                log::info!("start execution step assignment");
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
@@ -944,7 +943,6 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                log::info!("finish execution step assignment");
                 Ok(())
             },
         )
