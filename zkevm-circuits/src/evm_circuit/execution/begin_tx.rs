@@ -625,113 +625,6 @@ mod test {
     }
 
     #[test]
-    fn begin_tx_invalid_nonce() {
-        // The nonce of the account doing the transaction is not correct
-        // Use the same nonce value for two transactions.
-        let multibyte_nonce = Word::from(1);
-
-        let to = MOCK_ACCOUNTS[0];
-        let from = MOCK_ACCOUNTS[1];
-
-        let code = bytecode! {
-            STOP
-        };
-
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(to).balance(eth(1)).code(code);
-                accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
-            },
-            |mut txs, _| {
-                //txs[0].to(to).from(from).nonce(Word::from(1));
-                txs[0]
-                    .to(to)
-                    .from(from)
-                    .nonce(Word::from(0))
-                    .invalid_tx(Word::from(1));
-            },
-            |block, _| block,
-        )
-        .unwrap()
-        .into();
-
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
-    }
-
-    #[test]
-    fn begin_tx_not_enough_eth() {
-        // The account does not have enough ETH to pay for eth_value + tx_gas *
-        // tx_gas_price.
-        let multibyte_nonce = Word::from(1);
-
-        let to = MOCK_ACCOUNTS[0];
-        let from = MOCK_ACCOUNTS[1];
-
-        let balance = Word::from(1) * Word::from(10u64.pow(5));
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(to).balance(gwei(0));
-                accs[1]
-                    .address(from)
-                    .balance(balance)
-                    .nonce(multibyte_nonce);
-            },
-            |mut txs, _| {
-                txs[0]
-                    .to(to)
-                    .from(from)
-                    .nonce(multibyte_nonce)
-                    .gas_price(gwei(1))
-                    .gas(Word::from(10u64.pow(5)))
-                    .value(gwei(1))
-                    .invalid_tx(Word::from(1));
-            },
-            |block, _| block,
-        )
-        .unwrap()
-        .into();
-
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
-    }
-
-    #[test]
-    fn begin_tx_insufficient_gas() {
-        let multibyte_nonce = Word::from(1);
-
-        let to = MOCK_ACCOUNTS[0];
-        let from = MOCK_ACCOUNTS[1];
-
-        let balance = Word::from(1) * Word::from(10u64.pow(18));
-        let block: GethData = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(to).balance(gwei(0));
-                accs[1]
-                    .address(from)
-                    .balance(balance)
-                    .nonce(multibyte_nonce);
-            },
-            |mut txs, _| {
-                txs[0]
-                    .to(to)
-                    .from(from)
-                    .nonce(multibyte_nonce)
-                    .gas_price(gwei(1))
-                    .gas(Word::from(1))
-                    .value(gwei(1))
-                    .invalid_tx(Word::from(1));
-            },
-            |block, _| block,
-        )
-        .unwrap()
-        .into();
-
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
-    }
-
-    #[test]
     fn begin_tx_gadget_rand() {
         let random_amount = Word::from_little_endian(&rand_bytes(32)) % eth(1);
         let random_gas_price = Word::from_little_endian(&rand_bytes(32)) % gwei(2);
@@ -832,6 +725,134 @@ mod test {
                     .input(code.into());
             },
             |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_not_enable_skipping_invalid_tx_invalid_nonce() {
+        begin_tx_invalid_nonce(false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_not_enable_skipping_invalid_tx_not_enough_eth() {
+        begin_tx_not_enough_eth(false);
+    }
+
+    #[test]
+    #[should_panic]
+    fn begin_tx_not_enable_skipping_invalid_tx_insufficient_gas() {
+        begin_tx_insufficient_gas(false);
+    }
+
+    #[test]
+    fn begin_tx_enable_skipping_invalid_tx() {
+        begin_tx_invalid_nonce(true);
+        begin_tx_not_enough_eth(true);
+        begin_tx_insufficient_gas(true);
+    }
+
+    fn begin_tx_invalid_nonce(enable_skipping_invalid_tx: bool) {
+        // The nonce of the account doing the transaction is not correct
+        // Use the same nonce value for two transactions.
+        let multibyte_nonce = Word::from(1);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let code = bytecode! {
+            STOP
+        };
+
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(eth(1)).code(code);
+                accs[1].address(from).balance(eth(1)).nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(Word::from(0))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    fn begin_tx_not_enough_eth(enable_skipping_invalid_tx: bool) {
+        // The account does not have enough ETH to pay for eth_value + tx_gas *
+        // tx_gas_price.
+        let multibyte_nonce = Word::from(1);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(5));
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(multibyte_nonce)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(10u64.pow(5)))
+                    .value(gwei(1))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
+        )
+        .unwrap()
+        .into();
+
+        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+    }
+
+    fn begin_tx_insufficient_gas(enable_skipping_invalid_tx: bool) {
+        let multibyte_nonce = Word::from(1);
+
+        let to = MOCK_ACCOUNTS[0];
+        let from = MOCK_ACCOUNTS[1];
+
+        let balance = Word::from(1) * Word::from(10u64.pow(18));
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(to).balance(gwei(0));
+                accs[1]
+                    .address(from)
+                    .balance(balance)
+                    .nonce(multibyte_nonce);
+            },
+            |mut txs, _| {
+                txs[0]
+                    .to(to)
+                    .from(from)
+                    .nonce(multibyte_nonce)
+                    .gas_price(gwei(1))
+                    .gas(Word::from(1))
+                    .value(gwei(1))
+                    .enable_skipping_invalid_tx(enable_skipping_invalid_tx);
+            },
+            |block, _| block,
         )
         .unwrap()
         .into();
