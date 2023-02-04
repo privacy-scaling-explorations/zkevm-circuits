@@ -10,8 +10,8 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{
-                ByteSizeGadget, IsEqualGadget, IsZeroGadget, LtGadget, MulWordByU64Gadget,
-                RangeCheckGadget,
+                BinaryNumberGadget, ByteSizeGadget, IsEqualGadget, IsZeroGadget, LtGadget,
+                MulWordByU64Gadget, RangeCheckGadget,
             },
             not, CachedRegion, Cell, Word,
         },
@@ -22,16 +22,17 @@ use crate::{
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256};
-use gadgets::util::{expr_from_bytes, or, select, sum};
+use gadgets::util::{expr_from_bytes, or, select};
 use halo2_proofs::plonk::Error;
 use halo2_proofs::{circuit::Value, plonk::Expression};
+use num::Zero;
 
 /// When calculating the contract address we take:
 ///
 /// RLP([tx_caller_address, tx_nonce])
 ///
-/// Defines the maximum length of the RLP-encoding.
-const MAX_RLP_LEN_CONTRACT_CREATION_INPUT: usize = 31;
+/// Defines the minimum length of the RLP-encoding.
+const MIN_RLP_LEN_CONTRACT_CREATION_INPUT: usize = 23;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -62,6 +63,7 @@ pub(crate) struct BeginTxGadget<F> {
     tx_nonce_is_zero: IsZeroGadget<F>,
     tx_nonce_lt_128: LtGadget<F, 8>,
     tx_nonce_byte_size: ByteSizeGadget<F>,
+    tx_nonce_byte_size_cmp: BinaryNumberGadget<F, 4>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -191,6 +193,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .try_into()
                 .unwrap(),
         );
+        let tx_nonce_byte_size_cmp =
+            BinaryNumberGadget::construct(cb, tx_nonce_byte_size.byte_size());
         cb.require_equal(
             "tx caller address equivalence",
             tx_caller_address.expr(),
@@ -203,98 +207,150 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 expr_from_bytes(&caller_nonce_hash_bytes[0..N_BYTES_ACCOUNT_ADDRESS]),
             );
         });
-        cb.condition(tx_nonce_lt_128.expr(), |cb| {
-            cb.require_zero("tx nonce bytes unused", sum::expr(&tx_nonce_bytes));
-        });
-        cb.condition(not::expr(tx_nonce_lt_128.expr()), |cb| {
-            cb.require_equal(
-                "tx nonce bytes used => equivalence",
-                tx_nonce.expr(),
-                expr_from_bytes(&tx_nonce_bytes),
-            );
-        });
+        cb.require_equal(
+            "tx nonce bytes used => equivalence",
+            tx_nonce.expr(),
+            expr_from_bytes(&tx_nonce_bytes),
+        );
+
+        // 1. calculate output_rlc
+        // this is simply RLC(tx_callee_address_bytes, powers_of_randomness)
+        let caller_nonce_hash_exprs: [Expression<F>; N_BYTES_WORD] = caller_nonce_hash_bytes
+            .iter()
+            .map(Expr::expr)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        let output_rlc = cb.word_rlc(caller_nonce_hash_exprs);
+        // 2. calculate input_len:
+        // if nonce in [0, 127]: input_len == 23
+        // else: input_len == 23 + byte_size(nonce)
+        let input_len = select::expr(
+            tx_nonce_lt_128.expr(),
+            MIN_RLP_LEN_CONTRACT_CREATION_INPUT.expr(),
+            MIN_RLP_LEN_CONTRACT_CREATION_INPUT.expr() + tx_nonce_byte_size.byte_size(),
+        );
+        // 3. calculate input_rlc:
+        // RLC(RLP([tx_caller_address, tx_nonce]), powers_of_randomness)
+        //
+        // RLP-encoding:
+        //
+        // | prefix | addr-prefix | address  | nonce-prefix | nonce          |
+        // |--------|-------------|----------|--------------|----------------|
+        // | 1-byte | 1-byte      | 20-bytes | 1 byte       | n_bytes(nonce) |
+        //
+        // where:
+        // prefix == 192 + 21 + (1 if nonce < 128 else (1 + byte_size(nonce)))
+        // address-prefix == 148
+        // address == tx_caller_address_bytes
+        // nonce-prefix == if nonce >= 128: 128 + byte_size(nonce)
+        // nonce == tx_nonce_bytes (without trailing zeros)
+        macro_rules! keccak_lookup {
+            // n: number of meaningful nonce bytes.
+            // cond: repetitive conditions to guard the lookup.
+            ( $n:expr, $( $cond:expr ),* ) => {
+                cb.condition(
+                    gadgets::util::and::expr([
+                        tx_is_create.expr(),
+                        $(
+                            $cond,
+                        )*
+                    ]),
+                    |cb| {
+                    // populate the RLP([tx_caller_address, tx_nonce]) in little-endian order.
+                    // max length of RLP encoding is 31.
+                    let mut input_exprs =
+                        Vec::with_capacity(MIN_RLP_LEN_CONTRACT_CREATION_INPUT + $n);
+                    // nonce
+                    input_exprs.extend_from_slice(
+                        // tx nonce bytes will be zeros if nonce < 128. So prepending zeros will
+                        // not affect the random linear combination.
+                        tx_nonce_bytes
+                            .iter()
+                            .take($n)
+                            .map(Expr::expr)
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
+                    // nonce / nonce-prefix
+                    input_exprs.push(select::expr(
+                        tx_nonce_is_zero.expr(),
+                        128.expr(),
+                        select::expr(
+                            tx_nonce_lt_128.expr(),
+                            tx_nonce.expr(),
+                            128.expr() + tx_nonce_byte_size.byte_size(),
+                        ),
+                    ));
+                    // address
+                    input_exprs.extend_from_slice(
+                        tx_caller_address_bytes
+                            .iter()
+                            .map(Expr::expr)
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    );
+                    // addr-prefix
+                    input_exprs.push(148.expr());
+                    // prefix
+                    input_exprs.push(select::expr(
+                        tx_nonce_lt_128.expr(),
+                        214.expr(),
+                        214.expr() + tx_nonce_byte_size.byte_size(),
+                    ));
+                    let input_exprs: [Expression<F>; MIN_RLP_LEN_CONTRACT_CREATION_INPUT + $n] =
+                        input_exprs.try_into().unwrap();
+                    let input_rlc = cb.keccak_rlc(input_exprs);
+
+                    // 4. keccak table lookup
+                    cb.keccak_table_lookup(input_rlc, input_len.expr(), output_rlc.expr());
+                });
+            };
+        }
+
+        keccak_lookup!(0, tx_nonce_lt_128.expr());
+        keccak_lookup!(
+            1,
+            not::expr(tx_nonce_lt_128.expr()),
+            tx_nonce_byte_size_cmp.value_equals(1usize)
+        );
+        keccak_lookup!(
+            2,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(2usize)
+        );
+        keccak_lookup!(
+            3,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(3usize)
+        );
+        keccak_lookup!(
+            4,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(4usize)
+        );
+        keccak_lookup!(
+            5,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(5usize)
+        );
+        keccak_lookup!(
+            6,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(6usize)
+        );
+        keccak_lookup!(
+            7,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(7usize)
+        );
+        keccak_lookup!(
+            8,
+            tx_is_create.expr(),
+            tx_nonce_byte_size_cmp.value_equals(8usize)
+        );
+
         cb.condition(tx_is_create.expr(), |cb| {
-            // 1. calculate output_rlc
-            // this is simply RLC(tx_callee_address_bytes, powers_of_randomness)
-            let caller_nonce_hash_exprs: [Expression<F>; N_BYTES_WORD] = caller_nonce_hash_bytes
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
-            let output_rlc = cb.word_rlc(caller_nonce_hash_exprs);
-
-            // 2. calculate input_len:
-            // if nonce in [0, 127]: input_len == 23
-            // else: input_len == 23 + byte_size(nonce)
-            let input_len = select::expr(
-                tx_nonce_lt_128.expr(),
-                23.expr(),
-                23.expr() + tx_nonce_byte_size.byte_size(),
-            );
-
-            // 3. calculate input_rlc:
-            // RLC(RLP([tx_caller_address, tx_nonce]), powers_of_randomness)
-            //
-            // RLP-encoding:
-            //
-            // | prefix | addr-prefix | address  | nonce-prefix | nonce          |
-            // |--------|-------------|----------|--------------|----------------|
-            // | 1-byte | 1-byte      | 20-bytes | 1 byte       | n_bytes(nonce) |
-            //
-            // where:
-            // prefix == 192 + 21 + (1 if nonce < 128 else (1 + byte_size(nonce)))
-            // address-prefix == 148
-            // address == tx_caller_address_bytes
-            // nonce-prefix == if nonce >= 128: 128 + byte_size(nonce)
-            // nonce == tx_nonce_bytes (without trailing zeros)
-            //
-            // populate the RLP([tx_caller_address, tx_nonce]) in little-endian order.
-            // max length of RLP encoding is 31.
-            let mut input_exprs = Vec::with_capacity(MAX_RLP_LEN_CONTRACT_CREATION_INPUT);
-            // nonce
-            input_exprs.extend_from_slice(
-                // tx nonce bytes will be zeros if nonce < 128. So prepending zeros will not affect
-                // the random linear combination.
-                tx_nonce_bytes
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            );
-            // nonce / nonce-prefix
-            input_exprs.push(select::expr(
-                tx_nonce_is_zero.expr(),
-                128.expr(),
-                select::expr(
-                    tx_nonce_lt_128.expr(),
-                    tx_nonce.expr(),
-                    128.expr() + tx_nonce_byte_size.byte_size(),
-                ),
-            ));
-            // address
-            input_exprs.extend_from_slice(
-                tx_caller_address_bytes
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            );
-            // addr-prefix
-            input_exprs.push(148.expr());
-            // prefix
-            input_exprs.push(select::expr(
-                tx_nonce_lt_128.expr(),
-                214.expr(),
-                214.expr() + tx_nonce_byte_size.byte_size(),
-            ));
-            let input_exprs: [Expression<F>; MAX_RLP_LEN_CONTRACT_CREATION_INPUT] =
-                input_exprs.try_into().unwrap();
-            let input_rlc = cb.keccak_rlc(input_exprs);
-
-            // 4. keccak table lookup
-            cb.keccak_table_lookup(input_rlc, input_len, output_rlc);
-
             cb.account_write(
                 call_callee_address.expr(),
                 AccountFieldTag::CodeHash,
@@ -303,6 +359,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 None,
             );
         });
+
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.account_read(
                 call_callee_address.expr(),
@@ -526,6 +583,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce_is_zero,
             tx_nonce_lt_128,
             tx_nonce_byte_size,
+            tx_nonce_byte_size_cmp,
         }
     }
 
@@ -648,19 +706,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         {
             c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
-        if tx.nonce < 128u64 {
-            for c in self.tx_nonce_bytes.iter() {
-                c.assign(region, offset, Value::known(F::zero()))?;
-            }
-        } else {
-            for (c, v) in self
-                .tx_nonce_bytes
-                .iter()
-                .rev()
-                .zip(tx.nonce.to_be_bytes().iter())
-            {
-                c.assign(region, offset, Value::known(F::from(*v as u64)))?;
-            }
+        for (c, v) in self
+            .tx_nonce_bytes
+            .iter()
+            .rev()
+            .zip(tx.nonce.to_be_bytes().iter())
+        {
+            c.assign(region, offset, Value::known(F::from(*v as u64)))?;
         }
         self.tx_nonce_is_zero
             .assign(region, offset, F::from(tx.nonce))?;
@@ -668,6 +720,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .assign(region, offset, F::from(tx.nonce), F::from(128u64))?;
         self.tx_nonce_byte_size
             .assign(region, offset, tx.nonce.into())?;
+        self.tx_nonce_byte_size_cmp.assign(
+            region,
+            offset,
+            8usize
+                - tx.nonce
+                    .to_be_bytes()
+                    .iter()
+                    .take_while(|b| b.is_zero())
+                    .count(),
+        )?;
         self.is_empty_code_hash.assign_value(
             region,
             offset,
@@ -875,10 +937,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // Enable this test once we have support for contract deployment from
-    // BeginTx.
-    #[test]
-    fn begin_tx_deploy() {
+    fn begin_tx_deploy(nonce: u64) {
         let code = bytecode! {
             // [ADDRESS, STOP]
             PUSH32(word!("3000000000000000000000000000000000000000000000000000000000000000"))
@@ -892,11 +951,15 @@ mod test {
         let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
-                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(eth(20))
+                    .nonce(nonce.into());
             },
             |mut txs, _accs| {
                 txs[0]
                     .from(MOCK_ACCOUNTS[0])
+                    .nonce(nonce.into())
                     .gas_price(gwei(2))
                     .gas(Word::from(0x10000))
                     .value(eth(2))
@@ -907,5 +970,33 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
+    fn begin_tx_deploy_nonce_zero() {
+        begin_tx_deploy(0);
+    }
+
+    #[test]
+    fn begin_tx_deploy_nonce_small_1byte() {
+        begin_tx_deploy(1);
+        begin_tx_deploy(127);
+    }
+
+    #[test]
+    fn begin_tx_deploy_nonce_big_1byte() {
+        begin_tx_deploy(128);
+        begin_tx_deploy(255);
+    }
+
+    #[test]
+    fn begin_tx_deploy_nonce_multi_byte() {
+        begin_tx_deploy(0x1020u64);
+        begin_tx_deploy(0x102030u64);
+        begin_tx_deploy(0x10203040u64);
+        begin_tx_deploy(0x1020304050u64);
+        begin_tx_deploy(0x102030405060u64);
+        begin_tx_deploy(0x10203040506070u64);
+        begin_tx_deploy(0x1020304050607080u64);
     }
 }
