@@ -1287,7 +1287,7 @@ impl ExpTable {
                             F::zero()
                         };
                         region.assign_fixed(
-                            || format!("todo"),
+                            || format!("exponentiation table row {}", offset),
                             self.is_step,
                             offset,
                             || Value::known(is_step),
