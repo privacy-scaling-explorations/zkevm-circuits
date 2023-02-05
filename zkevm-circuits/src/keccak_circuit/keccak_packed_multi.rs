@@ -882,8 +882,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        assert!(get_num_rows_per_round() > NUM_BYTES_PER_WORD,
-                "KeccakCircuit requires KECCAK_ROWS>=9");
+        assert!(
+            get_num_rows_per_round() > NUM_BYTES_PER_WORD,
+            "KeccakCircuit requires KECCAK_ROWS>=9"
+        );
 
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
@@ -989,8 +991,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         total_lookup_counter += lookup_counter;
 
         // Process inputs.
-        // "Absorb" happens at the first round. However, the input is witnessed and processed
-        // over the first 17 rounds. Each round converts a word into 8 bytes.
+        // "Absorb" happens at the first round. However, the input is witnessed and
+        // processed over the first 17 rounds. Each round converts a word into 8
+        // bytes.
         cell_manager.start_region();
         let mut lookup_counter = 0;
         // Potential optimization: could do multiple bytes per lookup
@@ -1559,9 +1562,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             let length = meta.query_advice(length, Rotation::cur());
             let data_rlc_prev =
                 meta.query_advice(data_rlc, Rotation(-(get_num_rows_per_round() as i32)));
-            let data_rlcs: Vec<_> = (0..NUM_BYTES_PER_WORD + 1).map(|i| {
-                meta.query_advice(data_rlc, Rotation(i as i32))
-            }).collect();
+            let data_rlcs: Vec<_> = (0..NUM_BYTES_PER_WORD + 1)
+                .map(|i| meta.query_advice(data_rlc, Rotation(i as i32)))
+                .collect();
             assert_eq!(data_rlcs.len(), input_bytes.len() + 1);
 
             // Update the length/data_rlc on rows where we absorb data
@@ -1580,13 +1583,19 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
 
                 let mut new_data_rlc = data_rlcs[NUM_BYTES_PER_WORD].expr();
 
-                // At the start of a hash, start at 0. Otherwise, continue from the previous value.
+                // At the start of a hash, start at 0. Otherwise, continue from the previous
+                // value.
                 let data_rlc_zero_or_prev =
                     data_rlc_prev.clone() * not::expr(start_new_hash_prev.expr());
-                cb.require_equal("initial data rlc", data_rlc_zero_or_prev, new_data_rlc.clone());
+                cb.require_equal(
+                    "initial data rlc",
+                    data_rlc_zero_or_prev,
+                    new_data_rlc.clone(),
+                );
 
-                // Add the word `input_bytes` to `data_rlc`. It has a variable length represented by
-                // `is_paddings`, which requires intermediate cells to keep the degree low.
+                // Add the word `input_bytes` to `data_rlc`. It has a variable length
+                // represented by `is_paddings`, which requires intermediate
+                // cells to keep the degree low.
                 for (idx, (byte, is_padding)) in
                     input_bytes.iter().zip(is_paddings.iter()).enumerate()
                 {
@@ -1603,8 +1612,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                     );
                     new_data_rlc = data_rlc_after_this_byte;
                 }
-                // At this point, `data_rlcs[0]` includes the new input word. It will be copied into
-                // the next round, or it is the final `input_rlc` in the lookup table.
+                // At this point, `data_rlcs[0]` includes the new input word. It
+                // will be copied into the next round, or it is
+                // the final `input_rlc` in the lookup table.
             });
             // Keep length/data_rlc the same on rows where we don't absorb data
             cb.condition(
