@@ -57,6 +57,7 @@ pub(crate) struct BeginTxGadget<F> {
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
     is_zero_code_hash: IsZeroGadget<F>,
+    // fields to support keccak lookup.
     tx_caller_address_bytes: [Cell<F>; N_BYTES_ACCOUNT_ADDRESS],
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
     tx_nonce_bytes: [Cell<F>; N_BYTES_U64],
@@ -101,8 +102,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 TxContextFieldTag::CallDataGasCost,
             ]
             .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
-        let tx_nonce_is_zero = IsZeroGadget::construct(cb, tx_nonce.expr());
-        let tx_nonce_lt_128 = LtGadget::construct(cb, tx_nonce.expr(), 128.expr());
 
         let call_callee_address = cb.query_cell();
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
@@ -176,13 +175,15 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
-        // Read code_hash of callee
+        // Initialise cells/gadgets required for contract deployment case.
         let phase2_code_hash = cb.query_cell_phase2();
         let (tx_caller_address_bytes, caller_nonce_hash_bytes, tx_nonce_bytes) = (
             array_init::array_init(|_| cb.query_byte()),
             array_init::array_init(|_| cb.query_byte()),
             array_init::array_init(|_| cb.query_byte()),
         );
+        let tx_nonce_is_zero = IsZeroGadget::construct(cb, tx_nonce.expr());
+        let tx_nonce_lt_128 = LtGadget::construct(cb, tx_nonce.expr(), 128.expr());
         let tx_nonce_byte_size = ByteSizeGadget::construct(
             cb,
             tx_nonce_bytes
@@ -195,6 +196,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         );
         let tx_nonce_byte_size_cmp =
             BinaryNumberGadget::construct(cb, tx_nonce_byte_size.byte_size());
+
         cb.require_equal(
             "tx caller address equivalence",
             tx_caller_address.expr(),
@@ -208,7 +210,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
         });
         cb.require_equal(
-            "tx nonce bytes used => equivalence",
+            "tx nonce equivalence",
             tx_nonce.expr(),
             expr_from_bytes(&tx_nonce_bytes),
         );
@@ -246,7 +248,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // nonce-prefix == if nonce >= 128: 128 + byte_size(nonce)
         // nonce == tx_nonce_bytes (without trailing zeros)
         macro_rules! keccak_lookup {
-            // n: number of meaningful nonce bytes.
+            // n: minimum number of bytes used to represent tx nonce.
             // cond: repetitive conditions to guard the lookup.
             ( $n:expr, $( $cond:expr ),* ) => {
                 cb.condition(
@@ -308,47 +310,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             };
         }
 
+        // Cover various cases of keccak lookup guarded by the number of bytes used to
+        // represent transaction's nonce.
+        //
+        // The tx nonce in the RLP-encoding could be n ∈ [0, 8] bytes. Depending on the
+        // byte size of tx nonce, we take `n` byte from the 8-bytes nonce array.
         keccak_lookup!(0, tx_nonce_lt_128.expr());
         keccak_lookup!(
             1,
             not::expr(tx_nonce_lt_128.expr()),
             tx_nonce_byte_size_cmp.value_equals(1usize)
         );
-        keccak_lookup!(
-            2,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(2usize)
-        );
-        keccak_lookup!(
-            3,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(3usize)
-        );
-        keccak_lookup!(
-            4,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(4usize)
-        );
-        keccak_lookup!(
-            5,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(5usize)
-        );
-        keccak_lookup!(
-            6,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(6usize)
-        );
-        keccak_lookup!(
-            7,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(7usize)
-        );
-        keccak_lookup!(
-            8,
-            tx_is_create.expr(),
-            tx_nonce_byte_size_cmp.value_equals(8usize)
-        );
+        keccak_lookup!(2, tx_nonce_byte_size_cmp.value_equals(2usize));
+        keccak_lookup!(3, tx_nonce_byte_size_cmp.value_equals(3usize));
+        keccak_lookup!(4, tx_nonce_byte_size_cmp.value_equals(4usize));
+        keccak_lookup!(5, tx_nonce_byte_size_cmp.value_equals(5usize));
+        keccak_lookup!(6, tx_nonce_byte_size_cmp.value_equals(6usize));
+        keccak_lookup!(7, tx_nonce_byte_size_cmp.value_equals(7usize));
+        keccak_lookup!(8, tx_nonce_byte_size_cmp.value_equals(8usize));
 
         cb.condition(tx_is_create.expr(), |cb| {
             cb.account_write(
@@ -359,7 +338,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 None,
             );
         });
-
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.account_read(
                 call_callee_address.expr(),
@@ -367,6 +345,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 phase2_code_hash.expr(),
             );
         });
+
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
         let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
