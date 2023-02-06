@@ -434,7 +434,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             let mut stream = rlp::RlpStream::new();
             stream.begin_list(2);
             stream.append(&caller_address);
-            stream.append(&Word::from(nonce_prev));
+            stream.append(&nonce_prev);
             stream.out().to_vec()
         });
         state.push_op_reversible(
