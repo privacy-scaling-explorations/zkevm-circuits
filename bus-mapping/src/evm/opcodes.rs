@@ -4,7 +4,8 @@ use crate::{
     error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
+        TxRefundOp, RW,
     },
     state_db::CodeDB,
     Error,
@@ -462,12 +463,15 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
-            state.account_write(
+            state.push_op_reversible(
                 &mut exec_step,
-                call.address,
-                AccountField::Nonce,
-                1.into(),
-                0.into(),
+                RW::WRITE,
+                AccountOp {
+                    address: call.address,
+                    field: AccountField::Nonce,
+                    value: 1.into(),
+                    value_prev: 0.into(),
+                },
             )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),

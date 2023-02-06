@@ -371,7 +371,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 AccountFieldTag::Nonce,
                 1.expr(),
                 0.expr(),
-                None,
+                Some(&mut reversion_info),
             );
             for (field_tag, value) in [
                 (CallContextFieldTag::Depth, 1.expr()),
@@ -407,7 +407,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 is_create: To(tx_is_create.expr()),
                 code_hash: To(cb.curr.state.code_hash.expr()),
                 gas_left: To(gas_left.clone()),
-                reversible_write_counter: To(2.expr()),
+                reversible_write_counter: To(3.expr()),
                 log_id: To(0.expr()),
                 ..StepStateTransition::new_context()
             });
