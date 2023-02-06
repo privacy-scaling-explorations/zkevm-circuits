@@ -410,6 +410,15 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
+    // Transfer with fee
+    state.transfer_with_fee(
+        &mut exec_step,
+        call.caller_address,
+        call.address,
+        call.value,
+        state.tx.gas_price * state.tx.gas,
+    )?;
+
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);
     let callee_exists = !callee_account.is_empty();
@@ -437,23 +446,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             stream.append(&nonce_prev);
             stream.out().to_vec()
         });
-    } else {
-        state.account_read(
-            &mut exec_step,
-            call.address,
-            AccountField::CodeHash,
-            callee_code_hash,
-            callee_code_hash,
-        )?;
     }
-    // Transfer with fee
-    state.transfer_with_fee(
-        &mut exec_step,
-        call.caller_address,
-        call.address,
-        call.value,
-        state.tx.gas_price * state.tx.gas,
-    )?;
 
     // There are 4 branches from here.
     match (
@@ -510,6 +503,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::CodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            )?;
+
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 // if the transfer values make an account from non-exist to exist

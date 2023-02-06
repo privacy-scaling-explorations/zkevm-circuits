@@ -4,6 +4,7 @@ use crate::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64, N_BYTES_WORD},
         step::ExecutionState,
         util::{
+            and,
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
@@ -175,8 +176,27 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_left = tx_gas.expr() - intrinsic_gas_cost.expr();
         let sufficient_gas_left = RangeCheckGadget::construct(cb, gas_left.clone());
 
+        // TODO: If value is 0, skip transfer, just like callop.
+        // Transfer value from caller to callee
+        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+            cb,
+            tx_caller_address.expr(),
+            call_callee_address.expr(),
+            tx_value.clone(),
+            mul_gas_fee_by_gas.product().clone(),
+            &mut reversion_info,
+        );
+
         // Initialise cells/gadgets required for contract deployment case.
         let phase2_code_hash = cb.query_cell_phase2();
+        // TODO: guard against call to precompiled contracts.
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
+            cb.account_read(
+                call_callee_address.expr(),
+                AccountFieldTag::CodeHash,
+                phase2_code_hash.expr(),
+            );
+        });
         let (tx_caller_address_bytes, caller_nonce_hash_bytes, tx_nonce_bytes) = (
             array_init::array_init(|_| cb.query_byte()),
             array_init::array_init(|_| cb.query_byte()),
@@ -329,14 +349,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         keccak_lookup!(7, tx_nonce_byte_size_cmp.value_equals(7usize));
         keccak_lookup!(8, tx_nonce_byte_size_cmp.value_equals(8usize));
 
-        cb.condition(not::expr(tx_is_create.expr()), |cb| {
-            cb.account_read(
-                call_callee_address.expr(),
-                AccountFieldTag::CodeHash,
-                phase2_code_hash.expr(),
-            );
-        });
-
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
         let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
@@ -350,21 +362,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
         });
 
-        // TODO: If value is 0, skip transfer, just like callop.
-        // Transfer value from caller to callee
-        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
-            cb,
-            tx_caller_address.expr(),
-            call_callee_address.expr(),
-            tx_value.clone(),
-            mul_gas_fee_by_gas.product().clone(),
-            &mut reversion_info,
-        );
-
-        // TODO: Handle precompiled
-
-        // Handle contract creation transaction
-        // tx_is_create = true when tx.to = none
+        // 1. Handle contract creation transaction
         cb.condition(tx_is_create.expr(), |cb| {
             cb.account_write(
                 call_callee_address.expr(),
@@ -401,6 +399,30 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
+                // 23 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write caller Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance (Reversible)
+                //   - Write Account Balance (Reversible)
+                //   - Write callee Account Nonce (Reversible)
+                //   - Write CallContext Depth
+                //   - Write CallContext CallerAddress
+                //   - Write CallContext CalleeAddress
+                //   - Write CallContext CallDataOffset
+                //   - Write CallContext CallDataLength
+                //   - Write CallContext Value
+                //   - Write CallContext IsStatic
+                //   - Write CallContext LastCalleeId
+                //   - Write CallContext LastCalleeReturnDataOffset
+                //   - Write CallContext LastCalleeReturnDataLength
+                //   - Write CallContext IsRoot
+                //   - Write CallContext IsCreate
+                //   - Write CallContext CodeHash
                 rw_counter: Delta(23.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
@@ -413,9 +435,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
+        // TODO: 2. Handle call to precompiled contracts.
+
         // TODO: we should use "!tx_is_create && is_empty_code && !(1 <= addr <= 9)".
         // check callop.rs
-        let native_transfer = not::expr(tx_is_create.expr()) * is_empty_code.expr();
+        // 3. Handle call to account with empty code.
+        let native_transfer = and::expr([not::expr(tx_is_create.expr()), is_empty_code.expr()]);
         cb.condition(
             native_transfer.expr() * not::expr(tx_value_is_zero.expr()),
             |cb| {
@@ -458,8 +483,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        let normal_contract_call = not::expr(tx_is_create.expr()) * not::expr(is_empty_code.expr());
-
+        // 4. Handle call to account with non-empty code.
+        let normal_contract_call = and::expr([
+            not::expr(tx_is_create.expr()),
+            not::expr(is_empty_code.expr()),
+        ]);
         cb.condition(normal_contract_call, |cb| {
             // Setup first call's context.
             for (field_tag, value) in [
@@ -495,8 +523,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
-                //   - Write Account Balance
-                //   - Write Account Balance
+                //   - Write Account Balance (Reversible)
+                //   - Write Account Balance (Reversible)
                 //   - Read Account CodeHash
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
@@ -575,9 +603,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             )
         } else {
             (
+                block.rws[step.rw_indices[7]].account_value_pair(),
                 block.rws[step.rw_indices[8]].account_value_pair(),
-                block.rws[step.rw_indices[9]].account_value_pair(),
-                block.rws[step.rw_indices[7]].account_value_pair().0,
+                // TODO: handle call to precompiled contracts where we may not have a account read
+                // for code hash.
+                block.rws[step.rw_indices[9]].account_value_pair().0,
             )
         };
 
