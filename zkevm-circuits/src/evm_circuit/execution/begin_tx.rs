@@ -955,27 +955,56 @@ mod test {
     fn begin_tx_deploy_nonce_zero() {
         begin_tx_deploy(0);
     }
-
     #[test]
     fn begin_tx_deploy_nonce_small_1byte() {
         begin_tx_deploy(1);
         begin_tx_deploy(127);
     }
-
     #[test]
     fn begin_tx_deploy_nonce_big_1byte() {
         begin_tx_deploy(128);
         begin_tx_deploy(255);
     }
-
     #[test]
-    fn begin_tx_deploy_nonce_multi_byte() {
+    fn begin_tx_deploy_nonce_2bytes() {
+        begin_tx_deploy(0x0100u64);
         begin_tx_deploy(0x1020u64);
+        begin_tx_deploy(0xffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_3bytes() {
+        begin_tx_deploy(0x010000u64);
         begin_tx_deploy(0x102030u64);
+        begin_tx_deploy(0xffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_4bytes() {
+        begin_tx_deploy(0x01000000u64);
         begin_tx_deploy(0x10203040u64);
+        begin_tx_deploy(0xffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_5bytes() {
+        begin_tx_deploy(0x0100000000u64);
         begin_tx_deploy(0x1020304050u64);
+        begin_tx_deploy(0xffffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_6bytes() {
+        begin_tx_deploy(0x010000000000u64);
         begin_tx_deploy(0x102030405060u64);
+        begin_tx_deploy(0xffffffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_7bytes() {
+        begin_tx_deploy(0x01000000000000u64);
         begin_tx_deploy(0x10203040506070u64);
+        begin_tx_deploy(0xffffffffffffffu64);
+    }
+    #[test]
+    fn begin_tx_deploy_nonce_8bytes() {
+        begin_tx_deploy(0x0100000000000000u64);
         begin_tx_deploy(0x1020304050607080u64);
+        begin_tx_deploy(0xfffffffffffffffeu64);
     }
 }
