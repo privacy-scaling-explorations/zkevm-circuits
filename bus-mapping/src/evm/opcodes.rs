@@ -431,7 +431,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     if state.tx.is_create() {
         state.block.sha3_inputs.push({
-            let mut stream = rlp::RlpStream::new();
+            let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
             stream.append(&caller_address);
             stream.append(&nonce_prev);
