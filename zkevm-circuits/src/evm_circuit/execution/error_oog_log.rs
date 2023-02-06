@@ -40,6 +40,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasLOG;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+        let opcode = cb.query_cell();
+        // constrain op code is Log*
+        cb.require_in_set(
+            "ErrorOutOfGasLOG happens in Log*",
+            opcode.expr(),
+            vec![
+                OpcodeId::LOG0.expr(),
+                OpcodeId::LOG1.expr(),
+                OpcodeId::LOG2.expr(),
+                OpcodeId::LOG3.expr(),
+                OpcodeId::LOG4.expr(),
+            ],
+        );
         let mstart = cb.query_cell_phase2();
         let msize = cb.query_word_rlc();
         let rw_counter_end_of_reversion = cb.query_cell();
@@ -50,7 +63,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
         // Note: no need to check not in static call, since write protection error will
         // handle it.
-        let opcode = cb.query_cell();
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
 
         // check memory
