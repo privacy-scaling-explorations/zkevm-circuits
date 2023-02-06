@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let memory_offset = cb.query_cell();
+        let memory_offset = cb.query_cell_phase2();
         let data_offset = cb.query_word_rlc();
         let length = cb.query_word_rlc();
 
@@ -249,7 +249,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -283,7 +283,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None,), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn test_ok_internal(
@@ -339,7 +339,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None,), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

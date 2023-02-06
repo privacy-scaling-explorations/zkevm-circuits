@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, CachedRegion, Cell, CellType,
+            select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -44,12 +44,12 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
         let mut reversion_info = cb.reversion_info_read(None);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
-        let phase2_key = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_key = cb.query_cell_phase2();
         // Pop the key from the stack
         cb.stack_pop(phase2_key.expr());
 
-        let phase2_value = cb.query_cell_with_type(CellType::StoragePhase2);
-        let phase2_committed_value = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_value = cb.query_cell_phase2();
+        let phase2_committed_value = cb.query_cell_phase2();
         cb.account_storage_read(
             callee_address.expr(),
             phase2_key.expr(),
@@ -166,11 +166,7 @@ impl<F: Field> SloadGasGadget<F> {
 #[cfg(test)]
 mod test {
 
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, BytecodeTestConfig},
-    };
-
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::{test_ctx::helpers::tx_from_1_to_0, TestContext, MOCK_ACCOUNTS};
 
@@ -211,11 +207,8 @@ mod test {
                 |block, _txs| block,
             )
             .unwrap();
-            let test_config = BytecodeTestConfig {
-                enable_state_circuit_test: true,
-                ..Default::default()
-            };
-            assert_eq!(run_test_circuits(ctx, Some(test_config),), Ok(()));
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         }
     }
 

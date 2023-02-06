@@ -1,27 +1,23 @@
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
-use crate::{
-    evm_circuit::{
-        execution::ExecutionGadget,
-        param::N_BYTES_GAS,
-        step::ExecutionState,
-        util::{
-            common_gadget::{CommonCallGadget, RestoreContextGadget},
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
-            math_gadget::LtGadget,
-            CachedRegion, Cell, Word,
+use crate::evm_circuit::{
+    execution::ExecutionGadget,
+    param::N_BYTES_GAS,
+    step::ExecutionState,
+    util::{
+        common_gadget::{CommonCallGadget, RestoreContextGadget},
+        constraint_builder::{
+            ConstraintBuilder, StepStateTransition,
+            Transition::{Delta, Same},
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        math_gadget::LtGadget,
+        CachedRegion, Cell,
     },
-    witness::Rw,
+    witness::{Block, Call, ExecStep, Transaction},
 };
+use crate::table::CallContextFieldTag;
+use crate::util::Expr;
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorOOGCallGadget<F> {
@@ -30,7 +26,6 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     is_static: Cell<F>,
     call: CommonCallGadget<F, false>,
     is_warm: Cell<F>,
-    balance: Word<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
@@ -65,15 +60,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_warm.expr(),
         );
 
-        let balance = cb.query_word_rlc();
-        cb.account_read(
-            call_gadget.callee_address_expr(),
-            AccountFieldTag::Balance,
-            balance.expr(),
-        );
-
         // Verify gas cost
-        let gas_cost = call_gadget.gas_cost_expr(cb, is_warm.expr(), 1.expr());
+        let gas_cost = call_gadget.gas_cost_expr(is_warm.expr(), 1.expr());
 
         // Check if the amount of gas available is less than the amount of gas required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
@@ -106,8 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(15.expr() + cb.curr.state.reversible_write_counter.expr()),
-
+                rw_counter: Delta(14.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -141,7 +128,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             is_static,
             call: call_gadget,
             is_warm,
-            balance,
             insufficient_gas,
             rw_counter_end_of_reversion,
             restore_context,
@@ -172,21 +158,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         ]
         .map(|idx| block.rws[idx].stack_value());
 
-        let (is_warm, is_warm_prev) = block.rws[step.rw_indices[10]].tx_access_list_value_pair();
-        let callee_balance_pair = block.rws[step.rw_indices[11]].account_value_pair();
-        let (callee_code_hash, callee_exists) = match block.rws[step.rw_indices[12]] {
-            Rw::Account {
-                field_tag: AccountFieldTag::CodeHash,
-                value,
-                ..
-            } => (value.to_le_bytes(), true),
-            Rw::Account {
-                field_tag: AccountFieldTag::NonExisting,
-                ..
-            } => (*EMPTY_HASH_LE, false),
-            _ => unreachable!(),
-        };
-        let callee_code_hash_word = region.word_rlc(U256::from_little_endian(&callee_code_hash));
+        let callee_code_hash = block.rws[step.rw_indices[10]].account_value_pair().0;
+        let callee_exists = !callee_code_hash.is_zero();
+
+        let (is_warm, is_warm_prev) = block.rws[step.rw_indices[11]].tx_access_list_value_pair();
+
         let memory_expansion_gas_cost = self.call.assign(
             region,
             offset,
@@ -199,7 +175,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             rd_offset,
             rd_length,
             step.memory_word_size(),
-            callee_code_hash_word,
+            region.word_rlc(callee_code_hash),
         )?;
 
         self.opcode
@@ -214,9 +190,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        // new assignment
-        self.balance
-            .assign(region, offset, Some(callee_balance_pair.0.to_le_bytes()))?;
         let has_value = !value.is_zero();
         let gas_cost = self.call.cal_gas_cost_for_assignment(
             memory_expansion_gas_cost,
@@ -240,20 +213,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         )?;
 
         self.restore_context
-            .assign(region, offset, block, call, step, 15)?;
+            .assign(region, offset, block, call, step, 14)?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
+
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode};
     use eth_types::{bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account};
     use eth_types::{Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::TestContext;
+
     use std::default::Default;
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -310,7 +285,7 @@ mod test {
 
     fn test_oog(caller: Account, callee: Account, is_root: bool) {
         let tx_gas = if is_root { 21100 } else { 25000 };
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -335,15 +310,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block.unwrap()), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

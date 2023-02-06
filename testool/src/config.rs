@@ -1,5 +1,4 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use eth_types::evm_types::OpcodeId;
 use serde::Deserialize;
 
 const CONFIG_FILE: &str = "Config.toml";
@@ -19,8 +18,6 @@ pub struct TestSuite {
     pub max_gas: u64,
     pub max_steps: u64,
 
-    /// see [Implemented opcodes status](https://github.com/appliedzkp/zkevm-circuits/issues/477)
-    pub unimplemented_opcodes: Vec<OpcodeId>,
     ignore_tests: Option<Vec<String>>,
     allow_tests: Option<Vec<String>>,
 }
@@ -32,7 +29,6 @@ impl Default for TestSuite {
             path: String::default(),
             max_gas: u64::MAX,
             max_steps: u64::MAX,
-            unimplemented_opcodes: Vec::new(),
             ignore_tests: Some(Vec::new()),
             allow_tests: None,
         }

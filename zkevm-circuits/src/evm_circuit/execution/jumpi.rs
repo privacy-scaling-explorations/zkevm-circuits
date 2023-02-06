@@ -11,7 +11,7 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsZeroGadget,
-            select, CachedRegion, Cell, CellType, RandomLinearCombination,
+            select, CachedRegion, Cell, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let destination = cb.query_word_rlc();
-        let phase2_condition = cb.query_cell_with_type(CellType::StoragePhase2);
+        let phase2_condition = cb.query_cell_phase2();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 mod test {
     use crate::{
         evm_circuit::test::{rand_range, rand_word},
-        test_util::run_test_circuits,
+        test_util::CircuitTestBuilder,
     };
     use eth_types::{bytecode, Word};
     use mock::TestContext;
@@ -139,13 +139,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

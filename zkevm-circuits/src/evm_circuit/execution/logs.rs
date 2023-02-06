@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, CellType,
+            not, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let mstart = cb.query_cell();
+        let mstart = cb.query_cell_phase2();
         let msize = cb.query_word_rlc();
 
         // Pop mstart_address, msize from stack
@@ -74,7 +74,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         });
 
         // constrain topics in logs
-        let phase2_topics = array_init(|_| cb.query_cell_with_type(CellType::StoragePhase2));
+        let phase2_topics = array_init(|_| cb.query_cell_phase2());
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in phase2_topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
@@ -261,11 +261,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{evm_types::OpcodeId, Bytecode, Word};
     use mock::TestContext;
     use rand::Rng;
-
-    use crate::test_util::run_test_circuits;
 
     #[test]
     fn log_gadget_simple() {
@@ -365,13 +364,10 @@ mod test {
 
         code_prepare.append(&code);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     // test multi log op codes and multi copy log steps
@@ -420,13 +416,10 @@ mod test {
         code.write_op(OpcodeId::STOP);
         code_prepare.append(&code);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code_prepare).unwrap(),
-                None,
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     /// prepare memory reading data

@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let chain_id = cb.query_cell();
+        let chain_id = cb.query_cell_phase2();
 
         // Push the value to the stack
         cb.stack_push(chain_id.expr());
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::test_ctx::TestContext;
 
@@ -84,12 +84,10 @@ mod test {
             CHAINID
             STOP
         };
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

@@ -50,7 +50,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
             Some(&mut reversion_info),
         );
 
-        let code_hash = cb.query_cell();
+        let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
         cb.account_read(address, AccountFieldTag::CodeHash, code_hash.expr());
         cb.stack_push(code_hash.expr());
@@ -120,11 +120,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::test_circuits_block_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode,
-        geth_types::{Account, GethData},
-        Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;
@@ -158,7 +156,7 @@ mod test {
         });
 
         // Execute the bytecode and get trace
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -182,10 +180,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        test_circuits_block_geth_data_default(block).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

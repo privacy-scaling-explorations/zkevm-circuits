@@ -36,7 +36,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset = cb.query_cell();
+        let offset = cb.query_cell_phase2();
         let size = cb.query_word_rlc();
         let sha3_rlc = cb.query_word_rlc();
 
@@ -47,7 +47,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let memory_address = MemoryAddressGadget::construct(cb, offset, size);
 
         let copy_rwc_inc = cb.query_cell();
-        let rlc_acc = cb.query_cell();
+        let rlc_acc = cb.query_cell_phase2();
 
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
@@ -159,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::run_test_circuits_with_params;
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{
         circuit_input_builder::CircuitsParams,
         evm::{gen_sha3_code, MemoryKind},
@@ -168,17 +168,14 @@ mod tests {
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, _) = gen_sha3_code(offset, size, mem_kind);
-        assert_eq!(
-            run_test_circuits_with_params(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None,
-                CircuitsParams {
-                    max_rws: 5500,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .params(CircuitsParams {
+            max_rws: 5500,
+            ..Default::default()
+        })
+        .run();
     }
 
     #[test]

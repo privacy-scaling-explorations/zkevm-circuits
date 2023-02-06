@@ -4,9 +4,8 @@ use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
-use eth_types::{GethExecStep, ToWord, Word};
+use eth_types::{evm_unimplemented, GethExecStep, ToWord, Word};
 use keccak256::EMPTY_HASH;
-use log::warn;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -90,6 +89,25 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (call.is_success as u64).into(),
         )?;
 
+        let callee_code_hash = call.code_hash;
+        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
+
+        let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+            (
+                callee_code_hash.to_word(),
+                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            )
+        } else {
+            (Word::zero(), true)
+        };
+        state.account_read(
+            &mut exec_step,
+            callee_address,
+            AccountField::CodeHash,
+            callee_code_hash_word,
+            callee_code_hash_word,
+        )?;
+
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
             &mut exec_step,
@@ -119,7 +137,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         debug_assert!(found);
 
         let caller_balance = sender_account.balance;
-        let insufficient_balance = call.value > caller_balance;
+        let is_call_or_callcode = call.kind == CallKind::Call || call.kind == CallKind::CallCode;
+        let insufficient_balance = call.value > caller_balance && is_call_or_callcode;
+
+        log::debug!(
+            "insufficient_balance: {}, call type: {:?}, sender_account: {:?} ",
+            insufficient_balance,
+            call.kind,
+            call.caller_address
+        );
 
         // read balance of caller to compare to value for insufficient_balance checking
         // in circuit, also use for callcode successful case check balance is
@@ -127,17 +153,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         // tranfer gadget implicitly.
         state.account_read(
             &mut exec_step,
-            call.address,
+            call.caller_address,
             AccountField::Balance,
             caller_balance,
             caller_balance,
         )?;
 
-        let callee_code_hash = call.code_hash;
-        let callee_exists = !state.sdb.get_account(&callee_address).1.is_empty();
-
-        // Transfer value only for CALL opcode. only when insufficient_balance = false.
-        if call.kind == CallKind::Call && !insufficient_balance {
+        // Transfer value only for CALL opcode, insufficient_balance = false
+        // and value > 0.
+        if call.kind == CallKind::Call && !insufficient_balance && !call.value.is_zero() {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
@@ -145,22 +169,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 call.value,
             )?;
         }
-
-        let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
-            (
-                callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
-            )
-        } else {
-            (Word::zero(), true)
-        };
-        state.account_read(
-            &mut exec_step,
-            callee_address,
-            AccountField::CodeHash,
-            callee_code_hash_word,
-            callee_code_hash_word,
-        )?;
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
@@ -204,7 +212,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         ) {
             // 1. Call to precompiled.
             (false, true, _) => {
-                warn!("Call to precompiled is left unimplemented");
+                evm_unimplemented!("Call to precompiled is left unimplemented");
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.

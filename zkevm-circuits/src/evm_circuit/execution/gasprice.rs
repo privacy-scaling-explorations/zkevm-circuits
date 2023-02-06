@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         // Query gasprice value
-        let gas_price = cb.query_cell();
+        let gas_price = cb.query_cell_phase2();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -88,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -116,6 +116,6 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
