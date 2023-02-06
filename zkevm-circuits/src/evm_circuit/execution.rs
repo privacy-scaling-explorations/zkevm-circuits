@@ -1,7 +1,7 @@
 use super::util::{CachedRegion, CellManager, StoredExpression};
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
+        param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -316,15 +316,13 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
 
-        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
-
         let advices = [(); STEP_WIDTH]
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < lookup_column_count {
+                if n < *EVM_LOOKUP_COLS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < *EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -773,6 +771,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         height: usize,
     ) -> Result<(), Error> {
+        // Name Advice columns
         for idx in 0..height {
             let offset = offset + idx;
             self.q_usable.enable(region, offset)?;
@@ -816,6 +815,19 @@ impl<F: Field> ExecutionConfig<F> {
             || "Execution step",
             |mut region| {
                 let mut offset = 0;
+
+                self.advices.iter().enumerate().for_each(|(idx, &col)| {
+                    if idx < *EVM_LOOKUP_COLS {
+                        region.name_column(|| format!("EVM_Adv Phase3"), col)
+                    } else if idx < *EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
+                        region.name_column(|| format!("EVM_Adv Phase2"), col)
+                    } else {
+                        region.name_column(|| format!("EVM_Adv Phase1"), col)
+                    }
+                });
+                region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
+                region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
+                region.name_column(|| "Copy_Constr constants", self.constants);
 
                 self.q_step_first.enable(&mut region, offset)?;
 
