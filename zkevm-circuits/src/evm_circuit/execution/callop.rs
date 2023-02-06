@@ -661,9 +661,8 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::{Account, GethData};
+    use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, word, Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
     use itertools::Itertools;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
