@@ -62,7 +62,7 @@ pub trait LookupTable<F: Field> {
 impl<F: Field, C: Into<Column<Any>> + Copy + Clone, const W: usize> LookupTable<F> for [C; W] {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.iter()
-            .map(|column| meta.query_any(column.clone(), Rotation::cur()))
+            .map(|column| meta.query_any(*column, Rotation::cur()))
             .collect()
     }
 

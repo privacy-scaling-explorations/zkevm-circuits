@@ -818,11 +818,11 @@ impl<F: Field> ExecutionConfig<F> {
 
                 self.advices.iter().enumerate().for_each(|(idx, &col)| {
                     if idx < *EVM_LOOKUP_COLS {
-                        region.name_column(|| format!("EVM_Adv Phase3"), col)
+                        region.name_column(|| "EVM_Adv Phase3".to_string(), col)
                     } else if idx < *EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
-                        region.name_column(|| format!("EVM_Adv Phase2"), col)
+                        region.name_column(|| "EVM_Adv Phase2".to_string(), col)
                     } else {
-                        region.name_column(|| format!("EVM_Adv Phase1"), col)
+                        region.name_column(|| "EVM_Adv Phase1".to_string(), col)
                     }
                 });
                 region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
