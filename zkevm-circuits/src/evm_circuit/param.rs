@@ -71,6 +71,9 @@ pub(crate) const N_BYTES_CALLDATASIZE: usize = N_BYTES_U64;
 lazy_static::lazy_static! {
     // Step slot height in evm circuit
     pub(crate) static ref EXECUTION_STATE_HEIGHT_MAP : HashMap<ExecutionState, usize> = get_step_height_map();
+
+    /// Ammount of lookup columns in the EVM circuit dedicated to lookups.
+    pub(crate) static ref EVM_LOOKUP_COLS: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
 }
 fn get_step_height_map() -> HashMap<ExecutionState, usize> {
     let mut meta = ConstraintSystem::<Fr>::default();
