@@ -2182,6 +2182,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs_extra"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2022715d62ab30faffd124d40b76f4134a550a87792276512b18d63272333394"
+
+[[package]]
 name = "funty"
 version = "1.2.0"
 source = "git+https://github.com/ferrilab/funty/?rev=7ef0d890fbcd8b3def1635ac1a877fc298488446#7ef0d890fbcd8b3def1635ac1a877fc298488446"
@@ -2476,6 +2482,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2_base"
+version = "0.1.0"
+source = "git+ssh://git@github.com/scroll-tech/halo2-ecc.git?branch=halo2-ecc-ecdsa-0129#83826a6a5fbec9cd02b97c2f202da3e05da2a306"
+dependencies = [
+ "ff",
+ "halo2_proofs",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "halo2_ecc"
+version = "0.1.0"
+source = "git+ssh://git@github.com/scroll-tech/halo2-ecc.git?branch=halo2-ecc-ecdsa-0129#83826a6a5fbec9cd02b97c2f202da3e05da2a306"
+dependencies = [
+ "ark-std",
+ "ff",
+ "group",
+ "halo2_base",
+ "halo2_proofs",
+ "halo2curves 0.3.1",
+ "jemallocator",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "halo2_proofs"
 version = "0.2.0"
 source = "git+https://github.com/scroll-tech/halo2.git?branch=scroll-dev-1220#b050cd9085a6ecfe57af19eab45ca2ec9c534f2c"
@@ -2519,6 +2558,23 @@ dependencies = [
 name = "halo2curves"
 version = "0.2.1"
 source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=0.3.0#83c72d49762343ffc9576ca11a2aa615efe1029b"
+dependencies = [
+ "ff",
+ "group",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "static_assertions",
+ "subtle",
+]
+
+[[package]]
+name = "halo2curves"
+version = "0.3.1"
+source = "git+https://github.com/jonathanpwang/halo2curves.git#a6437dbe92fe3fd347674ab32cc0909c605a4f89"
 dependencies = [
  "ff",
  "group",
@@ -2939,6 +2995,27 @@ name = "itoa"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4217ad341ebadf8d8e724e264f13e593e0648f5b3e94b3896a5df283be015ecc"
+
+[[package]]
+name = "jemalloc-sys"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3b9f3f5c9b31aa0f5ed3260385ac205db665baa41d49bb8338008ae94ede45"
+dependencies = [
+ "cc",
+ "fs_extra",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43ae63fcfc45e99ab3d1b29a46782ad679e98436c3169d15a167a1108a724b69"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+]
 
 [[package]]
 name = "jpeg-decoder"
@@ -6467,6 +6544,8 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "gadgets",
+ "halo2_base",
+ "halo2_ecc",
  "halo2_proofs",
  "hex",
  "integer",
