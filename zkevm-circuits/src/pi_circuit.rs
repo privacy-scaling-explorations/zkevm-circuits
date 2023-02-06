@@ -10,6 +10,7 @@ use eth_types::{
     Word,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
+use keccak256::plain::Keccak;
 use mock::MOCK_CHAIN_ID;
 
 use crate::table::BlockTable;
@@ -1148,11 +1149,17 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 base_fee: block.context.base_fee,
             },
         };
+        let rand_rpi = gen_rand_rpi::<F>(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            &public_data,
+            block.randomness,
+        );
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.randomness,
-            block.randomness + F::from_u128(1),
+            rand_rpi,
             public_data,
         )
     }
@@ -1569,6 +1576,24 @@ fn raw_public_inputs_col<F: Field>(
     }
 
     result
+}
+
+/// Computes `rand_rpi` - a commitment to the `raw_public_inputs_col` values.
+pub fn gen_rand_rpi<F: Field>(
+    max_txs: usize,
+    max_calldata: usize,
+    public_data: &PublicData,
+    randomness: F,
+) -> F {
+    let rlc_rpi_col = raw_public_inputs_col::<F>(max_txs, max_calldata, public_data, randomness);
+    let mut keccak = Keccak::default();
+    for value in rlc_rpi_col.iter() {
+        let mut tmp = value.to_repr();
+        tmp.reverse();
+        keccak.update(&tmp);
+    }
+    let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
+    rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
 }
 
 #[cfg(test)]
