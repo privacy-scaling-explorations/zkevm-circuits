@@ -129,7 +129,7 @@ pub struct TxCircuitConfig<F: Field> {
 
     /// Address recovered by SignVerifyChip
     sv_address: Column<Advice>,
-    sign_verify: SignVerifyConfig,
+    sign_verify: SignVerifyConfig<F>,
 
     // External tables
     tx_table: TxTable,
@@ -161,7 +161,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             tx_table,
             keccak_table,
             rlp_table,
-            challenges,
+            challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
         let q_enable = meta.fixed_column();
@@ -401,7 +401,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             rlp_table,
         );
 
-        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
+        let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone());
 
         meta.create_gate("is_calldata", |meta| {
             let mut cb = BaseConstraintBuilder::default();
@@ -1659,6 +1659,11 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             let assigned_sig_verifs =
                 self.sign_verify
                     .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
+            self.sign_verify.assert_sig_is_valid(
+                &config.sign_verify,
+                layouter,
+                assigned_sig_verifs.as_slice(),
+            )?;
             self.assign(
                 config,
                 challenges,
