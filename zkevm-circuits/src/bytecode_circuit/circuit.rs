@@ -12,7 +12,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use keccak256::EMPTY_HASH_LE;
-use log::trace;
 use std::vec;
 
 use super::{
@@ -353,6 +352,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 is_byte_to_header(meta),
             ]))
         });
+        #[cfg(feature = "codehash")]
         meta.lookup_any(
             "keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
             |meta| {
@@ -424,7 +424,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         assert!(size > self.minimum_rows);
         let last_row_offset = size - self.minimum_rows + 1;
 
-        trace!(
+        log::debug!(
             "size: {}, minimum_rows: {}, last_row_offset:{}",
             size,
             self.minimum_rows,
@@ -435,9 +435,21 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             .evm_word()
             .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
 
+        let mut is_first_time = true;
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
+                if is_first_time {
+                    is_first_time = false;
+                    self.set_padding_row(
+                        &mut region,
+                        &push_data_left_is_zero_chip,
+                        empty_hash,
+                        last_row_offset,
+                        last_row_offset,
+                    )?;
+                    return Ok(());
+                }
                 let mut offset = 0;
                 for bytecode in witness.iter() {
                     self.assign_bytecode(
@@ -540,6 +552,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     F::from(push_data_size as u64),
                 )?;
 
+                /*
                 trace!(
                     "bytecode.set_row({}): last:{} h:{:?} t:{:?} i:{:?} c:{:?} v:{:?} pdl:{} rlc:{:?} l:{:?} pds:{:?}",
                     offset,
@@ -554,6 +567,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     length.get_lower_32(),
                     push_data_size
                 );
+                */
 
                 *offset += 1;
                 push_data_left = next_push_data_left
@@ -775,7 +789,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
+        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, true)
     }
 }
 
@@ -922,6 +936,7 @@ mod tests {
     }
 
     /// Test invalid code_hash data
+    #[cfg(feature = "codehash")]
     #[test]
     fn bytecode_invalid_hash_data() {
         let k = 9;
@@ -932,7 +947,7 @@ mod tests {
         {
             let mut invalid = unrolled;
             invalid.rows[0].code_hash += Word::one();
-            trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
+            log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
             test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
         }
         // TODO: other rows code_hash are ignored by the witness generation, to
@@ -965,6 +980,8 @@ mod tests {
     }
 
     /// Test invalid byte data
+
+    #[cfg(feature = "codehash")]
     #[test]
     fn bytecode_invalid_byte_data() {
         let k = 9;

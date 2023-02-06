@@ -1,4 +1,5 @@
 use bus_mapping::circuit_input_builder::{keccak_inputs, BuilderClient, CircuitsParams};
+use bus_mapping::Error::JSONRpcError;
 use halo2_proofs::circuit::Value;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::dev::VerifyFailure;
@@ -101,11 +102,11 @@ async fn test_super_circuit_all_block() {
         let block_num = blk as u64;
         log::info!("test super circuit, block number: {}", block_num);
         let cli = get_client();
-        // target k = 19
+        // target k = 22
         let params = CircuitsParams {
             max_rws: 4_000_000,
             max_copy_rows: 4_000_000,
-            max_txs: 500,
+            max_txs: 235, // 2**22 / ROWS_PER_SIG
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
@@ -114,7 +115,12 @@ async fn test_super_circuit_all_block() {
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let builder = cli.gen_inputs(block_num).await;
         if builder.is_err() {
-            log::error!("invalid builder {} {:?}, err num NA", block_num, builder);
+            let err = builder.err().unwrap();
+            let err_msg = match err {
+                JSONRpcError(_json_rpc_err) => "JSONRpcError".to_string(), // too long...
+                _ => format!("{err:?}"),
+            };
+            log::error!("invalid builder {} {:?}, err num NA", block_num, err_msg);
             continue;
         }
         let builder = builder.unwrap().0;
@@ -125,10 +131,11 @@ async fn test_super_circuit_all_block() {
         }
 
         let (k, circuit, instance) =
-            SuperCircuit::<Fr, 500, 2_000_000, 64, 0x1000>::build_from_circuit_input_builder(
+            SuperCircuit::<Fr, 235, 2_000_000, 64, 0x1000>::build_from_circuit_input_builder(
                 &builder,
             )
             .unwrap();
+        debug_assert!(k <= 22);
         let prover = MockProver::<Fr>::run(k, &circuit, instance).unwrap();
         let result = prover.verify_par();
         let errs = result.err().unwrap_or_default();
@@ -155,7 +162,7 @@ async fn test_circuit_all_block() {
         let params = CircuitsParams {
             max_rws: 4_000_000,
             max_copy_rows: 4_000_000,
-            max_txs: 500,
+            max_txs: 235,
             max_calldata: 2_000_000,
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
