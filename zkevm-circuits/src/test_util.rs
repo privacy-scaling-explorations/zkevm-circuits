@@ -12,6 +12,7 @@ use eth_types::geth_types::GethData;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
 use mock::TestContext;
+use crate::util::log2_ceil;
 
 #[cfg(test)]
 #[ctor::ctor]
@@ -221,9 +222,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // TODO: use randomness as one of the circuit public input, since randomness in
         // state circuit and evm circuit must be same
         {
+            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
+            let k = log2_ceil(rows_needed + rows_needed);
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let power_of_randomness = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
+            let prover = MockProver::<Fr>::run(k, &state_circuit, power_of_randomness).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
