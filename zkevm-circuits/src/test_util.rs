@@ -3,7 +3,7 @@
 use crate::{
     evm_circuit::EvmCircuit,
     state_circuit::StateCircuit,
-    util::SubCircuit,
+    util::{log2_ceil, SubCircuit},
     witness::{Block, Rw},
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -205,10 +205,10 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
 
+        const NUM_BLINDING_ROWS: usize = 64;
         // Run evm circuit test
         {
             let k = block.get_test_degree();
-
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
             let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
@@ -219,10 +219,11 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         // Run state circuit test
         {
-            let n_rows: usize = block.rws.0.values().flatten().count() + 10;
-            let state_circuit = StateCircuit::<Fr>::new(block.rws, n_rows);
+            let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
+            let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
+            let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let instance = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(17, &state_circuit, instance).unwrap();
+            let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
