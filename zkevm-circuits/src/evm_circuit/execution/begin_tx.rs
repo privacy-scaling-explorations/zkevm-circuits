@@ -329,15 +329,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         keccak_lookup!(7, tx_nonce_byte_size_cmp.value_equals(7usize));
         keccak_lookup!(8, tx_nonce_byte_size_cmp.value_equals(8usize));
 
-        cb.condition(tx_is_create.expr(), |cb| {
-            cb.account_write(
-                call_callee_address.expr(),
-                AccountFieldTag::CodeHash,
-                phase2_code_hash.expr(),
-                0.expr(),
-                None,
-            );
-        });
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.account_read(
                 call_callee_address.expr(),
@@ -401,7 +392,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 1.expr()),
                 (CallContextFieldTag::IsCreate, 1.expr()),
-                //(CallContextFieldTag::CodeHash, phase2_code_hash.expr()),
                 (
                     CallContextFieldTag::CodeHash,
                     cb.curr.state.code_hash.expr(),
@@ -411,13 +401,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                rw_counter: Delta(24.expr()),
+                rw_counter: Delta(23.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
                 code_hash: To(cb.curr.state.code_hash.expr()),
                 gas_left: To(gas_left.clone()),
-                reversible_write_counter: To(3.expr()),
+                reversible_write_counter: To(2.expr()),
                 log_id: To(0.expr()),
                 ..StepStateTransition::new_context()
             });
@@ -577,12 +567,18 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
 
-        let [caller_balance_pair, callee_balance_pair] =
-            [step.rw_indices[8], step.rw_indices[9]].map(|idx| block.rws[idx].account_value_pair());
-        let callee_code_hash = if tx.is_create {
-            call.code_hash
+        let (caller_balance_pair, callee_balance_pair, callee_code_hash) = if tx.is_create {
+            (
+                block.rws[step.rw_indices[7]].account_value_pair(),
+                block.rws[step.rw_indices[8]].account_value_pair(),
+                call.code_hash,
+            )
         } else {
-            block.rws[step.rw_indices[7]].account_value_pair().0
+            (
+                block.rws[step.rw_indices[8]].account_value_pair(),
+                block.rws[step.rw_indices[9]].account_value_pair(),
+                block.rws[step.rw_indices[7]].account_value_pair().0,
+            )
         };
 
         self.tx_id
