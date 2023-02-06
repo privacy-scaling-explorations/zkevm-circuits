@@ -313,7 +313,7 @@ pub fn gen_associated_ops(
         // TODO: after more error state handled, refactor all error handling in
         // fn_gen_error_state_associated_ops method
         // For exceptions that have been implemented
-        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&geth_step, &exec_error) {
+        if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(geth_step, &exec_error) {
             return fn_gen_error_ops(state, geth_steps);
         } else {
             // For exceptions that already enter next call context, but fail immediately

@@ -1048,12 +1048,12 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-            .unwrap();
+        .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx)
             .params(CircuitsParams {
                 max_rws: 300000,
-                .. Default::default()
+                ..Default::default()
             })
             .run();
 
