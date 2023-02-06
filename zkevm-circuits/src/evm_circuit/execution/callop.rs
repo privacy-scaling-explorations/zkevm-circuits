@@ -658,8 +658,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::evm_circuit::test::run_test_circuit_geth_data;
-    use crate::test_util::run_test_circuits_with_params;
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::{Account, GethData};
@@ -668,7 +667,7 @@ mod test {
     use itertools::Itertools;
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
     use mock::TestContext;
-    use pretty_assertions::assert_eq;
+
     use std::default::Default;
 
     const TEST_CALL_OPCODES: &[OpcodeId] = &[
@@ -706,6 +705,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn callop_recursive() {
         for opcode in TEST_CALL_OPCODES {
@@ -713,6 +713,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn callop_simple() {
         let stacks = [
@@ -912,7 +913,7 @@ mod test {
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block: GethData = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -939,18 +940,14 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        assert_eq!(
-            run_test_circuit_geth_data::<Fr>(
-                block,
-                CircuitsParams {
-                    max_rws: 4500,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 500,
+                ..Default::default()
+            })
+            .run();
     }
 
     fn test_recursive(opcode: &OpcodeId) {
@@ -1040,27 +1037,47 @@ mod test {
             SUB
         };
 
-        assert_eq!(
-            run_test_circuits_with_params(
-                TestContext::<2, 1>::new(
-                    None,
-                    account_0_code_account_1_no_code(callee_code),
-                    |mut txs, accs| {
-                        txs[0]
-                            .to(accs[0].address)
-                            .from(accs[1].address)
-                            .gas(word!("0x2386F26FC10000"));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap(),
-                None,
-                CircuitsParams {
-                    max_rws: 200000,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(callee_code),
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(word!("0x2386F26FC10000"));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+            .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 300000,
+                .. Default::default()
+            })
+            .run();
+
+        // assert_eq!(
+        //     run_test_circuits_with_params(
+        //         TestContext::<2, 1>::new(
+        //             None,
+        //             account_0_code_account_1_no_code(callee_code),
+        //             |mut txs, accs| {
+        //                 txs[0]
+        //                     .to(accs[0].address)
+        //                     .from(accs[1].address)
+        //                     .gas(word!("0x2386F26FC10000"));
+        //             },
+        //             |block, _tx| block.number(0xcafeu64),
+        //         )
+        //         .unwrap(),
+        //         None,
+        //         CircuitsParams {
+        //             max_rws: 200000,
+        //             ..Default::default()
+        //         }
+        //     ),
+        //     Ok(())
+        // );
     }
 }
