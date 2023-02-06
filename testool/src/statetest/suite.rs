@@ -117,7 +117,7 @@ pub fn run_statetests_suite(
                     "unable to get panic info".into()
                 };
                 let level = if panic_err.contains("evm_unimplemented") {
-                    ResultLevel::Ignored
+                    ResultLevel::Fail
                 } else {
                     ResultLevel::Panic
                 };
