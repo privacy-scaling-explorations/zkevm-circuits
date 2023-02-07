@@ -28,15 +28,18 @@ use strum_macros::{EnumCount, EnumIter};
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {
     /// Returns the list of ALL the table columns following the table order.
-    fn columns(&self) -> Vec<Column<Any>> {
-        self.advice_columns()
+    fn columns(&self) -> Vec<Column<Any>>;
+
+    /// Returns the list of ALL the table advice columns following the table
+    /// order.
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        self.columns()
             .iter()
-            .map(|&col| col.into())
+            .map(|&col| col.try_into())
+            .filter(|res| res.is_ok())
+            .map(|ok_res| ok_res.unwrap())
             .collect()
     }
-
-    /// Returns the list of ALL the table columns following the table order.
-    fn advice_columns(&self) -> Vec<Column<Advice>>;
 
     /// Retunrs the String annotations associated to each column of the table.
     fn annotations(&self) -> Vec<String>;
@@ -57,9 +60,18 @@ pub trait LookupTable<F: Field> {
             .zip(self.annotations().iter())
             .for_each(|(&col, ann)| cs.annotate_lookup_any_column(col, || ann))
     }
+
+    /// Annotates a lookup table by passing annotations for each of it's
+    /// columns.
+    fn annotate_columns_in_region(&self, region: &mut Region<F>) {
+        self.columns()
+            .iter()
+            .zip(self.annotations().iter())
+            .for_each(|(&col, ann)| region.name_column(|| ann, col))
+    }
 }
 
-impl<F: Field, C: Into<Column<Any>> + Copy + Clone, const W: usize> LookupTable<F> for [C; W] {
+impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [C; W] {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.iter()
             .map(|column| meta.query_any(*column, Rotation::cur()))
@@ -67,11 +79,7 @@ impl<F: Field, C: Into<Column<Any>> + Copy + Clone, const W: usize> LookupTable<
     }
 
     fn columns(&self) -> Vec<Column<Any>> {
-        self.iter().map(|&column| column.into()).collect()
-    }
-
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![]
+        self.iter().map(|&col| col.into()).collect()
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -206,9 +214,6 @@ impl TxTable {
 }
 
 impl<F: Field> LookupTable<F> for TxTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tx_id, self.index, self.value]
-    }
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
             self.tx_id.into(),
@@ -413,19 +418,19 @@ pub struct RwTable {
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.rw_counter,
-            self.is_write,
-            self.tag,
-            self.id,
-            self.address,
-            self.field_tag,
-            self.storage_key,
-            self.value,
-            self.value_prev,
-            self.aux1,
-            self.aux2,
+            self.rw_counter.into(),
+            self.is_write.into(),
+            self.tag.into(),
+            self.id.into(),
+            self.address.into(),
+            self.field_tag.into(),
+            self.storage_key.into(),
+            self.value.into(),
+            self.value_prev.into(),
+            self.aux1.into(),
+            self.aux2.into(),
         ]
     }
 
@@ -553,8 +558,8 @@ impl From<AccountFieldTag> for ProofType {
 pub struct MptTable([Column<Advice>; 7]);
 
 impl<F: Field> LookupTable<F> for MptTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        self.0.to_vec()
+    fn columns(&self) -> Vec<Column<Any>> {
+        self.0.iter().map(|&col| col.into()).collect()
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -704,13 +709,13 @@ impl BytecodeTable {
 }
 
 impl<F: Field> LookupTable<F> for BytecodeTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash,
-            self.tag,
-            self.index,
-            self.is_code,
-            self.value,
+            self.code_hash.into(),
+            self.tag.into(),
+            self.index.into(),
+            self.is_code.into(),
+            self.value.into(),
         ]
     }
 
@@ -811,8 +816,8 @@ impl BlockTable {
 }
 
 impl<F: Field> LookupTable<F> for BlockTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tag, self.index, self.value]
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.tag.into(), self.index.into(), self.value.into()]
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -838,12 +843,12 @@ pub struct KeccakTable {
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.is_enabled,
-            self.input_rlc,
-            self.input_len,
-            self.output_rlc,
+            self.is_enabled.into(),
+            self.input_rlc.into(),
+            self.input_len.into(),
+            self.output_rlc.into(),
         ]
     }
 
@@ -1211,16 +1216,16 @@ impl CopyTable {
 }
 
 impl<F: Field> LookupTable<F> for CopyTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.is_first,
-            self.id,
-            self.addr,
-            self.src_addr_end,
-            self.bytes_left,
-            self.rlc_acc,
-            self.rw_counter,
-            self.rwc_inc_left,
+            self.is_first.into(),
+            self.id.into(),
+            self.addr.into(),
+            self.src_addr_end.into(),
+            self.bytes_left.into(),
+            self.rlc_acc.into(),
+            self.rw_counter.into(),
+            self.rwc_inc_left.into(),
         ]
     }
 
@@ -1415,14 +1420,14 @@ impl ExpTable {
 }
 
 impl<F: Field> LookupTable<F> for ExpTable {
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.is_step,
-            self.identifier,
-            self.is_last,
-            self.base_limb,
-            self.exponent_lo_hi,
-            self.exponentiation_lo_hi,
+            self.is_step.into(),
+            self.identifier.into(),
+            self.is_last.into(),
+            self.base_limb.into(),
+            self.exponent_lo_hi.into(),
+            self.exponentiation_lo_hi.into(),
         ]
     }
 
