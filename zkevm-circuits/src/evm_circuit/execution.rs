@@ -421,8 +421,6 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
 
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness();
-        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -434,8 +432,6 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_first,
                     q_step_last,
                     &challenges,
-                    &word_powers_of_randomness,
-                    &lookup_powers_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut height_map,
@@ -579,8 +575,6 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_first: Selector,
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
-        word_powers_of_randomness: &[Expression<F>; 31],
-        lookup_powers_of_randomness: &[Expression<F>; 12],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
@@ -593,8 +587,6 @@ impl<F: Field> ExecutionConfig<F> {
                 step_curr.clone(),
                 step_next.clone(),
                 challenges,
-                word_powers_of_randomness,
-                lookup_powers_of_randomness,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
@@ -608,8 +600,6 @@ impl<F: Field> ExecutionConfig<F> {
             step_curr.clone(),
             step_next.clone(),
             challenges,
-            word_powers_of_randomness,
-            lookup_powers_of_randomness,
             G::EXECUTION_STATE,
         );
 
@@ -744,8 +734,6 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
-        let lookup_powers_of_randomness: [Expression<F>; 31] =
-            challenges.lookup_input_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -763,7 +751,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, &lookup_powers_of_randomness),
+                        rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
             }
@@ -827,7 +815,6 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                log::info!("start execution step assignment");
                 let mut offset = 0;
 
                 self.q_step_first.enable(&mut region, offset)?;
@@ -954,7 +941,6 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                log::info!("finish execution step assignment");
                 Ok(())
             },
         )
