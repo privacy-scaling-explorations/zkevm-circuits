@@ -1,5 +1,4 @@
 use crate::{get_client, GenDataOutput};
-use async_once::AsyncOnce;
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
@@ -162,7 +161,8 @@ fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
     }
 }
 
-async fn gen_inputs(
+/// returns gen_inputs for a block number
+pub async fn gen_inputs(
     block_num: u64,
 ) -> (
     CircuitInputBuilder,

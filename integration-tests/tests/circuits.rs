@@ -6,6 +6,13 @@ macro_rules! declare_tests {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 let pk = if $real_prover { Some((*EVM_CIRCUIT_KEY).clone()) } else { None };
+                let (builder, _) = gen_inputs(*block_num).await;
+                let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+                block.circuits_params.max_evm_rows = 0;
+                let rows_required = EvmCircuit::get_min_num_rows_required(&block);
+                if rows_required > rows_required {
+                    panic!("EVM circuit not enough rows {}, required {}", rows_required, rows_required);
+                }
                 test_circuit_at_block::<EvmCircuit::<Fr>>(
                     "evm", EVM_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
             }
@@ -67,7 +74,8 @@ macro_rules! unroll_tests {
             tx_circuit::TxCircuit,
             evm_circuit::EvmCircuit,
             bytecode_circuit::circuit::BytecodeCircuit,
-            copy_circuit::CopyCircuit
+            copy_circuit::CopyCircuit,
+            witness::block_convert
         };
         use halo2_proofs::halo2curves::bn256::Fr;
         use integration_tests::integration_test_circuits::*;

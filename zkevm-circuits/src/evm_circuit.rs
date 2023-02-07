@@ -188,20 +188,23 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
         let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
-            for transaction in &block.txs {
-                for step in &transaction.steps {
-                    num_rows += step.execution_state.get_step_height();
-                }
-            }
-            num_rows += 1; // EndBlock
+            Self::get_min_num_rows_required(block)
         } else {
-            num_rows += block.circuits_params.max_evm_rows;
+            block.circuits_params.max_evm_rows + 1
         }
-        num_rows
+    }
+
+    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+        let mut num_rows = 0;
+        for transaction in &block.txs {
+            for step in &transaction.steps {
+                num_rows += step.execution_state.get_step_height();
+            }
+        }
+
+        num_rows + 2 // EndBlock and at least one unused
     }
 }
 
