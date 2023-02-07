@@ -17,7 +17,7 @@ body:
           description: Please include relevant code snippets as well if relevant.
       validations:
           required: true
-		- type: textarea
-			attributes:
-				label: Concrete steps to reproduce the bug
-        description: Leave empty if not relevant
+    - type: textarea
+      attributes:
+	  label: Concrete steps to reproduce the bug
+          description: Leave empty if not relevant
