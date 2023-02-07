@@ -17,12 +17,15 @@ use gadgets::util::{and, select, sum};
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn},
     poly::Rotation,
 };
 use log::{debug, info};
 use std::{env::var, marker::PhantomData, vec};
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 const MAX_DEGREE: usize = 3;
 const ABSORB_LOOKUP_RANGE: usize = 3;
@@ -396,7 +399,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for KeccakCircuit<F> {
     type Config = (KeccakCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

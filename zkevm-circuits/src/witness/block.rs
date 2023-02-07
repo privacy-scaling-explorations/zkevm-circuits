@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{
-    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
-    table::BlockContextFieldTag,
-};
+#[cfg(any(feature = "test", test))]
+use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
+
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,

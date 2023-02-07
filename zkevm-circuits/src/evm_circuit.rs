@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 use halo2_proofs::{
-    circuit::{Layouter, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::*,
 };
 
@@ -266,21 +266,90 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
+// Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
+impl<F: Field> Circuit<F> for EvmCircuit<F> {
+    type Config = (EvmCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let tx_table = TxTable::construct(meta);
+        let rw_table = RwTable::construct(meta);
+        let bytecode_table = BytecodeTable::construct(meta);
+        let block_table = BlockTable::construct(meta);
+        let q_copy_table = meta.fixed_column();
+        let copy_table = CopyTable::construct(meta, q_copy_table);
+        let keccak_table = KeccakTable::construct(meta);
+        let exp_table = ExpTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+        let challenges_expr = challenges.exprs(meta);
+
+        (
+            EvmCircuitConfig::new(
+                meta,
+                EvmCircuitConfigArgs {
+                    challenges: challenges_expr,
+                    tx_table,
+                    rw_table,
+                    bytecode_table,
+                    block_table,
+                    copy_table,
+                    keccak_table,
+                    exp_table,
+                },
+            ),
+            challenges,
+        )
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let block = self.block.as_ref().unwrap();
+
+        let (config, challenges) = config;
+        let challenges = challenges.values(&mut layouter);
+
+        config.tx_table.load(
+            &mut layouter,
+            &block.txs,
+            block.circuits_params.max_txs,
+            &challenges,
+        )?;
+        block.rws.check_rw_counter_sanity();
+        config.rw_table.load(
+            &mut layouter,
+            &block.rws.table_assignments(),
+            block.circuits_params.max_rws,
+            challenges.evm_word(),
+        )?;
+        config
+            .bytecode_table
+            .load(&mut layouter, block.bytecodes.values(), &challenges)?;
+        config
+            .block_table
+            .load(&mut layouter, &block.context, challenges.evm_word())?;
+        config.copy_table.load(&mut layouter, block, &challenges)?;
+        config
+            .keccak_table
+            .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+        config.exp_table.load(&mut layouter, block)?;
+
+        self.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+}
+
 #[cfg(any(feature = "test", test))]
 pub mod test {
     use super::*;
-    use crate::{
-        evm_circuit::{witness::Block, EvmCircuitConfig},
-        table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
-        util::Challenges,
-    };
+    use crate::evm_circuit::witness::Block;
 
     use eth_types::{Field, Word};
-
-    use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, ConstraintSystem, Error},
-    };
     use rand::{
         distributions::uniform::{SampleRange, SampleUniform},
         random, thread_rng, Rng,
@@ -304,83 +373,6 @@ pub mod test {
 
     pub(crate) fn rand_word() -> Word {
         Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    impl<F: Field> Circuit<F> for EvmCircuit<F> {
-        type Config = (EvmCircuitConfig<F>, Challenges);
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
-            let rw_table = RwTable::construct(meta);
-            let bytecode_table = BytecodeTable::construct(meta);
-            let block_table = BlockTable::construct(meta);
-            let q_copy_table = meta.fixed_column();
-            let copy_table = CopyTable::construct(meta, q_copy_table);
-            let keccak_table = KeccakTable::construct(meta);
-            let exp_table = ExpTable::construct(meta);
-            let challenges = Challenges::construct(meta);
-            let challenges_expr = challenges.exprs(meta);
-
-            (
-                EvmCircuitConfig::new(
-                    meta,
-                    EvmCircuitConfigArgs {
-                        challenges: challenges_expr,
-                        tx_table,
-                        rw_table,
-                        bytecode_table,
-                        block_table,
-                        copy_table,
-                        keccak_table,
-                        exp_table,
-                    },
-                ),
-                challenges,
-            )
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            let block = self.block.as_ref().unwrap();
-
-            let (config, challenges) = config;
-            let challenges = challenges.values(&mut layouter);
-
-            config.tx_table.load(
-                &mut layouter,
-                &block.txs,
-                block.circuits_params.max_txs,
-                &challenges,
-            )?;
-            block.rws.check_rw_counter_sanity();
-            config.rw_table.load(
-                &mut layouter,
-                &block.rws.table_assignments(),
-                block.circuits_params.max_rws,
-                challenges.evm_word(),
-            )?;
-            config
-                .bytecode_table
-                .load(&mut layouter, block.bytecodes.values(), &challenges)?;
-            config
-                .block_table
-                .load(&mut layouter, &block.context, challenges.evm_word())?;
-            config.copy_table.load(&mut layouter, block, &challenges)?;
-            config
-                .keccak_table
-                .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-            config.exp_table.load(&mut layouter, block)?;
-
-            self.synthesize_sub(&config, &challenges, &mut layouter)
-        }
     }
 
     impl<F: Field> EvmCircuit<F> {
