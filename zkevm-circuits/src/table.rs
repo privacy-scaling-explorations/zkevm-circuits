@@ -36,8 +36,7 @@ pub trait LookupTable<F: Field> {
         self.columns()
             .iter()
             .map(|&col| col.try_into())
-            .filter(|res| res.is_ok())
-            .map(|ok_res| ok_res.unwrap())
+            .filter_map(|res| res.ok())
             .collect()
     }
 

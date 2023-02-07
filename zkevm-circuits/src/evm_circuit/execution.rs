@@ -962,12 +962,12 @@ impl<F: Field> ExecutionConfig<F> {
             if idx < FIXED_TABLE_LOOKUPS {
                 region.name_column(|| format!("EVM_lookup_fixed_{}", idx), col);
                 acc += FIXED_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + FIXED_TABLE_LOOKUPS {
+            } else if acc < idx && idx < acc + TX_TABLE_LOOKUPS {
                 region.name_column(
-                    || format!("EVM_lookup_tx_{}", idx % acc + FIXED_TABLE_LOOKUPS),
+                    || format!("EVM_lookup_tx_{}", idx % acc + TX_TABLE_LOOKUPS),
                     col,
                 );
-                acc += FIXED_TABLE_LOOKUPS;
+                acc += TX_TABLE_LOOKUPS;
             } else if acc < idx && idx < acc + RW_TABLE_LOOKUPS {
                 region.name_column(
                     || format!("EVM_lookup_rw_{}", idx % acc + RW_TABLE_LOOKUPS),
