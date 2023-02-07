@@ -4,9 +4,9 @@ use crate::Error;
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ErrorOogConstant;
+pub(crate) struct ErrorStackOogConstant;
 
-impl Opcode for ErrorOogConstant {
+impl Opcode for ErrorStackOogConstant {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
