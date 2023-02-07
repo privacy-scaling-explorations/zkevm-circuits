@@ -1,4 +1,11 @@
-use super::util::{CachedRegion, CellManager, StoredExpression};
+use super::{
+    param::{
+        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+        RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+    },
+    util::{CachedRegion, CellManager, StoredExpression},
+};
 use crate::{
     evm_circuit::{
         param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
@@ -816,18 +823,8 @@ impl<F: Field> ExecutionConfig<F> {
             |mut region| {
                 let mut offset = 0;
 
-                self.advices.iter().enumerate().for_each(|(idx, &col)| {
-                    if idx < *EVM_LOOKUP_COLS {
-                        region.name_column(|| "EVM_Adv Phase3".to_string(), col)
-                    } else if idx < *EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
-                        region.name_column(|| "EVM_Adv Phase2".to_string(), col)
-                    } else {
-                        region.name_column(|| "EVM_Adv Phase1".to_string(), col)
-                    }
-                });
-                region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
-                region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
-                region.name_column(|| "Copy_Constr constants", self.constants);
+                // Annotate the EVMCircuit columns within it's single region.
+                self.annotate_circuit(&mut region);
 
                 self.q_step_first.enable(&mut region, offset)?;
 
@@ -956,6 +953,83 @@ impl<F: Field> ExecutionConfig<F> {
                 Ok(())
             },
         )
+    }
+
+    fn annotate_circuit(&self, region: &mut Region<F>) {
+        let mut acc = 0usize;
+
+        self.advices.iter().enumerate().for_each(|(idx, &col)| {
+            if idx < FIXED_TABLE_LOOKUPS {
+                region.name_column(|| format!("EVM_lookup_fixed_{}", idx), col);
+                acc += FIXED_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + FIXED_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_tx_{}", idx % acc + FIXED_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += FIXED_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + RW_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_rw_{}", idx % acc + RW_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += RW_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + BYTECODE_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_bytecode_{}", idx % acc + BYTECODE_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += BYTECODE_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + BLOCK_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_block_{}", idx % acc + BLOCK_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += BLOCK_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + COPY_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_copy_{}", idx % acc + COPY_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += COPY_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + KECCAK_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_keccak_{}", idx % acc + KECCAK_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += KECCAK_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + EXP_TABLE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_exp_{}", idx % acc + EXP_TABLE_LOOKUPS),
+                    col,
+                );
+                acc += EXP_TABLE_LOOKUPS;
+            } else if acc < idx && idx < acc + N_PHASE2_COLUMNS {
+                region.name_column(
+                    || format!("EVM_Adv_Phase2_{}", idx % acc + N_PHASE2_COLUMNS),
+                    col,
+                );
+                acc += N_PHASE2_COLUMNS;
+            } else if acc < idx && idx < acc + N_COPY_COLUMNS {
+                region.name_column(|| format!("EVM_copy_{}", idx % acc + N_COPY_COLUMNS), col);
+                acc += N_COPY_COLUMNS;
+            } else if acc < idx && idx < acc + N_BYTE_LOOKUPS {
+                region.name_column(
+                    || format!("EVM_lookup_byte_{}", idx % acc + N_BYTE_LOOKUPS),
+                    col,
+                );
+                // This is the last reserved section. The rest are Phase1 colums. So we reset
+                // acc to have an index that starts from 0 in order to annotate
+                // them.
+                acc = 0;
+            } else {
+                region.name_column(|| format!("EVM_Adv_Phase2_{}", idx), col);
+                acc += 1;
+            }
+        });
+        region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
+        region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
+        region.name_column(|| "Copy_Constr_const", self.constants);
     }
 
     #[allow(clippy::too_many_arguments)]
