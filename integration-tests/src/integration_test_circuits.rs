@@ -87,7 +87,7 @@ lazy_static! {
 
 lazy_static! {
     /// EVM Circuit proving key
-    static ref EVM_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+    pub static ref EVM_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
         let circuit = EvmCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(EVM_CIRCUIT_DEGREE);

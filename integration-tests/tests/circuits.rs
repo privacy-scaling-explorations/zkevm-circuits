@@ -5,7 +5,7 @@ macro_rules! declare_tests {
             async fn [<serial_test_evm_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = None;
+                let pk = if $real_prover { Some((*EVM_CIRCUIT_KEY).clone()) } else { None };
                 test_circuit_at_block::<EvmCircuit::<Fr>>(
                     "evm", EVM_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
             }
