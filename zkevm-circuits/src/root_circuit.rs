@@ -26,7 +26,7 @@ pub use aggregation::TestAggregationCircuit;
 pub struct RootCircuit<'a, M: MultiMillerLoop> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
-    instances: Vec<M::Scalar>,
+    instance: Vec<M::Scalar>,
 }
 
 impl<'a, M: MultiMillerLoop> RootCircuit<'a, M>
@@ -35,7 +35,7 @@ where
     M::G2Affine: SerdeObject,
 {
     /// Create a `RootCircuit` with accumulator computed given a `SuperCircuit`
-    /// proof and its instances. Returns `None` if given proof is invalid.
+    /// proof and its instance. Returns `None` if given proof is invalid.
     pub fn new(
         params: &ParamsKZG<M>,
         super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
@@ -43,8 +43,8 @@ where
         super_circuit_proof: Value<&'a [u8]>,
     ) -> Result<Self, snark_verifier::Error> {
         let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
-        let instances = {
-            let mut instances = Ok(vec![M::Scalar::zero(); num_instances]);
+        let instance = {
+            let mut instance = Ok(vec![M::Scalar::zero(); num_instances]);
             super_circuit_instances
                 .as_ref()
                 .zip(super_circuit_proof.as_ref())
@@ -54,18 +54,18 @@ where
                         super_circuit_instances,
                         super_circuit_proof,
                     );
-                    instances = aggregate::<M>(params, [snark]).map(|accumulator_limbs| {
+                    instance = aggregate::<M>(params, [snark]).map(|accumulator_limbs| {
                         iter::empty()
-                            // Propagate `SuperCircuit`'s instances
+                            // Propagate `SuperCircuit`'s instance
                             .chain(super_circuit_instances.iter().flatten().cloned())
                             // Output aggregated accumulator limbs
                             .chain(accumulator_limbs)
                             .collect_vec()
                     });
                 });
-            instances?
+            instance?
         };
-        debug_assert_eq!(instances.len(), num_instances);
+        debug_assert_eq!(instance.len(), num_instances);
 
         Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
@@ -74,7 +74,7 @@ where
                 super_circuit_instances,
                 super_circuit_proof,
             ),
-            instances,
+            instance,
         })
     }
 
@@ -90,9 +90,9 @@ where
         vec![self.snark.protocol().num_instance.iter().sum::<usize>() + 4 * LIMBS]
     }
 
-    /// Returns instances
-    pub fn instances(&self) -> Vec<Vec<M::Scalar>> {
-        vec![self.instances.clone()]
+    /// Returns instance
+    pub fn instance(&self) -> Vec<Vec<M::Scalar>> {
+        vec![self.instance.clone()]
     }
 }
 
@@ -104,7 +104,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
         Self {
             svk: self.svk,
             snark: self.snark.without_witnesses(),
-            instances: vec![M::Scalar::zero(); self.instances.len()],
+            instance: vec![M::Scalar::zero(); self.instance.len()],
         }
     }
 
@@ -118,12 +118,12 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
         mut layouter: impl Layouter<M::Scalar>,
     ) -> Result<(), Error> {
         config.load_table(&mut layouter)?;
-        let (instances, accumulator_limbs) =
+        let (instance, accumulator_limbs) =
             config.aggregate::<M>(&mut layouter, &self.svk, [self.snark])?;
 
         // Constrain equality to instance values
         let main_gate = config.main_gate();
-        for (row, limb) in instances
+        for (row, limb) in instance
             .into_iter()
             .flatten()
             .flatten()
@@ -185,7 +185,7 @@ mod test {
                 &params,
                 pk.get_vk(),
                 Config::kzg()
-                    .with_num_instance(instance.iter().map(|instances| instances.len()).collect()),
+                    .with_num_instance(instance.iter().map(|instance| instance.len()).collect()),
             );
 
             // Create proof
@@ -214,7 +214,7 @@ mod test {
         )
         .unwrap();
         assert_eq!(
-            MockProver::run(26, &root_circuit, root_circuit.instances())
+            MockProver::run(26, &root_circuit, root_circuit.instance())
                 .unwrap()
                 .verify_par(),
             Ok(())
