@@ -39,7 +39,7 @@ impl BlockData {
                 self.history_hashes.clone(),
                 Word::default(),
                 &self.eth_block,
-                self.circuits_params.clone(),
+                self.circuits_params,
             )
             .unwrap(),
         )
