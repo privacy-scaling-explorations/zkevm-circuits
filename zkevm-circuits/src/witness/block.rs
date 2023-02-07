@@ -37,11 +37,10 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
     pub exp_events: Vec<ExpEvent>,
-    // TODO: Rename to `max_evm_rows`, maybe move to CircuitsParams
     /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
     /// When 0, the EVM circuit contains as many rows for all steps + 1 row
     /// for EndBlock.
-    pub evm_circuit_pad_to: usize,
+    pub max_evm_rows: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
@@ -267,7 +266,7 @@ pub fn block_convert<F: Field>(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params,
-        evm_circuit_pad_to: <usize>::default(),
+        max_evm_rows: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
