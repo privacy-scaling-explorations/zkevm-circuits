@@ -4,13 +4,12 @@ use halo2_proofs::{
     plonk::VirtualCells,
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, RLCChainable, RLCable},
+    circuit_tools::{CellManager, DataTransition, RLCChainable, RLCable},
     mpt_circuit::{
-        helpers::{get_num_bytes_short, MPTConstraintBuilder},
+        helpers::{get_num_bytes_short, parent_memory, MPTConstraintBuilder, ParentData},
         param::{
             BRANCH_ROWS_NUM, EMPTY_TRIE_HASH, HASH_WIDTH, IS_STORAGE_MOD_POS, LEAF_VALUE_C_IND,
             LEAF_VALUE_S_IND,
@@ -19,7 +18,6 @@ use crate::{
     },
     mpt_circuit::{
         helpers::{BranchNodeInfo, StorageLeafInfo},
-        param::{EXTENSION_ROWS_NUM, STORAGE_LEAF_ROWS},
         witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{MPTConfig, ProofValues},
@@ -116,15 +114,16 @@ RLP byte means 32 bytes after it).
 
 */
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct LeafValueConfig<F> {
-    _marker: PhantomData<F>,
+    parent_data: ParentData<F>,
 }
 
 impl<F: FieldExt> LeafValueConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
+        cm: &mut CellManager<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
@@ -134,6 +133,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
         let value = ctx.value;
         let r = ctx.r.clone();
 
+        let ctx_parent_data: Option<ParentData<F>>;
+
         let rot_key = -1;
         let rot_s = if is_s { 0 } else { -2 };
         let leaf_value_pos = if is_s {
@@ -141,9 +142,7 @@ impl<F: FieldExt> LeafValueConfig<F> {
         } else {
             LEAF_VALUE_C_IND
         };
-        let rot_branch = -STORAGE_LEAF_ROWS;
         let rot_branch_init = -leaf_value_pos - BRANCH_ROWS_NUM;
-        let rot_branch_child_prev = rot_branch_init - EXTENSION_ROWS_NUM - 1;
 
         circuit!([meta, cb.base], {
             let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
@@ -205,54 +204,47 @@ impl<F: FieldExt> LeafValueConfig<F> {
                 require!(num_bytes => key_num_bytes.expr() + value_num_bytes.expr());
             }};
 
-            // Check that the storage leaf is in its parent.
-            ifx! {storage.is_below_account(meta) => {
-                ifx!{storage.is_placeholder_without_branch(meta) => {
-                    // Hash of the only storage leaf which is placeholder requires empty storage root
-                    let empty_root_rlc = EMPTY_TRIE_HASH.iter().map(|v| v.expr()).collect::<Vec<_>>().rlc(&r);
-                    let storage_root_rlc = storage.storage_root_in_account_above(meta);
-                    require!(storage_root_rlc => empty_root_rlc);
-                } elsex {
-                    // Hash of the only storage leaf is storage trie root
-                    let storage_root_rlc = storage.storage_root_in_account_above(meta);
-                    require!((1, leaf_rlc, num_bytes, storage_root_rlc) => @"keccak");
-                }}
+            // Check if the account is in its parent.
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
+            let parent_data = ParentData::load(
+                "leaf load",
+                &mut cb.base,
+                cm,
+                &ctx.memory[parent_memory(is_s)],
+                0.expr(),
+            );
+            // Check is skipped for placeholder leafs which are dummy leafs
+            ifx! {storage.is_below_account(meta), storage.is_placeholder_without_branch(meta) => {
+                // TODO(Brecht): Add this to the keccak table when necessary instead?
+                // Hash of the only storage leaf which is placeholder requires empty storage root
+                let empty_root_rlc = EMPTY_TRIE_HASH.iter().map(|v| v.expr()).collect::<Vec<_>>().rlc(&r);
+                require!(parent_data.rlc => empty_root_rlc);
             } elsex {
-                // TODO(Brecht): how does contains_placeholder_leaf really impact these checks?
-                ifx!{not!(branch.contains_placeholder_leaf(meta, is_s)) => {
-                    ifx!{branch.is_placeholder() => {
-                        ifx!{branch.is_below_account(meta) => {
-                            // Hash of the only storage leaf which is after a placeholder is storage trie root
-                            let storage_root_rlc = branch.storage_root_in_account_above(meta);
-                            require!((1, leaf_rlc, num_bytes, storage_root_rlc) => @"keccak");
-                        } elsex {
-                            // Leaf hash in parent (branch placeholder)
-                            // Check if we're in the branch above the placeholder branch.
-                            let rlc = (a!(accs.acc_s.rlc, -1), mult_prev.expr()).rlc_chain(s_main.rlc(meta, 0, &r));
-                            let mod_node_hash_rlc = a!(accs.mod_node_rlc(is_s), rot_branch_child_prev);
-                            require!((1, rlc, num_bytes, mod_node_hash_rlc) => @"keccak");
-                        }}
+                ifx!{not!(and::expr(&[not!(storage.is_below_account(meta)), branch.contains_placeholder_leaf(meta, is_s)])) => {
+                    let is_not_hashed = a!(accs.acc_c.rlc, -1);
+                    ifx!{or::expr(&[parent_data.force_hashed.expr(), not!(is_not_hashed)]) => {
+                        // Hashed branch hash in parent branch
+                        require!((1, leaf_rlc, num_bytes, parent_data.rlc) => @"keccak");
                     } elsex {
-                        let mod_node_rlc = a!(accs.mod_node_rlc(is_s), rot_branch);
-                        let not_hashed = a!(accs.acc_c.rlc, -1);
-                        ifx!{not_hashed => {
-                            // Non-hashed leaf in parent
-                            // When leaf is not hashed, the `mod_node_rlc` stores the RLC of the leaf bytes.
-                            require!(leaf_rlc => mod_node_rlc);
-                        } elsex {
-                            // Leaf hash in parent
-                            require!((1, leaf_rlc, num_bytes, mod_node_rlc) => @"keccak");
-                        }}
+                        // Non-hashed branch hash in parent branch
+                        require!(leaf_rlc => parent_data.rlc);
                     }}
                 }}
             }}
+            // Store the new parent
+            ParentData::store(
+                &mut cb.base,
+                &ctx.memory[parent_memory(is_s)],
+                [0.expr(), true.expr()],
+            );
+            ctx_parent_data = Some(parent_data);
 
             // Set the number of bytes used
             cb.set_length_s(value_num_bytes);
         });
 
         LeafValueConfig {
-            _marker: PhantomData,
+            parent_data: ctx_parent_data.unwrap(),
         }
     }
 
@@ -396,6 +388,25 @@ impl<F: FieldExt> LeafValueConfig<F> {
                     .ok();
             }
         }
+
+        let is_s = row.get_type() == MptWitnessRowType::StorageLeafSValue;
+        self.parent_data
+            .witness_load(region, offset, &mut pv.memory[parent_memory(is_s)], 0)
+            .ok();
+        // TODO(Brecht): remove
+        let row_offset = if is_s {offset - 1} else {offset - 3};
+        self.parent_data
+            .witness_load(region, row_offset, &mut pv.memory[parent_memory(is_s)], 0)
+            .ok();
+        self.parent_data
+            .witness_store(
+                region,
+                offset,
+                &mut pv.memory[parent_memory(is_s)],
+                F::zero(),
+                true,
+            )
+            .ok();
 
         mpt_config
             .assign_acc(

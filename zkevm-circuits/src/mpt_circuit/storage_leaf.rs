@@ -1,3 +1,4 @@
+pub mod leaf_combined;
 pub mod leaf_key;
 pub mod leaf_key_in_added_branch;
 pub mod leaf_non_existing;

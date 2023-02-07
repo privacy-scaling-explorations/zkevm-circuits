@@ -95,6 +95,14 @@ impl<F: FieldExt> MptWitnessRow<F> {
                 + HASH_WIDTH]
     }
 
+    pub(crate) fn s_root_bytes_rlc(&self, r: F) -> F {
+        bytes_into_rlc(self.s_root_bytes(), r)
+    }
+
+    pub(crate) fn c_root_bytes_rlc(&self, r: F) -> F {
+        bytes_into_rlc(self.c_root_bytes(), r)
+    }
+
     pub(crate) fn address_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - 2 * HASH_WIDTH
@@ -126,6 +134,11 @@ impl<F: FieldExt> MptWitnessRow<F> {
         offset: usize,
     ) -> Result<(), Error> {
         let row = self.main();
+
+        // println!("row: {}", offset);
+        // println!("{:?}", account_leaf);
+        // println!("{:?}", storage_leaf);
+        // println!("{:?}", branch);
 
         region.assign_advice(
             || "assign is_branch_init".to_string(),
@@ -383,6 +396,10 @@ impl<F: FieldExt> MptWitnessRow<F> {
             )?;
         }
 
+        /*if offset == 99 {
+            println!("{:?}", row);
+        }*/
+
         // not all columns may be needed
         let get_val = |curr_ind: usize| {
             let val = if curr_ind >= row.len() {
@@ -528,8 +545,11 @@ impl<F: FieldExt> MptWitnessRow<F> {
         pv: &ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.randomness);
-        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.randomness);
+        let s_root_rlc = self.s_root_bytes_rlc(mpt_config.randomness);
+        let c_root_rlc = self.c_root_bytes_rlc(mpt_config.randomness);
+
+        //println!("{}: {:?}", offset, s_root_rlc);
+        //println!("{}: {:?}", offset, c_root_rlc);
 
         region.assign_advice(
             || "inter start root",

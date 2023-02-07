@@ -2,18 +2,22 @@ use std::{marker::PhantomData, ops::Range};
 
 use crate::{
     _cb, circuit,
-    circuit_tools::{Conditionable, ConstraintBuilder, DataTransition, RLCChainable, RLCable},
+    circuit_tools::{
+        Cell, CellManager, CellType, Conditionable, ConstraintBuilder, DataTransition, MemoryBank,
+        RLCChainable, RLCable,
+    },
     evm_circuit::util::rlc,
     mpt_circuit::param::{
-        EXTENSION_ROWS_NUM, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE,
-        RLP_LIST_LONG, RLP_LIST_SHORT, RLP_NIL, RLP_SHORT,
+        KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LIST_SHORT,
+        RLP_NIL, RLP_SHORT,
     },
     util::Expr,
 };
 use gadgets::util::{and, not};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Expression, VirtualCells},
+    circuit::{Region, Value},
+    plonk::{Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -28,12 +32,225 @@ use super::{
         IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_LONGER_THAN_55_POS,
         IS_S_EXT_NODE_NON_HASHED_POS, KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, NIBBLES_COUNTER_POS,
     },
-    FixedTableTag, MPTContext,
+    witness_row::MptWitnessRow,
+    FixedTableTag, MPTConfig, MPTContext, ProofValues,
 };
 use crate::mpt_circuit::param::{
     IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
     IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_NUM,
 };
+
+pub(crate) trait Gadget<F: FieldExt> {
+    /// Constraints
+    fn configure(
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut MPTConstraintBuilder<F>,
+        ctx: MPTContext<F>,
+    ) -> Self;
+
+    /// Witness
+    fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        witness: &[MptWitnessRow<F>],
+        mpt_config: &MPTConfig<F>,
+        pv: &mut ProofValues<F>,
+        offset: usize,
+    ) -> Result<(), Error>;
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct KeyData<F> {
+    pub(crate) rlc: Cell<F>,
+    pub(crate) mult: Cell<F>,
+    pub(crate) num_nibbles: Cell<F>,
+    pub(crate) is_odd: Cell<F>,
+    pub(crate) is_placeholder_leaf_s: Cell<F>,
+    pub(crate) is_placeholder_leaf_c: Cell<F>,
+    pub(crate) rlc_last: Cell<F>,
+    pub(crate) mult_last: Cell<F>,
+}
+
+impl<F: FieldExt> KeyData<F> {
+    pub(crate) fn load(
+        cb: &mut ConstraintBuilder<F>,
+        cm: &mut CellManager<F>,
+        memory: &MemoryBank<F>,
+        offset: Expression<F>,
+    ) -> Self {
+        let key_data = KeyData {
+            rlc: cm.query_cell(CellType::Storage),
+            mult: cm.query_cell(CellType::Storage),
+            num_nibbles: cm.query_cell(CellType::Storage),
+            is_odd: cm.query_cell(CellType::Storage),
+            is_placeholder_leaf_s: cm.query_cell(CellType::Storage),
+            is_placeholder_leaf_c: cm.query_cell(CellType::Storage),
+            rlc_last: cm.query_cell(CellType::Storage),
+            mult_last: cm.query_cell(CellType::Storage),
+        };
+        circuit!([meta, cb], {
+            memory.load(
+                "key load",
+                cb,
+                offset,
+                &[
+                    key_data.rlc.expr(),
+                    key_data.mult.expr(),
+                    key_data.num_nibbles.expr(),
+                    key_data.is_odd.expr(),
+                    key_data.is_placeholder_leaf_s.expr(),
+                    key_data.is_placeholder_leaf_c.expr(),
+                ],
+            );
+        });
+        key_data
+    }
+
+    pub(crate) fn store(
+        cb: &mut ConstraintBuilder<F>,
+        memory: &MemoryBank<F>,
+        values: [Expression<F>; 6],
+    ) {
+        memory.store(cb, &values);
+    }
+
+    pub(crate) fn store_initial_values(cb: &mut ConstraintBuilder<F>, memory: &MemoryBank<F>) {
+        memory.store_with_key(cb, 0.expr(), &Self::default_values());
+    }
+
+    pub(crate) fn default_values() -> [Expression<F>; 6] {
+        [0.expr(), 1.expr(), 0.expr(), false.expr(), false.expr(), false.expr()]
+    }
+
+    pub(crate) fn witness_store(
+        &self,
+        _region: &mut Region<'_, F>,
+        offset: usize,
+        memory: &mut MemoryBank<F>,
+        rlc: F,
+        mult: F,
+        num_nibbles: usize,
+        is_placeholder_leaf_s: bool,
+        is_placeholder_leaf_c: bool,
+    ) -> Result<(), Error> {
+        //println!("offset: {}", offset);
+        //println!("key_rlc_prev: {:?}", pv.key_rlc_prev);
+        //println!("key_mult_prev: {:?}", pv.key_rlc_mult_prev);
+        //println!("nibbles_num_prev: {:?}", pv.nibbles_num_prev);
+
+        let values = [
+            rlc,
+            mult,
+            F::from(num_nibbles as u64),
+            F::from(num_nibbles % 2 == 1),
+            F::from(is_placeholder_leaf_s),
+            F::from(is_placeholder_leaf_c),
+        ];
+        memory.witness_store(offset, &values);
+
+        Ok(())
+    }
+
+    pub(crate) fn witness_load(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        memory: &MemoryBank<F>,
+        load_offset: usize,
+    ) -> Result<(), Error> {
+        let values = memory.witness_load(load_offset);
+
+        //println!("offset: {}", offset);
+        //println!("key_rlc_prev: {:?}", pv.key_rlc_prev);
+        //println!("key_mult_prev: {:?}", pv.key_rlc_mult_prev);
+        //println!("nibbles_num_prev: {:?}", pv.nibbles_num_prev);
+
+        self.rlc.assign(region, offset, Value::known(values[0]))?;
+        self.mult.assign(region, offset, Value::known(values[1]))?;
+        self.num_nibbles
+            .assign(region, offset, Value::known(values[2]))?;
+        self.is_odd
+            .assign(region, offset, Value::known(values[3]))?;
+        self.is_placeholder_leaf_s
+            .assign(region, offset, Value::known(values[4]))?;
+        self.is_placeholder_leaf_c
+            .assign(region, offset, Value::known(values[5]))?;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ParentData<F> {
+    pub(crate) rlc: Cell<F>,
+    pub(crate) force_hashed: Cell<F>,
+}
+
+impl<F: FieldExt> ParentData<F> {
+    pub(crate) fn load(
+        description: &'static str,
+        cb: &mut ConstraintBuilder<F>,
+        cm: &mut CellManager<F>,
+        memory: &MemoryBank<F>,
+        offset: Expression<F>,
+    ) -> Self {
+        let parent_data = ParentData {
+            rlc: cm.query_cell(CellType::Storage),
+            force_hashed: cm.query_cell(CellType::Storage),
+        };
+        circuit!([meta, cb], {
+            memory.load(
+                description,
+                cb,
+                offset,
+                &[parent_data.rlc.expr(), parent_data.force_hashed.expr()],
+            );
+        });
+        parent_data
+    }
+
+    pub(crate) fn store(
+        cb: &mut ConstraintBuilder<F>,
+        memory: &MemoryBank<F>,
+        values: [Expression<F>; 2],
+    ) {
+        memory.store(cb, &values);
+    }
+
+    pub(crate) fn witness_store(
+        &self,
+        _region: &mut Region<'_, F>,
+        offset: usize,
+        memory: &mut MemoryBank<F>,
+        rlc: F,
+        force_hashed: bool,
+    ) -> Result<(), Error> {
+        //println!("offset: {}", offset);
+        //println!("rlc: {:?}", rlc);
+        //println!("is_hashed: {}", is_hashed);
+
+        let values = [rlc, F::from(force_hashed)];
+        memory.witness_store(offset, &values);
+
+        Ok(())
+    }
+
+    pub(crate) fn witness_load(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        memory: &MemoryBank<F>,
+        load_offset: usize,
+    ) -> Result<(), Error> {
+        let values = memory.witness_load(load_offset);
+
+        self.rlc.assign(region, offset, Value::known(values[0]))?;
+        self.force_hashed
+            .assign(region, offset, Value::known(values[1]))?;
+
+        Ok(())
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct BranchNodeInfo<F> {
@@ -186,11 +403,6 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     // If more than 1 nibble is stored in the extension node
     pub(crate) fn is_long(&self) -> Expression<F> {
         self.is_long_even() + self.is_long_odd()
-    }
-
-    /// Returns if the key up till and including this branch is even.
-    pub(crate) fn is_key_even(&self) -> Expression<F> {
-        self.is_c1.expr()
     }
 
     /// Returns if the key up till and including this branch is odd.
@@ -374,6 +586,12 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         self.ext_num_rlp_bytes(meta) + self.ext_len(meta, rot_s)
     }
 
+    /// Number of bytes in the extension node
+    /// Uses data on the current row!
+    pub(crate) fn ext_num_bytes2(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+        self.ext_num_rlp_bytes(meta) + self.ext_len(meta, 1)
+    }
+
     /// Length of the extension node (excluding RLP bytes)
     /// Uses data on the current row!
     pub(crate) fn ext_len(&self, _meta: &mut VirtualCells<F>, rel_rot: i32) -> Expression<F> {
@@ -458,50 +676,6 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         })
     }
 
-    pub(crate) fn require_in_parent(
-        &self,
-        meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
-    ) {
-        circuit!([meta, cb], {
-            // The branch or extension node data
-            let (rlc, num_bytes, is_not_hashed) = ifx! {self.is_extension() => {
-                // Note: acc_c in both cases.
-                let ext_rlc = a!(self.ctx.accumulators.acc_c.rlc);
-                (ext_rlc, self.ext_num_bytes(meta), self.ext_is_not_hashed())
-            } elsex {
-                let acc = self.ctx.accumulators.acc(self.is_s);
-                // TODO: acc currently doesn't have branch ValueNode info
-                let branch_rlc = (a!(acc.rlc), a!(acc.mult)).rlc_chain(RLP_NIL.expr());
-                (branch_rlc, self.num_bytes(meta), self.is_not_hashed())
-            }};
-            // Check against the value expected in the parent
-            ifx! {not!(self.is_placeholder()) => {
-                ifx!{a!(self.ctx.position_cols.not_first_level) => {
-                    ifx!{self.is_below_account(meta) => {
-                        // Branch in first level of storage trie - hash compared to the storage root
-                        let storage_root_rlc = self.storage_root_in_account_above(meta);
-                        require!((1, rlc, num_bytes, storage_root_rlc) => @"keccak");
-                    } elsex {
-                        // Here the branch is in some other branch
-                        let rot_branch_child_prev = self.rot_branch_init - EXTENSION_ROWS_NUM - 1;
-                        let mod_node_hash_rlc = a!(self.ctx.accumulators.mod_node_rlc(self.is_s), rot_branch_child_prev);
-                        ifx!{is_not_hashed => {
-                            // Non-hashed branch hash in parent branch
-                            require!(rlc => mod_node_hash_rlc);
-                        } elsex {
-                            // Hashed branch hash in parent branch
-                            require!((1, rlc, num_bytes, mod_node_hash_rlc) => @"keccak");
-                        }}
-                    }}
-                } elsex {
-                    // Branch in first level of account trie - hash compared to root
-                    require!((1, rlc, num_bytes, a!(self.ctx.inter_root(self.is_s))) => @"keccak");
-                }}
-            }}
-        });
-    }
-
     /// Key data is read from the current row, not at rot_key!
     pub(crate) fn ext_key_rlc(
         &self,
@@ -510,7 +684,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         key_mult_prev: Expression<F>,
     ) -> Expression<F> {
         circuit!([meta, cb], {
-            let mult_first_odd = ifx! {self.is_key_even() => { 16.expr() } elsex { 1.expr() }};
+            let mult_first_odd = ifx! {self.is_key_odd() => { 1.expr() } elsex { 16.expr() }};
             let calc_rlc = |meta: &mut VirtualCells<F>,
                             cb: &mut ConstraintBuilder<F>,
                             bytes: &[Expression<F>],
@@ -701,6 +875,10 @@ impl<F: FieldExt> StorageLeafInfo<F> {
         }
     }
 
+    pub(crate) fn set_is_s(&mut self, is_s: bool) {
+        self.is_s = is_s;
+    }
+
     // Override the rotation while keeping the length flags intact
     pub(crate) fn set_rot_key(&mut self, rot_key: i32) {
         self.rot_key = rot_key;
@@ -773,7 +951,6 @@ impl<F: FieldExt> StorageLeafInfo<F> {
         get_num_nibbles(meta, key_len, is_key_odd)
     }
 
-    /// Key data is read from the current row, not at rot_key!
     pub(crate) fn key_rlc(
         &self,
         meta: &mut VirtualCells<F>,
@@ -782,6 +959,7 @@ impl<F: FieldExt> StorageLeafInfo<F> {
         is_key_odd: Expression<F>,
         key_mult_first_even: Expression<F>,
         requires_longer_than_55: bool,
+        rot: i32,
     ) -> Expression<F> {
         circuit!([meta, cb], {
             let calc_rlc = |meta: &mut VirtualCells<F>,
@@ -796,6 +974,7 @@ impl<F: FieldExt> StorageLeafInfo<F> {
                     key_mult_prev.expr(),
                     is_key_odd.expr(),
                     key_mult_first_even.expr(),
+                    self.rot_key + rot,
                 )
             };
             matchx! {
@@ -806,7 +985,7 @@ impl<F: FieldExt> StorageLeafInfo<F> {
                 self.is_long() => {
                     if requires_longer_than_55 {
                         // `s_main.rlp1` needs to be 248.
-                        require!(a!(self.ctx.s_main.rlp1) => (RLP_LIST_LONG + 1));
+                        require!(a!(self.ctx.s_main.rlp1, self.rot_key + rot) => (RLP_LIST_LONG + 1));
                     }
                     // First key byte is at `s_main.bytes[1]`.
                     calc_rlc(meta, cb, 3..36, is_key_odd.expr())
@@ -1034,6 +1213,7 @@ impl<F: FieldExt> AccountLeafInfo<F> {
         key_mult_prev: Expression<F>,
         is_key_odd: Expression<F>,
         key_mult_first_even: Expression<F>,
+        rot: i32,
     ) -> Expression<F> {
         leaf_key_rlc(
             meta,
@@ -1043,6 +1223,7 @@ impl<F: FieldExt> AccountLeafInfo<F> {
             key_mult_prev.expr(),
             is_key_odd,
             key_mult_first_even,
+            self.rot_key + rot,
         )
     }
 }
@@ -1064,17 +1245,18 @@ pub(crate) fn leaf_key_rlc<F: FieldExt>(
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
     key_mult_first_even: Expression<F>,
+    rot: i32,
 ) -> Expression<F> {
     circuit!([meta, cb], {
         // Add the odd nibble first if we have one.
-        let first_byte = a!(ctx.s_main.rlp_bytes()[range.start]);
+        let first_byte = a!(ctx.s_main.rlp_bytes()[range.start], rot);
         let (rlc, mult) = ifx! {is_key_odd => {
             (get_terminal_odd_nibble(first_byte.expr()) * key_mult_prev.expr(), ctx.r[0].expr())
         } elsex {
             require!(first_byte => KEY_TERMINAL_PREFIX_EVEN);
             (0.expr(), key_mult_first_even.expr())
         }};
-        (rlc, key_mult_prev * mult).rlc_chain(ctx.rlc(meta, range.start + 1..range.end, 0))
+        (rlc, key_mult_prev * mult).rlc_chain(ctx.rlc(meta, range.start + 1..range.end, cb.get_query_offset() + rot))
     })
 }
 
@@ -1143,11 +1325,7 @@ pub(crate) fn get_num_nibbles<F: FieldExt>(
     })
 }
 
-// The key RLC of the drifted leaf needs to be the same as the key RLC of the
-// leaf before the drift - the nibbles are the same in both cases, the
-// difference is that before the drift some nibbles are stored in the leaf key,
-// while after the drift these nibbles are used as position in a branch or/and
-// nibbles of the extension node.
+// Returns the RLC values stored in the parent of the current node.
 pub(crate) fn get_parent_rlc_state<F: FieldExt>(
     meta: &mut VirtualCells<F>,
     ctx: MPTContext<F>,
@@ -1195,6 +1373,10 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
         mult *= r;
     }
     rlc
+}
+
+pub(crate) fn parent_memory(is_s: bool) -> String {
+    (if is_s { "parent_s" } else { "parent_c" }).to_string()
 }
 
 /// MPTConstraintBuilder

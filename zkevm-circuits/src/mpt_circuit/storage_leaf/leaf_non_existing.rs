@@ -4,15 +4,17 @@ use halo2_proofs::{
     plonk::VirtualCells,
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::{Cell, CellManager, CellType},
     mpt_circuit::witness_row::MptWitnessRow,
-    mpt_circuit::{helpers::MPTConstraintBuilder, MPTContext},
     mpt_circuit::{
-        helpers::{BranchNodeInfo, StorageLeafInfo},
-        param::BRANCH_ROWS_NUM,
+        helpers::{StorageLeafInfo},
+    },
+    mpt_circuit::{
+        helpers::{KeyData, MPTConstraintBuilder},
+        MPTContext,
     },
     mpt_circuit::{
         param::{IS_NON_EXISTING_STORAGE_POS, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND, S_START},
@@ -75,25 +77,27 @@ is different).
 
 */
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct StorageNonExistingConfig<F> {
-    _marker: PhantomData<F>,
+    key_data: KeyData<F>,
+    diff_inv: Cell<F>,
 }
 
 impl<F: FieldExt> StorageNonExistingConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
+        cm: &mut CellManager<F>,
         ctx: MPTContext<F>,
     ) -> Self {
         let proof_type = ctx.proof_type;
         let s_main = ctx.s_main;
         let accs = ctx.accumulators;
 
+        let diff_inv = cm.query_cell(CellType::Storage);
+        let ctx_key_data: Option<KeyData<F>>;
+
         let rot_key_c = -(LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND);
-        let rot_first_child = -(LEAF_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
-        let rot_branch_init = rot_first_child - 1;
-        let rot_last_account_row = -LEAF_NON_EXISTING_IND - 1;
 
         circuit!([meta, cb.base], {
             let storage = StorageLeafInfo::new(meta, ctx.clone(), true, rot_key_c);
@@ -103,20 +107,14 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
             require!(is_wrong_leaf => bool);
 
             ifx! {a!(proof_type.is_non_existing_storage_proof) => {
+                // Get the previous key RLC data
+                let key_data = KeyData::load(&mut cb.base, cm, &ctx.memory["key"], 2.expr());
                 ifx! {is_wrong_leaf => {
-                    // Get the previous key RLC data
-                    let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx!{not!(ctx.is_account(meta, rot_last_account_row)) => {
-                        let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-                        (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.is_key_odd())
-                    } elsex {
-                        (0.expr(), 1.expr(), false.expr())
-                    }};
                     // Calculate the key and check it's the address as requested in the lookup
-                    let key_rlc_wrong = key_rlc_prev + storage.key_rlc(meta, &mut cb.base, key_mult_prev.expr(), is_key_odd.expr(), 1.expr(), false);
+                    let key_rlc_wrong = key_data.rlc.expr() + storage.key_rlc(meta, &mut cb.base, key_data.mult.expr(), key_data.is_odd.expr(), 1.expr(), false, -rot_key_c);
                     require!(a!(accs.key.mult) => key_rlc_wrong);
                     // Now make sure this address is different than the one of the leaf
-                    let diff_inv = a!(accs.acc_s.rlc);
-                    require!((a!(accs.key.mult) - a!(accs.key.rlc, rot_key_c)) * diff_inv => 1);
+                    require!((a!(accs.key.mult) - a!(accs.key.rlc, rot_key_c)) * diff_inv.expr() => 1);
                     // Make sure the lengths of the keys are the same
                     let mut storage_wrong = StorageLeafInfo::new(meta, ctx.clone(), true, rot_key_c);
                     storage_wrong.set_rot_key(0);
@@ -126,9 +124,9 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
                     cb.set_length(num_bytes);
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                    let branch = BranchNodeInfo::new(meta, ctx.clone(), false, rot_branch_init);
-                    require!(branch.contains_placeholder_leaf(meta, false) => true);
+                    require!(key_data.is_placeholder_leaf_c => true);
                 }}
+                ctx_key_data = Some(key_data);
             } elsex {
                 // is_wrong_leaf needs to be false when not in non_existing_account proof
                 require!(is_wrong_leaf => false);
@@ -136,7 +134,8 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         });
 
         StorageNonExistingConfig {
-            _marker: PhantomData,
+            key_data: ctx_key_data.unwrap(),
+            diff_inv,
         }
     }
 
@@ -148,6 +147,14 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
+        self.key_data
+            .witness_load(region, offset, &mut pv.memory["key"], 2)
+            .ok();
+        // TODO(Brecht): remove
+        self.key_data
+            .witness_load(region, offset - 5, &mut pv.memory["key"], 2)
+            .ok();
+
         let row = &witness[offset];
         if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 0 {
             // No need to assign anything when not non-existing-storage proof.
@@ -174,13 +181,12 @@ impl<F: FieldExt> StorageNonExistingConfig<F> {
         let diff_inv = (key_rlc_new - pv.storage_key_rlc)
             .invert()
             .unwrap_or(F::zero());
-        region
-            .assign_advice(
-                || "assign diff inv".to_string(),
-                mpt_config.accumulators.acc_s.rlc,
-                offset,
-                || Value::known(diff_inv),
-            )
+        self.diff_inv
+            .assign(region, offset, Value::known(diff_inv))
+            .ok();
+        // TODO(Brecht): remove
+        self.diff_inv
+            .assign(region, offset - 5, Value::known(diff_inv))
             .ok();
 
         if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {

@@ -1,19 +1,19 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::VirtualCells,
+    plonk::{Error, VirtualCells},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::CellManager,
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{get_num_nibbles, AccountLeafInfo, MPTConstraintBuilder},
+        helpers::{get_num_nibbles, AccountLeafInfo, KeyData, MPTConstraintBuilder},
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG},
         FixedTableTag,
     },
@@ -113,9 +113,9 @@ an even number of nibbles, it turns around.
 
 */
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct AccountLeafKeyConfig<F> {
-    _marker: PhantomData<F>,
+    key_data: KeyData<F>,
 }
 
 impl<F: FieldExt> AccountLeafKeyConfig<F> {
@@ -133,9 +133,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
         // key rlc is in the first branch node
         let rot_first_child = -BRANCH_ROWS_NUM + if is_s { 1 } else { 0 };
-        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+        //let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
         let rot_branch_init = rot_first_child - 1;
-        let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
+        //let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
+
+        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        let ctx_key_data: Option<KeyData<F>>;
 
         circuit!([meta, cb.base], {
             let account = AccountLeafInfo::new(meta, ctx.clone(), 0);
@@ -149,39 +152,31 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             // Calculate and store the leaf data RLC
             require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
-            // Get the previous key data, which depends on the branch being a placeholder.
+            // Load the last key values, which depends on the branch being a placeholder.
             let is_branch_placeholder = ifx! {a!(not_first_level) => { branch.is_placeholder() }};
-            let (key_rlc_prev, key_mult_prev, nibbles_count_prev, is_key_odd) = ifx! {is_branch_placeholder => {
-                let is_branch_in_first_level = not!(a!(not_first_level, rot_branch_init));
-                ifx!{not!(is_branch_in_first_level) => {
-                    let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init_prev);
-                    (a!(accs.key.rlc, rot_first_child_prev), a!(accs.key.mult, rot_first_child_prev), branch_prev.nibbles_counter().expr(), branch_prev.is_key_odd())
-                } elsex {
-                    (0.expr(), 1.expr(), 0.expr(), false.expr())
-                }}
-            } elsex {
-                ifx! {a!(not_first_level)  => {
-                    (a!(accs.key.rlc, rot_first_child), a!(accs.key.mult, rot_first_child), branch.nibbles_counter().expr(), branch.is_key_odd())
-                } elsex {
-                    (0.expr(), 1.expr(), 0.expr(), false.expr())
-                }}
-            }};
+            let offset = if is_s { 0.expr() } else { 1.expr() };
+            let offset = offset + ifx! {is_branch_placeholder => { 1.expr() }};
+            let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], offset);
 
             // Calculate the key RLC
-            let key_rlc = key_rlc_prev
+            let key_rlc = key_data.rlc.expr()
                 + account.key_rlc(
                     meta,
                     &mut cb.base,
-                    key_mult_prev.expr(),
-                    is_key_odd.expr(),
+                    key_data.mult.expr(),
+                    key_data.is_odd.expr(),
                     1.expr(),
+                    0,
                 );
             require!(a!(accs.key.rlc) => key_rlc);
 
             // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
             let key_len = account.key_len(meta);
-            let num_nibbles = get_num_nibbles(meta, key_len.expr(), is_key_odd.expr());
-            require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
+            let num_nibbles = get_num_nibbles(meta, key_len.expr(), key_data.is_odd.expr());
+            require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+
+            // Key done, set the starting values
+            KeyData::store(&mut cb.base, &ctx.memory["key"], KeyData::default_values());
 
             // Num bytes used in RLC
             let num_bytes = account.num_bytes_on_key_row(meta);
@@ -220,10 +215,12 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
                     require!(or::expr([branch.contains_placeholder_leaf(meta, is_s), branch.is_placeholder()]) => true);
                 }}
             }
+
+            ctx_key_data = Some(key_data);
         });
 
         AccountLeafKeyConfig {
-            _marker: PhantomData,
+            key_data: ctx_key_data.unwrap(),
         }
     }
 
@@ -234,7 +231,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
-    ) {
+    ) -> Result<(), Error> {
         // account leaf key S & C
         let mut acc = F::zero();
         let mut acc_mult = F::one();
@@ -250,21 +247,40 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             pv.acc_mult_account_s = acc_mult;
 
             if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
-                region
-                    .assign_advice(
-                        || "assign lookup enabled".to_string(),
-                        mpt_config.proof_type.proof_type,
-                        offset,
-                        || Value::known(F::from(5_u64)), /* account delete mod lookup enabled in
-                                                          * this row if it is is_account_delete
-                                                          * proof */
-                    )
-                    .ok();
+                region.assign_advice(
+                    || "assign lookup enabled".to_string(),
+                    mpt_config.proof_type.proof_type,
+                    offset,
+                    || Value::known(F::from(5_u64)), /* account delete mod lookup enabled in
+                                                      * this row if it is is_account_delete
+                                                      * proof */
+                )?;
             }
         } else {
             pv.acc_account_c = acc;
             pv.acc_mult_account_c = acc_mult;
         }
+
+        let is_s = row.get_type() == MptWitnessRowType::AccountLeafKeyS;
+        let is_branch_placeholder = if is_s {
+            pv.is_branch_s_placeholder
+        } else {
+            pv.is_branch_c_placeholder
+        };
+        let load_offset = if is_s { 0 } else { 1 };
+        let load_offset = load_offset + if is_branch_placeholder { 1 } else { 0 };
+        self.key_data
+            .witness_load(region, offset, &mut pv.memory["key"], load_offset)?;
+        self.key_data.witness_store(
+            region,
+            offset,
+            &mut pv.memory["key"],
+            F::zero(),
+            F::one(),
+            0,
+            false,
+            false,
+        )?;
 
         // For leaf S and leaf C we need to start with the same rlc.
         let mut key_rlc_new = pv.key_rlc;
@@ -278,17 +294,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
         mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
         pv.account_key_rlc = key_rlc_new;
-        region
-            .assign_advice(
-                || "assign key_rlc".to_string(),
-                mpt_config.accumulators.key.rlc,
-                offset,
-                || Value::known(key_rlc_new),
-            )
-            .ok();
+        region.assign_advice(
+            || "assign key_rlc".to_string(),
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Value::known(key_rlc_new),
+        )?;
 
-        mpt_config
-            .assign_acc(region, acc, acc_mult, F::zero(), F::zero(), offset)
-            .ok();
+        mpt_config.assign_acc(region, acc, acc_mult, F::zero(), F::zero(), offset)
     }
 }

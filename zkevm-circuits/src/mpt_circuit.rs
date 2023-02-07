@@ -44,9 +44,11 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
-    circuit_tools::merge_lookups,
+    circuit_tools::{merge_lookups, Memory, CellManager},
     evm_circuit::util::rlc,
-    mpt_circuit::helpers::{extend_rand, BranchNodeInfo, MPTConstraintBuilder},
+    mpt_circuit::{helpers::{
+        extend_rand, parent_memory, BranchNodeInfo, KeyData, MPTConstraintBuilder, ParentData,
+    }, storage_leaf::leaf_combined::LeafCombinedConfig},
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
@@ -84,7 +86,7 @@ use self::{
 */
 
 /// Merkle Patricia Trie config.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug)]
 pub struct RowConfig<F> {
     account_leaf_key_s: AccountLeafKeyConfig<F>,
     account_leaf_key_c: AccountLeafKeyConfig<F>,
@@ -95,6 +97,7 @@ pub struct RowConfig<F> {
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
     account_non_existing: AccountNonExistingConfig<F>,
     branch_config: BranchConfig<F>,
+    branch_key_config: BranchKeyConfig<F>,
     ext_node_config_s: ExtensionNodeConfig<F>,
     ext_node_config_c: ExtensionNodeConfig<F>,
     storage_leaf_key_s: LeafKeyConfig<F>,
@@ -122,7 +125,9 @@ pub struct MPTContext<F> {
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols<F>,
     pub(crate) address_rlc: Column<Advice>,
+    pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) r: Vec<Expression<F>>,
+    pub(crate) memory: Memory<F>,
 }
 
 impl<F: FieldExt> MPTContext<F> {
@@ -184,6 +189,8 @@ pub struct MPTConfig<F> {
     pub(crate) account_leaf: AccountLeafCols<F>,
     pub(crate) storage_leaf: StorageLeafCols<F>,
     pub(crate) denoter: DenoteCols<F>,
+    pub(crate) managed_columns: Vec<Column<Advice>>,
+    pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same
@@ -202,6 +209,7 @@ pub struct MPTConfig<F> {
     account_leaf_key_in_added_branch: AccountLeafKeyInAddedBranchConfig<F>,
     account_non_existing: AccountNonExistingConfig<F>,
     branch_config: BranchConfig<F>,
+    branch_key_config: BranchKeyConfig<F>,
     ext_node_config_s: ExtensionNodeConfig<F>,
     ext_node_config_c: ExtensionNodeConfig<F>,
     storage_leaf_key_s: LeafKeyConfig<F>,
@@ -233,7 +241,6 @@ pub enum FixedTableTag {
 
 impl_expr!(FixedTableTag);
 
-#[derive(Default)]
 /*
 Some values are accumulating through the rows (or block of rows) and we need to access the previous value
 to continue the calculation, for this reason the previous values are stored in `ProofValues` struct.
@@ -241,6 +248,7 @@ Such accumulated value is for example `key_rlc` which stores the intermediate ke
 and extension node block a new intermediate key RLC is computed).
 Also, for example, `modified_node` is given in branch init but needed to be set in every branch children row.
 */
+#[derive(Default)]
 pub(crate) struct ProofValues<F> {
     pub(crate) modified_node: u8, /* branch child that is being changed, it is the same in all
                                    * branch children rows */
@@ -270,6 +278,7 @@ pub(crate) struct ProofValues<F> {
                                        * go one level back
                                        * to get previous key_rlc */
     pub(crate) key_rlc_mult_prev: F,
+    pub(crate) nibbles_num_prev: usize,
     pub(crate) mult_diff: F, /* power of randomness r: multiplier_curr = multiplier_prev *
                               * mult_diff */
     pub(crate) key_rlc_sel: bool, /* If true, nibble is multiplied by 16, otherwise by 1. */
@@ -294,17 +303,36 @@ pub(crate) struct ProofValues<F> {
     pub(crate) nonce_value_s: F,
     pub(crate) balance_value_s: F,
     pub(crate) storage_root_value_s: F,
+    pub(crate) storage_root_value_c: F,
     pub(crate) codehash_value_s: F,
     pub(crate) before_account_leaf: bool,
     pub(crate) nibbles_num: usize,
 
     pub(crate) account_key_rlc: F,
     pub(crate) storage_key_rlc: F,
+
+    pub(crate) is_hashed_s: bool,
+    pub(crate) is_hashed_c: bool,
+
+    pub(crate) ext_is_hashed_s: bool,
+    pub(crate) ext_is_hashed_c: bool,
+
+    pub(crate) parent_rlc_s: F,
+    pub(crate) parent_is_hashed_s: bool,
+
+    pub(crate) parent_rlc_c: F,
+    pub(crate) parent_is_hashed_c: bool,
+
+    pub(crate) is_placeholder_leaf_s: bool,
+    pub(crate) is_placeholder_leaf_c: bool,
+
+    pub(crate) memory: Memory<F>,
 }
 
 impl<F: FieldExt> ProofValues<F> {
-    fn new() -> Self {
+    fn new(memory: &Memory<F>) -> Self {
         Self {
+            memory: memory.clone(),
             key_rlc_mult: F::one(),
             key_rlc_mult_prev: F::one(),
             mult_diff: F::one(),
@@ -353,6 +381,15 @@ impl<F: FieldExt> MPTConfig<F> {
             .try_into()
             .unwrap();
 
+        let managed_columns = (0..32).map(|_| meta.advice_column()).collect::<Vec<_>>();
+
+        let memory_columns = (0..4).map(|_| meta.advice_column()).collect::<Vec<_>>();
+
+        let mut memory = Memory::new(memory_columns);
+        memory.allocate(meta, "key");
+        memory.allocate(meta, parent_memory(false));
+        memory.allocate(meta, parent_memory(true));
+
         /*
         Note: `key_rlc_mult` would not be needed if we would have
         big endian instead of little endian. However, then it would be much more
@@ -400,10 +437,12 @@ impl<F: FieldExt> MPTConfig<F> {
             accumulators: accumulators.clone(),
             denoter: denoter.clone(),
             address_rlc: address_rlc.clone(),
+            managed_columns: managed_columns.clone(),
             r: extend_rand(&power_of_randomness),
+            memory: memory.clone(),
         };
 
-        let mut row_config: RowConfig<F> = RowConfig::default();
+        let mut row_config: Option<RowConfig<F>> = None;
 
         let mut cb = MPTConstraintBuilder::new(17);
         meta.create_gate("MPT", |meta| {
@@ -411,6 +450,21 @@ impl<F: FieldExt> MPTConfig<F> {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
+
+                /* Initial values */
+                // Initial key values
+                ifx!{not!(f!(position_cols.q_enable)) => {
+                    //KeyData::store(&mut cb.base, &ctx.key_memory, KeyData::default_values());
+                    KeyData::store_initial_values(&mut cb.base, &ctx.memory["key"]);
+                }}
+                // Initial parent values
+                ifx!{f!(position_cols.q_enable), not!(a!(ctx.position_cols.not_first_level)),
+                        a!(branch.is_init) + a!(storage_leaf.is_s_key) + a!(account_leaf.is_key_s) => {
+                    for is_s in [true, false] {
+                        let root = a!(ctx.inter_root(is_s));
+                        ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [root, true.expr()]);
+                    }
+                }}
 
                 // TODO(Brecht): Make an actual state machine (currently close, but not yet)
                 /* Branch node */
@@ -439,31 +493,30 @@ impl<F: FieldExt> MPTConfig<F> {
                     ext_node_config_c = ExtensionNodeConfig::configure(meta, &mut cb, ctx.clone(), false);
                 }}
                 // BRANCH.IS_EXTENSION_NODE_S + BRANCH.IS_EXTENSION_NODE_C
-                BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
+                let branch_key_config = BranchKeyConfig::configure(meta, &mut cb, ctx.clone());
 
                 /* Storage Leaf */
+                let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
                 // LEAF_KEY_S
                 // LEAF_KEY_C
-                let storage_leaf_key_s;
-                let storage_leaf_key_c;
-                ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
-                    ifx!{a!(storage_leaf.is_s_key) => {
-                        storage_leaf_key_s = LeafKeyConfig::configure(meta, &mut cb, ctx.clone(), true);
-                    }}
-                    ifx!{a!(storage_leaf.is_c_key) => {
-                        storage_leaf_key_c = LeafKeyConfig::configure(meta, &mut cb, ctx.clone(), false);
-                    }}
-                }}
                 // LEAF_VALUE_S
                 // LEAF_VALUE_C
+                let storage_leaf_key_s;
+                let storage_leaf_key_c;
                 let storage_leaf_value_s;
                 let storage_leaf_value_c;
-                ifx!{f!(position_cols.q_not_first) => {
+                ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
+                    ifx!{a!(storage_leaf.is_s_key) => {
+                        storage_leaf_key_s = LeafKeyConfig::configure(meta, &mut cb, &mut cm, ctx.clone(), true);
+                    }}
                     ifx!{a!(ctx.storage_leaf.is_s_value) => {
-                        storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), true);
+                        storage_leaf_value_s = LeafValueConfig::configure(meta, &mut cb, &mut cm, ctx.clone(), true);
+                    }}
+                    ifx!{a!(storage_leaf.is_c_key) => {
+                        storage_leaf_key_c = LeafKeyConfig::configure(meta, &mut cb, &mut cm, ctx.clone(), false);
                     }}
                     ifx!{a!(ctx.storage_leaf.is_c_value) => {
-                        storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, ctx.clone(), false);
+                        storage_leaf_value_c = LeafValueConfig::configure(meta, &mut cb, &mut cm, ctx.clone(), false);
                     }}
                 }}
                 // LEAF_DRIFTED
@@ -474,7 +527,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 // LEAF_NON_EXISTING
                 let storage_non_existing;
                 ifx!{f!(position_cols.q_enable), a!(storage_leaf.is_non_existing) => {
-                    storage_non_existing = StorageNonExistingConfig::<F>::configure(meta, &mut cb, ctx.clone());
+                    storage_non_existing = StorageNonExistingConfig::<F>::configure(meta, &mut cb, &mut cm, ctx.clone());
                 }}
 
                 /* Account Leaf */
@@ -517,6 +570,16 @@ impl<F: FieldExt> MPTConfig<F> {
                     account_leaf_key_in_added_branch = AccountLeafKeyInAddedBranchConfig::configure(meta, &mut cb, ctx.clone());
                 }}
 
+                ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
+                    matchx! {
+                        a!(storage_leaf.is_s_key) => {
+                            LeafCombinedConfig::configure(meta, &mut cb, ctx.clone());
+                            ()
+                        },
+                        _ => (),
+                    }
+                }}
+
                 /* Range checks */
                 // These range checks ensure that the value in the RLP columns are all byte value.
                 // These lookups also enforce the value to be zero if the passed in length is < 0.
@@ -557,7 +620,7 @@ impl<F: FieldExt> MPTConfig<F> {
                 // TODO(Brecht): manually optimized lookups for now, but the constraint builder can
                 // automatically do this. Shouldn't be too hard hopefully.
                 for tag in ["mult", "mult2"] {
-                    let lookups = cb.base.get_lookups(&[tag]);
+                    let lookups = cb.base.consume_lookups(&[tag]);
                     let optimize = true;
                     if optimize {
                         let (_, values) = merge_lookups(&mut cb.base, lookups);
@@ -575,7 +638,12 @@ impl<F: FieldExt> MPTConfig<F> {
                 require!(@"keccak" => keccak_table.columns().iter().map(|table| a!(table)).collect());
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
-                row_config = RowConfig {
+                /* Memory banks */
+                ifx!{f!(position_cols.q_enable) => {
+                    ctx.memory.generate_constraints(&mut cb.base);
+                }}
+
+                row_config = Some(RowConfig {
                     account_leaf_key_s,
                     account_leaf_key_c,
                     account_leaf_nonce_balance_s,
@@ -585,6 +653,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     account_leaf_key_in_added_branch,
                     account_non_existing,
                     branch_config,
+                    branch_key_config,
                     ext_node_config_s,
                     ext_node_config_c,
                     storage_leaf_key_s,
@@ -593,7 +662,7 @@ impl<F: FieldExt> MPTConfig<F> {
                     storage_leaf_value_c,
                     storage_leaf_key_in_added_branch,
                     storage_non_existing,
-                };
+                });
             });
 
             cb.base.generate_constraints()
@@ -604,9 +673,21 @@ impl<F: FieldExt> MPTConfig<F> {
             .parse()
             .expect("Cannot parse DISABLE_LOOKUPS env var as usize");
         if disable_lookups == 0 {
-            cb.base.generate_lookups(meta, &["fixed", "keccak"]);
+            cb.base.generate_lookups(
+                meta,
+                &[
+                    vec!["fixed".to_string(), "keccak".to_string()],
+                    ctx.memory.tags(),
+                ]
+                .concat(),
+            );
         } else if disable_lookups == 1 {
-            cb.base.generate_lookups(meta, &["keccak"]);
+            cb.base.generate_lookups(
+                meta,
+                &[vec!["keccak".to_string()], ctx.memory.tags()].concat(),
+            );
+        } else if disable_lookups == 2 {
+            cb.base.generate_lookups(meta, &ctx.memory.tags());
         }
 
         println!("num lookups: {}", meta.lookups().len());
@@ -623,6 +704,7 @@ impl<F: FieldExt> MPTConfig<F> {
             root: inter_final_root,
         };
 
+        let row_config = row_config.unwrap();
         let randomness = F::zero();
         MPTConfig {
             proof_type,
@@ -638,6 +720,8 @@ impl<F: FieldExt> MPTConfig<F> {
             storage_leaf,
             accumulators,
             denoter,
+            managed_columns,
+            memory,
             keccak_table,
             fixed_table,
             address_rlc,
@@ -650,6 +734,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_leaf_key_in_added_branch: row_config.account_leaf_key_in_added_branch,
             account_non_existing: row_config.account_non_existing,
             branch_config: row_config.branch_config,
+            branch_key_config: row_config.branch_key_config,
             ext_node_config_s: row_config.ext_node_config_s,
             ext_node_config_c: row_config.ext_node_config_c,
             storage_leaf_key_s: row_config.storage_leaf_key_s,
@@ -844,26 +929,64 @@ impl<F: FieldExt> MPTConfig<F> {
         randomness: F,
     ) {
         self.randomness = randomness;
+        let mut height = 0;
+
+        let mut memory = self.memory.clone();
 
         layouter
             .assign_region(
                 || "MPT",
                 |mut region| {
                     let mut offset = 0;
-                    let mut pv = ProofValues::new();
+                    let mut pv = ProofValues::new(&self.memory);
+
+                    memory.clear_witness_data();
+
+                    pv.memory["key"].witness_store_init(&[
+                        F::zero(),
+                        F::one(),
+                        F::zero(),
+                        F::zero(),
+                        F::zero(),
+                        F::zero(),
+                    ]);
 
                     for (ind, row) in witness
                         .iter()
                         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
                         .enumerate()
                     {
+                        let mut new_proof = offset == 0;
                         if offset > 0 {
                             let row_prev = &witness[offset - 1];
                             let not_first_level_prev = row_prev.not_first_level();
                             let not_first_level_cur = row.not_first_level();
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
-                                pv = ProofValues::new();
+                                pv = ProofValues::new(&pv.memory);
+                                new_proof = true;
                             }
+                        }
+
+                        if new_proof {
+                            pv.memory[parent_memory(true)].witness_store(
+                                offset,
+                                &[row.s_root_bytes_rlc(self.randomness), F::from(true)],
+                            );
+                            pv.memory[parent_memory(false)].witness_store(
+                                offset,
+                                &[row.c_root_bytes_rlc(self.randomness), F::from(true)],
+                            );
+
+                            //pv.parent_rlc_s =
+                            // row.s_root_bytes_rlc(self.randomness);
+                            // pv.parent_is_hashed_s = true;
+                            //pv.memory[parent_memory(false)].
+                            // store_used_at(offset);
+                            // pv.parent_rlc_c =
+                            // row.c_root_bytes_rlc(self.randomness);
+                            // pv.parent_is_hashed_c = true;
+
+                            //println!("{} -> {:?}", offset, row.get_type());
                         }
 
                         //println!("{} -> {:?}", offset, row.get_type());
@@ -874,6 +997,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             offset,
                             || Value::known(F::one()),
                         )?;
+                        height += 1;
 
                         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                             // account leaf key
@@ -888,7 +1012,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Value::known(q_not_first),
                         )?;
 
-                        let q_not_first_ext_s = if offset < (BRANCH_ROWS_NUM as usize) - 1 {
+                        let q_not_first_ext_s = if offset < (BRANCH_ROWS_NUM as usize) - 2 {
                             F::zero()
                         } else {
                             F::one()
@@ -900,7 +1024,7 @@ impl<F: FieldExt> MPTConfig<F> {
                             || Value::known(q_not_first_ext_s),
                         )?;
 
-                        let q_not_first_ext_c = if offset < (BRANCH_ROWS_NUM as usize) - 0 {
+                        let q_not_first_ext_c = if offset < (BRANCH_ROWS_NUM as usize) - 1 {
                             F::zero()
                         } else {
                             F::one()
@@ -967,6 +1091,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.key_rlc_mult = F::one();
                                 pv.key_rlc_prev = F::zero();
                                 pv.key_rlc_mult_prev = F::one();
+                                pv.nibbles_num_prev = 0;
                                 pv.key_rlc_sel = true;
                                 pv.nibbles_num = 0;
                                 /*
@@ -1020,7 +1145,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut pv,
                                     row,
                                     offset,
-                                );
+                                )?;
                             } else if row.get_type() == MptWitnessRowType::StorageLeafCKey {
                                 self.storage_leaf_key_c.assign(
                                     &mut region,
@@ -1028,7 +1153,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut pv,
                                     row,
                                     offset,
-                                );
+                                )?;
                             } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
                                 self.storage_leaf_value_s.assign(
                                     &mut region,
@@ -1062,7 +1187,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut pv,
                                     row,
                                     offset,
-                                );
+                                )?;
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
                                 self.account_leaf_key_c.assign(
                                     &mut region,
@@ -1070,7 +1195,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     &mut pv,
                                     row,
                                     offset,
-                                );
+                                )?;
                             } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS
                             {
                                 self.account_leaf_nonce_balance_s.assign(
@@ -1127,6 +1252,9 @@ impl<F: FieldExt> MPTConfig<F> {
                                     true,
                                 );
                             } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
+                                self.branch_key_config
+                                    .assign(&mut region, witness, self, &mut pv, offset)
+                                    .ok();
                                 self.ext_node_config_c.assign(
                                     &mut region,
                                     self,
@@ -1162,10 +1290,14 @@ impl<F: FieldExt> MPTConfig<F> {
                         }
                     }
 
+                    memory = pv.memory;
+
                     Ok(())
                 },
             )
             .ok();
+
+        memory.assign(&mut layouter, height).ok();
     }
 
     fn load_fixed_table(

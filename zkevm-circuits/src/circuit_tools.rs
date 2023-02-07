@@ -1,9 +1,19 @@
 //! Circuit utilities
-use crate::{evm_circuit::util::rlc, util::Expr};
+use std::{
+    collections::BTreeMap,
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
+
+use crate::{
+    evm_circuit::util::rlc,
+    util::{query_expression, Expr},
+};
 use gadgets::util::{and, select, sum};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    circuit::{AssignedCell, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -57,6 +67,415 @@ impl<F: FieldExt> Expr<F> for DataTransition<F> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct Cell<F> {
+    // expression for constraint
+    expression: Expression<F>,
+    column: Column<Advice>,
+    // relative position to selector for synthesis
+    rotation: usize,
+}
+
+impl<F: FieldExt> Cell<F> {
+    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>, rotation: usize) -> Self {
+        Self {
+            expression: meta.query_advice(column, Rotation(rotation as i32)),
+            column,
+            rotation,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        region.assign_advice(
+            || {
+                format!(
+                    "Cell column: {:?} and rotation: {}",
+                    self.column, self.rotation
+                )
+            },
+            self.column,
+            offset + self.rotation,
+            || value,
+        )
+    }
+}
+
+impl<F: FieldExt> Expr<F> for Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+}
+
+impl<F: FieldExt> Expr<F> for &Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CellType {
+    Storage,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CellColumn<F> {
+    pub(crate) index: usize,
+    pub(crate) cell_type: CellType,
+    pub(crate) height: usize,
+    pub(crate) expr: Expression<F>,
+}
+
+impl<F: FieldExt> Expr<F> for CellColumn<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expr.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CellManager<F> {
+    width: usize,
+    height: usize,
+    cells: Vec<Cell<F>>,
+    columns: Vec<CellColumn<F>>,
+}
+
+impl<F: FieldExt> CellManager<F> {
+    pub(crate) fn new(
+        meta: &mut VirtualCells<F>,
+        height: usize,
+        advices: &[Column<Advice>],
+        height_offset: usize,
+    ) -> Self {
+        // Setup the columns and query the cells
+        let width = advices.len();
+        let mut cells = Vec::with_capacity(height * width);
+        let mut columns = Vec::with_capacity(width);
+        for c in 0..width {
+            for r in 0..height {
+                cells.push(Cell::new(meta, advices[c], height_offset + r));
+            }
+            columns.push(CellColumn {
+                index: c,
+                cell_type: CellType::Storage,
+                height: 0,
+                expr: cells[c * height].expr(),
+            });
+        }
+
+        Self {
+            width,
+            height,
+            cells,
+            columns,
+        }
+    }
+
+    pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+        let mut cells = Vec::with_capacity(count);
+        while cells.len() < count {
+            let column_idx = self.next_column(cell_type);
+            let column = &mut self.columns[column_idx];
+            cells.push(self.cells[column_idx * self.height + column.height].clone());
+            column.height += 1;
+        }
+        cells
+    }
+
+    pub(crate) fn query_cell(&mut self, cell_type: CellType) -> Cell<F> {
+        self.query_cells(cell_type, 1)[0].clone()
+    }
+
+    fn next_column(&self, cell_type: CellType) -> usize {
+        let mut best_index: Option<usize> = None;
+        let mut best_height = self.height;
+        for column in self.columns.iter() {
+            if column.cell_type == cell_type && column.height < best_height {
+                best_index = Some(column.index);
+                best_height = column.height;
+            }
+        }
+        match best_index {
+            Some(index) => index,
+            None => unreachable!("not enough cells for query: {:?}", cell_type),
+        }
+    }
+
+    pub(crate) fn get_height(&self) -> usize {
+        self.columns
+            .iter()
+            .map(|column| column.height)
+            .max()
+            .unwrap()
+    }
+
+    /// Returns a map of CellType -> (width, height, num_cells)
+    pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
+        let mut data = BTreeMap::new();
+        for column in self.columns.iter() {
+            let (mut count, mut height, mut num_cells) =
+                data.get(&column.cell_type).unwrap_or(&(0, 0, 0));
+            count += 1;
+            height = height.max(column.height);
+            num_cells += column.height;
+            data.insert(column.cell_type, (count, height, num_cells));
+        }
+        data
+    }
+
+    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+        &self.columns
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Memory<F> {
+    columns: Vec<Column<Advice>>,
+    banks: Vec<MemoryBank<F>>,
+}
+
+impl<F: FieldExt> Memory<F> {
+    pub(crate) fn new(columns: Vec<Column<Advice>>) -> Self {
+        Self {
+            columns,
+            banks: Vec::new(),
+        }
+    }
+
+    pub(crate) fn allocate<S: AsRef<str>>(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        tag: S,
+    ) -> &MemoryBank<F> {
+        self.banks
+            .push(MemoryBank::new(meta, self.columns[self.banks.len()], tag));
+        self.banks.last().unwrap()
+    }
+
+    pub(crate) fn get<S: AsRef<str>>(&self, tag: S) -> &MemoryBank<F> {
+        for bank in self.banks.iter() {
+            if bank.tag() == tag.as_ref() {
+                return bank;
+            }
+        }
+        unreachable!()
+    }
+
+    pub(crate) fn get_mut<S: AsRef<str>>(&mut self, tag: S) -> &mut MemoryBank<F> {
+        for bank in self.banks.iter_mut() {
+            if bank.tag() == tag.as_ref() {
+                return bank;
+            }
+        }
+        unreachable!()
+    }
+
+    pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
+        for bank in self.banks.iter() {
+            bank.generate_constraints(cb);
+
+            cb.generate_lookup_table_checks(bank.tag());
+
+            /*let lookups = cb.consume_lookups(&[bank.tag()]);
+            if !lookups.is_empty() {
+                //println!("{}: {}", tag, lookups.len());
+                let (_, values) = merge_lookups(cb, lookups);
+                crate::circuit!([meta, cb], {
+                    require!(values => @bank.tag());
+                })
+            }*/
+        }
+    }
+
+    pub(crate) fn clear_witness_data(&mut self) {
+        for bank in self.banks.iter_mut() {
+            bank.clear_witness_data();
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        height: usize,
+    ) -> Result<(), Error> {
+        for bank in self.banks.iter() {
+            bank.assign(layouter, height)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn tags(&self) -> Vec<String> {
+        self.banks.iter().map(|bank| bank.tag()).collect()
+    }
+}
+
+impl<F: FieldExt, S: AsRef<str>> Index<S> for Memory<F> {
+    type Output = MemoryBank<F>;
+
+    fn index(&self, tag: S) -> &Self::Output {
+        for bank in self.banks.iter() {
+            if bank.tag() == tag.as_ref() {
+                return bank;
+            }
+        }
+        unreachable!()
+    }
+}
+
+impl<F: FieldExt, S: AsRef<str>> IndexMut<S> for Memory<F> {
+    fn index_mut(&mut self, tag: S) -> &mut Self::Output {
+        for bank in self.banks.iter_mut() {
+            if bank.tag() == tag.as_ref() {
+                return bank;
+            }
+        }
+        unreachable!()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryBank<F> {
+    column: Column<Advice>,
+    tag: String,
+    cur: Expression<F>,
+    next: Expression<F>,
+    store_offsets: Vec<usize>,
+    stored_values: Vec<Vec<F>>,
+    _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt> MemoryBank<F> {
+    pub(crate) fn new<S: AsRef<str>>(
+        meta: &mut ConstraintSystem<F>,
+        column: Column<Advice>,
+        tag: S,
+    ) -> Self {
+        let mut cur = 0.expr();
+        let mut next = 0.expr();
+        query_expression(meta, |meta| {
+            cur = meta.query_advice(column, Rotation::cur());
+            next = meta.query_advice(column, Rotation::next());
+        });
+        Self {
+            column,
+            tag: tag.as_ref().to_owned(),
+            cur,
+            next,
+            store_offsets: Vec::new(),
+            stored_values: Vec::new(),
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn key(&self) -> Expression<F> {
+        self.cur.expr()
+    }
+
+    pub(crate) fn load(
+        &self,
+        description: &'static str,
+        cb: &mut ConstraintBuilder<F>,
+        offset: Expression<F>,
+        values: &[Expression<F>],
+    ) {
+        self.load_with_key(description, cb, self.key() - offset, values);
+    }
+
+    pub(crate) fn load_with_key(
+        &self,
+        description: &'static str,
+        cb: &mut ConstraintBuilder<F>,
+        key: Expression<F>,
+        values: &[Expression<F>],
+    ) {
+        let mut key_values = values.to_vec();
+        key_values.insert(0, key);
+        cb.lookup(description, self.tag(), values.to_vec());
+    }
+
+    pub(crate) fn store(&self, cb: &mut ConstraintBuilder<F>, values: &[Expression<F>]) {
+        self.store_with_key(cb, self.key() + 1.expr(), values);
+    }
+
+    pub(crate) fn store_with_key(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        key: Expression<F>,
+        values: &[Expression<F>],
+    ) {
+        let mut key_values = values.to_vec();
+        key_values.insert(0, key);
+        cb.lookup_table("memory store", self.tag(), values.to_vec());
+    }
+
+    pub(crate) fn witness_store(&mut self, offset: usize, values: &[F]) {
+        self.stored_values.push(values.to_vec());
+        self.store_offsets.push(offset);
+    }
+
+    pub(crate) fn witness_store_init(&mut self, values: &[F]) {
+        self.stored_values.push(values.to_vec());
+    }
+
+    pub(crate) fn witness_load(&self, offset: usize) -> Vec<F> {
+        self.stored_values[self.stored_values.len() - 1 - offset].clone()
+    }
+
+    pub(crate) fn clear_witness_data(&mut self) {
+        self.store_offsets.clear();
+    }
+
+    pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
+        let lookup_table = cb.get_lookup_table(self.tag());
+        crate::circuit!([meta, cb], {
+            require!(self.next => self.cur.expr() + lookup_table.0);
+        });
+    }
+
+    pub(crate) fn assign(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        height: usize,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "memory bank",
+            |mut region| {
+                // Pad to the full circuit (necessary for reads)
+                let mut store_offsets = self.store_offsets.clone();
+                store_offsets.push(height);
+
+                //println!("offsets: {:?}", self.store_offsets);
+
+                //println!("height: {}", height);
+                let mut store_index = 0;
+                let mut offset = 0;
+                for &stored_offset in store_offsets.iter() {
+                    while offset <= stored_offset {
+                        region.assign_advice(
+                            || "assign memory index".to_string(),
+                            self.column,
+                            offset,
+                            || Value::known(F::from(store_index as u64)),
+                        )?;
+                        //println!("[{}] {}: {}", self.tag(), offset, store_index);
+                        offset += 1;
+                    }
+                    store_index += 1;
+                }
+                Ok(())
+            },
+        )
+    }
+
+    pub(crate) fn tag(&self) -> String {
+        self.tag.clone()
+    }
+}
+
 /// Lookup data
 #[derive(Clone)]
 pub struct LookupData<F> {
@@ -79,6 +498,8 @@ pub struct ConstraintBuilder<F> {
     pub lookups: Vec<LookupData<F>>,
     /// The lookup tables
     pub lookup_tables: Vec<LookupData<F>>,
+    /// Query offset
+    pub query_offset: i32,
 }
 
 impl<F: FieldExt> ConstraintBuilder<F> {
@@ -89,6 +510,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             conditions: Vec::new(),
             lookups: Vec::new(),
             lookup_tables: Vec::new(),
+            query_offset: 0,
         }
     }
 
@@ -186,7 +608,7 @@ impl<F: FieldExt> ConstraintBuilder<F> {
                 .collect::<Vec<_>>();
             for lookup in lookups.iter() {
                 meta.lookup_any(lookup.description, |_meta| {
-                    let table = self.get_lookup_table(lookup_name);
+                    let table = self.get_lookup_table_values(lookup_name);
                     let mut values: Vec<_> = lookup
                         .values
                         .iter()
@@ -218,31 +640,31 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         self.get_condition().unwrap_or_else(|| 1.expr())
     }
 
-    pub(crate) fn lookup_table(
+    pub(crate) fn lookup_table<S: AsRef<str>>(
         &mut self,
         description: &'static str,
-        tag: String,
+        tag: S,
         values: Vec<Expression<F>>,
     ) {
         let condition = self.get_condition_expr();
         self.lookup_tables.push(LookupData {
             description,
-            tag,
+            tag: tag.as_ref().to_owned(),
             condition,
             values,
         });
     }
 
-    pub(crate) fn lookup(
+    pub(crate) fn lookup<S: AsRef<str>>(
         &mut self,
         description: &'static str,
-        tag: String,
+        tag: S,
         values: Vec<Expression<F>>,
     ) {
         let condition = self.get_condition_expr();
         self.lookups.push(LookupData {
             description,
-            tag,
+            tag: tag.as_ref().to_owned(),
             condition,
             values,
         });
@@ -256,23 +678,62 @@ impl<F: FieldExt> ConstraintBuilder<F> {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) fn get_lookup_table<S: AsRef<str>>(&self, tag: S) -> Vec<Expression<F>> {
+    pub(crate) fn consume_lookups<S: AsRef<str>>(&mut self, tags: &[S]) -> Vec<LookupData<F>> {
+        let lookups = self.get_lookups(tags);
+        self.lookups
+            .retain(|lookup| tags.iter().any(|tag| lookup.tag != tag.as_ref()));
+        lookups
+    }
+
+    pub(crate) fn get_lookup_table<S: AsRef<str>>(
+        &self,
+        tag: S,
+    ) -> (Expression<F>, Vec<Expression<F>>) {
         let lookups = self
             .lookup_tables
             .iter()
             .filter(|lookup| lookup.tag == tag.as_ref())
             .collect::<Vec<_>>();
-        let selector = sum::expr(lookups.iter().map(|lookup| lookup.condition.expr()));
 
-        let mut table = vec![0.expr(); lookups[0].values.len()];
-        for (idx, value) in table.iter_mut().enumerate() {
-            *value = sum::expr(
-                lookups
-                    .iter()
-                    .map(|lookup| selector.expr() * lookup.values[idx].expr()),
+        merge_values_unsafe(
+            lookups
+                .iter()
+                .map(|lookup| (lookup.condition.clone(), lookup.values.clone()))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    pub(crate) fn get_lookup_table_values<S: AsRef<str>>(&self, tag: S) -> Vec<Expression<F>> {
+        let lookup_table = self.get_lookup_table(tag);
+        // Combine with the merged selector as well
+        lookup_table
+            .1
+            .iter()
+            .map(|v| v.expr() * lookup_table.0.expr())
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn generate_lookup_table_checks<S: AsRef<str>>(&mut self, tag: S) {
+        let lookups = self
+            .lookup_tables
+            .iter()
+            .filter(|lookup| lookup.tag == tag.as_ref())
+            .collect::<Vec<_>>();
+        let selectors = lookups
+            .iter()
+            .map(|lookup| lookup.condition.expr())
+            .collect::<Vec<_>>();
+        for selector in selectors.iter() {
+            self.require_boolean(
+                "lookup table condition needs to be boolean",
+                selector.expr(),
             );
         }
-        table
+        let selector = sum::expr(&selectors);
+        self.require_boolean(
+            "lookup table conditions sum needs to be boolean",
+            selector.expr(),
+        );
     }
 
     pub(crate) fn print_stats(&self) {
@@ -281,6 +742,14 @@ impl<F: FieldExt> ConstraintBuilder<F> {
         for (name, expr) in expressions.iter() {
             println!("'{}': {}", name, expr.degree());
         }
+    }
+
+    pub(crate) fn get_query_offset(&self) -> i32 {
+        self.query_offset
+    }
+
+    pub(crate) fn set_query_offset(&mut self, query_offset: i32) {
+        self.query_offset = query_offset;
     }
 }
 
@@ -306,6 +775,16 @@ pub(crate) fn merge_values<F: FieldExt>(
     crate::circuit!([meta, cb], {
         require!(selector => bool);
     });
+    merge_values_unsafe(values)
+}
+
+pub(crate) fn merge_values_unsafe<F: FieldExt>(
+    values: Vec<(Expression<F>, Vec<Expression<F>>)>,
+) -> (Expression<F>, Vec<Expression<F>>) {
+    if values.is_empty() {
+        return (0.expr(), Vec::new());
+    }
+    let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
     // Merge
     let max_length = values.iter().map(|(_, values)| values.len()).max().unwrap();
     let mut merged_values = vec![0.expr(); max_length];
@@ -419,6 +898,7 @@ impl_expressable!(usize);
 impl_expressable!(isize);
 impl_expressable!(Expression<F>);
 impl_expressable!(DataTransition<F>);
+impl_expressable!(Cell<F>);
 
 /// Trait around select
 pub trait Selectable<F> {
@@ -867,20 +1347,20 @@ macro_rules! circuit {
         #[allow(unused_macros)]
         macro_rules! f {
             ($column:expr, $rot:expr) => {{
-                $meta.query_fixed($column.clone(), Rotation($rot as i32))
+                $meta.query_fixed($column.clone(), Rotation($cb.get_query_offset() + ($rot as i32)))
             }};
             ($column:expr) => {{
-                $meta.query_fixed($column.clone(), Rotation::cur())
+                $meta.query_fixed($column.clone(), Rotation($cb.get_query_offset()))
             }};
         }
 
         #[allow(unused_macros)]
         macro_rules! a {
             ($column:expr, $rot:expr) => {{
-                $meta.query_advice($column.clone(), Rotation($rot as i32))
+                $meta.query_advice($column.clone(), Rotation($cb.get_query_offset() + ($rot as i32)))
             }};
             ($column:expr) => {{
-                $meta.query_advice($column.clone(), Rotation::cur())
+                $meta.query_advice($column.clone(), Rotation($cb.get_query_offset()))
             }};
         }
 

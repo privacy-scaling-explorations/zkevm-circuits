@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::RLCChainable,
+    circuit_tools::{RLCChainable, ConstraintBuilder},
     mpt_circuit::{
         helpers::StorageLeafInfo,
         param::{BRANCH_ROWS_NUM, LEAF_DRIFTED_IND, LEAF_KEY_C_IND, LEAF_KEY_S_IND},
@@ -199,7 +199,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 // Calculate the drifted key RLC
                 let drifted_key_rlc = key_rlc_prev.expr() +
                     branch.drifted_nibble_rlc(meta, &mut cb.base, key_mult_prev.expr()) +
-                    drifted_storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true);
+                    drifted_storage.key_rlc(meta, &mut cb.base, key_mult_prev, branch.is_key_odd(), r[0].expr(), true, 0);
 
                 // Check zero bytes and mult_diff
                 let mult = a!(accs.acc_s.mult);
@@ -213,12 +213,14 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                 }}
 
                 // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                let mut calc_rlc = |is_s| {
-                    let rot_key = if is_s { rot_key_s } else { rot_key_c };
-                    let rot_value = if is_s { rot_value_s } else { rot_value_c };
-                    // Complete the drifted leaf rlc by adding the bytes on the value row
-                    let drifted_rlc = (drifted_rlc.expr(), mult.expr()).rlc_chain(s_main.rlc(meta, rot_value, &r));
-                    (true.expr(), a!(accs.key.rlc, rot_key), drifted_rlc, a!(accs.mod_node_rlc(is_s), rot_branch_child))
+                let calc_rlc = |is_s, meta: &mut VirtualCells<'_, F>, cb: &mut ConstraintBuilder<F>| {
+                    circuit!([meta, cb], {
+                        let rot_key = if is_s { rot_key_s } else { rot_key_c };
+                        let rot_value = if is_s { rot_value_s } else { rot_value_c };
+                        // Complete the drifted leaf rlc by adding the bytes on the value row
+                        let drifted_rlc = (drifted_rlc.expr(), mult.expr()).rlc_chain(s_main.rlc(meta, rot_value, &r));
+                        (true.expr(), a!(accs.key.rlc, rot_key), drifted_rlc, a!(accs.mod_node_rlc(is_s), rot_branch_child))
+                    })
                 };
                 let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
                     branch.is_placeholder_s() => {
@@ -228,7 +230,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                         // - `s_mod_node_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                         // This is because `c_mod_node_rlc` in the added branch stores the hash of
                         // `modified_index` (the leaf that has been added).
-                        calc_rlc(true)
+                        calc_rlc(true, meta, &mut cb.base)
                     },
                     branch.is_placeholder_c() => {
                         // Neighbour leaf in the deleted branch
@@ -237,7 +239,7 @@ impl<F: FieldExt> LeafKeyInAddedBranchConfig<F> {
                         // - `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
                         // This is because `s_mod_node_rlc` in the deleted branch stores the hash of
                         // `modified_index` (the leaf that is to be deleted).
-                        calc_rlc(false)
+                        calc_rlc(false, meta, &mut cb.base)
                     },
                     _ => (false.expr(), 0.expr(), 0.expr(), 0.expr()),
                 };

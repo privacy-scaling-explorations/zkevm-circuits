@@ -4,14 +4,14 @@ use halo2_proofs::{
     plonk::VirtualCells,
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::CellManager,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{bytes_into_rlc, BranchNodeInfo},
-        param::{ACCOUNT_NON_EXISTING_IND, BRANCH_ROWS_NUM},
+        helpers::{bytes_into_rlc, KeyData},
+        param::{ACCOUNT_NON_EXISTING_IND},
         ProofValues,
     },
     mpt_circuit::{
@@ -103,9 +103,9 @@ it automatically means the account leaf is not in the first level.
 
 */
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct AccountNonExistingConfig<F> {
-    _marker: PhantomData<F>,
+    key_data: KeyData<F>,
 }
 
 impl<F: FieldExt> AccountNonExistingConfig<F> {
@@ -115,13 +115,13 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         ctx: MPTContext<F>,
     ) -> Self {
         let proof_type = ctx.proof_type;
-        let not_first_level = ctx.position_cols.not_first_level;
         let accs = ctx.accumulators;
         let address_rlc = ctx.address_rlc;
 
+        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        let ctx_key_data: Option<KeyData<F>>;
+
         let rot_key_s = -ACCOUNT_NON_EXISTING_IND;
-        let rot_first_branch = -(ACCOUNT_NON_EXISTING_IND - 1 + BRANCH_ROWS_NUM);
-        let rot_branch_init = rot_first_branch - 1;
 
         circuit!([meta, cb.base], {
             let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key_s);
@@ -130,17 +130,10 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             require!(account.is_wrong_leaf(meta, true) => bool);
 
             ifx! {a!(proof_type.is_non_existing_account_proof) => {
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], 2.expr());
                 ifx! {account.is_wrong_leaf(meta, true) => {
-                    // Note: currently, for non_existing_account proof S and C
-                    // proofs are the same, thus there is never a placeholder branch.
-                    let (key_rlc_prev, key_mult_prev, is_key_odd) = ifx! {a!(not_first_level) => {
-                        let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-                        (a!(accs.key.rlc, rot_first_branch), a!(accs.key.mult, rot_first_branch), branch.is_key_odd())
-                    } elsex {
-                        (0.expr(), 1.expr(), false.expr())
-                    }};
                     // Calculate the key and check it's the address as requested in the lookup
-                    let key_rlc_wrong = key_rlc_prev + account.key_rlc(meta, &mut cb.base, key_mult_prev, is_key_odd, 1.expr());
+                    let key_rlc_wrong = key_data.rlc.expr() + account.key_rlc(meta, &mut cb.base, key_data.mult.expr(), key_data.is_odd.expr(), 1.expr(), -rot_key_s);
                     require!(a!(address_rlc) => key_rlc_wrong);
                     // Now make sure this address is different than the one of the leaf
                     let diff_inv = a!(accs.acc_s.rlc);
@@ -154,9 +147,9 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
                     cb.set_length(num_bytes);
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                    let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-                    require!(branch.contains_placeholder_leaf(meta, true) => true);
+                    require!(key_data.is_placeholder_leaf_s => true);
                 }}
+                ctx_key_data = Some(key_data);
             } elsex {
                 // is_wrong_leaf needs to be false when not in non_existing_account proof
                 require!(account.is_wrong_leaf(meta, true) => false);
@@ -164,7 +157,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         });
 
         AccountNonExistingConfig {
-            _marker: PhantomData,
+            key_data: ctx_key_data.unwrap(),
         }
     }
 
@@ -176,6 +169,10 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         witness: &[MptWitnessRow<F>],
         offset: usize,
     ) {
+        self.key_data
+            .witness_load(region, offset, &mut pv.memory["key"], 2)
+            .ok();
+
         let row = &witness[offset];
         let address_rlc = bytes_into_rlc(row.address_bytes(), mpt_config.randomness);
         let diff_inv = (address_rlc - pv.account_key_rlc)

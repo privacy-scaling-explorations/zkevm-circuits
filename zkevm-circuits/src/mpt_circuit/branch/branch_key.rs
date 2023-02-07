@@ -1,11 +1,17 @@
-use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
-use std::marker::PhantomData;
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    circuit::Region,
+    plonk::{Error, VirtualCells},
+    poly::Rotation,
+};
 
 use crate::{
     circuit,
-    circuit_tools::DataTransition,
-    mpt_circuit::MPTContext,
+    circuit_tools::{CellManager, DataTransition},
     mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
+    mpt_circuit::{
+        helpers::KeyData, witness_row::MptWitnessRow, MPTConfig, MPTContext, ProofValues,
+    },
     mpt_circuit::{helpers::MPTConstraintBuilder, FixedTableTag},
 };
 
@@ -123,11 +129,11 @@ Using this approach we do not need to store C RLP & key, but it will increase th
 
 #[derive(Clone, Debug)]
 pub(crate) struct BranchKeyConfig<F> {
-    _marker: PhantomData<F>,
+    key_data: KeyData<F>,
 }
 
 impl<F: FieldExt> BranchKeyConfig<F> {
-    pub fn configure(
+    pub(crate) fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
@@ -137,42 +143,30 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         let mult_diff = ctx.accumulators.mult_diff;
         let r = ctx.r.clone();
 
-        let rot_branch_init = -BRANCH_ROWS_NUM + 1;
-        let rot_first_child = rot_branch_init + 1;
-        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
-        let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
+        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        let ctx_key_data: Option<KeyData<F>>;
+
         circuit!([meta, cb.base], {
-            let not_first_level = a!(position_cols.not_first_level);
-            let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-            let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init_prev);
-            let modified_index = a!(ctx.branch.modified_index, rot_first_child);
-            let key_rlc =
-                DataTransition::new_with_rot(meta, key.rlc, rot_first_child_prev, rot_first_child);
-            let key_mult =
-                DataTransition::new_with_rot(meta, key.mult, rot_first_child_prev, rot_first_child);
-
             ifx! {f!(position_cols.q_not_first_ext_c), a!(ctx.branch.is_extension_node_c) => {
-                let selectors = [branch.is_key_odd(), branch.is_key_even()];
-                // Selectors need to be boolean.
-                for selector in selectors.iter() {
-                    require!(selector => bool);
-                }
-                // One selector needs to be enabled.
-                require!(sum::expr(&selectors) => 1);
+                let rot_branch_init = -BRANCH_ROWS_NUM + 1;
+                let rot_first_child = rot_branch_init + 1;
 
-                // Get the previous values from the previous branch. In the first level use initial values.
-                let after_first_level = not_first_level.expr() * not!(branch.is_below_account(meta));
-                let (key_rlc_prev, key_mult_prev, is_key_odd_prev) = ifx!{after_first_level => {
-                    (key_rlc.prev(), key_mult.prev(), branch_prev.is_key_odd())
-                } elsex {
-                    (0.expr(), 1.expr(), false.expr())
-                }};
+                let branch = BranchNodeInfo::new(meta, ctx.clone(), false, rot_branch_init);
+                let modified_index = a!(ctx.branch.modified_index, rot_first_child);
+                let key_rlc = a!(key.rlc, rot_first_child);
+                let key_mult = a!(key.mult, rot_first_child);
+
+                // `is_key_odd` needs to be boolean
+                require!(branch.is_key_odd() => bool);
+
+                // Load the last key values
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], 0.expr());
 
                 // Calculate the extension node key RLC when in an extension node
                 let key_rlc_post_ext = ifx!{branch.is_extension() => {
                     let key_rlc_ext = DataTransition::new(meta, key.rlc);
                     // Extension key rlc
-                    let ext_key_rlc = key_rlc_prev.expr() + branch.ext_key_rlc(meta, &mut cb.base, key_mult_prev.expr());
+                    let ext_key_rlc = key_data.rlc.expr() + branch.ext_key_rlc(meta, &mut cb.base, key_data.mult.expr());
                     // Currently, the extension node S and extension node C both have the same key RLC -
                     // however, sometimes extension node can be replaced by a shorter extension node
                     // (in terms of nibbles), this is still to be implemented.
@@ -182,21 +176,21 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     require!(key_rlc_ext => ext_key_rlc);
                     ext_key_rlc.expr()
                 } elsex {
-                    key_rlc_prev.expr()
+                    key_data.rlc.expr()
                 }};
 
                 // Get the length of the key
                 let key_num_bytes_for_mult = ifx!{branch.is_extension() => {
                     // Unless both parts of the key are odd, subtract 1 from the key length.
                     let key_len = branch.ext_key_len(meta, -1);
-                    key_len - ifx! {not!(is_key_odd_prev * branch.is_key_part_in_ext_odd()) => { 1.expr() }}
+                    key_len - ifx! {not!(key_data.is_odd.expr() * branch.is_key_part_in_ext_odd()) => { 1.expr() }}
                 }};
                 // Get the multiplier for this key length
                 let mult_diff = a!(mult_diff, rot_first_child);
                 require!((FixedTableTag::RMult, key_num_bytes_for_mult, mult_diff) => @"mult");
 
                 // Now update the key RLC and multiplier for the branch nibble.
-                let mult = key_mult_prev.expr() * mult_diff.expr();
+                let mult = key_data.mult.expr() * mult_diff.expr();
                 let (nibble_mult, mult_mult) = ifx!{branch.is_key_odd() => {
                     // The nibble will be added as the most significant nibble using the same multiplier
                     (16.expr(), 1.expr())
@@ -208,40 +202,70 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 require!(key_mult => mult.expr() * mult_mult.expr());
 
                 // Update key parity
-                ifx!{after_first_level => {
-                    ifx!{branch.is_extension() => {
-                        // We need to take account the nibbles of the extension node.
-                        // The parity alternates when there's an even number of nibbles, remains the same otherwise
-                        ifx!{branch.is_key_part_in_ext_even() => {
-                            require!(branch.is_key_odd() => branch_prev.is_key_even());
-                        } elsex {
-                            require!(branch.is_key_odd() => branch_prev.is_key_odd());
-                        }}
+                ifx!{branch.is_extension() => {
+                    // We need to take account the nibbles of the extension node.
+                    // The parity alternates when there's an even number of nibbles, remains the same otherwise
+                    ifx!{branch.is_key_part_in_ext_even() => {
+                        require!(branch.is_key_odd() => not!(key_data.is_odd));
                     } elsex {
-                        // The parity simply alternates for regular branches.
-                        require!(branch.is_key_odd() => branch_prev.is_key_even());
+                        require!(branch.is_key_odd() => key_data.is_odd);
                     }}
                 } elsex {
-                    // In the first level we just have to ensure the initial values are set.
-                    ifx!{branch.is_extension() => {
-                        require!(branch.is_key_odd() => branch.is_key_part_in_ext_even());
-                    } elsex {
-                        require!(branch.is_key_odd() => true);
-                    }}
+                    // The parity simply alternates for regular branches.
+                    require!(branch.is_key_odd() => not!(key_data.is_odd));
                 }}
+
+                KeyData::store(&mut cb.base, &ctx.memory["key"], [
+                    key_rlc.expr(),
+                    key_mult.expr(),
+                    branch.nibbles_counter().expr(),
+                    branch.is_key_odd(),
+                    branch.contains_placeholder_leaf(meta, true),
+                    branch.contains_placeholder_leaf(meta, false),
+                ]);
 
                 // We need to check that the nibbles we stored in s are between 0 and 15.
                 cb.set_range_s(FixedTableTag::RangeKeyLen16.expr());
+
+                ctx_key_data = Some(key_data);
             }}
 
-            ifx! {f!(position_cols.q_not_first_ext_s), a!(ctx.branch.is_extension_node_s), branch.is_extension() => {
-                // RLC bytes zero check
-                cb.set_length(branch.ext_num_bytes_on_key_row(meta, 0));
+            ifx! {f!(position_cols.q_not_first_ext_s), a!(ctx.branch.is_extension_node_s) => {
+                let rot_branch_init = -BRANCH_ROWS_NUM + 2;
+                let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
+                ifx! {branch.is_extension() => {
+                    // RLC bytes zero check
+                    // TODO(Brecht): fix
+                    //cb.set_length(1.expr() + branch.ext_num_bytes_on_key_row(meta, 0));
+                }}
             }}
         });
 
         BranchKeyConfig {
-            _marker: PhantomData,
+            key_data: ctx_key_data.unwrap(),
         }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        _witness: &[MptWitnessRow<F>],
+        _mpt_config: &MPTConfig<F>,
+        pv: &mut ProofValues<F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        self.key_data
+            .witness_load(region, offset, &pv.memory["key"], 0)?;
+        self.key_data.witness_store(
+            region,
+            offset,
+            &mut pv.memory["key"],
+            pv.key_rlc,
+            pv.key_rlc_mult,
+            pv.nibbles_num,
+            pv.is_placeholder_leaf_s,
+            pv.is_placeholder_leaf_c,
+        )?;
+        Ok(())
     }
 }

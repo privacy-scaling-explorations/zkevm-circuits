@@ -1,19 +1,19 @@
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
-    plonk::VirtualCells,
+    plonk::{Error, VirtualCells},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::{
     circuit,
+    circuit_tools::CellManager,
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{MPTConstraintBuilder, StorageLeafInfo},
+        helpers::{KeyData, MPTConstraintBuilder, StorageLeafInfo},
         param::KEY_LEN_IN_NIBBLES,
         FixedTableTag,
     },
@@ -124,15 +124,16 @@ incorporated in `key_rlc`. That means we need to ignore the first nibble here
 
 */
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct LeafKeyConfig<F> {
-    _marker: PhantomData<F>,
+    key_data: KeyData<F>,
 }
 
 impl<F: FieldExt> LeafKeyConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
+        cm: &mut CellManager<F>,
         ctx: MPTContext<F>,
         is_s: bool,
     ) -> Self {
@@ -140,12 +141,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
         let rot_parent = if is_s { -1 } else { -3 };
         let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
-        let rot_branch_init_prev = rot_branch_init - BRANCH_ROWS_NUM;
-        let rot_first_child = rot_branch_init + 1;
-        let rot_first_child_prev = rot_first_child - BRANCH_ROWS_NUM;
+
+        let ctx_key_data: Option<KeyData<F>>;
 
         circuit!([meta, cb.base], {
             let storage = StorageLeafInfo::new(meta, ctx.clone(), is_s, 0);
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
 
             // The two flag values need to be boolean.
             require!(storage.flag1 => bool);
@@ -154,34 +155,23 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // Calculate and store the leaf data RLC
             require!(a!(accs.acc_s.rlc) => ctx.rlc(meta, 0..36, 0));
 
-            // Get the key data from the branch above (if any)
-            let (key_rlc_prev, key_mult_prev, is_key_odd, nibbles_count_prev) = ifx! {not!(storage.is_below_account(meta)) => {
-                let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
-                ifx!{branch.is_placeholder() => {
-                    ifx!{not!(branch.is_below_account(meta)) => {
-                        let branch_prev = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init_prev);
-                        let rot_prev = rot_first_child_prev;
-                        (a!(accs.key.rlc, rot_prev), a!(accs.key.mult, rot_prev), branch_prev.is_key_odd(), branch_prev.nibbles_counter().expr())
-                    } elsex {
-                        (0.expr(), 1.expr(), 0.expr(), 0.expr())
-                    }}
-                } elsex {
-                    let rot = rot_first_child;
-                    (a!(accs.key.rlc, rot), a!(accs.key.mult, rot), branch.is_key_odd(), branch.nibbles_counter().expr())
-                }}
-            } elsex {
-                (0.expr(), 1.expr(), 0.expr(), 0.expr())
-            }};
+            // Load the last key values, which depends on the branch being a placeholder.
+            let is_branch_placeholder =
+                ifx! {not!(storage.is_below_account(meta)) => { branch.is_placeholder() }};
+            let offset = if is_s { 0.expr() } else { 1.expr() };
+            let offset = offset + ifx! {is_branch_placeholder => { 1.expr() }};
+            let key_data = KeyData::load(&mut cb.base, cm, &ctx.memory["key"], offset);
 
             // Calculate and store the key RLC.
-            let key_rlc = key_rlc_prev.expr()
+            let key_rlc = key_data.rlc.expr()
                 + storage.key_rlc(
                     meta,
                     &mut cb.base,
-                    key_mult_prev,
-                    is_key_odd.expr(),
+                    key_data.mult.expr(),
+                    key_data.is_odd.expr(),
                     1.expr(),
                     true,
+                    0,
                 );
             require!(a!(accs.key.rlc) => key_rlc);
 
@@ -189,9 +179,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // placeholder leaf).
             // TODO(Brecht): why not in placeholder leaf?
             ifx! {not!(storage.is_placeholder(meta)) => {
-                let num_nibbles = storage.num_key_nibbles(meta, is_key_odd.expr());
-                require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
+                let num_nibbles = storage.num_key_nibbles(meta, key_data.is_odd.expr());
+                require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
             }}
+
+            // Key done, set the default values
+            KeyData::store(&mut cb.base, &ctx.memory["key"], KeyData::default_values());
 
             // Num bytes used in RLC
             let num_bytes = storage.num_bytes_on_key_row(meta);
@@ -199,10 +192,12 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult)) => @"mult");
             // RLC bytes zero check
             cb.set_length(num_bytes.expr());
+
+            ctx_key_data = Some(key_data);
         });
 
         LeafKeyConfig {
-            _marker: PhantomData,
+            key_data: ctx_key_data.unwrap(),
         }
     }
 
@@ -213,7 +208,7 @@ impl<F: FieldExt> LeafKeyConfig<F> {
         pv: &mut ProofValues<F>,
         row: &MptWitnessRow<F>,
         offset: usize,
-    ) {
+    ) -> Result<(), Error> {
         /*
         getProof storage leaf examples:
             short (one RLP byte > 128: 160):
@@ -291,6 +286,47 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             start = S_START;
         }
 
+        /*let key_memory = &mut pv.memory["key"];
+        if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+            if !pv.is_branch_s_placeholder {
+                self.key_data.assign(region, offset, key_memory, pv.key_rlc, pv.key_rlc_mult, pv.nibbles_num)?;
+            } else {
+                self.key_data.assign(region, offset, key_memory, pv.key_rlc_prev, pv.key_rlc_mult_prev, pv.nibbles_num_prev)?;
+            }
+        }
+        if row.get_type() == MptWitnessRowType::StorageLeafCKey {
+            if !pv.is_branch_c_placeholder {
+                self.key_data.assign(region, offset, key_memory, pv.key_rlc, pv.key_rlc_mult, pv.nibbles_num)?;
+            } else {
+                self.key_data.assign(region, offset, key_memory, pv.key_rlc_prev, pv.key_rlc_mult_prev, pv.nibbles_num_prev)?;
+            }
+        }*/
+
+        let is_s = row.get_type() == MptWitnessRowType::StorageLeafSKey;
+        let is_branch_placeholder = if is_s {
+            pv.is_branch_s_placeholder
+        } else {
+            pv.is_branch_c_placeholder
+        };
+        let load_offset = if is_s { 0 } else { 1 };
+        let load_offset = load_offset + if is_branch_placeholder { 1 } else { 0 };
+        self.key_data
+            .witness_load(region, offset, &mut pv.memory["key"], load_offset)?;
+        // TODO(Brecht): remove
+        let row_offset = if is_s {offset} else {offset - 2};
+        self.key_data
+            .witness_load(region, row_offset, &mut pv.memory["key"], load_offset)?;
+        self.key_data.witness_store(
+            region,
+            offset,
+            &mut pv.memory["key"],
+            F::zero(),
+            F::one(),
+            0,
+            false,
+            false,
+        )?;
+
         // For leaf S and leaf C we need to start with the same rlc.
         let mut key_rlc_new = pv.key_rlc;
         let mut key_rlc_mult_new = pv.key_rlc_mult;
@@ -305,18 +341,18 @@ impl<F: FieldExt> LeafKeyConfig<F> {
             // the key RLC is already computed using the first two bytes above.
             mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
         }
-        region
-            .assign_advice(
-                || "assign key_rlc".to_string(),
-                mpt_config.accumulators.key.rlc,
-                offset,
-                || Value::known(key_rlc_new),
-            )
-            .ok();
+        region.assign_advice(
+            || "assign key_rlc".to_string(),
+            mpt_config.accumulators.key.rlc,
+            offset,
+            || Value::known(key_rlc_new),
+        )?;
         pv.storage_key_rlc = key_rlc_new;
 
         // Store key_rlc into rlc2 to be later set in leaf value C row (to enable
         // lookups):
         pv.rlc2 = key_rlc_new;
+
+        Ok(())
     }
 }

@@ -246,9 +246,9 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 }
                 // For extension nodes exactly 1 type selector needs to be enabled.
                 require!(sum::expr(&type_selectors) => 1);
-                // `is_key_odd` and `is_key_even` selectors are set using the extension node type selector data.
+                // `is_key_odd` is set using the extension node type selector data.
                 // (while in case of a regular branch the extension node selectors do not hold this information).
-                require!(ext.is_key_even() => sum::expr(&type_selectors_c1));
+                require!(ext.is_key_odd() => not!(sum::expr(&type_selectors_c1)));
                 require!(ext.is_key_odd() => sum::expr(&type_selectors_c16));
             }}
 
@@ -300,9 +300,6 @@ impl<F: FieldExt> ExtensionNodeConfig<F> {
                 // Check if the RLC matches
                 require!(branch_rlc => branch_rlc_in_ext);
             }}
-
-            // Check if the extension node is in its parent.
-            ext.require_in_parent(meta, &mut cb.base);
 
             // Update the number of nibbles processed up to this point.
             if is_s {

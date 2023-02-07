@@ -4,23 +4,21 @@ use halo2_proofs::{
     plonk::VirtualCells,
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, RLCable},
+    circuit_tools::{CellManager, DataTransition, RLCable},
+    mpt_circuit::witness_row::{MptWitnessRow, MptWitnessRowType},
     mpt_circuit::{
-        helpers::{AccountLeafInfo, BranchNodeInfo, MPTConstraintBuilder},
+        helpers::{
+            parent_memory, AccountLeafInfo, BranchNodeInfo, MPTConstraintBuilder, ParentData,
+        },
         param::{
             ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
             ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, BRANCH_ROWS_NUM, C_START, HASH_WIDTH,
             IS_CODEHASH_MOD_POS, RLP_HASH_VALUE, S_START,
         },
         MPTContext,
-    },
-    mpt_circuit::{
-        param::ARITY,
-        witness_row::{MptWitnessRow, MptWitnessRowType},
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -67,9 +65,9 @@ Lookups:
 The `is_codehash_mod` lookup is enabled in `ACCOUNT_LEAF_STORAGE_CODEHASH_C` row.
 */
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct AccountLeafStorageCodehashConfig<F> {
-    _marker: PhantomData<F>,
+    parent_data: ParentData<F>,
 }
 
 impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
@@ -80,7 +78,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         is_s: bool,
     ) -> Self {
         let proof_type = ctx.proof_type;
-        let inter_root = ctx.inter_root(is_s);
         let position_cols = ctx.position_cols;
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
@@ -88,6 +85,9 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         let accs = ctx.accumulators;
         let value_prev = ctx.value_prev;
         let value = ctx.value;
+
+        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        let ctx_parent_data: Option<ParentData<F>>;
 
         let rot_nonce_balance = -2;
         let rot_key = -if is_s {
@@ -100,8 +100,6 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         } else {
             -ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND
         } - BRANCH_ROWS_NUM;
-        let rot_last_child = rot_branch_init + (ARITY as i32);
-        let rot_last_child_prev = rot_last_child - BRANCH_ROWS_NUM;
         let rot_s = if is_s {
             0
         } else {
@@ -142,33 +140,16 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 require!(account_rlc => rlc);
 
                 // Check if the account is in its parent.
-                let (do_lookup, hash_rlc) = ifx!{a!(position_cols.not_first_level) => {
-                    let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
-                    ifx!{branch.is_placeholder() => {
-                        ifx!{a!(position_cols.not_first_level, rot_last_child) => {
-                            // Hash of an account leaf when branch placeholder
-                            // Check if we're in the branch above the placeholder branch.
-                            (true.expr(), a!(accs.mod_node_rlc(is_s), rot_last_child_prev))
-                        } elsex {
-                            // Hash of an account leaf compared to root when branch placeholder in the first level
-                            (true.expr(), a!(inter_root))
-                        }}
-                    } elsex {
-                        // Hash of an account leaf in a branch
-                        // Check is skipped for placeholder leafs which are dummy leafs
-                        ifx!{not!(branch.contains_placeholder_leaf(meta, is_s)) => {
-                            (true.expr(), a!(accs.mod_node_rlc(is_s), rot_last_child))
-                        }}
-                    }}
-                } elsex {
-                    // Account first level leaf without branch - compared to state root
-                    (true.expr(), a!(inter_root))
-                }};
-                // Do the lookup
-                ifx!{do_lookup => {
+                let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
+                let parent_data = ParentData::load("storage load", &mut cb.base, &mut cm, &ctx.memory[parent_memory(is_s)], 0.expr());
+                // Check is skipped for placeholder leafs which are dummy leafs
+                ifx!{not!(and::expr(&[a!(position_cols.not_first_level), not!(branch.is_placeholder()), branch.contains_placeholder_leaf(meta, is_s)])) => {
                     let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-                    require!((1, account_rlc, account.num_bytes(meta), hash_rlc) => @"keccak");
+                    require!((1, account_rlc, account.num_bytes(meta), parent_data.rlc) => @"keccak");
                 }}
+                // Store the new parent
+                ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [storage_root.expr(), true.expr()]);
+                ctx_parent_data = Some(parent_data);
 
                 if !is_s {
                     // To enable lookups we need to have the previous/current storage root/code hash on the same row.
@@ -193,7 +174,7 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
         });
 
         AccountLeafStorageCodehashConfig {
-            _marker: PhantomData,
+            parent_data: ctx_parent_data.unwrap(),
         }
     }
 
@@ -244,6 +225,8 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
 
             let storage_root_value_c = pv.rlc1;
             let codehash_value_c = pv.rlc2;
+
+            pv.storage_root_value_c = storage_root_value_c;
 
             if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
                 region
@@ -300,6 +283,26 @@ impl<F: FieldExt> AccountLeafStorageCodehashConfig<F> {
                 )
                 .ok();
         }
+
+        let is_s = row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS;
+        let storage_root = if is_s {
+            pv.storage_root_value_s
+        } else {
+            pv.storage_root_value_c
+        };
+        self.parent_data
+            .witness_load(region, offset, &mut pv.memory[parent_memory(is_s)], 0)
+            .ok();
+        self.parent_data
+            .witness_store(
+                region,
+                offset,
+                &mut pv.memory[parent_memory(is_s)],
+                storage_root,
+                true,
+            )
+            .ok();
+
         // storage
         mpt_config.compute_acc_and_mult(
             &row.bytes,

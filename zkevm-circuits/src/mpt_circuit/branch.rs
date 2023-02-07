@@ -11,13 +11,24 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
-use super::{helpers::MPTConstraintBuilder, param::ARITY, MPTContext};
+use super::{
+    helpers::MPTConstraintBuilder,
+    param::{
+        ARITY, IS_C_BRANCH_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS,
+        IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_NODE_NON_HASHED_POS,
+    },
+    MPTContext,
+};
 use crate::{
     circuit,
-    circuit_tools::{DataTransition, RLCable},
+    circuit_tools::{CellManager, DataTransition, RLCChainable, RLCable},
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
-    mpt_circuit::{helpers::contains_placeholder_leaf, storage_leaf::StorageLeaf},
+    mpt_circuit::{
+        helpers::{contains_placeholder_leaf, parent_memory, ParentData},
+        param::RLP_NIL,
+        storage_leaf::StorageLeaf,
+    },
     mpt_circuit::{
         helpers::{BranchChildInfo, BranchNodeInfo},
         param::{
@@ -118,9 +129,10 @@ impl<F: FieldExt> BranchCols<F> {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct BranchConfig<F> {
-    _marker: PhantomData<F>,
+    parent_data_s: ParentData<F>,
+    parent_data_c: ParentData<F>,
 }
 
 impl<F: FieldExt> BranchConfig<F> {
@@ -135,6 +147,10 @@ impl<F: FieldExt> BranchConfig<F> {
         let accs = ctx.accumulators;
         let branch = ctx.branch;
         let r = ctx.r.clone();
+
+        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        let mut ctx_parent_data_s: Option<ParentData<F>> = None;
+        let mut ctx_parent_data_c: Option<ParentData<F>> = None;
 
         circuit!([meta, cb.base], {
             let q_not_first = f!(position_cols.q_not_first);
@@ -266,11 +282,37 @@ impl<F: FieldExt> BranchConfig<F> {
                         require!(sum::expr(&is_drifted_values) => 1);
                     }}
 
-                    // Check if the branch is in its parent.
-                    // Extension node is handled in `extension_node.rs`.
-                    ifx! {not!(branch.is_extension()) => {
-                        branch.require_in_parent(meta, &mut cb.base);
-                    }}
+                    for is_s in [true, false] {
+                        branch.set_is_s(is_s);
+
+                        // Check if the branch is in its parent.
+                        let (rlc, num_bytes, is_not_hashed) = ifx! {branch.is_extension() => {
+                            // Note: acc_c in both cases.
+                            let ext_rlc = a!(branch.ctx.accumulators.acc_c.rlc, if is_s {1} else {2});
+                            (ext_rlc, branch.ext_num_bytes2(meta), branch.ext_is_not_hashed())
+                        } elsex {
+                            let acc = branch.ctx.accumulators.acc(is_s);
+                            // TODO: acc currently doesn't have branch ValueNode info
+                            let branch_rlc = (a!(acc.rlc), a!(acc.mult)).rlc_chain(RLP_NIL.expr());
+                            (branch_rlc, branch.num_bytes(meta), branch.is_not_hashed())
+                        }};
+
+                        let parent_data = ParentData::load("branch load", &mut cb.base, &mut cm, &ctx.memory[parent_memory(is_s)], 0.expr());
+                        ifx! {not!(branch.is_placeholder()) => {
+                            ifx!{or::expr(&[parent_data.force_hashed.expr(), not!(is_not_hashed)]) => {
+                                // Hashed branch hash in parent branch
+                                require!((1, rlc, num_bytes, parent_data.rlc) => @"keccak");
+                            } elsex {
+                                // Non-hashed branch hash in parent branch
+                                require!(rlc => parent_data.rlc);
+                            }}
+                        }}
+                        if is_s {
+                            ctx_parent_data_s = Some(parent_data);
+                        } else {
+                            ctx_parent_data_c = Some(parent_data);
+                        }
+                    }
 
                     // - For a branch placeholder we do not have any constraints. However, in the parallel
                     // (regular) branch we have an additional constraint (besides `is_modified` row
@@ -289,11 +331,13 @@ impl<F: FieldExt> BranchConfig<F> {
                                 ifx!{a!(ctx.branch.is_drifted, rot) => {
                                     let branch_rlc = ctx.main(!is_s).bytes(meta, rot).rlc(&r);
                                     require!(a!(accs.mod_node_rlc(is_s), rot) => branch_rlc);
+                                    //ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [branch_rlc, false.expr()]);
                                 }}
                             } elsex {
                                 ifx!{a!(ctx.branch.is_modified, rot) => {
                                     let branch_rlc = ctx.main(is_s).bytes(meta, rot).rlc(&r);
                                     require!(a!(accs.mod_node_rlc(is_s), rot) => branch_rlc);
+                                    ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [branch_rlc, false.expr()]);
                                 }}
                             }}
                         }
@@ -333,7 +377,8 @@ impl<F: FieldExt> BranchConfig<F> {
         });
 
         BranchConfig {
-            _marker: PhantomData,
+            parent_data_s: ctx_parent_data_s.unwrap(),
+            parent_data_c: ctx_parent_data_c.unwrap(),
         }
     }
 
@@ -346,6 +391,8 @@ impl<F: FieldExt> BranchConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         let row = &witness[offset];
+
+        pv.nibbles_num_prev = pv.nibbles_num;
 
         pv.modified_node = row.get_byte(BRANCH_0_KEY_POS);
         pv.node_index = 0;
@@ -363,6 +410,7 @@ impl<F: FieldExt> BranchConfig<F> {
         pv.c_mod_node_hash_rlc = bytes_into_rlc(&c_hash, mpt_config.randomness);
 
         if row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1 {
+            println!("{}: s_placeholder", offset);
             // We put hash of a node that moved down to the added branch.
             // This is needed to check the hash of leaf_in_added_branch.
             s_hash = witness[offset + 1 + pv.drifted_pos as usize]
@@ -374,6 +422,7 @@ impl<F: FieldExt> BranchConfig<F> {
             pv.is_branch_s_placeholder = false
         }
         if row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1 {
+            println!("{}: c_placeholder", offset);
             c_hash = witness[offset + 1 + pv.drifted_pos as usize]
                 .c_hash_bytes()
                 .to_vec();
@@ -514,6 +563,11 @@ impl<F: FieldExt> BranchConfig<F> {
             offset,
             || Value::known(F::from(pv.nibbles_num as u64)),
         )?;
+
+        pv.is_hashed_s = row.get_byte(IS_S_BRANCH_NON_HASHED_POS) != 1;
+        pv.is_hashed_c = row.get_byte(IS_C_BRANCH_NON_HASHED_POS) != 1;
+        pv.ext_is_hashed_s = row.get_byte(IS_S_EXT_NODE_NON_HASHED_POS) != 1;
+        pv.ext_is_hashed_c = row.get_byte(IS_C_EXT_NODE_NON_HASHED_POS) != 1;
 
         Ok(())
     }
@@ -753,6 +807,50 @@ impl<F: FieldExt> BranchConfig<F> {
             row.assign_branch_row(region, mpt_config, pv, offset)?;
         }
 
+        //println!("node index: {} ({})", pv.node_index, offset);
+
+        if pv.node_index == 15 {
+            self.parent_data_s.witness_load(
+                region,
+                offset,
+                &mut pv.memory[parent_memory(true)],
+                0,
+            )?;
+            self.parent_data_c.witness_load(
+                region,
+                offset,
+                &mut pv.memory[parent_memory(false)],
+                0,
+            )?;
+
+            if !pv.is_branch_s_placeholder {
+                self.parent_data_s.witness_store(
+                    region,
+                    offset,
+                    &mut pv.memory[parent_memory(true)],
+                    pv.s_mod_node_hash_rlc,
+                    false,
+                )?;
+            } else {
+                //self.parent_data_s.witness_store(region, offset, &mut
+                // pv.memory[parent_memory(true)], pv.c_mod_node_hash_rlc,
+                // false)?;
+            }
+            if !pv.is_branch_c_placeholder {
+                self.parent_data_c.witness_store(
+                    region,
+                    offset,
+                    &mut pv.memory[parent_memory(false)],
+                    pv.c_mod_node_hash_rlc,
+                    false,
+                )?;
+            } else {
+                //self.parent_data_c.witness_store(region, offset, &mut
+                // pv.memory[parent_memory(false)], pv.s_mod_node_hash_rlc,
+                // false)?;
+            }
+        }
+
         /*
         `sel1` is to distinguish whether the S node at `modified_node` position is empty.
         `sel2` is to distinguish whether the C node at `modified_node` position is empty.
@@ -766,26 +864,28 @@ impl<F: FieldExt> BranchConfig<F> {
         is found with hash `[128, 0, ..., 0]`,
         but the probability is negligible.
         */
-        let mut sel1 = F::zero();
-        let mut sel2 = F::zero();
+        let mut sel1 = false;
+        let mut sel2 = false;
         if pv.s_mod_node_hash_rlc == F::from(128_u64) {
-            sel1 = F::one();
+            sel1 = true;
         }
         if pv.c_mod_node_hash_rlc == F::from(128_u64) {
-            sel2 = F::one();
+            sel2 = true;
         }
+        pv.is_placeholder_leaf_s = sel1;
+        pv.is_placeholder_leaf_c = sel2;
 
         region.assign_advice(
             || "assign sel1".to_string(),
             mpt_config.denoter.sel1,
             offset,
-            || Value::known(sel1),
+            || Value::known(F::from(sel1)),
         )?;
         region.assign_advice(
             || "assign sel2".to_string(),
             mpt_config.denoter.sel2,
             offset,
-            || Value::known(sel2),
+            || Value::known(F::from(sel2)),
         )?;
 
         // reassign (it was assigned to 0 in assign_row) branch_acc and
