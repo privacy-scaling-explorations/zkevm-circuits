@@ -52,6 +52,7 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_calldata: MAX_CALLDATA,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,
+    max_evm_rows: 0,
     keccak_padding: None,
 };
 

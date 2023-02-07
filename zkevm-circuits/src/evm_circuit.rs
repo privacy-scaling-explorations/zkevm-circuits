@@ -190,7 +190,7 @@ impl<F: Field> EvmCircuit<F> {
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
         // Start at 1 so we can be sure there is an unused `next` row available
         let mut num_rows = 1;
-        let evm_rows = block.max_evm_rows;
+        let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
             for transaction in &block.txs {
                 for step in &transaction.steps {
@@ -199,7 +199,7 @@ impl<F: Field> EvmCircuit<F> {
             }
             num_rows += 1; // EndBlock
         } else {
-            num_rows += block.max_evm_rows;
+            num_rows += block.circuits_params.max_evm_rows;
         }
         num_rows
     }
@@ -224,7 +224,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 num_rows_required_for_execution_steps,
                 num_rows_required_for_fixed_table,
             ),
-            block.max_evm_rows,
+            block.circuits_params.max_evm_rows,
         )
     }
 
@@ -414,7 +414,9 @@ mod evm_circuit_stats {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
-        .block_modifier(Box::new(|block| block.max_evm_rows = (1 << 18) - 100))
+        .block_modifier(Box::new(|block| {
+            block.circuits_params.max_evm_rows = (1 << 18) - 100
+        }))
         .run();
     }
 
