@@ -46,13 +46,16 @@ pub const MAX_BYTECODE: usize = 5000;
 /// MAX_COPY_ROWS
 pub const MAX_COPY_ROWS: usize = 5888;
 
+/// MAX_EVM_ROWS
+pub const MAX_EVM_ROWS: usize = 10000;
+
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
     max_txs: MAX_TXS,
     max_calldata: MAX_CALLDATA,
     max_bytecode: MAX_BYTECODE,
     max_copy_rows: MAX_COPY_ROWS,
-    max_evm_rows: 0,
+    max_evm_rows: MAX_EVM_ROWS,
     keccak_padding: None,
 };
 
@@ -83,19 +86,16 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref EVM_CIRCUIT_KEY: AsyncOnce<ProvingKey<G1Affine>> = AsyncOnce::new(async {
-        let block_tag = "Transfer 0";
-        let block_num = GEN_DATA.blocks.get(block_tag).unwrap();
-        let (builder, _) = gen_inputs(*block_num).await;
-
-        let block = block_convert(&builder.block, &builder.code_db).unwrap();
+    /// EVM Circuit proving key
+    static ref EVM_CIRCUIT_KEY: ProvingKey<G1Affine> = {
+        let block = new_empty_block();
         let circuit = EvmCircuit::<Fr>::new_from_block(&block);
         let general_params = get_general_params(EVM_CIRCUIT_DEGREE);
 
         let verifying_key =
             keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
         keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    });
+    };
     /// State Circuit proving key
     pub static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
         let block = new_empty_block();
