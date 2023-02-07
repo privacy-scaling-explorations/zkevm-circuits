@@ -41,28 +41,33 @@ where
         super_circuit_protocol: &'a PlonkProtocol<M::G1Affine>,
         super_circuit_instances: Value<&'a Vec<Vec<M::Scalar>>>,
         super_circuit_proof: Value<&'a [u8]>,
-    ) -> Option<Self> {
-        let mut instances = Some(Vec::new());
-        super_circuit_instances
-            .as_ref()
-            .zip(super_circuit_proof.as_ref())
-            .map(|(super_circuit_instances, super_circuit_proof)| {
-                let snark = Snark::new(
-                    super_circuit_protocol,
-                    super_circuit_instances,
-                    super_circuit_proof,
-                );
-                instances = aggregate::<M>(params, [snark]).map(|accumulator_limbs| {
-                    iter::empty()
-                        // Propagate `SuperCircuit`'s instances
-                        .chain(super_circuit_instances.iter().flatten().cloned())
-                        // Output aggregated accumulator limbs
-                        .chain(accumulator_limbs)
-                        .collect_vec()
+    ) -> Result<Self, snark_verifier::Error> {
+        let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
+        let instances = {
+            let mut instances = Ok(vec![M::Scalar::zero(); num_instances]);
+            super_circuit_instances
+                .as_ref()
+                .zip(super_circuit_proof.as_ref())
+                .map(|(super_circuit_instances, super_circuit_proof)| {
+                    let snark = Snark::new(
+                        super_circuit_protocol,
+                        super_circuit_instances,
+                        super_circuit_proof,
+                    );
+                    instances = aggregate::<M>(params, [snark]).map(|accumulator_limbs| {
+                        iter::empty()
+                            // Propagate `SuperCircuit`'s instances
+                            .chain(super_circuit_instances.iter().flatten().cloned())
+                            // Output aggregated accumulator limbs
+                            .chain(accumulator_limbs)
+                            .collect_vec()
+                    });
                 });
-            });
+            instances?
+        };
+        debug_assert_eq!(instances.len(), num_instances);
 
-        instances.map(|instances| Self {
+        Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
             snark: SnarkWitness::new(
                 super_circuit_protocol,

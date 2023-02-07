@@ -225,6 +225,8 @@ impl AggregationConfig {
                 let ecc_chip = self.ecc_chip::<M::G1Affine>();
                 let loader = Halo2Loader::new(ecc_chip, ctx);
 
+                // Verify the cheap part and get accumulator (left-hand and right-hand side of
+                // pairing) of individual proof.
                 let (instances, accumulators) = snarks
                     .iter()
                     .map(|snark| {
@@ -246,6 +248,8 @@ impl AggregationConfig {
                     .collect_vec()
                     .into_iter()
                     .unzip::<_, _, Vec<_>, Vec<_>>();
+
+                // Verify proof for accumulation of all accumulators into new one.
                 let accumulator = {
                     let as_vk = Default::default();
                     let as_proof = Vec::new();
@@ -295,7 +299,7 @@ impl AggregationConfig {
 pub fn aggregate<'a, M: MultiMillerLoop>(
     params: &ParamsKZG<M>,
     snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
-) -> Option<[M::Scalar; 4 * LIMBS]>
+) -> Result<[M::Scalar; 4 * LIMBS], snark_verifier::Error>
 where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
@@ -303,6 +307,8 @@ where
     let svk = KzgSvk::<M>::new(params.get_g()[0]);
     let dk = KzgDk::new(svk, params.g2(), params.s_g2());
 
+    // Use the same logic of verifier to get accumulator (left-hand and right-hand
+    // side of pairing) of individual proof.
     let accumulators = snarks
         .into_iter()
         .map(|snark| {
@@ -315,22 +321,23 @@ where
             )?;
             PlonkSuccinctVerifier::verify(&svk, snark.protocol, snark.instances, &proof)
         })
-        .try_collect::<_, Vec<_>, _>()
-        .ok()?
+        .try_collect::<_, Vec<_>, _>()?
         .into_iter()
         .flatten()
         .collect_vec();
 
+    // Create proof for accumulation of all accumulators into new one.
+    // In our case (KZG without zero-knowledge), it's no-ops since the verifier
+    // could add up the accumulators into the new one itself in circuit.
     let accumulator = {
         let as_pk = Default::default();
         let rng = StdRng::from_seed(Default::default());
         let mut transcript = PoseidonTranscript::new(Vec::new());
-        let accumulator =
-            KzgAs::<M>::create_proof(&as_pk, &accumulators, &mut transcript, rng).ok()?;
+        let accumulator = KzgAs::<M>::create_proof(&as_pk, &accumulators, &mut transcript, rng)?;
         assert!(transcript.finalize().is_empty());
         accumulator
     };
-    KzgAs::<M>::decide(&dk, accumulator.clone()).ok()?;
+    KzgAs::<M>::decide(&dk, accumulator.clone())?;
 
     let KzgAccumulator { lhs, rhs } = accumulator;
     let accumulator_limbs = [lhs, rhs]
@@ -343,7 +350,7 @@ where
         .collect_vec()
         .try_into()
         .unwrap();
-    Some(accumulator_limbs)
+    Ok(accumulator_limbs)
 }
 
 /// Aggregation circuit for testing purpose.
@@ -364,7 +371,7 @@ where
     pub fn new(
         params: &ParamsKZG<M>,
         snarks: impl IntoIterator<Item = Snark<'a, M::G1Affine>>,
-    ) -> Option<Self> {
+    ) -> Result<Self, snark_verifier::Error> {
         let snarks = snarks.into_iter().collect_vec();
 
         let accumulator_limbs = aggregate(params, snarks.clone())?;
@@ -380,7 +387,7 @@ where
             .chain(accumulator_limbs)
             .collect_vec();
 
-        Some(Self {
+        Ok(Self {
             svk: KzgSvk::<M>::new(params.get_g()[0]),
             snarks: snarks.into_iter().map_into().collect(),
             instances,
