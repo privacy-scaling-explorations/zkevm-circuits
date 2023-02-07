@@ -78,11 +78,11 @@ mod test {
     fn test_abi_encoding() -> Result<()> {
         // matches with https://raw.githubusercontent.com/ethereum-lists/4bytes/master/with_parameter_names/b3de648b
         assert_eq!(
-            hex::encode(encode_funccall("f(uint256) 4")?),
+            hex::encode(encode_funccall("f(uint) 4")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
         );
         assert_eq!(
-            hex::encode(encode_funccall("f(uint256) 0x04")?),
+            hex::encode(encode_funccall("f(uint) 0x04")?),
             "b3de648b0000000000000000000000000000000000000000000000000000000000000004"
         );
         Ok(())
