@@ -1,6 +1,6 @@
 //! PI circuit benchmarks
 use ark_std::{end_timer, start_timer};
-use eth_types::{Word, U256};
+use eth_types::{Bytes, Word, U256};
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
 use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
@@ -31,7 +31,7 @@ fn bench_pi_circuit_prover() {
         .expect("Cannot parse DEGREE env var as u32");
 
     const MAX_TXS: usize = 80;
-    const MAX_CALLDATA: usize = 65536*16;
+    const MAX_CALLDATA: usize = 65536 * 16;
 
     let mut rng = ChaCha20Rng::seed_from_u64(2);
     let randomness = Fr::random(&mut rng);
@@ -443,75 +443,158 @@ pub(crate) struct ProverCmdConfig {
     output: Option<String>,
 }
 
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct CircuitConfig {
+    pub block_gas_limit: usize,
+    pub max_txs: usize,
+    pub max_calldata: usize,
+    pub max_bytecode: usize,
+    pub max_rws: usize,
+    pub min_k: usize,
+    pub pad_to: usize,
+    pub min_k_aggregation: usize,
+    pub keccak_padding: usize,
+}
+
+const circuit_config: CircuitConfig = CircuitConfig {
+    block_gas_limit: 600000,
+    max_txs: 80,
+    max_calldata: 697500,
+    max_bytecode: 139500,
+    max_rws: 3161966,
+    min_k: 21,
+    pad_to: 2097152,
+    min_k_aggregation: 26,
+    keccak_padding: 1600000,
+};
+
+// from zkevm-chain
+macro_rules! select_circuit_config {
+    ($txs:expr, $on_match:expr, $on_error:expr) => {
+        match $txs {
+            0..=40 => {
+                const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
+                    block_gas_limit: 300000,
+                    max_txs: 40,
+                    max_calldata: 105000,
+                    max_bytecode: 24634,
+                    max_rws: 476052,
+                    min_k: 20,
+                    pad_to: 476052,
+                    min_k_aggregation: 26,
+                    keccak_padding: 336000,
+                };
+                $on_match
+            }
+            41..=80 => {
+                const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
+                    block_gas_limit: 600000,
+                    max_txs: 80,
+                    max_calldata: 697500,
+                    max_bytecode: 139500,
+                    max_rws: 3161966,
+                    min_k: 21,
+                    pad_to: 2097152,
+                    min_k_aggregation: 26,
+                    keccak_padding: 1600000,
+                };
+                $on_match
+            }
+
+            _ => $on_error,
+        }
+    };
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    let txs: u32 = var("TXS")
+        .unwrap_or_else(|_| "80".to_string())
+        .parse()
+        .expect("Cannot parse TXS env var as u32");
+
     let config = ProverCmdConfig::parse();
     let provider = Http::from_str(&config.geth_url).expect("Http geth url");
     let geth_client = GethClient::new(provider);
-    const MAX_TXS: usize = 80;
-    const MAX_CALLDATA: usize = 1048576;
-    let circuit_params = CircuitsParams {
-        max_rws: 476052,
-        max_txs: MAX_TXS,
-        max_calldata: MAX_CALLDATA,
-        max_bytecode: 65536,
-        keccak_padding: None,
-    };
+
+    let circuit_params = select_circuit_config!(
+        txs,
+        {
+            CircuitsParams {
+                max_rws: circuit_config.max_rws,
+                max_txs: circuit_config.max_txs,
+                max_calldata: circuit_config.max_calldata,
+                max_bytecode: circuit_config.max_bytecode,
+                keccak_padding: Some(circuit_config.keccak_padding),
+            }
+        },
+        {
+            panic!("no match txs circuit");
+        }
+    );
 
     let builder = BuilderClient::new(geth_client, circuit_params.clone()).await?;
     let (builder, eth_block) = builder.gen_inputs(config.block_num).await?;
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    block.randomness = Fr::from(MOCK_RANDOMNESS);
-    let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>(PiCircuit::new_from_block(&block));
-    assert!(block.txs.len() <= MAX_TXS);
+    // block.randomness = Fr::from(MOCK_RANDOMNESS);
+    select_circuit_config!(
+        txs,
+        {
+            let circuit =
+                PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>(
+                    PiCircuit::new_from_block(&block),
+                );
+            assert!(block.txs.len() <= circuit_config.max_txs);
 
-    let degree = 21;
-    let params = get_circuit_params::<0>(degree as usize);
+            let params = get_circuit_params::<0>(CIRCUIT_CONFIG.min_k as usize);
 
-    // let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(),
-    // &circuit).unwrap();
-    let pk = {
-        let key_file_name = format!(
-            "{}-{}-{}",
-            "pi", circuit_params.max_txs, circuit_params.max_calldata
-        );
-        load_circuit_pk(&key_file_name, &params, &circuit).unwrap()
-    };
+            // let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(),
+            // &circuit).unwrap();
+            let pk = {
+                let key_file_name = format!(
+                    "{}-{}-{}",
+                    "pi", circuit_params.max_txs, circuit_params.max_calldata
+                );
+                load_circuit_pk(&key_file_name, &params, &circuit).unwrap()
+            };
 
-    // let deployment_code = gen_evm_verifier(
-    //     &params,
-    //     pk.get_vk(),
-    //     PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>::num_instance(),
-    // );
+            let deployment_code = gen_evm_verifier(
+                    &params,
+                    pk.get_vk(),
+                    PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>::num_instance(),
+                    );
 
-    let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
-    // evm_verify(deployment_code, circuit.instances(), proof.clone());
+            println!("circuit.instances() = {:?}", circuit.instances());
+            let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
+            evm_verify(deployment_code, circuit.instances(), proof.clone());
 
-    #[derive(Serialize, Deserialize, Debug)]
-    struct BlockProofData {
-        instances: Vec<U256>,
-        proof: Vec<u8>,
-    }
+            #[derive(Serialize, Deserialize, Debug)]
+            struct BlockProofData {
+                instances: Vec<U256>,
+                proof: Bytes,
+            }
 
-    let block_proof_data = BlockProofData {
-        instances: circuit
-            .instances()
-            .iter()
-            .flatten()
-            .map(|v| U256::from_little_endian(v.to_repr().as_ref()))
-            .collect(),
-        proof: proof,
-    };
+            let block_proof_data = BlockProofData {
+                instances: circuit
+                    .instances()
+                    .iter()
+                    .flatten()
+                    .map(|v| U256::from_little_endian(v.to_repr().as_ref()))
+                    .collect(),
+                proof: proof.into(),
+            };
 
-    let output_file = if let Some(output) = config.output {
-        output
-    } else {
-        format!("./block-{}_proof.json", config.block_num)
-    };
-    File::create(output_file)
-        .expect("open output_file")
-        .write_all(&serde_json::to_vec(&block_proof_data).unwrap())
-        .expect("write output_file");
-
-    Ok(())
+            let output_file = if let Some(output) = config.output {
+                output
+            } else {
+                format!("./block-{}_proof-new.json", config.block_num)
+            };
+            File::create(output_file)
+                .expect("open output_file")
+                .write_all(&serde_json::to_vec(&block_proof_data).unwrap())
+                .expect("write output_file");
+            Ok(())
+        },
+        { panic!("no matched txs") }
+    )
 }
