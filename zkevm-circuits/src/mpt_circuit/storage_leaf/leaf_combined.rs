@@ -7,14 +7,14 @@ use halo2_proofs::{
 
 use crate::{
     circuit,
-    circuit_tools::{CellManager, DataTransition, RLCable, RLCChainable, ConstraintBuilder, CellType},
+    circuit_tools::{CellManager, DataTransition, RLCable, RLCChainable, ConstraintBuilder, CellType, Cell},
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{KeyData, MPTConstraintBuilder, StorageLeafInfo, get_num_bytes_short, ParentData, parent_memory, get_parent_rlc_state},
-        param::{KEY_LEN_IN_NIBBLES, EMPTY_TRIE_HASH},
+        helpers::{KeyData, MPTConstraintBuilder, StorageLeafInfo, get_num_bytes_short, ParentData, parent_memory, get_parent_rlc_state, key_memory},
+        param::{KEY_LEN_IN_NIBBLES, EMPTY_TRIE_HASH, HASH_WIDTH, IS_STORAGE_MOD_POS, LEAF_NON_EXISTING_IND, LEAF_KEY_C_IND, IS_NON_EXISTING_STORAGE_POS},
         FixedTableTag,
     },
     mpt_circuit::{
@@ -26,7 +26,12 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct LeafCombinedConfig<F> {
-    key_data: KeyData<F>,
+    key_data_s: KeyData<F>,
+    key_data_c: KeyData<F>,
+    key_data_w: KeyData<F>,
+    parent_data_s: ParentData<F>,
+    parent_data_c: ParentData<F>,
+    diff_inv: Cell<F>,
 }
 
 impl<F: FieldExt> LeafCombinedConfig<F> {
@@ -52,23 +57,26 @@ impl<F: FieldExt> LeafCombinedConfig<F> {
         let rot_value_c = 3;
 
         let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
-        let mut ctx_key_data: Option<KeyData<F>> = None;
+        let mut ctx_key_data_c: Option<KeyData<F>> = None;
+        let mut ctx_key_data_s: Option<KeyData<F>> = None;
+        let mut ctx_key_data_w: Option<KeyData<F>> = None;
+        let mut ctx_parent_data_s: Option<ParentData<F>> = None;
+        let mut ctx_parent_data_c: Option<ParentData<F>> = None;
+        let mut ctx_diff_inv: Option<Cell<F>> = None;
+
 
         circuit!([meta, cb.base], {
             let mut branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
 
             let mut offset = 0;
             for is_s in [true, false] {
-                //cb.base.set_query_offset(offset);
                 let storage = StorageLeafInfo::new(meta, ctx.clone(), is_s, offset);
-                //storage.set_is_s(is_s);
-                //storage.set_rot_key(offset);
                 branch.set_is_s(is_s);
 
                 // Load the last key values, which depends on the branch being a placeholder.
                 let is_branch_placeholder = ifx! {not!(storage.is_below_account(meta)) => { branch.is_placeholder() }};
                 let load_offset = ifx! {is_branch_placeholder => { 1.expr() }};
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], load_offset);
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(is_s)], load_offset);
 
                 // The two flag values need to be boolean.
                 require!(storage.flag1 => bool);
@@ -104,6 +112,15 @@ impl<F: FieldExt> LeafCombinedConfig<F> {
                 require!((FixedTableTag::RMult, num_bytes.expr(), a!(accs.acc_s.mult, offset)) => @"fixed");
                 // RLC bytes zero check
                 //cb.set_length(num_bytes.expr());
+
+                // Key done, set the default values
+                KeyData::store(&mut cb.base, &ctx.memory[key_memory(is_s)], KeyData::default_values());
+
+                if is_s {
+                    ctx_key_data_s = Some(key_data);
+                } else {
+                    ctx_key_data_c = Some(key_data);
+                }
 
                 offset += 1;
 
@@ -194,19 +211,22 @@ impl<F: FieldExt> LeafCombinedConfig<F> {
                     }}
                 }}
                 // Store the new parent
-                /*ParentData::store(
+                ParentData::store(
                     &mut cb.base,
                     &ctx.memory[parent_memory(is_s)],
                     [0.expr(), true.expr()],
                 );
-                ctx_parent_data = Some(parent_data);
 
                 // Set the number of bytes used
-                cb.set_length_s(value_num_bytes);*/
+                //cb.set_length_s(value_num_bytes);
 
                 offset += 1;
 
-                ctx_key_data = Some(key_data);
+                if is_s {
+                    ctx_parent_data_s = Some(parent_data);
+                } else {
+                    ctx_parent_data_c = Some(parent_data);
+                }
             }
 
 
@@ -294,7 +314,7 @@ impl<F: FieldExt> LeafCombinedConfig<F> {
             let diff_inv = cm.query_cell(CellType::Storage);
             ifx! {a!(ctx.proof_type.is_non_existing_storage_proof, offset) => {
                 // Get the previous key RLC data
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], 2.expr());
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 1.expr());
                 ifx! {is_wrong_leaf => {
                     // Calculate the key and check it's the address as requested in the lookup
                     let key_rlc_wrong = key_data.rlc.expr() + storage.key_rlc(meta, &mut cb.base, key_data.mult.expr(), key_data.is_odd.expr(), 1.expr(), false, offset - rot_key_c);
@@ -312,20 +332,439 @@ impl<F: FieldExt> LeafCombinedConfig<F> {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
                     require!(key_data.is_placeholder_leaf_c => true);
                 }}
-                ctx_key_data = Some(key_data);
+                ctx_key_data_w = Some(key_data);
             } elsex {
                 // is_wrong_leaf needs to be false when not in non_existing_account proof
                 require!(is_wrong_leaf => false);
             }}
-
-            // Key done, set the default values
-            //KeyData::store(&mut cb.base, &ctx.memory["key"], KeyData::default_values());
-
-            cb.base.set_query_offset(0);
+            ctx_diff_inv = Some(diff_inv);
         });
 
         LeafCombinedConfig {
-            key_data: ctx_key_data.unwrap(),
+            key_data_s: ctx_key_data_s.unwrap(),
+            key_data_c: ctx_key_data_c.unwrap(),
+            key_data_w: ctx_key_data_w.unwrap(),
+            parent_data_s: ctx_parent_data_s.unwrap(),
+            parent_data_c: ctx_parent_data_c.unwrap(),
+            diff_inv: ctx_diff_inv.unwrap(),
         }
+    }
+
+    pub fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        mpt_config: &MPTConfig<F>,
+        witness: &[MptWitnessRow<F>],
+        pv: &mut ProofValues<F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+
+        println!("offset: {}", offset);
+
+        let base_offset = offset;
+        let mut offset = offset;
+
+        for is_s in [true, false] {
+
+            /* KEY */
+
+            {
+                let row = &witness[offset];
+
+                // Info whether leaf rlp is long or short:
+                //  - long means the key length is at position 2.
+                //  - short means the key length is at position 1.
+                let mut typ = "short";
+                if row.get_byte(0) == 248 {
+                    typ = "long";
+                } else if row.get_byte(1) == 32 {
+                    typ = "last_level";
+                } else if row.get_byte(1) < 128 {
+                    typ = "one_nibble";
+                }
+                mpt_config.assign_long_short(region, typ, offset).ok();
+
+                pv.acc_s = F::zero();
+                pv.acc_mult_s = F::one();
+                let len: usize;
+                if typ == "long" {
+                    len = (row.get_byte(2) - 128) as usize + 3;
+                } else if typ == "short" {
+                    len = (row.get_byte(1) - 128) as usize + 2;
+                } else {
+                    // last_level or one_nibble
+                    len = 2
+                }
+                mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
+
+                mpt_config
+                    .assign_acc(
+                        region,
+                        pv.acc_s,
+                        pv.acc_mult_s,
+                        F::zero(),
+                        F::zero(),
+                        offset,
+                    )
+                    .ok();
+
+                // note that this assignment needs to be after assign_acc call
+                if row.get_byte(0) < 223 {
+                    // when shorter than 32 bytes, the node doesn't get hashed
+                    // not_hashed
+                    region
+                        .assign_advice(
+                            || "assign not_hashed".to_string(),
+                            mpt_config.accumulators.acc_c.rlc,
+                            offset,
+                            || Value::known(F::one()),
+                        )
+                        .ok();
+                }
+
+                // TODO: handle if branch or extension node is added
+                let mut start = S_START - 1;
+                if row.get_byte(0) == 248 {
+                    // long RLP
+                    start = S_START;
+                }
+
+                let is_branch_placeholder = if is_s {
+                    pv.is_branch_s_placeholder
+                } else {
+                    pv.is_branch_c_placeholder
+                };
+                let load_offset = if is_branch_placeholder { 1 } else { 0 };
+
+                let key_data = if is_s { &self.key_data_s } else { &self.key_data_c };
+                key_data
+                    .witness_load(region, base_offset, &mut pv.memory[key_memory(is_s)], load_offset)?;
+                key_data.witness_store(
+                    region,
+                    base_offset,
+                    &mut pv.memory[key_memory(is_s)],
+                    F::zero(),
+                    F::one(),
+                    0,
+                    false,
+                    false,
+                )?;
+
+                // For leaf S and leaf C we need to start with the same rlc.
+                let mut key_rlc_new = pv.key_rlc;
+                let mut key_rlc_mult_new = pv.key_rlc_mult;
+                if (pv.is_branch_s_placeholder && row.get_type() == MptWitnessRowType::StorageLeafSKey)
+                    || (pv.is_branch_c_placeholder && row.get_type() == MptWitnessRowType::StorageLeafCKey)
+                {
+                    key_rlc_new = pv.key_rlc_prev;
+                    key_rlc_mult_new = pv.key_rlc_mult_prev;
+                }
+                if typ != "last_level" && typ != "one_nibble" {
+                    // If in last level or having only one nibble,
+                    // the key RLC is already computed using the first two bytes above.
+                    mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
+                }
+                region.assign_advice(
+                    || "assign key_rlc".to_string(),
+                    mpt_config.accumulators.key.rlc,
+                    offset,
+                    || Value::known(key_rlc_new),
+                )?;
+                pv.storage_key_rlc = key_rlc_new;
+
+                // Store key_rlc into rlc2 to be later set in leaf value C row (to enable
+                // lookups):
+                pv.rlc2 = key_rlc_new;
+            }
+
+
+
+            /* VALUE */
+
+            offset += 1;
+            println!("offset value: {}", offset);
+
+            {
+
+                let row_prev = &witness[offset - 1];
+                let row = &witness[offset];
+
+                // Info whether leaf value is 1 byte or more:
+                let mut is_long = false;
+                if row_prev.get_byte(0) == 248 {
+                    // whole leaf is in long format (3 RLP meta bytes)
+                    let key_len = row_prev.get_byte(2) - 128;
+                    if row_prev.get_byte(1) - key_len - 1 > 1 {
+                        is_long = true;
+                    }
+                } else if row_prev.get_byte(1) < 128 {
+                    // last_level or one_nibble
+                    let leaf_len = row_prev.get_byte(0) - 192;
+                    if leaf_len - 1 > 1 {
+                        is_long = true;
+                    }
+                } else {
+                    let leaf_len = row_prev.get_byte(0) - 192;
+                    let key_len = row_prev.get_byte(1) - 128;
+                    if leaf_len - key_len - 1 > 1 {
+                        is_long = true;
+                    }
+                }
+                // Short means there is only one byte for value (no RLP specific bytes).
+                // Long means there is more than one byte for value which brings two
+                // RLP specific bytes, like: 161 160 ... for 32-long value.
+                let mut typ = "short";
+                if is_long {
+                    typ = "long";
+                }
+                mpt_config.assign_long_short(region, typ, offset).ok();
+
+                // Leaf RLC
+                mpt_config.compute_acc_and_mult(
+                    &row.bytes,
+                    &mut pv.acc_s,
+                    &mut pv.acc_mult_s,
+                    0,
+                    HASH_WIDTH + 2,
+                );
+
+                pv.acc_c = F::zero();
+                pv.acc_mult_c = F::one();
+                // Leaf value RLC
+                let mut start = 0;
+                if is_long {
+                    start = 2;
+                }
+                mpt_config.compute_acc_and_mult(
+                    &row.bytes,
+                    &mut pv.acc_c,
+                    &mut pv.acc_mult_c,
+                    start,
+                    HASH_WIDTH + 2,
+                );
+
+                let empty_trie_hash: Vec<u8> = vec![
+                    86, 232, 31, 23, 27, 204, 85, 166, 255, 131, 69, 230, 146, 192, 248, 110, 91, 72, 224,
+                    27, 153, 108, 173, 192, 1, 98, 47, 181, 227, 99, 180, 33,
+                ];
+                if is_s {
+                    // Store leaf value RLC into rlc1 to be later set in leaf value C row (to enable
+                    // lookups):
+                    pv.rlc1 = pv.acc_c;
+
+                    /*
+                    account leaf storage codehash S <- rotate here
+                    account leaf storage codehash C
+                    account leaf in added branch
+                    leaf key S
+                    leaf value S <- we are here
+                    leaf key C
+                    leaf value C
+                    */
+                    let row_prev = &witness[offset - 4];
+                    if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
+                        && row_prev.s_hash_bytes() == empty_trie_hash
+                    {
+                        // Leaf is without branch and it is just a placeholder.
+                        region
+                            .assign_advice(
+                                || "assign sel1".to_string(),
+                                mpt_config.denoter.sel1,
+                                offset,
+                                || Value::known(F::one()),
+                            )
+                            .ok();
+                    }
+                } else {
+                    region
+                        .assign_advice(
+                            || "assign key_rlc into key_rlc_mult".to_string(),
+                            mpt_config.accumulators.key.mult,
+                            offset,
+                            || Value::known(pv.rlc2),
+                        )
+                        .ok();
+                    region
+                        .assign_advice(
+                            || "assign leaf value S into value_prev".to_string(),
+                            mpt_config.value_prev,
+                            offset,
+                            || Value::known(pv.rlc1),
+                        )
+                        .ok();
+
+                    /*
+                    account leaf storage codehash S
+                    account leaf storage codehash C <- rotate here
+                    account leaf in added branch
+                    leaf key S
+                    leaf value S
+                    leaf key C
+                    leaf value C <- we are here
+                    */
+                    let row_prev = &witness[offset - 5];
+                    if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
+                        && row_prev.s_hash_bytes() == empty_trie_hash
+                    {
+                        // Leaf is without branch and it is just a placeholder.
+                        region
+                            .assign_advice(
+                                || "assign sel2".to_string(),
+                                mpt_config.denoter.sel2,
+                                offset,
+                                || Value::known(F::one()),
+                            )
+                            .ok();
+                    }
+                }
+
+                let parent_data = if is_s { &self.parent_data_s } else { &self.parent_data_c };
+                parent_data
+                    .witness_load(region, base_offset, &mut pv.memory[parent_memory(is_s)], 0)
+                    .ok();
+                parent_data
+                    .witness_store(
+                        region,
+                        base_offset,
+                        &mut pv.memory[parent_memory(is_s)],
+                        F::zero(),
+                        true,
+                    )
+                    .ok();
+
+                mpt_config
+                    .assign_acc(
+                        region,
+                        pv.acc_s, // leaf RLC
+                        pv.acc_mult_s,
+                        pv.acc_c, // leaf value RLC
+                        F::zero(),
+                        offset,
+                    )
+                    .ok();
+
+                region
+                    .assign_advice(
+                        || "assign leaf value C into value".to_string(),
+                        mpt_config.value,
+                        offset,
+                        || Value::known(pv.acc_c),
+                    )
+                    .ok();
+
+                if !is_s && row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
+                    region
+                        .assign_advice(
+                            || "assign lookup enabled".to_string(),
+                            mpt_config.proof_type.proof_type,
+                            offset,
+                            || Value::known(F::from(6_u64)), /* storage mod lookup enabled in this row
+                                                            * if it is is_storage_mod proof */
+                        )
+                        .ok();
+                }
+            }
+
+            offset += 1;
+        }
+
+        {
+            let row = &witness[offset];
+
+            /*
+            row[1] != 0 just to avoid usize problems below (when row doesn't
+            need to be assigned) Info whether leaf rlp is long or short.
+            */
+            /*
+            Info whether leaf rlp is long or short:
+            - long means the key length is at position 2.
+            - short means the key length is at position 1.
+            */
+            let mut typ = "short";
+            if row.get_byte(0) == 248 {
+                typ = "long";
+            } else if row.get_byte(1) == 32 {
+                typ = "last_level";
+            } else if row.get_byte(1) < 128 {
+                typ = "one_nibble";
+            }
+            mpt_config.assign_long_short(region, typ, offset).ok();
+
+            pv.acc_s = F::zero();
+            pv.acc_mult_s = F::one();
+            let len: usize;
+            if typ == "long" {
+                len = (row.get_byte(2) - 128) as usize + 3;
+            } else if typ == "short" {
+                len = (row.get_byte(1) - 128) as usize + 2;
+            } else {
+                // last_level or one_nibble
+                len = 2
+            }
+            mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
+
+            mpt_config
+                .assign_acc(
+                    region,
+                    pv.acc_s,
+                    pv.acc_mult_s,
+                    F::zero(),
+                    F::zero(),
+                    offset,
+                )
+                .ok();
+
+            offset += 1;
+        }
+
+        {
+            self.key_data_w
+                .witness_load(region, base_offset, &mut pv.memory[key_memory(true)], 1)
+                .ok();
+
+            let row = &witness[offset];
+            if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
+                let row_key_c = &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
+                let mut start = S_START - 1;
+                if row_key_c.get_byte(0) == 248 {
+                    start = S_START;
+                }
+                let mut key_rlc_new = pv.key_rlc;
+                let mut key_rlc_mult_new = pv.key_rlc_mult;
+                mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, start);
+                region
+                    .assign_advice(
+                        || "assign key_rlc".to_string(),
+                        mpt_config.accumulators.key.mult, // lookup uses `key.mult`
+                        offset,
+                        || Value::known(key_rlc_new),
+                    )
+                    .ok();
+
+                let diff_inv = (key_rlc_new - pv.storage_key_rlc)
+                    .invert()
+                    .unwrap_or(F::zero());
+                self.diff_inv
+                    .assign(region, base_offset, Value::known(diff_inv))
+                    .ok();
+
+                if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
+                    region
+                        .assign_advice(
+                            || "assign lookup enabled".to_string(),
+                            mpt_config.proof_type.proof_type,
+                            offset,
+                            || Value::known(F::from(7_u64)), /* non existing storage lookup enabled in
+                                                            * this row if it is non_existing_storage
+                                                            * proof */
+                        )
+                        .ok();
+                }
+            }
+        }
+
+        println!("offset post: {}", offset);
+
+        Ok(())
     }
 }

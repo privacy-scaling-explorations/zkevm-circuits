@@ -8,7 +8,7 @@ use halo2_proofs::{
 use crate::{
     circuit,
     circuit_tools::{CellManager, DataTransition},
-    mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
+    mpt_circuit::{helpers::{BranchNodeInfo, key_memory}, param::BRANCH_ROWS_NUM},
     mpt_circuit::{
         helpers::KeyData, witness_row::MptWitnessRow, MPTConfig, MPTContext, ProofValues,
     },
@@ -160,7 +160,7 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                 require!(branch.is_key_odd() => bool);
 
                 // Load the last key values
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], 0.expr());
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 0.expr());
 
                 // Calculate the extension node key RLC when in an extension node
                 let key_rlc_post_ext = ifx!{branch.is_extension() => {
@@ -215,14 +215,16 @@ impl<F: FieldExt> BranchKeyConfig<F> {
                     require!(branch.is_key_odd() => not!(key_data.is_odd));
                 }}
 
-                KeyData::store(&mut cb.base, &ctx.memory["key"], [
-                    key_rlc.expr(),
-                    key_mult.expr(),
-                    branch.nibbles_counter().expr(),
-                    branch.is_key_odd(),
-                    branch.contains_placeholder_leaf(meta, true),
-                    branch.contains_placeholder_leaf(meta, false),
-                ]);
+                for is_s in [true, false] {
+                    KeyData::store(&mut cb.base, &ctx.memory[key_memory(is_s)], [
+                        key_rlc.expr(),
+                        key_mult.expr(),
+                        branch.nibbles_counter().expr(),
+                        branch.is_key_odd(),
+                        branch.contains_placeholder_leaf(meta, true),
+                        branch.contains_placeholder_leaf(meta, false),
+                    ]);
+                }
 
                 // We need to check that the nibbles we stored in s are between 0 and 15.
                 cb.set_range_s(FixedTableTag::RangeKeyLen16.expr());
@@ -255,17 +257,19 @@ impl<F: FieldExt> BranchKeyConfig<F> {
         offset: usize,
     ) -> Result<(), Error> {
         self.key_data
-            .witness_load(region, offset, &pv.memory["key"], 0)?;
-        self.key_data.witness_store(
-            region,
-            offset,
-            &mut pv.memory["key"],
-            pv.key_rlc,
-            pv.key_rlc_mult,
-            pv.nibbles_num,
-            pv.is_placeholder_leaf_s,
-            pv.is_placeholder_leaf_c,
-        )?;
+            .witness_load(region, offset, &pv.memory[key_memory(true)], 0)?;
+        for is_s in [true, false] {
+            self.key_data.witness_store(
+                region,
+                offset,
+                &mut pv.memory[key_memory(is_s)],
+                pv.key_rlc,
+                pv.key_rlc_mult,
+                pv.nibbles_num,
+                pv.is_placeholder_leaf_s,
+                pv.is_placeholder_leaf_c,
+            )?;
+        }
         Ok(())
     }
 }

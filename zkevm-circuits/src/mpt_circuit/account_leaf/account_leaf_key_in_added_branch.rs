@@ -4,7 +4,7 @@ use crate::{
     circuit,
     circuit_tools::{CellManager, ConstraintBuilder},
     mpt_circuit::{
-        helpers::BranchNodeInfo,
+        helpers::{BranchNodeInfo, key_memory},
         param::{
             ACCOUNT_DRIFTED_LEAF_IND, ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
             ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_NONCE_BALANCE_S_IND,
@@ -132,7 +132,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
                 let (key_rlc_prev, key_mult_prev) = get_parent_rlc_state(meta, ctx.clone(), is_branch_in_first_level, rot_parent);
 
                 // Load the last key values
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], 3.expr());
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 2.expr());
 
                 // TODO(Brecht): make this work with loaded key data when extension node is separate
                 ifx! {not!(branch.is_extension()) => {
@@ -231,7 +231,7 @@ impl<F: FieldExt> AccountLeafKeyInAddedBranchConfig<F> {
         mpt_config.compute_acc_and_mult(row, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
 
         self.key_data
-            .witness_load(region, offset, &mut pv.memory["key"], 3)
+            .witness_load(region, offset, &mut pv.memory[key_memory(true)], 2)
             .ok();
 
         mpt_config

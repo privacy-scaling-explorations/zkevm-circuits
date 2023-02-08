@@ -155,49 +155,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
         )?;
 
         region.assign_advice(
-            || "assign acc_s".to_string(),
-            mpt_config.accumulators.acc_s.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_s".to_string(),
-            mpt_config.accumulators.acc_s.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_c".to_string(),
-            mpt_config.accumulators.acc_c.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_c".to_string(),
-            mpt_config.accumulators.acc_c.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        // because used for is_long
-        region.assign_advice(
-            || "assign s_modified_node_rlc".to_string(),
-            mpt_config.accumulators.s_mod_node_rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-        // because used for is_short
-        region.assign_advice(
-            || "assign c_modified_node_rlc".to_string(),
-            mpt_config.accumulators.c_mod_node_rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
             || "assign is_last_branch_child".to_string(),
             mpt_config.branch.is_last_child,
             offset,
@@ -230,40 +187,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
             mpt_config.branch.is_drifted,
             offset,
             || Value::known(F::from((branch.drifted_index == branch.node_index) as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign key rlc".to_string(),
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign key rlc mult".to_string(),
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign mult diff".to_string(),
-            mpt_config.accumulators.mult_diff,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign sel1".to_string(),
-            mpt_config.denoter.sel1,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-        region.assign_advice(
-            || "assign sel2".to_string(),
-            mpt_config.denoter.sel2,
-            offset,
-            || Value::known(F::zero()),
         )?;
 
         region.assign_advice(

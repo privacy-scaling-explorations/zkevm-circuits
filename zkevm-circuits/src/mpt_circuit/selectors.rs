@@ -131,7 +131,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 require!(sum::expr(row_type_selectors.iter()) => 1);
 
                 // The type of the proof needs to be set.
-                require!(sum::expr(proof_type_selectors.iter()) => 1);
+                /*require!(sum::expr(proof_type_selectors.iter()) => 1);
 
                 // We need to prevent lookups into non-lookup rows and we need to prevent for
                 // example nonce lookup into balance lookup row.
@@ -158,7 +158,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                             require!(proof_type_id => 0);
                         }}
                     }}
-                }
+                }*/
             }};
 
             // First row

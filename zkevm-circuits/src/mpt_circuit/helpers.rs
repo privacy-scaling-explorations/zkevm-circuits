@@ -160,7 +160,7 @@ impl<F: FieldExt> KeyData<F> {
     ) -> Result<(), Error> {
         let values = memory.witness_load(load_offset);
 
-        //println!("offset: {}", offset);
+        //println!("offset: {}, values: {:?}", offset, values);
         //println!("key_rlc_prev: {:?}", pv.key_rlc_prev);
         //println!("key_mult_prev: {:?}", pv.key_rlc_mult_prev);
         //println!("nibbles_num_prev: {:?}", pv.nibbles_num_prev);
@@ -580,25 +580,16 @@ impl<F: FieldExt> BranchNodeInfo<F> {
     }
 
     /// Number of bytes in the extension node
-    /// Uses data on the current row!
-    pub(crate) fn ext_num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        let rot_s = if self.is_s { 0 } else { -1 };
-        self.ext_num_rlp_bytes(meta) + self.ext_len(meta, rot_s)
-    }
-
-    /// Number of bytes in the extension node
-    /// Uses data on the current row!
-    pub(crate) fn ext_num_bytes2(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        self.ext_num_rlp_bytes(meta) + self.ext_len(meta, 1)
+    pub(crate) fn ext_num_bytes(&self, meta: &mut VirtualCells<F>, rot_c: i32) -> Expression<F> {
+        self.ext_num_rlp_bytes(meta) + self.ext_len(meta, rot_c)
     }
 
     /// Length of the extension node (excluding RLP bytes)
-    /// Uses data on the current row!
-    pub(crate) fn ext_len(&self, _meta: &mut VirtualCells<F>, rel_rot: i32) -> Expression<F> {
+    pub(crate) fn ext_len(&self, _meta: &mut VirtualCells<F>, rot_c: i32) -> Expression<F> {
         circuit!([_meta, _cb!()], {
             matchx! {
-                self.is_short() + self.is_long() => get_len_list_short(a!(self.ctx.s_main.rlp1, rel_rot)),
-                self.is_longer_than_55_s => get_len_short(a!(self.ctx.s_main.bytes[0], rel_rot)),
+                self.is_short() + self.is_long() => get_len_list_short(a!(self.ctx.s_main.rlp1, rot_c)),
+                self.is_longer_than_55_s => get_len_short(a!(self.ctx.s_main.bytes[0], rot_c)),
             }
         })
     }
@@ -652,27 +643,27 @@ impl<F: FieldExt> BranchNodeInfo<F> {
 
     /// Length of the included branch (excluding RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn ext_branch_len(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+    pub(crate) fn ext_branch_len(&self, meta: &mut VirtualCells<F>, rot_ext_s: i32) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            ifx! {self.contains_hashed_branch(meta) => {
+            ifx! {self.contains_hashed_branch(meta, rot_ext_s) => {
                 32.expr()
             } elsex {
-                get_len_list_short(a!(self.ctx.c_main.bytes[0]))
+                get_len_list_short(a!(self.ctx.c_main.bytes[0], rot_ext_s))
             }}
         })
     }
 
     /// Length of the included branch (excluding RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn ext_branch_num_bytes(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        1.expr() + self.ext_branch_len(meta)
+    pub(crate) fn ext_branch_num_bytes(&self, meta: &mut VirtualCells<F>, rot_ext_s: i32) -> Expression<F> {
+        1.expr() + self.ext_branch_len(meta, rot_ext_s)
     }
 
     /// Length of the key (excluding RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn contains_hashed_branch(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
+    pub(crate) fn contains_hashed_branch(&self, meta: &mut VirtualCells<F>, rot_ext_s: i32) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            a!(self.ctx.c_main.rlp2) * invert!(RLP_HASH_VALUE)
+            a!(self.ctx.c_main.rlp2, rot_ext_s) * invert!(RLP_HASH_VALUE)
         })
     }
 
@@ -682,6 +673,7 @@ impl<F: FieldExt> BranchNodeInfo<F> {
         meta: &mut VirtualCells<F>,
         cb: &mut ConstraintBuilder<F>,
         key_mult_prev: Expression<F>,
+        rot_ext_c: i32,
     ) -> Expression<F> {
         circuit!([meta, cb], {
             let mult_first_odd = ifx! {self.is_key_odd() => { 1.expr() } elsex { 16.expr() }};
@@ -707,10 +699,10 @@ impl<F: FieldExt> BranchNodeInfo<F> {
                     // the two keys being the same - update operation, not splitting into extension node.
                     // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
                     // is not used (when even number of nibbles).
-                    let mut key_bytes = vec![a!(self.ctx.s_main.bytes[0], -1)];
+                    let mut key_bytes = vec![a!(self.ctx.s_main.bytes[0], rot_ext_c - 1)];
                     key_bytes.append(&mut self.ctx.s_main.bytes.iter().skip(1).zip(self.ctx.s_main.bytes.iter()).map(|(byte, byte_hi)| {
-                        let byte = a!(byte, -1);
-                        let nibble_hi = a!(byte_hi);
+                        let byte = a!(byte, rot_ext_c - 1);
+                        let nibble_hi = a!(byte_hi, rot_ext_c);
                         let nibble_lo = (byte.expr() - nibble_hi.expr()) * invert!(16);
                         // Check that `nibble_hi` is correct.
                         require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
@@ -721,11 +713,11 @@ impl<F: FieldExt> BranchNodeInfo<F> {
                 },
                 self.is_long_odd_c16.expr() + self.is_long_even_c16.expr() => {
                     let additional_mult = ifx! {self.is_long_odd_c16 => { self.ctx.r[0].expr() } elsex { 1.expr() }};
-                    let key_bytes = self.ctx.s_main.bytes(meta, -1);
+                    let key_bytes = self.ctx.s_main.bytes(meta, rot_ext_c - 1);
                     calc_rlc(meta, cb, &key_bytes, additional_mult)
                 },
                 self.is_short() => {
-                    let key_bytes = vec![a!(self.ctx.s_main.rlp2, -1)];
+                    let key_bytes = vec![a!(self.ctx.s_main.rlp2, rot_ext_c - 1)];
                     calc_rlc(meta, cb, &key_bytes, 1.expr())
                 },
             }
@@ -776,9 +768,9 @@ impl<F: FieldExt> BranchChildInfo<F> {
             ifx! {self.is_hashed(meta) => {
                 // There is `s_rlp2 = 0` when there is a nil node and `s_rlp2 = 160` when
                 // non-nil node (1 or 33 respectively).
-                a!(self.ctx.main(self.is_s).rlp2) * invert!(RLP_HASH_VALUE) * 32.expr() + 1.expr()
+                a!(self.ctx.main(self.is_s).rlp2, self.rot_branch) * invert!(RLP_HASH_VALUE) * 32.expr() + 1.expr()
             } elsex {
-                get_num_bytes_list_short(a!(self.ctx.main(self.is_s).bytes[0]))
+                get_num_bytes_list_short(a!(self.ctx.main(self.is_s).bytes[0], self.rot_branch))
             }}
         })
     }
@@ -807,7 +799,7 @@ impl<F: FieldExt> BranchChildInfo<F> {
                 main.expr(meta, self.rot_branch)[2..34].rlc(&r)
             } elsex {
                 ifx!{self.is_empty(meta) => {
-                    require!(a!(main.bytes[0]) => RLP_NIL);
+                    require!(a!(main.bytes[0], self.rot_branch) => RLP_NIL);
                     // There's only one byte (128 at `bytes[0]`) that needs to be added to the RLC.
                     main.expr(meta, self.rot_branch)[2..3].rlc(&r)
                 } elsex {
@@ -1205,7 +1197,6 @@ impl<F: FieldExt> AccountLeafInfo<F> {
             .rlc(&self.ctx.r)
     }
 
-    // Will use data on the current row!
     pub(crate) fn key_rlc(
         &self,
         meta: &mut VirtualCells<F>,
@@ -1377,6 +1368,10 @@ pub(crate) fn bytes_into_rlc<F: FieldExt>(expressions: &[u8], r: F) -> F {
 
 pub(crate) fn parent_memory(is_s: bool) -> String {
     (if is_s { "parent_s" } else { "parent_c" }).to_string()
+}
+
+pub(crate) fn key_memory(is_s: bool) -> String {
+    (if is_s { "key_s" } else { "key_c" }).to_string()
 }
 
 /// MPTConstraintBuilder

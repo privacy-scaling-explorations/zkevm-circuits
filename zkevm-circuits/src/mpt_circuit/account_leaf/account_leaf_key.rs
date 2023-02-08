@@ -13,7 +13,7 @@ use crate::{
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{get_num_nibbles, AccountLeafInfo, KeyData, MPTConstraintBuilder},
+        helpers::{get_num_nibbles, AccountLeafInfo, KeyData, MPTConstraintBuilder, key_memory},
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG},
         FixedTableTag,
     },
@@ -154,9 +154,8 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
 
             // Load the last key values, which depends on the branch being a placeholder.
             let is_branch_placeholder = ifx! {a!(not_first_level) => { branch.is_placeholder() }};
-            let offset = if is_s { 0.expr() } else { 1.expr() };
-            let offset = offset + ifx! {is_branch_placeholder => { 1.expr() }};
-            let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], offset);
+            let offset = ifx! {is_branch_placeholder => { 1.expr() }};
+            let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(is_s)], offset);
 
             // Calculate the key RLC
             let key_rlc = key_data.rlc.expr()
@@ -176,7 +175,7 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
             require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
             // Key done, set the starting values
-            KeyData::store(&mut cb.base, &ctx.memory["key"], KeyData::default_values());
+            KeyData::store(&mut cb.base, &ctx.memory[key_memory(is_s)], KeyData::default_values());
 
             // Num bytes used in RLC
             let num_bytes = account.num_bytes_on_key_row(meta);
@@ -267,14 +266,13 @@ impl<F: FieldExt> AccountLeafKeyConfig<F> {
         } else {
             pv.is_branch_c_placeholder
         };
-        let load_offset = if is_s { 0 } else { 1 };
-        let load_offset = load_offset + if is_branch_placeholder { 1 } else { 0 };
+        let load_offset = if is_branch_placeholder { 1 } else { 0 };
         self.key_data
-            .witness_load(region, offset, &mut pv.memory["key"], load_offset)?;
+            .witness_load(region, offset, &mut pv.memory[key_memory(is_s)], load_offset)?;
         self.key_data.witness_store(
             region,
             offset,
-            &mut pv.memory["key"],
+            &mut pv.memory[key_memory(is_s)],
             F::zero(),
             F::one(),
             0,

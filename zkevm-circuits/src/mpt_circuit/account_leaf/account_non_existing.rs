@@ -10,7 +10,7 @@ use crate::{
     circuit_tools::CellManager,
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{bytes_into_rlc, KeyData},
+        helpers::{bytes_into_rlc, KeyData, key_memory},
         param::{ACCOUNT_NON_EXISTING_IND},
         ProofValues,
     },
@@ -130,7 +130,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
             require!(account.is_wrong_leaf(meta, true) => bool);
 
             ifx! {a!(proof_type.is_non_existing_account_proof) => {
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory["key"], 2.expr());
+                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 1.expr());
                 ifx! {account.is_wrong_leaf(meta, true) => {
                     // Calculate the key and check it's the address as requested in the lookup
                     let key_rlc_wrong = key_data.rlc.expr() + account.key_rlc(meta, &mut cb.base, key_data.mult.expr(), key_data.is_odd.expr(), 1.expr(), -rot_key_s);
@@ -170,7 +170,7 @@ impl<F: FieldExt> AccountNonExistingConfig<F> {
         offset: usize,
     ) {
         self.key_data
-            .witness_load(region, offset, &mut pv.memory["key"], 2)
+            .witness_load(region, offset, &mut pv.memory[key_memory(true)], 1)
             .ok();
 
         let row = &witness[offset];
