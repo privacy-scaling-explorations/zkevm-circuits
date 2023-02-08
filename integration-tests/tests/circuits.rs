@@ -9,8 +9,8 @@ macro_rules! declare_tests {
                 let (builder, _) = gen_inputs(*block_num).await;
                 let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
                 let rows_required = EvmCircuit::get_min_num_rows_required(&block);
-                if rows_required > rows_required {
-                    panic!("EVM circuit not enough rows {}, required {}", rows_required, rows_required);
+                if rows_required > MAX_EVM_ROWS {
+                    panic!("EVM circuit not enough rows {}, required {}", MAX_EVM_ROWS, rows_required);
                 }
                 test_circuit_at_block::<EvmCircuit::<Fr>>(
                     "evm", EVM_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
