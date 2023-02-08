@@ -28,6 +28,7 @@ pub(crate) struct ErrorOOGLogGadget<F> {
     // memory address
     memory_address: MemoryAddressGadget<F>,
     is_static_call: Cell<F>,
+    is_opcode_logn: LtGadget<F, 1>,
     // constrain gas left is less than gas cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -44,18 +45,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        // constrain op code is LogN
-        cb.require_in_set(
-            "ErrorOutOfGasLOG happens in Log*",
-            opcode.expr(),
-            vec![
-                OpcodeId::LOG0.expr(),
-                OpcodeId::LOG1.expr(),
-                OpcodeId::LOG2.expr(),
-                OpcodeId::LOG3.expr(),
-                OpcodeId::LOG4.expr(),
-            ],
-        );
         let mstart = cb.query_cell_phase2();
         let msize = cb.query_word_rlc();
         let rw_counter_end_of_reversion = cb.query_cell();
@@ -68,9 +57,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
         cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
 
-        // Note: no need to check not in static call, since write protection error will
-        // handle it.
         let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
+        let is_opcode_logn = LtGadget::construct(cb, topic_count.clone(), 5.expr());
+        cb.require_equal(
+            "topic count in [0..5) which means opcode is Log0...Log4 ",
+            is_opcode_logn.expr(),
+            1.expr(),
+        );
 
         // check memory
         let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
@@ -147,6 +140,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         Self {
             opcode,
             is_static_call,
+            is_opcode_logn,
             memory_address,
             memory_expansion,
             insufficient_gas,
@@ -183,6 +177,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.is_static_call
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
 
+        self.is_opcode_logn
+            .assign(region, offset, F::from(topic_count), F::from(5u64))?;
         // Gas insufficient check
         self.insufficient_gas.assign(
             region,
