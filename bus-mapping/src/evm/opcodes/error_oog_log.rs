@@ -1,7 +1,8 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::{Opcode, OpcodeId};
+use crate::operation::CallContextField;
 use crate::Error;
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ErrorOOGLog;
@@ -18,7 +19,7 @@ impl Opcode for ErrorOOGLog {
         } else {
             None
         };
-        exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
+        exec_step.error = state.get_step_err(geth_step, next_step)?;
         // assert op code can only be Log*
         assert!([
             OpcodeId::LOG0,
@@ -33,7 +34,13 @@ impl Opcode for ErrorOOGLog {
 
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), mstart)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(1), msize)?;
-
+        // read static call property
+        state.call_context_read(
+            &mut exec_step,
+            state.call()?.call_id,
+            CallContextField::IsStatic,
+            Word::from(state.call()?.is_static as u8),
+        );
         // common error handling
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;

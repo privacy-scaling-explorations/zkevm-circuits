@@ -27,6 +27,7 @@ pub(crate) struct ErrorOOGLogGadget<F> {
     opcode: Cell<F>,
     // memory address
     memory_address: MemoryAddressGadget<F>,
+    is_static_call: Cell<F>,
     // constrain gas left is less than gas cost
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
@@ -41,7 +42,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        // constrain op code is Log*
+        cb.opcode_lookup(opcode.expr(), 1.expr());
+
+        // constrain op code is LogN
         cb.require_in_set(
             "ErrorOutOfGasLOG happens in Log*",
             opcode.expr(),
@@ -60,6 +63,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         // Pop mstart_address, msize from stack
         cb.stack_pop(mstart.expr());
         cb.stack_pop(msize.expr());
+
+        // constrain not in static call
+        let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
+        cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
 
         // Note: no need to check not in static call, since write protection error will
         // handle it.
@@ -81,7 +88,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         // required
         let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
-            "log* gas left is less than gas required ",
+            "logN gas left is less than gas required ",
             insufficient_gas.expr(),
             1.expr(),
         );
@@ -109,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(4.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(5.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -127,8 +134,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
                 0.expr(),
             )
         });
+
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
         Self {
             opcode,
+            is_static_call,
             memory_address,
             memory_expansion,
             insufficient_gas,
@@ -162,6 +180,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         let topic_count = opcode.postfix().expect("opcode with postfix") as u64;
         assert!(topic_count <= 4);
+        self.is_static_call
+            .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
 
         // Gas insufficient check
         self.insufficient_gas.assign(
@@ -177,7 +197,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 4)?;
+            .assign(region, offset, block, call, step, 5)?;
 
         Ok(())
     }
