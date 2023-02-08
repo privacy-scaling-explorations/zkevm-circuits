@@ -1,10 +1,10 @@
 ### Description
 
-_PR description_
+[_PR description_]
 
 ### Issue Link
 
-_link issue here_
+[_link issue here_]
 
 ### Type of change
 
@@ -15,12 +15,12 @@ _link issue here_
 
 ### Contents
 
-- _item_
+- [_item_]
 
 ### Rationale
 
-_design decisions and extended information_
+[_design decisions and extended information_]
 
 ### How Has This Been Tested?
 
-_explanation_
+[_explanation_]
