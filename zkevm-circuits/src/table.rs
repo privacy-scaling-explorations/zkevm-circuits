@@ -40,7 +40,7 @@ pub trait LookupTable<F: Field> {
             .collect()
     }
 
-    /// Retunrs the String annotations associated to each column of the table.
+    /// Returns the String annotations associated to each column of the table.
     fn annotations(&self) -> Vec<String>;
 
     /// Return the list of expressions used to define the lookup table.
@@ -60,8 +60,7 @@ pub trait LookupTable<F: Field> {
             .for_each(|(&col, ann)| cs.annotate_lookup_any_column(col, || ann))
     }
 
-    /// Annotates a lookup table by passing annotations for each of it's
-    /// columns.
+    /// Annotates columns of a table embedded within a circuit region.
     fn annotate_columns_in_region(&self, region: &mut Region<F>) {
         self.columns()
             .iter()

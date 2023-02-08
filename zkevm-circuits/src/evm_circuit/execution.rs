@@ -2,7 +2,7 @@ use super::{
     param::{
         BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
-        RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
     util::{CachedRegion, CellManager, StoredExpression},
 };
@@ -327,9 +327,9 @@ impl<F: Field> ExecutionConfig<F> {
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < *EVM_LOOKUP_COLS {
+                if n < EVM_LOOKUP_COLS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < *EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
+                } else if n < EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -956,77 +956,32 @@ impl<F: Field> ExecutionConfig<F> {
     }
 
     fn annotate_circuit(&self, region: &mut Region<F>) {
-        let mut acc = 0usize;
-
-        self.advices.iter().enumerate().for_each(|(idx, &col)| {
-            if idx < FIXED_TABLE_LOOKUPS {
-                region.name_column(|| format!("EVM_lookup_fixed_{}", idx), col);
-                acc += FIXED_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + TX_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_tx_{}", idx % acc + TX_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += TX_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + RW_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_rw_{}", idx % acc + RW_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += RW_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + BYTECODE_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_bytecode_{}", idx % acc + BYTECODE_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += BYTECODE_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + BLOCK_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_block_{}", idx % acc + BLOCK_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += BLOCK_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + COPY_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_copy_{}", idx % acc + COPY_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += COPY_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + KECCAK_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_keccak_{}", idx % acc + KECCAK_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += KECCAK_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + EXP_TABLE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_exp_{}", idx % acc + EXP_TABLE_LOOKUPS),
-                    col,
-                );
-                acc += EXP_TABLE_LOOKUPS;
-            } else if acc < idx && idx < acc + N_PHASE2_COLUMNS {
-                region.name_column(
-                    || format!("EVM_Adv_Phase2_{}", idx % acc + N_PHASE2_COLUMNS),
-                    col,
-                );
-                acc += N_PHASE2_COLUMNS;
-            } else if acc < idx && idx < acc + N_COPY_COLUMNS {
-                region.name_column(|| format!("EVM_copy_{}", idx % acc + N_COPY_COLUMNS), col);
-                acc += N_COPY_COLUMNS;
-            } else if acc < idx && idx < acc + N_BYTE_LOOKUPS {
-                region.name_column(
-                    || format!("EVM_lookup_byte_{}", idx % acc + N_BYTE_LOOKUPS),
-                    col,
-                );
-                // This is the last reserved section. The rest are Phase1 colums. So we reset
-                // acc to have an index that starts from 0 in order to annotate
-                // them.
-                acc = 0;
-            } else {
-                region.name_column(|| format!("EVM_Adv_Phase2_{}", idx), col);
-                acc += 1;
+        let groups = [
+            ("EVM_lookup_fixed", FIXED_TABLE_LOOKUPS),
+            ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
+            ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
+            ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
+            ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
+            ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
+            ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
+            ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_adv_phase2", N_PHASE2_COLUMNS),
+            ("EVM_copy", N_COPY_COLUMNS),
+            ("EVM_lookup_byte", N_BYTE_LOOKUPS),
+            ("EVM_adv_phase1", N_PHASE1_COLUMNS),
+        ];
+        let mut group_index = 0;
+        let mut index = 0;
+        for col in self.advices {
+            let (name, length) = groups[group_index];
+            region.name_column(|| format!("{}_{}", name, index), col);
+            index += 1;
+            if index >= length {
+                index = 0;
+                group_index += 1;
             }
-        });
+        }
+
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);
