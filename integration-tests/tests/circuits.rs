@@ -7,8 +7,7 @@ macro_rules! declare_tests {
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
                 let pk = if $real_prover { Some((*EVM_CIRCUIT_KEY).clone()) } else { None };
                 let (builder, _) = gen_inputs(*block_num).await;
-                let mut block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-                block.circuits_params.max_evm_rows = 0;
+                let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
                 let rows_required = EvmCircuit::get_min_num_rows_required(&block);
                 if rows_required > rows_required {
                     panic!("EVM circuit not enough rows {}, required {}", rows_required, rows_required);
