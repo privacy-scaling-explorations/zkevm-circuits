@@ -25,34 +25,63 @@ use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
-/// Trait used for dynamic tables.  Used to get an automatic implementation of
-/// the LookupTable trait where each `table_expr` is a query to each column at
-/// `Rotation::cur`.
-pub trait DynamicTableColumns {
-    /// Returns the list of advice columns following the table order.
-    fn columns(&self) -> Vec<Column<Advice>>;
-}
-
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {
-    /// Return the list of expressions used to define the lookup table.
-    fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>>;
-}
+    /// Returns the list of ALL the table columns following the table order.
+    fn columns(&self) -> Vec<Column<Any>>;
 
-impl<F: Field, T: DynamicTableColumns> LookupTable<F> for T {
+    /// Returns the list of ALL the table advice columns following the table
+    /// order.
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        self.columns()
+            .iter()
+            .map(|&col| col.try_into())
+            .filter_map(|res| res.ok())
+            .collect()
+    }
+
+    /// Returns the String annotations associated to each column of the table.
+    fn annotations(&self) -> Vec<String>;
+
+    /// Return the list of expressions used to define the lookup table.
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.columns()
             .iter()
-            .map(|column| meta.query_advice(*column, Rotation::cur()))
+            .map(|&column| meta.query_any(column, Rotation::cur()))
             .collect()
+    }
+
+    /// Annotates a lookup table by passing annotations for each of it's
+    /// columns.
+    fn annotate_columns(&self, cs: &mut ConstraintSystem<F>) {
+        self.columns()
+            .iter()
+            .zip(self.annotations().iter())
+            .for_each(|(&col, ann)| cs.annotate_lookup_any_column(col, || ann))
+    }
+
+    /// Annotates columns of a table embedded within a circuit region.
+    fn annotate_columns_in_region(&self, region: &mut Region<F>) {
+        self.columns()
+            .iter()
+            .zip(self.annotations().iter())
+            .for_each(|(&col, ann)| region.name_column(|| ann, col))
     }
 }
 
-impl<F: Field, C: Into<Column<Any>> + Clone, const W: usize> LookupTable<F> for [C; W] {
+impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [C; W] {
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.iter()
-            .map(|column| meta.query_any(column.clone(), Rotation::cur()))
+            .map(|column| meta.query_any(*column, Rotation::cur()))
             .collect()
+    }
+
+    fn columns(&self) -> Vec<Column<Any>> {
+        self.iter().map(|&col| col.into()).collect()
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![]
     }
 }
 
@@ -183,6 +212,24 @@ impl TxTable {
 }
 
 impl<F: Field> LookupTable<F> for TxTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.tx_id.into(),
+            self.tag.into(),
+            self.index.into(),
+            self.value.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tx_id"),
+            String::from("tag"),
+            String::from("index"),
+            String::from("value"),
+        ]
+    }
+
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.tx_id, Rotation::cur()),
@@ -368,20 +415,36 @@ pub struct RwTable {
     pub aux2: Column<Advice>,
 }
 
-impl DynamicTableColumns for RwTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
+impl<F: Field> LookupTable<F> for RwTable {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.rw_counter,
-            self.is_write,
-            self.tag,
-            self.id,
-            self.address,
-            self.field_tag,
-            self.storage_key,
-            self.value,
-            self.value_prev,
-            self.aux1,
-            self.aux2,
+            self.rw_counter.into(),
+            self.is_write.into(),
+            self.tag.into(),
+            self.id.into(),
+            self.address.into(),
+            self.field_tag.into(),
+            self.storage_key.into(),
+            self.value.into(),
+            self.value_prev.into(),
+            self.aux1.into(),
+            self.aux2.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("rw_counter"),
+            String::from("is_write"),
+            String::from("tag"),
+            String::from("id"),
+            String::from("address"),
+            String::from("field_tag"),
+            String::from("storage_key"),
+            String::from("value"),
+            String::from("value_prev"),
+            String::from("aux1"),
+            String::from("aux2"),
         ]
     }
 }
@@ -493,9 +556,21 @@ impl From<AccountFieldTag> for ProofType {
 #[derive(Clone, Copy, Debug)]
 pub struct MptTable([Column<Advice>; 7]);
 
-impl DynamicTableColumns for MptTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        self.0.to_vec()
+impl<F: Field> LookupTable<F> for MptTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        self.0.iter().map(|&col| col.into()).collect()
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("Address"),
+            String::from("Storage key"),
+            String::from("Proof type"),
+            String::from("New root"),
+            String::from("Old root"),
+            String::from("New value"),
+            String::from("Old value"),
+        ]
     }
 }
 
@@ -601,7 +676,7 @@ impl BytecodeTable {
             || "bytecode table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                for column in <BytecodeTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "bytecode table all-zero row",
                         column,
@@ -611,13 +686,14 @@ impl BytecodeTable {
                 }
                 offset += 1;
 
-                let bytecode_table_columns = self.columns();
+                let bytecode_table_columns =
+                    <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone() {
                     for row in bytecode.table_assignments(challenges) {
-                        for (column, value) in bytecode_table_columns.iter().zip_eq(row) {
+                        for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),
-                                *column,
+                                column,
                                 offset,
                                 || value,
                             )?;
@@ -631,14 +707,24 @@ impl BytecodeTable {
     }
 }
 
-impl DynamicTableColumns for BytecodeTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
+impl<F: Field> LookupTable<F> for BytecodeTable {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash,
-            self.tag,
-            self.index,
-            self.is_code,
-            self.value,
+            self.code_hash.into(),
+            self.tag.into(),
+            self.index.into(),
+            self.is_code.into(),
+            self.value.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("code_hash"),
+            String::from("tag"),
+            String::from("index"),
+            String::from("is_code"),
+            String::from("value"),
         ]
     }
 }
@@ -699,7 +785,7 @@ impl BlockTable {
             || "block table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                for column in <BlockTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "block table all-zero row",
                         column,
@@ -709,12 +795,12 @@ impl BlockTable {
                 }
                 offset += 1;
 
-                let block_table_columns = self.columns();
+                let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(self);
                 for row in block.table_assignments(randomness) {
-                    for (column, value) in block_table_columns.iter().zip_eq(row) {
+                    for (&column, value) in block_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("block table row {}", offset),
-                            *column,
+                            column,
                             offset,
                             || value,
                         )?;
@@ -728,9 +814,17 @@ impl BlockTable {
     }
 }
 
-impl DynamicTableColumns for BlockTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![self.tag, self.index, self.value]
+impl<F: Field> LookupTable<F> for BlockTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![self.tag.into(), self.index.into(), self.value.into()]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tag"),
+            String::from("index"),
+            String::from("value"),
+        ]
     }
 }
 
@@ -745,6 +839,26 @@ pub struct KeccakTable {
     pub input_len: Column<Advice>,
     /// RLC of the hash result
     pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+}
+
+impl<F: Field> LookupTable<F> for KeccakTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.is_enabled.into(),
+            self.input_rlc.into(),
+            self.input_len.into(),
+            self.output_rlc.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("is_enabled"),
+            String::from("input_rlc"),
+            String::from("input_len"),
+            String::from("output_rlc"),
+        ]
+    }
 }
 
 impl KeccakTable {
@@ -792,8 +906,11 @@ impl KeccakTable {
         offset: usize,
         values: [Value<F>; 4],
     ) -> Result<(), Error> {
-        for (column, value) in self.columns().iter().zip(values.iter()) {
-            region.assign_advice(|| format!("assign {}", offset), *column, offset, || *value)?;
+        for (&column, value) in <KeccakTable as LookupTable<F>>::advice_columns(self)
+            .iter()
+            .zip(values.iter())
+        {
+            region.assign_advice(|| format!("assign {}", offset), column, offset, || *value)?;
         }
         Ok(())
     }
@@ -810,7 +927,7 @@ impl KeccakTable {
             || "keccak table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                for column in <KeccakTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "keccak table all-zero row",
                         column,
@@ -820,14 +937,14 @@ impl KeccakTable {
                 }
                 offset += 1;
 
-                let keccak_table_columns = self.columns();
+                let keccak_table_columns = <KeccakTable as LookupTable<F>>::advice_columns(self);
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
                         // let mut column_index = 0;
-                        for (column, value) in keccak_table_columns.iter().zip_eq(row) {
+                        for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("keccak table row {}", offset),
-                                *column,
+                                column,
                                 offset,
                                 || value,
                             )?;
@@ -852,17 +969,6 @@ impl KeccakTable {
             (value_rlc, self.input_rlc),
             (length, self.input_len),
             (code_hash, self.output_rlc),
-        ]
-    }
-}
-
-impl DynamicTableColumns for KeccakTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        vec![
-            self.is_enabled,
-            self.input_rlc,
-            self.input_len,
-            self.output_rlc,
         ]
     }
 }
@@ -1075,7 +1181,7 @@ impl CopyTable {
             || "copy table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                for column in <CopyTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "copy table all-zero row",
                         column,
@@ -1086,13 +1192,13 @@ impl CopyTable {
                 offset += 1;
 
                 let tag_chip = BinaryNumberChip::construct(self.tag);
-                let copy_table_columns = self.columns();
+                let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
-                        for (column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
+                        for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("{} at row: {}", label, offset),
-                                *column,
+                                column,
                                 offset,
                                 || value,
                             )?;
@@ -1108,22 +1214,33 @@ impl CopyTable {
     }
 }
 
-impl CopyTable {
-    pub(crate) fn columns(&self) -> Vec<Column<Advice>> {
+impl<F: Field> LookupTable<F> for CopyTable {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.is_first,
-            self.id,
-            self.addr,
-            self.src_addr_end,
-            self.bytes_left,
-            self.rlc_acc,
-            self.rw_counter,
-            self.rwc_inc_left,
+            self.is_first.into(),
+            self.id.into(),
+            self.addr.into(),
+            self.src_addr_end.into(),
+            self.bytes_left.into(),
+            self.rlc_acc.into(),
+            self.rw_counter.into(),
+            self.rwc_inc_left.into(),
         ]
     }
-}
 
-impl<F: Field> LookupTable<F> for CopyTable {
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("is_first"),
+            String::from("id"),
+            String::from("addr"),
+            String::from("src_addr_end"),
+            String::from("bytes_left"),
+            String::from("rlc_acc"),
+            String::from("rw_counter"),
+            String::from("rwc_inc_left"),
+        ]
+    }
+
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_first, Rotation::cur()),
@@ -1160,20 +1277,6 @@ pub struct ExpTable {
     pub exponent_lo_hi: Column<Advice>,
     /// The intermediate result of exponentiation by squaring.
     pub exponentiation_lo_hi: Column<Advice>,
-}
-
-impl ExpTable {
-    /// Get the list of columns associated with the exponentiation table.
-    pub fn columns(&self) -> Vec<Column<Advice>> {
-        vec![
-            self.is_step,
-            self.identifier,
-            self.is_last,
-            self.base_limb,
-            self.exponent_lo_hi,
-            self.exponentiation_lo_hi,
-        ]
-    }
 }
 
 impl ExpTable {
@@ -1283,13 +1386,13 @@ impl ExpTable {
             || "exponentiation table",
             |mut region| {
                 let mut offset = 0;
-                let exp_table_columns = self.columns();
+                let exp_table_columns = <ExpTable as LookupTable<F>>::advice_columns(self);
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
-                        for (column, value) in exp_table_columns.iter().zip_eq(row) {
+                        for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("exponentiation table row {}", offset),
-                                *column,
+                                column,
                                 offset,
                                 || Value::known(value),
                             )?;
@@ -1300,10 +1403,10 @@ impl ExpTable {
 
                 // pad an empty row
                 let row = [F::from_u128(0); 6];
-                for (column, value) in exp_table_columns.iter().zip_eq(row) {
+                for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),
-                        *column,
+                        column,
                         offset,
                         || Value::known(value),
                     )?;
@@ -1316,6 +1419,28 @@ impl ExpTable {
 }
 
 impl<F: Field> LookupTable<F> for ExpTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        vec![
+            self.is_step.into(),
+            self.identifier.into(),
+            self.is_last.into(),
+            self.base_limb.into(),
+            self.exponent_lo_hi.into(),
+            self.exponentiation_lo_hi.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("is_step"),
+            String::from("identifier"),
+            String::from("is_last"),
+            String::from("base_limb"),
+            String::from("exponent_lo_hi"),
+            String::from("exponentiation_lo_hi"),
+        ]
+    }
+
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
             meta.query_advice(self.is_step, Rotation::cur()),
