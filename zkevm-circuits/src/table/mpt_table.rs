@@ -1,5 +1,5 @@
 use crate::table::LookupTable;
-use crate::witness::{MptUpdateRow, MptUpdates};
+use crate::witness::MptUpdates;
 use eth_types::Field;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::plonk::{Any, SecondPhase};
@@ -62,19 +62,6 @@ impl MptTable {
                 offset,
                 || value,
             )?;
-        }
-        Ok(())
-    }
-
-    // todo
-    pub(crate) fn assign<F: Field>(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        row: &MptUpdateRow<Value<F>>,
-    ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row.values()) {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
         }
         Ok(())
     }
