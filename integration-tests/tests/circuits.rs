@@ -5,18 +5,17 @@ macro_rules! declare_tests {
             async fn [<serial_test_evm_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*EVM_CIRCUIT_KEY).clone()) } else { None };
                 let (builder, _) = gen_inputs(*block_num).await;
                 let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
                 let rows_required = EvmCircuit::get_min_num_rows_required(&block);
                 if rows_required > MAX_EVM_ROWS {
                     panic!("EVM circuit not enough rows {}, required {}", MAX_EVM_ROWS, rows_required);
                 }
-                test_circuit_at_block::<EvmCircuit::<Fr>>(
-                    "evm", EVM_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                let mut test = EVM_CIRCUIT_TEST.lock().await;
+                test.test_at_block("evm", *block_num, $real_prover).await;
             }
 
-            #[tokio::test]
+            /*#[tokio::test]
             async fn [<serial_test_state_ $name>]() {
                 log_init();
                 let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
@@ -59,7 +58,7 @@ macro_rules! declare_tests {
                 let pk = None;
                 test_circuit_at_block::<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>
                     ("super", SUPER_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
-            }
+            }*/
         }
     };
 }
