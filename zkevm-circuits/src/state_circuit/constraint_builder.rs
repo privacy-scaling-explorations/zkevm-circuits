@@ -9,7 +9,7 @@ use crate::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
-    table::{AccountFieldTag, ProofType, RwTableTag},
+    table::{rw_table::RwTableTag, AccountFieldTag, ProofType},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;

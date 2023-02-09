@@ -13,7 +13,7 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::{util::constraint_builder::BaseConstraintBuilder, witness::Block},
-    table::{ExpTable, LookupTable},
+    table::{exp_table::ExpTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -329,28 +329,7 @@ impl<F: Field> ExpCircuitConfig<F> {
                 }
 
                 // assign exp table.
-                offset = 0usize;
-                for exp_event in block.exp_events.iter() {
-                    for step_assignments in
-                        ExpTable::assignments::<F>(exp_event).chunks_exact(OFFSET_INCREMENT)
-                    {
-                        for (i, assignment) in step_assignments.iter().enumerate() {
-                            for (column, value) in
-                                <ExpTable as LookupTable<F>>::advice_columns(&self.exp_table)
-                                    .iter()
-                                    .zip(assignment)
-                            {
-                                region.assign_advice(
-                                    || format!("exp circuit: {:?}: {}", *column, offset + i),
-                                    *column,
-                                    offset + i,
-                                    || Value::known(*value),
-                                )?;
-                            }
-                        }
-                        offset += OFFSET_INCREMENT;
-                    }
-                }
+                self.exp_table.load_with_region(&mut region, block)?;
 
                 self.assign_padding_rows(&mut region, offset)?;
 

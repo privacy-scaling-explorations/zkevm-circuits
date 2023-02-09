@@ -22,16 +22,20 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use crate::witness::{Bytecode, RwMap, Transaction};
+use crate::witness::{Bytecode, RwMap};
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
     table::{
-        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
-        TxContextFieldTag, TxTable,
+        bytecode_table::{BytecodeFieldTag, BytecodeTable},
+        copy_table::CopyTable,
+        rw_table::{RwTable, RwTableTag},
+        tx_table::{TxContextFieldTag, TxTable},
+        LookupTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
+use eth_types::geth_types::Transaction;
 
 /// Encode the type `NumberOrHash` into a field element
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
@@ -738,7 +742,12 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
-                txs: block.txs.clone(),
+                txs: block
+                    .eth_block
+                    .transactions
+                    .iter()
+                    .map(|tx| tx.into())
+                    .collect(),
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws.clone(),
                 bytecodes: block.bytecodes.clone(),
@@ -786,7 +795,7 @@ pub mod dev {
     use crate::witness::Block;
 
     use crate::{
-        table::{BytecodeTable, RwTable, TxTable},
+        table::{bytecode_table::BytecodeTable, rw_table::RwTable, tx_table::TxTable},
         util::Challenges,
     };
 
@@ -834,6 +843,7 @@ pub mod dev {
                 &mut layouter,
                 &self.external_data.txs,
                 self.external_data.max_txs,
+                None,
                 &challenge_values,
             )?;
 
@@ -880,7 +890,12 @@ pub mod dev {
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
-                txs: block.txs,
+                txs: block
+                    .eth_block
+                    .transactions
+                    .iter()
+                    .map(|tx| tx.into())
+                    .collect(),
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws,
                 bytecodes: block.bytecodes,

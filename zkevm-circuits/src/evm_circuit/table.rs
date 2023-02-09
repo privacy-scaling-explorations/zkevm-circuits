@@ -1,6 +1,6 @@
 use crate::evm_circuit::step::ExecutionState;
 use crate::impl_expr;
-pub use crate::table::TxContextFieldTag;
+pub use crate::table::tx_table::TxContextFieldTag;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use gadgets::util::Expr;

@@ -11,7 +11,7 @@ use crate::{
         param::{N_BYTES_WORD, STACK_CAPACITY},
         step::ExecutionState,
     },
-    table::RwTableTag,
+    table::rw_table::RwTableTag,
 };
 
 /// Step executed in a transaction

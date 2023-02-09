@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use crate::evm_circuit::util::rlc;
 use crate::table::{
-    AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
+    rw_table::RwTableTag, AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
 };
 use crate::util::build_tx_log_address;
 
@@ -55,18 +55,7 @@ impl RwMap {
             1
         }
     }
-    /// Prepad Rw::Start rows to target length
-    pub fn table_assignments_prepad(rows: &[Rw], target_len: usize) -> (Vec<Rw>, usize) {
-        // Remove Start rows as we will add them from scratch.
-        let rows: Vec<Rw> = rows
-            .iter()
-            .skip_while(|rw| matches!(rw, Rw::Start { .. }))
-            .cloned()
-            .collect();
-        let padding_length = Self::padding_len(rows.len(), target_len);
-        let padding = (1..=padding_length).map(|rw_counter| Rw::Start { rw_counter });
-        (padding.chain(rows.into_iter()).collect(), padding_length)
-    }
+
     /// Build Rws for assignment
     pub fn table_assignments(&self) -> Vec<Rw> {
         let mut rows: Vec<Rw> = self.0.values().flatten().cloned().collect();

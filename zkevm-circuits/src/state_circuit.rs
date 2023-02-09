@@ -9,7 +9,11 @@ mod test;
 
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
+    table::{
+        mpt_table::MptTable,
+        rw_table::{RwTable, RwTableTag},
+        AccountFieldTag, LookupTable, ProofType,
+    },
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -203,7 +207,7 @@ impl<F: Field> StateCircuitConfig<F> {
     ) -> Result<(), Error> {
         let tag_chip = BinaryNumberChip::construct(self.sort_keys.tag);
 
-        let (rows, padding_length) = RwMap::table_assignments_prepad(rows, n_rows);
+        let (rows, padding_length) = self.rw_table.assignments_prepad(rows, n_rows);
         let rows_len = rows.len();
         let rows = rows.iter();
         let prev_rows = once(None).chain(rows.clone().map(Some));

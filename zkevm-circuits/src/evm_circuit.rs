@@ -14,7 +14,9 @@ pub(crate) mod util;
 pub mod table;
 
 use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
+    block_table::BlockTable, bytecode_table::BytecodeTable, copy_table::CopyTable,
+    exp_table::ExpTable, keccak_table::KeccakTable, rw_table::RwTable, tx_table::TxTable,
+    LookupTable,
 };
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 pub use crate::witness;
@@ -285,7 +287,10 @@ pub mod test {
     use super::*;
     use crate::{
         evm_circuit::{witness::Block, EvmCircuitConfig},
-        table::{BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, RwTable, TxTable},
+        table::{
+            block_table::BlockTable, bytecode_table::BytecodeTable, copy_table::CopyTable,
+            exp_table::ExpTable, keccak_table::KeccakTable, rw_table::RwTable, tx_table::TxTable,
+        },
         util::Challenges,
     };
 
@@ -370,8 +375,14 @@ pub mod test {
 
             config.tx_table.load(
                 &mut layouter,
-                &block.txs,
+                &block
+                    .eth_block
+                    .transactions
+                    .iter()
+                    .map(|tx| tx.into())
+                    .collect(),
                 block.circuits_params.max_txs,
+                None,
                 &challenges,
             )?;
             block.rws.check_rw_counter_sanity();

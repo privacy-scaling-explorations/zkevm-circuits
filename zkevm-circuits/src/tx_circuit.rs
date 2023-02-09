@@ -6,21 +6,21 @@
 
 pub mod sign_verify;
 
-use crate::table::{KeccakTable, TxFieldTag, TxTable};
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
+use crate::table::{keccak_table::KeccakTable, tx_table::TxTable};
+use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
-    {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
+    {geth_types::Transaction, Field},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 use itertools::Itertools;
 use log::error;
-use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
+use sign_verify::{SignVerifyChip, SignVerifyConfig};
 use std::marker::PhantomData;
 
 pub use halo2_proofs::halo2curves::{
@@ -42,13 +42,10 @@ pub(crate) const TX_LEN: usize = 10;
 /// Config for TxCircuit
 #[derive(Clone, Debug)]
 pub struct TxCircuitConfig<F: Field> {
-    tx_id: Column<Advice>,
-    tag: Column<Fixed>,
-    index: Column<Advice>,
-    value: Column<Advice>,
     sign_verify: SignVerifyConfig,
     _marker: PhantomData<F>,
     // External tables
+    tx_table: TxTable,
     keccak_table: KeccakTable,
 }
 
@@ -74,20 +71,13 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let tx_id = tx_table.tx_id;
-        let tag = tx_table.tag;
-        let index = tx_table.index;
-        let value = tx_table.value;
-        meta.enable_equality(value);
+        meta.enable_equality(tx_table.value);
 
         let sign_verify = SignVerifyConfig::new(meta, keccak_table.clone(), challenges);
 
         Self {
-            tx_id,
-            tag,
-            index,
-            value,
             sign_verify,
+            tx_table,
             keccak_table,
             _marker: PhantomData,
         }
@@ -98,38 +88,6 @@ impl<F: Field> TxCircuitConfig<F> {
     /// Load ECDSA RangeChip table.
     pub fn load_aux_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.sign_verify.load_range(layouter)
-    }
-
-    /// Assigns a tx circuit row and returns the assigned cell of the value in
-    /// the row.
-    fn assign_row(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        tx_id: usize,
-        tag: TxFieldTag,
-        index: usize,
-        value: Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
-        region.assign_advice(
-            || "tx_id",
-            self.tx_id,
-            offset,
-            || Value::known(F::from(tx_id as u64)),
-        )?;
-        region.assign_fixed(
-            || "tag",
-            self.tag,
-            offset,
-            || Value::known(F::from(tag as u64)),
-        )?;
-        region.assign_advice(
-            || "index",
-            self.index,
-            offset,
-            || Value::known(F::from(index as u64)),
-        )?;
-        region.assign_advice(|| "value", self.value, offset, || value)
     }
 
     /// Get number of rows required.
@@ -173,147 +131,6 @@ impl<F: Field> TxCircuit<F> {
     pub fn min_num_rows(txs_len: usize, call_data_len: usize) -> usize {
         let tx_table_len = txs_len * TX_LEN + call_data_len;
         std::cmp::max(tx_table_len, SignVerifyChip::<F>::min_num_rows(txs_len))
-    }
-
-    fn assign_tx_table(
-        &self,
-        config: &TxCircuitConfig<F>,
-        challenges: &Challenges<Value<F>>,
-        layouter: &mut impl Layouter<F>,
-        assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "tx table",
-            |mut region| {
-                let mut offset = 0;
-                // Empty entry
-                config.assign_row(
-                    &mut region,
-                    offset,
-                    0,
-                    TxFieldTag::Null,
-                    0,
-                    Value::known(F::zero()),
-                )?;
-                offset += 1;
-                // Assign al Tx fields except for call data
-                let tx_default = Transaction::default();
-                for (i, assigned_sig_verif) in assigned_sig_verifs.iter().enumerate() {
-                    let tx = if i < self.txs.len() {
-                        &self.txs[i]
-                    } else {
-                        &tx_default
-                    };
-
-                    for (tag, value) in [
-                        (
-                            TxFieldTag::Nonce,
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.nonce.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            TxFieldTag::Gas,
-                            Value::known(F::from(tx.gas_limit.as_u64())),
-                        ),
-                        (
-                            TxFieldTag::GasPrice,
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.gas_price.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            TxFieldTag::CallerAddress,
-                            Value::known(tx.from.to_scalar().expect("tx.from too big")),
-                        ),
-                        (
-                            TxFieldTag::CalleeAddress,
-                            Value::known(
-                                tx.to
-                                    .unwrap_or_else(Address::zero)
-                                    .to_scalar()
-                                    .expect("tx.to too big"),
-                            ),
-                        ),
-                        (
-                            TxFieldTag::IsCreate,
-                            Value::known(F::from(tx.to.is_none() as u64)),
-                        ),
-                        (
-                            TxFieldTag::Value,
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.value.to_le_bytes(), challenge)),
-                        ),
-                        (
-                            TxFieldTag::CallDataLength,
-                            Value::known(F::from(tx.call_data.0.len() as u64)),
-                        ),
-                        (
-                            TxFieldTag::CallDataGasCost,
-                            Value::known(F::from(
-                                tx.call_data
-                                    .0
-                                    .iter()
-                                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
-                            )),
-                        ),
-                        (
-                            TxFieldTag::TxSignHash,
-                            assigned_sig_verif.msg_hash_rlc.value().copied(),
-                        ),
-                    ] {
-                        let assigned_cell =
-                            config.assign_row(&mut region, offset, i + 1, tag, 0, value)?;
-                        offset += 1;
-
-                        // Ref. spec 0. Copy constraints using fixed offsets between the tx rows and
-                        // the SignVerifyChip
-                        match tag {
-                            TxFieldTag::CallerAddress => region.constrain_equal(
-                                assigned_cell.cell(),
-                                assigned_sig_verif.address.cell(),
-                            )?,
-                            TxFieldTag::TxSignHash => region.constrain_equal(
-                                assigned_cell.cell(),
-                                assigned_sig_verif.msg_hash_rlc.cell(),
-                            )?,
-                            _ => (),
-                        }
-                    }
-                }
-
-                // Assign call data
-                let mut calldata_count = 0;
-                for (i, tx) in self.txs.iter().enumerate() {
-                    for (index, byte) in tx.call_data.0.iter().enumerate() {
-                        assert!(calldata_count < self.max_calldata);
-                        config.assign_row(
-                            &mut region,
-                            offset,
-                            i + 1, // tx_id
-                            TxFieldTag::CallData,
-                            index,
-                            Value::known(F::from(*byte as u64)),
-                        )?;
-                        offset += 1;
-                        calldata_count += 1;
-                    }
-                }
-                for _ in calldata_count..self.max_calldata {
-                    config.assign_row(
-                        &mut region,
-                        offset,
-                        0, // tx_id
-                        TxFieldTag::CallData,
-                        0,
-                        Value::known(F::zero()),
-                    )?;
-                    offset += 1;
-                }
-                Ok(())
-            },
-        )
     }
 }
 
@@ -371,7 +188,13 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         let assigned_sig_verifs =
             self.sign_verify
                 .assign(&config.sign_verify, layouter, &sign_datas, challenges)?;
-        self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
+        config.tx_table.load(
+            layouter,
+            &self.txs,
+            self.max_txs,
+            Some(assigned_sig_verifs),
+            challenges,
+        )?;
         Ok(())
     }
 
@@ -475,7 +298,7 @@ mod tx_circuit_tests {
                     .collect_vec(),
                 mock::MOCK_CHAIN_ID.as_u64(),
                 MAX_TXS,
-                MAX_CALLDATA
+                MAX_CALLDATA,
             ),
             Ok(())
         );

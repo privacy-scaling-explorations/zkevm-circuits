@@ -1,6 +1,6 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, rw_table::RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     util::SubCircuit,
     witness::{MptUpdates, Rw, RwMap},
 };
@@ -44,13 +44,16 @@ pub enum AdviceColumn {
     TagBit1,
     TagBit2,
     TagBit3,
-    LimbIndexBit0, // most significant bit
+    LimbIndexBit0,
+    // most significant bit
     LimbIndexBit1,
     LimbIndexBit2,
     LimbIndexBit3,
-    LimbIndexBit4, // least significant bit
+    LimbIndexBit4,
+    // least significant bit
     InitialValue,
-    IsZero, // committed_value and value are 0
+    IsZero,
+    // committed_value and value are 0
     // NonEmptyWitness is the BatchedIsZero chip witness that contains the
     // inverse of the non-zero value if any in [committed_value, value]
     NonEmptyWitness,

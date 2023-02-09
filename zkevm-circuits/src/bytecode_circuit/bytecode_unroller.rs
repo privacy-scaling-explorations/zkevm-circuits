@@ -1,5 +1,5 @@
 use crate::{
-    table::BytecodeFieldTag,
+    table::bytecode_table::BytecodeFieldTag,
     util::{get_push_size, keccak},
 };
 use eth_types::{Field, Word};

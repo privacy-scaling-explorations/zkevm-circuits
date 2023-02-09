@@ -6,8 +6,8 @@ use crate::{
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-        TxLogFieldTag, TxReceiptFieldTag,
+        bytecode_table::BytecodeFieldTag, rw_table::RwTableTag, tx_table::TxContextFieldTag,
+        AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag,
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };

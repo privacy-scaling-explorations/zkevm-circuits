@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
+    table::{tx_table::TxFieldTag as TxContextFieldTag, AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};

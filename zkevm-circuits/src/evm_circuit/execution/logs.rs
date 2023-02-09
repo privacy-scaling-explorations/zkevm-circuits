@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
+    table::{rw_table::RwTableTag, CallContextFieldTag, TxLogFieldTag},
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;

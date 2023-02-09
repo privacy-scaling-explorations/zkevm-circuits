@@ -18,7 +18,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, TxContextFieldTag},
+    table::{tx_table::TxContextFieldTag, CallContextFieldTag},
     util::Expr,
 };
 

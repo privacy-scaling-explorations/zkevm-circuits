@@ -4,21 +4,23 @@ use std::marker::PhantomData;
 
 use eth_types::geth_types::BlockConstants;
 use eth_types::sign_types::SignData;
-use eth_types::H256;
 use eth_types::{
-    geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
-    Word,
+    geth_types::Transaction, Address, BigEndianHash, Field, ToLittleEndian, ToScalar, Word,
 };
+use eth_types::{ToWord, H256};
 use halo2_proofs::plonk::{Instance, SecondPhase};
 use keccak256::plain::Keccak;
 use mock::MOCK_CHAIN_ID;
 
-use crate::table::BlockTable;
-use crate::table::TxFieldTag;
-use crate::table::TxTable;
+use crate::evm_circuit::util::rlc;
+use crate::table::{
+    block_table::BlockTable,
+    tx_table::{TxFieldTag, TxTable},
+};
 use crate::tx_circuit::TX_LEN;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
+use crate::witness::BlockContext;
 use gadgets::is_zero::IsZeroChip;
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
@@ -33,24 +35,12 @@ const EXTRA_LEN: usize = 2;
 const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
 
-/// Values of the block table (as in the spec)
-#[derive(Clone, Default, Debug)]
-pub struct BlockValues {
-    coinbase: Address,
-    gas_limit: u64,
-    number: u64,
-    timestamp: u64,
-    difficulty: Word,
-    base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
-    chain_id: u64,
-    history_hashes: Vec<H256>,
-}
-
 /// Values of the tx table (as in the spec)
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
     nonce: Word,
-    gas: Word, //gas limit
+    gas: Word,
+    //gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
@@ -102,24 +92,22 @@ impl Default for PublicData {
 
 impl PublicData {
     /// Returns struct with values for the block table
-    pub fn get_block_table_values(&self) -> BlockValues {
+    pub fn get_block_table_context(&self) -> BlockContext {
         let history_hashes = [
-            vec![H256::zero(); 256 - self.history_hashes.len()],
-            self.history_hashes
-                .iter()
-                .map(|&hash| H256::from(hash.to_be_bytes()))
-                .collect(),
+            vec![H256::zero().to_word(); 256 - self.history_hashes.len()],
+            self.history_hashes.clone(),
         ]
         .concat();
-        BlockValues {
+
+        BlockContext {
             coinbase: self.block_constants.coinbase,
             gas_limit: self.block_constants.gas_limit.as_u64(),
-            number: self.block_constants.number.as_u64(),
-            timestamp: self.block_constants.timestamp.as_u64(),
+            number: self.block_constants.number.low_u64().into(),
+            timestamp: self.block_constants.timestamp,
             difficulty: self.block_constants.difficulty,
             base_fee: self.block_constants.base_fee,
-            chain_id: self.chain_id.as_u64(),
             history_hashes,
+            chain_id: self.chain_id,
         }
     }
 
@@ -823,7 +811,7 @@ impl<F: Field> PiCircuitConfig<F> {
     fn assign_block_table(
         &self,
         region: &mut Region<'_, F>,
-        block_values: BlockValues,
+        block_values: &BlockContext,
         randomness: F,
         raw_pi_vals: &mut [F],
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -833,12 +821,8 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // zero row
-        region.assign_advice(
-            || "zero",
-            self.block_table.value,
-            offset,
-            || Value::known(F::zero()),
-        )?;
+        self.block_table
+            .assign_row(region, offset, [Value::known(F::zero()); 3])?;
         region.assign_advice(
             || "zero",
             self.raw_public_inputs,
@@ -883,7 +867,7 @@ impl<F: Field> PiCircuitConfig<F> {
         offset += 1;
 
         // number
-        let number = F::from(block_values.number);
+        let number = block_values.number.to_scalar().unwrap();
         region.assign_advice(
             || "number",
             self.block_table.value,
@@ -900,7 +884,7 @@ impl<F: Field> PiCircuitConfig<F> {
         offset += 1;
 
         // timestamp
-        let timestamp = F::from(block_values.timestamp);
+        let timestamp = block_values.timestamp.to_scalar().unwrap();
         region.assign_advice(
             || "timestamp",
             self.block_table.value,
@@ -951,7 +935,7 @@ impl<F: Field> PiCircuitConfig<F> {
         offset += 1;
 
         // chain_id
-        let chain_id = F::from(block_values.chain_id);
+        let chain_id = block_values.chain_id.to_scalar().unwrap();
         region.assign_advice(
             || "chain_id",
             self.block_table.value,
@@ -967,8 +951,8 @@ impl<F: Field> PiCircuitConfig<F> {
         raw_pi_vals[offset] = chain_id;
         offset += 1;
 
-        for prev_hash in block_values.history_hashes {
-            let prev_hash = rlc(prev_hash.to_fixed_bytes(), randomness);
+        for prev_hash in block_values.history_hashes.clone() {
+            let prev_hash = rlc::value(&prev_hash.to_le_bytes(), randomness);
             region.assign_advice(
                 || "prev_hash",
                 self.block_table.value,
@@ -1249,10 +1233,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
                 // Assign block table
-                let block_values = self.public_data.get_block_table_values();
+                let block_context = self.public_data.get_block_table_context();
                 let chain_id = config.assign_block_table(
                     &mut region,
-                    block_values,
+                    &block_context,
                     self.randomness,
                     &mut raw_pi_vals,
                 )?;
@@ -1475,15 +1459,17 @@ fn raw_public_inputs_col<F: Field>(
     public_data: &PublicData,
     randomness: F, // For RLC encoding
 ) -> Vec<F> {
-    let block = public_data.get_block_table_values();
+    let block = public_data.get_block_table_context();
     let extra = public_data.get_extra_values();
     let txs = public_data.get_tx_table_values();
 
-    let mut offset = 0;
     let mut result =
         vec![F::zero(); BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1) + max_calldata];
 
+    let rlc_fn = |value| rlc(value, randomness);
+
     //  Insert Block Values
+    let mut offset = 0;
     // zero row
     result[offset] = F::zero();
     offset += 1;
@@ -1494,31 +1480,31 @@ fn raw_public_inputs_col<F: Field>(
     result[offset] = F::from(block.gas_limit);
     offset += 1;
     // number
-    result[offset] = F::from(block.number);
+    result[offset] = block.number.to_scalar().unwrap();
     offset += 1;
     // timestamp
-    result[offset] = F::from(block.timestamp);
+    result[offset] = block.timestamp.to_scalar().unwrap();
     offset += 1;
     // difficulty
-    result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
+    result[offset] = rlc_fn(block.difficulty.to_le_bytes());
     offset += 1;
     // base_fee
-    result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);
+    result[offset] = rlc_fn(block.base_fee.to_le_bytes());
     offset += 1;
     // chain_id
-    result[offset] = F::from(block.chain_id);
+    result[offset] = block.chain_id.to_scalar().unwrap();
     offset += 1;
     // Previous block hashes
     for prev_hash in block.history_hashes {
-        result[offset] = rlc(prev_hash.to_fixed_bytes(), randomness);
+        result[offset] = rlc(prev_hash.to_le_bytes(), randomness);
         offset += 1;
     }
 
     // Insert Extra Values
     // block Root
-    result[BLOCK_LEN + 1] = rlc(extra.state_root.to_fixed_bytes(), randomness);
+    result[BLOCK_LEN + 1] = rlc_fn(extra.state_root.to_fixed_bytes());
     // parent block hash
-    result[BLOCK_LEN + 2] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
+    result[BLOCK_LEN + 2] = rlc_fn(extra.prev_state_root.to_fixed_bytes());
 
     // Insert Tx table
     offset = 0;

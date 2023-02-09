@@ -63,7 +63,9 @@ use crate::keccak_circuit::keccak_packed_multi::{
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
 use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
+    block_table::BlockTable, bytecode_table::BytecodeTable, copy_table::CopyTable,
+    exp_table::ExpTable, keccak_table::KeccakTable, mpt_table::MptTable, rw_table::RwTable,
+    tx_table::TxTable,
 };
 use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
 use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};

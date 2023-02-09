@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
-    table::{BytecodeFieldTag, BytecodeTable, KeccakTable},
+    table::{
+        bytecode_table::{BytecodeFieldTag, BytecodeTable},
+        keccak_table::KeccakTable,
+    },
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };

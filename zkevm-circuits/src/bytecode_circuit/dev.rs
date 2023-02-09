@@ -1,6 +1,6 @@
 use super::bytecode_unroller::{unroll, UnrolledBytecode};
 use super::circuit::{BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs};
-use crate::table::{BytecodeTable, KeccakTable};
+use crate::table::{bytecode_table::BytecodeTable, keccak_table::KeccakTable};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use eth_types::Field;
 use halo2_proofs::{

@@ -9,8 +9,9 @@ use halo2_proofs::{
 };
 use keccak256::plain::Keccak;
 
+use crate::evm_circuit::util::rlc;
+use crate::table::TxLogFieldTag;
 use crate::witness;
-use crate::{evm_circuit::util::rlc, table::TxLogFieldTag};
 use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;

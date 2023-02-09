@@ -8,7 +8,7 @@ use crate::keccak_circuit::util::{
     rotate, scatter, target_part_sizes, to_bytes, unpack, BIT_SIZE, NUM_WORDS_TO_ABSORB,
     NUM_WORDS_TO_SQUEEZE, RATE, RATE_IN_BITS, RHO_MATRIX, ROUND_CST,
 };
-use crate::table::KeccakTable;
+use crate::table::keccak_table::KeccakTable;
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};

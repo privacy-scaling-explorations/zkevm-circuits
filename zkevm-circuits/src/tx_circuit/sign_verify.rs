@@ -6,7 +6,7 @@
 
 use crate::{
     evm_circuit::util::{not, rlc},
-    table::KeccakTable,
+    table::keccak_table::KeccakTable,
     util::{Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};

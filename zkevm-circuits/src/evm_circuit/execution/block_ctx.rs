@@ -10,7 +10,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::BlockContextFieldTag,
+    table::block_table::BlockContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
