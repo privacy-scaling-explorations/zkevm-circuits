@@ -24,7 +24,7 @@ use std::marker::PhantomData;
 
 use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
-    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, RandomLinearCombination},
+    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,
@@ -46,9 +46,7 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) 
                 b.reverse();
                 b
             };
-            challenge.map(|challenge| {
-                RandomLinearCombination::random_linear_combine(le_bytes, challenge)
-            })
+            challenge.map(|challenge| rlc::value(&le_bytes, challenge))
         }
     }
 }
@@ -443,13 +441,17 @@ impl<F: Field> CopyCircuitConfig<F> {
             let is_read = step_idx % 2 == 0;
 
             // Copy table assignments
-            for (column, &(value, label)) in self.copy_table.columns().iter().zip_eq(table_row) {
+            for (&column, &(value, label)) in
+                <CopyTable as LookupTable<F>>::advice_columns(&self.copy_table)
+                    .iter()
+                    .zip_eq(table_row)
+            {
                 // Leave sr_addr_end and bytes_left unassigned when !is_read
                 if !is_read && (label == "src_addr_end" || label == "bytes_left") {
                 } else {
                     region.assign_advice(
                         || format!("{} at row: {}", label, offset),
-                        *column,
+                        column,
                         *offset,
                         || value,
                     )?;

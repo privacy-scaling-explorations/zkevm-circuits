@@ -1,7 +1,14 @@
-use super::util::{CachedRegion, CellManager, StoredExpression};
+use super::{
+    param::{
+        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+    },
+    util::{CachedRegion, CellManager, StoredExpression},
+};
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, N_PHASE3_COLUMNS, STEP_WIDTH},
+        param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -56,6 +63,7 @@ mod end_tx;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_log;
 mod error_oog_static_memory;
 mod error_stack;
 mod exp;
@@ -121,6 +129,7 @@ use end_tx::EndTxGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_log::ErrorOOGLogGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -193,7 +202,7 @@ pub(crate) struct ExecutionConfig<F> {
     q_step_last: Selector,
     advices: [Column<Advice>; STEP_WIDTH],
     step: Step<F>,
-    height_map: HashMap<ExecutionState, usize>,
+    pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
@@ -266,7 +275,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
-    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
+    error_oog_log: ErrorOOGLogGadget<F>,
     error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
     error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
@@ -316,15 +325,13 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
 
-        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
-
         let advices = [(); STEP_WIDTH]
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < N_PHASE3_COLUMNS + lookup_column_count {
+                if n < EVM_LOOKUP_COLS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < N_PHASE3_COLUMNS + lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -421,8 +428,6 @@ impl<F: Field> ExecutionConfig<F> {
         let mut stored_expressions_map = HashMap::new();
 
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
-        let word_powers_of_randomness = challenges.evm_word_powers_of_randomness();
-        let lookup_powers_of_randomness = challenges.lookup_input_powers_of_randomness();
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -434,8 +439,6 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_first,
                     q_step_last,
                     &challenges,
-                    &word_powers_of_randomness,
-                    &lookup_powers_of_randomness,
                     &step_curr,
                     &step_next,
                     &mut height_map,
@@ -569,15 +572,6 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub fn get_step_height_option(&self, execution_state: ExecutionState) -> Option<usize> {
-        self.height_map.get(&execution_state).copied()
-    }
-
-    pub fn get_step_height(&self, execution_state: ExecutionState) -> usize {
-        self.get_step_height_option(execution_state)
-            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", execution_state))
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -588,8 +582,6 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_first: Selector,
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
-        word_powers_of_randomness: &[Expression<F>; 31],
-        lookup_powers_of_randomness: &[Expression<F>; 12],
         step_curr: &Step<F>,
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
@@ -602,8 +594,6 @@ impl<F: Field> ExecutionConfig<F> {
                 step_curr.clone(),
                 step_next.clone(),
                 challenges,
-                word_powers_of_randomness,
-                lookup_powers_of_randomness,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
@@ -617,8 +607,6 @@ impl<F: Field> ExecutionConfig<F> {
             step_curr.clone(),
             step_next.clone(),
             challenges,
-            word_powers_of_randomness,
-            lookup_powers_of_randomness,
             G::EXECUTION_STATE,
         );
 
@@ -753,8 +741,6 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Expression<F>>,
         cell_manager: &CellManager<F>,
     ) {
-        let lookup_powers_of_randomness: [Expression<F>; 31] =
-            challenges.lookup_input_powers_of_randomness();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
@@ -765,7 +751,6 @@ impl<F: Field> ExecutionConfig<F> {
                         Table::Rw => rw_table,
                         Table::Bytecode => bytecode_table,
                         Table::Block => block_table,
-                        Table::Byte => byte_table,
                         Table::Copy => copy_table,
                         Table::Keccak => keccak_table,
                         Table::Exp => exp_table,
@@ -773,8 +758,16 @@ impl<F: Field> ExecutionConfig<F> {
                     .table_exprs(meta);
                     vec![(
                         column.expr(),
-                        rlc::expr(&table_expressions, &lookup_powers_of_randomness),
+                        rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
+                });
+            }
+        }
+        for column in cell_manager.columns().iter() {
+            if let CellType::LookupByte = column.cell_type {
+                meta.lookup_any("Byte lookup", |meta| {
+                    let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
+                    vec![(column.expr(), byte_table_expression)]
                 });
             }
         }
@@ -787,6 +780,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         height: usize,
     ) -> Result<(), Error> {
+        // Name Advice columns
         for idx in 0..height {
             let offset = offset + idx;
             self.q_usable.enable(region, offset)?;
@@ -829,8 +823,10 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                log::info!("start execution step assignment");
                 let mut offset = 0;
+
+                // Annotate the EVMCircuit columns within it's single region.
+                self.annotate_circuit(&mut region);
 
                 self.q_step_first.enable(&mut region, offset)?;
 
@@ -864,7 +860,7 @@ impl<F: Field> ExecutionConfig<F> {
                     if next.is_none() {
                         break;
                     }
-                    let height = self.get_step_height(step.execution_state);
+                    let height = step.execution_state.get_step_height();
 
                     // Assign the step witness
                     self.assign_exec_step(
@@ -895,7 +891,7 @@ impl<F: Field> ExecutionConfig<F> {
                         );
                         return Err(Error::Synthesis);
                     }
-                    let height = self.get_step_height(ExecutionState::EndBlock);
+                    let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
                     let last_row = evm_rows - 1;
                     log::trace!(
@@ -922,7 +918,7 @@ impl<F: Field> ExecutionConfig<F> {
                 }
 
                 // part3: assign the last EndBlock at offset `evm_rows - 1`
-                let height = self.get_step_height(ExecutionState::EndBlock);
+                let height = ExecutionState::EndBlock.get_step_height();
                 debug_assert_eq!(height, 1);
                 log::trace!("assign last EndBlock at offset {}", offset);
                 self.assign_exec_step(
@@ -956,10 +952,41 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                log::info!("finish execution step assignment");
                 Ok(())
             },
         )
+    }
+
+    fn annotate_circuit(&self, region: &mut Region<F>) {
+        let groups = [
+            ("EVM_lookup_fixed", FIXED_TABLE_LOOKUPS),
+            ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
+            ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
+            ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
+            ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
+            ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
+            ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
+            ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_adv_phase2", N_PHASE2_COLUMNS),
+            ("EVM_copy", N_COPY_COLUMNS),
+            ("EVM_lookup_byte", N_BYTE_LOOKUPS),
+            ("EVM_adv_phase1", N_PHASE1_COLUMNS),
+        ];
+        let mut group_index = 0;
+        let mut index = 0;
+        for col in self.advices {
+            let (name, length) = groups[group_index];
+            region.name_column(|| format!("{}_{}", name, index), col);
+            index += 1;
+            if index >= length {
+                index = 0;
+                group_index += 1;
+            }
+        }
+
+        region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
+        region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
+        region.name_column(|| "Copy_Constr_const", self.constants);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1259,9 +1286,9 @@ impl<F: Field> ExecutionConfig<F> {
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", step.execution_state))
         {
             let assigned = stored_expression.assign(region, offset)?;
-            assigned.value().map(|v| {
+            assigned.map(|v| {
                 let name = stored_expression.name.clone();
-                assigned_stored_expressions.push((name, *v));
+                assigned_stored_expressions.push((name, v));
             });
         }
         Ok(assigned_stored_expressions)

@@ -374,6 +374,12 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         self.assign_tx_table(config, challenges, layouter, assigned_sig_verifs)?;
         Ok(())
     }
+
+    fn instance(&self) -> Vec<Vec<F>> {
+        // The maingate expects an instance column, but we don't use it, so we return an
+        // "empty" instance column
+        vec![vec![]]
+    }
 }
 
 #[cfg(any(feature = "test", test))]

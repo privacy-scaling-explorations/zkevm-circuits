@@ -1,52 +1,87 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    param::N_BYTES_GAS,
-    step::ExecutionState,
-    util::{
-        common_gadget::RestoreContextGadget,
-        constraint_builder::{
-            ConstraintBuilder, StepStateTransition,
-            Transition::{Delta, Same},
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        step::ExecutionState,
+        util::{
+            common_gadget::RestoreContextGadget,
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
+            math_gadget::LtGadget,
+            memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
+            CachedRegion, Cell,
         },
-        math_gadget::LtGadget,
-        CachedRegion, Cell,
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    table::CallContextFieldTag,
+    util::Expr,
 };
-use crate::table::CallContextFieldTag;
-use crate::util::Expr;
 use eth_types::Field;
+use eth_types::{evm_types::GasCost, evm_types::OpcodeId};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
-pub(crate) struct ErrorOOGConstantGadget<F> {
+pub(crate) struct ErrorOOGLogGadget<F> {
     opcode: Cell<F>,
-    // constrain gas left is less than required
-    gas_required: Cell<F>,
+    // memory address
+    memory_address: MemoryAddressGadget<F>,
+    is_static_call: Cell<F>,
+    is_opcode_logn: LtGadget<F, 1>,
+    // constrain gas left is less than gas cost
+    memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
-    const NAME: &'static str = "ErrorOutOfGasConstant";
+impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
+    const NAME: &'static str = "ErrorOutOfGasLOG";
 
-    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasConstant;
+    const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasLOG;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let gas_required = cb.query_cell();
+        let mstart = cb.query_cell_phase2();
+        let msize = cb.query_word_rlc();
         let rw_counter_end_of_reversion = cb.query_cell();
 
-        cb.constant_gas_lookup(opcode.expr(), gas_required.expr());
+        // Pop mstart_address, msize from stack
+        cb.stack_pop(mstart.expr());
+        cb.stack_pop(msize.expr());
+
+        // constrain not in static call
+        let is_static_call = cb.call_context(None, CallContextFieldTag::IsStatic);
+        cb.require_zero("is_static_call is false in LOGN", is_static_call.expr());
+
+        let topic_count = opcode.expr() - OpcodeId::LOG0.as_u8().expr();
+        let is_opcode_logn = LtGadget::construct(cb, topic_count.clone(), 5.expr());
+        cb.require_equal(
+            "topic count in [0..5) which means opcode is Log0...Log4 ",
+            is_opcode_logn.expr(),
+            1.expr(),
+        );
+
+        // check memory
+        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
+
+        // Calculate the next memory size and the gas cost for this memory
+        // access
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
+
+        let gas_cost = GasCost::LOG.as_u64().expr()
+            + GasCost::LOG.as_u64().expr() * topic_count
+            + 8.expr() * memory_address.length()
+            + memory_expansion.gas_cost();
+
         // Check if the amount of gas available is less than the amount of gas
         // required
-        let insufficient_gas =
-            LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_required.expr());
+        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
         cb.require_equal(
-            "constant gas left is less than gas required ",
+            "logN gas left is less than gas required ",
             insufficient_gas.expr(),
             1.expr(),
         );
@@ -74,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             // Do step state transition
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
-                rw_counter: Delta(2.expr() + cb.curr.state.reversible_write_counter.expr()),
+                rw_counter: Delta(5.expr() + cb.curr.state.reversible_write_counter.expr()),
                 ..StepStateTransition::any()
             });
         });
@@ -85,7 +120,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 0.expr(),
-                // rw_offset is handled in construct internally
                 0.expr(),
                 0.expr(),
                 0.expr(),
@@ -105,7 +139,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
         Self {
             opcode,
-            gas_required,
+            is_static_call,
+            is_opcode_logn,
+            memory_address,
+            memory_expansion,
             insufficient_gas,
             rw_counter_end_of_reversion,
             restore_context,
@@ -121,15 +158,28 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let [memory_start, msize] =
+            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
 
+        let memory_address = self
+            .memory_address
+            .assign(region, offset, memory_start, msize)?;
+
+        // Memory expansion
+        self.memory_expansion
+            .assign(region, offset, step.memory_word_size(), [memory_address])?;
+
+        let opcode = step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        // Inputs/Outputs
-        self.gas_required
-            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
+        let topic_count = opcode.postfix().expect("opcode with postfix") as u64;
+        assert!(topic_count <= 4);
+        self.is_static_call
+            .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
+
+        self.is_opcode_logn
+            .assign(region, offset, F::from(topic_count), F::from(5u64))?;
         // Gas insufficient check
-        // Get `gas_available` variable here once it's available
         self.insufficient_gas.assign(
             region,
             offset,
@@ -142,9 +192,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             offset,
             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
-
         self.restore_context
-            .assign(region, offset, block, call, step, 2)?;
+            .assign(region, offset, block, call, step, 5)?;
 
         Ok(())
     }
@@ -152,8 +201,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
 
 #[cfg(test)]
 mod test {
-
     use crate::test_util::CircuitTestBuilder;
+
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
@@ -175,18 +224,12 @@ mod test {
         )
     }
 
-    fn test_oog_constant(tx: eth_types::Transaction, is_success: bool) {
-        let code = if is_success {
-            bytecode! {
+    fn test_oog_log(tx: eth_types::Transaction) {
+        let code = bytecode! {
                 PUSH1(0)
                 PUSH1(0)
-                RETURN
-            }
-        } else {
-            bytecode! {
-                PUSH1(0)
-                PUSH1(0)
-            }
+                PUSH1(100)
+                LOG0
         };
 
         // Get the execution steps from the external tracer
@@ -198,7 +241,7 @@ mod test {
                     .to(tx.to.unwrap())
                     .from(tx.from)
                     .gas_price(tx.gas_price.unwrap())
-                    .gas(tx.gas - 1)
+                    .gas(tx.gas + 5)
                     .input(tx.input)
                     .value(tx.value);
             },
@@ -209,7 +252,6 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // TODO: Use `mock` crate
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
@@ -225,9 +267,9 @@ mod test {
     }
 
     #[test]
-    fn test_oog_constant_root() {
-        // in root call , out of gas constant happens
-        test_oog_constant(mock_tx(eth(1), gwei(2), vec![]), false);
+    // test oog log in root call
+    fn test_oog_log_root() {
+        test_oog_log(mock_tx(eth(1), gwei(2), vec![]));
     }
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -244,7 +286,7 @@ mod test {
         let terminator = OpcodeId::REVERT;
 
         let stack = Stack {
-            gas: 10,
+            gas: 100,
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -268,8 +310,6 @@ mod test {
             PUSH32(Address::repeat_byte(0xff).to_word())
             PUSH32(Word::from(stack.gas))
             CALL
-            //PUSH1(0)
-            //PUSH1(0)
             .write_op(terminator)
         };
 
@@ -281,7 +321,7 @@ mod test {
         }
     }
 
-    fn oog_constant_internal_call(caller: Account, callee: Account) {
+    fn oog_log_internal_call(caller: Account, callee: Account) {
         let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
@@ -303,7 +343,7 @@ mod test {
                 txs[0]
                     .from(accs[0].address)
                     .to(accs[1].address)
-                    .gas(23800.into());
+                    .gas(24000.into());
             },
             |block, _tx| block.number(0xcafeu64),
         )
@@ -325,18 +365,18 @@ mod test {
     }
 
     #[test]
-    fn test_oog_constant_internal() {
+    // test oog log in internal call
+    fn test_oog_log_internal() {
         let bytecode = bytecode! {
             PUSH32(Word::from(0))
-            PUSH32(Word::from(1))
-            PUSH32(Word::from(2))
             PUSH32(Word::from(10))
             PUSH32(Word::from(224))
             PUSH32(Word::from(1025))
             PUSH32(Word::from(5089))
+            LOG2
             STOP
         };
         let callee = callee(bytecode);
-        oog_constant_internal_call(caller(), callee);
+        oog_log_internal_call(caller(), callee);
     }
 }
