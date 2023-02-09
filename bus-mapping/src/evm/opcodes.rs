@@ -252,9 +252,6 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<true>::gen_associated_ops
         }
-        // Invalid opcodes should be handled via ErrorInvalidOpcode as below. Dummy associated
-        // operations to avoid unimplemented panic.
-        OpcodeId::INVALID(_) => Dummy::gen_associated_ops,
         _ => {
             evm_unimplemented!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
             Dummy::gen_associated_ops
@@ -289,8 +286,6 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         assert_eq!(
@@ -338,6 +333,7 @@ pub fn gen_associated_ops(
         }
     }
     // if no errors, continue as normal
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, geth_steps)
 }
 
