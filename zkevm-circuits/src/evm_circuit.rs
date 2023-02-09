@@ -206,6 +206,7 @@ impl<F: Field> EvmCircuit<F> {
         if evm_rows == 0 {
             Self::get_min_num_rows_required(block)
         } else {
+            // It must have at least one unused row.
             block.circuits_params.max_evm_rows + 1
         }
     }
@@ -218,7 +219,8 @@ impl<F: Field> EvmCircuit<F> {
             }
         }
 
-        num_rows + 2 // EndBlock and at least one unused
+        // It must have one row for EndBlock and at least one unused one
+        num_rows + 2
     }
 }
 
