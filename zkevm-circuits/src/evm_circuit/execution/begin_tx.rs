@@ -634,7 +634,7 @@ mod test {
             STOP
         };
 
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
@@ -653,7 +653,7 @@ mod test {
         .unwrap()
         .into();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -666,7 +666,7 @@ mod test {
         let from = MOCK_ACCOUNTS[1];
 
         let balance = Word::from(1) * Word::from(10u64.pow(5));
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(gwei(0));
@@ -690,7 +690,7 @@ mod test {
         .unwrap()
         .into();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -701,7 +701,7 @@ mod test {
         let from = MOCK_ACCOUNTS[1];
 
         let balance = Word::from(1) * Word::from(10u64.pow(18));
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(gwei(0));
@@ -725,7 +725,7 @@ mod test {
         .unwrap()
         .into();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
