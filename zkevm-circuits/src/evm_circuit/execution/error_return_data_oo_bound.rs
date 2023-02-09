@@ -46,6 +46,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        cb.opcode_lookup(opcode.expr(), 1.expr());
         let memory_offset = cb.query_cell();
         let data_offset = cb.query_word_rlc();
         let length = cb.query_word_rlc();
@@ -125,7 +126,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             cb.require_step_state_transition(StepStateTransition {
                 call_id: Same,
                 rw_counter: Delta(6.expr() + cb.curr.state.reversible_write_counter.expr()),
-
                 ..StepStateTransition::any()
             });
         });

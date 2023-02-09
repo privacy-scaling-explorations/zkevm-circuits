@@ -14,14 +14,13 @@ impl Opcode for ErrorReturnDataOutOfBound {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let next_step = if geth_steps.len() > 1 {
-            Some(&geth_steps[1])
-        } else {
-            None
+        let next_step = geth_steps.get(1);
         };
-        exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
-        // assert op code can only be RETURNDATACOPY
-        assert!(geth_step.op == OpcodeId::RETURNDATACOPY);
+        exec_step.error = Some(ExecError::ReturnDataOutOfBounds);
+        assert_eq!(
+            state.get_step_err(geth_step, next_step).unwrap(),
+            Some(ExecError::ReturnDataOutOfBounds)
+        );
 
         let memory_offset = geth_step.stack.nth_last(0)?;
         let data_offset = geth_step.stack.nth_last(1)?;
@@ -41,7 +40,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
 
         let call_id = state.call()?.call_id;
         let call_ctx = state.call_ctx()?;
-        let return_data = call_ctx.return_data.clone();
+        let return_data = &call_ctx.return_data;
         let last_callee_return_data_length = state.call()?.last_callee_return_data_length;
         assert_eq!(
             last_callee_return_data_length as usize,
