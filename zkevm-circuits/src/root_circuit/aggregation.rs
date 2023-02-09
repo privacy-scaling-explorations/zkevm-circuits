@@ -1,7 +1,9 @@
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
-    halo2curves::{pairing::Engine, serde::SerdeObject, CurveAffine},
+    halo2curves::{
+        group::prime::PrimeCurveAffine, pairing::Engine, serde::SerdeObject, CurveAffine,
+    },
     plonk::{Circuit, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
 };
@@ -24,7 +26,7 @@ use snark_verifier::{
     util::arithmetic::{fe_to_limbs, FieldExt, MultiMillerLoop},
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
-use std::{iter, rc::Rc};
+use std::{io, iter, rc::Rc};
 
 /// Number of limbs to decompose a elliptic curve base field element into.
 pub const LIMBS: usize = 4;
@@ -319,6 +321,18 @@ where
                 snark.instances,
                 &mut transcript,
             )?;
+            for commitment in iter::empty()
+                .chain(snark.protocol.preprocessed.iter())
+                .chain(proof.witnesses.iter())
+                .chain(proof.quotients.iter())
+            {
+                if bool::from(commitment.is_identity()) {
+                    return Err(snark_verifier::Error::Transcript(
+                        io::ErrorKind::Other,
+                        "Identity point in preprocessed or proof is not yet supported".to_string(),
+                    ));
+                }
+            }
             PlonkSuccinctVerifier::verify(&svk, snark.protocol, snark.instances, &proof)
         })
         .try_collect::<_, Vec<_>, _>()?
@@ -599,6 +613,8 @@ pub mod test {
             layouter.assign_region(
                 || "",
                 |mut region| {
+                    // Assign some non-zero values to make sure the advice/fixed columns have
+                    // non-identity commitments.
                     let a = region.assign_advice(|| "", w_l, 0, || Value::known(self.0))?;
                     region.assign_fixed(|| "", q_l, 0, || Value::known(-F::one()))?;
                     a.copy_advice(|| "", &mut region, w_r, 1)?;
