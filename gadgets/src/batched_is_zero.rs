@@ -89,6 +89,14 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
                 (F::one(), F::zero())
             }
         });
+
+        // annotate columns
+        region.name_column(|| "GADGETS_BATCHED_is_zero", config.is_zero);
+        region.name_column(
+            || "GADGETS_BATCHED_nonempty_witness",
+            config.nonempty_witness,
+        );
+
         region.assign_advice(
             || "is_zero",
             config.is_zero,

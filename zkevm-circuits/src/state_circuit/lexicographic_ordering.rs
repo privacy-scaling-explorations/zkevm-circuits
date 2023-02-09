@@ -192,6 +192,14 @@ impl Config {
         cur: &Rw,
         prev: &Rw,
     ) -> Result<LimbIndex, Error> {
+        // annotate columns
+        region.name_column(|| "STATE_LO_upper_limb_difference", self.selector);
+        region.name_column(|| "STATE_LO_limb_difference", self.limb_difference);
+        region.name_column(
+            || "STATE_LO_limb_difference_inverse",
+            self.limb_difference_inverse,
+        );
+
         region.assign_fixed(
             || "upper_limb_difference",
             self.selector,

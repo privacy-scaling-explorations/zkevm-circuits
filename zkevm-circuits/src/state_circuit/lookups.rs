@@ -104,6 +104,7 @@ impl<F: Field> Chip<F> {
             layouter.assign_region(
                 || format!("assign u{} fixed column", exponent),
                 |mut region| {
+                    region.name_column(|| format!("STATE_LOOKUP_fixed_u{}", exponent), column);
                     for i in 0..(1 << exponent) {
                         region.assign_fixed(
                             || format!("assign {} in u{} fixed column", i, exponent),
@@ -119,6 +120,10 @@ impl<F: Field> Chip<F> {
         layouter.assign_region(
             || "assign call_context_field_tags fixed column",
             |mut region| {
+                region.name_column(
+                    || "STATE_LOOKUP_call_context_field_tag",
+                    self.config.call_context_field_tag,
+                );
                 for field_tag in CallContextFieldTag::iter() {
                     region.assign_fixed(
                         || {

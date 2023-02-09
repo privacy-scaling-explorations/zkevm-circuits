@@ -176,6 +176,7 @@ where
         value: &T,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
+            region.name_column(|| format!("GADGETS_binary_number_{:?}", column), column);
             region.assign_advice(
                 || format!("binary number {:?}", column),
                 column,

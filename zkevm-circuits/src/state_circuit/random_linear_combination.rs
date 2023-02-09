@@ -38,6 +38,7 @@ impl<const N: usize> Config<N> {
     ) -> Result<(), Error> {
         let bytes = value.to_le_bytes();
         for (i, &byte) in bytes.iter().enumerate() {
+            region.name_column(|| format!("STATE_RLC_byte[{}]", i), self.bytes[i]);
             region.assign_advice(
                 || format!("byte[{}] in rlc", i),
                 self.bytes[i],

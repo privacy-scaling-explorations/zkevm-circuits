@@ -141,6 +141,10 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             power_of_randomness.clone(),
         );
 
+        // annotate columns
+        rw_table.annotate_columns(meta);
+        mpt_table.annotate_columns(meta);
+
         let config = Self {
             selector,
             sort_keys,
@@ -210,6 +214,13 @@ impl<F: Field> StateCircuitConfig<F> {
 
         let mut state_root =
             randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(), randomness));
+
+        // annotate columns
+        region.name_column(|| "STATE_selector", self.selector);
+        region.name_column(|| "STATE_not_first_access", self.not_first_access);
+        region.name_column(|| "STATE_phase2_initial_value", self.initial_value);
+        region.name_column(|| "STATE_phase2_mpt_proof_type", self.mpt_proof_type);
+        region.name_column(|| "STATE_phase2_state_root", self.state_root);
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
@@ -474,6 +485,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                             offset,
                             || Value::known(f),
                         )?;
+                        region.name_column(|| "STATE_test_override", advice_column);
                     }
                 }
 
