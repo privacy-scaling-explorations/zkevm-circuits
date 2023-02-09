@@ -1297,7 +1297,7 @@ impl ExpTable {
                 }
 
                 // pad an empty row
-                let row = [F::from_u128(0); 6];
+                let row = [F::from_u128(0); 5];
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),
