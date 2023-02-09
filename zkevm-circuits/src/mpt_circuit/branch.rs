@@ -1,8 +1,3 @@
-pub mod branch_init;
-pub mod branch_key;
-pub mod branch_rlc;
-pub mod extension_node;
-
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Region, Value},
@@ -17,7 +12,7 @@ use super::{
         ARITY, IS_C_BRANCH_NON_HASHED_POS, IS_C_EXT_NODE_NON_HASHED_POS,
         IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_NODE_NON_HASHED_POS,
     },
-    MPTContext, witness_row::MptWitnessRowType,
+    MPTContext,
 };
 use crate::{
     circuit,
@@ -25,9 +20,13 @@ use crate::{
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::{
-        helpers::{contains_placeholder_leaf, parent_memory, ParentData, get_num_nibbles, KeyData, key_memory},
-        param::{RLP_NIL, RLP_LIST_LONG},
-        storage_leaf::StorageLeaf, FixedTableTag,
+        helpers::{
+            contains_placeholder_leaf, get_num_nibbles, key_memory, parent_memory, KeyData,
+            ParentData,
+        },
+        param::{RLP_LIST_LONG, RLP_NIL},
+        storage_leaf::StorageLeaf,
+        FixedTableTag,
     },
     mpt_circuit::{
         helpers::{BranchChildInfo, BranchNodeInfo},
@@ -42,41 +41,6 @@ use crate::{
     mpt_circuit::{param::RLP_HASH_VALUE, witness_row::MptWitnessRow},
     mpt_circuit::{MPTConfig, ProofValues},
 };
-
-/*
-A branch occupies 19 rows:
-BRANCH.IS_INIT
-BRANCH.IS_CHILD 0
-...
-BRANCH.IS_CHILD 15
-BRANCH.IS_EXTENSION_NODE_S
-BRANCH.IS_EXTENSION_NODE_C
-
-Example:
-
-[1 0 1 0 248 241 0 248 241 0 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 160 164 92 78 34 81 137 173 236 78 208 145 118 128 60 46 5 176 8 229 165 42 222 110 4 252 228 93 243 26 160 241 85 0 160 95 174 59 239 229 74 221 53 227 115 207 137 94 29 119 126 56 209 55 198 212 179 38 213 219 36 111 62 46 43 176 168 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 160 60 157 212 182 167 69 206 32 151 2 14 23 149 67 58 187 84 249 195 159 106 68 203 199 199 65 194 33 215 102 71 138 0 160 60 157 212 182 167 69 206 32 151 2 14 23 149 67 58 187 84 249 195 159 106 68 203 199 199 65 194 33 215 102 71 138 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 160 21 230 18 20 253 84 192 151 178 53 157 0 9 105 229 121 222 71 120 109 159 109 9 218 254 1 50 139 117 216 194 252 0 160 21 230 18 20 253 84 192 151 178 53 157 0 9 105 229 121 222 71 120 109 159 109 9 218 254 1 50 139 117 216 194 252 1]
-[0 160 229 29 220 149 183 173 68 40 11 103 39 76 251 20 162 242 21 49 103 245 160 99 143 218 74 196 2 61 51 34 105 123 0 160 229 29 220 149 183 173 68 40 11 103 39 76 251 20 162 242 21 49 103 245 160 99 143 218 74 196 2 61 51 34 105 123 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 160 0 140 67 252 58 164 68 143 34 163 138 133 54 27 218 38 80 20 142 115 221 100 73 161 165 75 83 53 8 58 236 1 0 160 0 140 67 252 58 164 68 143 34 163 138 133 54 27 218 38 80 20 142 115 221 100 73 161 165 75 83 53 8 58 236 1 1]
-[0 160 149 169 206 0 129 86 168 48 42 127 100 73 109 90 171 56 216 28 132 44 167 14 46 189 224 213 37 0 234 165 140 236 0 160 149 169 206 0 129 86 168 48 42 127 100 73 109 90 171 56 216 28 132 44 167 14 46 189 224 213 37 0 234 165 140 236 1]
-[0 160 42 63 45 28 165 209 201 220 231 99 153 208 48 174 250 66 196 18 123 250 55 107 64 178 159 49 190 84 159 179 138 235 0 160 42 63 45 28 165 209 201 220 231 99 153 208 48 174 250 66 196 18 123 250 55 107 64 178 159 49 190 84 159 179 138 235 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 128 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1]
-[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 16]
-[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 17]
-
-Note that when `BRANCH.IS_CHILD` row presents a nil node, there is only one byte non-zero:
-128 at `s_main.bytes[0] / c_main.bytes[0]`.
-*/
 
 #[derive(Default, Debug)]
 pub(crate) struct Branch {
@@ -146,7 +110,6 @@ impl<F: FieldExt> BranchConfig<F> {
         let s_main = ctx.s_main;
         let c_main = ctx.c_main;
         let accs = ctx.accumulators;
-        let branch = ctx.branch;
         let r = ctx.r.clone();
 
         let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
@@ -155,8 +118,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let mut ctx_parent_data_c: Option<ParentData<F>> = None;
 
         circuit!([meta, cb.base], {
-
-            let mut offset = 0;
+            let mut offset = -1;
             let rot_branch_init = offset;
 
             for is_s in [true, false] {
@@ -170,18 +132,23 @@ impl<F: FieldExt> BranchConfig<F> {
                     branch.is_branch_long(meta) => (rlp[..2].rlc(&r), r[1].expr()),
                     branch.is_branch_very_long(meta) => (rlp[..3].rlc(&r), r[2].expr()),
                 };
-                require!(a!(accs.acc(is_s).rlc) => rlc);
-                require!(a!(accs.acc(is_s).mult) => mult);
+                require!(a!(accs.acc(is_s).rlc, offset) => rlc);
+                require!(a!(accs.acc(is_s).mult, offset) => mult);
             }
 
             // These selectors are only stored in branch init rows
-            let branch = BranchNodeInfo::new(meta, ctx.clone(), true, 0);
+            let branch = BranchNodeInfo::new(meta, ctx.clone(), true, offset);
             // Boolean checks
-            for selector in [branch.is_placeholder_s(), branch.is_placeholder_c(), branch.is_not_hashed_s(), branch.is_not_hashed_c()] {
+            for selector in [
+                branch.is_placeholder_s(),
+                branch.is_placeholder_c(),
+                branch.is_not_hashed_s(),
+                branch.is_not_hashed_c(),
+            ] {
                 require!(selector => bool);
             }
             // Update the nibble counter
-            ifx!{not!(branch.is_extension()) => {
+            ifx! {not!(branch.is_extension()) => {
                 let nibbles_counter_prev = ifx!{not!(branch.is_at_tree_top(meta)) => {
                     branch.nibbles_counter().prev()
                 }};
@@ -221,8 +188,10 @@ impl<F: FieldExt> BranchConfig<F> {
                         let mult_diff = ctx.accumulators.node_mult_diff(is_s);
 
                         let child = BranchChildInfo::new(meta, ctx.clone(), is_s, offset);
-                        let branch_mult = DataTransition::new_with_rot(meta, branch.mult, offset - 1, offset);
-                        let branch_rlc = DataTransition::new_with_rot(meta, branch.rlc, offset - 1, offset);
+                        let branch_mult =
+                            DataTransition::new_with_rot(meta, branch.mult, offset - 1, offset);
+                        let branch_rlc =
+                            DataTransition::new_with_rot(meta, branch.rlc, offset - 1, offset);
                         // Calculate the RLC
                         let rlc = child.rlc(meta, &mut cb.base);
                         require!(branch_rlc => (branch_rlc.prev(), branch_mult.prev()).rlc_chain(rlc));
@@ -232,11 +201,12 @@ impl<F: FieldExt> BranchConfig<F> {
                         // We need to check that the multiplier changes according to `num_bytes` and
                         // update it.
                         require!((FixedTableTag::RMult, child.num_bytes(meta), a!(mult_diff, offset)) => @format!("fixed"));
-                        // When a value is being added (and reverse situation when deleted) to the trie
-                        // and there is no other leaf at the position where it is to be
-                        // added, we have empty branch child in `S` proof and hash of a
-                        // newly added leaf at the parallel position in `C` proof.
-                        // That means we have empty node in `S` proof at `modified_node`.
+                        // When a value is being added (and reverse situation when deleted) to the
+                        // trie and there is no other leaf at the position
+                        // where it is to be added, we have empty branch
+                        // child in `S` proof and hash of a newly added leaf
+                        // at the parallel position in `C` proof. That means
+                        // we have empty node in `S` proof at `modified_node`.
                         // When this happens, we denote this situation by having a placeholder leaf.
                         // In this case we need to make sure the node is seen as empty.
                         ifx! {a!(ctx.branch.is_modified, offset), contains_placeholder_leaf(meta, ctx.clone(), is_s, offset) => {
@@ -247,11 +217,11 @@ impl<F: FieldExt> BranchConfig<F> {
                 }
 
                 // Check that `is_modified` is enabled for the correct branch child.
-                ifx!{a!(ctx.branch.is_modified, offset) => {
+                ifx! {a!(ctx.branch.is_modified, offset) => {
                     require!(a!(ctx.branch.node_index, offset) => a!(ctx.branch.modified_index, offset));
                 }}
                 // Check that `is_drifted` is enabled for the correct branch child.
-                ifx!{a!(ctx.branch.is_drifted, offset) => {
+                ifx! {a!(ctx.branch.is_drifted, offset) => {
                     require!(a!(ctx.branch.node_index, offset) => a!(ctx.branch.drifted_index, offset));
                 }}
 
@@ -271,7 +241,8 @@ impl<F: FieldExt> BranchConfig<F> {
                     }
                 }}*/
 
-                // If we have a branch child, we can only have branch child or branch init in the previous row.
+                // If we have a branch child, we can only have branch child or branch init in
+                // the previous row.
                 /*require!(or::expr([is_branch_child.prev(), is_branch_init.prev()]) => true);
                 // When `node_index` != 0
                 ifx!{node_index => {
@@ -292,7 +263,8 @@ impl<F: FieldExt> BranchConfig<F> {
                     }
                 }}*/
 
-                // Make sure `is_branch_child`, `node_index` and `is_last_child` are set correctly.
+                // Make sure `is_branch_child`, `node_index` and `is_last_child` are set
+                // correctly.
                 /*ifx!{is_branch_init.prev() => {
                     // First child when previous row is a branch init row
                     require!(is_branch_child => true);
@@ -307,14 +279,18 @@ impl<F: FieldExt> BranchConfig<F> {
                 }}*/
 
                 if node_index == ARITY - 1 {
-                    // Rotations could be avoided but we would need additional is_branch_placeholder column.
-                    let mut branch = BranchNodeInfo::new(meta, ctx.clone(), true, offset - (ARITY as i32));
+                    // Rotations could be avoided but we would need additional is_branch_placeholder
+                    // column.
+                    let mut branch =
+                        BranchNodeInfo::new(meta, ctx.clone(), true, offset - (ARITY as i32));
 
                     // `is_modified` needs to be set to 1 at exactly 1 branch child
-                    let is_modified_values = (0..ARITY).map(|rot| a!(ctx.branch.is_modified, offset - (rot as i32))).collect::<Vec<_>>();
+                    let is_modified_values = (0..ARITY)
+                        .map(|rot| a!(ctx.branch.is_modified, offset - (rot as i32)))
+                        .collect::<Vec<_>>();
                     require!(sum::expr(&is_modified_values) => 1);
 
-                    ifx!{branch.is_placeholder() => {
+                    ifx! {branch.is_placeholder() => {
                         // `is_drifted` needs to be set to 1 at exactly 1 branch child
                         let is_drifted_values = (0..ARITY).map(|rot| a!(ctx.branch.is_drifted, offset - (rot as i32))).collect::<Vec<_>>();
                         require!(sum::expr(&is_drifted_values) => 1);
@@ -335,7 +311,13 @@ impl<F: FieldExt> BranchConfig<F> {
                             (branch_rlc, branch.num_bytes(meta), branch.is_not_hashed())
                         }};
 
-                        let parent_data = ParentData::load("branch load", &mut cb.base, &mut cm, &ctx.memory[parent_memory(is_s)], 0.expr());
+                        let parent_data = ParentData::load(
+                            "branch load",
+                            &mut cb.base,
+                            &mut cm,
+                            &ctx.memory[parent_memory(is_s)],
+                            0.expr(),
+                        );
                         ifx! {not!(branch.is_placeholder()) => {
                             ifx!{or::expr(&[parent_data.force_hashed.expr(), not!(is_not_hashed)]) => {
                                 // Hashed branch hash in parent branch
@@ -353,20 +335,22 @@ impl<F: FieldExt> BranchConfig<F> {
                         }
                     }
 
-                    // - For a branch placeholder we do not have any constraints. However, in the parallel
+                    // - For a branch placeholder we do not have any constraints. However, in the
+                    //   parallel
                     // (regular) branch we have an additional constraint (besides `is_modified` row
-                    // corresponding to `mod_nod_hash_rlc`) in this case: `is_drifted` `main.bytes` RLC
-                    // is stored in the placeholder `mod_node_hash_rlc`. For example, if there is a placeholder
-                    // branch in `S` proof, we have:
+                    // corresponding to `mod_nod_hash_rlc`) in this case: `is_drifted` `main.bytes`
+                    // RLC is stored in the placeholder `mod_node_hash_rlc`. For
+                    // example, if there is a placeholder branch in `S` proof,
+                    // we have:
                     //   - c_mod_node_hash_rlc := `is_modified` `c_main.bytes RLC`
                     //   - s_mod_node_hash_rlc := `is_drifted` `c_main.bytes RLC`
                     // - When `S` branch is NOT a placeholder:
                     //   - s_mod_node_rlc := `is_modified` `s_main.bytes RLC`
                     // Run over all branch children
-                    for rot in -(ARITY as i32)+1..=0 {
+                    for rot in -(ARITY as i32) + 1..=0 {
                         for is_s in [true, false] {
                             branch.set_is_s(is_s);
-                            ifx!{branch.is_placeholder() => {
+                            ifx! {branch.is_placeholder() => {
                                 ifx!{a!(ctx.branch.is_drifted, offset + rot) => {
                                     let branch_rlc = ctx.main(!is_s).bytes(meta, offset + rot).rlc(&r);
                                     require!(a!(accs.mod_node_rlc(is_s), offset + rot) => branch_rlc);
@@ -382,9 +366,10 @@ impl<F: FieldExt> BranchConfig<F> {
                         }
                     }
 
-                    // When in a placeholder branch, both branches are the same - the placeholder branch and its
-                    // parallel counterpart, which is not a placeholder, but a regular branch (newly
-                    // added branch). The regular branch has only two non-nil nodes,
+                    // When in a placeholder branch, both branches are the same - the placeholder
+                    // branch and its parallel counterpart, which is not a
+                    // placeholder, but a regular branch (newly added branch).
+                    // The regular branch has only two non-nil nodes,
                     // because the placeholder branch appears only when an existing
                     // leaf drifts down into a newly added branch. Besides an
                     // existing leaf, we have a leaf that was being added and that caused
@@ -398,11 +383,13 @@ impl<F: FieldExt> BranchConfig<F> {
                         // elsewhere, so it should not be much of an overhead.
                         // Alternative approach would be to have a column specifying
                         // whether there is a placeholder branch or not (we currently have this info
-                        // only in branch init). Another alternative would be to have a column where we
-                        // add `rlp2` value from the current row in each of the 16
-                        // rows. Both alternative would require additional column.
-                        let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, offset - (ARITY as i32));
-                        ifx!{branch.is_placeholder() => {
+                        // only in branch init). Another alternative would be to have a column where
+                        // we add `rlp2` value from the current row in each
+                        // of the 16 rows. Both alternative would require
+                        // additional column.
+                        let branch =
+                            BranchNodeInfo::new(meta, ctx.clone(), is_s, offset - (ARITY as i32));
+                        ifx! {branch.is_placeholder() => {
                             let sum_rlp2 = (0..ARITY).into_iter().fold(0.expr(), |acc, idx| {
                                 acc + a!(ctx.main(is_s).rlp2, offset - (idx as i32))
                             });
@@ -422,7 +409,7 @@ impl<F: FieldExt> BranchConfig<F> {
                 let not_first_level = a!(position_cols.not_first_level, offset);
                 let ext = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
 
-                ifx!{ext.is_extension() => {
+                ifx! {ext.is_extension() => {
                     let ext_rlc = DataTransition::from(a!(accs.acc_s.rlc, rot_s), a!(accs.acc_c.rlc, offset));
 
                     // There are two cases:
@@ -542,7 +529,6 @@ impl<F: FieldExt> BranchConfig<F> {
 
             offset += 1;
 
-
             let key = ctx.accumulators.key;
             let mult_diff = ctx.accumulators.mult_diff;
 
@@ -557,10 +543,15 @@ impl<F: FieldExt> BranchConfig<F> {
             require!(branch.is_key_odd() => bool);
 
             // Load the last key values
-            let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 0.expr());
+            let key_data = KeyData::load(
+                &mut cb.base,
+                &mut cm,
+                &ctx.memory[key_memory(true)],
+                0.expr(),
+            );
 
             // Calculate the extension node key RLC when in an extension node
-            let key_rlc_post_ext = ifx!{branch.is_extension() => {
+            let key_rlc_post_ext = ifx! {branch.is_extension() => {
                 let key_rlc_ext = DataTransition::new_with_rot(meta, key.rlc, offset - 1, offset);
                 // Extension key rlc
                 let ext_key_rlc = key_data.rlc.expr() + branch.ext_key_rlc(meta, &mut cb.base, key_data.mult.expr(), offset);
@@ -577,7 +568,7 @@ impl<F: FieldExt> BranchConfig<F> {
             }};
 
             // Get the length of the key
-            let key_num_bytes_for_mult = ifx!{branch.is_extension() => {
+            let key_num_bytes_for_mult = ifx! {branch.is_extension() => {
                 // Unless both parts of the key are odd, subtract 1 from the key length.
                 let key_len = branch.ext_key_len(meta, offset - 1);
                 key_len - ifx! {not!(key_data.is_odd.expr() * branch.is_key_part_in_ext_odd()) => { 1.expr() }}
@@ -588,7 +579,7 @@ impl<F: FieldExt> BranchConfig<F> {
 
             // Now update the key RLC and multiplier for the branch nibble.
             let mult = key_data.mult.expr() * mult_diff.expr();
-            let (nibble_mult, mult_mult) = ifx!{branch.is_key_odd() => {
+            let (nibble_mult, mult_mult) = ifx! {branch.is_key_odd() => {
                 // The nibble will be added as the most significant nibble using the same multiplier
                 (16.expr(), 1.expr())
             } elsex {
@@ -599,7 +590,7 @@ impl<F: FieldExt> BranchConfig<F> {
             require!(key_mult => mult.expr() * mult_mult.expr());
 
             // Update key parity
-            ifx!{branch.is_extension() => {
+            ifx! {branch.is_extension() => {
                 // We need to take account the nibbles of the extension node.
                 // The parity alternates when there's an even number of nibbles, remains the same otherwise
                 ifx!{branch.is_key_part_in_ext_even() => {
@@ -613,14 +604,18 @@ impl<F: FieldExt> BranchConfig<F> {
             }}
 
             for is_s in [true, false] {
-                KeyData::store(&mut cb.base, &ctx.memory[key_memory(is_s)], [
-                    key_rlc.expr(),
-                    key_mult.expr(),
-                    branch.nibbles_counter().expr(),
-                    branch.is_key_odd(),
-                    branch.contains_placeholder_leaf(meta, true),
-                    branch.contains_placeholder_leaf(meta, false),
-                ]);
+                KeyData::store(
+                    &mut cb.base,
+                    &ctx.memory[key_memory(is_s)],
+                    [
+                        key_rlc.expr(),
+                        key_mult.expr(),
+                        branch.nibbles_counter().expr(),
+                        branch.is_key_odd(),
+                        branch.contains_placeholder_leaf(meta, true),
+                        branch.contains_placeholder_leaf(meta, false),
+                    ],
+                );
             }
 
             // We need to check that the nibbles we stored in s are between 0 and 15.
@@ -644,9 +639,8 @@ impl<F: FieldExt> BranchConfig<F> {
         pv: &mut ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
-
         let base_offset = offset;
-        let mut offset = offset;
+        let mut offset = offset - 1;
 
         /* INIT */
         let row = &witness[offset];
@@ -833,7 +827,6 @@ impl<F: FieldExt> BranchConfig<F> {
         /* CHILD */
 
         for node_index in 0..ARITY {
-
             let row = &witness[offset];
 
             let mut node_mult_diff_s = F::one();
@@ -916,8 +909,8 @@ impl<F: FieldExt> BranchConfig<F> {
                                 &mut pv.extension_node_rlc,
                                 &mut pv.key_rlc_mult,
                                 key_len_pos + 2, /* first position behind key_len_pos
-                                                * is 0 (because is_even), we start
-                                                * with the next one */
+                                                  * is 0 (because is_even), we start
+                                                  * with the next one */
                                 key_len,
                             );
                             pv.mult_diff = F::one();
@@ -949,7 +942,8 @@ impl<F: FieldExt> BranchConfig<F> {
                                     first_nibble * 16 + second_nibble,
                                     ext_row.get_byte(key_len_pos + 2 + k),
                                 );
-                                pv.extension_node_rlc += F::from(first_nibble as u64) * pv.key_rlc_mult;
+                                pv.extension_node_rlc +=
+                                    F::from(first_nibble as u64) * pv.key_rlc_mult;
 
                                 pv.key_rlc_mult *= mpt_config.randomness;
                                 pv.mult_diff *= mpt_config.randomness;
@@ -1006,7 +1000,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         pv.key_rlc_sel = !pv.key_rlc_sel;
                     } else if pv.is_odd && pv.is_long {
                         pv.extension_node_rlc +=
-                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64) * pv.key_rlc_mult;
+                            F::from((ext_row.get_byte(key_len_pos + 1) - 16) as u64)
+                                * pv.key_rlc_mult;
 
                         pv.key_rlc_mult *= mpt_config.randomness;
 
@@ -1017,9 +1012,9 @@ impl<F: FieldExt> BranchConfig<F> {
                             &mut pv.extension_node_rlc,
                             &mut pv.key_rlc_mult,
                             key_len_pos + 2, /* the first position after key_len_pos
-                                            * is single nibble which is taken into
-                                            * account above, we start
-                                            * with fourth */
+                                              * is single nibble which is taken into
+                                              * account above, we start
+                                              * with fourth */
                             key_len - 1, // one byte is occupied by single nibble
                         );
                         pv.mult_diff = F::one();
@@ -1028,7 +1023,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         }
                         pv.key_rlc = pv.extension_node_rlc;
                         // branch part:
-                        pv.key_rlc += F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                         // key_rlc_mult stays the same
                     } else if pv.is_short {
                         pv.extension_node_rlc +=
@@ -1038,7 +1034,8 @@ impl<F: FieldExt> BranchConfig<F> {
 
                         pv.key_rlc_mult *= mpt_config.randomness;
                         // branch part:
-                        pv.key_rlc += F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                         pv.mult_diff = if pv.is_short_c1 {
                             F::one()
                         } else {
@@ -1047,7 +1044,8 @@ impl<F: FieldExt> BranchConfig<F> {
                     }
                 } else {
                     if pv.key_rlc_sel {
-                        pv.key_rlc += F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
+                        pv.key_rlc +=
+                            F::from(pv.modified_node as u64) * F::from(16) * pv.key_rlc_mult;
                         // key_rlc_mult stays the same
                     } else {
                         pv.key_rlc += F::from(pv.modified_node as u64) * pv.key_rlc_mult;
@@ -1169,7 +1167,8 @@ impl<F: FieldExt> BranchConfig<F> {
                         *branch_mult *= mpt_config.randomness;
                         let len = row.get_byte(start) as usize - 192;
                         for i in 0..len {
-                            *branch_acc += F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
+                            *branch_acc +=
+                                F::from(row.get_byte(start + 1 + i) as u64) * *branch_mult;
                             *branch_mult *= mpt_config.randomness;
                         }
                     }
@@ -1207,23 +1206,9 @@ impl<F: FieldExt> BranchConfig<F> {
             offset += 1;
         }
 
-        /*let row = &witness[offset];
-        if row.get_type()  == MptWitnessRowType::AccountLeafNeighbouringLeaf {
-            println!("[{}] reset", offset);
-            //account_leaf.is_in_added_branch = true;
-            pv.key_rlc = F::zero(); // account address until here, storage key from here on
-            pv.key_rlc_mult = F::one();
-            pv.key_rlc_prev = F::zero();
-            pv.key_rlc_mult_prev = F::one();
-            pv.nibbles_num_prev = 0;
-            pv.key_rlc_sel = true;
-            pv.nibbles_num = 0;
-        }*/
-
         /* EXTENSION */
 
         if pv.is_extension_node {
-            println!("[{}] extension", base_offset);
             for is_s in [true, false] {
                 let row = &witness[offset];
                 if is_s {
@@ -1285,8 +1270,12 @@ impl<F: FieldExt> BranchConfig<F> {
                         .assign_acc(region, pv.acc_s, pv.acc_mult_s, pv.acc_c, F::zero(), offset)
                         .ok();
                 } else {
-                    self.key_data
-                        .witness_load(region, base_offset, &pv.memory[key_memory(true)], 0)?;
+                    self.key_data.witness_load(
+                        region,
+                        base_offset,
+                        &pv.memory[key_memory(true)],
+                        0,
+                    )?;
                     for is_s in [true, false] {
                         self.key_data.witness_store(
                             region,
@@ -1336,7 +1325,6 @@ impl<F: FieldExt> BranchConfig<F> {
                 offset += 1;
             }
         } else {
-
             offset += 1;
 
             self.key_data
@@ -1354,8 +1342,6 @@ impl<F: FieldExt> BranchConfig<F> {
                 )?;
             }
         }
-
-        println!("offset: {}", offset);
 
         Ok(())
     }

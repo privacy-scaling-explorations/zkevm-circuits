@@ -20,18 +20,11 @@ mod selectors;
 mod storage_leaf;
 mod witness_row;
 
-use account_leaf::{
-    AccountLeaf, AccountLeafCols,
-};
-use branch::{
-    branch_key::BranchKeyConfig,
-    extension_node::ExtensionNodeConfig, Branch, BranchCols, BranchConfig,
-};
+use account_leaf::{AccountLeaf, AccountLeafCols};
+use branch::{Branch, BranchCols, BranchConfig};
 use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
 use proof_chain::ProofChainConfig;
-use storage_leaf::{
-    StorageLeaf, StorageLeafCols,
-};
+use storage_leaf::{StorageLeaf, StorageLeafCols};
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::HASH_WIDTH;
@@ -39,19 +32,17 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
-    circuit_tools::{merge_lookups, Memory, CellManager},
+    circuit_tools::{merge_lookups, Memory},
     evm_circuit::util::rlc,
-    mpt_circuit::{helpers::{
-        extend_rand, parent_memory, BranchNodeInfo, KeyData, MPTConstraintBuilder, ParentData,
-    }, storage_leaf::leaf_combined::LeafCombinedConfig},
+    mpt_circuit::{
+        helpers::{extend_rand, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
+        storage_leaf::StorageLeafConfig,
+    },
     table::{DynamicTableColumns, KeccakTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
 
-use self::{
-    columns::MPTTable, param::BRANCH_ROWS_NUM,
-    helpers::key_memory, account_leaf::AccountCombinedConfig,
-};
+use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memory};
 
 /*
     MPT circuit contains S and C columns (other columns are mostly selectors).
@@ -84,8 +75,8 @@ use self::{
 #[derive(Debug)]
 pub struct RowConfig<F> {
     branch_config: BranchConfig<F>,
-    super_leaf: LeafCombinedConfig<F>,
-    super_account: AccountCombinedConfig<F>,
+    storage_config: StorageLeafConfig<F>,
+    account_config: AccountLeafConfig<F>,
 }
 
 /// Merkle Patricia Trie context
@@ -181,8 +172,8 @@ pub struct MPTConfig<F> {
                                              * address RLC in
                                              * the same row as storage key/value). */
     branch_config: BranchConfig<F>,
-    super_leaf: LeafCombinedConfig<F>,
-    super_account: AccountCombinedConfig<F>,
+    storage_config: StorageLeafConfig<F>,
+    account_config: AccountLeafConfig<F>,
     pub(crate) randomness: F,
     pub(crate) mpt_table: MPTTable,
 }
@@ -420,7 +411,6 @@ impl<F: FieldExt> MPTConfig<F> {
                 /* Initial values */
                 // Initial key values
                 ifx!{not!(f!(position_cols.q_enable)) => {
-                    //KeyData::store(&mut cb.base, &ctx.key_memory, KeyData::default_values());
                     KeyData::store_initial_values(&mut cb.base, &ctx.memory[key_memory(true)]);
                     KeyData::store_initial_values(&mut cb.base, &ctx.memory[key_memory(false)]);
                 }}
@@ -433,21 +423,21 @@ impl<F: FieldExt> MPTConfig<F> {
                     }
                 }}
 
-                let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+                //let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
                 let branch_config;
-                let super_leaf;
-                let super_account;
+                let storage_config;
+                let account_config;
                 ifx!{f!(position_cols.q_enable) => {
                     matchx! {
-                        a!(branch.is_init) => {
+                        and::expr(&[a!(branch.is_init, -1), f!(position_cols.q_not_first)]) => {
                             branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(account_leaf.is_key_c) => {
-                            super_account = AccountCombinedConfig::configure(meta, &mut cb, ctx.clone());
+                            account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(storage_leaf.is_s_key) => {
                             ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
-                                super_leaf = LeafCombinedConfig::configure(meta, &mut cb, ctx.clone());
+                                storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                             }};
                         },
                         _ => (),
@@ -513,15 +503,14 @@ impl<F: FieldExt> MPTConfig<F> {
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 /* Memory banks */
-                // TODO(Brecht): change back to q_enable
                 ifx!{f!(position_cols.q_enable) => {
                     ctx.memory.generate_constraints(&mut cb.base);
                 }}
 
                 row_config = Some(RowConfig {
                     branch_config,
-                    super_leaf,
-                    super_account,
+                    storage_config,
+                    account_config,
                 });
             });
 
@@ -586,8 +575,8 @@ impl<F: FieldExt> MPTConfig<F> {
             fixed_table,
             address_rlc,
             branch_config: row_config.branch_config,
-            super_leaf: row_config.super_leaf,
-            super_account: row_config.super_account,
+            storage_config: row_config.storage_config,
+            account_config: row_config.account_config,
             randomness,
             mpt_table,
         }
@@ -798,7 +787,7 @@ impl<F: FieldExt> MPTConfig<F> {
                         ]);
                     }
 
-                    for (ind, row) in witness
+                    for (idx, row) in witness
                         .iter()
                         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
                         .enumerate()
@@ -840,36 +829,12 @@ impl<F: FieldExt> MPTConfig<F> {
                             pv.before_account_leaf = false;
                         }
 
-                        let q_not_first = if ind == 0 { F::zero() } else { F::one() };
+                        let q_not_first = if idx == 0 { F::zero() } else { F::one() };
                         region.assign_fixed(
                             || "not first",
                             self.position_cols.q_not_first,
                             offset,
                             || Value::known(q_not_first),
-                        )?;
-
-                        let q_not_first_ext_s = if offset < (BRANCH_ROWS_NUM as usize) - 2 {
-                            F::zero()
-                        } else {
-                            F::one()
-                        };
-                        region.assign_fixed(
-                            || "not first ext s",
-                            self.position_cols.q_not_first_ext_s,
-                            offset,
-                            || Value::known(q_not_first_ext_s),
-                        )?;
-
-                        let q_not_first_ext_c = if offset < (BRANCH_ROWS_NUM as usize) - 1 {
-                            F::zero()
-                        } else {
-                            F::one()
-                        };
-                        region.assign_fixed(
-                            || "not first ext c",
-                            self.position_cols.q_not_first_ext_c,
-                            offset,
-                            || Value::known(q_not_first_ext_c),
                         )?;
 
                         region.assign_advice(
@@ -881,14 +846,19 @@ impl<F: FieldExt> MPTConfig<F> {
 
                         row.assign_lookup_columns(&mut region, self, &pv, offset)?;
 
-                        if row.get_type() == MptWitnessRowType::InitBranch {
+                        let prev_row = if offset > 0 {
+                            &witness[offset - 1]
+                        } else {
+                            row
+                        };
+
+                        if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
                             self.branch_config
                                 .assign(&mut region, witness, self, &mut pv, offset)
                                 .ok();
 
                             offset += 1;
                         } else if row.get_type() == MptWitnessRowType::BranchChild {
-
                             offset += 1;
                         } else {
                             // leaf s or leaf c or leaf key s or leaf key c
@@ -919,7 +889,6 @@ impl<F: FieldExt> MPTConfig<F> {
                             } else if row.get_type()
                                 == MptWitnessRowType::AccountLeafNeighbouringLeaf
                             {
-                                println!("[{}] reset", offset);
                                 account_leaf.is_in_added_branch = true;
                                 pv.key_rlc = F::zero(); // account address until here, storage key from here on
                                 pv.key_rlc_mult = F::one();
@@ -928,24 +897,6 @@ impl<F: FieldExt> MPTConfig<F> {
                                 pv.nibbles_num_prev = 0;
                                 pv.key_rlc_sel = true;
                                 pv.nibbles_num = 0;
-                                /*
-                                Note: The constraints for ensuring that in the first account and first storage level
-                                the key RLC is 0 and the key RLC mult is 1 are in:
-                                 - `account_leaf_key.rs` for when the node in the first level is an account leaf
-                                 - `branch_key.rs` for when the node in the first level is a branch
-                                 - `extension_node_key.rs` for when the node in the first level is an extension node.
-
-                                Similarly for `sel`. For `key_rlc_prev` and `key_rlc_mult_prev` there are no
-                                columns, these values are used for internal computation, like for `key_rlc`
-                                after the branch placeholder (when we need to reach back to the branch above
-                                the placeholder).
-
-                                The constraints for ensuring that in the first account and first storage level
-                                `nibbles_num` is 0 are in:
-                                 - `account_leaf_key.rs` for when the node in the first level is an account leaf
-                                 - `branch.rs` for when the node in the first level is a branch
-                                 - `extension_node.rs` for when the node in the first level is an extension node.
-                                */
                             } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
                                 storage_leaf.is_s_value = true;
                             } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
@@ -973,7 +924,7 @@ impl<F: FieldExt> MPTConfig<F> {
 
                             // Storage leaf key
                             if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                                self.super_leaf.assign(
+                                self.storage_config.assign(
                                     &mut region,
                                     self,
                                     witness,
@@ -981,7 +932,7 @@ impl<F: FieldExt> MPTConfig<F> {
                                     offset,
                                 )?;
                             } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                                self.super_account.assign(
+                                self.account_config.assign(
                                     &mut region,
                                     self,
                                     witness,

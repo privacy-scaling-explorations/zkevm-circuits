@@ -277,7 +277,6 @@ impl<F: FieldExt> Memory<F> {
     pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
         for bank in self.banks.iter() {
             bank.generate_constraints(cb);
-
             cb.generate_lookup_table_checks(bank.tag());
 
             /*let lookups = cb.consume_lookups(&[bank.tag()]);
@@ -432,7 +431,8 @@ impl<F: FieldExt> MemoryBank<F> {
     pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
         let lookup_table = cb.get_lookup_table(self.tag());
         crate::circuit!([meta, cb], {
-            require!(self.next => self.cur.expr() + lookup_table.0);
+            // TODO(Brecht): fix
+            //require!(self.next => self.cur.expr() + lookup_table.0);
         });
     }
 

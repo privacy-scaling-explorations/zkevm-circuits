@@ -119,7 +119,14 @@ impl<F: FieldExt> KeyData<F> {
     }
 
     pub(crate) fn default_values() -> [Expression<F>; 6] {
-        [0.expr(), 1.expr(), 0.expr(), false.expr(), false.expr(), false.expr()]
+        [
+            0.expr(),
+            1.expr(),
+            0.expr(),
+            false.expr(),
+            false.expr(),
+            false.expr(),
+        ]
     }
 
     pub(crate) fn witness_store(
@@ -643,7 +650,11 @@ impl<F: FieldExt> BranchNodeInfo<F> {
 
     /// Length of the included branch (excluding RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn ext_branch_len(&self, meta: &mut VirtualCells<F>, rot_ext_s: i32) -> Expression<F> {
+    pub(crate) fn ext_branch_len(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rot_ext_s: i32,
+    ) -> Expression<F> {
         circuit!([meta, _cb!()], {
             ifx! {self.contains_hashed_branch(meta, rot_ext_s) => {
                 32.expr()
@@ -655,13 +666,21 @@ impl<F: FieldExt> BranchNodeInfo<F> {
 
     /// Length of the included branch (excluding RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn ext_branch_num_bytes(&self, meta: &mut VirtualCells<F>, rot_ext_s: i32) -> Expression<F> {
+    pub(crate) fn ext_branch_num_bytes(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rot_ext_s: i32,
+    ) -> Expression<F> {
         1.expr() + self.ext_branch_len(meta, rot_ext_s)
     }
 
     /// Length of the key (excluding RLP bytes)
     /// Uses data on the current row!
-    pub(crate) fn contains_hashed_branch(&self, meta: &mut VirtualCells<F>, rot_ext_s: i32) -> Expression<F> {
+    pub(crate) fn contains_hashed_branch(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rot_ext_s: i32,
+    ) -> Expression<F> {
         circuit!([meta, _cb!()], {
             a!(self.ctx.c_main.rlp2, rot_ext_s) * invert!(RLP_HASH_VALUE)
         })
@@ -1247,7 +1266,11 @@ pub(crate) fn leaf_key_rlc<F: FieldExt>(
             require!(first_byte => KEY_TERMINAL_PREFIX_EVEN);
             (0.expr(), key_mult_first_even.expr())
         }};
-        (rlc, key_mult_prev * mult).rlc_chain(ctx.rlc(meta, range.start + 1..range.end, cb.get_query_offset() + rot))
+        (rlc, key_mult_prev * mult).rlc_chain(ctx.rlc(
+            meta,
+            range.start + 1..range.end,
+            cb.get_query_offset() + rot,
+        ))
     })
 }
 

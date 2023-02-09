@@ -1,30 +1,27 @@
-pub mod account_leaf_key;
-pub mod account_leaf_key_in_added_branch;
-pub mod account_leaf_nonce_balance;
-pub mod account_leaf_storage_codehash;
-pub mod account_non_existing;
-
 use halo2_proofs::{
     arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression},
 };
-use std::marker::PhantomData;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
+use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{CellManager, DataTransition, RLCable, Cell, ConstraintBuilder},
+    circuit_tools::{Cell, CellManager, CellType, ConstraintBuilder, DataTransition, RLCable},
     mpt_circuit::{
         helpers::BranchNodeInfo,
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
-        helpers::{get_num_nibbles, AccountLeafInfo, KeyData, MPTConstraintBuilder, key_memory, get_num_bytes_short, parent_memory, ParentData, get_parent_rlc_state},
-        param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG, RLP_HASH_VALUE},
+        helpers::{
+            get_num_bytes_short, get_num_nibbles, get_parent_rlc_state, key_memory, parent_memory,
+            AccountLeafInfo, KeyData, MPTConstraintBuilder, ParentData,
+        },
+        param::{KEY_LEN_IN_NIBBLES, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LONG},
         FixedTableTag,
     },
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
@@ -34,8 +31,15 @@ use crate::{
     },
 };
 
-use super::{param::{ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND, ACCOUNT_LEAF_KEY_C_IND, C_START, HASH_WIDTH, IS_NONCE_MOD_POS, IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, IS_NON_EXISTING_ACCOUNT_POS}, helpers::bytes_into_rlc};
-
+use super::{
+    helpers::bytes_into_rlc,
+    param::{
+        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
+        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
+        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, C_START, HASH_WIDTH, IS_BALANCE_MOD_POS,
+        IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+    },
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountLeafCols<F> {
@@ -103,17 +107,17 @@ pub(crate) struct AccountLeaf {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct AccountCombinedConfig<F> {
+pub(crate) struct AccountLeafConfig<F> {
     key_data_s: KeyData<F>,
     key_data_c: KeyData<F>,
     key_data_w: KeyData<F>,
     key_data_d: KeyData<F>,
     parent_data_s: ParentData<F>,
     parent_data_c: ParentData<F>,
-    //diff_inv: Cell<F>,
+    diff_inv: Cell<F>,
 }
 
-impl<F: FieldExt> AccountCombinedConfig<F> {
+impl<F: FieldExt> AccountLeafConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -131,7 +135,7 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
         let value = ctx.value;
         let r = ctx.r.clone();
 
-        let mut offset = - 1;
+        let mut offset = -1;
 
         // key rlc is in the first branch node
         let rot_parent = offset - 1;
@@ -145,7 +149,7 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
         let mut ctx_key_data_d: Option<KeyData<F>> = None;
         let mut ctx_parent_data_s: Option<ParentData<F>> = None;
         let mut ctx_parent_data_c: Option<ParentData<F>> = None;
-        let mut ctx_diff_inv: Option<Cell<F>> = None;
+        let ctx_diff_inv: Cell<F>;
 
         circuit!([meta, cb.base], {
             for is_s in [true, false] {
@@ -163,7 +167,12 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                 // Load the last key values, which depends on the branch being a placeholder.
                 let is_branch_placeholder = ifx! {f!(ctx.position_cols.q_not_first), a!(not_first_level) => { branch.is_placeholder() }};
                 let load_offset = ifx! {is_branch_placeholder => { 1.expr() }};
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(is_s)], load_offset);
+                let key_data = KeyData::load(
+                    &mut cb.base,
+                    &mut cm,
+                    &ctx.memory[key_memory(is_s)],
+                    load_offset,
+                );
 
                 // Calculate the key RLC
                 let key_rlc = key_data.rlc.expr()
@@ -183,7 +192,11 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                 require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                 // Key done, set the starting values
-                KeyData::store(&mut cb.base, &ctx.memory[key_memory(is_s)], KeyData::default_values());
+                KeyData::store(
+                    &mut cb.base,
+                    &ctx.memory[key_memory(is_s)],
+                    KeyData::default_values(),
+                );
 
                 // Num bytes used in RLC
                 let num_bytes = account.num_bytes_on_key_row(meta);
@@ -249,8 +262,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     let key_rlc_wrong = key_data.rlc.expr() + account.key_rlc(meta, &mut cb.base, key_data.mult.expr(), key_data.is_odd.expr(), 1.expr(), offset - rot_key_s);
                     require!(a!(address_rlc, offset) => key_rlc_wrong);
                     // Now make sure this address is different than the one of the leaf
-                    let diff_inv = a!(accs.acc_s.rlc, offset);
-                    require!((a!(address_rlc, offset) - a!(accs.key.rlc, rot_key_s)) * diff_inv => 1);
+                    let diff_inv = cm.query_cell(CellType::Storage);
+                    require!((a!(address_rlc, offset) - a!(accs.key.rlc, rot_key_s)) * diff_inv.expr() => 1);
                     // Make sure the lengths of the keys are the same
                     let account_wrong = AccountLeafInfo::new(meta, ctx.clone(), offset);
                     require!(account_wrong.key_len(meta) => account.key_len(meta));
@@ -258,6 +271,7 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     let leaf = AccountLeafInfo::new(meta, ctx.clone(), offset);
                     let num_bytes = leaf.num_bytes_on_key_row(meta);
                     //cb.set_length(num_bytes);
+                    ctx_diff_inv = diff_inv;
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
                     require!(key_data.is_placeholder_leaf_s => true);
@@ -574,14 +588,14 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
             }}
         });
 
-        AccountCombinedConfig {
+        AccountLeafConfig {
             key_data_s: ctx_key_data_s.unwrap(),
             key_data_c: ctx_key_data_c.unwrap(),
             key_data_w: ctx_key_data_w.unwrap(),
             key_data_d: ctx_key_data_d.unwrap(),
             parent_data_s: ctx_parent_data_s.unwrap(),
             parent_data_c: ctx_parent_data_c.unwrap(),
-            //diff_inv: ctx_diff_inv.unwrap(),
+            diff_inv: ctx_diff_inv,
         }
     }
 
@@ -593,7 +607,6 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
         pv: &mut ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
-
         let base_offset = offset;
         let mut offset = offset - 1;
 
@@ -622,8 +635,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                         mpt_config.proof_type.proof_type,
                         offset,
                         || Value::known(F::from(5_u64)), /* account delete mod lookup enabled in
-                                                        * this row if it is is_account_delete
-                                                        * proof */
+                                                          * this row if it is is_account_delete
+                                                          * proof */
                     )?;
                 }
             } else {
@@ -637,9 +650,17 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                 pv.is_branch_c_placeholder
             };
             let load_offset = if is_branch_placeholder { 1 } else { 0 };
-            let key_data = if is_s { &self.key_data_s } else { &self.key_data_c };
-            key_data
-                .witness_load(region, base_offset, &mut pv.memory[key_memory(is_s)], load_offset)?;
+            let key_data = if is_s {
+                &self.key_data_s
+            } else {
+                &self.key_data_c
+            };
+            key_data.witness_load(
+                region,
+                base_offset,
+                &mut pv.memory[key_memory(is_s)],
+                load_offset,
+            )?;
             key_data.witness_store(
                 region,
                 base_offset,
@@ -655,13 +676,19 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
             let mut key_rlc_new = pv.key_rlc;
             let mut key_rlc_mult_new = pv.key_rlc_mult;
             if (pv.is_branch_s_placeholder && row.get_type() == MptWitnessRowType::AccountLeafKeyS)
-                || (pv.is_branch_c_placeholder && row.get_type() == MptWitnessRowType::AccountLeafKeyC)
+                || (pv.is_branch_c_placeholder
+                    && row.get_type() == MptWitnessRowType::AccountLeafKeyC)
             {
                 key_rlc_new = pv.key_rlc_prev;
                 key_rlc_mult_new = pv.key_rlc_mult_prev;
             }
 
-            mpt_config.compute_key_rlc(&row.bytes, &mut key_rlc_new, &mut key_rlc_mult_new, S_START);
+            mpt_config.compute_key_rlc(
+                &row.bytes,
+                &mut key_rlc_new,
+                &mut key_rlc_mult_new,
+                S_START,
+            );
             pv.account_key_rlc = key_rlc_new;
             region.assign_advice(
                 || "assign key_rlc".to_string(),
@@ -670,7 +697,9 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                 || Value::known(key_rlc_new),
             )?;
 
-            mpt_config.assign_acc(region, acc, acc_mult, F::zero(), F::zero(), offset).ok();
+            mpt_config
+                .assign_acc(region, acc, acc_mult, F::zero(), F::zero(), offset)
+                .ok();
 
             offset += 1;
         }
@@ -686,13 +715,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
             let diff_inv = (address_rlc - pv.account_key_rlc)
                 .invert()
                 .unwrap_or(F::zero());
-            region
-                .assign_advice(
-                    || "assign diff inv".to_string(),
-                    mpt_config.accumulators.acc_s.rlc,
-                    offset,
-                    || Value::known(diff_inv),
-                )
+            self.diff_inv
+                .assign(region, base_offset, Value::known(diff_inv))
                 .ok();
 
             if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
@@ -701,12 +725,14 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                         || "assign lookup enabled".to_string(),
                         mpt_config.proof_type.proof_type,
                         offset,
-                        || Value::known(F::from(4_u64)), /* non existing account lookup enabled in
-                                                        * this row if it is non_existing_account
-                                                        * proof */
+                        || Value::known(F::from(4_u64)), /* non existing account lookup enabled
+                                                          * in
+                                                          * this row if it is
+                                                          * non_existing_account
+                                                          * proof */
                     )
                     .ok();
-        }
+            }
         }
 
         offset += 1;
@@ -725,7 +751,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     .assign_advice(
                         || "assign sel1".to_string(),
                         mpt_config.denoter.sel1,
-                        offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
+                        offset
+                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
                         || Value::known(F::one()),
                     )
                     .ok();
@@ -734,7 +761,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     .assign_advice(
                         || "assign sel1".to_string(),
                         mpt_config.denoter.sel1,
-                        offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
+                        offset
+                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
                         || Value::known(F::zero()),
                     )
                     .ok();
@@ -747,7 +775,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     .assign_advice(
                         || "assign sel2".to_string(),
                         mpt_config.denoter.sel2,
-                        offset - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
+                        offset
+                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
                         || Value::known(F::one()),
                     )
                     .ok();
@@ -756,7 +785,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     .assign_advice(
                         || "assign sel2".to_string(),
                         mpt_config.denoter.sel2,
-                        offset - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
+                        offset
+                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
                         || Value::known(F::zero()),
                     )
                     .ok();
@@ -852,7 +882,8 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                 }
 
                 let offset_s = offset
-                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND) as usize;
+                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND)
+                        as usize;
 
                 // assign nonce S RLC in ACCOUNT_LEAF_NONCE_BALANCE_S row.
                 region
@@ -1053,7 +1084,9 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                             || "assign lookup enabled".to_string(),
                             mpt_config.proof_type.proof_type,
                             offset,
-                            || Value::known(F::from(3_u64)), // codehash mod lookup enabled in this row if it is is_codehash_mod proof
+                            || Value::known(F::from(3_u64)), /* codehash mod lookup enabled in
+                                                              * this row if it is
+                                                              * is_codehash_mod proof */
                         )
                         .ok();
                 }
@@ -1108,7 +1141,11 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
             } else {
                 pv.storage_root_value_c
             };
-            let parent_data = if is_s { &self.parent_data_s } else { &self.parent_data_c };
+            let parent_data = if is_s {
+                &self.parent_data_s
+            } else {
+                &self.parent_data_c
+            };
             parent_data
                 .witness_load(region, base_offset, &mut pv.memory[parent_memory(is_s)], 0)
                 .ok();
@@ -1175,7 +1212,7 @@ impl<F: FieldExt> AccountCombinedConfig<F> {
                     offset,
                 )
                 .ok();
-            }
+        }
 
         Ok(())
     }
