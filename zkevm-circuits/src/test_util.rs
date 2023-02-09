@@ -21,6 +21,8 @@ fn init_env_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 }
 
+const NUM_BLINDING_ROWS: usize = 64;
+
 #[allow(clippy::type_complexity)]
 /// Struct used to easily generate tests for EVM &| State circuits being able to
 /// customize all of the steps involved in the testing itself.
@@ -223,7 +225,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // state circuit and evm circuit must be same
         {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
-            let k = log2_ceil(rows_needed + rows_needed);
+            let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let power_of_randomness = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, power_of_randomness).unwrap();
