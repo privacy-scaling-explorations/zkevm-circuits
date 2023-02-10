@@ -16,7 +16,7 @@ use halo2_proofs::{
 
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
-    table::ExpTable,
+    table::{ExpTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -332,6 +332,7 @@ impl<F: Field> ExpCircuitConfig<F> {
                         &mut parity_check_chip,
                     )?;
                 }
+
                 // Fill the rest of the circuit with valid rows to achieve a constant assignment
                 // to the q_usable fixed column.
                 let pad_exp_event = ExpEvent::default();
@@ -406,7 +407,10 @@ impl<F: Field> ExpCircuitConfig<F> {
             )?;
             // assign exp table.
             for (i, assignment) in step_assignments.iter().enumerate() {
-                for (column, value) in self.exp_table.columns().iter().zip(assignment) {
+                for (column, value) in <ExpTable as LookupTable<F>>::advice_columns(&self.exp_table)
+                    .iter()
+                    .zip(assignment)
+                {
                     region.assign_advice(
                         || format!("exp circuit: {:?}: {}", *column, *offset + i),
                         *column,
@@ -438,7 +442,7 @@ impl<F: Field> ExpCircuitConfig<F> {
     }
 
     fn assign_unused_rows(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
-        let mut all_columns = self.exp_table.columns();
+        let mut all_columns = <ExpTable as LookupTable<F>>::advice_columns(&self.exp_table);
         all_columns.extend_from_slice(&[
             self.mul_gadget.col0,
             self.mul_gadget.col1,
