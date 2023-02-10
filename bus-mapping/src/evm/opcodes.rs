@@ -276,7 +276,7 @@ fn fn_gen_error_state_associated_ops(
             let op = geth_step.op;
             assert!(op.is_call());
             Some(fn_gen_associated_ops(&op))
-        },
+        }
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         // more future errors place here
         _ => {
