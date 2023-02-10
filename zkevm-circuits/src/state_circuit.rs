@@ -638,7 +638,8 @@ mod state_circuit_stats {
 
         let mut stats = Vec::new();
         for state in implemented_states {
-            for opcode in state.responsible_opcodes() {
+            for responsible_op in state.responsible_opcodes() {
+                let opcode = responsible_op.opcode();
                 let mut code = bytecode! {
                     PUSH2(0x100)
                     MLOAD // Expand memory a bit
