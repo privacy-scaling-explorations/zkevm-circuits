@@ -1,6 +1,6 @@
 //! Exponentiation verification circuit.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Add};
 
 use bus_mapping::circuit_input_builder::{ExpEvent, ExpStep};
 use eth_types::{Field, ToScalar, U256};
@@ -293,35 +293,18 @@ impl<F: Field> ExpCircuitConfig<F> {
         exp_events: &[ExpEvent],
         max_exp_steps: usize,
     ) -> Result<(), Error> {
+        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
+        debug_assert!(
+            Self::min_num_rows(exp_events) <= max_exp_rows,
+            "insufficient rows to populate the exponentiation trace"
+        );
+
         let mut mul_chip = MulAddChip::construct(self.mul_gadget.clone());
         let mut parity_check_chip = MulAddChip::construct(self.parity_check.clone());
-        let max_exp_rows = max_exp_steps * OFFSET_INCREMENT;
-        assert!(Self::min_num_rows(exp_events) <= max_exp_rows - UNUSABLE_EXP_ROWS);
+
         layouter.assign_region(
             || "exponentiation circuit",
             |mut region| {
-                region.name_column(|| "exp_table.is_step", self.exp_table.is_step);
-                region.name_column(|| "exp_table.identifier", self.exp_table.identifier);
-                region.name_column(|| "exp_table.is_last", self.exp_table.is_last);
-                region.name_column(|| "exp_table.base_limb", self.exp_table.base_limb);
-                region.name_column(|| "exp_table.exponent_lo_hi", self.exp_table.exponent_lo_hi);
-                region.name_column(
-                    || "exp_table.exponentiation_lo_hi",
-                    self.exp_table.exponentiation_lo_hi,
-                );
-                // region.name_column(|| "q_usable", self.q_usable);
-                region.name_column(|| "mul_gadget.col0", self.mul_gadget.col0);
-                region.name_column(|| "mul_gadget.col1", self.mul_gadget.col1);
-                region.name_column(|| "mul_gadget.col2", self.mul_gadget.col2);
-                region.name_column(|| "mul_gadget.col3", self.mul_gadget.col3);
-                region.name_column(|| "mul_gadget.col4", self.mul_gadget.col4);
-                // region.name_column(|| "mul_gadget.overflow", self.mul_gadget.overflow);
-                region.name_column(|| "parity_check.col0", self.parity_check.col0);
-                region.name_column(|| "parity_check.col1", self.parity_check.col1);
-                region.name_column(|| "parity_check.col2", self.parity_check.col2);
-                region.name_column(|| "parity_check.col3", self.parity_check.col3);
-                region.name_column(|| "parity_check.col4", self.parity_check.col4);
-                // region.name_column(|| "parity_check.overflow", self.parity_check.overflow);
                 let mut offset = 0;
                 for exp_event in exp_events.iter() {
                     self.assign_exp_event(
@@ -351,34 +334,6 @@ impl<F: Field> ExpCircuitConfig<F> {
                 Ok(())
             },
         )
-    }
-    fn assign_step(
-        &self,
-        region: &mut Region<F>,
-        offset: usize,
-        exponent: &mut U256,
-        step: &ExpStep,
-        mul_chip: &mut MulAddChip<F>,
-        parity_check_chip: &mut MulAddChip<F>,
-    ) -> Result<(), Error> {
-        let two = U256::from(2);
-        let (exponent_div2, remainder) = exponent.div_mod(two);
-
-        for i in 0..OFFSET_INCREMENT {
-            self.q_usable.enable(region, offset + i)?;
-        }
-        mul_chip.assign(region, offset, [step.a, step.b, U256::zero(), step.d])?;
-        parity_check_chip.assign(region, offset, [two, exponent_div2, remainder, *exponent])?;
-
-        // update reducing exponent
-        if remainder.is_zero() {
-            // exponent is even
-            *exponent = exponent_div2;
-        } else {
-            // exponent is odd
-            *exponent = *exponent - 1;
-        }
-        Ok(())
     }
 
     fn assign_exp_event(
@@ -441,6 +396,35 @@ impl<F: Field> ExpCircuitConfig<F> {
         Ok(())
     }
 
+    fn assign_step(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        exponent: &mut U256,
+        step: &ExpStep,
+        mul_chip: &mut MulAddChip<F>,
+        parity_check_chip: &mut MulAddChip<F>,
+    ) -> Result<(), Error> {
+        let two = U256::from(2);
+        let (exponent_div2, remainder) = exponent.div_mod(two);
+
+        for i in 0..OFFSET_INCREMENT {
+            self.q_usable.enable(region, offset + i)?;
+        }
+        mul_chip.assign(region, offset, [step.a, step.b, U256::zero(), step.d])?;
+        parity_check_chip.assign(region, offset, [two, exponent_div2, remainder, *exponent])?;
+
+        // update reducing exponent
+        if remainder.is_zero() {
+            // exponent is even
+            *exponent = exponent_div2;
+        } else {
+            // exponent is odd
+            *exponent = *exponent - 1;
+        }
+        Ok(())
+    }
+
     fn assign_unused_rows(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
         let mut all_columns = <ExpTable as LookupTable<F>>::advice_columns(&self.exp_table);
         all_columns.extend_from_slice(&[
@@ -479,7 +463,8 @@ impl<F: Field> ExpCircuitConfig<F> {
         exp_events
             .iter()
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
-            .sum()
+            .sum::<usize>()
+            .add(UNUSABLE_EXP_ROWS)
     }
 }
 

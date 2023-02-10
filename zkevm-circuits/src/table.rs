@@ -1279,19 +1279,6 @@ pub struct ExpTable {
 }
 
 impl ExpTable {
-    /// Get the list of columns associated with the exponentiation table.
-    pub fn columns(&self) -> Vec<Column<Advice>> {
-        vec![
-            self.identifier,
-            self.is_last,
-            self.base_limb,
-            self.exponent_lo_hi,
-            self.exponentiation_lo_hi,
-        ]
-    }
-}
-
-impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
