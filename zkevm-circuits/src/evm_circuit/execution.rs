@@ -61,6 +61,7 @@ mod dup;
 mod end_block;
 mod end_tx;
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_log;
@@ -127,6 +128,7 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
+use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
@@ -288,6 +290,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
+    error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
@@ -295,7 +298,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
-    invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -537,12 +539,12 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
+            error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
             error_depth: configure_gadget!(),
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
-            invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1214,6 +1216,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
+            ExecutionState::ErrorInvalidOpcode => {
+                assign_exec_step!(self.error_invalid_opcode)
+            }
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
@@ -1228,10 +1233,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
-            }
-
-            ExecutionState::ErrorInvalidOpcode => {
-                assign_exec_step!(self.invalid_opcode_gadget)
             }
 
             _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
