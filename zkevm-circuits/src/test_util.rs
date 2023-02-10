@@ -8,10 +8,12 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
 use eth_types::geth_types::GethData;
+use std::cmp;
 
 use crate::util::log2_ceil;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::plonk::{Circuit, ConstraintSystem};
 use mock::TestContext;
 
 #[cfg(test)]
@@ -225,7 +227,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // state circuit and evm circuit must be same
         {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
-            let k = log2_ceil(rows_needed + NUM_BLINDING_ROWS);
+            let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
             let power_of_randomness = state_circuit.instance();
             let prover = MockProver::<Fr>::run(k, &state_circuit, power_of_randomness).unwrap();
