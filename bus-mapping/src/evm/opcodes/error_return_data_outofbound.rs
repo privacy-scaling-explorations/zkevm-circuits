@@ -1,5 +1,6 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::{Opcode, OpcodeId};
+use crate::error::ExecError;
+use crate::evm::Opcode;
 use crate::operation::CallContextField;
 use crate::Error;
 use eth_types::{GethExecStep, Word};
@@ -15,7 +16,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         let next_step = geth_steps.get(1);
-        };
+
         exec_step.error = Some(ExecError::ReturnDataOutOfBounds);
         assert_eq!(
             state.get_step_err(geth_step, next_step).unwrap(),
@@ -73,8 +74,12 @@ impl Opcode for ErrorReturnDataOutOfBound {
 }
 
 #[cfg(test)]
-mod return_tests {
+mod tests {
+    use super::*;
+    use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
+    use crate::operation::RW;
+    use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::GethData;
     use eth_types::{bytecode, word};
     use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
@@ -87,27 +92,28 @@ mod return_tests {
             PUSH1(0)
             MSTORE
 
-            PUSH1 (0x15)
-            PUSH1 (0xB)
-            PUSH1 (0)
+            PUSH1 (0x15) // size
+            PUSH1 (0xB) // offset
+            PUSH1 (0)   // value
             CREATE
 
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0x20)
-            PUSH1 (0)
-            PUSH1 (0)
-            DUP6
-            PUSH2 (0xFFFF)
+            PUSH1 (0x20)   // retLength
+            PUSH1 (0x20)   // retOffset
+            PUSH1 (0x20)   // argsLength
+            PUSH1 (0)      // argsOffset
+            PUSH1 (0)      // value
+            DUP6           // addr from above CREATE
+            PUSH2 (0xFFFF) // gas
             CALL
 
-            PUSH1 (0x40)
+            PUSH1 (0x40) // 0x40 > 0x20 (which return from above CALL), result in ReturnDataOutOfBounds
             PUSH1 (0)
             PUSH1 (0x40)
             RETURNDATACOPY
 
             STOP
         };
+
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(
             None,
@@ -122,5 +128,20 @@ mod return_tests {
         builder
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
+
+        let tx_id = 1;
+        let transaction = &builder.block.txs()[tx_id - 1];
+        let step = transaction
+            .steps()
+            .iter()
+            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::RETURNDATACOPY))
+            .last()
+            .unwrap();
+
+        assert_eq!(step.error, Some(ExecError::ReturnDataOutOfBounds));
+
+        let container = builder.block.container.clone();
+        let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
+        assert_eq!(operation.rw(), RW::READ);
     }
 }
