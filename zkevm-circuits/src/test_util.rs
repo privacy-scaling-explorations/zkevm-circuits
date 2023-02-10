@@ -13,7 +13,6 @@ use std::cmp;
 use crate::util::log2_ceil;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::plonk::{Circuit, ConstraintSystem};
 use mock::TestContext;
 
 #[cfg(test)]
