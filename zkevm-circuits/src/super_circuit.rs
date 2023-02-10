@@ -597,6 +597,7 @@ pub(crate) mod super_circuit_tests {
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
             keccak_padding: None,
         };
@@ -613,6 +614,7 @@ pub(crate) mod super_circuit_tests {
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
             keccak_padding: None,
         };
@@ -629,6 +631,7 @@ pub(crate) mod super_circuit_tests {
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
             keccak_padding: None,
         };
