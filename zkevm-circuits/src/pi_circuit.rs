@@ -13,9 +13,9 @@ use halo2_proofs::plonk::{Instance, SecondPhase};
 use keccak256::plain::Keccak;
 use mock::MOCK_CHAIN_ID;
 
-use crate::table::BlockTable;
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
+use crate::table::{BlockTable, LookupTable};
 use crate::tx_circuit::TX_LEN;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
@@ -259,6 +259,10 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_end = meta.selector();
 
         let pi = meta.instance_column();
+
+        // Annotate table columns
+        tx_table.annotate_columns(meta);
+        block_table.annotate_columns(meta);
 
         meta.enable_equality(raw_public_inputs);
         meta.enable_equality(rpi_rlc_acc);
@@ -1245,6 +1249,22 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let pi_cells = layouter.assign_region(
             || "region 0",
             |mut region| {
+                // Annotate columns
+
+                region.name_column(|| "raw_public_inputs", config.raw_public_inputs);
+                region.name_column(|| "tx_id_inv", config.tx_id_inv);
+                region.name_column(|| "tx_value_inv", config.tx_value_inv);
+                region.name_column(|| "tx_id_diff_inv", config.tx_id_diff_inv);
+
+                region.name_column(|| "fixed_u16", config.fixed_u16);
+                region.name_column(|| "calldata_gas_cost", config.calldata_gas_cost);
+                region.name_column(|| "calldata_is_final", config.is_final);
+
+                region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
+                region.name_column(|| "rand_rpi", config.rand_rpi);
+
+                region.name_column(|| "Public Inputs", config.pi);
+
                 let circuit_len = config.circuit_len();
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
