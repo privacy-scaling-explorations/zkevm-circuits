@@ -53,6 +53,7 @@ mod stop;
 mod swap;
 
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_log;
 mod error_stack_oog_constant;
@@ -73,7 +74,8 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
-use error_invalid_jump::ErrorInvalidJump;
+use error_invalid_jump::InvalidJump;
+use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
 use error_oog_log::ErrorOOGLog;
 use error_stack_oog_constant::ErrorStackOogConstant;
@@ -259,7 +261,8 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
     match error {
-        ExecError::InvalidJump => Some(ErrorInvalidJump::gen_associated_ops),
+        ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
@@ -283,8 +286,6 @@ pub fn gen_associated_ops(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
-    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
-
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
     if memory_enabled {
         assert_eq!(
@@ -332,6 +333,7 @@ pub fn gen_associated_ops(
         }
     }
     // if no errors, continue as normal
+    let fn_gen_associated_ops = fn_gen_associated_ops(opcode_id);
     fn_gen_associated_ops(state, geth_steps)
 }
 
