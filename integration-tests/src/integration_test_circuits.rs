@@ -2,6 +2,7 @@ use crate::{get_client, GenDataOutput};
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
+use halo2_proofs::dev::CellValue;
 use halo2_proofs::plonk::{
     create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey,
 };
@@ -29,6 +30,7 @@ use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
 use zkevm_circuits::copy_circuit::CopyCircuit;
 use zkevm_circuits::evm_circuit::EvmCircuit;
 use zkevm_circuits::state_circuit::StateCircuit;
+use zkevm_circuits::super_circuit::SuperCircuit;
 use zkevm_circuits::tx_circuit::TxCircuit;
 use zkevm_circuits::util::SubCircuit;
 use zkevm_circuits::witness::{block_convert, Block};
@@ -141,25 +143,57 @@ lazy_static! {
 
 lazy_static! {
     /// Integration test for EVM circuit
-    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<EvmCircuit<Fr>, EVM_CIRCUIT_DEGREE>> =
-    TokioMutex::new(IntegrationTest::default());
+    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<EvmCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE));
+
+    /// Integration test for State circuit
+    pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<StateCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
+
+    /// Integration test for State circuit
+    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TxCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
+
+    /// Integration test for Bytecode circuit
+    pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<BytecodeCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE));
+
+    /// Integration test for Copy circuit
+    pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<CopyCircuit<Fr>>> =
+    TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE));
+
+    /// Integration test for Copy circuit
+    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
+    TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
 }
 
 /// Generic implementation for integration tests
-#[derive(Default)]
-pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>, const DEGREE: u32> {
+pub struct IntegrationTest<C: SubCircuit<Fr> + Circuit<Fr>> {
+    name: &'static str,
+    degree: u32,
     key: Option<ProvingKey<G1Affine>>,
+    fixed: Option<Vec<Vec<CellValue<Fr>>>>,
     _marker: PhantomData<C>,
 }
 
-impl<C: SubCircuit<Fr> + Circuit<Fr>, const DEGREE: u32> IntegrationTest<C, DEGREE> {
+impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
+    fn new(name: &'static str, degree: u32) -> Self {
+        Self {
+            name,
+            degree,
+            key: None,
+            fixed: None,
+            _marker: PhantomData,
+        }
+    }
+
     fn get_key(&mut self) -> ProvingKey<G1Affine> {
         match self.key.clone() {
             Some(key) => key,
             None => {
                 let block = new_empty_block();
                 let circuit = C::new_from_block(&block);
-                let general_params = get_general_params(DEGREE);
+                let general_params = get_general_params(self.degree);
 
                 let verifying_key =
                     keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
@@ -173,7 +207,6 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>, const DEGREE: u32> IntegrationTest<C, DEGR
 
     fn test_actual(
         &self,
-        degree: u32,
         circuit: C,
         instance: Vec<Vec<Fr>>,
         proving_key: Option<ProvingKey<G1Affine>>,
@@ -232,7 +265,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>, const DEGREE: u32> IntegrationTest<C, DEGR
             .expect("failed to verify circuit");
         }
 
-        let general_params = get_general_params(degree);
+        let general_params = get_general_params(self.degree);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
 
         let proving_key = match proving_key {
@@ -269,22 +302,40 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>, const DEGREE: u32> IntegrationTest<C, DEGR
         );
     }
 
-    fn test_mock(&self, degree: u32, circuit: &C, instance: Vec<Vec<Fr>>) {
-        let mock_prover = MockProver::<Fr>::run(degree, circuit, instance).unwrap();
+    fn test_mock(&mut self, circuit: &C, instance: Vec<Vec<Fr>>) {
+        let mock_prover = MockProver::<Fr>::run(self.degree, circuit, instance).unwrap();
+
+        self.test_variadic(&mock_prover);
+
         mock_prover
             .verify_par()
             .expect("mock prover verification failed");
     }
 
-    fn test_circuit_at_block(
-        &mut self,
-        circuit_name: &str,
-        degree: u32,
-        builder: CircuitInputBuilder,
-        block_num: u64,
-        actual: bool,
-    ) {
-        log::info!("test {} circuit, block number: {}", circuit_name, block_num);
+    fn test_variadic(&mut self, mock_prover: &MockProver<Fr>) {
+        let fixed = mock_prover.fixed();
+
+        match self.fixed.clone() {
+            Some(prev_fixed) => {
+                assert!(
+                    fixed.eq(&prev_fixed),
+                    "circuit fixed columns are not constant for different witnesses"
+                );
+            }
+            None => {
+                self.fixed = Some(fixed.clone());
+            }
+        };
+
+        // TODO: check mock_prover.permutation(), currently the returning type
+        // is private so cannot store.
+    }
+
+    /// run integration test at a block number
+    pub async fn test_at_block(&mut self, block_num: u64, actual: bool) {
+        let (builder, _) = gen_inputs(block_num).await;
+
+        log::info!("test {} circuit, block number: {}", self.name, block_num);
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
         let circuit = C::new_from_block(&block);
@@ -292,16 +343,10 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>, const DEGREE: u32> IntegrationTest<C, DEGR
 
         if actual {
             let key = self.get_key();
-            self.test_actual(degree, circuit, instance, Some(key));
+            self.test_actual(circuit, instance, Some(key));
         } else {
-            self.test_mock(degree, &circuit, instance);
+            self.test_mock(&circuit, instance);
         }
-    }
-
-    /// run integration test at a block number
-    pub async fn test_at_block(&mut self, circuit_name: &str, block_num: u64, actual: bool) {
-        let (builder, _) = gen_inputs(block_num).await;
-        self.test_circuit_at_block(circuit_name, DEGREE, builder, block_num, actual)
     }
 }
 

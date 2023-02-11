@@ -1,64 +1,46 @@
+macro_rules! run_test {
+    ($test_instance:expr, $block_tag:expr, $real_prover:expr) => {
+        log_init();
+        let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
+
+        let mut test = $test_instance.lock().await;
+        test.test_at_block(*block_num, $real_prover).await;
+        drop(test) // make sure the compiler does not drop it before
+    };
+}
+
 macro_rules! declare_tests {
     (($name:ident, $block_tag:expr),$real_prover:expr) => {
         paste! {
             #[tokio::test]
             async fn [<serial_test_evm_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let (builder, _) = gen_inputs(*block_num).await;
-                let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-                let rows_required = EvmCircuit::get_min_num_rows_required(&block);
-                if rows_required > MAX_EVM_ROWS {
-                    panic!("EVM circuit not enough rows {}, required {}", MAX_EVM_ROWS, rows_required);
-                }
-                let mut test = EVM_CIRCUIT_TEST.lock().await;
-                test.test_at_block("evm", *block_num, $real_prover).await;
+                run_test! (EVM_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
-            /*#[tokio::test]
+            #[tokio::test]
             async fn [<serial_test_state_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*STATE_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<StateCircuit::<Fr>>
-                    ("state", STATE_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (STATE_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_tx_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*TX_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<TxCircuit::<Fr>>
-                    ("tx", TX_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (TX_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_bytecode_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*BYTECODE_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<BytecodeCircuit::<Fr>>
-                    ("bytecode", BYTECODE_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (BYTECODE_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_copy_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = if $real_prover { Some((*COPY_CIRCUIT_KEY).clone()) } else { None };
-                test_circuit_at_block::<CopyCircuit::<Fr>>
-                    ("copy", COPY_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
+                run_test! (COPY_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_super_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                let pk = None;
-                test_circuit_at_block::<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>
-                    ("super", SUPER_CIRCUIT_DEGREE, *block_num, $real_prover, pk).await;
-            }*/
+                run_test! (SUPER_CIRCUIT_TEST, $block_tag, $real_prover);
+            }
         }
     };
 }
