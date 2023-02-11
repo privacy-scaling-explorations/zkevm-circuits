@@ -152,12 +152,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         }
     }
 
-    fn test_actual(
-        &self,
-        circuit: C,
-        instance: Vec<Vec<Fr>>,
-        proving_key: Option<ProvingKey<G1Affine>>,
-    ) {
+    fn test_actual(&self, circuit: C, instance: Vec<Vec<Fr>>, proving_key: ProvingKey<G1Affine>) {
         fn test_gen_proof<C: Circuit<Fr>, R: RngCore>(
             rng: R,
             circuit: C,
@@ -214,16 +209,6 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
 
         let general_params = get_general_params(self.degree);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
-
-        let proving_key = match proving_key {
-            Some(pk) => pk,
-            None => {
-                let verifying_key =
-                    keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-                keygen_pk(&general_params, verifying_key, &circuit)
-                    .expect("keygen_pk should not fail")
-            }
-        };
 
         let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
@@ -296,7 +281,7 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
 
         if actual {
             let key = self.get_key();
-            self.test_actual(circuit, instance, Some(key));
+            self.test_actual(circuit, instance, key);
         } else {
             self.test_mock(&circuit, instance);
         }
