@@ -1,11 +1,9 @@
 macro_rules! run_test {
     ($test_instance:expr, $block_tag:expr, $real_prover:expr) => {
         log_init();
-        let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
 
         let mut test = $test_instance.lock().await;
-        test.test_at_block(*block_num, $real_prover).await;
-        drop(test) // make sure the compiler does not drop it before
+        test.test_at_block_tag($block_tag, $real_prover).await;
     };
 }
 
@@ -48,17 +46,14 @@ macro_rules! declare_tests {
 macro_rules! unroll_tests {
     ($($arg:tt),*) => {
         use paste::paste;
-        use zkevm_circuits::{
-            state_circuit::StateCircuit,
-            super_circuit::SuperCircuit,
-            tx_circuit::TxCircuit,
-            evm_circuit::EvmCircuit,
-            bytecode_circuit::circuit::BytecodeCircuit,
-            copy_circuit::CopyCircuit,
-            witness::block_convert
+        use integration_tests::integration_test_circuits::{
+            EVM_CIRCUIT_TEST,
+            STATE_CIRCUIT_TEST,
+            TX_CIRCUIT_TEST,
+            BYTECODE_CIRCUIT_TEST,
+            COPY_CIRCUIT_TEST,
+            SUPER_CIRCUIT_TEST
         };
-        use halo2_proofs::halo2curves::bn256::Fr;
-        use integration_tests::integration_test_circuits::*;
         use integration_tests::log_init;
         mod real_prover {
             use super::*;

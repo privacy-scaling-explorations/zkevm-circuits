@@ -36,21 +36,21 @@ use zkevm_circuits::util::SubCircuit;
 use zkevm_circuits::witness::{block_convert, Block};
 
 /// TEST_MOCK_RANDOMNESS
-pub const TEST_MOCK_RANDOMNESS: u64 = 0x100;
+const TEST_MOCK_RANDOMNESS: u64 = 0x100;
 
 /// MAX_TXS
-pub const MAX_TXS: usize = 4;
+const MAX_TXS: usize = 4;
 /// MAX_CALLDATA
-pub const MAX_CALLDATA: usize = 512;
+const MAX_CALLDATA: usize = 512;
 /// MAX_RWS
-pub const MAX_RWS: usize = 5888;
+const MAX_RWS: usize = 5888;
 /// MAX_BYTECODE
-pub const MAX_BYTECODE: usize = 5000;
+const MAX_BYTECODE: usize = 5000;
 /// MAX_COPY_ROWS
-pub const MAX_COPY_ROWS: usize = 5888;
+const MAX_COPY_ROWS: usize = 5888;
 
 /// MAX_EVM_ROWS
-pub const MAX_EVM_ROWS: usize = 10000;
+const MAX_EVM_ROWS: usize = 10000;
 
 const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_rws: MAX_RWS,
@@ -63,21 +63,21 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
 };
 
 /// EVM Circuit degree
-pub const EVM_CIRCUIT_DEGREE: u32 = 18;
+const EVM_CIRCUIT_DEGREE: u32 = 18;
 /// State Circuit degree
-pub const STATE_CIRCUIT_DEGREE: u32 = 17;
+const STATE_CIRCUIT_DEGREE: u32 = 17;
 /// Tx Circuit degree
-pub const TX_CIRCUIT_DEGREE: u32 = 20;
+const TX_CIRCUIT_DEGREE: u32 = 20;
 /// Bytecode Circuit degree
-pub const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
+const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
 /// Copy Circuit degree
-pub const COPY_CIRCUIT_DEGREE: u32 = 16;
+const COPY_CIRCUIT_DEGREE: u32 = 16;
 /// Super Circuit degree
-pub const SUPER_CIRCUIT_DEGREE: u32 = 20;
+const SUPER_CIRCUIT_DEGREE: u32 = 20;
 
 lazy_static! {
     /// Data generation.
-    pub static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
+    static ref GEN_DATA: GenDataOutput = GenDataOutput::load();
     static ref RNG: XorShiftRng = XorShiftRng::from_seed([
         0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc,
         0xe5,
@@ -86,59 +86,6 @@ lazy_static! {
 
 lazy_static! {
     static ref GEN_PARAMS: Mutex<HashMap<u32, ParamsKZG<Bn256>>> = Mutex::new(HashMap::new());
-}
-
-lazy_static! {
-    /// EVM Circuit proving key
-    pub static ref EVM_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let block = new_empty_block();
-        let circuit = EvmCircuit::<Fr>::new_from_block(&block);
-        let general_params = get_general_params(EVM_CIRCUIT_DEGREE);
-
-        let verifying_key =
-            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    };
-    /// State Circuit proving key
-    pub static ref STATE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let block = new_empty_block();
-        let circuit = StateCircuit::<Fr>::new_from_block(&block);
-        let general_params = get_general_params(STATE_CIRCUIT_DEGREE);
-
-        let verifying_key =
-            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    };
-    /// Tx Circuit proving key
-    pub static ref TX_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let block = new_empty_block();
-        let circuit = TxCircuit::<Fr>::new_from_block(&block);
-        let general_params = get_general_params(TX_CIRCUIT_DEGREE);
-
-        let verifying_key =
-            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    };
-    /// Bytecode Circuit proving key
-    pub static ref BYTECODE_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let block = new_empty_block();
-        let circuit = BytecodeCircuit::<Fr>::new_from_block(&block);
-        let general_params = get_general_params(BYTECODE_CIRCUIT_DEGREE);
-
-        let verifying_key =
-            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    };
-    /// Copy Circuit proving key
-    pub static ref COPY_CIRCUIT_KEY: ProvingKey<G1Affine> = {
-        let block = new_empty_block();
-        let circuit = CopyCircuit::<Fr>::new_from_block(&block);
-        let general_params = get_general_params(COPY_CIRCUIT_DEGREE);
-
-        let verifying_key =
-            keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-        keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-    };
 }
 
 lazy_static! {
@@ -331,11 +278,17 @@ impl<C: SubCircuit<Fr> + Circuit<Fr>> IntegrationTest<C> {
         // is private so cannot store.
     }
 
-    /// run integration test at a block number
-    pub async fn test_at_block(&mut self, block_num: u64, actual: bool) {
+    /// Run integration test at a block identified by a tag.
+    pub async fn test_at_block_tag(&mut self, block_tag: &str, actual: bool) {
+        let block_num = *GEN_DATA.blocks.get(block_tag).unwrap();
         let (builder, _) = gen_inputs(block_num).await;
 
-        log::info!("test {} circuit, block number: {}", self.name, block_num);
+        log::info!(
+            "test {} circuit, block: #{} - {}",
+            self.name,
+            block_num,
+            block_tag
+        );
         let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
         block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
         let circuit = C::new_from_block(&block);
@@ -375,7 +328,7 @@ fn get_general_params(degree: u32) -> ParamsKZG<Bn256> {
 }
 
 /// returns gen_inputs for a block number
-pub async fn gen_inputs(
+async fn gen_inputs(
     block_num: u64,
 ) -> (
     CircuitInputBuilder,
@@ -385,129 +338,4 @@ pub async fn gen_inputs(
     let cli = BuilderClient::new(cli, CIRCUITS_PARAMS).await.unwrap();
 
     cli.gen_inputs(block_num).await.unwrap()
-}
-
-fn test_actual<C: Circuit<Fr>>(
-    degree: u32,
-    circuit: C,
-    instance: Vec<Vec<Fr>>,
-    proving_key: Option<ProvingKey<G1Affine>>,
-) {
-    fn test_gen_proof<C: Circuit<Fr>, R: RngCore>(
-        rng: R,
-        circuit: C,
-        general_params: &ParamsKZG<Bn256>,
-        proving_key: &ProvingKey<G1Affine>,
-        mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-        instances: &[&[Fr]],
-    ) -> Vec<u8> {
-        create_proof::<
-            KZGCommitmentScheme<Bn256>,
-            ProverSHPLONK<'_, Bn256>,
-            Challenge255<G1Affine>,
-            R,
-            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            C,
-        >(
-            general_params,
-            proving_key,
-            &[circuit],
-            &[instances],
-            rng,
-            &mut transcript,
-        )
-        .expect("proof generation should not fail");
-
-        transcript.finalize()
-    }
-
-    fn test_verify(
-        general_params: &ParamsKZG<Bn256>,
-        verifier_params: &ParamsKZG<Bn256>,
-        verifying_key: &VerifyingKey<G1Affine>,
-        proof: &[u8],
-        instances: &[&[Fr]],
-    ) {
-        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(proof);
-        let strategy = SingleStrategy::new(general_params);
-
-        verify_proof::<
-            KZGCommitmentScheme<Bn256>,
-            VerifierSHPLONK<'_, Bn256>,
-            Challenge255<G1Affine>,
-            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
-            SingleStrategy<'_, Bn256>,
-        >(
-            verifier_params,
-            verifying_key,
-            strategy,
-            &[instances],
-            &mut verifier_transcript,
-        )
-        .expect("failed to verify circuit");
-    }
-
-    let general_params = get_general_params(degree);
-    let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
-
-    let proving_key = match proving_key {
-        Some(pk) => pk,
-        None => {
-            let verifying_key =
-                keygen_vk(&general_params, &circuit).expect("keygen_vk should not fail");
-            keygen_pk(&general_params, verifying_key, &circuit).expect("keygen_pk should not fail")
-        }
-    };
-
-    let transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-
-    // change instace to slice
-    let instance: Vec<&[Fr]> = instance.iter().map(|v| v.as_slice()).collect();
-
-    let proof = test_gen_proof(
-        RNG.clone(),
-        circuit,
-        &general_params,
-        &proving_key,
-        transcript,
-        &instance,
-    );
-
-    let verifying_key = proving_key.get_vk();
-    test_verify(
-        &general_params,
-        &verifier_params,
-        verifying_key,
-        &proof,
-        &instance,
-    );
-}
-
-fn test_mock<C: Circuit<Fr>>(degree: u32, circuit: &C, instance: Vec<Vec<Fr>>) {
-    let mock_prover = MockProver::<Fr>::run(degree, circuit, instance).unwrap();
-    mock_prover
-        .verify_par()
-        .expect("mock prover verification failed");
-}
-
-/// Integration test generic function
-pub async fn test_circuit_at_block<C: SubCircuit<Fr> + Circuit<Fr>>(
-    circuit_name: &str,
-    degree: u32,
-    block_num: u64,
-    actual: bool,
-    proving_key: Option<ProvingKey<G1Affine>>,
-) {
-    log::info!("test {} circuit, block number: {}", circuit_name, block_num);
-    let (builder, _) = gen_inputs(block_num).await;
-    let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
-    block.randomness = Fr::from(TEST_MOCK_RANDOMNESS);
-    let circuit = C::new_from_block(&block);
-    let instance = circuit.instance();
-
-    if actual {
-        test_actual(degree, circuit, instance, proving_key);
-    } else {
-        test_mock(degree, &circuit, instance);
-    }
 }
