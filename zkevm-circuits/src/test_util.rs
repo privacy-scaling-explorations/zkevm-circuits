@@ -207,7 +207,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
         // Run evm circuit test
         {
-            let k = block.get_test_degree();
+            let k = 18; // ; block.get_test_degree();
 
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
