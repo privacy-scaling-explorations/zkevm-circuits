@@ -415,6 +415,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (Word::zero(), true)
     };
 
+    // In case of contract creation we wish to verify the correctness of the
+    // contract's address (callee). This address is defined as:
+    //
+    // Keccak256(RLP([tx_caller, tx_nonce]))[12:]
+    //
+    // We feed the RLP-encoded bytes to the block's SHA3 inputs, which gets assigned
+    // to the Keccak circuit, so that the BeginTxGadget can do a lookup to the
+    // Keccak table and verify the contract address.
     if state.tx.is_create() {
         state.block.sha3_inputs.push({
             let mut stream = ethers_core::utils::rlp::RlpStream::new();

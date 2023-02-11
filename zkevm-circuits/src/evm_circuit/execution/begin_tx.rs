@@ -378,12 +378,40 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
+                // 23 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account (Caller) Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account (Caller) Balance (Reversible)
+                //   - Write Account (Callee) Balance (Reversible)
+                //   - Write Account (Callee) Nonce (Reversible)
+                //   - Write CallContext Depth
+                //   - Write CallContext CallerAddress
+                //   - Write CallContext CalleeAddress
+                //   - Write CallContext CallDataOffset
+                //   - Write CallContext CallDataLength
+                //   - Write CallContext Value
+                //   - Write CallContext IsStatic
+                //   - Write CallContext LastCalleeId
+                //   - Write CallContext LastCalleeReturnDataOffset
+                //   - Write CallContext LastCalleeReturnDataLength
+                //   - Write CallContext IsRoot
+                //   - Write CallContext IsCreate
+                //   - Write CallContext CodeHash
                 rw_counter: Delta(23.expr()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
                 code_hash: To(cb.curr.state.code_hash.expr()),
                 gas_left: To(gas_left.clone()),
+                // There are 3 reversible writes:
+                //  - Caller Account Balance
+                //  - Callee Account Balance
+                //  - Callee Account Nonce
                 reversible_write_counter: To(3.expr()),
                 log_id: To(0.expr()),
                 ..StepStateTransition::new_context()
