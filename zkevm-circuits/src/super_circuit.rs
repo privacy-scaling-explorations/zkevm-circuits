@@ -750,7 +750,7 @@ pub(crate) mod super_circuit_tests {
         block
     }
 
-    fn block_1tx() -> GethData {
+    pub(crate) fn block_1tx() -> GethData {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
 
         let chain_id = (*MOCK_CHAIN_ID).as_u64();
@@ -879,6 +879,7 @@ pub(crate) mod super_circuit_tests {
             max_bytecode: 512,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
+            max_exp_steps: 256,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
             block,
@@ -925,6 +926,7 @@ pub(crate) mod super_circuit_tests {
             max_bytecode: 512,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
+            max_exp_steps: 256,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
             block,

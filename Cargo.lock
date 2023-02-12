@@ -1343,6 +1343,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9b0705efd4599c15a38151f4721f7bc388306f61084d3bfd50bd07fbca5cb60"
 
 [[package]]
+name = "ecc"
+version = "0.1.0"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
+dependencies = [
+ "group",
+ "integer",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "subtle",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2483,7 +2497,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "plotters",
- "poseidon",
+ "poseidon 0.2.0 (git+https://github.com/appliedzkp/poseidon.git)",
  "rand_core 0.6.4",
  "rayon",
  "sha3 0.9.1",
@@ -2867,6 +2881,20 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "integer"
+version = "0.1.0"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
+dependencies = [
+ "group",
+ "maingate",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "subtle",
 ]
 
 [[package]]
@@ -3880,6 +3908,16 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
+source = "git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2022_10_22#5d29df01a95e3df6334080d28e983407f56b5da3"
+dependencies = [
+ "group",
+ "halo2curves 0.2.1",
+ "subtle",
+]
+
+[[package]]
+name = "poseidon"
+version = "0.2.0"
 source = "git+https://github.com/appliedzkp/poseidon.git#0b9965fbcd9e03559088b8f68489592286bc55e0"
 dependencies = [
  "group",
@@ -4839,6 +4877,24 @@ name = "smallvec"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
+
+[[package]]
+name = "snark-verifier"
+version = "0.1.0"
+source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2023_02_02#df03d898b841f71cbc36c2fb9fa07b8196f9623e"
+dependencies = [
+ "ecc",
+ "halo2_proofs",
+ "halo2curves 0.3.1 (git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1)",
+ "hex",
+ "itertools",
+ "lazy_static",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "poseidon 0.2.0 (git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2022_10_22)",
+ "rand 0.8.5",
+]
 
 [[package]]
 name = "socket2"
@@ -6481,6 +6537,7 @@ dependencies = [
  "rayon",
  "rlp",
  "sha3 0.10.6",
+ "snark-verifier",
  "strum",
  "strum_macros",
  "subtle",

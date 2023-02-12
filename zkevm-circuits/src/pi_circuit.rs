@@ -10,7 +10,6 @@ use eth_types::{Field, ToBigEndian, Word};
 use eth_types::{Hash, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
-use keccak256::plain::Keccak;
 use mock::MOCK_CHAIN_ID;
 
 #[cfg(feature = "onephase")]
@@ -931,12 +930,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
     fn new_from_block(block: &Block<F>) -> Self {
-        let rand_rpi = gen_rand_rpi::<F>(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
-            &public_data,
-            block.randomness,
-        );
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
@@ -1095,24 +1088,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
         Ok(())
     }
 }
-}
-
-/// Computes `rand_rpi` - a commitment to the `raw_public_inputs_col` values.
-pub fn gen_rand_rpi<F: Field>(
-    max_txs: usize,
-    max_calldata: usize,
-    public_data: &PublicData,
-    randomness: F,
-) -> F {
-    let rlc_rpi_col = raw_public_inputs_col::<F>(max_txs, max_calldata, public_data, randomness);
-    let mut keccak = Keccak::default();
-    for value in rlc_rpi_col.iter() {
-        let mut tmp = value.to_repr();
-        tmp.reverse();
-        keccak.update(&tmp);
-    }
-    let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
-    rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
 
 #[cfg(test)]
 mod pi_circuit_test {

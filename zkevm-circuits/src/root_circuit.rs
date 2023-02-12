@@ -173,9 +173,10 @@ mod test {
                 max_exp_steps: 256,
                 max_bytecode: 512,
                 keccak_padding: None,
+                max_inner_blocks: 64,
             };
             let (k, circuit, instance, _) =
-                SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>::build(
+                SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 64, TEST_MOCK_RANDOMNESS>::build(
                     block_1tx(),
                     circuits_params,
                 )

@@ -274,7 +274,6 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
 
         // more future errors place here
         _ => {

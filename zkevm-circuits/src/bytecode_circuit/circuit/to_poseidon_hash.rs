@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
-    table::{BytecodeFieldTag, DynamicTableColumns, KeccakTable, PoseidonTable},
+    table::{BytecodeFieldTag, KeccakTable, LookupTable, PoseidonTable},
     util::{Challenges, Expr, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -288,7 +288,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
 
         let lookup_columns = [code_hash, field_input, control_length];
         let pick_hash_tbl_cols = |inp_i| {
-            let cols = poseidon_table.columns();
+            let cols = <PoseidonTable as LookupTable<F>>::advice_columns(&poseidon_table);
             [cols[0], cols[inp_i + 1], cols[cols.len() - 2]]
         };
 

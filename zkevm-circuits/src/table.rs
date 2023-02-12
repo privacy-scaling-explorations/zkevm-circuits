@@ -693,9 +693,19 @@ impl MptTable {
 #[derive(Clone, Copy, Debug)]
 pub struct PoseidonTable(pub [Column<Advice>; 5]);
 
-impl DynamicTableColumns for PoseidonTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
-        self.0.to_vec()
+impl<F: Field> LookupTable<F> for PoseidonTable {
+    fn columns(&self) -> Vec<Column<Any>> {
+        self.0.iter().map(|c| Column::<Any>::from(*c)).collect()
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("hash_id"),
+            String::from("input0"),
+            String::from("input1"),
+            String::from("control"),
+            String::from("heading_mark"),
+        ]
     }
 }
 
@@ -773,7 +783,8 @@ impl PoseidonTable {
             || "poseidon table",
             |mut region| {
                 let mut offset = 0;
-                let poseidon_table_columns = self.columns();
+                let poseidon_table_columns =
+                    <PoseidonTable as LookupTable<F>>::advice_columns(self);
                 for column in poseidon_table_columns.iter().copied() {
                     region.assign_advice(
                         || "poseidon table all-zero row",
@@ -1017,7 +1028,7 @@ impl BlockTable {
             || "block table",
             |mut region| {
                 let mut offset = 0;
-                let block_table_columns = self.columns();
+                let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(self);
                 for column in block_table_columns.iter() {
                     region.assign_advice(
                         || "block table all-zero row",
@@ -1028,7 +1039,6 @@ impl BlockTable {
                 }
                 offset += 1;
 
-                let block_table_columns = <BlockTable as LookupTable<F>>::advice_columns(self);
                 let mut cum_num_txs = 0usize;
                 let padding_blocks = (block_ctxs.ctxs.len()..max_inner_blocks)
                     .into_iter()
@@ -1725,14 +1735,24 @@ pub struct RlpTable {
     pub data_type: Column<Advice>,
 }
 
-impl DynamicTableColumns for RlpTable {
-    fn columns(&self) -> Vec<Column<Advice>> {
+impl<F: Field> LookupTable<F> for RlpTable {
+    fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.tx_id,
-            self.tag,
-            self.tag_rindex,
-            self.value_acc,
-            self.data_type,
+            self.tx_id.into(),
+            self.tag.into(),
+            self.tag_rindex.into(),
+            self.value_acc.into(),
+            self.data_type.into(),
+        ]
+    }
+
+    fn annotations(&self) -> Vec<String> {
+        vec![
+            String::from("tx_id"),
+            String::from("tag"),
+            String::from("tag_rindex"),
+            String::from("value_acc"),
+            String::from("data_type"),
         ]
     }
 }
@@ -1788,7 +1808,7 @@ impl RlpTable {
             || "rlp table",
             |mut region| {
                 let mut offset = 0;
-                for column in self.columns() {
+                for column in <RlpTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || format!("empty row: {}", offset),
                         column,
@@ -1799,7 +1819,10 @@ impl RlpTable {
 
                 for row in Self::dev_assignments(txs.clone(), challenges) {
                     offset += 1;
-                    for (column, value) in self.columns().iter().zip(row) {
+                    for (column, value) in <RlpTable as LookupTable<F>>::advice_columns(self)
+                        .iter()
+                        .zip(row)
+                    {
                         region.assign_advice(
                             || format!("row: {}", offset),
                             *column,

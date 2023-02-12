@@ -51,6 +51,7 @@ mod tests {
             max_inner_blocks: 64,
             max_bytecode: 3_000_000,
             keccak_padding: None,
+            max_exp_steps: 100_000,
         };
         let cli = BuilderClient::new(cli, params).await.unwrap();
         let (builder, _) = cli.gen_inputs(block_num).await.unwrap();
