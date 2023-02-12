@@ -110,6 +110,9 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
     ) -> Result<(), Error> {
         let config = self.config();
 
+        // annotate columns
+        region.name_column(|| "GADGETS_IS_ZERO_inverse_witness", config.value_inv);
+
         let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
         region.assign_advice(
             || "witness inverse of value",
@@ -263,6 +266,10 @@ mod test {
                 layouter.assign_region(
                     || "witness",
                     |mut region| {
+                        // annotate columns
+                        region.name_column(|| "GADGETS_IS_ZERO_TEST_value", config.value);
+                        region.name_column(|| "GADGETS_IS_ZERO_TEST_check", config.check);
+
                         region.assign_advice(
                             || "first row value",
                             config.value,
@@ -394,6 +401,10 @@ mod test {
                 layouter.assign_region(
                     || "witness",
                     |mut region| {
+                        region.name_column(|| "GADGETS_IS_ZERO_TEST_value_a", config.value_a);
+                        region.name_column(|| "GADGETS_IS_ZERO_TEST_value_b", config.value_b);
+                        region.name_column(|| "GADGETS_IS_ZERO_TEST_check", config.check);
+
                         for (idx, ((value_a, value_b), check)) in
                             values.iter().zip(checks).enumerate()
                         {

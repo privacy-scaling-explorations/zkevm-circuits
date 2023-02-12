@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
-    table::{BytecodeFieldTag, BytecodeTable, KeccakTable},
+    table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -73,6 +73,13 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
         let push_data_size = meta.advice_column();
         let push_data_left_inv = meta.advice_column();
         let push_table = array_init::array_init(|_| meta.fixed_column());
+
+        // annotate columns
+        bytecode_table.annotate_columns(meta);
+        keccak_table.annotate_columns(meta);
+        push_table.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_any_column(col, || format!("push_table_{}", idx))
+        });
 
         let is_header_to_header = |meta: &mut VirtualCells<F>| {
             and::expr(vec![
@@ -613,6 +620,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         length: F,
         push_data_size: F,
     ) -> Result<(), Error> {
+        // annotate columns
+        self.annotate_circuit(region);
+
         // q_enable
         region.assign_fixed(
             || format!("assign q_enable {}", offset),
@@ -632,7 +642,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         // q_last
         let q_last_value = if last { F::one() } else { F::zero() };
         region.assign_fixed(
-            || format!("assign q_first {}", offset),
+            || format!("assign q_last {}", offset),
             self.q_last,
             offset,
             || Value::known(q_last_value),
@@ -678,6 +688,17 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         )?;
 
         Ok(())
+    }
+
+    fn annotate_circuit(&self, region: &mut Region<'_, F>) {
+        region.name_column(|| "BYTECODE_q_enable", self.q_enable);
+        region.name_column(|| "BYTECODE_q_first", self.q_first);
+        region.name_column(|| "BYTECODE_q_last", self.q_last);
+        region.name_column(|| "BYTECODE_length", self.length);
+        region.name_column(|| "BYTECODE_push_data_left", self.push_data_left);
+        region.name_column(|| "BYTECODE_push_data_size", self.push_data_size);
+        region.name_column(|| "BYTECODE_value_rlc", self.value_rlc);
+        region.name_column(|| "BYTECODE_push_data_left_inv", self.push_data_left_inv);
     }
 
     /// load fixed tables
