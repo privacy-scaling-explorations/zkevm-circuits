@@ -682,7 +682,6 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
-    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -921,7 +920,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();
-                        // TODO: Try to get rid of clone.
+
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;
