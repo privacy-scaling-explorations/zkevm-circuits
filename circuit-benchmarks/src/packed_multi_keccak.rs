@@ -17,7 +17,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::keccak_packed_multi::KeccakCircuit;
+    use zkevm_circuits::keccak_circuit::KeccakCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
