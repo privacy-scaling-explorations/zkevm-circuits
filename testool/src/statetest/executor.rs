@@ -10,14 +10,17 @@ use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
+use zkevm_circuits::super_circuit::SuperCircuit;
+use zkevm_circuits::test_util::CircuitTestBuilder;
+use zkevm_circuits::witness::Block;
+
+const MAX_TXS: usize = 1;
+const MAX_CALLDATA: usize = 32;
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
     #[error("CannotGenerateCircuitInput({0})")]
     CircuitInput(String),
-    #[error("VerifierError({0})")]
-    VerifierError(String),
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
@@ -35,7 +38,7 @@ pub enum StateTestError {
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
-    Exception { expected: bool, found: bool },
+    Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
@@ -174,18 +177,23 @@ pub fn run_test(
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
     let geth_traces = external_tracer::trace(&trace_config);
-    if st.exception {
-        if geth_traces.is_ok() {
-            return Err(StateTestError::Exception {
-                expected: st.exception,
-                found: geth_traces.is_err(),
-            });
-        } else {
-            return Ok(());
-        }
-    }
 
-    let geth_traces = geth_traces.map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+    let geth_traces = match (geth_traces, st.exception) {
+        (Ok(res), false) => res,
+        (Ok(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(_), true) => return Ok(()),
+        (Err(err), false) => {
+            return Err(StateTestError::Exception {
+                expected: false,
+                found: err.to_string(),
+            })
+        }
+    };
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
@@ -251,6 +259,7 @@ pub fn run_test(
             max_calldata: 5000,
             max_bytecode: 5000,
             max_copy_rows: 55000,
+            max_exp_steps: 5000,
             keccak_padding: None,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -260,28 +269,20 @@ pub fn run_test(
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        let block =
+        let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
 
-        let config = BytecodeTestConfig {
-            enable_evm_circuit_test: true,
-            enable_state_circuit_test: true,
-            gas_limit: u64::MAX,
-        };
-
-        zkevm_circuits::test_util::test_circuits_witness_block(block, config)
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
     } else {
         geth_data.sign(&wallets);
 
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
         let circuits_params = CircuitsParams {
             max_txs: MAX_TXS,
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
             keccak_padding: None,
         };
@@ -291,10 +292,8 @@ pub fn run_test(
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover
-            .verify_par()
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
-    }
+        prover.assert_satisfied_par();
+    };
 
     check_post(&builder, &post)?;
 

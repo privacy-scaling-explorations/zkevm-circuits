@@ -226,12 +226,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits_with_params;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
 
-    fn test_ok_internal(
+    fn test_ok(
         return_data_offset: usize,
         return_data_size: usize,
         dest_offset: usize,
@@ -316,31 +315,21 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(
-            run_test_circuits_with_params(
-                ctx,
-                None,
-                CircuitsParams {
-                    max_rws: 2048,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     // test root & internal calls
     #[test]
     fn returndatacopy_out_of_bound_error() {
         // test root call cases: `end` exceed return data size
-        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, true);
+        test_ok(0x00, 0x10, 0x20, 0x10, 0x10, true);
         // test root call case: `end` exceed return data size
-        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, true);
+        test_ok(0x00, 0x10, 0x20, 0x10, 0x10, true);
         // test data offset u64 overflow
-        test_ok_internal(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, false);
+        test_ok(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, false);
         // test end = data offset + length(size) overflow
-        test_ok_internal(0x00, 0x10, 0x20, 0x1, 0x10, false);
+        test_ok(0x00, 0x10, 0x20, 0x1, 0x10, false);
         // test end overflow with end > 0xff
-        test_ok_internal(0x00, 0x10, 0x20, 0x1, 0xff, false);
+        test_ok(0x00, 0x10, 0x20, 0x1, 0xff, false);
     }
 }

@@ -10,6 +10,8 @@ use eth_types::{
     Word,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
+use keccak256::plain::Keccak;
+use mock::MOCK_CHAIN_ID;
 
 use crate::table::BlockTable;
 use crate::table::TxFieldTag;
@@ -68,7 +70,7 @@ pub struct ExtraValues {
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
@@ -83,6 +85,19 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
+}
+
+impl Default for PublicData {
+    fn default() -> Self {
+        PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            history_hashes: vec![],
+            transactions: vec![],
+            state_root: H256::zero(),
+            prev_state_root: H256::zero(),
+            block_constants: BlockConstants::default(),
+        }
+    }
 }
 
 impl PublicData {
@@ -1134,11 +1149,17 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 base_fee: block.context.base_fee,
             },
         };
+        let rand_rpi = gen_rand_rpi::<F>(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            &public_data,
+            block.randomness,
+        );
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.randomness,
-            block.randomness + F::from_u128(1),
+            rand_rpi,
             public_data,
         )
     }
@@ -1557,15 +1578,32 @@ fn raw_public_inputs_col<F: Field>(
     result
 }
 
+/// Computes `rand_rpi` - a commitment to the `raw_public_inputs_col` values.
+pub fn gen_rand_rpi<F: Field>(
+    max_txs: usize,
+    max_calldata: usize,
+    public_data: &PublicData,
+    randomness: F,
+) -> F {
+    let rlc_rpi_col = raw_public_inputs_col::<F>(max_txs, max_calldata, public_data, randomness);
+    let mut keccak = Keccak::default();
+    for value in rlc_rpi_col.iter() {
+        let mut tmp = value.to_repr();
+        tmp.reverse();
+        keccak.update(&tmp);
+    }
+    let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
+    rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
+}
+
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
-
-    use crate::test_util::rand_tx;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
+    use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1609,16 +1647,13 @@ mod pi_circuit_test {
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-
         let mut public_data = PublicData::default();
-        let chain_id = 1337u64;
-        public_data.chain_id = Word::from(chain_id);
 
         let n_tx = 4;
         for i in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, i & 2 == 0));
-            public_data.transactions.push(eth_tx);
+            public_data
+                .transactions
+                .push(CORRECT_MOCK_TXS[i].clone().into());
         }
 
         let k = 17;

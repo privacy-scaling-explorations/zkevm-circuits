@@ -1,7 +1,14 @@
-use super::util::{CachedRegion, CellManager, StoredExpression};
+use super::{
+    param::{
+        BLOCK_TABLE_LOOKUPS, BYTECODE_TABLE_LOOKUPS, COPY_TABLE_LOOKUPS, EXP_TABLE_LOOKUPS,
+        FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
+        N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
+    },
+    util::{CachedRegion, CellManager, StoredExpression},
+};
 use crate::{
     evm_circuit::{
-        param::{LOOKUP_CONFIG, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
+        param::{EVM_LOOKUP_COLS, MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
         step::{ExecutionState, Step},
         table::Table,
         util::{
@@ -54,8 +61,10 @@ mod dup;
 mod end_block;
 mod end_tx;
 mod error_invalid_jump;
+mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_log;
 mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
@@ -120,8 +129,10 @@ use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
+use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_log::ErrorOOGLogGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
@@ -268,29 +279,26 @@ pub(crate) struct ExecutionConfig<F> {
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
-    error_oog_log: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasLOG }>,
+    error_oog_log: ErrorOOGLogGadget<F>,
     error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
     error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
-    error_oog_call_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCALLCODE }>,
-    error_oog_delegate_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDELEGATECALL }>,
     error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
-    error_oog_static_call: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSTATICCALL }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
+    error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
     error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
-    invalid_opcode_gadget: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidOpcode }>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -317,15 +325,13 @@ impl<F: Field> ExecutionConfig<F> {
         let q_step_first = meta.complex_selector();
         let q_step_last = meta.complex_selector();
 
-        let lookup_column_count: usize = LOOKUP_CONFIG.iter().map(|(_, count)| *count).sum();
-
         let advices = [(); STEP_WIDTH]
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                if n < lookup_column_count {
+                if n < EVM_LOOKUP_COLS {
                     meta.advice_column_in(ThirdPhase)
-                } else if n < lookup_column_count + N_PHASE2_COLUMNS {
+                } else if n < EVM_LOOKUP_COLS + N_PHASE2_COLUMNS {
                     meta.advice_column_in(SecondPhase)
                 } else {
                     meta.advice_column_in(FirstPhase)
@@ -528,21 +534,18 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
             error_oog_ext_codecopy: configure_gadget!(),
-            error_oog_call_code: configure_gadget!(),
-            error_oog_delegate_call: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
-            error_oog_static_call: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
             error_oog_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
+            error_invalid_opcode: configure_gadget!(),
             error_write_protection: configure_gadget!(),
             error_depth: configure_gadget!(),
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
-            invalid_opcode_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -774,6 +777,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         height: usize,
     ) -> Result<(), Error> {
+        // Name Advice columns
         for idx in 0..height {
             let offset = offset + idx;
             self.q_usable.enable(region, offset)?;
@@ -816,8 +820,10 @@ impl<F: Field> ExecutionConfig<F> {
         layouter.assign_region(
             || "Execution step",
             |mut region| {
-                log::info!("start execution step assignment");
                 let mut offset = 0;
+
+                // Annotate the EVMCircuit columns within it's single region.
+                self.annotate_circuit(&mut region);
 
                 self.q_step_first.enable(&mut region, offset)?;
 
@@ -943,10 +949,41 @@ impl<F: Field> ExecutionConfig<F> {
                     || Value::known(F::zero()),
                 )?;
 
-                log::info!("finish execution step assignment");
                 Ok(())
             },
         )
+    }
+
+    fn annotate_circuit(&self, region: &mut Region<F>) {
+        let groups = [
+            ("EVM_lookup_fixed", FIXED_TABLE_LOOKUPS),
+            ("EVM_lookup_tx", TX_TABLE_LOOKUPS),
+            ("EVM_lookup_rw", RW_TABLE_LOOKUPS),
+            ("EVM_lookup_bytecode", BYTECODE_TABLE_LOOKUPS),
+            ("EVM_lookup_block", BLOCK_TABLE_LOOKUPS),
+            ("EVM_lookup_copy", COPY_TABLE_LOOKUPS),
+            ("EVM_lookup_keccak", KECCAK_TABLE_LOOKUPS),
+            ("EVM_lookup_exp", EXP_TABLE_LOOKUPS),
+            ("EVM_adv_phase2", N_PHASE2_COLUMNS),
+            ("EVM_copy", N_COPY_COLUMNS),
+            ("EVM_lookup_byte", N_BYTE_LOOKUPS),
+            ("EVM_adv_phase1", N_PHASE1_COLUMNS),
+        ];
+        let mut group_index = 0;
+        let mut index = 0;
+        for col in self.advices {
+            let (name, length) = groups[group_index];
+            region.name_column(|| format!("{}_{}", name, index), col);
+            index += 1;
+            if index >= length {
+                index = 0;
+                group_index += 1;
+            }
+        }
+
+        region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
+        region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
+        region.name_column(|| "Copy_Constr_const", self.constants);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1130,7 +1167,7 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasConstant => {
                 assign_exec_step!(self.error_oog_constant)
             }
-            ExecutionState::ErrorOutOfGasCALL => {
+            ExecutionState::ErrorOutOfGasCall => {
                 assign_exec_step!(self.error_oog_call)
             }
             ExecutionState::ErrorOutOfGasDynamicMemoryExpansion => {
@@ -1157,20 +1194,11 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasEXTCODECOPY => {
                 assign_exec_step!(self.error_oog_ext_codecopy)
             }
-            ExecutionState::ErrorOutOfGasCALLCODE => {
-                assign_exec_step!(self.error_oog_call_code)
-            }
-            ExecutionState::ErrorOutOfGasDELEGATECALL => {
-                assign_exec_step!(self.error_oog_delegate_call)
-            }
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
             }
             ExecutionState::ErrorOutOfGasCREATE2 => {
                 assign_exec_step!(self.error_oog_create2)
-            }
-            ExecutionState::ErrorOutOfGasSTATICCALL => {
-                assign_exec_step!(self.error_oog_static_call)
             }
             ExecutionState::ErrorOutOfGasSELFDESTRUCT => {
                 assign_exec_step!(self.error_oog_self_destruct)
@@ -1189,6 +1217,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorInvalidJump => {
                 assign_exec_step!(self.error_invalid_jump)
             }
+            ExecutionState::ErrorInvalidOpcode => {
+                assign_exec_step!(self.error_invalid_opcode)
+            }
             ExecutionState::ErrorWriteProtection => {
                 assign_exec_step!(self.error_write_protection)
             }
@@ -1203,10 +1234,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
-            }
-
-            ExecutionState::ErrorInvalidOpcode => {
-                assign_exec_step!(self.invalid_opcode_gadget)
             }
 
             _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
