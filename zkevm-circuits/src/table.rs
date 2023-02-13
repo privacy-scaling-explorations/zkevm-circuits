@@ -151,6 +151,7 @@ impl TxTable {
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
+        max_calldata: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
@@ -159,51 +160,87 @@ impl TxTable {
             txs.len(),
             max_txs
         );
+        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        assert!(
+            sum_txs_calldata <= max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
+            sum_txs_calldata,
+            max_calldata,
+        );
+
+        fn assign_row<F: Field>(
+            region: &mut Region<'_, F>,
+            offset: usize,
+            advice_columns: &[Column<Advice>],
+            tag: &Column<Fixed>,
+            row: &[Value<F>; 4],
+            msg: &str,
+        ) -> Result<(), Error> {
+            for (index, column) in advice_columns.iter().enumerate() {
+                region.assign_advice(
+                    || format!("tx table {} row {}", msg, offset),
+                    *column,
+                    offset,
+                    || row[if index > 0 { index + 1 } else { index }],
+                )?;
+            }
+            region.assign_fixed(
+                || format!("tx table {} row {}", msg, offset),
+                *tag,
+                offset,
+                || row[1],
+            )?;
+            Ok(())
+        }
+
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                for column in advice_columns {
-                    region.assign_advice(
-                        || "tx table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-                region.assign_fixed(
-                    || "tx table all-zero row",
-                    self.tag,
+                assign_row(
+                    &mut region,
                     offset,
-                    || Value::known(F::zero()),
+                    &advice_columns,
+                    &self.tag,
+                    &[(); 4].map(|_| Value::known(F::zero())),
+                    "all-zero",
                 )?;
                 offset += 1;
 
-                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
+                // Tx Table contains an initial region that has a size parametrized by max_txs
+                // with all the tx data except for calldata, and then a second
+                // region that has a size parametrized by max_calldata with all
+                // the tx calldata.  This is required to achieve a constant fixed column tag
+                // regardless of the number of input txs or the calldata size of each tx.
+                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                // Assign Tx data (all tx fields except for calldata)
+                let padding_txs: Vec<_> = (txs.len()..max_txs)
                     .map(|i| Transaction {
                         id: i + 1,
                         ..Default::default()
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    for row in tx.table_assignments(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
+                    let (tx_data, tx_calldata) = tx.table_assignments(*challenges);
+                    for row in tx_data {
+                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
                     }
+                    calldata_assignments.extend(tx_calldata.iter());
+                }
+                // Assign Tx calldata
+                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
+                    [
+                        Value::known(F::zero()),
+                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::zero()),
+                        Value::known(F::zero()),
+                    ]
+                });
+                for row in calldata_assignments.into_iter().chain(padding_calldata) {
+                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                    offset += 1;
                 }
                 Ok(())
             },
