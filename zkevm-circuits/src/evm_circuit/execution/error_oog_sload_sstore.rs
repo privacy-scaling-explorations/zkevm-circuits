@@ -291,7 +291,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             call,
             step,
             // Additional one stack pop and one account storage read for SSTORE.
-            7 + if is_sstore { 2 } else { 0 },
+            7 + usize::from(is_sstore) * 2,
         )
     }
 }
