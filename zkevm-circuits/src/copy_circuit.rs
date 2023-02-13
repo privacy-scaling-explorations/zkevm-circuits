@@ -939,6 +939,7 @@ mod tests {
             CircuitsParams {
                 max_rws: 8192,
                 max_copy_rows: 8192 + 2,
+                max_calldata: 5000,
                 ..Default::default()
             },
         )
