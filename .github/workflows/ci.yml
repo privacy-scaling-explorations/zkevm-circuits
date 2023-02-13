@@ -7,24 +7,17 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
 
 jobs:
-  runner:
-    if: github.event.pull_request.draft == false
-    uses: ./.github/workflows/select-runner.yml
-
   test:
     name: Test
-    needs: [runner]
-    runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group }}
-    strategy:
-      matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix) }}
+    runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
     steps:
       - uses: actions/checkout@v2
