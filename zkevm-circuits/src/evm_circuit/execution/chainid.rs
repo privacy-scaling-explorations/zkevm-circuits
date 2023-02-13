@@ -5,16 +5,16 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::BlockContextFieldTag,
+    table::block_table::BlockContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ChainIdGadget<F> {
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CHAINID;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let chain_id = cb.query_cell();
+        let chain_id = cb.query_cell_phase2();
 
         // Push the value to the stack
         cb.stack_push(chain_id.expr());
@@ -65,21 +65,15 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let chain_id = block.rws[step.rw_indices[0]].stack_value();
 
-        self.chain_id.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                chain_id.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.chain_id
+            .assign(region, offset, region.word_rlc(chain_id))?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::test_ctx::TestContext;
 
@@ -90,12 +84,10 @@ mod test {
             CHAINID
             STOP
         };
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

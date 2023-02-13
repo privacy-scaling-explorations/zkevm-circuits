@@ -54,11 +54,11 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         let is_shl = OpcodeId::SHR.expr() - opcode.expr();
         let is_shr = 1.expr() - is_shl.expr();
 
-        let quotient = cb.query_word();
-        let divisor = cb.query_word();
-        let remainder = cb.query_word();
-        let dividend = cb.query_word();
-        let shift = cb.query_word();
+        let quotient = cb.query_word_rlc();
+        let divisor = cb.query_word_rlc();
+        let remainder = cb.query_word_rlc();
+        let dividend = cb.query_word_rlc();
+        let shift = cb.query_word_rlc();
         let shf0 = cb.query_cell();
 
         let mul_add_words =
@@ -75,6 +75,11 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         cb.stack_push(
             (is_shl.expr() * dividend.expr() + is_shr.expr() * quotient.expr())
                 * (1.expr() - divisor_is_zero.expr()),
+        );
+
+        cb.require_zero(
+            "shf0 == shift.cells[0]",
+            shf0.expr() - shift.cells[0].expr(),
         );
 
         cb.require_zero(
@@ -187,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
@@ -201,13 +206,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

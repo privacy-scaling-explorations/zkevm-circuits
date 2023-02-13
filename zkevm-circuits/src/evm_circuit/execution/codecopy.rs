@@ -50,9 +50,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let opcode = cb.query_cell();
 
         // Query elements to be popped from the stack.
-        let dst_memory_offset = cb.query_cell();
-        let code_offset = cb.query_rlc();
-        let size = cb.query_rlc();
+        let dst_memory_offset = cb.query_cell_phase2();
+        let code_offset = cb.query_word_rlc();
+        let size = cb.query_word_rlc();
 
         // Pop items from stack.
         cb.stack_pop(dst_memory_offset.expr());
@@ -66,7 +66,8 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         let code_hash = cb.curr.state.code_hash.clone();
 
         // Fetch the bytecode length from the bytecode table.
-        let code_size = cb.bytecode_length(code_hash.expr());
+        let code_size = cb.query_cell();
+        cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access. This also accounts for the dynamic gas required to copy bytes to
@@ -166,9 +167,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         )?;
 
         // assign the destination memory offset.
-        let memory_address =
-            self.dst_memory_addr
-                .assign(region, offset, dest_offset, size, block.randomness)?;
+        let memory_address = self
+            .dst_memory_addr
+            .assign(region, offset, dest_offset, size)?;
 
         // assign to gadgets handling memory expansion cost and copying cost.
         let (_, memory_expansion_cost) = self.memory_expansion.assign(
@@ -195,10 +196,9 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
-
-    use crate::test_util::run_test_circuits;
 
     fn test_ok(memory_offset: usize, code_offset: usize, size: usize, large: bool) {
         let mut code = bytecode! {};
@@ -216,13 +216,10 @@ mod tests {
         };
         code.append(&tail);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None,
-            ),
-            Ok(()),
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .run();
     }
 
     #[test]

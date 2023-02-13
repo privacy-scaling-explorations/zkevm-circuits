@@ -36,8 +36,8 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
 
         // Check if opcode is EQ
         let is_eq = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::EQ.expr());
@@ -168,7 +168,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
@@ -181,13 +181,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

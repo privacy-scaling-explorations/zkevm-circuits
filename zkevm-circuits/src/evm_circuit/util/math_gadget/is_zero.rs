@@ -1,5 +1,7 @@
 use crate::{
-    evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell},
+    evm_circuit::util::{
+        constraint_builder::ConstraintBuilder, transpose_val_ret, CachedRegion, Cell, CellType,
+    },
     util::Expr,
 };
 use eth_types::Field;
@@ -17,7 +19,7 @@ pub struct IsZeroGadget<F> {
 
 impl<F: Field> IsZeroGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
-        let inverse = cb.query_cell();
+        let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
         // when `value != 0` check `inverse = a.invert()`: value * (1 - value *
@@ -50,6 +52,15 @@ impl<F: Field> IsZeroGadget<F> {
         } else {
             F::zero()
         })
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<Value<F>, Error> {
+        transpose_val_ret(value.map(|value| self.assign(region, offset, value)))
     }
 }
 

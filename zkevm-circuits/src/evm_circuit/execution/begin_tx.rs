@@ -10,17 +10,16 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, MulWordByU64Gadget, RangeCheckGadget},
-            select, CachedRegion, Cell, RandomLinearCombination, Word,
+            not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
+    table::{tx_table::TxFieldTag as TxContextFieldTag, AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::circuit::Value;
 use halo2_proofs::plonk::Error;
-use keccak256::EMPTY_HASH_LE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -39,7 +38,7 @@ pub(crate) struct BeginTxGadget<F> {
     reversion_info: ReversionInfo<F>,
     sufficient_gas_left: RangeCheckGadget<F, N_BYTES_GAS>,
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
-    code_hash: Cell<F>,
+    phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
 }
 
@@ -136,6 +135,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         );
 
+        // TODO: If value is 0, skip transfer, just like callop.
         // Transfer value from caller to callee
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
@@ -150,21 +150,17 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: Handle precompiled
 
         // Read code_hash of callee
-        let code_hash = cb.query_cell();
-        cb.account_read(
-            tx_callee_address.expr(),
-            AccountFieldTag::CodeHash,
-            code_hash.expr(),
-        );
+        let phase2_code_hash = cb.query_cell_phase2();
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
+            cb.account_read(
+                tx_callee_address.expr(),
+                AccountFieldTag::CodeHash,
+                phase2_code_hash.expr(),
+            );
+        });
 
-        let is_empty_code_hash = IsEqualGadget::construct(
-            cb,
-            code_hash.expr(),
-            Word::random_linear_combine_expr(
-                (*EMPTY_HASH_LE).map(|byte| byte.expr()),
-                cb.power_of_randomness(),
-            ),
-        );
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
 
         cb.condition(is_empty_code_hash.expr(), |cb| {
             cb.require_equal(
@@ -214,13 +210,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
                 (CallContextFieldTag::IsRoot, 1.expr()),
                 (CallContextFieldTag::IsCreate, tx_is_create.expr()),
-                (CallContextFieldTag::CodeHash, code_hash.expr()),
+                (CallContextFieldTag::CodeHash, phase2_code_hash.expr()),
             ] {
                 cb.call_context_lookup(true.expr(), Some(call_id.expr()), field_tag, value);
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 23 reads and writes:
+                // 22-23 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -230,7 +226,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write TxAccessListAccount
                 //   - Write Account Balance
                 //   - Write Account Balance
-                //   - Read Account CodeHash
+                //   - Read Account CodeHash (only if tx is not create)
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
                 //   - Write CallContext CalleeAddress
@@ -244,11 +240,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(23.expr()),
+                rw_counter: Delta(22.expr() + (1.expr() - tx_is_create.expr())),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
-                code_hash: To(code_hash.expr()),
+                code_hash: To(phase2_code_hash.expr()),
                 gas_left: To(gas_left),
                 reversible_write_counter: To(2.expr()),
                 log_id: To(0.expr()),
@@ -272,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             reversion_info,
             sufficient_gas_left,
             transfer_with_gas_fee,
-            code_hash,
+            phase2_code_hash,
             is_empty_code_hash,
         }
     }
@@ -287,9 +283,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-        let [caller_balance_pair, callee_balance_pair, (callee_code_hash, _)] =
-            [step.rw_indices[7], step.rw_indices[8], step.rw_indices[9]]
-                .map(|idx| block.rws[idx].account_value_pair());
+        let [caller_balance_pair, callee_balance_pair] =
+            [step.rw_indices[7], step.rw_indices[8]].map(|idx| block.rws[idx].account_value_pair());
+        let callee_code_hash = if tx.is_create {
+            call.code_hash
+        } else {
+            block.rws[step.rw_indices[9]].account_value_pair().0
+        };
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -346,19 +346,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx.value,
             gas_fee,
         )?;
-        self.code_hash.assign(
+        self.phase2_code_hash
+            .assign(region, offset, region.word_rlc(callee_code_hash))?;
+        self.is_empty_code_hash.assign_value(
             region,
             offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                callee_code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
-        self.is_empty_code_hash.assign(
-            region,
-            offset,
-            Word::random_linear_combine(callee_code_hash.to_le_bytes(), block.randomness),
-            Word::random_linear_combine(*EMPTY_HASH_LE, block.randomness),
+            region.word_rlc(callee_code_hash),
+            region.empty_hash_rlc(),
         )?;
         Ok(())
     }
@@ -366,12 +360,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::{rand_bytes, run_test_circuit_geth_data_default};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
-    use eth_types::{
-        self, bytecode, evm_types::GasCost, geth_types::GethData, word, Bytecode, Word,
-    };
-    use halo2_proofs::halo2curves::bn256::Fr;
+    use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
+
     use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
@@ -403,7 +395,7 @@ mod test {
 
     fn test_ok(tx: eth_types::Transaction, code: Option<Bytecode>) {
         // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(10));
@@ -423,12 +415,12 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    // TODO: Use `mock` crate.
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
@@ -475,7 +467,7 @@ mod test {
             STOP
         };
 
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(to).balance(eth(1)).code(code);
@@ -486,10 +478,9 @@ mod test {
             },
             |block, _| block,
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
@@ -519,7 +510,7 @@ mod test {
 
     #[test]
     fn begin_tx_no_code() {
-        let block: GethData = TestContext::<2, 1>::new(
+        let ctx = TestContext::<2, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -535,15 +526,14 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]
     fn begin_tx_no_account() {
-        let block: GethData = TestContext::<1, 1>::new(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -558,10 +548,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     // TODO: Enable this test once we have support for contract deployment from
@@ -579,7 +568,7 @@ mod test {
             PUSH1(0)
             RETURN
         };
-        let block: GethData = TestContext::<1, 1>::new(
+        let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
                 accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
@@ -594,9 +583,8 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
+        .unwrap();
 
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }

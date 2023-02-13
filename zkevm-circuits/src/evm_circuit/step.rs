@@ -1,14 +1,14 @@
 use super::util::{CachedRegion, CellManager, CellType};
+use crate::evm_circuit::param::EXECUTION_STATE_HEIGHT_MAP;
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
-        util::{Cell, RandomLinearCombination},
+        util::Cell,
         witness::{Block, Call, ExecStep},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::ToLittleEndian;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Value,
@@ -107,11 +107,8 @@ pub enum ExecutionState {
     ErrorOutOfGasEXTCODECOPY,
     ErrorOutOfGasSLOAD,
     ErrorOutOfGasSSTORE,
-    ErrorOutOfGasCALL,
-    ErrorOutOfGasCALLCODE,
-    ErrorOutOfGasDELEGATECALL,
+    ErrorOutOfGasCall,
     ErrorOutOfGasCREATE2,
-    ErrorOutOfGasSTATICCALL,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
@@ -155,11 +152,8 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXTCODECOPY
                 | Self::ErrorOutOfGasSLOAD
                 | Self::ErrorOutOfGasSSTORE
-                | Self::ErrorOutOfGasCALL
-                | Self::ErrorOutOfGasCALLCODE
-                | Self::ErrorOutOfGasDELEGATECALL
+                | Self::ErrorOutOfGasCall
                 | Self::ErrorOutOfGasCREATE2
-                | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
@@ -309,8 +303,18 @@ impl ExecutionState {
             Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
+            Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
         }
+    }
+
+    pub fn get_step_height_option(&self) -> Option<usize> {
+        EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
+    }
+
+    pub fn get_step_height(&self) -> usize {
+        self.get_step_height_option()
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
     }
 }
 
@@ -329,8 +333,8 @@ pub(crate) struct DynamicSelectorHalf<F> {
 
 impl<F: FieldExt> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
-        let target_pairs = cell_manager.query_cells(CellType::Storage, (count + 1) / 2);
-        let target_odd = cell_manager.query_cell(CellType::Storage);
+        let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
+        let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
         Self {
             count,
             target_pairs,
@@ -472,17 +476,17 @@ impl<F: FieldExt> Step<F> {
                     &mut cell_manager,
                     ExecutionState::amount(),
                 ),
-                rw_counter: cell_manager.query_cell(CellType::Storage),
-                call_id: cell_manager.query_cell(CellType::Storage),
-                is_root: cell_manager.query_cell(CellType::Storage),
-                is_create: cell_manager.query_cell(CellType::Storage),
-                code_hash: cell_manager.query_cell(CellType::Storage),
-                program_counter: cell_manager.query_cell(CellType::Storage),
-                stack_pointer: cell_manager.query_cell(CellType::Storage),
-                gas_left: cell_manager.query_cell(CellType::Storage),
-                memory_word_size: cell_manager.query_cell(CellType::Storage),
-                reversible_write_counter: cell_manager.query_cell(CellType::Storage),
-                log_id: cell_manager.query_cell(CellType::Storage),
+                rw_counter: cell_manager.query_cell(CellType::StoragePhase1),
+                call_id: cell_manager.query_cell(CellType::StoragePhase1),
+                is_root: cell_manager.query_cell(CellType::StoragePhase1),
+                is_create: cell_manager.query_cell(CellType::StoragePhase1),
+                code_hash: cell_manager.query_cell(CellType::StoragePhase2),
+                program_counter: cell_manager.query_cell(CellType::StoragePhase1),
+                stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
+                gas_left: cell_manager.query_cell(CellType::StoragePhase1),
+                memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
+                reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
+                log_id: cell_manager.query_cell(CellType::StoragePhase1),
             }
         };
         Self {
@@ -504,7 +508,7 @@ impl<F: FieldExt> Step<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        _block: &Block<F>,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -527,14 +531,9 @@ impl<F: FieldExt> Step<F> {
             offset,
             Value::known(F::from(call.is_create as u64)),
         )?;
-        self.state.code_hash.assign(
-            region,
-            offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                call.code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.state
+            .code_hash
+            .assign(region, offset, region.word_rlc(call.code_hash))?;
         self.state.program_counter.assign(
             region,
             offset,

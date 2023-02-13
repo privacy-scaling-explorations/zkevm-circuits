@@ -14,11 +14,11 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             memory_gadget::BufferReaderGadget,
-            not, CachedRegion, Cell, MemoryAddress, RandomLinearCombination,
+            not, CachedRegion, Cell, MemoryAddress,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, TxContextFieldTag},
+    table::{tx_table::TxContextFieldTag, CallContextFieldTag},
     util::Expr,
 };
 
@@ -56,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset = cb.query_rlc();
+        let offset = cb.query_word_rlc();
 
         // Pop the offset value from stack.
         cb.stack_pop(offset.expr());
@@ -143,10 +143,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         // Add a lookup constraint for the 32-bytes that should have been pushed
         // to the stack.
         let calldata_word: [Expression<F>; N_BYTES_WORD] = calldata_word.try_into().unwrap();
-        cb.stack_push(RandomLinearCombination::random_linear_combine_expr(
-            calldata_word,
-            cb.power_of_randomness(),
-        ));
+        cb.stack_push(cb.word_rlc(calldata_word));
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(cb.rw_counter_offset()),
@@ -245,10 +242,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToWord, Word};
     use mock::TestContext;
-
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
 
     fn test_root_ok(offset: usize) {
         let bytecode = bytecode! {
@@ -257,13 +253,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn test_internal_ok(call_data_length: usize, call_data_offset: usize, offset: usize) {
@@ -310,7 +303,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

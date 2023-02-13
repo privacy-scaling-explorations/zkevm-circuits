@@ -1,7 +1,6 @@
-use super::bytecode_unroller::{
-    unroll, BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs, UnrolledBytecode,
-};
-use crate::table::{BytecodeTable, KeccakTable};
+use super::bytecode_unroller::{unroll, UnrolledBytecode};
+use super::circuit::{BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs};
+use crate::table::{bytecode_table::BytecodeTable, keccak_table::KeccakTable};
 use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 use eth_types::Field;
 use halo2_proofs::{
@@ -92,5 +91,6 @@ pub fn test_bytecode_circuit_unrolled<F: Field>(
             error!("{}", failure);
         }
     }
-    assert_eq!(result.is_ok(), success);
+    let error_msg = if success { "valid" } else { "invalid" };
+    assert_eq!(result.is_ok(), success, "proof must be {}", error_msg);
 }

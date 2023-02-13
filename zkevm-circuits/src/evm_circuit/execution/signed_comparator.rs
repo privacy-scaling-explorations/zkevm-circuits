@@ -42,8 +42,8 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
 
         // The Signed Comparator gadget is used for both opcodes SLT and SGT.
         // Depending on whether the opcode is SLT or SGT, we
@@ -223,7 +223,7 @@ mod test {
     use eth_types::Word;
     use mock::TestContext;
 
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
 
     fn test_ok(pairs: Vec<(OpcodeId, Word, Word)>) {
         let mut bytecode = bytecode! {};
@@ -234,13 +234,10 @@ mod test {
         }
         bytecode.write_op(OpcodeId::STOP);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

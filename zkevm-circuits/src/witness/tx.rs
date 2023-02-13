@@ -2,9 +2,7 @@ use bus_mapping::circuit_input_builder;
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
 use halo2_proofs::circuit::Value;
 
-use crate::{
-    evm_circuit::util::RandomLinearCombination, table::TxContextFieldTag, util::Challenges,
-};
+use crate::{evm_circuit::util::rlc, table::tx_table::TxContextFieldTag, util::Challenges};
 
 use super::{step::step_convert, Call, ExecStep};
 
@@ -63,12 +61,9 @@ impl Transaction {
                     Value::known(F::from(self.id as u64)),
                     Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
                     Value::known(F::zero()),
-                    challenges.evm_word().map(|evm_word| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.gas_price.to_le_bytes(),
-                            evm_word,
-                        )
-                    }),
+                    challenges
+                        .evm_word()
+                        .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
                 ],
                 [
                     Value::known(F::from(self.id as u64)),
@@ -92,12 +87,9 @@ impl Transaction {
                     Value::known(F::from(self.id as u64)),
                     Value::known(F::from(TxContextFieldTag::Value as u64)),
                     Value::known(F::zero()),
-                    challenges.evm_word().map(|evm_word| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.value.to_le_bytes(),
-                            evm_word,
-                        )
-                    }),
+                    challenges
+                        .evm_word()
+                        .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
                 ],
                 [
                     Value::known(F::from(self.id as u64)),

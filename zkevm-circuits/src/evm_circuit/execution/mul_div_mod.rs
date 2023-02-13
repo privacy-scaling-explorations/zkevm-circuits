@@ -52,10 +52,10 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         let is_mod = (opcode.expr() - OpcodeId::MUL.expr())
             * (opcode.expr() - OpcodeId::DIV.expr())
             * F::from(8).invert().unwrap();
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
-        let d = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
+        let d = cb.query_word_rlc();
 
         let mul_add_words = MulAddWordsGadget::construct(cb, [&a, &b, &c, &d]);
         let divisor_is_zero = IsZeroGadget::construct(cb, sum::expr(&b.cells));
@@ -150,7 +150,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
     use mock::TestContext;
@@ -164,13 +164,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

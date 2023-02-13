@@ -34,7 +34,7 @@ use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CircuitsParams {
     /// Maximum number of rw operations in the state circuit (RwTable length /
     /// nummber of rows). This must be at least the number of rw operations
@@ -45,6 +45,11 @@ pub struct CircuitsParams {
     pub max_txs: usize,
     /// Maximum number of bytes from all txs calldata in the Tx Circuit
     pub max_calldata: usize,
+    /// Max ammount of rows that the CopyCircuit can have.
+    pub max_copy_rows: usize,
+    /// Max number of steps that the ExpCircuit can have. Each step is further
+    /// expressed in 7 rows
+    pub max_exp_steps: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
     // TODO: Rename for consistency
@@ -60,6 +65,10 @@ impl Default for CircuitsParams {
             max_rws: 1000,
             max_txs: 1,
             max_calldata: 256,
+            // TODO: Check whether this value is correct or we should increase/decrease based on
+            // this lib tests
+            max_copy_rows: 1000,
+            max_exp_steps: 1000,
             max_bytecode: 512,
             keccak_padding: None,
         }
@@ -539,7 +548,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             history_hashes,
             prev_state_root,
             eth_block,
-            self.circuits_params.clone(),
+            self.circuits_params,
         )?;
         let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
         builder.handle_block(eth_block, geth_traces)?;

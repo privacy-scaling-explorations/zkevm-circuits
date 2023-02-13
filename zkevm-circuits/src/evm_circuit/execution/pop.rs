@@ -5,20 +5,20 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::Field;
+use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct PopGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Cell<F>,
+    phase2_value: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
@@ -27,10 +27,10 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::POP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_cell();
+        let phase2_value = cb.query_cell_phase2();
 
         // Pop the value from the stack
-        cb.stack_pop(value.expr());
+        cb.stack_pop(phase2_value.expr());
 
         // State transition
         let step_state_transition = StepStateTransition {
@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
 
         Self {
             same_context,
-            value,
+            phase2_value,
         }
     }
 
@@ -61,14 +61,8 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let value = block.rws[step.rw_indices[0]].stack_value();
-        self.value.assign(
-            region,
-            offset,
-            Value::known(Word::random_linear_combine(
-                value.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.phase2_value
+            .assign(region, offset, region.word_rlc(value))?;
 
         Ok(())
     }
@@ -76,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for PopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -87,13 +81,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -114,13 +105,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

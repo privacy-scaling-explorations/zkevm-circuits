@@ -2,7 +2,7 @@ use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
 use crate::Error;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word};
+use eth_types::{GethExecStep, ToAddress, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct Extcodesize;
@@ -16,12 +16,9 @@ impl Opcode for Extcodesize {
         let mut exec_step = state.new_step(geth_step)?;
 
         // Read account address from stack.
-        let address = geth_step.stack.last()?.to_address();
-        state.stack_read(
-            &mut exec_step,
-            geth_step.stack.last_filled(),
-            address.to_word(),
-        )?;
+        let address_word = geth_step.stack.last()?;
+        let address = address_word.to_address();
+        state.stack_read(&mut exec_step, geth_step.stack.last_filled(), address_word)?;
 
         // Read transaction ID, rw_counter_end_of_reversion, and is_persistent from call
         // context.
@@ -54,25 +51,22 @@ impl Opcode for Extcodesize {
 
         // Read account code hash and get code length.
         let account = state.sdb.get_account(&address).1;
-        let code_size = if !account.is_empty() {
-            let code_hash = account.code_hash;
-            let code_hash_word = code_hash.to_word();
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::CodeHash,
-                code_hash_word,
-                code_hash_word,
-            )?;
+        let exists = !account.is_empty();
+        let code_hash = if exists {
+            account.code_hash
+        } else {
+            H256::zero()
+        };
+        state.account_read(
+            &mut exec_step,
+            address,
+            AccountField::CodeHash,
+            code_hash.to_word(),
+            code_hash.to_word(),
+        )?;
+        let code_size = if exists {
             state.code(code_hash)?.len()
         } else {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::NonExisting,
-                Word::zero(),
-                Word::zero(),
-            )?;
             0
         };
 
@@ -118,7 +112,7 @@ mod extcodesize_tests {
     }
 
     fn test_ok(account: &Account, is_warm: bool) {
-        let account_exists = !account.is_empty();
+        let exists = !account.is_empty();
 
         let mut bytecode = Bytecode::default();
         if is_warm {
@@ -142,7 +136,7 @@ mod extcodesize_tests {
                     .address(MOCK_ACCOUNTS[0])
                     .balance(*MOCK_1_ETH)
                     .code(bytecode);
-                if account_exists {
+                if exists {
                     accs[1].address(account.address).code(account.code.clone());
                 } else {
                     accs[1].address(MOCK_ACCOUNTS[1]).balance(*MOCK_1_ETH);
@@ -234,26 +228,17 @@ mod extcodesize_tests {
             }
         );
 
+        let code_hash = Word::from(keccak256(account.code.clone()));
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
-            &(if account_exists {
-                let code_hash = Word::from(keccak256(account.code.clone()));
-                AccountOp {
-                    address: account.address,
-                    field: AccountField::CodeHash,
-                    value: code_hash,
-                    value_prev: code_hash,
-                }
-            } else {
-                AccountOp {
-                    address: account.address,
-                    field: AccountField::NonExisting,
-                    value: Word::zero(),
-                    value_prev: Word::zero(),
-                }
-            })
+            &AccountOp {
+                address: account.address,
+                field: AccountField::CodeHash,
+                value: if exists { code_hash } else { U256::zero() },
+                value_prev: if exists { code_hash } else { U256::zero() },
+            }
         );
 
         let operation = &container.stack[indices[6].as_usize()];
@@ -263,12 +248,7 @@ mod extcodesize_tests {
             &StackOp {
                 call_id,
                 address: 1023u32.into(),
-                value: (if account_exists {
-                    account.code.len()
-                } else {
-                    0
-                })
-                .into(),
+                value: (if exists { account.code.len() } else { 0 }).into(),
             }
         );
     }

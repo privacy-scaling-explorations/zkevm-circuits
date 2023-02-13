@@ -34,7 +34,8 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let code_length = cb.query_cell();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let is_out_of_range = IsZeroGadget::construct(
             cb,
             code_length.expr() - cb.curr.state.program_counter.expr(),
@@ -133,15 +134,15 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit_geth_data_default;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Bytecode, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
+
     use itertools::Itertools;
     use mock::TestContext;
 
     fn test_ok(bytecode: Bytecode, is_root: bool) {
-        let block = if is_root {
-            TestContext::<2, 1>::new(
+        if is_root {
+            let ctx = TestContext::<2, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -160,10 +161,11 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         } else {
-            TestContext::<3, 1>::new(
+            let ctx = TestContext::<3, 1>::new(
                 None,
                 |accs| {
                     accs[0]
@@ -196,10 +198,10 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into()
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
         };
-        assert_eq!(run_test_circuit_geth_data_default::<Fr>(block), Ok(()));
     }
 
     #[test]

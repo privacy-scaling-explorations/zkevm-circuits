@@ -4,13 +4,14 @@ use bus_mapping::{
     evm::OpcodeId,
     operation,
 };
+use eth_types::evm_unimplemented;
 
 use crate::{
     evm_circuit::{
         param::{N_BYTES_WORD, STACK_CAPACITY},
         step::ExecutionState,
     },
-    table::RwTableTag,
+    table::rw_table::RwTableTag,
 };
 
 /// Step executed in a transaction
@@ -84,11 +85,8 @@ impl From<&ExecError> for ExecutionState {
                 OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
                 OogError::Sload => ExecutionState::ErrorOutOfGasSLOAD,
                 OogError::Sstore => ExecutionState::ErrorOutOfGasSSTORE,
-                OogError::Call => ExecutionState::ErrorOutOfGasCALL,
-                OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
-                OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
+                OogError::Call => ExecutionState::ErrorOutOfGasCall,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
-                OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -117,7 +115,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::warn!("{:?} is implemented with DummyGadget", $name);
+                        evm_unimplemented!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
@@ -162,6 +160,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
+                    OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
@@ -183,7 +182,6 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     // dummy ops
-                    OpcodeId::SAR => dummy!(ExecutionState::SAR),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),

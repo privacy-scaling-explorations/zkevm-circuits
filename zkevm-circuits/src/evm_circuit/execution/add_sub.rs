@@ -35,9 +35,9 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
         let add_words = AddWordsGadget::construct(cb, [a.clone(), b.clone()], c.clone());
 
         // Swap a and c if opcode is SUB
@@ -105,9 +105,10 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_word;
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::evm_types::OpcodeId;
     use eth_types::{bytecode, Word};
+
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word) {
@@ -118,13 +119,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run()
     }
 
     #[test]

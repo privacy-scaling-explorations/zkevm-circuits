@@ -10,18 +10,17 @@ use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::{super_circuit::SuperCircuit, test_util::BytecodeTestConfig};
+use zkevm_circuits::super_circuit::SuperCircuit;
+use zkevm_circuits::test_util::CircuitTestBuilder;
+use zkevm_circuits::witness::Block;
 
-const EVMERR_OOG: &str = "out of gas";
-const EVMERR_STACKUNDERFLOW: &str = "stack underflow";
-const EVMERR_GAS_UINT64OVERFLOW: &str = "gas uint64 overflow";
+const MAX_TXS: usize = 1;
+const MAX_CALLDATA: usize = 32;
 
 #[derive(PartialEq, Eq, Error, Debug)]
 pub enum StateTestError {
     #[error("CannotGenerateCircuitInput({0})")]
     CircuitInput(String),
-    #[error("VerifierError({0})")]
-    VerifierError(String),
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
@@ -34,23 +33,19 @@ pub enum StateTestError {
         expected: U256,
         found: U256,
     },
-    #[error("SkipTesstMaxGasLimit({0})")]
+    #[error("SkipTestMaxGasLimit({0})")]
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
-    #[error("SkipUnimplemented({0})")]
-    SkipUnimplemented(String),
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
-    Exception { expected: bool, found: bool },
+    Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
         matches!(
             self,
-            StateTestError::SkipUnimplemented(_)
-                | StateTestError::SkipTestMaxSteps(_)
-                | StateTestError::SkipTestMaxGasLimit(_)
+            StateTestError::SkipTestMaxSteps(_) | StateTestError::SkipTestMaxGasLimit(_)
         )
     }
 }
@@ -181,25 +176,24 @@ pub fn run_test(
 
     let (_, trace_config, post) = into_traceconfig(st.clone());
 
-    if st.to.is_none() {
-        return Err(StateTestError::SkipUnimplemented(
-            "TransactionCreation".to_string(),
-        ));
-    }
-
     let geth_traces = external_tracer::trace(&trace_config);
-    if st.exception {
-        if geth_traces.is_ok() {
-            return Err(StateTestError::Exception {
-                expected: st.exception,
-                found: geth_traces.is_err(),
-            });
-        } else {
-            return Ok(());
-        }
-    }
 
-    let geth_traces = geth_traces.map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
+    let geth_traces = match (geth_traces, st.exception) {
+        (Ok(res), false) => res,
+        (Ok(_), true) => {
+            return Err(StateTestError::Exception {
+                expected: true,
+                found: "no error".into(),
+            })
+        }
+        (Err(_), true) => return Ok(()),
+        (Err(err), false) => {
+            return Err(StateTestError::Exception {
+                expected: false,
+                found: err.to_string(),
+            })
+        }
+    };
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
@@ -207,45 +201,8 @@ pub fn run_test(
         ));
     }
 
-    // we are not checking here geth_traces[0].failed, since
-    // there are some tests that makes the tx failing
-    // (eg memory filler tests)
-
-    if let Some(step) = geth_traces[0]
-        .struct_logs
-        .iter()
-        .find(|step| suite.unimplemented_opcodes.contains(&step.op))
-    {
-        return Err(StateTestError::SkipUnimplemented(format!(
-            "OPCODE {:?}",
-            step.op
-        )));
-    }
-
-    for err in [EVMERR_STACKUNDERFLOW, EVMERR_OOG, EVMERR_GAS_UINT64OVERFLOW] {
-        if geth_traces[0]
-            .struct_logs
-            .iter()
-            .any(|step| step.error.as_ref().map(|e| e.contains(err)) == Some(true))
-        {
-            return Err(StateTestError::SkipUnimplemented(format!("Error {}", err)));
-        }
-    }
-
-    if geth_traces[0].gas.0 > suite.max_gas {
+    if suite.max_gas > 0 && geth_traces[0].gas.0 > suite.max_gas {
         return Err(StateTestError::SkipTestMaxGasLimit(geth_traces[0].gas.0));
-    }
-
-    if let Some(acc) = st.pre.get(&st.to.unwrap()) {
-        if acc.code.0.is_empty() {
-            return Err(StateTestError::SkipUnimplemented(
-                "Calling to empty accounts unimplemented (1)".to_string(),
-            ));
-        }
-    } else {
-        return Err(StateTestError::SkipUnimplemented(
-            "Calling to empty accounts unimplemented (2)".to_string(),
-        ));
     }
 
     let transactions = trace_config
@@ -301,6 +258,8 @@ pub fn run_test(
             max_rws: 55000,
             max_calldata: 5000,
             max_bytecode: 5000,
+            max_copy_rows: 55000,
+            max_exp_steps: 5000,
             keccak_padding: None,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
@@ -310,30 +269,31 @@ pub fn run_test(
             .handle_block(&eth_block, &geth_traces)
             .map_err(|err| StateTestError::CircuitInput(err.to_string()))?;
 
-        let block =
+        let block: Block<Fr> =
             zkevm_circuits::evm_circuit::witness::block_convert(&builder.block, &builder.code_db)
                 .unwrap();
 
-        let config = BytecodeTestConfig {
-            enable_evm_circuit_test: true,
-            enable_state_circuit_test: true,
-            gas_limit: u64::MAX,
-        };
-
-        zkevm_circuits::test_util::test_circuits_witness_block(block, config)
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
+        CircuitTestBuilder::<1, 1>::new_from_block(block).run();
     } else {
         geth_data.sign(&wallets);
 
+        let circuits_params = CircuitsParams {
+            max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_rws: 256,
+            max_copy_rows: 256,
+            max_exp_steps: 256,
+            max_bytecode: 512,
+            keccak_padding: None,
+        };
         let (k, circuit, instance, _builder) =
-            SuperCircuit::<Fr, 1, 32, 255>::build(geth_data).unwrap();
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)
+                .unwrap();
         builder = _builder;
 
         let prover = MockProver::run(k, &circuit, instance).unwrap();
-        prover
-            .verify_par()
-            .map_err(|err| StateTestError::VerifierError(format!("{:#?}", err)))?;
-    }
+        prover.assert_satisfied_par();
+    };
 
     check_post(&builder, &post)?;
 

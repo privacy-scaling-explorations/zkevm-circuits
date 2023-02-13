@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
+use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, Word};
 
 use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
 
@@ -52,6 +52,87 @@ pub struct Block<F> {
     pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
+impl<F: Field> Block<F> {
+    /// For each tx, for each step, print the rwc at the beginning of the step,
+    /// and all the rw operations of the step.
+    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
+        for (tx_idx, tx) in self.txs.iter().enumerate() {
+            println!("tx {}", tx_idx);
+            for step in &tx.steps {
+                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+                for rw_ref in &step.rw_indices {
+                    println!("  - {:?}", self.rws[*rw_ref]);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "test")]
+use crate::exp_circuit::OFFSET_INCREMENT;
+#[cfg(feature = "test")]
+use crate::util::log2_ceil;
+
+#[cfg(feature = "test")]
+impl<F: Field> Block<F> {
+    /// Obtains the expected Circuit degree needed in order to be able to test
+    /// the EvmCircuit with this block without needing to configure the
+    /// `ConstraintSystem`.
+    pub fn get_test_degree(&self) -> u32 {
+        let num_rows_required_for_execution_steps: usize =
+            EvmCircuit::<F>::get_num_rows_required(self);
+        let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
+        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(self)
+            .iter()
+            .map(|tag| tag.build::<F>().count())
+            .sum();
+        let num_rows_required_for_bytecode_table: usize = self
+            .bytecodes
+            .values()
+            .map(|bytecode| bytecode.bytes.len() + 1)
+            .sum();
+        let num_rows_required_for_copy_table: usize =
+            self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
+        let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
+        let num_rows_required_for_tx_table: usize =
+            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+        let num_rows_required_for_exp_table: usize = self
+            .exp_events
+            .iter()
+            .map(|e| e.steps.len() * OFFSET_INCREMENT)
+            .sum();
+
+        const NUM_BLINDING_ROWS: usize = 64;
+
+        let rows_needed: usize = itertools::max([
+            num_rows_required_for_execution_steps,
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table,
+        ])
+        .unwrap();
+
+        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        log::debug!(
+            "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
+            copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table
+        );
+        log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+        k
+    }
+}
+
 /// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
@@ -71,78 +152,6 @@ pub struct BlockContext {
     pub history_hashes: Vec<Word>,
     /// The chain id
     pub chain_id: Word,
-}
-
-impl BlockContext {
-    /// Assignments for block table
-    pub fn table_assignments<F: Field>(&self, randomness: F) -> Vec<[F; 3]> {
-        [
-            vec![
-                [
-                    F::from(BlockContextFieldTag::Coinbase as u64),
-                    F::zero(),
-                    self.coinbase.to_scalar().unwrap(),
-                ],
-                [
-                    F::from(BlockContextFieldTag::Timestamp as u64),
-                    F::zero(),
-                    self.timestamp.to_scalar().unwrap(),
-                ],
-                [
-                    F::from(BlockContextFieldTag::Number as u64),
-                    F::zero(),
-                    self.number.to_scalar().unwrap(),
-                ],
-                [
-                    F::from(BlockContextFieldTag::Difficulty as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.difficulty.to_le_bytes(),
-                        randomness,
-                    ),
-                ],
-                [
-                    F::from(BlockContextFieldTag::GasLimit as u64),
-                    F::zero(),
-                    F::from(self.gas_limit),
-                ],
-                [
-                    F::from(BlockContextFieldTag::BaseFee as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.base_fee.to_le_bytes(),
-                        randomness,
-                    ),
-                ],
-                [
-                    F::from(BlockContextFieldTag::ChainId as u64),
-                    F::zero(),
-                    RandomLinearCombination::random_linear_combine(
-                        self.chain_id.to_le_bytes(),
-                        randomness,
-                    ),
-                ],
-            ],
-            {
-                let len_history = self.history_hashes.len();
-                self.history_hashes
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, hash)| {
-                        [
-                            F::from(BlockContextFieldTag::BlockHash as u64),
-                            (self.number - len_history + idx).to_scalar().unwrap(),
-                            RandomLinearCombination::random_linear_combine(
-                                hash.to_le_bytes(),
-                                randomness,
-                            ),
-                        ]
-                    })
-                    .collect()
-            },
-        ]
-        .concat()
-    }
 }
 
 impl From<&circuit_input_builder::Block> for BlockContext {
@@ -166,8 +175,8 @@ pub fn block_convert<F: Field>(
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
     Ok(Block {
-        randomness: F::from(0xcafeu64),
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
+        randomness: F::from(0xcafeu64),
         context: block.into(),
         rws: RwMap::from(&block.container),
         txs: block
@@ -189,7 +198,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params.clone(),
+        circuits_params: block.circuits_params,
         evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,

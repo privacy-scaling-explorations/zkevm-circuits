@@ -60,9 +60,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let dest_offset = cb.query_cell();
-        let data_offset = cb.query_rlc();
-        let size = cb.query_rlc();
+        let dest_offset = cb.query_cell_phase2();
+        let data_offset = cb.query_word_rlc();
+        let size = cb.query_word_rlc();
 
         // 1. Pop dest_offset, offset, length from stack
         cb.stack_pop(dest_offset.expr());
@@ -227,9 +227,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         )?;
 
         // assign the destination memory offset.
-        let memory_address =
-            self.dst_memory_addr
-                .assign(region, offset, dest_offset, size, block.randomness)?;
+        let memory_address = self
+            .dst_memory_addr
+            .assign(region, offset, dest_offset, size)?;
 
         // assign to gadgets handling memory expansion cost and copying cost.
         let (_, memory_expansion_cost) = self.memory_expansion.assign(
@@ -268,7 +268,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::run_test_circuits_with_params;
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
@@ -330,17 +330,12 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(
-            run_test_circuits_with_params(
-                ctx,
-                None,
-                CircuitsParams {
-                    max_rws: 2048,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 2048,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
