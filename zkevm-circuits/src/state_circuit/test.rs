@@ -1,6 +1,9 @@
 use super::{StateCircuit, StateCircuitConfig};
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, rw_table::RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{
+        rw_table::RwTableTag, AccountFieldTag, CallContextFieldTag, TxLogFieldTag,
+        TxReceiptFieldTag,
+    },
     util::SubCircuit,
     witness::{MptUpdates, Rw, RwMap},
 };

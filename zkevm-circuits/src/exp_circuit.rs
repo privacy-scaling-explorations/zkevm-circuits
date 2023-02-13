@@ -15,7 +15,7 @@ use halo2_proofs::{
 };
 
 use crate::{
-    evm_circuit::{util::constraint_builder::BaseConstraintBuilder, witness::Block},
+    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::{exp_table::ExpTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,

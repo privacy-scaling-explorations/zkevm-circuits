@@ -15,7 +15,7 @@ use itertools::Itertools;
 #[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
     /// Whether the row is the start of a step.
-    pub is_step: Column<Advice>,
+    pub is_step: Column<Fixed>,
     /// An identifier for every exponentiation trace, at the moment this is the
     /// read-write counter at the time of the lookups done to the
     /// exponentiation table.
@@ -31,13 +31,13 @@ pub struct ExpTable {
     pub exponentiation_lo_hi: Column<Advice>,
 }
 
-type ExpTableRow<F> = [F; 6];
+type ExpTableRow<F> = [F; 5];
 
 impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_step: meta.advice_column(),
+            is_step: meta.fixed_column(),
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
             base_limb: meta.advice_column(),
@@ -48,7 +48,7 @@ impl ExpTable {
 
     /// Given an exponentiation event and randomness, get assignments to the
     /// exponentiation table.
-    pub fn assignments<F: Field>(&self, exp_event: &ExpEvent) -> Vec<[F; 6]> {
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 5]> {
         let mut assignments = Vec::new();
         let base_limbs = split_u256_limb64(&exp_event.base);
         let identifier = F::from(exp_event.identifier as u64);
@@ -64,7 +64,6 @@ impl ExpTable {
 
             // row 1
             assignments.push([
-                F::one(),
                 identifier,
                 is_last,
                 base_limbs[0].as_u64().into(),
@@ -77,7 +76,6 @@ impl ExpTable {
             ]);
             // row 2
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[1].as_u64().into(),
@@ -90,7 +88,6 @@ impl ExpTable {
             ]);
             // row 3
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[2].as_u64().into(),
@@ -99,7 +96,6 @@ impl ExpTable {
             ]);
             // row 4
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[3].as_u64().into(),
@@ -107,14 +103,7 @@ impl ExpTable {
                 F::zero(),
             ]);
             for _ in ROWS_PER_STEP..OFFSET_INCREMENT {
-                assignments.push([
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                ]);
+                assignments.push([F::zero(); 5]);
             }
 
             // update intermediate exponent.
@@ -156,13 +145,24 @@ impl ExpTable {
     ) -> Result<(), Error> {
         let mut offset = 0;
         for exp_event in block.exp_events.iter() {
-            for row in self.assignments(exp_event) {
+            for row in Self::assignments(exp_event) {
                 self.assign_row(region, offset, row)?;
+                let is_step = if offset % OFFSET_INCREMENT == 0 {
+                    F::one()
+                } else {
+                    F::zero()
+                };
+                region.assign_fixed(
+                    || format!("exponentiation table row {}", offset),
+                    self.is_step,
+                    offset,
+                    || Value::known(is_step),
+                )?;
                 offset += 1;
             }
         }
 
-        self.assign_row(region, offset, [F::zero(); 6])?;
+        self.assign_row(region, offset, [F::zero(); 5])?;
         Ok(())
     }
 
@@ -204,7 +204,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.is_step, Rotation::cur()),
+            meta.query_fixed(self.is_step, Rotation::cur()),
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::cur()),
