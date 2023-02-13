@@ -314,8 +314,7 @@ mod test {
         [false, true].into_iter().for_each(|is_warm| {
             let testing_data = TestingData::new_for_sload(TESTING_STORAGE_KEY, is_warm);
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -331,8 +330,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -348,8 +346,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -365,8 +362,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -382,8 +378,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -400,8 +395,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -418,8 +412,7 @@ mod test {
                 is_warm,
             );
             test_root(&testing_data);
-            test_internal(0x20, 0x00, &testing_data);
-            test_internal(0x1010, 0xff, &testing_data);
+            test_internal(&testing_data);
         });
     }
 
@@ -537,7 +530,7 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    fn test_internal(call_data_offset: usize, call_data_length: usize, testing_data: &TestingData) {
+    fn test_internal(testing_data: &TestingData) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
@@ -553,8 +546,8 @@ mod test {
             // call ADDR_B.
             PUSH1(0x00) // retLength
             PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
+            PUSH32(0x00) // argsLength
+            PUSH32(0x20) // argsOffset
             PUSH1(0x00) // value
             PUSH32(addr_b.to_word()) // addr
             // Decrease expected gas cost (by 1) to trigger out of gas error.
