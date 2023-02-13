@@ -72,7 +72,7 @@ def prepare_result_dataframe(test_result, sysstat,env, test_id):
     
     return r
 
-def write_mem_time(engine, mem_statistics, test_id, dummy=True):
+def write_mem_time(engine, mem_statistics, test_id, dummy=False):
     '''
     adds mem stats df as time series data to table mem_stats
     '''
@@ -81,7 +81,7 @@ def write_mem_time(engine, mem_statistics, test_id, dummy=True):
     mem_statistics['test_id'] = mem_statistics['timestamp'].apply(lambda x: f'{test_id}')
     mem_statistics.to_sql(table,engine,if_exists='append',index=False)
 
-def write_cpuall_time(engine, cpu_statistics, test_id, dummy=True):
+def write_cpuall_time(engine, cpu_statistics, test_id, dummy=False):
     '''
     adds cpu stats df as time series data to table mem_stats
     '''
