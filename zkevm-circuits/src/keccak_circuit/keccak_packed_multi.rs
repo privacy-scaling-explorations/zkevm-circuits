@@ -1641,7 +1641,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
         witness: &[KeccakRow<F>],
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "assign keccak rows",
+            || "kc.rows",
             |mut region| {
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     self.set_row(&mut region, offset, keccak_row)?;

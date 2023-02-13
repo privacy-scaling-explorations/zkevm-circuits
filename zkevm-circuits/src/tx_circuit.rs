@@ -183,7 +183,7 @@ impl<F: Field> TxCircuit<F> {
         assigned_sig_verifs: Vec<AssignedSignatureVerify<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "tx table",
+            || "tx.tbl",
             |mut region| {
                 let mut offset = 0;
                 // Empty entry

@@ -160,7 +160,7 @@ impl TxTable {
             max_txs
         );
         layouter.assign_region(
-            || "tx table",
+            || "tx.tbl",
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
@@ -501,7 +501,7 @@ impl RwTable {
         challenges: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "rw table",
+            || "st.tbl",
             |mut region| self.load_with_region(&mut region, rws, n_rows, challenges),
         )
     }
@@ -606,7 +606,7 @@ impl MptTable {
         randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "mpt table",
+            || "mp.tbl",
             |mut region| self.load_with_region(&mut region, updates, randomness),
         )
     }
@@ -672,7 +672,7 @@ impl BytecodeTable {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "bytecode table",
+            || "bc.tbl",
             |mut region| {
                 let mut offset = 0;
                 for column in <BytecodeTable as LookupTable<F>>::advice_columns(self) {
@@ -781,7 +781,7 @@ impl BlockTable {
         randomness: Value<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "block table",
+            || "bl.tbl",
             |mut region| {
                 let mut offset = 0;
                 for column in <BlockTable as LookupTable<F>>::advice_columns(self) {
@@ -923,7 +923,7 @@ impl KeccakTable {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "keccak table",
+            || "kc.tbl",
             |mut region| {
                 let mut offset = 0;
                 for column in <KeccakTable as LookupTable<F>>::advice_columns(self) {
@@ -1177,7 +1177,7 @@ impl CopyTable {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "copy table",
+            || "cp.tbl",
             |mut region| {
                 let mut offset = 0;
                 for column in <CopyTable as LookupTable<F>>::advice_columns(self) {
@@ -1382,7 +1382,7 @@ impl ExpTable {
         block: &Block<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "exponentiation table",
+            || "ex.tbl",
             |mut region| {
                 let mut offset = 0;
                 let exp_table_columns = <ExpTable as LookupTable<F>>::advice_columns(self);

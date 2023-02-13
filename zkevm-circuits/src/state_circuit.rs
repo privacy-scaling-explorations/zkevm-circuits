@@ -186,7 +186,7 @@ impl<F: Field> StateCircuitConfig<F> {
     ) -> Result<(), Error> {
         let updates = MptUpdates::mock_from(rows);
         layouter.assign_region(
-            || "state circuit",
+            || "st.r0",
             |mut region| {
                 self.assign_with_region(&mut region, rows, &updates, n_rows, challenges.evm_word())
             },
@@ -444,7 +444,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         // Here we use one single region to assign `overrides` to both rw table and
         // other parts.
         layouter.assign_region(
-            || "state circuit",
+            || "st.r0",
             |mut region| {
                 config.rw_table.load_with_region(
                     &mut region,

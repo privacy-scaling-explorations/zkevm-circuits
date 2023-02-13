@@ -288,7 +288,7 @@ impl<F: Field> ExpCircuitConfig<F> {
         let parity_check_chip = MulAddChip::construct(self.parity_check.clone());
 
         layouter.assign_region(
-            || "exponentiation circuit",
+            || "ex.r0",
             |mut region| {
                 // assign everything except the exp table.
                 let mut offset = 0;

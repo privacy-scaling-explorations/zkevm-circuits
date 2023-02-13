@@ -815,7 +815,7 @@ impl<F: Field> ExecutionConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "Execution step",
+            || "ev.exec_step",
             |mut region| {
                 let mut offset = 0;
 

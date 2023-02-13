@@ -2009,15 +2009,16 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_02_02#0a8646b78286a13d320759b1c585262d6536dce4"
 dependencies = [
  "blake2b_simd",
  "ff",
  "group",
  "halo2curves 0.3.1",
+ "plotters",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
+ "tabbycat",
  "tracing",
 ]
 
@@ -4930,6 +4931,7 @@ dependencies = [
  "mock",
  "num",
  "num-bigint",
+ "plotters",
  "pretty_assertions",
  "rand",
  "rand_chacha",
@@ -4939,4 +4941,5 @@ dependencies = [
  "strum",
  "strum_macros",
  "subtle",
+ "tabbycat",
 ]

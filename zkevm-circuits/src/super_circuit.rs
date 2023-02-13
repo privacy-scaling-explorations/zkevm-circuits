@@ -73,7 +73,7 @@ use bus_mapping::mock::BlockData;
 use eth_types::geth_types::GethData;
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{floor_planner, Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
 
@@ -244,6 +244,7 @@ pub struct SuperCircuit<
     pub exp_circuit: ExpCircuit<F>,
     /// Keccak Circuit
     pub keccak_circuit: KeccakCircuit<F>,
+    circuits_params: CircuitsParams,
 }
 
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
@@ -286,6 +287,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
             copy_circuit,
             exp_circuit,
             keccak_circuit,
+            circuits_params: block.circuits_params,
         }
     }
 
@@ -351,14 +353,38 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
     }
 }
 
+fn new_empty_block<F: Field>(params: CircuitsParams) -> Block<F> {
+    use mock::TestContext;
+    let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
+        .unwrap()
+        .into();
+    let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+        .new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+    block_convert(&builder.block, &builder.code_db).unwrap()
+}
+
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
     Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
 {
     type Config = SuperCircuitConfig<F>;
-    type FloorPlanner = SimpleFloorPlanner;
+    type FloorPlanner = floor_planner::V1;
 
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        let block = new_empty_block(self.circuits_params);
+        Self {
+            evm_circuit: EvmCircuit::new_from_block(&block),
+            state_circuit: StateCircuit::new_from_block(&block),
+            tx_circuit: TxCircuit::new_from_block(&block),
+            pi_circuit: PiCircuit::new_from_block(&block),
+            bytecode_circuit: BytecodeCircuit::new_from_block(&block),
+            copy_circuit: CopyCircuit::new_from_block(&block),
+            exp_circuit: ExpCircuit::new_from_block(&block),
+            keccak_circuit: KeccakCircuit::new_from_block(&block),
+            circuits_params: self.circuits_params,
+        }
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -633,5 +659,45 @@ pub(crate) mod super_circuit_tests {
             keccak_padding: None,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
+    }
+
+    #[cfg(feature = "dev-graph")]
+    #[test]
+    fn plot_supercircuit() {
+        use plotters::prelude::*;
+
+        const MAX_TXS: usize = 4;
+        const MAX_CALLDATA: usize = 512;
+        const MOCK_RANDOMNESS: u64 = 0x100;
+        let k = 20;
+
+        // TODO: Use some numbers corresponding to a worst case for N gas scenario.
+        let mut block = new_empty_block(CircuitsParams {
+            max_rws: 1000,
+            max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_copy_rows: 1000,
+            max_bytecode: 512,
+            keccak_padding: Some(2000),
+        });
+        block.evm_circuit_pad_to = 1600;
+        block.exp_circuit_pad_to = 400;
+        let circuit =
+            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::new_from_block(&block);
+
+        let root =
+            BitMapBackend::new("layout_supercircuit.png", (16384, 16384)).into_drawing_area();
+        // let root = SVGBackend::new("layout_supercircuit.svg", (16384,
+        // 16384)).into_drawing_area();
+        root.fill(&WHITE).unwrap();
+        let root = root
+            .titled("SuperCircuit layout", ("sans-serif", 30))
+            .unwrap();
+
+        halo2_proofs::dev::CircuitLayout::default()
+            // Render the circuit onto your area!
+            // The first argument is the size parameter for the circuit.
+            .render(k, &circuit, &root)
+            .unwrap();
     }
 }

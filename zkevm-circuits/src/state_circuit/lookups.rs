@@ -102,7 +102,7 @@ impl<F: Field> Chip<F> {
             (self.config.u16, 16),
         ] {
             layouter.assign_region(
-                || format!("assign u{} fixed column", exponent),
+                || format!("st.fixed_u{}", exponent),
                 |mut region| {
                     for i in 0..(1 << exponent) {
                         region.assign_fixed(
@@ -117,7 +117,7 @@ impl<F: Field> Chip<F> {
             )?;
         }
         layouter.assign_region(
-            || "assign call_context_field_tags fixed column",
+            || "st.fixed_call_ctx_field_tags",
             |mut region| {
                 for field_tag in CallContextFieldTag::iter() {
                     region.assign_fixed(

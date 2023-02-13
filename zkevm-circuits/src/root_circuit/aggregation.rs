@@ -611,7 +611,7 @@ pub mod test {
             let [q_l, q_r, q_o, q_m, q_c] = config.selectors;
             let [w_l, w_r, w_o] = config.wires;
             layouter.assign_region(
-                || "",
+                || "ro.r0",
                 |mut region| {
                     // Assign some non-zero values to make sure the advice/fixed columns have
                     // non-identity commitments.

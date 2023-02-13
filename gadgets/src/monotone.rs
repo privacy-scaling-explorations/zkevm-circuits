@@ -64,7 +64,7 @@ impl<F: FieldExt, const RANGE: usize, const INCR: bool, const STRICT: bool>
 
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
-            || "range_table",
+            || "monotone_chip.range_tbl",
             |mut meta| {
                 let max = RANGE - STRICT as usize;
 

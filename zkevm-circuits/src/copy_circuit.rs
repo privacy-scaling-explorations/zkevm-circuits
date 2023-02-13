@@ -522,7 +522,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
         layouter.assign_region(
-            || "assign copy table",
+            || "cp.copy_tbl",
             |mut region| {
                 let mut offset = 0;
                 for copy_event in copy_events.iter() {

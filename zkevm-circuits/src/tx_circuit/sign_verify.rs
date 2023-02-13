@@ -631,7 +631,7 @@ impl<F: Field> SignVerifyChip<F> {
         let scalar_chip = cloned_ecc_chip.scalar_field_chip();
 
         layouter.assign_region(
-            || "ecc chip aux",
+            || "tx.ecc_aux",
             |region| {
                 let mut ctx = RegionCtx::new(region, 0);
                 self.assign_aux(&mut ctx, &mut ecc_chip)?;
@@ -651,7 +651,7 @@ impl<F: Field> SignVerifyChip<F> {
         };
 
         let assigned_ecdsas = layouter.assign_region(
-            || "ecdsa chip verification",
+            || "tx.ecdsa_verif",
             |region| {
                 let mut assigned_ecdsas = Vec::new();
                 let mut ctx = RegionCtx::new(region, 0);
@@ -671,7 +671,7 @@ impl<F: Field> SignVerifyChip<F> {
         )?;
 
         layouter.assign_region(
-            || "signature address verify",
+            || "tx.sig_addr_verif",
             |region| {
                 let mut assigned_sig_verifs = Vec::new();
                 let mut ctx = RegionCtx::new(region, 0);

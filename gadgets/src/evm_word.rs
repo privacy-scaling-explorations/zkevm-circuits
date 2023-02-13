@@ -106,7 +106,7 @@ impl<F: Field> WordConfig<F> {
     #[cfg(test)]
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
-            || "8-bit table",
+            || "word.fixed_u8",
             |mut meta| {
                 for byte in 0..=u8::MAX {
                     meta.assign_fixed(

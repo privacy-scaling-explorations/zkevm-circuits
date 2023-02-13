@@ -131,7 +131,7 @@ impl<F: Field> EvmCircuitConfig<F> {
         fixed_table_tags: Vec<FixedTableTag>,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "fixed table",
+            || "ev.fixed_tbl",
             |mut region| {
                 for (offset, row) in std::iter::once([F::zero(); 4])
                     .chain(fixed_table_tags.iter().flat_map(|tag| tag.build()))
@@ -150,7 +150,7 @@ impl<F: Field> EvmCircuitConfig<F> {
     /// Load byte table
     pub fn load_byte_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
-            || "byte table",
+            || "ev.byte_tbl",
             |mut region| {
                 for offset in 0..256 {
                     region.assign_fixed(

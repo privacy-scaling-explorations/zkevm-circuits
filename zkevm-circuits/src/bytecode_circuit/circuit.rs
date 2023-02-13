@@ -433,7 +433,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
 
         layouter.assign_region(
-            || "assign bytecode",
+            || "bc.bytec",
             |mut region| {
                 let mut offset = 0;
                 for bytecode in witness.iter() {
@@ -687,7 +687,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         // [OpcodeId::PUSH1, OpcodeId::PUSH32] -> [1..32]
         // [OpcodeId::PUSH32, 256] -> 0
         layouter.assign_region(
-            || "push table",
+            || "by.push_tbl",
             |mut region| {
                 for byte in 0usize..256 {
                     let push_size = get_push_size(byte as u8);
