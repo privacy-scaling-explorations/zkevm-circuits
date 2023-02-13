@@ -13,9 +13,7 @@ rm -f ~/*.proverlog
 rm -f ~/*.tar.gz
 
 scp prover:$target_dir/*proverlog ~/
-
-scp ~/actions-runner/_work/zkevm-circuits/zkevm-circuits/.github/proverCiScripts/sadf.sh prover:~/
-
+scp ~/actions-runner/zkevm_circuits_prover/zkevm-circuits/zkevm-circuits/.github/proverCiScripts/sadf.sh prover:~/
 ssh prover "bash -s" <<EOF
 ./sadf.sh
 rm -f sadf.sh
