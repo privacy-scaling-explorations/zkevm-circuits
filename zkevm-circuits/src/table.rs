@@ -222,7 +222,7 @@ impl TxTable {
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    let (tx_data, tx_calldata) = tx.table_assignments(*challenges);
+                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
                     for row in tx_data {
                         assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;

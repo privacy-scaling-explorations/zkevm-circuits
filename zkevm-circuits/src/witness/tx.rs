@@ -43,7 +43,7 @@ impl Transaction {
     pub fn table_assignments<F: Field>(
         &self,
         challenges: Challenges<Value<F>>,
-    ) -> (Vec<[Value<F>; 4]>, Vec<[Value<F>; 4]>) {
+    ) -> [Vec<[Value<F>; 4]>; 2] {
         let tx_data = vec![
             [
                 Value::known(F::from(self.id as u64)),
@@ -117,7 +117,7 @@ impl Transaction {
                 ]
             })
             .collect();
-        (tx_data, tx_calldata)
+        [tx_data, tx_calldata]
     }
 }
 
