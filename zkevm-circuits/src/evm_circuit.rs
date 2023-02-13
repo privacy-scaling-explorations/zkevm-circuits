@@ -402,9 +402,7 @@ pub mod test {
             config
                 .keccak_table
                 .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-            config
-                .exp_table
-                .load(&mut layouter, block, config.exp_table.columns(), 1)?;
+            config.exp_table.load(&mut layouter, block)?;
 
             self.synthesize_sub(&config, &challenges, &mut layouter)
         }
