@@ -47,6 +47,9 @@ pub struct CircuitsParams {
     pub max_calldata: usize,
     /// Max ammount of rows that the CopyCircuit can have.
     pub max_copy_rows: usize,
+    /// Max number of steps that the ExpCircuit can have. Each step is further
+    /// expressed in 7 rows
+    pub max_exp_steps: usize,
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
     // TODO: Rename for consistency
@@ -65,6 +68,7 @@ impl Default for CircuitsParams {
             // TODO: Check whether this value is correct or we should increase/decrease based on
             // this lib tests
             max_copy_rows: 1000,
+            max_exp_steps: 1000,
             max_bytecode: 512,
             keccak_padding: None,
         }
