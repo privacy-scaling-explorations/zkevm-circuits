@@ -1,4 +1,5 @@
 use super::{
+    constraint_builder::Transition,
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
@@ -7,6 +8,7 @@ use super::{
 use crate::{
     evm_circuit::{
         param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
@@ -635,6 +637,123 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         self.callee_not_exists
             .assign_value(region, offset, phase2_callee_code_hash)?;
         Ok(memory_expansion_gas_cost)
+    }
+
+    pub(crate) fn cal_gas_cost_for_assignment(
+        &self,
+        memory_expansion_gas_cost: u64,
+        is_warm_prev: bool,
+        is_call: bool,
+        has_value: bool,
+        is_empty_account: bool,
+    ) -> Result<u64, Error> {
+        let gas_cost = if is_warm_prev {
+            GasCost::WARM_ACCESS.as_u64()
+        } else {
+            GasCost::COLD_ACCOUNT_ACCESS.as_u64()
+        } + if has_value {
+            GasCost::CALL_WITH_VALUE.as_u64()
+                // Only CALL opcode could invoke transfer to make empty account into non-empty.
+                + if is_call && is_empty_account {
+                    GasCost::NEW_ACCOUNT.as_u64()
+                } else {
+                    0
+                }
+        } else {
+            0
+        } + memory_expansion_gas_cost;
+
+        Ok(gas_cost)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CommonErrorGadget<F> {
+    rw_counter_end_of_reversion: Cell<F>,
+    restore_context: RestoreContextGadget<F>,
+}
+
+impl<F: Field> CommonErrorGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        rw_counter_delta: Expression<F>,
+    ) -> Self {
+        let rw_counter_end_of_reversion = cb.query_cell();
+
+        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
+
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
+        // Go to EndTx only when is_root
+        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
+        cb.require_equal(
+            "Go to EndTx only when is_root",
+            cb.curr.state.is_root.expr(),
+            is_to_end_tx,
+        );
+
+        // When it's a root call.
+        cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            cb.require_step_state_transition(StepStateTransition {
+                call_id: Transition::Same,
+                rw_counter: Transition::Delta(
+                    rw_counter_delta + cb.curr.state.reversible_write_counter.expr(),
+                ),
+                ..StepStateTransition::any()
+            })
+        });
+
+        // When it's an internal call, need to restore caller's state as finishing this
+        // call. Restore caller state to next StepState
+        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            RestoreContextGadget::construct(
+                cb,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            )
+        });
+
+        // Constrain `RwCounterEndOfReversion`.
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
+        Self {
+            rw_counter_end_of_reversion,
+            restore_context,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        call: &Call,
+        step: &ExecStep,
+        rw_counter_delta: usize,
+    ) -> Result<(), Error> {
+        self.rw_counter_end_of_reversion.assign(
+            region,
+            offset,
+            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+        )?;
+        self.restore_context
+            .assign(region, offset, block, call, step, rw_counter_delta)
     }
 
     pub(crate) fn cal_gas_cost_for_assignment(
