@@ -78,32 +78,26 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         let data_offset_larger_u64 = from_bytes::expr(&data_offset.cells[8..]);
         let is_data_offset_within_range = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
-        // when data set is not overflow, check sum and `end` if not overflow.
-        let (sum, is_end_within_range) = cb.condition(is_data_offset_within_range.expr(), |cb| {
-            let sum_gadget =
-                AddWordsGadget::construct(cb, [data_offset.clone(), length], end.clone());
-            let end_larger_u64 = from_bytes::expr(&end.cells[8..]);
-            (sum_gadget, IsZeroGadget::construct(cb, end_larger_u64))
-        });
+        // check if `end` u64  overflow or not.
+        let sum = AddWordsGadget::construct(cb, [data_offset, length], end.clone());
 
-        // when `end` not u64 overflow, check if it exceeds return data length
-        let is_end_exceed_length = cb.condition(
-            is_data_offset_within_range.expr() * is_end_within_range.expr(),
-            |cb| LtGadget::construct(cb, return_data_length.expr(), end.expr()),
+        let end_larger_u64 = from_bytes::expr(&end.cells[8..]);
+        let is_end_within_range = IsZeroGadget::construct(cb, end_larger_u64);
+
+        // check if `end` exceeds return data length
+        let is_end_exceed_length = LtGadget::construct(
+            cb,
+            return_data_length.expr(),
+            from_bytes::expr(&end.cells[..N_BYTES_U64]),
         );
-
-        // only one of (data offset overflow, end overflow, end_exceed_length) must be
-        // true. because when data offset overflow, don't go to check other two,
-        // when `end` overflow, don't check the last. which is accordance to evm
-        // execution.
-        cb.require_equal(
-            "name",
+        // Any of [offset_out_of_range, end_out_of_range, end_exceed_length] occurs.
+        cb.require_in_set(
+            "Any of [offset_out_of_range, end_out_of_range, end_exceed_length] occurs",
             not::expr(is_data_offset_within_range.expr())
                 + not::expr(is_end_within_range.expr())
                 + is_end_exceed_length.expr(),
-            1.expr(),
+            vec![1.expr(), 2.expr(), 3.expr()],
         );
-
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
         cb.call_context_lookup(
@@ -206,26 +200,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             offset,
             F::from(data_offset_overflow as u64),
         )?;
-        // only when data set is not overflow, check `end` if not overflow.
-        let end_overflow = if !data_offset_overflow {
-            U256::from(u64::MAX) < end
-        } else {
-            false
-        };
+        // check `end` if u64 overflow.
+        let end_overflow = U256::from(u64::MAX) < end;
 
         self.is_end_within_range
             .assign(region, offset, F::from(end_overflow as u64))?;
 
-        // if `end` not overflow, check if it exceeds last callee return data length
-        if !data_offset_overflow && !end_overflow {
-            let return_length = return_data_length.to_scalar().unwrap();
-            self.is_end_exceed_length.assign(
-                region,
-                offset,
-                return_length,
-                end.to_scalar().unwrap(),
-            )?;
-        }
+        // check if it exceeds last callee return data length
+        let end_u64 = end.low_u64();
+        let return_length = return_data_length.to_scalar().unwrap();
+        self.is_end_exceed_length
+            .assign(region, offset, return_length, F::from(end_u64))?;
+
         self.rw_counter_end_of_reversion.assign(
             region,
             offset,
@@ -348,11 +334,13 @@ mod test {
     fn returndatacopy_out_of_bound_error() {
         // test root call cases: `end` exceed return data size
         test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, true);
-        // test internal call case: `end` exceed return data size
-        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, false);
-        // test data offset overflow
-        test_ok_internal(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, true);
+        // test root call case: `end` exceed return data size
+        test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10, true);
+        // test data offset u64 overflow
+        test_ok_internal(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, false);
         // test end = data offset + length(size) overflow
-        test_ok_internal(0x00, 0x10, 0x20, u128::from(u64::MAX) - 5, 0x10, true);
+        test_ok_internal(0x00, 0x10, 0x20, 0x1, 0x10, false);
+        // test end overflow with end > 0xff
+        test_ok_internal(0x00, 0x10, 0x20, 0x1, 0xff, false);
     }
 }
