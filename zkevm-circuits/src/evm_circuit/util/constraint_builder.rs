@@ -376,6 +376,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     }
 
+    pub(crate) fn query_keccak_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.keccak_input())
+    }
+
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.query_bytes_dyn(N).try_into().unwrap()
     }
@@ -418,6 +422,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn word_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
         rlc::expr(&bytes, self.challenges.evm_word())
+    }
+
+    pub(crate) fn keccak_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
+        rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
     pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
