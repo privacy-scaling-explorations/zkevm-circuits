@@ -131,6 +131,18 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let rwc_inc_left = copy_table.rwc_inc_left;
         let tag = copy_table.tag;
 
+        // annotate table columns
+        tx_table.annotate_columns(meta);
+        rw_table.annotate_columns(meta);
+        bytecode_table.annotate_columns(meta);
+        copy_table.annotate_columns(meta);
+
+        // annotate circuit specific columns
+        meta.annotate_lookup_any_column(is_last, || "is_last");
+        meta.annotate_lookup_any_column(value, || "value");
+        meta.annotate_lookup_any_column(is_code, || "is_code");
+        meta.annotate_lookup_any_column(is_pad, || "is_pad");
+
         let addr_lt_addr_end = LtChip::configure(
             meta,
             |meta| meta.query_selector(q_step),
