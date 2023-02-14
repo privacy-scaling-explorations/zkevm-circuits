@@ -151,6 +151,7 @@ impl TxTable {
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
+        max_calldata: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
@@ -159,51 +160,87 @@ impl TxTable {
             txs.len(),
             max_txs
         );
+        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        assert!(
+            sum_txs_calldata <= max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
+            sum_txs_calldata,
+            max_calldata,
+        );
+
+        fn assign_row<F: Field>(
+            region: &mut Region<'_, F>,
+            offset: usize,
+            advice_columns: &[Column<Advice>],
+            tag: &Column<Fixed>,
+            row: &[Value<F>; 4],
+            msg: &str,
+        ) -> Result<(), Error> {
+            for (index, column) in advice_columns.iter().enumerate() {
+                region.assign_advice(
+                    || format!("tx table {} row {}", msg, offset),
+                    *column,
+                    offset,
+                    || row[if index > 0 { index + 1 } else { index }],
+                )?;
+            }
+            region.assign_fixed(
+                || format!("tx table {} row {}", msg, offset),
+                *tag,
+                offset,
+                || row[1],
+            )?;
+            Ok(())
+        }
+
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                for column in advice_columns {
-                    region.assign_advice(
-                        || "tx table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-                region.assign_fixed(
-                    || "tx table all-zero row",
-                    self.tag,
+                assign_row(
+                    &mut region,
                     offset,
-                    || Value::known(F::zero()),
+                    &advice_columns,
+                    &self.tag,
+                    &[(); 4].map(|_| Value::known(F::zero())),
+                    "all-zero",
                 )?;
                 offset += 1;
 
-                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
+                // Tx Table contains an initial region that has a size parametrized by max_txs
+                // with all the tx data except for calldata, and then a second
+                // region that has a size parametrized by max_calldata with all
+                // the tx calldata.  This is required to achieve a constant fixed column tag
+                // regardless of the number of input txs or the calldata size of each tx.
+                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                // Assign Tx data (all tx fields except for calldata)
+                let padding_txs: Vec<_> = (txs.len()..max_txs)
                     .map(|i| Transaction {
                         id: i + 1,
                         ..Default::default()
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    for row in tx.table_assignments(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
+                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
+                    for row in tx_data {
+                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
                     }
+                    calldata_assignments.extend(tx_calldata.iter());
+                }
+                // Assign Tx calldata
+                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
+                    [
+                        Value::known(F::zero()),
+                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::zero()),
+                        Value::known(F::zero()),
+                    ]
+                });
+                for row in calldata_assignments.into_iter().chain(padding_calldata) {
+                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                    offset += 1;
                 }
                 Ok(())
             },
@@ -1262,7 +1299,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 #[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
     /// Whether the row is the start of a step.
-    pub is_step: Column<Advice>,
+    pub is_step: Column<Fixed>,
     /// An identifier for every exponentiation trace, at the moment this is the
     /// read-write counter at the time of the lookups done to the
     /// exponentiation table.
@@ -1282,7 +1319,7 @@ impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_step: meta.advice_column(),
+            is_step: meta.fixed_column(),
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
             base_limb: meta.advice_column(),
@@ -1293,7 +1330,7 @@ impl ExpTable {
 
     /// Given an exponentiation event and randomness, get assignments to the
     /// exponentiation table.
-    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 6]> {
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 5]> {
         let mut assignments = Vec::new();
         let base_limbs = split_u256_limb64(&exp_event.base);
         let identifier = F::from(exp_event.identifier as u64);
@@ -1309,7 +1346,6 @@ impl ExpTable {
 
             // row 1
             assignments.push([
-                F::one(),
                 identifier,
                 is_last,
                 base_limbs[0].as_u64().into(),
@@ -1322,7 +1358,6 @@ impl ExpTable {
             ]);
             // row 2
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[1].as_u64().into(),
@@ -1335,7 +1370,6 @@ impl ExpTable {
             ]);
             // row 3
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[2].as_u64().into(),
@@ -1344,7 +1378,6 @@ impl ExpTable {
             ]);
             // row 4
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[3].as_u64().into(),
@@ -1352,14 +1385,7 @@ impl ExpTable {
                 F::zero(),
             ]);
             for _ in ROWS_PER_STEP..OFFSET_INCREMENT {
-                assignments.push([
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                ]);
+                assignments.push([F::zero(), F::zero(), F::zero(), F::zero(), F::zero()]);
             }
 
             // update intermediate exponent.
@@ -1396,16 +1422,27 @@ impl ExpTable {
                                 || Value::known(value),
                             )?;
                         }
+                        let is_step = if offset % OFFSET_INCREMENT == 0 {
+                            F::one()
+                        } else {
+                            F::zero()
+                        };
+                        region.assign_fixed(
+                            || format!("exponentiation table row {}", offset),
+                            self.is_step,
+                            offset,
+                            || Value::known(is_step),
+                        )?;
                         offset += 1;
                     }
                 }
 
                 // pad an empty row
-                let row = [F::from_u128(0); 6];
-                for (&column, value) in exp_table_columns.iter().zip_eq(row) {
+                let row = [F::from_u128(0); 5];
+                for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),
-                        column,
+                        *column,
                         offset,
                         || Value::known(value),
                     )?;
@@ -1442,7 +1479,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.is_step, Rotation::cur()),
+            meta.query_fixed(self.is_step, Rotation::cur()),
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::cur()),
