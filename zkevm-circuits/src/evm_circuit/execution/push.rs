@@ -190,6 +190,16 @@ mod test {
     }
 
     #[test]
+    fn push_gadget_out_of_range() {
+        // PUSH2 0x00
+        let bytecode = eth_types::Bytecode::from(vec![0x61, 0x00]);
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
+    }
+
+    #[test]
     #[ignore]
     fn push_gadget_rand() {
         for (idx, opcode) in vec![
