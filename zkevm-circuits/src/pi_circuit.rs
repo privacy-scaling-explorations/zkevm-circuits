@@ -1258,7 +1258,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 region.name_column(|| "fixed_u16", config.fixed_u16);
                 region.name_column(|| "calldata_gas_cost", config.calldata_gas_cost);
-                region.name_column(|| "calldata_is_final", config.is_final);
+                region.name_column(|| "is_final", config.is_final);
 
                 region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
                 region.name_column(|| "rand_rpi", config.rand_rpi);
