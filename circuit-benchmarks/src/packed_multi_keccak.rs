@@ -54,7 +54,7 @@ mod tests {
 
         // Bench proof generation time
         let proof_message = format!(
-            "Packed Multi-Keccak Proof generation with degree = {}",
+            "Packed Multi-Keccak Circuit Proof generation with degree = {}",
             degree
         );
         let start2 = start_timer!(|| proof_message);
@@ -78,7 +78,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Packed Multi-Keccak Proof verification");
+        let start3 = start_timer!(|| "Packed Multi-Keccak Circuit Proof verification");
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
