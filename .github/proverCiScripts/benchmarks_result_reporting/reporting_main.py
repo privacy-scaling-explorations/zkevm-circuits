@@ -18,7 +18,6 @@ def main():
     parser.add_argument('test_id')
     args = parser.parse_args()
     pr, circuit, degree, test_id = (args.pr, args.circuit, args.degree, args.test_id)
-    # circuit = circuit.split(":")[1].replace('"', '')
     test_result = rmod.log_processor(pr,circuit, degree)
     cpustats, memstats, sysstat = rmod.calc_stats(cstats,mstats)
     data = rmod.prepare_result_dataframe(test_result, sysstat, env, test_id)
