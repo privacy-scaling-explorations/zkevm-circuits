@@ -24,42 +24,23 @@ def prepare_result_dataframe(test_result, sysstat,env, test_id):
     prepares postgres data (in the form of dataframe) for table circuit_benchmarks
     '''
     try:
-        if test_result['result'] == 'PASSED':
-            r = {
-                'pull_request'          : test_result['pull_request'],
-                'test_id'               : test_id,
-                'circuit'               : test_result['circuit'],
-                'degree'                : test_result['degree'],
-                'test_result'           : test_result['result'],
-                'test_date'             : datetime.datetime.now().date(),
-                'setup_gen'             : test_result['setup_gen'],
-                'proof_gen'             : test_result['proof_gen'],
-                'proof_ver'             : test_result['proof_ver'],
-                'max_ram'               : sysstat['max_ram'],
-                'cpu_all_Average'       : sysstat['cpu_all_Average'],
-                'cpu_all_Max'           : sysstat['cpu_all_Max'],
-                'cpu_count'             : sysstat['cpu_count'],
-                'sysstats_url'          : f'{env["grafana_dashboard_prefix"]}{test_id}',
-                'logsurl'               : f'{env["s3endpoint"]}{test_id}.tar.gz'
-            }
-        else:
-            r = {
-                'pull_request'          : test_result['pull_request'],
-                'test_id'               : test_id,
-                'circuit'               : test_result['circuit'],
-                'degree'                : test_result['degree'],
-                'test_result'           : test_result['result'],
-                'test_date'             : datetime.datetime.now().date(),
-                'setup_gen'             : test_result['setup_gen'],
-                'proof_gen'             : test_result['proof_gen'],
-                'proof_ver'             : test_result['proof_ver'],
-                'max_ram'               : sysstat['max_ram'],
-                'cpu_all_Average'       : sysstat['cpu_all_Average'],
-                'cpu_all_Max'           : sysstat['cpu_all_Max'],
-                'cpu_count'             : sysstat['cpu_count'],
-                'sysstats_url'          : f'{env["grafana_dashboard_prefix"]}{test_id}',
-                'logsurl'               : f'{env["s3endpoint"]}{test_id}.tar.gz'
-            }
+        r = {
+            'pull_request'          : test_result['pull_request'],
+            'test_id'               : test_id,
+            'circuit'               : test_result['circuit'],
+            'degree'                : test_result['degree'],
+            'test_result'           : test_result['result'],
+            'test_date'             : datetime.datetime.now().date(),
+            'setup_gen'             : test_result['setup_gen'],
+            'proof_gen'             : test_result['proof_gen'],
+            'proof_ver'             : test_result['proof_ver'],
+            'max_ram'               : sysstat['max_ram'],
+            'cpu_all_Average'       : sysstat['cpu_all_Average'],
+            'cpu_all_Max'           : sysstat['cpu_all_Max'],
+            'cpu_count'             : sysstat['cpu_count'],
+            'sysstats_url'          : f'{env["grafana_dashboard_prefix"]}{test_id}',
+            'logsurl'               : f'{env["s3endpoint"]}{test_id}.tar.gz'
+        }
 
     except Exception as e:
         print(e)
@@ -113,7 +94,7 @@ def log_processor(pull_request,circuit, degree):
     logfile = [i for i in os.listdir('/home/ubuntu/') if 'proverlog' in i][0]
     f = open(f'/home/ubuntu/{logfile}', 'r')
     logdata = f.read()
-    logdata = logdata.split("\n")[-20:]
+    logdata = logdata.split("\n")
     running = [i for i in logdata if 'running' in i and 'test' in i][0].split()[1]
     if running != '0':
         r = [i.split(":")[1].split(".")[0].replace(" ","") for i in logdata if 'test result' in i][0]
@@ -124,11 +105,11 @@ def log_processor(pull_request,circuit, degree):
             except:
                 sg = 'None'
             try:
-                pg = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'ircuit Proof generation' in i ][0])).split('.', 1)[-1]
+                pg = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'Circuit Proof generation' in i ][0])).split('.', 1)[-1]
             except:
                 pg = 'None'                
             try:
-                pv = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'ircuit Proof verification' in i ][0])).split('.', 1)[-1]
+                pv = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'Circuit Proof verification' in i ][0])).split('.', 1)[-1]
             except:
                 pv = 'None'
             logdata = {
