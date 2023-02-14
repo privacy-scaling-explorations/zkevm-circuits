@@ -13,7 +13,7 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, Same, To},
             },
-            math_gadget::{AddWordsGadget, RangeCheckGadget},
+            math_gadget::{AddWordsGadget, RangeCheckGadget, LtGadget},
             not, Cell, CellType, Word,
         },
     },
@@ -662,5 +662,129 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         } + memory_expansion_gas_cost;
 
         Ok(gas_cost)
+    }
+}
+
+
+#[derive(Clone, Debug)]
+pub(crate) struct CommonErrorGadget<F> {
+    opcode: Cell<F>,
+    // constrain gas left is less than gas cost
+    insufficient_gas: LtGadget<F, N_BYTES_GAS>,
+    rw_counter_end_of_reversion: Cell<F>,
+    restore_context: RestoreContextGadget<F>,
+}
+
+impl<F: Field> CommonErrorGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut ConstraintBuilder<F>,
+        opcode: Expression<F>,
+        gas_cost: Expression<F>,
+        rw_counter_delta: Expression<F>,
+    ) -> Self {
+        let opcode = cb.query_cell();
+        cb.opcode_lookup(opcode.expr(), 1.expr());
+
+        let rw_counter_end_of_reversion = cb.query_cell();
+        // Check if the amount of gas available is less than the amount of gas
+        // required
+        let insufficient_gas = LtGadget::construct(cb, cb.curr.state.gas_left.expr(), gas_cost);
+        cb.require_equal(
+            "gas left is less than gas required ",
+            insufficient_gas.expr(),
+            1.expr(),
+        );
+
+        // current call must be failed.
+        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
+
+        cb.call_context_lookup(
+            false.expr(),
+            None,
+            CallContextFieldTag::RwCounterEndOfReversion,
+            rw_counter_end_of_reversion.expr(),
+        );
+
+        // Go to EndTx only when is_root
+        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
+        cb.require_equal(
+            "Go to EndTx only when is_root",
+            cb.curr.state.is_root.expr(),
+            is_to_end_tx,
+        );
+     
+        // When it's a root call
+        cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            // Do step state transition
+            cb.require_step_state_transition(StepStateTransition {
+                call_id: Same,
+                rw_counter: Delta(rw_counter_delta + cb.curr.state.reversible_write_counter.expr()),
+                ..StepStateTransition::any()
+            });
+        });
+        
+          // When it's an internal call, need to restore caller's state as finishing this
+        // call. Restore caller state to next StepState
+        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
+            RestoreContextGadget::construct(
+                cb,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            )
+        });
+
+        // constrain RwCounterEndOfReversion
+        let rw_counter_end_of_step =
+            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
+        cb.require_equal(
+            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
+            rw_counter_end_of_reversion.expr(),
+            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
+        );
+
+        Self {
+            opcode,
+            insufficient_gas,
+            rw_counter_end_of_reversion,
+            restore_context,
+        }
+    }
+
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        call: &Call,
+        step: &ExecStep,
+    ) -> Result<_, Error> {
+         //TODO: implement assign
+         let opcode = step.opcode.unwrap();
+         self.opcode
+             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
+
+         // Gas insufficient check
+         self.insufficient_gas.assign(
+             region,
+             offset,
+             F::from(step.gas_left),
+             F::from(step.gas_cost),
+         )?;
+ 
+         self.rw_counter_end_of_reversion.assign(
+             region,
+             offset,
+             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+         )?;
+         self.restore_context
+             .assign(region, offset, block, call, step, 5)?;
+ 
+        Ok(())
     }
 }
