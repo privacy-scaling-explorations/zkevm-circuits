@@ -65,7 +65,6 @@ def prepare_result_dataframe(test_result, sysstat,env, test_id):
     except Exception as e:
         print(e)
 
-    # print(r['sysstats_url'])
     test_id = r['test_id']
     r = pd.DataFrame([r])
     r = r.set_index('test_date')
