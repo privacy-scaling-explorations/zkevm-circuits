@@ -190,7 +190,6 @@ def process_cpustats(statsdf):
     accepts cpu stats raw data from csv and returns a dataframe for further processing
     '''
     statsdf = statsdf[['timestamp', '%idle']]
-    # statsdf = statsdf.set_index('timestamp')
     statsdf['%idle']   = pd.to_numeric(statsdf['%idle'])
     statsdf['utilizationall'] = statsdf['%idle'].apply(lambda x:round(float(100) - x, 2 ))
     statsdf = statsdf[['timestamp','utilizationall']]
@@ -204,7 +203,6 @@ def process_memstats(df):
     accepts ram stats raw data  and returns a dataframe for further processing
     '''
     statsdf = df[['timestamp', 'kbmemused']]
-    # statsdf = statsdf.set_index('timestamp')
     statsdf['kbmemused']   = pd.to_numeric(statsdf['kbmemused'])
     statsdf['utilizationgb']   = statsdf['kbmemused'].apply(lambda x: round(x/float(1000000),2))
     statsdf = statsdf[['timestamp','utilizationgb']]
