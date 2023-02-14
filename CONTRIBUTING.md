@@ -85,8 +85,8 @@ Types of tests include:
 
 Q: Do I need permissions on PSE org to create issues or PRs?
 
-A: Don’t need permissions from PSE, can just ask in telegram chat or comment on an issue and they assign you issues or review/approve/merge PRs. 
+A: You don’t need permissions from PSE, can just create an issue or propose a PR and we will assign you issues or review/approve/merge PRs. 
 
-Q: Is there a forum for discussing different issues so I can find one I am interested in? 
+Q: Is there a forum for discussing different issues or features where I can get started?
 
-A: There’s the issues section in zkevm repos, but for more nuanced discussion join our [discord](https://discord.gg/BvcMkbKN).
+A: There’s the issues section in zkevm repos, but for more nuanced discussion join our [Github Discussions](https://github.com/privacy-scaling-explorations/zkevm-circuits/discussions) or [discord](https://discord.gg/BvcMkbKN).
