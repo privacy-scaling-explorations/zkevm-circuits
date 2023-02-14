@@ -259,8 +259,6 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
-    /// Account Destructed operation
-    AccountDestructed,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -280,7 +278,6 @@ impl RwTableTag {
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
-                | RwTableTag::AccountDestructed
         )
     }
 }
@@ -531,8 +528,6 @@ pub enum ProofType {
     CodeHashExists = AccountFieldTag::CodeHash as isize,
     /// Account does not exist
     AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
-    /// Account destroyed
-    AccountDestructed,
     /// Storage updated
     StorageChanged,
     /// Storage does not exist

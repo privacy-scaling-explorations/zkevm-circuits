@@ -126,9 +126,6 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::Account), |cb| {
             cb.build_account_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountDestructed), |cb| {
-            cb.build_account_destructed_constraints(q)
-        });
         self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
             cb.build_call_context_constraints(q)
         });
@@ -402,16 +399,6 @@ impl<F: Field> ConstraintBuilder<F> {
                 ],
             );
         });
-    }
-
-    fn build_account_destructed_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("id is 0 for AccountDestructed", q.id());
-        self.require_zero("field_tag is 0 for AccountDestructed", q.field_tag());
-        self.require_zero(
-            "storage_key is 0 for AccountDestructed",
-            q.rw_table.storage_key.clone(),
-        );
-        // TODO: Missing constraints
     }
 
     fn build_call_context_constraints(&mut self, q: &Queries<F>) {
