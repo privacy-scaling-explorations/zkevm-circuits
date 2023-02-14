@@ -1,9 +1,13 @@
 //! Utility traits, functions used in the crate.
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    U256,
+    Field, U256,
 };
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    circuit::{AssignedCell, Region, Value},
+    plonk::*,
+};
 
 /// Returns the sum of the passed in cells
 pub mod sum {
@@ -231,4 +235,110 @@ pub fn split_u256_limb64(value: &U256) -> [U256; 4] {
         U256([value.0[2], 0, 0, 0]),
         U256([value.0[3], 0, 0, 0]),
     ]
+}
+
+/// wrap up multiple Region.assign_advice and a single Region.name_column
+pub fn assign_advice<VR, AR, F: Field>(
+    region: &mut Region<F>,
+    annotation: impl Fn() -> AR,
+    column: Column<Advice>,
+    offsets: Vec<usize>,
+    values: Vec<Value<VR>>,
+    module: impl Fn() -> AR,
+) -> Result<Vec<AssignedCell<VR, F>>, Error>
+where
+    for<'vr> Assigned<F>: From<&'vr VR>,
+    AR: Into<String>,
+    VR: Clone,
+{
+    region.name_column(
+        || format!("{}_{}", module().into(), annotation().into()),
+        column,
+    );
+
+    let assigned_cells = values
+        .iter()
+        .zip(offsets.iter())
+        .map(|(v, offset)| {
+            region.assign_advice(&|| annotation().into(), column, offset.clone(), || {
+                v.clone()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(assigned_cells)
+}
+
+/// wrap up a single Region.assign_advice and a single Region.name_column
+pub fn assign_advice_single<VR, V, AR, F: Field>(
+    region: &mut Region<F>,
+    annotation: impl Fn() -> AR,
+    column: Column<Advice>,
+    offset: usize,
+    to: V,
+    module: impl Fn() -> AR,
+) -> Result<AssignedCell<VR, F>, Error>
+where
+    V: FnMut() -> Value<VR>,
+    for<'vr> Assigned<F>: From<&'vr VR>,
+    AR: Into<String>,
+{
+    region.name_column(
+        || format!("{}_{}", module().into(), annotation().into()),
+        column,
+    );
+    region.assign_advice(&|| annotation().into(), column, offset, to)
+}
+
+/// wrap up multiple Region.assign_fixed and a single Region.name_column
+pub fn assign_fixed<VR, AR, F: Field>(
+    region: &mut Region<F>,
+    annotation: impl Fn() -> AR,
+    column: Column<Fixed>,
+    offsets: Vec<usize>,
+    values: Vec<Value<VR>>,
+    module: impl Fn() -> AR,
+) -> Result<Vec<AssignedCell<VR, F>>, Error>
+where
+    for<'vr> Assigned<F>: From<&'vr VR>,
+    AR: Into<String>,
+    VR: Clone,
+{
+    region.name_column(
+        || format!("{}_{}", module().into(), annotation().into()),
+        column,
+    );
+
+    let assigned_cells = values
+        .iter()
+        .zip(offsets.iter())
+        .map(|(v, offset)| {
+            region.assign_fixed(&|| annotation().into(), column, offset.clone(), || {
+                v.clone()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(assigned_cells)
+}
+
+/// wrap up a single Region.assign_advice and a single Region.name_column
+pub fn assign_fixed_single<VR, V, AR, F: Field>(
+    region: &mut Region<F>,
+    annotation: impl Fn() -> AR,
+    column: Column<Fixed>,
+    offset: usize,
+    to: V,
+    module: impl Fn() -> AR,
+) -> Result<AssignedCell<VR, F>, Error>
+where
+    V: FnMut() -> Value<VR>,
+    for<'vr> Assigned<F>: From<&'vr VR>,
+    AR: Into<String>,
+{
+    region.name_column(
+        || format!("{}_{}", module().into(), annotation().into()),
+        column,
+    );
+    region.assign_fixed(&|| annotation().into(), column, offset, to)
 }

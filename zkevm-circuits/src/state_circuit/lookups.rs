@@ -1,10 +1,12 @@
 use crate::table::CallContextFieldTag;
 use eth_types::Field;
+use gadgets::util::assign_fixed;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
@@ -104,15 +106,21 @@ impl<F: Field> Chip<F> {
             layouter.assign_region(
                 || format!("assign u{} fixed column", exponent),
                 |mut region| {
-                    region.name_column(|| format!("STATE_LOOKUP_fixed_u{}", exponent), column);
+                    let mut offsets: Vec<usize> = Vec::new();
                     for i in 0..(1 << exponent) {
-                        region.assign_fixed(
-                            || format!("assign {} in u{} fixed column", i, exponent),
-                            column,
-                            i,
-                            || Value::known(F::from(i as u64)),
-                        )?;
+                        offsets.push(i as usize);
                     }
+                    assign_fixed(
+                        &mut region,
+                        || format!("fixed_u{}", exponent),
+                        column,
+                        offsets.clone(),
+                        offsets
+                            .iter()
+                            .map(|&i| Value::known(F::from(i as u64)))
+                            .collect_vec(),
+                        || "STATE_LOOKUP".to_string(),
+                    )?;
                     Ok(())
                 },
             )?;
@@ -120,23 +128,21 @@ impl<F: Field> Chip<F> {
         layouter.assign_region(
             || "assign call_context_field_tags fixed column",
             |mut region| {
-                region.name_column(
-                    || "STATE_LOOKUP_call_context_field_tag",
-                    self.config.call_context_field_tag,
-                );
+                let mut offsets: Vec<usize> = Vec::new();
                 for field_tag in CallContextFieldTag::iter() {
-                    region.assign_fixed(
-                        || {
-                            format!(
-                                "assign {:?} in call_context_field_tag fixed column",
-                                field_tag
-                            )
-                        },
-                        self.config.call_context_field_tag,
-                        field_tag as usize,
-                        || Value::known(F::from(field_tag as u64)),
-                    )?;
+                    offsets.push(field_tag as usize);
                 }
+                assign_fixed(
+                    &mut region,
+                    || "call_context_field_tag",
+                    self.config.call_context_field_tag,
+                    offsets.clone(),
+                    offsets
+                        .iter()
+                        .map(|&field_tag| Value::known(F::from(field_tag as u64)))
+                        .collect_vec(),
+                    || "STATE_LOOKUP",
+                )?;
                 Ok(())
             },
         )?;

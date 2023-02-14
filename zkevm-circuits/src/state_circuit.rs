@@ -18,6 +18,7 @@ use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::{assign_advice_single, assign_fixed_single},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -218,22 +219,19 @@ impl<F: Field> StateCircuitConfig<F> {
         // annotate columns
         self.rw_table.annotate_columns_in_region(region);
         self.mpt_table.annotate_columns_in_region(region);
-        region.name_column(|| "STATE_selector", self.selector);
-        region.name_column(|| "STATE_not_first_access", self.not_first_access);
-        region.name_column(|| "STATE_phase2_initial_value", self.initial_value);
-        region.name_column(|| "STATE_phase2_mpt_proof_type", self.mpt_proof_type);
-        region.name_column(|| "STATE_phase2_state_root", self.state_root);
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset >= padding_length {
                 log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
             }
 
-            region.assign_fixed(
+            assign_fixed_single(
+                region,
                 || "selector",
                 self.selector,
                 offset,
                 || Value::known(F::one()),
+                || "STATE",
             )?;
 
             tag_chip.assign(region, offset, &row.tag())?;
@@ -263,11 +261,13 @@ impl<F: Field> StateCircuitConfig<F> {
                 let is_first_access =
                     !matches!(index, LimbIndex::RwCounter0 | LimbIndex::RwCounter1);
 
-                region.assign_advice(
+                assign_advice_single(
+                    region,
                     || "not_first_access",
                     self.not_first_access,
                     offset,
                     || Value::known(if is_first_access { F::zero() } else { F::one() }),
+                    || "STATE",
                 )?;
 
                 if is_first_access {
@@ -300,11 +300,13 @@ impl<F: Field> StateCircuitConfig<F> {
                     .map(|u| u.value_assignments(randomness).1)
                     .unwrap_or_default()
             });
-            region.assign_advice(
+            assign_advice_single(
+                region,
                 || "initial_value",
                 self.initial_value,
                 offset,
                 || initial_value,
+                || "STATE",
             )?;
 
             // Identify non-existing if both committed value and new value are zero.
@@ -343,22 +345,26 @@ impl<F: Field> StateCircuitConfig<F> {
                     _ => 0,
                 })
             });
-            region.assign_advice(
+            assign_advice_single(
+                region,
                 || "mpt_proof_type",
                 self.mpt_proof_type,
                 offset,
                 || mpt_proof_type,
+                || "STATE",
             )?;
 
             // TODO: Switch from Rw::Start -> Rw::Padding to simplify this logic.
             // State root assignment is at previous row (offset - 1) because the state root
             // changes on the last access row.
             if offset != 0 {
-                region.assign_advice(
+                assign_advice_single(
+                    region,
                     || "state_root",
                     self.state_root,
                     offset - 1,
                     || state_root,
+                    || "STATE",
                 )?;
             }
 
@@ -372,11 +378,13 @@ impl<F: Field> StateCircuitConfig<F> {
                         new_root
                     });
                 }
-                region.assign_advice(
+                assign_advice_single(
+                    region,
                     || "last row state_root",
                     self.state_root,
                     offset,
                     || state_root,
+                    || "STATE",
                 )?;
             }
         }
@@ -481,13 +489,14 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                         let offset =
                             usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
                                 .unwrap();
-                        region.assign_advice(
+                        assign_advice_single(
+                            &mut region,
                             || "override",
                             advice_column,
                             offset,
                             || Value::known(f),
+                            || "STATE_test_override",
                         )?;
-                        region.name_column(|| "STATE_test_override", advice_column);
                     }
                 }
 
