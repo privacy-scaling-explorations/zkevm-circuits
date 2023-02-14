@@ -670,6 +670,8 @@ impl<F: Field> CopyCircuitConfig<F> {
 pub struct ExternalData {
     /// TxCircuit -> max_txs
     pub max_txs: usize,
+    /// TxCircuit -> max_calldata
+    pub max_calldata: usize,
     /// TxCircuit -> txs
     pub txs: Vec<Transaction>,
     /// StateCircuit -> max_rws
@@ -738,6 +740,7 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
+                max_calldata: block.circuits_params.max_calldata,
                 txs: block.txs.clone(),
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws.clone(),
@@ -834,6 +837,7 @@ pub mod dev {
                 &mut layouter,
                 &self.external_data.txs,
                 self.external_data.max_txs,
+                self.external_data.max_calldata,
                 &challenge_values,
             )?;
 
@@ -880,6 +884,7 @@ pub mod dev {
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
+                max_calldata: block.circuits_params.max_calldata,
                 txs: block.txs,
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws,
@@ -934,6 +939,7 @@ mod tests {
             CircuitsParams {
                 max_rws: 8192,
                 max_copy_rows: 8192 + 2,
+                max_calldata: 5000,
                 ..Default::default()
             },
         )
