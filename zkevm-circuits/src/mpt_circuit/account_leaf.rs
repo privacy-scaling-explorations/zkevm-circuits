@@ -1,5 +1,5 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression},
 };
 use halo2_proofs::{
@@ -11,14 +11,15 @@ use std::marker::PhantomData;
 
 use crate::{
     circuit,
-    circuit_tools::{Cell, CellManager, CellType, ConstraintBuilder, DataTransition, RLCable},
+    circuit_tools::cell_manager::{Cell, DataTransition},
+    circuit_tools::constraint_builder::{ConstraintBuilder, RLCable},
     mpt_circuit::{
-        helpers::BranchNodeInfo,
+        helpers::{BranchNodeInfo, get_num_bytes_short},
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
         helpers::{
-            get_num_bytes_short, get_num_nibbles, get_parent_rlc_state, key_memory, parent_memory,
+            get_num_nibbles, get_parent_rlc_state, key_memory, parent_memory,
             AccountLeafInfo, KeyData, MPTConstraintBuilder, ParentData,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LONG},
@@ -54,7 +55,7 @@ pub(crate) struct AccountLeafCols<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccountLeafCols<F> {
+impl<F: Field> AccountLeafCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_key_s: meta.advice_column(),
@@ -117,7 +118,7 @@ pub(crate) struct AccountLeafConfig<F> {
     diff_inv: Cell<F>,
 }
 
-impl<F: FieldExt> AccountLeafConfig<F> {
+impl<F: Field> AccountLeafConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -142,7 +143,7 @@ impl<F: FieldExt> AccountLeafConfig<F> {
         let rot_first_child = offset - BRANCH_ROWS_NUM + 1;
         let rot_branch_init = rot_first_child - 1;
 
-        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        cb.base.cell_manager.as_mut().unwrap().reset();
         let mut ctx_key_data_s: Option<KeyData<F>> = None;
         let mut ctx_key_data_c: Option<KeyData<F>> = None;
         let mut ctx_key_data_w: Option<KeyData<F>> = None;
@@ -167,12 +168,8 @@ impl<F: FieldExt> AccountLeafConfig<F> {
                 // Load the last key values, which depends on the branch being a placeholder.
                 let is_branch_placeholder = ifx! {f!(ctx.position_cols.q_not_first), a!(not_first_level) => { branch.is_placeholder() }};
                 let load_offset = ifx! {is_branch_placeholder => { 1.expr() }};
-                let key_data = KeyData::load(
-                    &mut cb.base,
-                    &mut cm,
-                    &ctx.memory[key_memory(is_s)],
-                    load_offset,
-                );
+                let key_data =
+                    KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], load_offset);
 
                 // Calculate the key RLC
                 let key_rlc = key_data.rlc.expr()
@@ -188,7 +185,7 @@ impl<F: FieldExt> AccountLeafConfig<F> {
 
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                 let key_len = account.key_len(meta);
-                let num_nibbles = get_num_nibbles(meta, key_len.expr(), key_data.is_odd.expr());
+                let num_nibbles = get_num_nibbles(key_len.expr(), key_data.is_odd.expr());
                 require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                 // Key done, set the starting values
@@ -256,13 +253,13 @@ impl<F: FieldExt> AccountLeafConfig<F> {
             require!(account.is_wrong_leaf(meta, true) => bool);
 
             ifx! {a!(proof_type.is_non_existing_account_proof, offset) => {
-                let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 1.expr());
+                let key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 1.expr());
                 ifx! {account.is_wrong_leaf(meta, true) => {
                     // Calculate the key and check it's the address as requested in the lookup
                     let key_rlc_wrong = key_data.rlc.expr() + account.key_rlc(meta, &mut cb.base, key_data.mult.expr(), key_data.is_odd.expr(), 1.expr(), offset - rot_key_s);
                     require!(a!(address_rlc, offset) => key_rlc_wrong);
                     // Now make sure this address is different than the one of the leaf
-                    let diff_inv = cm.query_cell(CellType::Storage);
+                    let diff_inv = cb.base.query_cell();
                     require!((a!(address_rlc, offset) - a!(accs.key.rlc, rot_key_s)) * diff_inv.expr() => 1);
                     // Make sure the lengths of the keys are the same
                     let account_wrong = AccountLeafInfo::new(meta, ctx.clone(), offset);
@@ -308,7 +305,7 @@ impl<F: FieldExt> AccountLeafConfig<F> {
                         require!(is_long => bool);
                         // Calculate the RLC
                         let (num_bytes, value_rlc) = ifx! {is_long => {
-                            let num_bytes = get_num_bytes_short(a!(ctx.main(is_s).bytes[0], offset));
+                            let num_bytes = get_num_bytes_short::expr(a!(ctx.main(is_s).bytes[0], offset));
                             let value_rlc = ctx.main(is_s).bytes(meta, offset)[1..].to_vec().rlc(&r);
                             (num_bytes, value_rlc)
                         } elsex {
@@ -449,7 +446,7 @@ impl<F: FieldExt> AccountLeafConfig<F> {
 
                     // Check if the account is in its parent.
                     let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
-                    let parent_data = ParentData::load("storage load", &mut cb.base, &mut cm, &ctx.memory[parent_memory(is_s)], 0.expr());
+                    let parent_data = ParentData::load("storage load", &mut cb.base, &ctx.memory[parent_memory(is_s)], 0.expr());
                     // Check is skipped for placeholder leafs which are dummy leafs
                     ifx!{not!(and::expr(&[a!(ctx.position_cols.not_first_level, offset), not!(branch.is_placeholder()), branch.contains_placeholder_leaf(meta, is_s)])) => {
                         let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
@@ -507,7 +504,7 @@ impl<F: FieldExt> AccountLeafConfig<F> {
                         let (key_rlc_prev, key_mult_prev) = get_parent_rlc_state(meta, ctx.clone(), is_branch_in_first_level, rot_parent);
 
                         // Load the last key values
-                        let key_data = KeyData::load(&mut cb.base, &mut cm, &ctx.memory[key_memory(true)], 2.expr());
+                        let key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 2.expr());
 
                         // TODO(Brecht): make this work with loaded key data when extension node is separate
                         ifx! {not!(branch.is_extension()) => {
@@ -715,9 +712,7 @@ impl<F: FieldExt> AccountLeafConfig<F> {
             let diff_inv = (address_rlc - pv.account_key_rlc)
                 .invert()
                 .unwrap_or(F::zero());
-            self.diff_inv
-                .assign(region, base_offset, Value::known(diff_inv))
-                .ok();
+            self.diff_inv.assign(region, base_offset, diff_inv).ok();
 
             if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
                 region

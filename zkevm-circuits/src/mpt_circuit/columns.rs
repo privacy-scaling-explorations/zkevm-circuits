@@ -1,11 +1,11 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use std::{convert::TryInto, marker::PhantomData};
 
-use crate::{circuit_tools::RLCable, mpt_circuit::param::HASH_WIDTH};
+use crate::{circuit_tools::constraint_builder::RLCable, mpt_circuit::param::HASH_WIDTH};
 
 /*
 This file contains columns that are not specific to any of account leaf, storage leaf, branch,
@@ -38,7 +38,7 @@ pub(crate) struct ProofTypeCols<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ProofTypeCols<F> {
+impl<F: Field> ProofTypeCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             proof_type: meta.advice_column(),
@@ -63,7 +63,7 @@ pub(crate) struct MainCols<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> MainCols<F> {
+impl<F: Field> MainCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             rlp1: meta.advice_column(),
@@ -114,7 +114,7 @@ pub(crate) struct AccumulatorPair<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccumulatorPair<F> {
+impl<F: Field> AccumulatorPair<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             rlc: meta.advice_column(),
@@ -148,7 +148,7 @@ pub(crate) struct AccumulatorCols<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> AccumulatorCols<F> {
+impl<F: Field> AccumulatorCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             acc_s: AccumulatorPair::new(meta),
@@ -215,7 +215,7 @@ pub(crate) struct DenoteCols<F> {
 // TODO: check whether sel1, sel2 are sometimes used for accumulated values and
 // fix it.
 
-impl<F: FieldExt> DenoteCols<F> {
+impl<F: Field> DenoteCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             sel1: meta.advice_column(),
@@ -252,7 +252,7 @@ pub(crate) struct PositionCols<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> PositionCols<F> {
+impl<F: Field> PositionCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             q_enable: meta.fixed_column(),

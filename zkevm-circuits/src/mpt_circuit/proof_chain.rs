@@ -1,8 +1,9 @@
-use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
+use eth_types::Field;
+use halo2_proofs::{plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use super::{helpers::MPTConstraintBuilder, MPTContext};
-use crate::{circuit, circuit_tools::DataTransition};
+use crate::{circuit, circuit_tools::cell_manager::DataTransition};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -39,7 +40,7 @@ pub(crate) struct ProofChainConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ProofChainConfig<F> {
+impl<F: Field> ProofChainConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,

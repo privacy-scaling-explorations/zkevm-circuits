@@ -1,5 +1,5 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::Error,
 };
@@ -49,7 +49,7 @@ pub struct MptWitnessRow<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> MptWitnessRow<F> {
+impl<F: Field> MptWitnessRow<F> {
     pub fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes,

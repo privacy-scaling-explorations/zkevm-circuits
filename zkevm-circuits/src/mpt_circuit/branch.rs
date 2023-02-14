@@ -1,5 +1,6 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
+
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, VirtualCells},
     poly::Rotation,
@@ -16,7 +17,10 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{CellManager, DataTransition, RLCChainable, RLCable},
+    circuit_tools::{
+        cell_manager::{CellManager, DataTransition},
+        constraint_builder::{RLCChainable, RLCable},
+    },
     mpt_circuit::account_leaf::AccountLeaf,
     mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::{
@@ -75,7 +79,7 @@ pub(crate) struct BranchCols<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> BranchCols<F> {
+impl<F: Field> BranchCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             is_init: meta.advice_column(),
@@ -100,7 +104,7 @@ pub(crate) struct BranchConfig<F> {
     parent_data_c: ParentData<F>,
 }
 
-impl<F: FieldExt> BranchConfig<F> {
+impl<F: Field> BranchConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -112,7 +116,7 @@ impl<F: FieldExt> BranchConfig<F> {
         let accs = ctx.accumulators;
         let r = ctx.r.clone();
 
-        let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+        cb.base.cell_manager.as_mut().unwrap().reset();
         let mut ctx_key_data: Option<KeyData<F>> = None;
         let mut ctx_parent_data_s: Option<ParentData<F>> = None;
         let mut ctx_parent_data_c: Option<ParentData<F>> = None;
@@ -314,7 +318,6 @@ impl<F: FieldExt> BranchConfig<F> {
                         let parent_data = ParentData::load(
                             "branch load",
                             &mut cb.base,
-                            &mut cm,
                             &ctx.memory[parent_memory(is_s)],
                             0.expr(),
                         );
@@ -506,7 +509,7 @@ impl<F: FieldExt> BranchConfig<F> {
                         let key_len = ext.ext_key_len(meta, offset);
                         // Calculate the number of nibbles
                         let num_nibbles =
-                            get_num_nibbles(meta, key_len.expr(), ext.is_key_part_in_ext_odd());
+                            get_num_nibbles(key_len.expr(), ext.is_key_part_in_ext_odd());
                         // Make sure the nibble counter is updated correctly
                         let nibbles_count_prev = ifx! {f!(ctx.position_cols.q_not_first), not!(ext.is_below_account(meta)), not_first_level.expr() => {
                             ext.nibbles_counter().prev()
@@ -543,12 +546,7 @@ impl<F: FieldExt> BranchConfig<F> {
             require!(branch.is_key_odd() => bool);
 
             // Load the last key values
-            let key_data = KeyData::load(
-                &mut cb.base,
-                &mut cm,
-                &ctx.memory[key_memory(true)],
-                0.expr(),
-            );
+            let key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 0.expr());
 
             // Calculate the extension node key RLC when in an extension node
             let key_rlc_post_ext = ifx! {branch.is_extension() => {

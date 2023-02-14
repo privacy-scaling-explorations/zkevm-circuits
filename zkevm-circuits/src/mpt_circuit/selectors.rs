@@ -1,6 +1,7 @@
 use super::{helpers::MPTConstraintBuilder, MPTContext};
-use crate::{circuit, circuit_tools::DataTransition};
-use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
+use crate::{circuit, circuit_tools::cell_manager::DataTransition};
+use eth_types::Field;
+use halo2_proofs::{plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -8,7 +9,7 @@ pub(crate) struct SelectorsConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SelectorsConfig<F> {
+impl<F: Field> SelectorsConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,

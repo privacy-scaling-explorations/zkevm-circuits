@@ -2,7 +2,6 @@
 use eth_types::Field;
 use gadgets::impl_expr;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -32,8 +31,7 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
-    circuit_tools::{merge_lookups, Memory},
-    evm_circuit::util::rlc,
+    circuit_tools::{cell_manager::CellManager, constraint_builder::{merge_lookups, RLCable}, memory::Memory},
     mpt_circuit::{
         helpers::{extend_rand, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
         storage_leaf::StorageLeafConfig,
@@ -72,7 +70,6 @@ use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memo
 */
 
 /// Merkle Patricia Trie config.
-#[derive(Debug)]
 pub struct RowConfig<F> {
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
@@ -82,6 +79,7 @@ pub struct RowConfig<F> {
 /// Merkle Patricia Trie context
 #[derive(Clone, Debug)]
 pub struct MPTContext<F> {
+    pub(crate) mpt_table: MPTTable,
     pub(crate) proof_type: ProofTypeCols<F>,
     pub(crate) position_cols: PositionCols<F>,
     pub(crate) inter_start_root: Column<Advice>,
@@ -101,7 +99,7 @@ pub struct MPTContext<F> {
     pub(crate) memory: Memory<F>,
 }
 
-impl<F: FieldExt> MPTContext<F> {
+impl<F: Field> MPTContext<F> {
     pub(crate) fn main(&self, is_s: bool) -> MainCols<F> {
         if is_s {
             self.s_main
@@ -124,19 +122,24 @@ impl<F: FieldExt> MPTContext<F> {
             .to_vec()
     }
 
+    pub(crate) fn expr(
+        &self,
+        meta: &mut VirtualCells<F>,
+        rot: i32,
+    ) -> Vec<Expression<F>> {
+        self.rlp_bytes()
+            .iter()
+            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
+            .collect::<Vec<_>>()
+    }
+
     pub(crate) fn rlc(
         &self,
         meta: &mut VirtualCells<F>,
         range: Range<usize>,
         rot: i32,
     ) -> Expression<F> {
-        rlc::expr(
-            &self.rlp_bytes()[range]
-                .iter()
-                .map(|&byte| meta.query_advice(byte, Rotation(rot)))
-                .collect::<Vec<_>>(),
-            &self.r,
-        )
+        self.expr(meta, rot)[range].rlc(&self.r)
     }
 
     pub(crate) fn is_account(&self, meta: &mut VirtualCells<F>, rot_above: i32) -> Expression<F> {
@@ -145,7 +148,7 @@ impl<F: FieldExt> MPTContext<F> {
 }
 
 /// Merkle Patricia Trie config.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct MPTConfig<F> {
     pub(crate) proof_type: ProofTypeCols<F>,
     pub(crate) position_cols: PositionCols<F>,
@@ -176,6 +179,7 @@ pub struct MPTConfig<F> {
     account_config: AccountLeafConfig<F>,
     pub(crate) randomness: F,
     pub(crate) mpt_table: MPTTable,
+    cb: MPTConstraintBuilder<F>,
 }
 
 /// Enumerator to determine the type of row in the fixed table.
@@ -285,7 +289,7 @@ pub(crate) struct ProofValues<F> {
     pub(crate) memory: Memory<F>,
 }
 
-impl<F: FieldExt> ProofValues<F> {
+impl<F: Field> ProofValues<F> {
     fn new(memory: &Memory<F>) -> Self {
         Self {
             memory: memory.clone(),
@@ -299,7 +303,7 @@ impl<F: FieldExt> ProofValues<F> {
     }
 }
 
-impl<F: FieldExt> MPTConfig<F> {
+impl<F: Field> MPTConfig<F> {
     /// Configure MPT Circuit
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -379,7 +383,18 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let address_rlc = meta.advice_column();
 
+        let mpt_table = MPTTable {
+            address_rlc,
+            proof_type: proof_type.proof_type,
+            key_rlc: accumulators.key.mult,
+            value_prev,
+            value,
+            root_prev: inter_start_root,
+            root: inter_final_root,
+        };
+
         let ctx = MPTContext {
+            mpt_table: mpt_table.clone(),
             proof_type: proof_type.clone(),
             position_cols: position_cols.clone(),
             inter_start_root: inter_start_root.clone(),
@@ -401,8 +416,11 @@ impl<F: FieldExt> MPTConfig<F> {
 
         let mut row_config: Option<RowConfig<F>> = None;
 
-        let mut cb = MPTConstraintBuilder::new(17);
+        let mut cb = MPTConstraintBuilder::new(17, None);
         meta.create_gate("MPT", |meta| {
+            let cell_manager = CellManager::new(meta, &ctx.managed_columns);
+            cb.base.set_cell_manager(cell_manager);
+
             circuit!([meta, cb.base], {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
@@ -537,21 +555,15 @@ impl<F: FieldExt> MPTConfig<F> {
             );
         } else if disable_lookups == 2 {
             cb.base.generate_lookups(meta, &ctx.memory.tags());
+        } else if disable_lookups == 3 {
+            cb.base.generate_lookups(meta, &vec!["fixed".to_string(), "keccak".to_string()]);
+        }  else if disable_lookups == 4 {
+            cb.base.generate_lookups(meta, &vec!["keccak".to_string()]);
         }
 
         println!("num lookups: {}", meta.lookups().len());
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
-
-        let mpt_table = MPTTable {
-            address_rlc,
-            proof_type: proof_type.proof_type,
-            key_rlc: accumulators.key.mult,
-            value_prev,
-            value,
-            root_prev: inter_start_root,
-            root: inter_final_root,
-        };
 
         let row_config = row_config.unwrap();
         let randomness = F::zero();
@@ -579,6 +591,7 @@ impl<F: FieldExt> MPTConfig<F> {
             account_config: row_config.account_config,
             randomness,
             mpt_table,
+            cb,
         }
     }
 
@@ -852,67 +865,55 @@ impl<F: FieldExt> MPTConfig<F> {
                             row
                         };
 
-                        if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
-                            self.branch_config
-                                .assign(&mut region, witness, self, &mut pv, offset)
-                                .ok();
+                        // leaf s or leaf c or leaf key s or leaf key c
+                        let mut account_leaf = AccountLeaf::default();
+                        let mut storage_leaf = StorageLeaf::default();
+                        let mut branch = Branch::default();
 
-                            offset += 1;
-                        } else if row.get_type() == MptWitnessRowType::BranchChild {
-                            offset += 1;
-                        } else {
-                            // leaf s or leaf c or leaf key s or leaf key c
-                            let mut account_leaf = AccountLeaf::default();
-                            let mut storage_leaf = StorageLeaf::default();
-                            let mut branch = Branch::default();
+                        if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                            storage_leaf.is_s_key = true;
+                        } else if row.get_type() == MptWitnessRowType::StorageLeafCKey {
+                            storage_leaf.is_c_key = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
+                            account_leaf.is_key_s = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
+                            account_leaf.is_key_c = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
+                            account_leaf.is_nonce_balance_s = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC {
+                            account_leaf.is_nonce_balance_c = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS {
+                            account_leaf.is_storage_codehash_s = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC {
+                            account_leaf.is_storage_codehash_c = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf {
+                            account_leaf.is_in_added_branch = true;
+                            pv.key_rlc = F::zero(); // account address until here, storage key from here on
+                            pv.key_rlc_mult = F::one();
+                            pv.key_rlc_prev = F::zero();
+                            pv.key_rlc_mult_prev = F::one();
+                            pv.nibbles_num_prev = 0;
+                            pv.key_rlc_sel = true;
+                            pv.nibbles_num = 0;
+                        } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
+                            storage_leaf.is_s_value = true;
+                        } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
+                            storage_leaf.is_c_value = true;
+                        } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf {
+                            storage_leaf.is_in_added_branch = true;
+                        } else if row.get_type() == MptWitnessRowType::StorageNonExisting {
+                            storage_leaf.is_non_existing = true;
+                        } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                            branch.is_extension_node_s = true;
+                        } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
+                            branch.is_extension_node_c = true;
+                        } else if row.get_type() == MptWitnessRowType::AccountNonExisting {
+                            account_leaf.is_non_existing_account_row = true;
+                        }
 
-                            if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                                storage_leaf.is_s_key = true;
-                            } else if row.get_type() == MptWitnessRowType::StorageLeafCKey {
-                                storage_leaf.is_c_key = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                                account_leaf.is_key_s = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                                account_leaf.is_key_c = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS
-                            {
-                                account_leaf.is_nonce_balance_s = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC
-                            {
-                                account_leaf.is_nonce_balance_c = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
-                            {
-                                account_leaf.is_storage_codehash_s = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
-                            {
-                                account_leaf.is_storage_codehash_c = true;
-                            } else if row.get_type()
-                                == MptWitnessRowType::AccountLeafNeighbouringLeaf
-                            {
-                                account_leaf.is_in_added_branch = true;
-                                pv.key_rlc = F::zero(); // account address until here, storage key from here on
-                                pv.key_rlc_mult = F::one();
-                                pv.key_rlc_prev = F::zero();
-                                pv.key_rlc_mult_prev = F::one();
-                                pv.nibbles_num_prev = 0;
-                                pv.key_rlc_sel = true;
-                                pv.nibbles_num = 0;
-                            } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
-                                storage_leaf.is_s_value = true;
-                            } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
-                                storage_leaf.is_c_value = true;
-                            } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf {
-                                storage_leaf.is_in_added_branch = true;
-                            } else if row.get_type() == MptWitnessRowType::StorageNonExisting {
-                                storage_leaf.is_non_existing = true;
-                            } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
-                                branch.is_extension_node_s = true;
-                            } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
-                                branch.is_extension_node_c = true;
-                            } else if row.get_type() == MptWitnessRowType::AccountNonExisting {
-                                account_leaf.is_non_existing_account_row = true;
-                            }
-
+                        if !(row.get_type() == MptWitnessRowType::InitBranch
+                            || row.get_type() == MptWitnessRowType::BranchChild)
+                        {
                             row.assign(
                                 &mut region,
                                 self,
@@ -921,28 +922,31 @@ impl<F: FieldExt> MPTConfig<F> {
                                 branch,
                                 offset,
                             )?;
-
-                            // Storage leaf key
-                            if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                                self.storage_config.assign(
-                                    &mut region,
-                                    self,
-                                    witness,
-                                    &mut pv,
-                                    offset,
-                                )?;
-                            } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                                self.account_config.assign(
-                                    &mut region,
-                                    self,
-                                    witness,
-                                    &mut pv,
-                                    offset,
-                                )?;
-                            }
-
-                            offset += 1;
                         }
+
+                        if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
+                            self.branch_config
+                                .assign(&mut region, witness, self, &mut pv, offset)
+                                .ok();
+                        } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                            self.storage_config.assign(
+                                &mut region,
+                                self,
+                                witness,
+                                &mut pv,
+                                offset,
+                            )?;
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
+                            self.account_config.assign(
+                                &mut region,
+                                self,
+                                witness,
+                                &mut pv,
+                                offset,
+                            )?;
+                        }
+
+                        offset += 1;
                     }
 
                     memory = pv.memory;
@@ -1140,7 +1144,7 @@ mod tests {
 
     use super::*;
 
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use halo2_proofs::{dev::MockProver, halo2curves::{bn256::Fr, FieldExt}};
 
     use std::fs;
 
