@@ -203,7 +203,6 @@ def process_memstats(df):
     accepts ram stats raw data  and returns a dataframe for further processing
     '''
     statsdf = df[['timestamp', 'kbmemused']]
-    # statsdf = statsdf.set_index('timestamp')
     statsdf['kbmemused']   = pd.to_numeric(statsdf['kbmemused'])
     statsdf['utilizationgb']   = statsdf['kbmemused'].apply(lambda x: round(x/float(1000000),2))
     statsdf = statsdf[['timestamp','utilizationgb']]
