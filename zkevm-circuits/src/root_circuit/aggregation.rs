@@ -613,6 +613,16 @@ pub mod test {
             layouter.assign_region(
                 || "",
                 |mut region| {
+                    // annotation columns
+                    region.name_column(|| "ROOT_TEST_wire_l", w_l);
+                    region.name_column(|| "ROOT_TEST_wire_r", w_r);
+                    region.name_column(|| "ROOT_TEST_wire_o", w_o);
+                    region.name_column(|| "ROOT_TEST_selector_l", q_l);
+                    region.name_column(|| "ROOT_TEST_selector_r", q_r);
+                    region.name_column(|| "ROOT_TEST_selector_o", q_o);
+                    region.name_column(|| "ROOT_TEST_selector_m", q_m);
+                    region.name_column(|| "ROOT_TEST_selector_c", q_c);
+
                     // Assign some non-zero values to make sure the advice/fixed columns have
                     // non-identity commitments.
                     let a = region.assign_advice(|| "", w_l, 0, || Value::known(self.0))?;
