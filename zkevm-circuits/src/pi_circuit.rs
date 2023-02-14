@@ -1251,6 +1251,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
             |mut region| {
                 // Annotate columns
 
+                config.tx_table.annotate_columns_in_region(&mut region);
+                config.block_table.annotate_columns_in_region(&mut region);
+
                 region.name_column(|| "raw_public_inputs", config.raw_public_inputs);
                 region.name_column(|| "tx_id_inv", config.tx_id_inv);
                 region.name_column(|| "tx_value_inv", config.tx_value_inv);
@@ -1263,7 +1266,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
                 region.name_column(|| "rand_rpi", config.rand_rpi);
 
-                region.name_column(|| "Public Inputs", config.pi);
+                region.name_column(|| "Public_Inputs", config.pi);
 
                 let circuit_len = config.circuit_len();
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
