@@ -24,7 +24,6 @@ def prepare_result_dataframe(test_result, sysstat,env, test_id):
     prepares postgres data (in the form of dataframe) for table circuit_benchmarks
     '''
     try:
-        # test_id = f'{test_result["circuit"]}-{test_result["degree"]}-Benchmark-PR{test_result["pull_request"]}_{str(time.time_ns())[13:]}'
         if test_result['result'] == 'PASSED':
             r = {
                 'pull_request'          : test_result['pull_request'],
