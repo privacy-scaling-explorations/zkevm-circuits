@@ -29,8 +29,9 @@ pub struct RwTableQueries<F: Field> {
     pub field_tag: Expression<F>,
     pub storage_key: Expression<F>,
     pub value: Expression<F>,
-    pub value_prev: Expression<F>,
-    // TODO: aux1 and aux2
+    pub value_rotation_prev: Expression<F>, // meta.query(value, Rotation::prev())
+    pub value_prev: Expression<F>,          /* meta.query(prev_value, Rotation::cur())
+                                             * TODO: aux1 and aux2 */
 }
 
 #[derive(Clone)]
@@ -170,6 +171,10 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.require_zero(
                 "initial value doesn't change in an access group",
                 q.initial_value.clone() - q.initial_value_prev(),
+            );
+            cb.require_zero(
+                "value column at Rotation::prev() is equal to value_prev at Rotation::cur()",
+                q.value_rotation_prev() - q.rw_table.value_prev.clone(),
             );
         });
     }
@@ -582,6 +587,10 @@ impl<F: Field> Queries<F> {
 
     fn state_root_prev(&self) -> Expression<F> {
         self.state_root_prev.clone()
+    }
+
+    fn value_rotation_prev(&self) -> Expression<F> {
+        self.rw_table.value_rotation_prev.clone()
     }
 }
 
