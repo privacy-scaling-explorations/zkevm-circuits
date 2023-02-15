@@ -237,7 +237,8 @@ pub fn split_u256_limb64(value: &U256) -> [U256; 4] {
     ]
 }
 
-/// wrap up multiple Region.assign_advice and a single Region.name_column
+/// wrap up Region.assign_advice and Region.name_column
+/// it supports to assign multiple values to a single column
 pub fn assign_advice_multi_value<VR, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
@@ -267,7 +268,7 @@ where
     Ok(assigned_cells)
 }
 
-/// wrap up a single Region.assign_advice and a single Region.name_column
+/// wrap up Region.assign_advice and Region.name_column
 pub fn assign_advice<VR, V, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
@@ -288,7 +289,8 @@ where
     region.assign_advice(&|| annotation().into(), column, offset, to)
 }
 
-/// wrap up multiple Region.assign_fixed and a single Region.name_column
+/// wrap up Region.assign_fixed andRegion.name_column
+/// it supports to assign multiple values to a single column
 pub fn assign_fixed_multi_value<VR, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
@@ -318,7 +320,7 @@ where
     Ok(assigned_cells)
 }
 
-/// wrap up a single Region.assign_advice and a single Region.name_column
+/// wrap up Region.assign_advice and Region.name_column
 pub fn assign_fixed<VR, V, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
