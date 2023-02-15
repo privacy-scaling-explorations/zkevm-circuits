@@ -213,7 +213,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     }
                     operation::Target::TxRefund => RwTableTag::TxRefund,
                     operation::Target::Account => RwTableTag::Account,
-                    operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
                     operation::Target::TxLog => RwTableTag::TxLog,
