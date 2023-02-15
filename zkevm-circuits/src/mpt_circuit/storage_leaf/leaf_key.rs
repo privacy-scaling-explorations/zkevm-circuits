@@ -187,11 +187,8 @@ impl<F: FieldExt> LeafKeyConfig<F> {
 
             // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES (except in a
             // placeholder leaf).
-            // TODO(Brecht): why not in placeholder leaf?
-            ifx! {not!(storage.is_placeholder(meta)) => {
-                let num_nibbles = storage.num_key_nibbles(meta, is_key_odd.expr());
-                require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
-            }}
+            let num_nibbles = storage.num_key_nibbles(meta, is_key_odd.expr());
+            require!(nibbles_count_prev + num_nibbles => KEY_LEN_IN_NIBBLES);
 
             // Num bytes used in RLC
             let num_bytes = storage.num_bytes_on_key_row(meta);

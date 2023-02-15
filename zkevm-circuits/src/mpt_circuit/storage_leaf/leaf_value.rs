@@ -198,12 +198,8 @@ impl<F: FieldExt> LeafValueConfig<F> {
             // Make sure the RLP encoding is correct.
             // storage = [key, value]
             let num_bytes = storage.num_bytes(meta);
-            // TODO(Brecht): modify the witness for empty placeholder leafs to have valid
-            // RLP encoding
-            ifx! {not!(branch.contains_placeholder_leaf(meta, is_s)) => {
-                let key_num_bytes = storage.num_bytes_on_key_row(meta);
-                require!(num_bytes => key_num_bytes.expr() + value_num_bytes.expr());
-            }};
+            let key_num_bytes = storage.num_bytes_on_key_row(meta);
+            require!(num_bytes => key_num_bytes.expr() + value_num_bytes.expr());
 
             // Check that the storage leaf is in its parent.
             ifx! {storage.is_below_account(meta) => {
