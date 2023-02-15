@@ -216,6 +216,8 @@ impl<F: Field> StateCircuitConfig<F> {
             randomness.map(|randomness| rlc::value(&updates.old_root().to_le_bytes(), randomness));
 
         // annotate columns
+        self.rw_table.annotate_columns_in_region(region);
+        self.mpt_table.annotate_columns_in_region(region);
         region.name_column(|| "STATE_selector", self.selector);
         region.name_column(|| "STATE_not_first_access", self.not_first_access);
         region.name_column(|| "STATE_phase2_initial_value", self.initial_value);
