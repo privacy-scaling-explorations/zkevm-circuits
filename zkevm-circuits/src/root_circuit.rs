@@ -173,7 +173,7 @@ mod test {
                 max_exp_steps: 256,
                 max_bytecode: 512,
                 max_evm_rows: 0,
-                keccak_padding: None,
+                max_keccak_rows: 0,
             };
             let (k, circuit, instance, _) =
                 SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>::build(

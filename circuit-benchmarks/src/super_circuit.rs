@@ -82,7 +82,7 @@ mod tests {
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
         };
         let (_, circuit, instance, _) =
             SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 0x100>::build(block, circuits_params).unwrap();
