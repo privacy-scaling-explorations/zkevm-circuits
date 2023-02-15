@@ -57,9 +57,7 @@ use crate::bytecode_circuit::circuit::{
 use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
 use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
 use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
-use crate::keccak_circuit::keccak_packed_multi::{
-    KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
-};
+use crate::keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs};
 use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
 use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
 use crate::table::{

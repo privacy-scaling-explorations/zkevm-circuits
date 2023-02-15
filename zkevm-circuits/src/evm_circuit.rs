@@ -333,6 +333,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &mut layouter,
             &block.txs,
             block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
             &challenges,
         )?;
         block.rws.check_rw_counter_sanity();
