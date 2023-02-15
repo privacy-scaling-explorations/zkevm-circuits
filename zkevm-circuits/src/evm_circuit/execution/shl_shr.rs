@@ -162,11 +162,14 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
         let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
-        let shf0 = u128::from(pop1.to_le_bytes()[0]);
+        let shf0 = u64::from(pop1.to_le_bytes()[0]);
         let shf_lt256 = pop1
             .to_le_bytes()
             .iter()
-            .fold(0, |acc, val| acc + u128::from(*val))
+            .fold(Some(0_u64), |acc, val| {
+                acc.and_then(|acc| acc.checked_add(u64::from(*val)))
+            })
+            .unwrap()
             - shf0;
         let divisor = if shf_lt256 == 0 {
             U256::from(1) << shf0
@@ -190,11 +193,10 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         self.shift
             .assign(region, offset, Some(pop1.to_le_bytes()))?;
         self.shf0
-            .assign(region, offset, Value::known(F::from_u128(shf0)))?;
+            .assign(region, offset, Value::known(F::from(shf0)))?;
         self.mul_add_words
             .assign(region, offset, [quotient, divisor, remainder, dividend])?;
-        self.shf_lt256
-            .assign(region, offset, F::from_u128(shf_lt256))?;
+        self.shf_lt256.assign(region, offset, F::from(shf_lt256))?;
         let divisor_sum = (0..32).fold(0, |acc, idx| acc + divisor.byte(idx) as u64);
         self.divisor_is_zero
             .assign(region, offset, F::from(divisor_sum))?;
