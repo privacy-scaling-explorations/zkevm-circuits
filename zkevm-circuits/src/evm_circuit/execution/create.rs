@@ -10,7 +10,7 @@ use crate::{
             common_gadget::TransferGadget,
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Delta, To},
+                Transition::{Any, Delta, To},
             },
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget},
@@ -262,7 +262,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(true.expr()),
-                code_hash: To(code_hash.expr()),
+                code_hash: Any,
                 gas_left: To(callee_gas_left),
                 reversible_write_counter: To(3.expr()),
                 ..StepStateTransition::new_context()

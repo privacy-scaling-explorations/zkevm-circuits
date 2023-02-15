@@ -85,19 +85,43 @@ impl CanRead for AccountData {
         let mut uint_buf = [0; 4];
         rd.read_exact(&mut uint_buf)?;
         // check it is 0x04040000
-        if uint_buf != [4, 4, 0, 0] {
+        if uint_buf != [5, 8, 0, 0] {
+            log::error!("invalid AccountData flag {:?}", uint_buf);
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
 
+        let mut byte8_buf = [0u8; 8];
+        let mut byte16_buf = [0u8; 16];
         let mut byte32_buf = [0; 32];
-        rd.read_exact(&mut byte32_buf)?; //nonce
-        let nonce = U64::from_big_endian(&byte32_buf[24..]);
+
+        rd.read_exact(&mut byte16_buf)?;
+        rd.read_exact(&mut byte8_buf)?;
+        let code_size = U64::from_big_endian(&byte8_buf);
+        rd.read_exact(&mut byte8_buf)?;
+        let nonce = U64::from_big_endian(&byte8_buf);
+
+        //rd.read_exact(&mut byte32_buf)?; //nonce
+        //let nonce = U64::from_big_endian(&byte32_buf[24..]);
         rd.read_exact(&mut byte32_buf)?; //balance
         let balance = U256::from_big_endian(&byte32_buf);
-        rd.read_exact(&mut byte32_buf)?; //codehash
-        let code_hash = H256::from(&byte32_buf);
-        rd.read_exact(&mut byte32_buf)?; //storage root, not need yet
+
+        rd.read_exact(&mut byte32_buf)?; //storage root
         let storage_root = H256::from(&byte32_buf);
+
+        rd.read_exact(&mut byte32_buf)?; //KeccakCodeHash
+        let code_hash = H256::from(&byte32_buf);
+
+        rd.read_exact(&mut byte32_buf)?; //PoseidonCodeHash
+        let mut code_hash = H256::from(&byte32_buf);
+        if hex::encode(code_hash)
+            == "2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864"
+        {
+            log::debug!("convert poseidon(nil)");
+            code_hash = bus_mapping::state_db::CodeDB::empty_code_hash();
+        }
+
+        //rd.read_exact(&mut byte32_buf)?; // code size
+        //let code_size = U64::from_big_endian(&byte32_buf[24..]);
 
         Ok(AccountData {
             nonce: nonce.as_u64(),
@@ -123,6 +147,7 @@ impl CanRead for StorageData {
         rd.read_exact(&mut uint_buf)?;
         // check it is 0x01010000
         if uint_buf != [1, 1, 0, 0] {
+            log::error!("invalid StorageData flag {:?}", uint_buf);
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
         let mut byte32_buf = [0; 32];
