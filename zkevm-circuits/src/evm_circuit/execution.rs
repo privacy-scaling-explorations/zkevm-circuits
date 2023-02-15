@@ -66,6 +66,7 @@ mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_log;
 mod error_oog_static_memory;
+mod error_return_data_oo_bound;
 mod error_stack;
 mod exp;
 mod extcodecopy;
@@ -132,6 +133,7 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
+use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
@@ -296,8 +298,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
-    error_return_data_out_of_bound:
-        DummyGadget<F, 0, 0, { ExecutionState::ErrorReturnDataOutOfBound }>,
+    error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -980,6 +981,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        region.name_column(|| "EVM_q_step", self.q_step);
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);
