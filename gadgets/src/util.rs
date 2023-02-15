@@ -132,6 +132,35 @@ pub mod select {
     }
 }
 
+
+/// Trait that implements functionality to get a scalar from
+/// commonly used types.
+pub trait Scalar<F: FieldExt> {
+    /// Returns a scalar for the type.
+    fn scalar(&self) -> F;
+}
+
+/// Implementation trait `Scalar` for type able to be casted to u64
+#[macro_export]
+macro_rules! impl_scalar {
+    ($type:ty) => {
+        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Scalar<F> for $type {
+            #[inline]
+            fn scalar(&self) -> F {
+                F::from(*self as u64)
+            }
+        }
+    };
+    ($type:ty, $method:path) => {
+        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Scalar<F> for $type {
+            #[inline]
+            fn scalar(&self) -> F {
+                F::from($method(self) as u64)
+            }
+        }
+    };
+}
+
 /// Trait that implements functionality to get a constant expression from
 /// commonly used types.
 pub trait Expr<F: FieldExt> {
@@ -143,6 +172,7 @@ pub trait Expr<F: FieldExt> {
 #[macro_export]
 macro_rules! impl_expr {
     ($type:ty) => {
+        $crate::impl_scalar!($type);
         impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
@@ -151,6 +181,7 @@ macro_rules! impl_expr {
         }
     };
     ($type:ty, $method:path) => {
+        $crate::impl_scalar!($type, $method);
         impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
@@ -168,6 +199,25 @@ impl_expr!(isize);
 impl_expr!(OpcodeId, OpcodeId::as_u8);
 impl_expr!(GasCost, GasCost::as_u64);
 
+impl<F: FieldExt> Scalar<F> for i32 {
+    #[inline]
+    fn scalar(&self) -> F {
+        F::from(self.unsigned_abs() as u64)
+            * if self.is_negative() {
+                -F::one()
+            } else {
+                F::one()
+            }
+    }
+}
+
+impl<F: FieldExt> Expr<F> for i32 {
+    #[inline]
+    fn expr(&self) -> Expression<F> {
+        Expression::Constant(self.scalar())
+    }
+}
+
 impl<F: FieldExt> Expr<F> for Expression<F> {
     #[inline]
     fn expr(&self) -> Expression<F> {
@@ -182,19 +232,12 @@ impl<F: FieldExt> Expr<F> for &Expression<F> {
     }
 }
 
-impl<F: FieldExt> Expr<F> for i32 {
+/*impl Scalar<dyn FieldExt> for FieldExt {
     #[inline]
-    fn expr(&self) -> Expression<F> {
-        Expression::Constant(
-            F::from(self.unsigned_abs() as u64)
-                * if self.is_negative() {
-                    -F::one()
-                } else {
-                    F::one()
-                },
-        )
+    fn scalar(&self) -> FieldExt {
+        self.clone()
     }
-}
+}*/
 
 /// Given a bytes-representation of an expression, it computes and returns the
 /// single expression.

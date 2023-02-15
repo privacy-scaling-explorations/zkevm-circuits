@@ -5,19 +5,21 @@ use crate::{
     circuit_tools::{
         cell_manager::{Cell, CellManager, DataTransition, Trackable},
         constraint_builder::{Conditionable, ConstraintBuilder, RLCChainable, RLCable},
-        memory::MemoryBank, gadgets::IsEqualGadget,
+        gadgets::IsEqualGadget,
+        memory::MemoryBank,
     },
     evm_circuit::util::rlc,
+    matchr, matchw,
     mpt_circuit::param::{
         KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LIST_SHORT,
         RLP_NIL, RLP_SHORT,
     },
-    util::Expr, matchw, matchr,
+    util::Expr,
 };
 use eth_types::Field;
 use gadgets::util::{and, not};
 use halo2_proofs::{
-    circuit::{Region},
+    circuit::Region,
     plonk::{Error, Expression, VirtualCells},
     poly::Rotation,
 };
@@ -25,13 +27,13 @@ use halo2_proofs::{
 use super::{
     columns::MainCols,
     param::{
-        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
+        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND,
         ACCOUNT_NON_EXISTING_IND, ARITY, BRANCH_0_C_START, BRANCH_0_S_START, BRANCH_ROWS_NUM,
         IS_BRANCH_C16_POS, IS_BRANCH_C1_POS, IS_BRANCH_C_PLACEHOLDER_POS,
         IS_BRANCH_S_PLACEHOLDER_POS, IS_C_BRANCH_NON_HASHED_POS, IS_C_EXT_LONGER_THAN_55_POS,
         IS_C_EXT_NODE_NON_HASHED_POS, IS_S_BRANCH_NON_HASHED_POS, IS_S_EXT_LONGER_THAN_55_POS,
-        IS_S_EXT_NODE_NON_HASHED_POS, KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, NIBBLES_COUNTER_POS, RLP_LONG,
+        IS_S_EXT_NODE_NON_HASHED_POS, KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, NIBBLES_COUNTER_POS,
+        RLP_LONG,
     },
     witness_row::MptWitnessRow,
     FixedTableTag, MPTConfig, MPTContext, ProofValues,
@@ -76,7 +78,6 @@ pub(crate) trait Gadget<F: Field> {
     ) -> Result<(), Error>;
 }
 
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RLPListGadget<F> {
     pub(crate) is_short: Cell<F>,
@@ -92,10 +93,7 @@ pub(crate) struct RLPListWitness {
 }
 
 impl<F: Field> RLPListGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        bytes: &[Expression<F>],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
         // TODO(Brecht): add lookup
         RLPListGadget {
             is_short: cb.query_cell(),
@@ -211,7 +209,6 @@ impl RLPListWitness {
     }
 }
 
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RLPValueGadget<F> {
     pub(crate) is_short: Cell<F>,
@@ -229,10 +226,7 @@ pub(crate) struct RLPValueWitness {
 }
 
 impl<F: Field> RLPValueGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        bytes: &[Expression<F>],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
         // TODO(Brecht): add lookup
         RLPValueGadget {
             is_short: cb.query_cell(),
@@ -264,7 +258,8 @@ impl<F: Field> RLPValueGadget<F> {
 
         self.is_short.assign(region, offset, F::from(is_short))?;
         self.is_long.assign(region, offset, F::from(is_long))?;
-        self.is_very_long.assign(region, offset, F::from(is_very_long))?;
+        self.is_very_long
+            .assign(region, offset, F::from(is_very_long))?;
 
         Ok(RLPValueWitness {
             is_short,
@@ -350,7 +345,6 @@ impl<F: Field> RLPValueGadget<F> {
     }
 }
 
-
 impl RLPValueWitness {
     // Single RLP byte containing the byte value
     pub(crate) fn is_short(&self) -> bool {
@@ -400,7 +394,6 @@ impl RLPValueWitness {
     }
 }
 
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LeafKeyGadget<F> {
     rlp_list: RLPListGadget<F>,
@@ -420,16 +413,21 @@ pub(crate) struct LeafKeyWitness {
 }
 
 impl<F: Field> LeafKeyGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        bytes: &[Expression<F>],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
         LeafKeyGadget {
             rlp_list: RLPListGadget::construct(cb, bytes),
             short_list_value: RLPValueGadget::construct(cb, &bytes[1..]),
             long_list_value: RLPValueGadget::construct(cb, &bytes[2..]),
-            short_list_has_no_nibbles: IsEqualGadget::<F>::construct(cb, bytes[1].expr(), KEY_TERMINAL_PREFIX_EVEN.expr()),
-            long_list_has_no_nibbles: IsEqualGadget::<F>::construct(cb, bytes[2].expr(), KEY_TERMINAL_PREFIX_EVEN.expr()),
+            short_list_has_no_nibbles: IsEqualGadget::<F>::construct(
+                cb,
+                bytes[1].expr(),
+                KEY_TERMINAL_PREFIX_EVEN.expr(),
+            ),
+            long_list_has_no_nibbles: IsEqualGadget::<F>::construct(
+                cb,
+                bytes[2].expr(),
+                KEY_TERMINAL_PREFIX_EVEN.expr(),
+            ),
             bytes: bytes.to_vec(),
         }
     }
@@ -443,8 +441,18 @@ impl<F: Field> LeafKeyGadget<F> {
         let rlp_list = self.rlp_list.assign(region, offset, bytes)?;
         let short_list_value = self.short_list_value.assign(region, offset, &bytes[1..])?;
         let long_list_value = self.long_list_value.assign(region, offset, &bytes[2..])?;
-        self.short_list_has_no_nibbles.assign(region, offset, F::from(bytes[1] as u64), F::from(KEY_TERMINAL_PREFIX_EVEN as u64))?;
-        self.long_list_has_no_nibbles.assign(region, offset, F::from(bytes[2] as u64), F::from(KEY_TERMINAL_PREFIX_EVEN as u64))?;
+        self.short_list_has_no_nibbles.assign(
+            region,
+            offset,
+            F::from(bytes[1] as u64),
+            F::from(KEY_TERMINAL_PREFIX_EVEN as u64),
+        )?;
+        self.long_list_has_no_nibbles.assign(
+            region,
+            offset,
+            F::from(bytes[2] as u64),
+            F::from(KEY_TERMINAL_PREFIX_EVEN as u64),
+        )?;
         Ok(LeafKeyWitness {
             rlp_list,
             short_list_value,
@@ -512,7 +520,6 @@ impl<F: Field> LeafKeyGadget<F> {
         })
     }
 
-
     /// Returns the total length of the leaf (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> Expression<F> {
         self.rlp_list.num_bytes()
@@ -521,14 +528,15 @@ impl<F: Field> LeafKeyGadget<F> {
     /// Number of RLP bytes for leaf and key
     pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            self.rlp_list.num_rlp_bytes() + matchx! {
-                self.rlp_list.is_short() => {
-                    self.short_list_value.num_rlp_bytes()
-                },
-                self.rlp_list.is_long() => {
-                    self.long_list_value.num_rlp_bytes()
-                },
-            }
+            self.rlp_list.num_rlp_bytes()
+                + matchx! {
+                    self.rlp_list.is_short() => {
+                        self.short_list_value.num_rlp_bytes()
+                    },
+                    self.rlp_list.is_long() => {
+                        self.long_list_value.num_rlp_bytes()
+                    },
+                }
         })
     }
 
@@ -549,21 +557,19 @@ impl<F: Field> LeafKeyGadget<F> {
     /// Number of bytes of RLP (including list RLP bytes) and key
     pub(crate) fn num_bytes_on_key_row(&self) -> Expression<F> {
         circuit!([meta, _cb!()], {
-            self.rlp_list.num_rlp_bytes() + matchx! {
-                self.rlp_list.is_short() => {
-                    self.short_list_value.num_bytes()
-                },
-                self.rlp_list.is_long() => {
-                    self.long_list_value.num_bytes()
-                },
-            }
+            self.rlp_list.num_rlp_bytes()
+                + matchx! {
+                    self.rlp_list.is_short() => {
+                        self.short_list_value.num_bytes()
+                    },
+                    self.rlp_list.is_long() => {
+                        self.long_list_value.num_bytes()
+                    },
+                }
         })
     }
 
-    pub(crate) fn num_key_nibbles(
-        &self,
-        is_key_odd: Expression<F>,
-    ) -> Expression<F> {
+    pub(crate) fn num_key_nibbles(&self, is_key_odd: Expression<F>) -> Expression<F> {
         get_num_nibbles(self.key_len(), is_key_odd)
     }
 }
@@ -581,13 +587,14 @@ impl LeafKeyWitness {
 
     /// Number of RLP bytes for leaf and key
     pub(crate) fn num_rlp_bytes(&self) -> u64 {
-        self.rlp_list.num_rlp_bytes() + if self.rlp_list.is_short() {
-            self.short_list_value.num_rlp_bytes()
-        } else if self.rlp_list.is_long() {
-            self.long_list_value.num_rlp_bytes()
-        } else {
-            unreachable!();
-        }
+        self.rlp_list.num_rlp_bytes()
+            + if self.rlp_list.is_short() {
+                self.short_list_value.num_rlp_bytes()
+            } else if self.rlp_list.is_long() {
+                self.long_list_value.num_rlp_bytes()
+            } else {
+                unreachable!();
+            }
     }
 
     /// Length of the key (excluding RLP bytes)
@@ -604,16 +611,16 @@ impl LeafKeyWitness {
 
     /// Number of bytes of RLP (including list RLP bytes) and key
     pub(crate) fn num_bytes_on_key_row(&self) -> u64 {
-        self.rlp_list.num_rlp_bytes() + if self.rlp_list.is_short() {
-            self.short_list_value.num_bytes()
-        } else if self.rlp_list.is_long() {
-            self.long_list_value.num_bytes()
-        } else {
-            unreachable!();
-        }
+        self.rlp_list.num_rlp_bytes()
+            + if self.rlp_list.is_short() {
+                self.short_list_value.num_bytes()
+            } else if self.rlp_list.is_long() {
+                self.long_list_value.num_bytes()
+            } else {
+                unreachable!();
+            }
     }
 }
-
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KeyData<F> {
@@ -752,7 +759,7 @@ impl<F: Field> KeyData<F> {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ParentData<F> {
     pub(crate) rlc: Cell<F>,
-    pub(crate) force_hashed: Cell<F>,
+    pub(crate) is_root: Cell<F>,
 }
 
 impl<F: Field> ParentData<F> {
@@ -764,14 +771,14 @@ impl<F: Field> ParentData<F> {
     ) -> Self {
         let parent_data = ParentData {
             rlc: cb.query_cell(),
-            force_hashed: cb.query_cell(),
+            is_root: cb.query_cell(),
         };
         circuit!([meta, cb], {
             memory.load(
                 description,
                 cb,
                 offset,
-                &[parent_data.rlc.expr(), parent_data.force_hashed.expr()],
+                &[parent_data.rlc.expr(), parent_data.is_root.expr()],
             );
         });
         parent_data
@@ -809,13 +816,13 @@ impl<F: Field> ParentData<F> {
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<F>, Error> {
         let values = memory.witness_load(load_offset);
 
         self.rlc.assign(region, offset, values[0])?;
-        self.force_hashed.assign(region, offset, values[1])?;
+        self.is_root.assign(region, offset, values[1])?;
 
-        Ok(())
+        Ok(values)
     }
 }
 
@@ -1409,11 +1416,7 @@ pub(crate) struct StorageLeafInfo<F> {
 }
 
 impl<F: Field> StorageLeafInfo<F> {
-    pub(crate) fn new(
-        ctx: MPTContext<F>,
-        is_s: bool,
-        rot_key: i32,
-    ) -> Self {
+    pub(crate) fn new(ctx: MPTContext<F>, is_s: bool, rot_key: i32) -> Self {
         StorageLeafInfo {
             is_s,
             ctx: ctx.clone(),
@@ -1428,29 +1431,6 @@ impl<F: Field> StorageLeafInfo<F> {
     pub(crate) fn is_below_account(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
         let rot_parent = if self.is_s { -1 } else { -3 };
         self.ctx.is_account(meta, self.rot_key + rot_parent)
-    }
-
-    pub(crate) fn is_placeholder(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        let rot_parent = if self.is_s { -1 } else { -3 };
-        let rot_branch_init = rot_parent - (BRANCH_ROWS_NUM - 1);
-        circuit!([meta, _cb!()], {
-            ifx! {self.is_below_account(meta) => {
-                self.is_placeholder_without_branch(meta)
-            } elsex {
-                let branch = BranchNodeInfo::new(meta, self.ctx.clone(), self.is_s, self.rot_key + rot_branch_init);
-                branch.contains_placeholder_leaf(meta, self.is_s)
-            }}
-        })
-    }
-
-    pub(crate) fn is_placeholder_without_branch(
-        &self,
-        meta: &mut VirtualCells<F>,
-    ) -> Expression<F> {
-        let rot_value = 1;
-        circuit!([meta, _cb!()], {
-            a!(self.ctx.denoter.sel(self.is_s), self.rot_key + rot_value)
-        })
     }
 }
 
@@ -1694,10 +1674,10 @@ pub(crate) fn get_ext_odd_nibble<F: Field>(byte: Expression<F>) -> Expression<F>
 
 // A single RLP byte
 pub(crate) mod get_len_short {
+    use crate::mpt_circuit::param::RLP_SHORT;
     use eth_types::Field;
     use gadgets::util::Expr;
-    use halo2_proofs::{plonk::Expression};
-    use crate::mpt_circuit::param::RLP_SHORT;
+    use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field>(byte: Expression<F>) -> Expression<F> {
         byte - RLP_SHORT.expr()
@@ -1709,10 +1689,10 @@ pub(crate) mod get_len_short {
 
 // A single RLP byte + the encoded length
 pub(crate) mod get_num_bytes_short {
+    use super::get_len_short;
     use eth_types::Field;
     use gadgets::util::Expr;
-    use halo2_proofs::{plonk::Expression};
-    use super::get_len_short;
+    use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field>(byte: Expression<F>) -> Expression<F> {
         1.expr() + get_len_short::expr(byte)
@@ -1723,10 +1703,10 @@ pub(crate) mod get_num_bytes_short {
 }
 
 pub(crate) mod get_len_list_short {
+    use crate::mpt_circuit::param::RLP_LIST_SHORT;
     use eth_types::Field;
     use gadgets::util::Expr;
-    use halo2_proofs::{plonk::Expression};
-    use crate::mpt_circuit::param::RLP_LIST_SHORT;
+    use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field>(byte: Expression<F>) -> Expression<F> {
         byte - RLP_LIST_SHORT.expr()
@@ -1738,10 +1718,10 @@ pub(crate) mod get_len_list_short {
 
 // A single RLP byte + the encoded length
 pub(crate) mod get_num_bytes_list_short {
+    use super::get_len_list_short;
     use eth_types::Field;
     use gadgets::util::Expr;
-    use halo2_proofs::{plonk::Expression};
-    use super::get_len_list_short;
+    use halo2_proofs::plonk::Expression;
 
     pub(crate) fn expr<F: Field>(byte: Expression<F>) -> Expression<F> {
         1.expr() + get_len_list_short::expr(byte)

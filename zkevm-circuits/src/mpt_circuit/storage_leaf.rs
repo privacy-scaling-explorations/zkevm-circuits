@@ -1,4 +1,5 @@
 use eth_types::Field;
+use gadgets::util::Scalar;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
 use halo2_proofs::{
     circuit::{Region, Value},
@@ -7,19 +8,21 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
-use crate::circuit_tools::cell_manager::{Cell};
+use crate::circuit_tools::cell_manager::Cell;
 use crate::circuit_tools::constraint_builder::{ConstraintBuilder, RLCChainable, RLCable};
-use crate::circuit_tools::gadgets::{RequireNotZeroGadget, LtGadget};
+use crate::circuit_tools::gadgets::{LtGadget, RequireNotZeroGadget, IsEqualGadget};
+use crate::table::ProofType;
 use crate::{
+    assign,
     circuit,
     mpt_circuit::{
         helpers::BranchNodeInfo,
-        param::{BRANCH_ROWS_NUM, S_START},
+        param::{BRANCH_ROWS_NUM},
     },
     mpt_circuit::{
         helpers::{
-            get_parent_rlc_state, key_memory, parent_memory, KeyData,
-            MPTConstraintBuilder, ParentData, StorageLeafInfo,
+            get_parent_rlc_state, key_memory, parent_memory, KeyData, MPTConstraintBuilder,
+            ParentData, StorageLeafInfo,
         },
         param::{
             EMPTY_TRIE_HASH, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS,
@@ -34,7 +37,7 @@ use crate::{
     mpt_circuit::{MPTConfig, ProofValues},
 };
 
-use super::helpers::{Indexable, RLPValueGadget, LeafKeyGadget};
+use super::helpers::{Indexable, LeafKeyGadget, RLPValueGadget, bytes_into_rlc};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StorageLeafCols<F> {
@@ -107,6 +110,8 @@ pub(crate) struct StorageLeafConfig<F> {
     is_wrong_leaf: Cell<F>,
     check_is_wrong_leaf: RequireNotZeroGadget<F>,
     is_not_hashed: [LtGadget<F, 1>; 2],
+    is_in_empty_trie: [IsEqualGadget<F>; 2],
+    is_in_empty_branch: [IsEqualGadget<F>; 2],
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -135,35 +140,49 @@ impl<F: Field> StorageLeafConfig<F> {
             let mut value_rlc = vec![0.expr(); 2];
             let mut leaf_rlc_value = vec![0.expr(); 2];
             for is_s in [true, false] {
-                let storage = StorageLeafInfo::new(ctx.clone(), is_s, offset);
+                // Parent data
+                let parent_data = &mut config.parent_data[is_s.idx()];
+                *parent_data = ParentData::load(
+                    "leaf load",
+                    &mut cb.base,
+                    &ctx.memory[parent_memory(is_s)],
+                    0.expr(),
+                );
+
                 branch.set_is_s(is_s);
 
-                // Load the last key values, which depends on the branch being a placeholder.
-                let is_branch_placeholder =
-                    ifx! {not!(storage.is_below_account(meta)) => { branch.is_placeholder() }};
+                // Key data
+                let is_branch_placeholder = ifx! {not!(parent_data.is_root) => { branch.is_placeholder() }};
                 let load_offset = ifx! {is_branch_placeholder => { 1.expr() }};
                 let key_data = &mut config.key_data[is_s.idx()];
                 *key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], load_offset);
 
-                let rlp_key = &mut config.rlp_key[is_s.idx()] ;
-                *rlp_key = LeafKeyGadget::construct(&mut cb.base, &ctx.expr(meta, offset));
+                // Placeholder checks
+                let empty_root_rlc = EMPTY_TRIE_HASH.iter().map(|v| v.expr()).collect::<Vec<_>>().rlc(&r);
+                config.is_in_empty_trie[is_s.idx()] = IsEqualGadget::construct(&mut cb.base, parent_data.rlc.expr(), empty_root_rlc.expr());
+                config.is_in_empty_branch[is_s.idx()] = IsEqualGadget::construct(&mut cb.base, parent_data.rlc.expr(), 128.expr());
+                let is_placeholder = or::expr(&[config.is_in_empty_trie[is_s.idx()].expr(), config.is_in_empty_branch[is_s.idx()].expr()]);
 
                 // Calculate and store the leaf data RLC
                 let leaf_rlc_key = ctx.rlc(meta, 0..36, offset);
 
-                key_rlc[is_s.idx()] = key_data.rlc.expr() + rlp_key.key_rlc(
-                    &mut cb.base,
-                    key_data.mult.expr(),
-                    key_data.is_odd.expr(),
-                    1.expr(),
-                    true,
-                    &r,
-                );
+                let rlp_key = &mut config.rlp_key[is_s.idx()];
+                *rlp_key = LeafKeyGadget::construct(&mut cb.base, &ctx.expr(meta, offset));
+
+                key_rlc[is_s.idx()] = key_data.rlc.expr()
+                    + rlp_key.key_rlc(
+                        &mut cb.base,
+                        key_data.mult.expr(),
+                        key_data.is_odd.expr(),
+                        1.expr(),
+                        true,
+                        &r,
+                    );
 
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES (except in a
                 // placeholder leaf).
                 // TODO(Brecht): why not in placeholder leaf?
-                ifx! {not!(storage.is_placeholder(meta)) => {
+                ifx! {not!(is_placeholder) => {
                     let num_nibbles = rlp_key.num_key_nibbles(key_data.is_odd.expr());
                     require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
                 }}
@@ -185,19 +204,18 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 offset += 1;
 
-                let rlp_value = &mut config.rlp_value[is_s.idx()] ;
+                let rlp_value = &mut config.rlp_value[is_s.idx()];
                 *rlp_value = RLPValueGadget::construct(&mut cb.base, &s_main.expr(meta, offset));
-                let (rlp_new_value_rlc, rlp_leaf_rlc_value_part) = rlp_value.rlc(&r);
-                value_rlc[is_s.idx()] = rlp_new_value_rlc.expr();
-                leaf_rlc_value[is_s.idx()] = rlp_leaf_rlc_value_part.expr();
-                let leaf_rlc = (leaf_rlc_key, config.mult[is_s.idx()].expr()).rlc_chain(rlp_leaf_rlc_value_part.expr());
+                (value_rlc[is_s.idx()], leaf_rlc_value[is_s.idx()]) = rlp_value.rlc(&r);
+                let leaf_rlc = (leaf_rlc_key, config.mult[is_s.idx()].expr())
+                    .rlc_chain(leaf_rlc_value[is_s.idx()].expr());
 
                 // If `is_modified_node_empty = 1`, which means an empty child, we need to
                 // ensure that the value is set to 0 in the placeholder leaf. For
                 // example when adding a new storage leaf to the trie, we have an empty child in
                 // `S` proof and non-empty in `C` proof.
-                ifx! {branch.contains_placeholder_leaf(meta, is_s) => {
-                    require!(a!(s_main.rlp1, offset) => 0);
+                ifx! {is_placeholder => {
+                    require!(value_rlc[is_s.idx()] => 0);
                 }}
 
                 // Number of bytes used by the leaf in total
@@ -209,36 +227,21 @@ impl<F: Field> StorageLeafConfig<F> {
                 // storage = [key, value]
                 // TODO(Brecht): modify the witness for empty placeholder leafs to have valid
                 // RLP encoding
-                ifx! {not!(branch.contains_placeholder_leaf(meta, is_s)) => {
+                ifx! {not!(is_placeholder) => {
                     let key_num_bytes = rlp_key.num_bytes_on_key_row();
                     require!(num_bytes => key_num_bytes.expr() + value_num_bytes.expr());
                 }};
 
                 // Check if the account is in its parent.
-                let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
-                let parent_data = &mut config.parent_data[is_s.idx()];
-                *parent_data = ParentData::load(
-                    "leaf load",
-                    &mut cb.base,
-                    &ctx.memory[parent_memory(is_s)],
-                    0.expr(),
-                );
                 // Check is skipped for placeholder leafs which are dummy leafs
-                ifx! {storage.is_below_account(meta), storage.is_placeholder_without_branch(meta) => {
-                    // TODO(Brecht): Add this to the keccak table when necessary instead?
-                    // Hash of the only storage leaf which is placeholder requires empty storage root
-                    let empty_root_rlc = EMPTY_TRIE_HASH.iter().map(|v| v.expr()).collect::<Vec<_>>().rlc(&r);
-                    require!(parent_data.rlc => empty_root_rlc);
-                } elsex {
-                    ifx!{not!(and::expr(&[not!(storage.is_below_account(meta)), branch.contains_placeholder_leaf(meta, is_s)])) => {
-                        config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, num_bytes.expr(), 32.expr());
-                        ifx!{or::expr(&[parent_data.force_hashed.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
-                            // Hashed branch hash in parent branch
-                            require!((1, leaf_rlc, num_bytes, parent_data.rlc) => @"keccak");
-                        } elsex {
-                            // Non-hashed branch hash in parent branch
-                            require!(leaf_rlc => parent_data.rlc);
-                        }}
+                ifx! {not!(is_placeholder) => {
+                    config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, num_bytes.expr(), 32.expr());
+                    ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
+                        // Hashed branch hash in parent branch
+                        require!((1, leaf_rlc, num_bytes, parent_data.rlc) => @"keccak");
+                    } elsex {
+                        // Non-hashed branch hash in parent branch
+                        require!(leaf_rlc => parent_data.rlc);
                     }}
                 }}
                 // Store the new parent
@@ -262,8 +265,6 @@ impl<F: Field> StorageLeafConfig<F> {
             // Drifted leaf
             let storage = StorageLeafInfo::new(ctx.clone(), true, 0);
             ifx! {branch.is_placeholder_s_or_c(), not!(storage.is_below_account(meta)) => {
-                let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-
                 config.drifted_rlp_key = LeafKeyGadget::construct(&mut cb.base, &ctx.expr(meta, offset));
 
                 // Calculate and store the leaf RLC (RLP + key)
@@ -341,9 +342,11 @@ impl<F: Field> StorageLeafConfig<F> {
                         false,
                         &ctx.r,
                     );
-                    require!(a!(ctx.mpt_table.key_rlc, offset) => key_rlc_wrong);
-                    // Now make sure this address is different than the one of the leaf
+                    // TODO(Brecht): only checks the key, not prev_value/value?
                     let key_rlc_lookup = a!(ctx.mpt_table.key_rlc, offset);
+                    require!(key_rlc_lookup => key_rlc_wrong);
+
+                    // Now make sure this address is different than the one of the leaf
                     config.check_is_wrong_leaf = RequireNotZeroGadget::construct(&mut cb.base, key_rlc_lookup - key_rlc[false.idx()].expr());
                     // Make sure the lengths of the keys are the same
                     require!(config.wrong_rlp_key.key_len() => config.rlp_key[false.idx()].key_len());
@@ -366,7 +369,7 @@ impl<F: Field> StorageLeafConfig<F> {
     pub fn assign(
         &self,
         region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
+        ctx: &MPTConfig<F>,
         witness: &[MptWitnessRow<F>],
         pv: &mut ProofValues<F>,
         offset: usize,
@@ -374,16 +377,21 @@ impl<F: Field> StorageLeafConfig<F> {
         let base_offset = offset;
         let mut offset = offset;
 
+        let mut key_rlc = vec![0.scalar(); 2];
+        let mut value_rlc = vec![0.scalar(); 2];
         for is_s in [true, false] {
             /* KEY */
             {
                 let key_row = &witness[offset];
 
-                let rlp_key_witness = self.rlp_key[is_s.idx()].assign(region, base_offset, &key_row.bytes).ok().unwrap();
+                let rlp_key_witness = self.rlp_key[is_s.idx()]
+                    .assign(region, base_offset, &key_row.bytes)
+                    .ok()
+                    .unwrap();
 
                 pv.acc_s = F::zero();
                 pv.acc_mult_s = F::one();
-                mpt_config.compute_acc_and_mult(
+                ctx.compute_acc_and_mult(
                     &key_row.bytes,
                     &mut pv.acc_s,
                     &mut pv.acc_mult_s,
@@ -395,7 +403,14 @@ impl<F: Field> StorageLeafConfig<F> {
                     .assign(region, base_offset, pv.acc_mult_s)
                     .ok();
 
-                self.is_not_hashed[is_s.idx()].assign(region, base_offset, F::from(rlp_key_witness.num_bytes()), F::from(32)).ok();
+                self.is_not_hashed[is_s.idx()]
+                    .assign(
+                        region,
+                        base_offset,
+                        F::from(rlp_key_witness.num_bytes()),
+                        F::from(32),
+                    )
+                    .ok();
 
                 let is_branch_placeholder = if is_s {
                     pv.is_branch_s_placeholder
@@ -434,24 +449,14 @@ impl<F: Field> StorageLeafConfig<F> {
                 if rlp_key_witness.num_bytes_on_key_row() != 2 {
                     // If in last level or having only one nibble,
                     // the key RLC is already computed using the first two bytes above.
-                    mpt_config.compute_key_rlc(
+                    ctx.compute_key_rlc(
                         &key_row.bytes,
                         &mut key_rlc_new,
                         &mut key_rlc_mult_new,
                         rlp_key_witness.num_rlp_bytes_list() as usize,
                     );
                 }
-                region.assign_advice(
-                    || "assign key_rlc".to_string(),
-                    mpt_config.accumulators.key.rlc,
-                    offset,
-                    || Value::known(key_rlc_new),
-                )?;
-                pv.storage_key_rlc = key_rlc_new;
-
-                // Store key_rlc into rlc2 to be later set in leaf value C row (to enable
-                // lookups):
-                pv.rlc2 = key_rlc_new;
+                key_rlc[is_s.idx()] = key_rlc_new;
             }
 
             /* VALUE */
@@ -459,35 +464,15 @@ impl<F: Field> StorageLeafConfig<F> {
             offset += 1;
 
             {
-                //let key_row = &witness[offset - 1];
                 let value_row = &witness[offset];
 
-                let value_witness = self.rlp_value[is_s.idx()].assign(region, base_offset, &value_row.bytes).ok().unwrap();
-
-                // Info whether leaf value is 1 byte or more:
-                /*let mut is_long = false;
-                if key_row.get_byte(0) == 248 {
-                    // whole leaf is in long format (3 RLP meta bytes)
-                    let key_len = key_row.get_byte(2) - 128;
-                    if key_row.get_byte(1) - key_len - 1 > 1 {
-                        is_long = true;
-                    }
-                } else if key_row.get_byte(1) < 128 {
-                    // last_level or one_nibble
-                    let leaf_len = key_row.get_byte(0) - 192;
-                    if leaf_len - 1 > 1 {
-                        is_long = true;
-                    }
-                } else {
-                    let leaf_len = key_row.get_byte(0) - 192;
-                    let key_len = key_row.get_byte(1) - 128;
-                    if leaf_len - key_len - 1 > 1 {
-                        is_long = true;
-                    }
-                }*/
+                let value_witness = self.rlp_value[is_s.idx()]
+                    .assign(region, base_offset, &value_row.bytes)
+                    .ok()
+                    .unwrap();
 
                 // Leaf RLC
-                mpt_config.compute_acc_and_mult(
+                ctx.compute_acc_and_mult(
                     &value_row.bytes,
                     &mut pv.acc_s,
                     &mut pv.acc_mult_s,
@@ -495,20 +480,9 @@ impl<F: Field> StorageLeafConfig<F> {
                     HASH_WIDTH + 2,
                 );
 
-
-                // Leaf value RLC
-                /*let mut start = 0;
-                if is_long {
-                    start = 2;
-                }*/
-
-                //let start = value_witness.num_rlp_bytes();
-                //println!("{} == {}", start, start);
-                //assert!(start == test_start);
-
                 pv.acc_c = F::zero();
                 pv.acc_mult_c = F::one();
-                mpt_config.compute_acc_and_mult(
+                ctx.compute_acc_and_mult(
                     &value_row.bytes,
                     &mut pv.acc_c,
                     &mut pv.acc_mult_c,
@@ -516,80 +490,11 @@ impl<F: Field> StorageLeafConfig<F> {
                     HASH_WIDTH + 2,
                 );
 
-                if is_s {
-                    // Store leaf value RLC into rlc1 to be later set in leaf value C row (to enable
-                    // lookups):
-                    pv.rlc1 = pv.acc_c;
+                value_rlc[is_s.idx()] = pv.acc_c;
 
-                    /*
-                    account leaf storage codehash S <- rotate here
-                    account leaf storage codehash C
-                    account leaf in added branch
-                    leaf key S
-                    leaf value S <- we are here
-                    leaf key C
-                    leaf value C
-                    */
-                    let row_prev = &witness[offset - 4];
-                    if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
-                        && row_prev.s_hash_bytes() == EMPTY_TRIE_HASH
-                    {
-                        // Leaf is without branch and it is just a placeholder.
-                        region
-                            .assign_advice(
-                                || "assign sel1".to_string(),
-                                mpt_config.denoter.sel1,
-                                offset,
-                                || Value::known(F::one()),
-                            )
-                            .ok();
-                    }
-                } else {
-                    region
-                        .assign_advice(
-                            || "assign key_rlc into key_rlc_mult".to_string(),
-                            mpt_config.accumulators.key.mult,
-                            offset,
-                            || Value::known(pv.rlc2),
-                        )
-                        .ok();
-                    region
-                        .assign_advice(
-                            || "assign leaf value S into value_prev".to_string(),
-                            mpt_config.value_prev,
-                            offset,
-                            || Value::known(pv.rlc1),
-                        )
-                        .ok();
-
-                    /*
-                    account leaf storage codehash S
-                    account leaf storage codehash C <- rotate here
-                    account leaf in added branch
-                    leaf key S
-                    leaf value S
-                    leaf key C
-                    leaf value C <- we are here
-                    */
-                    let row_prev = &witness[offset - 5];
-                    if row_prev.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
-                        && row_prev.s_hash_bytes() == EMPTY_TRIE_HASH
-                    {
-                        // Leaf is without branch and it is just a placeholder.
-                        region
-                            .assign_advice(
-                                || "assign sel2".to_string(),
-                                mpt_config.denoter.sel2,
-                                offset,
-                                || Value::known(F::one()),
-                            )
-                            .ok();
-                    }
-                }
-
-                self.parent_data[is_s.idx()]
+                let parent_values = self.parent_data[is_s.idx()]
                     .witness_load(region, base_offset, &mut pv.memory[parent_memory(is_s)], 0)
-                    .ok();
+                    .ok().unwrap();
                 self.parent_data[is_s.idx()]
                     .witness_store(
                         region,
@@ -600,41 +505,41 @@ impl<F: Field> StorageLeafConfig<F> {
                     )
                     .ok();
 
-                region
-                    .assign_advice(
-                        || "assign leaf value C into value".to_string(),
-                        mpt_config.value,
-                        offset,
-                        || Value::known(pv.acc_c),
-                    )
-                    .ok();
+                self.is_in_empty_trie[is_s.idx()].assign(region, base_offset, parent_values[0], bytes_into_rlc(&EMPTY_TRIE_HASH, ctx.randomness)).ok();
+                self.is_in_empty_branch[is_s.idx()].assign(region, base_offset, parent_values[0], 128.scalar()).ok();
 
                 if !is_s && value_row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-                    region
-                        .assign_advice(
-                            || "assign lookup enabled".to_string(),
-                            mpt_config.proof_type.proof_type,
-                            offset,
-                            || Value::known(F::from(6_u64)), /* storage mod lookup enabled in
-                                                              * this row
-                                                              * if it is is_storage_mod proof */
-                        )
-                        .ok();
+                    assign!(region, (ctx.proof_type.proof_type, offset) => ProofType::StorageChanged.scalar()).ok();
                 }
             }
 
             offset += 1;
         }
 
+        // Put the data in the lookup table
+        assign!(region, (ctx.mpt_table.key_rlc, offset - 1) => key_rlc[false.idx()]).ok();
+        assign!(region, (ctx.mpt_table.value_prev, offset - 1) => value_rlc[true.idx()]).ok();
+        assign!(region, (ctx.mpt_table.value, offset - 1) => value_rlc[false.idx()]).ok();
 
+        // Drifted leaf handling
         if pv.is_branch_s_placeholder || pv.is_branch_c_placeholder {
             let row = &witness[offset];
 
-            let drifted_key_witness = self.drifted_rlp_key.assign(region, base_offset, &row.bytes).ok().unwrap();
+            let drifted_key_witness = self
+                .drifted_rlp_key
+                .assign(region, base_offset, &row.bytes)
+                .ok()
+                .unwrap();
 
             pv.acc_s = F::zero();
             pv.acc_mult_s = F::one();
-            mpt_config.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, drifted_key_witness.num_bytes_on_key_row() as usize);
+            ctx.compute_acc_and_mult(
+                &row.bytes,
+                &mut pv.acc_s,
+                &mut pv.acc_mult_s,
+                0,
+                drifted_key_witness.num_bytes_on_key_row() as usize,
+            );
 
             self.drifted_mult
                 .assign(region, base_offset, pv.acc_mult_s)
@@ -645,49 +550,42 @@ impl<F: Field> StorageLeafConfig<F> {
         {
             let row = &witness[offset];
             if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
-
                 self.key_data_w
                     .witness_load(region, base_offset, &mut pv.memory[key_memory(true)], 1)
                     .ok();
 
                 // TODO(Brecht): Change how the witness is generated
                 let is_wrong = row.bytes[0] != 0;
-                self.is_wrong_leaf.assign(region, base_offset, F::from(is_wrong)).ok();
+                self.is_wrong_leaf
+                    .assign(region, base_offset, F::from(is_wrong))
+                    .ok();
 
                 let row_key_c =
                     &witness[offset - (LEAF_NON_EXISTING_IND - LEAF_KEY_C_IND) as usize];
                 let mut row_bytes = row.bytes.clone();
                 row_bytes[0] = row_key_c.bytes[0];
 
-                let wrong_witness = self.wrong_rlp_key.assign(region, base_offset, &row_bytes).ok().unwrap();
+                let wrong_witness = self
+                    .wrong_rlp_key
+                    .assign(region, base_offset, &row_bytes)
+                    .ok()
+                    .unwrap();
 
                 let mut key_rlc_new = pv.key_rlc;
                 let mut key_rlc_mult_new = pv.key_rlc_mult;
-                mpt_config.compute_key_rlc(
+                ctx.compute_key_rlc(
                     &row.bytes,
                     &mut key_rlc_new,
                     &mut key_rlc_mult_new,
                     wrong_witness.num_rlp_bytes_list() as usize,
                 );
-                region
-                    .assign_advice(
-                        || "assign key_rlc".to_string(),
-                        mpt_config.mpt_table.key_rlc,
-                        offset,
-                        || Value::known(key_rlc_new),
-                    )
+                assign!(region, (ctx.mpt_table.key_rlc, offset) => key_rlc_new).ok();
+
+                self.check_is_wrong_leaf
+                    .assign(region, base_offset, key_rlc_new - key_rlc[false.idx()])
                     .ok();
 
-                self.check_is_wrong_leaf.assign(region, base_offset, key_rlc_new - pv.storage_key_rlc).ok();
-
-                region
-                    .assign_advice(
-                        || "assign lookup enabled".to_string(),
-                        mpt_config.proof_type.proof_type,
-                        offset,
-                        || Value::known(F::from(7_u64)),
-                    )
-                    .ok();
+                assign!(region, (ctx.proof_type.proof_type, offset) => ProofType::StorageDoesNotExist.scalar()).ok();
             }
         }
 

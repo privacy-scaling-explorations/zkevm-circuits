@@ -1,7 +1,5 @@
 use eth_types::Field;
-use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression},
-};
+use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Expression};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
@@ -14,13 +12,13 @@ use crate::{
     circuit_tools::cell_manager::{Cell, DataTransition},
     circuit_tools::constraint_builder::{ConstraintBuilder, RLCable},
     mpt_circuit::{
-        helpers::{BranchNodeInfo, get_num_bytes_short},
+        helpers::{get_num_bytes_short, BranchNodeInfo},
         param::{BRANCH_ROWS_NUM, S_START},
     },
     mpt_circuit::{
         helpers::{
-            get_num_nibbles, get_parent_rlc_state, key_memory, parent_memory,
-            AccountLeafInfo, KeyData, MPTConstraintBuilder, ParentData,
+            get_num_nibbles, get_parent_rlc_state, key_memory, parent_memory, AccountLeafInfo,
+            KeyData, MPTConstraintBuilder, ParentData,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LONG},
         FixedTableTag,

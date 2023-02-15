@@ -1,6 +1,5 @@
 use eth_types::Field;
 use halo2_proofs::{
-
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, VirtualCells},
     poly::Rotation,
@@ -322,7 +321,7 @@ impl<F: Field> BranchConfig<F> {
                             0.expr(),
                         );
                         ifx! {not!(branch.is_placeholder()) => {
-                            ifx!{or::expr(&[parent_data.force_hashed.expr(), not!(is_not_hashed)]) => {
+                            ifx!{or::expr(&[parent_data.is_root.expr(), not!(is_not_hashed)]) => {
                                 // Hashed branch hash in parent branch
                                 // TODO(Brecht): fix
                                 //require!((1, rlc, num_bytes, parent_data.rlc) => @"keccak");

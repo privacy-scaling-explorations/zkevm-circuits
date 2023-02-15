@@ -31,7 +31,11 @@ use selectors::SelectorsConfig;
 
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::CellManager, constraint_builder::{merge_lookups, RLCable}, memory::Memory},
+    circuit_tools::{
+        cell_manager::CellManager,
+        constraint_builder::{merge_lookups, RLCable},
+        memory::Memory,
+    },
     mpt_circuit::{
         helpers::{extend_rand, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
         storage_leaf::StorageLeafConfig,
@@ -122,11 +126,7 @@ impl<F: Field> MPTContext<F> {
             .to_vec()
     }
 
-    pub(crate) fn expr(
-        &self,
-        meta: &mut VirtualCells<F>,
-        rot: i32,
-    ) -> Vec<Expression<F>> {
+    pub(crate) fn expr(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
         self.rlp_bytes()
             .iter()
             .map(|&byte| meta.query_advice(byte, Rotation(rot)))
@@ -269,7 +269,6 @@ pub(crate) struct ProofValues<F> {
     pub(crate) nibbles_num: usize,
 
     pub(crate) account_key_rlc: F,
-    pub(crate) storage_key_rlc: F,
 
     pub(crate) is_hashed_s: bool,
     pub(crate) is_hashed_c: bool,
@@ -556,8 +555,9 @@ impl<F: Field> MPTConfig<F> {
         } else if disable_lookups == 2 {
             cb.base.generate_lookups(meta, &ctx.memory.tags());
         } else if disable_lookups == 3 {
-            cb.base.generate_lookups(meta, &vec!["fixed".to_string(), "keccak".to_string()]);
-        }  else if disable_lookups == 4 {
+            cb.base
+                .generate_lookups(meta, &vec!["fixed".to_string(), "keccak".to_string()]);
+        } else if disable_lookups == 4 {
             cb.base.generate_lookups(meta, &vec!["keccak".to_string()]);
         }
 
@@ -1144,7 +1144,10 @@ mod tests {
 
     use super::*;
 
-    use halo2_proofs::{dev::MockProver, halo2curves::{bn256::Fr, FieldExt}};
+    use halo2_proofs::{
+        dev::MockProver,
+        halo2curves::{bn256::Fr, FieldExt},
+    };
 
     use std::fs;
 

@@ -2,13 +2,13 @@
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{
-    circuit::{Region},
+    circuit::Region,
     plonk::{Error, Expression},
 };
 
 use crate::evm_circuit::util::{from_bytes, pow_of_two};
 
-use super::{constraint_builder::ConstraintBuilder, cell_manager::{Cell}};
+use super::{cell_manager::Cell, constraint_builder::ConstraintBuilder};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
@@ -28,9 +28,11 @@ impl<F: Field> IsZeroGadget<F> {
             // `value == 0` => check `inverse = 0`: `inverse ⋅ (1 - value * inverse)`
             require!(inverse.expr() * is_zero.expr() => 0);
 
-            Self { inverse, is_zero: Some(is_zero) }
+            Self {
+                inverse,
+                is_zero: Some(is_zero),
+            }
         })
-
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
@@ -66,7 +68,6 @@ impl<F: Field> RequireNotZeroGadget<F> {
             require!(value.expr() * inverse.expr() =>1);
             Self { inverse }
         })
-
     }
 
     pub(crate) fn assign(
@@ -147,7 +148,11 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
             from_bytes::expr(&diff) - (lt.expr() * range),
         );
 
-        Self { lt, diff: Some(diff), range }
+        Self {
+            lt,
+            diff: Some(diff),
+            range,
+        }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
@@ -163,21 +168,14 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
         let lt = lhs < rhs;
-        self.lt.assign(
-            region,
-            offset,
-            if lt { F::one() } else { F::zero() },
-        )?;
+        self.lt
+            .assign(region, offset, if lt { F::one() } else { F::zero() })?;
 
         // Set the bytes of diff
         let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
         let diff_bytes = diff.to_repr();
         for (idx, diff) in self.diff.as_ref().unwrap().iter().enumerate() {
-            diff.assign(
-                region,
-                offset,
-                F::from(diff_bytes[idx] as u64),
-            )?;
+            diff.assign(region, offset, F::from(diff_bytes[idx] as u64))?;
         }
 
         Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))

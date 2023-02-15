@@ -2,9 +2,7 @@
 use crate::{evm_circuit::util::rlc, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, select, sum};
-use halo2_proofs::{
-    plonk::{ConstraintSystem, Expression},
-};
+use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
 use super::cell_manager::{Cell, CellManager, CellType, DataTransition, Trackable};
@@ -152,7 +150,10 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
-        self.cell_manager.as_mut().unwrap().query_cells(cell_type, count)
+        self.cell_manager
+            .as_mut()
+            .unwrap()
+            .query_cells(cell_type, count)
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -939,6 +940,24 @@ macro_rules! matchw {
     }};
 }
 
+/// assign
+#[macro_export]
+macro_rules! assign {
+    ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
+        let description = $crate::concat_with_preamble!(
+            stringify!($column),
+            " => ",
+            stringify!($value)
+        );
+        let value: F = $value;
+        $region.assign_advice(
+            || description,
+            $column,
+            $offset,
+            || Value::known(value),
+        )
+    }};
+}
 
 /// Circuit builder macros
 /// Nested macro's can't do repetition (https://github.com/rust-lang/rust/issues/35853)
