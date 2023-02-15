@@ -1840,6 +1840,16 @@ mod tx_circuit_tests {
     }
 
     #[test]
+    fn tx_circuit_0tx_1max_tx() {
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+
+        assert_eq!(run::<Fr>(vec![], chain_id, MAX_TXS, MAX_CALLDATA), Ok(()));
+    }
+
+    #[test]
     fn tx_circuit_1tx_1max_tx() {
         const MAX_TXS: usize = 1;
         const MAX_CALLDATA: usize = 32;
