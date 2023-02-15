@@ -1,5 +1,6 @@
 use crate::evm_circuit::util::rlc;
 use eth_types::{Field, ToLittleEndian, U256};
+use gadgets::util::assign_advice;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -38,12 +39,13 @@ impl<const N: usize> Config<N> {
     ) -> Result<(), Error> {
         let bytes = value.to_le_bytes();
         for (i, &byte) in bytes.iter().enumerate() {
-            region.name_column(|| format!("STATE_RLC_byte[{}]", i), self.bytes[i]);
-            region.assign_advice(
-                || format!("byte[{}] in rlc", i),
+            assign_advice(
+                region,
+                || format!("byte[{}]", i),
                 self.bytes[i],
                 offset,
                 || Value::known(F::from(byte as u64)),
+                || "STATE_RLC".to_string(),
             )?;
         }
         Ok(())

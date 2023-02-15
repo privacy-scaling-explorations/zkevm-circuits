@@ -1,7 +1,10 @@
 use super::{lookups, SortKeysConfig, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID, N_LIMBS_RW_COUNTER};
 use crate::{evm_circuit::param::N_BYTES_WORD, impl_expr, util::Expr, witness::Rw};
 use eth_types::{Field, ToBigEndian};
-use gadgets::binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig};
+use gadgets::{
+    binary_number::{AsBits, BinaryNumberChip, BinaryNumberConfig},
+    util::{assign_advice, assign_fixed},
+};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -192,19 +195,13 @@ impl Config {
         cur: &Rw,
         prev: &Rw,
     ) -> Result<LimbIndex, Error> {
-        // annotate columns
-        region.name_column(|| "STATE_LO_upper_limb_difference", self.selector);
-        region.name_column(|| "STATE_LO_limb_difference", self.limb_difference);
-        region.name_column(
-            || "STATE_LO_limb_difference_inverse",
-            self.limb_difference_inverse,
-        );
-
-        region.assign_fixed(
+        assign_fixed(
+            region,
             || "upper_limb_difference",
             self.selector,
             offset,
             || Value::known(F::one()),
+            || "STATE_LO",
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);
@@ -223,17 +220,21 @@ impl Config {
         BinaryNumberChip::construct(self.first_different_limb).assign(region, offset, &index)?;
 
         let limb_difference = F::from(*cur_limb as u64) - F::from(*prev_limb as u64);
-        region.assign_advice(
+        assign_advice(
+            region,
             || "limb_difference",
             self.limb_difference,
             offset,
             || Value::known(limb_difference),
+            || "STATE_LO",
         )?;
-        region.assign_advice(
+        assign_advice(
+            region,
             || "limb_difference_inverse",
             self.limb_difference_inverse,
             offset,
             || Value::known(limb_difference.invert().unwrap()),
+            || "STATE_LO",
         )?;
 
         Ok(index)

@@ -238,7 +238,7 @@ pub fn split_u256_limb64(value: &U256) -> [U256; 4] {
 }
 
 /// wrap up multiple Region.assign_advice and a single Region.name_column
-pub fn assign_advice<VR, AR, F: Field>(
+pub fn assign_advice_multi_value<VR, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
     column: Column<Advice>,
@@ -260,9 +260,7 @@ where
         .iter()
         .zip(offsets.iter())
         .map(|(v, offset)| {
-            region.assign_advice(&|| annotation().into(), column, offset.clone(), || {
-                v.clone()
-            })
+            region.assign_advice(&|| annotation().into(), column, *offset, || v.clone())
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -270,7 +268,7 @@ where
 }
 
 /// wrap up a single Region.assign_advice and a single Region.name_column
-pub fn assign_advice_single<VR, V, AR, F: Field>(
+pub fn assign_advice<VR, V, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
     column: Column<Advice>,
@@ -291,7 +289,7 @@ where
 }
 
 /// wrap up multiple Region.assign_fixed and a single Region.name_column
-pub fn assign_fixed<VR, AR, F: Field>(
+pub fn assign_fixed_multi_value<VR, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
     column: Column<Fixed>,
@@ -313,9 +311,7 @@ where
         .iter()
         .zip(offsets.iter())
         .map(|(v, offset)| {
-            region.assign_fixed(&|| annotation().into(), column, offset.clone(), || {
-                v.clone()
-            })
+            region.assign_fixed(&|| annotation().into(), column, *offset, || v.clone())
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -323,7 +319,7 @@ where
 }
 
 /// wrap up a single Region.assign_advice and a single Region.name_column
-pub fn assign_fixed_single<VR, V, AR, F: Field>(
+pub fn assign_fixed<VR, V, AR, F: Field>(
     region: &mut Region<F>,
     annotation: impl Fn() -> AR,
     column: Column<Fixed>,

@@ -1,6 +1,6 @@
 use crate::table::CallContextFieldTag;
 use eth_types::Field;
-use gadgets::util::assign_fixed;
+use gadgets::util::assign_fixed_multi_value;
 use halo2_proofs::{
     circuit::{Layouter, Value},
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -110,7 +110,7 @@ impl<F: Field> Chip<F> {
                     for i in 0..(1 << exponent) {
                         offsets.push(i as usize);
                     }
-                    assign_fixed(
+                    assign_fixed_multi_value(
                         &mut region,
                         || format!("fixed_u{}", exponent),
                         column,
@@ -132,7 +132,7 @@ impl<F: Field> Chip<F> {
                 for field_tag in CallContextFieldTag::iter() {
                     offsets.push(field_tag as usize);
                 }
-                assign_fixed(
+                assign_fixed_multi_value(
                     &mut region,
                     || "call_context_field_tag",
                     self.config.call_context_field_tag,

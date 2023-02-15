@@ -5,15 +5,15 @@
 //!   it exists, `0` otherwise
 //! - is_zero: 1 if all `values` are `0`, `0` otherwise
 
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Phase, VirtualCells},
     poly::Rotation,
 };
 use std::marker::PhantomData;
 
-use crate::util::Expr;
+use crate::util::{assign_advice, Expr};
 
 // TODO: Configurable Phase
 
@@ -32,7 +32,7 @@ pub struct BatchedIsZeroChip<F, const N: usize> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
+impl<F: Field, const N: usize> BatchedIsZeroChip<F, N> {
     /// Configure the BatchedIsZeroChip
     pub fn configure<P: Phase>(
         meta: &mut ConstraintSystem<F>,
@@ -90,24 +90,21 @@ impl<F: FieldExt, const N: usize> BatchedIsZeroChip<F, N> {
             }
         });
 
-        // annotate columns
-        region.name_column(|| "GADGETS_BATCHED_is_zero", config.is_zero);
-        region.name_column(
-            || "GADGETS_BATCHED_nonempty_witness",
-            config.nonempty_witness,
-        );
-
-        region.assign_advice(
+        assign_advice(
+            region,
             || "is_zero",
             config.is_zero,
             offset,
             || is_zero_nonempty_witness.map(|v| v.0),
+            || "GADGETS_BATCHED_IS_ZERO",
         )?;
-        region.assign_advice(
+        assign_advice(
+            region,
             || "nonempty_witness",
             config.nonempty_witness,
             offset,
             || is_zero_nonempty_witness.map(|v| v.1),
+            || "GADGETS_BATCHED_IS_ZERO",
         )?;
         Ok(())
     }
@@ -148,7 +145,7 @@ mod test {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt, const N: usize> Circuit<F> for TestCircuit<F, N> {
+    impl<F: Field, const N: usize> Circuit<F> for TestCircuit<F, N> {
         type Config = TestCircuitConfig<N>;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -205,18 +202,22 @@ mod test {
                 || "witness",
                 |mut region| {
                     config.q_enable.enable(&mut region, 0)?;
-                    region.assign_advice(
+                    assign_advice(
+                        &mut region,
                         || "expect_is_zero",
                         config.expect_is_zero,
                         0,
                         || Value::known(F::from(*expect_is_zero)),
+                        || "GADGETS_BATCHED_IS_ZERO_TEST",
                     )?;
                     for (value_column, value) in config.values.iter().zip(values.iter()) {
-                        region.assign_advice(
+                        assign_advice(
+                            &mut region,
                             || "value",
                             *value_column,
                             0,
                             || Value::known(*value),
+                            || "GADGETS_BATCHED_IS_ZERO_TEST",
                         )?;
                     }
                     is_zero.assign(&mut region, 0, Value::known(values))?;

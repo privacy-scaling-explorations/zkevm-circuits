@@ -18,7 +18,7 @@ use eth_types::{Address, Field, ToLittleEndian};
 use gadgets::{
     batched_is_zero::{BatchedIsZeroChip, BatchedIsZeroConfig},
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-    util::{assign_advice_single, assign_fixed_single},
+    util::{assign_advice, assign_fixed},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
@@ -225,7 +225,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 log::trace!("state circuit assign offset:{} row:{:#?}", offset, row);
             }
 
-            assign_fixed_single(
+            assign_fixed(
                 region,
                 || "selector",
                 self.selector,
@@ -261,7 +261,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 let is_first_access =
                     !matches!(index, LimbIndex::RwCounter0 | LimbIndex::RwCounter1);
 
-                assign_advice_single(
+                assign_advice(
                     region,
                     || "not_first_access",
                     self.not_first_access,
@@ -300,7 +300,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     .map(|u| u.value_assignments(randomness).1)
                     .unwrap_or_default()
             });
-            assign_advice_single(
+            assign_advice(
                 region,
                 || "initial_value",
                 self.initial_value,
@@ -345,7 +345,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     _ => 0,
                 })
             });
-            assign_advice_single(
+            assign_advice(
                 region,
                 || "mpt_proof_type",
                 self.mpt_proof_type,
@@ -358,7 +358,7 @@ impl<F: Field> StateCircuitConfig<F> {
             // State root assignment is at previous row (offset - 1) because the state root
             // changes on the last access row.
             if offset != 0 {
-                assign_advice_single(
+                assign_advice(
                     region,
                     || "state_root",
                     self.state_root,
@@ -378,7 +378,7 @@ impl<F: Field> StateCircuitConfig<F> {
                         new_root
                     });
                 }
-                assign_advice_single(
+                assign_advice(
                     region,
                     || "last row state_root",
                     self.state_root,
@@ -489,7 +489,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                         let offset =
                             usize::try_from(isize::try_from(padding_length).unwrap() + *row_offset)
                                 .unwrap();
-                        assign_advice_single(
+                        assign_advice(
                             &mut region,
                             || "override",
                             advice_column,

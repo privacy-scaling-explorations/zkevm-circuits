@@ -5,7 +5,10 @@ use crate::{
     witness,
 };
 use eth_types::{Field, ToLittleEndian};
-use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+use gadgets::{
+    is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction},
+    util::{assign_advice, assign_fixed},
+};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{
@@ -620,32 +623,35 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         length: F,
         push_data_size: F,
     ) -> Result<(), Error> {
-        // annotate columns
-        self.annotate_circuit(region);
-
         // q_enable
-        region.assign_fixed(
+        assign_fixed(
+            region,
             || format!("assign q_enable {}", offset),
             self.q_enable,
             offset,
             || Value::known(F::from(enable as u64)),
+            || "BYTECODE".to_string(),
         )?;
 
         // q_first
-        region.assign_fixed(
+        assign_fixed(
+            region,
             || format!("assign q_first {}", offset),
             self.q_first,
             offset,
             || Value::known(F::from((offset == 0) as u64)),
+            || "BYTECODE".to_string(),
         )?;
 
         // q_last
         let q_last_value = if last { F::one() } else { F::zero() };
-        region.assign_fixed(
+        assign_fixed(
+            region,
             || format!("assign q_last {}", offset),
             self.q_last,
             offset,
             || Value::known(q_last_value),
+            || "BYTECODE".to_string(),
         )?;
 
         // Advices
@@ -662,22 +668,26 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             ("length", self.length, length),
             ("push_data_size", self.push_data_size, push_data_size),
         ] {
-            region.assign_advice(
+            assign_advice(
+                region,
                 || format!("assign {} {}", name, offset),
                 column,
                 offset,
                 || Value::known(value),
+                || "BYTECODE".to_string(),
             )?;
         }
         for (name, column, value) in [
             ("code_hash", self.bytecode_table.code_hash, code_hash),
             ("value_rlc", self.value_rlc, value_rlc),
         ] {
-            region.assign_advice(
+            assign_advice(
+                region,
                 || format!("assign {} {}", name, offset),
                 column,
                 offset,
                 || value,
+                || "BYTECODE".to_string(),
             )?;
         }
 
@@ -688,17 +698,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         )?;
 
         Ok(())
-    }
-
-    fn annotate_circuit(&self, region: &mut Region<'_, F>) {
-        region.name_column(|| "BYTECODE_q_enable", self.q_enable);
-        region.name_column(|| "BYTECODE_q_first", self.q_first);
-        region.name_column(|| "BYTECODE_q_last", self.q_last);
-        region.name_column(|| "BYTECODE_length", self.length);
-        region.name_column(|| "BYTECODE_push_data_left", self.push_data_left);
-        region.name_column(|| "BYTECODE_push_data_size", self.push_data_size);
-        region.name_column(|| "BYTECODE_value_rlc", self.value_rlc);
-        region.name_column(|| "BYTECODE_push_data_left_inv", self.push_data_left_inv);
     }
 
     /// load fixed tables
@@ -716,11 +715,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         ("byte", self.push_table[0], byte as u64),
                         ("push_size", self.push_table[1], push_size),
                     ] {
-                        region.assign_fixed(
+                        assign_fixed(
+                            &mut region,
                             || format!("Push table assign {} {}", name, byte),
                             *column,
                             byte,
                             || Value::known(F::from(*value)),
+                            || "BYTECODE".to_string(),
                         )?;
                     }
                 }

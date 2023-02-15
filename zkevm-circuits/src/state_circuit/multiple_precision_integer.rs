@@ -2,6 +2,7 @@ use super::lookups;
 use super::{N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_RW_COUNTER};
 use crate::util::Expr;
 use eth_types::{Address, Field};
+use gadgets::util::assign_advice;
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -67,12 +68,13 @@ impl Config<Address, N_LIMBS_ACCOUNT_ADDRESS> {
         value: Address,
     ) -> Result<(), Error> {
         for (i, &limb) in value.to_limbs().iter().enumerate() {
-            region.name_column(|| format!("STATE_MPI_limb[{}]_address", i), self.limbs[i]);
-            region.assign_advice(
-                || format!("limb[{}] in address mpi", i),
+            assign_advice(
+                region,
+                || format!("limb[{}]_address", i),
                 self.limbs[i],
                 offset,
                 || Value::known(F::from(limb as u64)),
+                || "STATE_MPI".to_string(),
             )?;
         }
         Ok(())
@@ -87,12 +89,13 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
         value: u32,
     ) -> Result<(), Error> {
         for (i, &limb) in value.to_limbs().iter().enumerate() {
-            region.name_column(|| format!("STATE_MPI_limb[{}]_u32", i), self.limbs[i]);
-            region.assign_advice(
-                || format!("limb[{}] in u32 mpi", i),
+            assign_advice(
+                region,
+                || format!("limb[{}]_u32", i),
                 self.limbs[i],
                 offset,
                 || Value::known(F::from(limb as u64)),
+                || "STATE_MPI".to_string(),
             )?;
         }
         Ok(())

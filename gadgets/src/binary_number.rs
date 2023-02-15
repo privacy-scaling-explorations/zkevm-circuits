@@ -2,7 +2,7 @@
 //! in binary bits, which can be compared against a value or expression for
 //! equality.
 
-use crate::util::{and, not, Expr};
+use crate::util::{and, assign_advice, not, Expr};
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Region, Value},
@@ -176,12 +176,13 @@ where
         value: &T,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
-            region.name_column(|| format!("GADGETS_binary_number_{:?}", column), column);
-            region.assign_advice(
+            assign_advice(
+                region,
                 || format!("binary number {:?}", column),
                 column,
                 offset,
                 || Value::known(F::from(bit)),
+                || "GADGETS".to_string(),
             )?;
         }
         Ok(())
