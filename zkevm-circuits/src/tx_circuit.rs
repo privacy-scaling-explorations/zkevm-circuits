@@ -1758,9 +1758,13 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
         config
             .keccak_table
             .dev_load(&mut layouter, &self.keccak_inputs()?, &challenges)?;
-        config
-            .tx_table
-            .load(&mut layouter, &self.txs, self.max_txs, &challenges)?;
+        config.tx_table.load(
+            &mut layouter,
+            &self.txs,
+            self.max_txs,
+            self.chain_id,
+            &challenges,
+        )?;
         config.rlp_table.dev_load(
             &mut layouter,
             self.txs
