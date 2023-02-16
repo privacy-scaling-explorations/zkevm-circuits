@@ -137,12 +137,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         bytecode_table.annotate_columns(meta);
         copy_table.annotate_columns(meta);
 
-        // annotate circuit specific columns
-        meta.annotate_lookup_any_column(is_last, || "is_last");
-        meta.annotate_lookup_any_column(value, || "value");
-        meta.annotate_lookup_any_column(is_code, || "is_code");
-        meta.annotate_lookup_any_column(is_pad, || "is_pad");
-
         let addr_lt_addr_end = LtChip::configure(
             meta,
             |meta| meta.query_selector(q_step),
@@ -536,6 +530,11 @@ impl<F: Field> CopyCircuitConfig<F> {
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
+                region.name_column(|| "is_last", self.is_last);
+                region.name_column(|| "value", self.value);
+                region.name_column(|| "is_code", self.is_code);
+                region.name_column(|| "is_pad", self.is_pad);
+
                 let mut offset = 0;
                 for copy_event in copy_events.iter() {
                     self.assign_copy_event(
