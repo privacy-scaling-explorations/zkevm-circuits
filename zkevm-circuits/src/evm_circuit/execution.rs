@@ -981,6 +981,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        region.name_column(|| "EVM_q_step", self.q_step);
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);
