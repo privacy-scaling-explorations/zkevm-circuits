@@ -2482,7 +2482,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0129#631d71fd4dbe070fee34416efbfd12241d78c62f"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0216#051b5efc54512d1422eba35338364473fe3a65c0"
 dependencies = [
  "halo2_proofs",
  "hex",
@@ -4067,7 +4067,7 @@ dependencies = [
 [[package]]
 name = "poseidon-circuit"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0201#ceda6061aa5e5d09ca5dfd5d90c581eb54077fc0"
+source = "git+https://github.com/scroll-tech/poseidon-circuit.git?branch=scroll-dev-0215#1eea94a77a2252f2e8ca4eb5b98b66934b32623e"
 dependencies = [
  "bitvec 1.0.1",
  "halo2_proofs",
@@ -6792,8 +6792,8 @@ dependencies = [
 
 [[package]]
 name = "zktrie"
-version = "0.1.1"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=dev-1102#0ba3e060f7447c57175e2a70b1366053b5199a8a"
+version = "0.1.2"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0215#0bd8820fea4fea1ad10371ae9cae49622bd5413b"
 dependencies = [
  "gobuild",
 ]
