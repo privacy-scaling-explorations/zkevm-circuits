@@ -111,7 +111,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let insufficient_gas_sentry = LtGadget::construct(
             cb,
             cb.curr.state.gas_left.expr(),
-            GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap().expr(),
+            (GasCost::SSTORE_SENTRY.0 + 1).expr(),
         );
         cb.require_equal(
             "Gas left is less than gas cost or gas sentry (only for SSTORE)",
