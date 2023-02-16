@@ -126,7 +126,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         st.id,
         TraceConfig {
             chain_id: U256::one(),
-            history_hashes: Vec::new(),
+            history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,
                 timestamp: U256::from(st.env.current_timestamp),
