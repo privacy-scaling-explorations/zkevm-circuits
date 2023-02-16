@@ -279,6 +279,8 @@ impl<F: Field> SubCircuitConfig<F> for ExpCircuitConfig<F> {
             ]))
         });
 
+        exp_table.annotate_columns(meta);
+
         Self {
             q_usable,
             exp_table,
@@ -308,6 +310,10 @@ impl<F: Field> ExpCircuitConfig<F> {
         layouter.assign_region(
             || "exponentiation circuit",
             |mut region| {
+                mul_chip.annotate_columns_in_region(&mut region, "EXP_mul");
+                parity_check_chip.annotate_columns_in_region(&mut region, "EXP_parity_check");
+                self.exp_table.annotate_columns_in_region(&mut region);
+
                 let mut offset = 0;
                 for exp_event in exp_events.iter() {
                     self.assign_exp_event(

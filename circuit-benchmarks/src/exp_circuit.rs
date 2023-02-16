@@ -33,6 +33,9 @@ mod tests {
     fn bench_exp_circuit_prover() {
         env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Exp Circuit";
+
         // Initialize the circuit
 
         let base = Word::from(132);
@@ -63,7 +66,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("Exp Circuit Proof generation with degree = {}", DEGREE);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -85,7 +88,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "Exp Circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} Proof verification", BENCHMARK_ID));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
