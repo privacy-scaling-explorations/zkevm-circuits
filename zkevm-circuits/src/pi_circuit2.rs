@@ -479,18 +479,12 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let calldata_gas_cost = meta.advice_column();
         let is_final = meta.advice_column();
 
-        let raw_public_inputs = meta.advice_column();
-        let rand_rpi = meta.advice_column();
-        let q_not_end = meta.selector();
-        let q_end = meta.selector();
-
         let pi = meta.instance_column();
 
-        let tx_table_rlc_acc = meta.advice_column();
-
-        meta.enable_equality(raw_public_inputs);
         meta.enable_equality(block_rlc_acc);
-        meta.enable_equality(rand_rpi);
+        meta.enable_equality(block_keccak);
+        meta.enable_equality(txs_rlc_acc);
+        meta.enable_equality(txs_keccak);
         meta.enable_equality(pi);
 
         // block
@@ -531,62 +525,48 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         // 0.2 Block table -> value column match with raw_public_inputs at expected
         // offset
-        meta.create_gate("block_table[i] = raw_public_inputs[offset + i]", |meta| {
+        meta.create_gate("block_table[i] = block[i]", |meta| {
             let q_block_table = meta.query_selector(q_block_table);
             let block_value = meta.query_advice(block_table.value, Rotation::cur());
-            let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
+            let rpi_block_value = meta.query_advice(block, Rotation::cur());
             vec![q_block_table * (block_value - rpi_block_value)]
         });
 
-        let offset = BLOCK_LEN + 1 + EXTRA_LEN;
         let tx_table_len = max_txs * TX_LEN + 1;
 
         //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
         // at expected offset
-        meta.create_gate(
-            "tx_table.tx_id[i] == raw_public_inputs[offset + i]",
-            |meta| {
-                // row.q_tx_table * row.tx_table.tx_id
-                // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
-                let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
-                let rpi_tx_id = meta.query_advice(raw_public_inputs, Rotation(offset as i32));
+        meta.create_gate("tx_table.tx_id[i] == txs[i]", |meta| {
+            // row.q_tx_table * row.tx_table.tx_id
+            // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
+            let q_tx_table = meta.query_selector(q_tx_table);
+            let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
+            let rpi_tx_id = meta.query_advice(txs, Rotation::cur());
 
-                vec![q_tx_table * (tx_id - rpi_tx_id)]
-            },
-        );
+            vec![q_tx_table * (tx_id - rpi_tx_id)]
+        });
 
-        meta.create_gate(
-            "tx_table.index[i] == raw_public_inputs[offset + tx_table_len + i]",
-            |meta| {
-                // row.q_tx_table * row.tx_table.tx_index
-                // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
-                let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_index = meta.query_advice(tx_table.index, Rotation::cur());
-                let rpi_tx_index =
-                    meta.query_advice(raw_public_inputs, Rotation((offset + tx_table_len) as i32));
+        meta.create_gate("tx_table.index[i] == txs[tx_table_len + i]", |meta| {
+            // row.q_tx_table * row.tx_table.tx_index
+            // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
+            let q_tx_table = meta.query_selector(q_tx_table);
+            let tx_index = meta.query_advice(tx_table.index, Rotation::cur());
+            let rpi_tx_index = meta.query_advice(txs, Rotation(tx_table_len as i32));
 
-                vec![q_tx_table * (tx_index - rpi_tx_index)]
-            },
-        );
+            vec![q_tx_table * (tx_index - rpi_tx_index)]
+        });
 
-        meta.create_gate(
-            "tx_table.tx_value[i] == raw_public_inputs[offset + 2* tx_table_len + i]",
-            |meta| {
-                // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
-                // == (row.q_tx_calldata | row.q_tx_table) *
-                // row_offset_tx_table_tx_value.raw_public_inputs
-                let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_value = meta.query_advice(tx_value, Rotation::cur());
-                let q_tx_calldata = meta.query_selector(q_tx_calldata);
-                let rpi_tx_value = meta.query_advice(
-                    raw_public_inputs,
-                    Rotation((offset + 2 * tx_table_len) as i32),
-                );
+        meta.create_gate("tx_table.tx_value[i] == txs[2* tx_table_len + i]", |meta| {
+            // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
+            // == (row.q_tx_calldata | row.q_tx_table) *
+            // row_offset_tx_table_tx_value.raw_public_inputs
+            let q_tx_table = meta.query_selector(q_tx_table);
+            let tx_value = meta.query_advice(tx_value, Rotation::cur());
+            let q_tx_calldata = meta.query_selector(q_tx_calldata);
+            let rpi_tx_value = meta.query_advice(txs, Rotation((2 * tx_table_len) as i32));
 
-                vec![or::expr([q_tx_table, q_tx_calldata]) * (tx_value - rpi_tx_value)]
-            },
-        );
+            vec![or::expr([q_tx_table, q_tx_calldata]) * (tx_value - rpi_tx_value)]
+        });
 
         let tx_id_is_zero_config = IsZeroChip::configure(
             meta,
