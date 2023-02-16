@@ -11,7 +11,6 @@ use eth_types::{
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
 use keccak256::plain::Keccak;
-use mock::MOCK_CHAIN_ID;
 
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
@@ -22,10 +21,13 @@ use crate::witness;
 use gadgets::is_zero::IsZeroChip;
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
+    circuit::{AssignedCell, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Fixed by the spec
 const BLOCK_LEN: usize = 7 + 256;
@@ -90,7 +92,7 @@ pub struct PublicData {
 impl Default for PublicData {
     fn default() -> Self {
         PublicData {
-            chain_id: *MOCK_CHAIN_ID,
+            chain_id: Word::default(),
             history_hashes: vec![],
             transactions: vec![],
             state_root: H256::zero(),
@@ -1447,13 +1449,23 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 // that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
 // during the configuration.
 /// Test Circuit for PiCircuit
-#[cfg(any(feature = "test", test))]
-#[derive(Default)]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[derive(Default, Clone)]
 pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
     pub PiCircuit<F>,
 );
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    /// Compute the public inputs for this circuit.
+    pub fn instance(&self) -> Vec<Vec<F>> {
+        self.0.instance()
+    }
+}
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
@@ -1626,7 +1638,7 @@ mod pi_circuit_test {
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
-    use mock::CORRECT_MOCK_TXS;
+    use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1638,6 +1650,8 @@ mod pi_circuit_test {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = F::random(&mut rng);
         let rand_rpi = F::random(&mut rng);
+        let mut public_data = public_data;
+        public_data.chain_id = *MOCK_CHAIN_ID;
 
         let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
             MAX_TXS,

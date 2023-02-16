@@ -9,8 +9,8 @@ use gadgets::{
     util::{and, not, Expr},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Circuit, ConstraintSystem, Error, Selector},
+    circuit::{Layouter, Region, Value},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -20,6 +20,9 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// The number of rows assigned for each step in an exponentiation trace.
 pub const OFFSET_INCREMENT: usize = 7usize;
@@ -526,7 +529,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for ExpCircuit<F> {
     type Config = (ExpCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
