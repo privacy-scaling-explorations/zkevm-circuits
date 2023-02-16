@@ -7,7 +7,7 @@ use crate::evm_circuit::util::common_gadget::{
 };
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, Same};
 use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
-use crate::evm_circuit::util::math_gadget::{IsZeroGadget, LtGadget};
+use crate::evm_circuit::util::math_gadget::{LtGadget, PairSelectGadget};
 use crate::evm_circuit::util::{and, or, select, CachedRegion, Cell};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
 use crate::table::CallContextFieldTag;
@@ -31,7 +31,7 @@ pub(crate) struct ErrorOOGSloadSstoreGadget<F> {
     phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
     rw_counter_end_of_reversion: Cell<F>,
-    is_sstore: IsZeroGadget<F>,
+    is_sstore: PairSelectGadget<F>,
     sstore_gas_cost: SstoreGasGadget<F>,
     insufficient_gas_cost: LtGadget<F, N_BYTES_GAS>,
     // Constrain for SSTORE reentrancy sentry.
@@ -48,20 +48,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let opcode_select = PairSelectGadget::construct(
+        let is_sstore = PairSelectGadget::construct(
             cb,
             opcode.expr(),
             OpcodeId::SSTORE.expr(),
             OpcodeId::SLOAD.expr(),
         );
-        let (is_sstore, _) = opcode_select.expr();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
         // Constrain `is_static` must be false for SSTORE.
-        cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr());
+        cb.require_zero("is_static == false", is_static.expr() * is_sstore.expr().0);
 
         let phase2_key = cb.query_cell_phase2();
         let phase2_value = cb.query_cell_phase2();
@@ -78,7 +77,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         );
 
         let sload_gas_cost = SloadGasGadget::construct(cb, is_warm.expr());
-        let sstore_gas_cost = cb.condition(is_sstore.expr(), |cb| {
+        let sstore_gas_cost = cb.condition(is_sstore.expr().0, |cb| {
             cb.stack_pop(phase2_value.expr());
 
             cb.account_storage_read(
@@ -102,7 +101,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             cb,
             cb.curr.state.gas_left.expr(),
             select::expr(
-                is_sstore.expr(),
+                is_sstore.expr().0,
                 sstore_gas_cost.expr(),
                 sload_gas_cost.expr(),
             ),
@@ -117,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             "Gas left is less than gas cost or gas sentry (only for SSTORE)",
             or::expr([
                 insufficient_gas_cost.expr(),
-                and::expr([is_sstore.expr(), insufficient_gas_sentry.expr()]),
+                and::expr([is_sstore.expr().0, insufficient_gas_sentry.expr()]),
             ]),
             1.expr(),
         );
@@ -149,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
                 // Additional one stack pop and one account storage read for SSTORE.
                 rw_counter: Delta(
                     7.expr()
-                        + 2.expr() * is_sstore.expr()
+                        + 2.expr() * is_sstore.expr().0
                         + cb.curr.state.reversible_write_counter.expr(),
                 ),
                 ..StepStateTransition::any()
@@ -265,7 +264,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.is_sstore.assign(
             region,
             offset,
-            F::from(opcode.as_u64()) - F::from(OpcodeId::SSTORE.as_u64()),
+            F::from(opcode.as_u64()),
+            F::from(OpcodeId::SSTORE.as_u64()),
+            F::from(OpcodeId::SLOAD.as_u64()),
         )?;
         self.sstore_gas_cost
             .assign(region, offset, value, value_prev, original_value, is_warm)?;
