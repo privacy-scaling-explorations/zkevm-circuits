@@ -132,7 +132,6 @@ pub mod select {
     }
 }
 
-
 /// Trait that implements functionality to get a scalar from
 /// commonly used types.
 pub trait Scalar<F: FieldExt> {

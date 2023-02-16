@@ -17,7 +17,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use gadgets::util::{and, not};
+use gadgets::util::{and, not, Scalar};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression, VirtualCells},
@@ -630,8 +630,10 @@ pub(crate) struct KeyData<F> {
     pub(crate) is_odd: Cell<F>,
     pub(crate) is_placeholder_leaf_s: Cell<F>,
     pub(crate) is_placeholder_leaf_c: Cell<F>,
-    pub(crate) rlc_last: Cell<F>,
-    pub(crate) mult_last: Cell<F>,
+    pub(crate) placeholder_nibble: Cell<F>,
+    pub(crate) placeholder_is_odd: Cell<F>,
+    pub(crate) parent_rlc: Cell<F>,
+    pub(crate) parent_mult: Cell<F>,
 }
 
 impl<F: Field> Trackable for KeyData<F> {
@@ -656,8 +658,10 @@ impl<F: Field> KeyData<F> {
             is_odd: cb.query_cell(),
             is_placeholder_leaf_s: cb.query_cell(),
             is_placeholder_leaf_c: cb.query_cell(),
-            rlc_last: cb.query_cell(),
-            mult_last: cb.query_cell(),
+            placeholder_nibble: cb.query_cell(),
+            placeholder_is_odd: cb.query_cell(),
+            parent_rlc: cb.query_cell(),
+            parent_mult: cb.query_cell(),
         };
         circuit!([meta, cb], {
             memory.load(
@@ -671,6 +675,10 @@ impl<F: Field> KeyData<F> {
                     key_data.is_odd.expr(),
                     key_data.is_placeholder_leaf_s.expr(),
                     key_data.is_placeholder_leaf_c.expr(),
+                    key_data.placeholder_nibble.expr(),
+                    key_data.placeholder_is_odd.expr(),
+                    key_data.parent_rlc.expr(),
+                    key_data.parent_mult.expr(),
                 ],
             );
         });
@@ -680,7 +688,7 @@ impl<F: Field> KeyData<F> {
     pub(crate) fn store(
         cb: &mut ConstraintBuilder<F>,
         memory: &MemoryBank<F>,
-        values: [Expression<F>; 6],
+        values: [Expression<F>; 10],
     ) {
         memory.store(cb, &values);
     }
@@ -689,7 +697,7 @@ impl<F: Field> KeyData<F> {
         memory.store_with_key(cb, 0.expr(), &Self::default_values());
     }
 
-    pub(crate) fn default_values() -> [Expression<F>; 6] {
+    pub(crate) fn default_values() -> [Expression<F>; 10] {
         [
             0.expr(),
             1.expr(),
@@ -697,6 +705,10 @@ impl<F: Field> KeyData<F> {
             false.expr(),
             false.expr(),
             false.expr(),
+            0.expr(),
+            false.expr(),
+            0.expr(),
+            1.expr(),
         ]
     }
 
@@ -710,6 +722,10 @@ impl<F: Field> KeyData<F> {
         num_nibbles: usize,
         is_placeholder_leaf_s: bool,
         is_placeholder_leaf_c: bool,
+        placeholder_nibble: u8,
+        placeholder_is_odd: bool,
+        parent_rlc: F,
+        parent_mult: F,
     ) -> Result<(), Error> {
         //println!("offset: {}", offset);
         //println!("key_rlc_prev: {:?}", pv.key_rlc_prev);
@@ -719,10 +735,14 @@ impl<F: Field> KeyData<F> {
         let values = [
             rlc,
             mult,
-            F::from(num_nibbles as u64),
-            F::from(num_nibbles % 2 == 1),
-            F::from(is_placeholder_leaf_s),
-            F::from(is_placeholder_leaf_c),
+            num_nibbles.scalar(),
+            (num_nibbles % 2 == 1).scalar(),
+            is_placeholder_leaf_s.scalar(),
+            is_placeholder_leaf_c.scalar(),
+            placeholder_nibble.scalar(),
+            placeholder_is_odd.scalar(),
+            parent_rlc,
+            parent_mult,
         ];
         memory.witness_store(offset, &values);
 
@@ -735,7 +755,7 @@ impl<F: Field> KeyData<F> {
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<F>, Error> {
         let values = memory.witness_load(load_offset);
 
         //println!("offset: {}, values: {:?}", offset, values);
@@ -751,8 +771,12 @@ impl<F: Field> KeyData<F> {
             .assign(region, offset, values[4])?;
         self.is_placeholder_leaf_c
             .assign(region, offset, values[5])?;
+        self.placeholder_nibble.assign(region, offset, values[6])?;
+        self.placeholder_is_odd.assign(region, offset, values[7])?;
+        self.parent_rlc.assign(region, offset, values[8])?;
+        self.parent_mult.assign(region, offset, values[9])?;
 
-        Ok(())
+        Ok(values)
     }
 }
 
@@ -760,6 +784,8 @@ impl<F: Field> KeyData<F> {
 pub(crate) struct ParentData<F> {
     pub(crate) rlc: Cell<F>,
     pub(crate) is_root: Cell<F>,
+    pub(crate) is_placeholder: Cell<F>,
+    pub(crate) placeholder_rlc: Cell<F>,
 }
 
 impl<F: Field> ParentData<F> {
@@ -772,13 +798,20 @@ impl<F: Field> ParentData<F> {
         let parent_data = ParentData {
             rlc: cb.query_cell(),
             is_root: cb.query_cell(),
+            is_placeholder: cb.query_cell(),
+            placeholder_rlc: cb.query_cell(),
         };
         circuit!([meta, cb], {
             memory.load(
                 description,
                 cb,
                 offset,
-                &[parent_data.rlc.expr(), parent_data.is_root.expr()],
+                &[
+                    parent_data.rlc.expr(),
+                    parent_data.is_root.expr(),
+                    parent_data.is_placeholder.expr(),
+                    parent_data.placeholder_rlc.expr(),
+                ],
             );
         });
         parent_data
@@ -787,7 +820,7 @@ impl<F: Field> ParentData<F> {
     pub(crate) fn store(
         cb: &mut ConstraintBuilder<F>,
         memory: &MemoryBank<F>,
-        values: [Expression<F>; 2],
+        values: [Expression<F>; 4],
     ) {
         memory.store(cb, &values);
     }
@@ -799,12 +832,19 @@ impl<F: Field> ParentData<F> {
         memory: &mut MemoryBank<F>,
         rlc: F,
         force_hashed: bool,
+        is_placeholder: bool,
+        placeholder_rlc: F,
     ) -> Result<(), Error> {
         //println!("offset: {}", offset);
         //println!("rlc: {:?}", rlc);
         //println!("is_hashed: {}", is_hashed);
 
-        let values = [rlc, F::from(force_hashed)];
+        let values = [
+            rlc,
+            force_hashed.scalar(),
+            is_placeholder.scalar(),
+            placeholder_rlc,
+        ];
         memory.witness_store(offset, &values);
 
         Ok(())
@@ -821,6 +861,8 @@ impl<F: Field> ParentData<F> {
 
         self.rlc.assign(region, offset, values[0])?;
         self.is_root.assign(region, offset, values[1])?;
+        self.is_placeholder.assign(region, offset, values[2])?;
+        self.placeholder_rlc.assign(region, offset, values[3])?;
 
         Ok(values)
     }
@@ -1308,6 +1350,22 @@ impl<F: Field> BranchNodeInfo<F> {
             a!(self.ctx.branch.drifted_index, self.rot_branch_init + 1) * drifted_mult
         })
     }
+}
+
+/// Add the nibble from the drifted branch
+pub(crate) fn drifted_nibble_rlc<F: Field>(
+    cb: &mut ConstraintBuilder<F>,
+    difted_index: Expression<F>,
+    key_mult_prev: Expression<F>,
+    is_key_odd: Expression<F>,
+) -> Expression<F> {
+    circuit!([meta, cb], {
+        // Add the nibble from the branch (drifted_index is set to the same value for
+        // all children)
+        let drifted_mult =
+            key_mult_prev.expr() * ifx! {is_key_odd => { 16.expr() } elsex { 1.expr() }};
+        difted_index * drifted_mult
+    })
 }
 
 #[derive(Clone)]

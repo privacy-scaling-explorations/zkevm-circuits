@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use super::constraint_builder::ConstraintBuilder;
+use super::constraint_builder::{merge_lookups, ConstraintBuilder};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F> {
@@ -212,8 +212,7 @@ impl<F: Field> MemoryBank<F> {
     pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
         let lookup_table = cb.get_lookup_table(self.tag());
         crate::circuit!([meta, cb], {
-            // TODO(Brecht): fix
-            //require!(self.next => self.cur.expr() + lookup_table.0);
+            require!(self.tag(), self.next => self.cur.expr() + lookup_table.0);
         });
     }
 
@@ -229,7 +228,9 @@ impl<F: Field> MemoryBank<F> {
                 let mut store_offsets = self.store_offsets.clone();
                 store_offsets.push(height);
 
-                //println!("offsets: {:?}", self.store_offsets);
+                /*if self.tag().starts_with("parent") {
+                    println!("offsets: {:?}", self.store_offsets);
+                }*/
 
                 //println!("height: {}", height);
                 let mut store_index = 0;
@@ -242,7 +243,9 @@ impl<F: Field> MemoryBank<F> {
                             offset,
                             || Value::known(F::from(store_index as u64)),
                         )?;
-                        //println!("[{}] {}: {}", self.tag(), offset, store_index);
+                        /*if self.tag().starts_with("parent") {
+                            println!("[{}] {}: {}", self.tag(), offset, store_index);
+                        }*/
                         offset += 1;
                     }
                     store_index += 1;

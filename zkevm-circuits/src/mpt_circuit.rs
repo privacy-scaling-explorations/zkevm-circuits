@@ -1,6 +1,6 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
-use gadgets::impl_expr;
+use gadgets::{impl_expr, util::Scalar};
 use halo2_proofs::{
     circuit::{Layouter, Region, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -230,13 +230,15 @@ pub(crate) struct ProofValues<F> {
     pub(crate) acc_mult_nonce_balance_c: F,
     pub(crate) acc_c: F, /* RLC accumulator for the whole node (taking into account all RLP
                           * bytes of the node) */
-    pub(crate) acc_mult_c: F,         // multiplier for acc_c
-    pub(crate) key_rlc: F,            /* used first for account address, then for storage key */
-    pub(crate) key_rlc_mult: F,       // multiplier for key_rlc
-    pub(crate) extension_node_rlc: F, // RLC accumulator for extension node
-    pub(crate) key_rlc_prev: F,       /* for leaf after placeholder extension/branch, we need to
-                                       * go one level back
-                                       * to get previous key_rlc */
+    pub(crate) acc_mult_c: F,          // multiplier for acc_c
+    pub(crate) key_rlc: F,             /* used first for account address, then for storage key */
+    pub(crate) key_rlc_mult: F,        // multiplier for key_rlc
+    pub(crate) extension_node_rlc: F,  // RLC accumulator for extension node
+    pub(crate) extension_node_mult: F, // RLC multiplier for extension node
+    pub(crate) key_rlc_prev: F,        /* for leaf after placeholder extension/branch, we need
+                                        * to go one level
+                                        * back
+                                        * to get previous key_rlc */
     pub(crate) key_rlc_mult_prev: F,
     pub(crate) nibbles_num_prev: usize,
     pub(crate) mult_diff: F, /* power of randomness r: multiplier_curr = multiplier_prev *
@@ -297,6 +299,7 @@ impl<F: Field> ProofValues<F> {
             mult_diff: F::one(),
             key_rlc_sel: true,
             before_account_leaf: true,
+            extension_node_mult: F::one(),
             ..Default::default()
         }
     }
@@ -436,7 +439,7 @@ impl<F: Field> MPTConfig<F> {
                         a!(branch.is_init) + a!(storage_leaf.is_s_key) + a!(account_leaf.is_key_s) => {
                     for is_s in [true, false] {
                         let root = a!(ctx.inter_root(is_s));
-                        ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [root, true.expr()]);
+                        ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [root.expr(), true.expr(), false.expr(), root.expr()]);
                     }
                 }}
 
@@ -520,7 +523,8 @@ impl<F: Field> MPTConfig<F> {
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 /* Memory banks */
-                ifx!{f!(position_cols.q_enable) => {
+                //TODO(Brecht): change back to q_enable
+                ifx!{f!(position_cols.q_not_first) => {
                     ctx.memory.generate_constraints(&mut cb.base);
                 }}
 
@@ -797,6 +801,10 @@ impl<F: Field> MPTConfig<F> {
                             F::zero(),
                             F::zero(),
                             F::zero(),
+                            F::zero(),
+                            F::zero(),
+                            F::zero(),
+                            F::one(),
                         ]);
                     }
 
@@ -805,6 +813,7 @@ impl<F: Field> MPTConfig<F> {
                         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
                         .enumerate()
                     {
+                        //println!("offset: {}", offset);
                         let mut new_proof = offset == 0;
                         if offset > 0 {
                             let row_prev = &witness[offset - 1];
@@ -816,16 +825,28 @@ impl<F: Field> MPTConfig<F> {
                             }
                         }
 
+                        //println!("not_first_level: {}", row.not_first_level());
                         if new_proof {
                             pv.memory[parent_memory(true)].witness_store(
                                 offset,
-                                &[row.s_root_bytes_rlc(self.randomness), F::from(true)],
+                                &[
+                                    row.s_root_bytes_rlc(self.randomness),
+                                    true.scalar(),
+                                    false.scalar(),
+                                    row.s_root_bytes_rlc(self.randomness),
+                                ],
                             );
                             pv.memory[parent_memory(false)].witness_store(
                                 offset,
-                                &[row.c_root_bytes_rlc(self.randomness), F::from(true)],
+                                &[
+                                    row.c_root_bytes_rlc(self.randomness),
+                                    true.scalar(),
+                                    false.scalar(),
+                                    row.c_root_bytes_rlc(self.randomness),
+                                ],
                             );
-                            //println!("{} -> {:?}", offset, row.get_type());
+                            //println!("set root: {} -> {:?}", offset,
+                            // row.get_type());
                         }
                         //println!("{} -> {:?}", offset, row.get_type());
 
@@ -911,6 +932,20 @@ impl<F: Field> MPTConfig<F> {
                             account_leaf.is_non_existing_account_row = true;
                         }
 
+                        /*if row.not_first_level() == 0 && (row.get_type() == MptWitnessRowType::InitBranch ||
+                             row.get_type() == MptWitnessRowType::StorageLeafSKey ||
+                             row.get_type() == MptWitnessRowType::AccountLeafKeyC) {
+                            pv.memory[parent_memory(true)].witness_store(
+                                offset,
+                                &[row.s_root_bytes_rlc(self.randomness), true.scalar(), false.scalar()],
+                            );
+                            pv.memory[parent_memory(false)].witness_store(
+                                offset,
+                                &[row.c_root_bytes_rlc(self.randomness), true.scalar(), false.scalar()],
+                            );
+                            println!("set new parent: {}", offset);
+                        }*/
+
                         if !(row.get_type() == MptWitnessRowType::InitBranch
                             || row.get_type() == MptWitnessRowType::BranchChild)
                         {
@@ -925,10 +960,12 @@ impl<F: Field> MPTConfig<F> {
                         }
 
                         if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
+                            println!("{}: branch", offset);
                             self.branch_config
                                 .assign(&mut region, witness, self, &mut pv, offset)
                                 .ok();
                         } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                            println!("{}: storage", offset);
                             self.storage_config.assign(
                                 &mut region,
                                 self,
@@ -937,6 +974,7 @@ impl<F: Field> MPTConfig<F> {
                                 offset,
                             )?;
                         } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
+                            println!("{}: account", offset);
                             self.account_config.assign(
                                 &mut region,
                                 self,

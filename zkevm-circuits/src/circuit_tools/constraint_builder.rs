@@ -944,18 +944,10 @@ macro_rules! matchw {
 #[macro_export]
 macro_rules! assign {
     ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
-        let description = $crate::concat_with_preamble!(
-            stringify!($column),
-            " => ",
-            stringify!($value)
-        );
+        let description =
+            $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value));
         let value: F = $value;
-        $region.assign_advice(
-            || description,
-            $column,
-            $offset,
-            || Value::known(value),
-        )
+        $region.assign_advice(|| description, $column, $offset, || Value::known(value))
     }};
 }
 
@@ -975,20 +967,20 @@ macro_rules! circuit {
         #[allow(unused_macros)]
         macro_rules! f {
             ($column:expr, $rot:expr) => {{
-                $meta.query_fixed($column.clone(), Rotation($cb.get_query_offset() + ($rot as i32)))
+                $meta.query_fixed($column.clone(), Rotation($rot as i32))
             }};
             ($column:expr) => {{
-                $meta.query_fixed($column.clone(), Rotation($cb.get_query_offset()))
+                $meta.query_fixed($column.clone(), Rotation::cur())
             }};
         }
 
         #[allow(unused_macros)]
         macro_rules! a {
             ($column:expr, $rot:expr) => {{
-                $meta.query_advice($column.clone(), Rotation($cb.get_query_offset() + ($rot as i32)))
+                $meta.query_advice($column.clone(), Rotation($rot as i32))
             }};
             ($column:expr) => {{
-                $meta.query_advice($column.clone(), Rotation($cb.get_query_offset()))
+                $meta.query_advice($column.clone(), Rotation::cur())
             }};
         }
 

@@ -163,11 +163,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Calculate and store the leaf data RLC
                 require!(a!(accs.acc_s.rlc, offset) => ctx.rlc(meta, 0..36, offset));
 
-                // Load the last key values, which depends on the branch being a placeholder.
                 let is_branch_placeholder = ifx! {f!(ctx.position_cols.q_not_first), a!(not_first_level) => { branch.is_placeholder() }};
-                let load_offset = ifx! {is_branch_placeholder => { 1.expr() }};
-                let key_data =
-                    KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], load_offset);
+
+                // Load the last key values
+                let key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Calculate the key RLC
                 let key_rlc = key_data.rlc.expr()
@@ -451,7 +450,7 @@ impl<F: Field> AccountLeafConfig<F> {
                         require!((1, account_rlc, account.num_bytes(meta), parent_data.rlc) => @"keccak");
                     }}
                     // Store the new parent
-                    ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [storage_root.expr(), true.expr()]);
+                    ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [storage_root.expr(), true.expr(), false.expr(), storage_root.expr()]);
                     if is_s {
                         ctx_parent_data_s = Some(parent_data);
                     } else {
@@ -639,23 +638,12 @@ impl<F: Field> AccountLeafConfig<F> {
                 pv.acc_mult_account_c = acc_mult;
             }
 
-            let is_branch_placeholder = if is_s {
-                pv.is_branch_s_placeholder
-            } else {
-                pv.is_branch_c_placeholder
-            };
-            let load_offset = if is_branch_placeholder { 1 } else { 0 };
             let key_data = if is_s {
                 &self.key_data_s
             } else {
                 &self.key_data_c
             };
-            key_data.witness_load(
-                region,
-                base_offset,
-                &mut pv.memory[key_memory(is_s)],
-                load_offset,
-            )?;
+            key_data.witness_load(region, base_offset, &mut pv.memory[key_memory(is_s)], 0)?;
             key_data.witness_store(
                 region,
                 base_offset,
@@ -665,6 +653,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 0,
                 false,
                 false,
+                0,
+                false,
+                F::zero(),
+                F::one(),
             )?;
 
             // For leaf S and leaf C we need to start with the same rlc.
@@ -1149,6 +1141,8 @@ impl<F: Field> AccountLeafConfig<F> {
                     &mut pv.memory[parent_memory(is_s)],
                     storage_root,
                     true,
+                    false,
+                    storage_root,
                 )
                 .ok();
 
