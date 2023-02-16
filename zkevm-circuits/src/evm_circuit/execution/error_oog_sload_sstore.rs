@@ -48,16 +48,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let is_sstore = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::SSTORE.expr());
-        cb.require_equal(
-            "ErrorOutOfGasSSTORE opcode must be SLOAD or SSTORE",
+        let opcode_select = PairSelectGadget::construct(
+            cb,
             opcode.expr(),
-            select::expr(
-                is_sstore.expr(),
-                OpcodeId::SSTORE.expr(),
-                OpcodeId::SLOAD.expr(),
-            ),
+            OpcodeId::SSTORE.expr(),
+            OpcodeId::SLOAD.expr(),
         );
+        let (is_sstore, _) = opcode_select.expr();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_static = cb.call_context(None, CallContextFieldTag::IsStatic);
