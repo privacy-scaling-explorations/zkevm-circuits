@@ -686,7 +686,7 @@ impl BlockTable {
         &self,
         layouter: &mut impl Layouter<F>,
         block: &BlockContext,
-        randomness: F,
+        challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "block table",
@@ -703,7 +703,7 @@ impl BlockTable {
                 offset += 1;
 
                 let block_table_columns = self.columns();
-                for row in block.table_assignments(randomness) {
+                for row in block.table_assignments(challenges) {
                     for (column, value) in block_table_columns.iter().zip_eq(row) {
                         region.assign_advice(
                             || format!("block table row {}", offset),

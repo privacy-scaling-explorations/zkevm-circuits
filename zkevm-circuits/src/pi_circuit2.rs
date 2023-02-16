@@ -15,7 +15,10 @@
 
 use std::{char, marker::PhantomData};
 
-use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
+use crate::{
+    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    witness::{Block, BlockContext},
+};
 use bytes::Bytes;
 use eth_types::geth_types::BlockConstants;
 use eth_types::sign_types::SignData;
@@ -29,6 +32,7 @@ use halo2_proofs::{
     circuit,
     plonk::{Expression, Instance},
 };
+use itertools::Itertools;
 use rlp::RlpStream;
 
 use crate::table::TxFieldTag;
@@ -104,6 +108,8 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
+    /// Block context
+    pub block_ctx: BlockContext,
 }
 
 impl PublicData {
@@ -164,6 +170,14 @@ impl PublicData {
         tx_vals
     }
 
+    fn get_block_rlc<F: Field>(&self) -> Value<F> {
+        todo!()
+    }
+
+    fn get_txs_rlc<F: Field>(&self) -> Value<F> {
+        todo!()
+    }
+
     /// Returns struct with the extra values
     pub fn get_extra_values(&self) -> ExtraValues {
         ExtraValues {
@@ -181,7 +195,7 @@ impl PublicData {
         &self,
         txs_hash: H256,
         challenges: &Challenges<Value<F>>,
-    ) -> (Value<F>, usize, Value<F>) {
+    ) -> (Bytes, Value<F>, usize, Value<F>) {
         use crate::evm_circuit::util::rlc;
         let mut stream = RlpStream::new();
         stream.begin_unbounded_list();
@@ -199,31 +213,31 @@ impl PublicData {
             .append(&txs_hash);
         stream.finalize_unbounded_list();
 
-        let rlp = stream.out().iter();
+        let rlp: Bytes = stream.out().into();
         let r = challenges.evm_word();
-        let rlp_rlc = r.map(|v| rlc::value(rlp, v));
+        let rlp_rlc = r.map(|v| rlc::value(rlp.iter(), v));
         let len = rlp.len();
         let hash = keccak256(rlp);
         let hash_rlc = r.map(|v| rlc::value(hash.iter(), v));
-        (rlp_rlc, len, hash_rlc)
+        (rlp, rlp_rlc, len, hash_rlc)
     }
 
     fn get_txs_rlp_and_hash<F: Field>(
         &self,
         challenges: &Challenges<Value<F>>,
-    ) -> (Value<F>, usize, H256, Value<F>) {
+    ) -> (Bytes, Value<F>, usize, H256, Value<F>) {
         use crate::evm_circuit::util::rlc;
         let mut stream = RlpStream::new_list(self.transactions.len());
         for tx in self.transactions {
             stream.append_raw(&tx.rlp(), 1);
         }
-        let rlp = stream.out().iter();
+        let rlp: Bytes = stream.out().into();
         let r = challenges.evm_word();
-        let rlp_rlc = r.map(|v| rlc::value(rlp, v));
+        let rlp_rlc = r.map(|v| rlc::value(rlp.iter(), v));
         let len = rlp.len();
         let hash = keccak256(rlp);
         let hash_rlc = r.map(|v| rlc::value(hash.iter(), v));
-        (rlp_rlc, len, hash.into(), hash_rlc)
+        (rlp, rlp_rlc, len, hash.into(), hash_rlc)
     }
 }
 
@@ -1039,15 +1053,12 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(())
     }
 
-    /// Assigns the values for block table in the block_table column
-    /// and in the raw_public_inputs column. A copy is also stored in
-    /// a vector for computing RLC(raw_public_inputs)
-    fn assign_block_table(
+    fn assign_block(
         &self,
         region: &mut Region<'_, F>,
         public_data: &PublicData,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
         let block_values = public_data.get_block_table_values();
         let extra_values = public_data.get_extra_values();
         let r = challenges.evm_word();
@@ -1106,11 +1117,11 @@ impl<F: Field> PiCircuitConfig<F> {
 
         // last row
         let last = BLOCK_LEN + 1 + EXTRA_LEN;
-        let (_, _, hash, _) = public_data.get_txs_rlp_and_hash(challenges);
-        let (rlp_rlc, len, hash_rlc) = public_data.get_block_rlp_and_hash(hash, challenges);
+        let (_, _, _, hash, _) = public_data.get_txs_rlp_and_hash(challenges);
+        let (_, rlp_rlc, len, hash_rlc) = public_data.get_block_rlp_and_hash(hash, challenges);
         self.q_block_table.enable(region, last)?;
         region.assign_advice(|| "txs_hash", self.block_table.value, last, || hash_rlc)?;
-        region.assign_advice(|| "txs_hash", self.block, last, || hash_rlc)?;
+        let txs_hash_cell = region.assign_advice(|| "txs_hash", self.block, last, || hash_rlc)?;
         rlc_acc = rlc_acc * r + hash_rlc;
         region.assign_advice(|| "txs_hash", self.block_rlc_acc, last, || rlc_acc)?;
 
@@ -1121,14 +1132,18 @@ impl<F: Field> PiCircuitConfig<F> {
             last,
             || Value::known(F::from(len as u64)),
         )?;
-        Ok(region.assign_advice(|| "txs_hash", self.block_keccak, last, || hash_rlc)?)
+        let hash_cell =
+            region.assign_advice(|| "txs_hash", self.block_keccak, last, || hash_rlc)?;
+        Ok((hash_cell, txs_hash_cell))
     }
 
-    #[allow(clippy::type_complexity)]
-    fn assign_txs_rlc(
+    // TODO:
+    // 1. assign txs_rlp_len
+    // 2. assign txs_keccak and return it
+    fn assign_txs(
         &self,
         region: &mut Region<'_, F>,
-        challenges: Challenges<Value<F>>,
+        challenges: &Challenges<Value<F>>,
         rpi_vals: Vec<Value<F>>,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.q_txs_start.enable(region, 0)?;
@@ -1161,16 +1176,24 @@ pub struct PiCircuit<F: Field> {
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
 
+    block: Block<F>,
+
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> PiCircuit<F> {
     /// Creates a new PiCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData) -> Self {
+    pub fn new(
+        max_txs: usize,
+        max_calldata: usize,
+        public_data: PublicData,
+        block: Block<F>,
+    ) -> Self {
         Self {
             max_txs,
             max_calldata,
             public_data,
+            block,
             _marker: PhantomData,
         }
     }
@@ -1194,11 +1217,13 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 gas_limit: block.context.gas_limit.into(),
                 base_fee: block.context.base_fee,
             },
+            block_ctx: block.context,
         };
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             public_data,
+            block.clone(),
         )
     }
 
@@ -1229,12 +1254,12 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 Ok(())
             },
         )?;
-        let pi_cells = layouter.assign_region(
+        let hash_cell = layouter.assign_region(
             || "region 0",
             |mut region| {
                 // Assign block table
-                let rlc_acc =
-                    config.assign_block_table(&mut region, &self.public_data, challenges)?;
+                let (hash_cell, txs_hash_cell) =
+                    config.assign_block(&mut region, &self.public_data, challenges)?;
 
                 // Assign Tx table
                 let mut offset = 0;
@@ -1243,7 +1268,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 let tx_default = TxValues::default();
 
                 let circuit_len = config.circuit_block_len();
-                let mut raw_pi_vals = vec![Value::known(F::zero()); circuit_len];
+                let mut rpi_vals = vec![Value::known(F::zero()); circuit_len];
 
                 // Add empty row
                 config.assign_tx_row(
@@ -1253,7 +1278,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     TxFieldTag::Null,
                     0,
                     Value::known(F::zero()),
-                    &mut raw_pi_vals,
+                    &mut rpi_vals,
                 )?;
                 offset += 1;
 
@@ -1296,7 +1321,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             *tag,
                             0,
                             *value,
-                            &mut raw_pi_vals,
+                            &mut rpi_vals,
                         )?;
                         offset += 1;
                     }
@@ -1341,7 +1366,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             F::from(*byte as u64),
                             is_final,
                             gas_cost,
-                            &mut raw_pi_vals,
+                            &mut rpi_vals,
                         )?;
                         offset += 1;
                         calldata_count += 1;
@@ -1357,7 +1382,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         F::zero(),
                         false,
                         F::zero(),
-                        &mut raw_pi_vals,
+                        &mut rpi_vals,
                     )?;
                     offset += 1;
                 }
@@ -1365,25 +1390,15 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 //      otherwise it will emit CellNotAssigned Error
                 let tx_table_len = TX_LEN * self.max_txs + 1;
                 config.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
-
-                // rpi_rlc and rand_rpi cols
-                let (rpi_rand, rpi_rlc) =
-                    config.assign_rpi_rlc(&mut region, self.rand_rpi, raw_pi_vals)?;
-
-                Ok(vec![
-                    rpi_rand,
-                    rpi_rlc,
-                    chain_id,
-                    state_root,
-                    prev_state_root,
-                ])
+                let origin_txs_hash_cell = config.assign_txs(&mut region, challenges, rpi_vals)?;
+                // assert two txs hash are equal
+                region.constrain_equal(txs_hash_cell.cell(), origin_txs_hash_cell.cell())?;
+                Ok(hash_cell)
             },
         )?;
 
-        // Constrain raw_public_input cells to public inputs
-        for (i, pi_cell) in pi_cells.iter().enumerate() {
-            layouter.constrain_instance(pi_cell.cell(), config.pi, i)?;
-        }
+        // Constrain hash value of block to public inputs
+        layouter.constrain_instance(hash_cell.cell(), config.pi, 0)?;
 
         Ok(())
     }
@@ -1418,6 +1433,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let tx_table = TxTable::construct(meta);
         let rlp_table = array_init::array_init(|_| meta.advice_column());
         let keccak_table = KeccakTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+        let challenge_exprs = challenges.exprs(meta);
         (
             PiCircuitConfig::new(
                 meta,
@@ -1428,6 +1445,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                     tx_table,
                     rlp_table,
                     keccak_table,
+                    challenges: challenge_exprs,
                 },
             ),
             Challenges::construct(meta),
@@ -1440,6 +1458,56 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
+        // assign block table
+        config
+            .block_table
+            .load(&mut layouter, &self.0.public_data.block_ctx, &challenges)?;
+        // assign tx table
+        config.tx_table.load(
+            &mut layouter,
+            &self.0.block.txs,
+            self.0.max_txs,
+            &challenges,
+        )?;
+        let (txs_rlp, txs_rlp_rlc, txs_len, hash, _) =
+            self.0.public_data.get_txs_rlp_and_hash(&challenges);
+        let (block_rlp, block_rlp_rlc, block_len, _) =
+            self.0.public_data.get_block_rlp_and_hash(hash, &challenges);
+        // assign rlp table
+        layouter.assign_region(
+            || "rlp table",
+            |region| {
+                for (offset, vals) in [
+                    [
+                        Value::known(F::one()),
+                        self.0.public_data.get_txs_rlc(),
+                        txs_rlp_rlc,
+                        Value::known(F::from(txs_len as u64)),
+                    ],
+                    [
+                        Value::known(F::one()),
+                        self.0.public_data.get_block_rlc(),
+                        block_rlp_rlc,
+                        Value::known(F::from(block_len as u64)),
+                    ],
+                ]
+                .iter()
+                .enumerate()
+                {
+                    for (val, row) in vals.iter().zip_eq(config.rlp_table.iter()) {
+                        region.assign_advice(|| "", *row, 0, || val)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        // assign keccak table
+        config.keccak_table.dev_load(
+            &mut layouter,
+            vec![&txs_rlp.to_vec(), &block_rlp.to_vec()],
+            &challenges,
+        )?;
+
         self.0.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
