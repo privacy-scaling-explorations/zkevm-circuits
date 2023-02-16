@@ -221,7 +221,13 @@ impl AggregationConfig {
         let snarks = snarks.into_iter().collect_vec();
         layouter.assign_region(
             || "Aggregate snarks",
-            |region| {
+            |mut region| {
+                // annotate advices columns of `main_gate`. We can't annotate fixed_columns of
+                // `main_gate` bcs there is no methods exported.
+                for (i, col) in self.main_gate_config.advices().iter().enumerate() {
+                    region.name_column(|| format!("ROOT_main_gate_{}", i), *col);
+                }
+
                 let ctx = RegionCtx::new(region, 0);
 
                 let ecc_chip = self.ecc_chip::<M::G1Affine>();
@@ -613,16 +619,6 @@ pub mod test {
             layouter.assign_region(
                 || "",
                 |mut region| {
-                    // annotation columns
-                    region.name_column(|| "ROOT_TEST_wire_l", w_l);
-                    region.name_column(|| "ROOT_TEST_wire_r", w_r);
-                    region.name_column(|| "ROOT_TEST_wire_o", w_o);
-                    region.name_column(|| "ROOT_TEST_selector_l", q_l);
-                    region.name_column(|| "ROOT_TEST_selector_r", q_r);
-                    region.name_column(|| "ROOT_TEST_selector_o", q_o);
-                    region.name_column(|| "ROOT_TEST_selector_m", q_m);
-                    region.name_column(|| "ROOT_TEST_selector_c", q_c);
-
                     // Assign some non-zero values to make sure the advice/fixed columns have
                     // non-identity commitments.
                     let a = region.assign_advice(|| "", w_l, 0, || Value::known(self.0))?;
