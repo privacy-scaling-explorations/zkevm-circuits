@@ -2,6 +2,7 @@ name: Lints
 
 # We only run these lints on trial-merges of PRs to reduce noise.
 on:
+  merge_group:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
   push:
