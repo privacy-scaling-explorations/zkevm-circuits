@@ -709,7 +709,7 @@ impl BlockTable {
                             || format!("block table row {}", offset),
                             *column,
                             offset,
-                            || Value::known(value),
+                            || value,
                         )?;
                     }
                     offset += 1;

@@ -1495,7 +1495,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
                 .enumerate()
                 {
                     for (val, row) in vals.iter().zip_eq(config.rlp_table.iter()) {
-                        region.assign_advice(|| "", *row, 0, || val)?;
+                        region.assign_advice(|| "", *row, 0, || *val)?;
                     }
                 }
                 Ok(())
