@@ -513,7 +513,13 @@ async fn main() -> Result<(), Error> {
         .parse()
         .expect("Cannot parse TXS env var as u32");
 
-    let config = ProverCmdConfig::parse();
+    // let config = ProverCmdConfig::parse();
+    let config = ProverCmdConfig {
+        geth_url: String::from("https://l2rpc.internal.taiko.xyz"),
+        block_num: 622,
+        output: None,
+    };
+
     let provider = Http::from_str(&config.geth_url).expect("Http geth url");
     let geth_client = GethClient::new(provider);
 
@@ -564,8 +570,9 @@ async fn main() -> Result<(), Error> {
                     PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>::num_instance(),
                     );
 
-            println!("circuit.instances() = {:?}", circuit.instances());
+            let start = start_timer!(|| "EVM circuit Proof verification");
             let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
+            end_timer!(start);
             evm_verify(deployment_code, circuit.instances(), proof.clone());
 
             #[derive(Serialize, Deserialize, Debug)]
