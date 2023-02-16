@@ -202,20 +202,25 @@ impl<F: Field> EvmCircuit<F> {
     }
 
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        // Start at 1 so we can be sure there is an unused `next` row available
-        let mut num_rows = 1;
-        let evm_rows = block.evm_circuit_pad_to;
+        let evm_rows = block.circuits_params.max_evm_rows;
         if evm_rows == 0 {
-            for transaction in &block.txs {
-                for step in &transaction.steps {
-                    num_rows += step.execution_state.get_step_height();
-                }
-            }
-            num_rows += 1; // EndBlock
+            Self::get_min_num_rows_required(block)
         } else {
-            num_rows += block.evm_circuit_pad_to;
+            // It must have at least one unused row.
+            block.circuits_params.max_evm_rows + 1
         }
-        num_rows
+    }
+
+    pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
+        let mut num_rows = 0;
+        for transaction in &block.txs {
+            for step in &transaction.steps {
+                num_rows += step.execution_state.get_step_height();
+            }
+        }
+
+        // It must have one row for EndBlock and at least one unused one
+        num_rows + 2
     }
 }
 
@@ -238,7 +243,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
                 num_rows_required_for_execution_steps,
                 num_rows_required_for_fixed_table,
             ),
-            block.evm_circuit_pad_to,
+            block.circuits_params.max_evm_rows,
         )
     }
 
@@ -429,7 +434,9 @@ mod evm_circuit_stats {
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b).unwrap(),
         )
-        .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+        .block_modifier(Box::new(|block| {
+            block.circuits_params.max_evm_rows = (1 << 18) - 100
+        }))
         .run();
     }
 
