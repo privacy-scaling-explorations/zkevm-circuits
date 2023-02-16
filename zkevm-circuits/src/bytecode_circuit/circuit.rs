@@ -442,6 +442,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
+                // annotate columns
+                self.annotate_circuit(&mut region);
+
                 let mut offset = 0;
                 for bytecode in witness.iter() {
                     self.assign_bytecode(
@@ -620,9 +623,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         length: F,
         push_data_size: F,
     ) -> Result<(), Error> {
-        // annotate columns
-        self.annotate_circuit(region);
-
         // q_enable
         region.assign_fixed(
             || format!("assign q_enable {}", offset),
@@ -691,6 +691,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     }
 
     fn annotate_circuit(&self, region: &mut Region<'_, F>) {
+        self.bytecode_table.annotate_columns_in_region(region);
+        self.keccak_table.annotate_columns_in_region(region);
+
         region.name_column(|| "BYTECODE_q_enable", self.q_enable);
         region.name_column(|| "BYTECODE_q_first", self.q_first);
         region.name_column(|| "BYTECODE_q_last", self.q_last);
