@@ -26,6 +26,9 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_pi_circuit_prover() {
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Pi Circuit";
+
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
 
@@ -63,7 +66,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("PI_circuit Proof generation with {} rows", DEGREE);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, DEGREE);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -85,7 +88,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "PI_circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} Proof verification", BENCHMARK_ID));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
