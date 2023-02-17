@@ -13,8 +13,6 @@
 //! +----------+         +-----------+       +------------+
 //! ```
 
-use std::{char, marker::PhantomData};
-
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     witness::{Block, BlockContext},
@@ -34,6 +32,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use rlp::RlpStream;
+use std::marker::PhantomData;
 
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
@@ -214,11 +213,11 @@ impl PublicData {
         stream.finalize_unbounded_list();
 
         let rlp: Bytes = stream.out().into();
-        let r = challenges.evm_word();
-        let rlp_rlc = r.map(|v| rlc::value(rlp.iter(), v));
+        let randomness = challenges.evm_word();
+        let rlp_rlc = randomness.map(|randomness| rlc::value(rlp.iter(), randomness));
         let len = rlp.len();
         let hash = keccak256(rlp);
-        let hash_rlc = r.map(|v| rlc::value(hash.iter(), v));
+        let hash_rlc = randomness.map(|randomness| rlc::value(hash.iter(), randomness));
         (rlp, rlp_rlc, len, hash_rlc)
     }
 
@@ -232,11 +231,11 @@ impl PublicData {
             stream.append_raw(&tx.rlp(), 1);
         }
         let rlp: Bytes = stream.out().into();
-        let r = challenges.evm_word();
-        let rlp_rlc = r.map(|v| rlc::value(rlp.iter(), v));
+        let randomness = challenges.evm_word();
+        let rlp_rlc = randomness.map(|randomness| rlc::value(rlp.iter(), randomness));
         let len = rlp.len();
         let hash = keccak256(rlp);
-        let hash_rlc = r.map(|v| rlc::value(hash.iter(), v));
+        let hash_rlc = randomness.map(|randomness| rlc::value(hash.iter(), randomness));
         (rlp, rlp_rlc, len, hash.into(), hash_rlc)
     }
 }
@@ -1061,7 +1060,7 @@ impl<F: Field> PiCircuitConfig<F> {
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
         let block_values = public_data.get_block_table_values();
         let extra_values = public_data.get_extra_values();
-        let r = challenges.evm_word();
+        let randomness = challenges.evm_word();
         self.q_block_start.enable(region, 0)?;
         let mut rlc_acc = Value::known(F::zero());
         for (offset, (name, val)) in [
@@ -1075,11 +1074,11 @@ impl<F: Field> PiCircuitConfig<F> {
             ("timestamp", Value::known(F::from(block_values.timestamp))),
             (
                 "difficulty",
-                r.map(|v| rlc(block_values.difficulty.to_le_bytes(), v)),
+                randomness.map(|randomness| rlc(block_values.difficulty.to_le_bytes(), randomness)),
             ),
             (
                 "base_fee",
-                r.map(|v| rlc(block_values.base_fee.to_le_bytes(), v)),
+                randomness.map(|randomness| rlc(block_values.base_fee.to_le_bytes(), randomness)),
             ),
             ("chain_id", Value::known(F::from(block_values.chain_id))),
         ]
@@ -1088,7 +1087,7 @@ impl<F: Field> PiCircuitConfig<F> {
             block_values
                 .history_hashes
                 .iter()
-                .map(|h| ("prev_hash", r.map(|v| rlc(h.to_fixed_bytes(), v)))),
+                .map(|h| ("prev_hash", randomness.map(|v| rlc(h.to_fixed_bytes(), v)))),
         )
         .chain([
             // Assigns the extra fields (not in block or tx tables):
@@ -1098,11 +1097,11 @@ impl<F: Field> PiCircuitConfig<F> {
             // vector for computing RLC(raw_public_inputs).
             (
                 "state.root",
-                r.map(|v| rlc(extra_values.state_root.to_fixed_bytes(), v)),
+                randomness.map(|v| rlc(extra_values.state_root.to_fixed_bytes(), v)),
             ),
             (
                 "parent_block.hash",
-                r.map(|v| rlc(extra_values.prev_state_root.to_fixed_bytes(), v)),
+                randomness.map(|v| rlc(extra_values.prev_state_root.to_fixed_bytes(), v)),
             ),
         ])
         .enumerate()
@@ -1111,7 +1110,7 @@ impl<F: Field> PiCircuitConfig<F> {
             self.q_block_not_end.enable(region, offset)?;
             region.assign_advice(|| name, self.block_table.value, offset, || val)?;
             region.assign_advice(|| name, self.block, offset, || val)?;
-            rlc_acc = rlc_acc * r + val;
+            rlc_acc = rlc_acc * randomness + val;
             region.assign_advice(|| name, self.block_rlc_acc, offset, || rlc_acc)?;
         }
 
@@ -1122,7 +1121,7 @@ impl<F: Field> PiCircuitConfig<F> {
         self.q_block_table.enable(region, last)?;
         region.assign_advice(|| "txs_hash", self.block_table.value, last, || hash_rlc)?;
         let txs_hash_cell = region.assign_advice(|| "txs_hash", self.block, last, || hash_rlc)?;
-        rlc_acc = rlc_acc * r + hash_rlc;
+        rlc_acc = rlc_acc * randomness + hash_rlc;
         region.assign_advice(|| "txs_hash", self.block_rlc_acc, last, || rlc_acc)?;
 
         region.assign_advice(|| "txs_hash", self.block_rlp, last, || rlp_rlc)?;
@@ -1282,17 +1281,23 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 )?;
                 offset += 1;
 
-                let r = challenges.evm_word();
+                let randomness = challenges.evm_word();
 
                 for i in 0..config.max_txs {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
                     for (tag, value) in &[
-                        (TxFieldTag::Nonce, r.map(|v| rlc(tx.nonce.to_le_bytes(), v))),
-                        (TxFieldTag::Gas, r.map(|v| rlc(tx.gas.to_le_bytes(), v))),
+                        (
+                            TxFieldTag::Nonce,
+                            randomness.map(|randomness| rlc(tx.nonce.to_le_bytes(), randomness)),
+                        ),
+                        (
+                            TxFieldTag::Gas,
+                            randomness.map(|randomness| rlc(tx.gas.to_le_bytes(), randomness)),
+                        ),
                         (
                             TxFieldTag::GasPrice,
-                            r.map(|v| rlc(tx.gas_price.to_le_bytes(), v)),
+                            randomness.map(|v| rlc(tx.gas_price.to_le_bytes(), v)),
                         ),
                         (
                             TxFieldTag::CallerAddress,
@@ -1303,7 +1308,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             Value::known(tx.to_addr.to_scalar().expect("tx.to too big")),
                         ),
                         (TxFieldTag::IsCreate, Value::known(F::from(tx.is_create))),
-                        (TxFieldTag::Value, r.map(|v| rlc(tx.value.to_le_bytes(), v))),
+                        (
+                            TxFieldTag::Value,
+                            randomness.map(|randomness| rlc(tx.value.to_le_bytes(), randomness)),
+                        ),
                         (
                             TxFieldTag::CallDataLength,
                             Value::known(F::from(tx.call_data_len)),
@@ -1312,7 +1320,10 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             TxFieldTag::CallDataGasCost,
                             Value::known(F::from(tx.call_data_gas_cost)),
                         ),
-                        (TxFieldTag::TxSignHash, r.map(|v| rlc(tx.tx_sign_hash, v))),
+                        (
+                            TxFieldTag::TxSignHash,
+                            randomness.map(|randomness| rlc(tx.tx_sign_hash, randomness)),
+                        ),
                     ] {
                         config.assign_tx_row(
                             &mut region,
