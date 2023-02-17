@@ -9,21 +9,20 @@ use halo2_proofs::{
 use std::marker::PhantomData;
 
 use crate::circuit_tools::cell_manager::Cell;
-use crate::circuit_tools::constraint_builder::{ConstraintBuilder, RLCChainable, RLCable};
+use crate::circuit_tools::constraint_builder::{RLCChainable, RLCable, RLCChainableValue, RLCableValue};
 use crate::circuit_tools::gadgets::{IsEqualGadget, LtGadget, RequireNotZeroGadget};
 use crate::mpt_circuit::helpers::drifted_nibble_rlc;
 use crate::table::ProofType;
 use crate::{
     assign, circuit,
-    mpt_circuit::{helpers::BranchNodeInfo, param::BRANCH_ROWS_NUM},
     mpt_circuit::{
         helpers::{
-            get_parent_rlc_state, key_memory, parent_memory, KeyData, MPTConstraintBuilder,
-            ParentData, StorageLeafInfo,
+            key_memory, parent_memory, KeyData, MPTConstraintBuilder,
+            ParentData,
         },
         param::{
             EMPTY_TRIE_HASH, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS,
-            KEY_LEN_IN_NIBBLES, LEAF_KEY_C_IND, LEAF_NON_EXISTING_IND,
+            KEY_LEN_IN_NIBBLES,
         },
         FixedTableTag,
     },
@@ -160,7 +159,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 );
                 config.is_in_empty_branch[is_s.idx()] =
                     IsEqualGadget::construct(&mut cb.base, parent_data.rlc.expr(), 128.expr());
-                let is_placeholder = or::expr(&[
+                let is_placeholder_leaf = or::expr(&[
                     config.is_in_empty_trie[is_s.idx()].expr(),
                     config.is_in_empty_branch[is_s.idx()].expr(),
                 ]);
@@ -184,7 +183,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES (except in a
                 // placeholder leaf).
                 // TODO(Brecht): why not in placeholder leaf?
-                ifx! {not!(is_placeholder) => {
+                ifx! {not!(is_placeholder_leaf) => {
                     let num_nibbles = rlp_key.num_key_nibbles(key_data.is_odd.expr());
                     require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
                 }}
@@ -216,7 +215,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // ensure that the value is set to 0 in the placeholder leaf. For
                 // example when adding a new storage leaf to the trie, we have an empty child in
                 // `S` proof and non-empty in `C` proof.
-                ifx! {is_placeholder => {
+                ifx! {is_placeholder_leaf => {
                     require!(value_rlc[is_s.idx()] => 0);
                 }}
 
@@ -229,14 +228,14 @@ impl<F: Field> StorageLeafConfig<F> {
                 // storage = [key, value]
                 // TODO(Brecht): modify the witness for empty placeholder leafs to have valid
                 // RLP encoding
-                ifx! {not!(is_placeholder) => {
+                ifx! {not!(is_placeholder_leaf) => {
                     let key_num_bytes = rlp_key.num_bytes_on_key_row();
                     require!(num_bytes => key_num_bytes.expr() + value_num_bytes.expr());
                 }};
 
                 // Check if the account is in its parent.
                 // Check is skipped for placeholder leafs which are dummy leafs
-                ifx! {not!(is_placeholder) => {
+                ifx! {not!(is_placeholder_leaf) => {
                     config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, num_bytes.expr(), 32.expr());
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                         // Hashed branch hash in parent branch
@@ -387,140 +386,108 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut value_rlc = vec![0.scalar(); 2];
         for is_s in [true, false] {
             // Key
+            let key_row = &key_bytes[is_s.idx()];
+
+            let rlp_key_witness = self.rlp_key[is_s.idx()]
+                .assign(region, base_offset, &key_row.bytes)
+                .ok()
+                .unwrap();
+
+            let (_, leaf_mult) = rlp_key_witness.rlc_leaf(ctx.randomness);
+            self.mult[is_s.idx()]
+                .assign(region, base_offset, leaf_mult)
+                .ok();
+
+            self.is_not_hashed[is_s.idx()]
+                .assign(
+                    region,
+                    base_offset,
+                    F::from(rlp_key_witness.num_bytes()),
+                    F::from(32),
+                )
+                .ok();
+
+            self.key_data[is_s.idx()].witness_load(
+                region,
+                base_offset,
+                &mut pv.memory[key_memory(is_s)],
+                0,
+            )?;
+            self.key_data[is_s.idx()].witness_store(
+                region,
+                base_offset,
+                &mut pv.memory[key_memory(is_s)],
+                F::zero(),
+                F::one(),
+                0,
+                false,
+                false,
+                0,
+                false,
+                F::zero(),
+                F::one(),
+            )?;
+
+            // For leaf S and leaf C we need to start with the same rlc.
+            let mut key_rlc_new = pv.key_rlc;
+            let mut key_rlc_mult_new = pv.key_rlc_mult;
+            if (pv.is_branch_s_placeholder
+                && key_row.get_type() == MptWitnessRowType::StorageLeafSKey)
+                || (pv.is_branch_c_placeholder
+                    && key_row.get_type() == MptWitnessRowType::StorageLeafCKey)
             {
-                let key_row = &key_bytes[is_s.idx()];
-
-                let rlp_key_witness = self.rlp_key[is_s.idx()]
-                    .assign(region, base_offset, &key_row.bytes)
-                    .ok()
-                    .unwrap();
-
-                pv.acc_s = F::zero();
-                pv.acc_mult_s = F::one();
-                ctx.compute_acc_and_mult(
-                    &key_row.bytes,
-                    &mut pv.acc_s,
-                    &mut pv.acc_mult_s,
-                    0,
-                    rlp_key_witness.num_bytes_on_key_row() as usize,
-                );
-
-                self.mult[is_s.idx()]
-                    .assign(region, base_offset, pv.acc_mult_s)
-                    .ok();
-
-                self.is_not_hashed[is_s.idx()]
-                    .assign(
-                        region,
-                        base_offset,
-                        F::from(rlp_key_witness.num_bytes()),
-                        F::from(32),
-                    )
-                    .ok();
-
-                self.key_data[is_s.idx()].witness_load(
-                    region,
-                    base_offset,
-                    &mut pv.memory[key_memory(is_s)],
-                    0,
-                )?;
-                self.key_data[is_s.idx()].witness_store(
-                    region,
-                    base_offset,
-                    &mut pv.memory[key_memory(is_s)],
-                    F::zero(),
-                    F::one(),
-                    0,
-                    false,
-                    false,
-                    0,
-                    false,
-                    F::zero(),
-                    F::one(),
-                )?;
-
-                // For leaf S and leaf C we need to start with the same rlc.
-                let mut key_rlc_new = pv.key_rlc;
-                let mut key_rlc_mult_new = pv.key_rlc_mult;
-                if (pv.is_branch_s_placeholder
-                    && key_row.get_type() == MptWitnessRowType::StorageLeafSKey)
-                    || (pv.is_branch_c_placeholder
-                        && key_row.get_type() == MptWitnessRowType::StorageLeafCKey)
-                {
-                    key_rlc_new = pv.key_rlc_prev;
-                    key_rlc_mult_new = pv.key_rlc_mult_prev;
-                }
-                if rlp_key_witness.num_bytes_on_key_row() != 2 {
-                    // If in last level or having only one nibble,
-                    // the key RLC is already computed using the first two bytes above.
-                    ctx.compute_key_rlc(
-                        &key_row.bytes,
-                        &mut key_rlc_new,
-                        &mut key_rlc_mult_new,
-                        rlp_key_witness.num_rlp_bytes_list() as usize,
-                    );
-                }
-                key_rlc[is_s.idx()] = key_rlc_new;
+                key_rlc_new = pv.key_rlc_prev;
+                key_rlc_mult_new = pv.key_rlc_mult_prev;
             }
+            if rlp_key_witness.num_bytes_on_key_row() != 2 {
+                // If in last level or having only one nibble,
+                // the key RLC is already computed using the first two bytes above.
+                ctx.compute_key_rlc(
+                    &key_row.bytes,
+                    &mut key_rlc_new,
+                    &mut key_rlc_mult_new,
+                    rlp_key_witness.num_rlp_bytes_list() as usize,
+                );
+            }
+            key_rlc[is_s.idx()] = key_rlc_new;
 
             // Value
-            {
-                let value_row = &value_bytes[is_s.idx()];
+            let value_row = &value_bytes[is_s.idx()];
 
-                let value_witness = self.rlp_value[is_s.idx()]
-                    .assign(region, base_offset, &value_row.bytes)
-                    .ok()
-                    .unwrap();
+            let value_witness = self.rlp_value[is_s.idx()]
+                .assign(region, base_offset, &value_row.bytes)
+                .ok()
+                .unwrap();
 
-                // Leaf RLC
-                ctx.compute_acc_and_mult(
-                    &value_row.bytes,
-                    &mut pv.acc_s,
-                    &mut pv.acc_mult_s,
-                    0,
-                    HASH_WIDTH + 2,
-                );
+            value_rlc[is_s.idx()] = value_row.bytes[value_witness.num_rlp_bytes() as usize..HASH_WIDTH + 2].rlc_value(ctx.randomness);
 
-                pv.acc_c = F::zero();
-                pv.acc_mult_c = F::one();
-                ctx.compute_acc_and_mult(
-                    &value_row.bytes,
-                    &mut pv.acc_c,
-                    &mut pv.acc_mult_c,
-                    value_witness.num_rlp_bytes() as usize,
-                    HASH_WIDTH + 2,
-                );
+            let parent_values = self.parent_data[is_s.idx()]
+                .witness_load(region, base_offset, &mut pv.memory[parent_memory(is_s)], 0)
+                .ok()
+                .unwrap();
+            self.parent_data[is_s.idx()]
+                .witness_store(
+                    region,
+                    base_offset,
+                    &mut pv.memory[parent_memory(is_s)],
+                    F::zero(),
+                    true,
+                    false,
+                    F::zero(),
+                )
+                .ok();
 
-                value_rlc[is_s.idx()] = pv.acc_c;
-
-                let parent_values = self.parent_data[is_s.idx()]
-                    .witness_load(region, base_offset, &mut pv.memory[parent_memory(is_s)], 0)
-                    .ok()
-                    .unwrap();
-                self.parent_data[is_s.idx()]
-                    .witness_store(
-                        region,
-                        base_offset,
-                        &mut pv.memory[parent_memory(is_s)],
-                        F::zero(),
-                        true,
-                        false,
-                        F::zero(),
-                    )
-                    .ok();
-
-                self.is_in_empty_trie[is_s.idx()]
-                    .assign(
-                        region,
-                        base_offset,
-                        parent_values[0],
-                        bytes_into_rlc(&EMPTY_TRIE_HASH, ctx.randomness),
-                    )
-                    .ok();
-                self.is_in_empty_branch[is_s.idx()]
-                    .assign(region, base_offset, parent_values[0], 128.scalar())
-                    .ok();
-            }
+            self.is_in_empty_trie[is_s.idx()]
+                .assign(
+                    region,
+                    base_offset,
+                    parent_values[0],
+                    bytes_into_rlc(&EMPTY_TRIE_HASH, ctx.randomness),
+                )
+                .ok();
+            self.is_in_empty_branch[is_s.idx()]
+                .assign(region, base_offset, parent_values[0], 128.scalar())
+                .ok();
         }
 
         // Put the data in the lookup table
@@ -541,22 +508,14 @@ impl<F: Field> StorageLeafConfig<F> {
                 .ok()
                 .unwrap();
 
-            pv.acc_s = F::zero();
-            pv.acc_mult_s = F::one();
-            ctx.compute_acc_and_mult(
-                &row.bytes,
-                &mut pv.acc_s,
-                &mut pv.acc_mult_s,
-                0,
-                drifted_key_witness.num_bytes_on_key_row() as usize,
-            );
+            let (_, leaf_mult) = drifted_key_witness.rlc_leaf(ctx.randomness);
 
             self.drifted_mult
-                .assign(region, base_offset, pv.acc_mult_s)
+                .assign(region, base_offset, leaf_mult)
                 .ok();
         }
 
-        // Wrong leaf handling
+        // Non-existing
         {
             let row = &wrong_bytes;
             if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {

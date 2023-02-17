@@ -4,7 +4,7 @@ use crate::{
     _cb, circuit,
     circuit_tools::{
         cell_manager::{Cell, CellManager, DataTransition, Trackable},
-        constraint_builder::{Conditionable, ConstraintBuilder, RLCChainable, RLCable},
+        constraint_builder::{Conditionable, ConstraintBuilder, RLCChainable, RLCable, RLCableValue, RLCChainableValue},
         gadgets::IsEqualGadget,
         memory::MemoryBank,
     },
@@ -21,7 +21,7 @@ use gadgets::util::{and, not, Scalar};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression, VirtualCells},
-    poly::Rotation,
+    poly::Rotation, halo2curves::FieldExt,
 };
 
 use super::{
@@ -343,6 +343,14 @@ impl<F: Field> RLPValueGadget<F> {
             }
         })
     }
+
+    pub(crate) fn rlc_rlp(&self, r: &[Expression<F>]) -> Expression<F> {
+        self.rlc(r).0
+    }
+
+    pub(crate) fn rlc_value(&self, r: &[Expression<F>]) -> Expression<F> {
+        self.rlc(r).1
+    }
 }
 
 impl RLPValueWitness {
@@ -391,6 +399,31 @@ impl RLPValueWitness {
                 unreachable!();
             },
         }
+    }
+
+    /// RLC data
+    pub(crate) fn rlc<F: Field>(&self, r: F) -> (F, F) {
+        matchr! {
+            self.is_short() => {
+                let value_rlc = self.bytes[0].scalar();
+                (value_rlc, value_rlc)
+            },
+            self.is_long() => {
+                let value_rlc = self.bytes[1..].rlc_value(r);
+                (value_rlc, self.bytes.rlc_value(r))
+            },
+            self.is_very_long() => {
+                unreachable!();
+            },
+        }
+    }
+
+    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
+        self.rlc(r).0
+    }
+
+    pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
+        self.rlc(r).1
     }
 }
 
@@ -619,6 +652,14 @@ impl LeafKeyWitness {
             } else {
                 unreachable!();
             }
+    }
+
+    /// Number of bytes of RLP (including list RLP bytes) and key
+    pub(crate) fn rlc_leaf<F: Field>(&self, r: F) -> (F, F) {
+        (0.scalar(), 1.scalar()).rlc_chain_value(
+            &self.bytes[0..(self.num_bytes_on_key_row() as usize)],
+            r
+        )
     }
 }
 
@@ -1463,32 +1504,6 @@ impl<F: Field> BranchChildInfo<F> {
             require!(a!(main.rlp2, self.rot_branch) => [0, RLP_HASH_VALUE]);
             (RLP_HASH_VALUE.expr() - a!(main.rlp2, self.rot_branch)) * invert!(RLP_HASH_VALUE)
         })
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct StorageLeafInfo<F> {
-    pub(crate) is_s: bool,
-    pub(crate) ctx: MPTContext<F>,
-    pub(crate) rot_key: i32,
-}
-
-impl<F: Field> StorageLeafInfo<F> {
-    pub(crate) fn new(ctx: MPTContext<F>, is_s: bool, rot_key: i32) -> Self {
-        StorageLeafInfo {
-            is_s,
-            ctx: ctx.clone(),
-            rot_key,
-        }
-    }
-
-    pub(crate) fn set_is_s(&mut self, is_s: bool) {
-        self.is_s = is_s;
-    }
-
-    pub(crate) fn is_below_account(&self, meta: &mut VirtualCells<F>) -> Expression<F> {
-        let rot_parent = if self.is_s { -1 } else { -3 };
-        self.ctx.is_account(meta, self.rot_key + rot_parent)
     }
 }
 

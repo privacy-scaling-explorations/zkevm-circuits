@@ -1,7 +1,7 @@
 //! Circuit utilities
 use crate::{evm_circuit::util::rlc, util::Expr};
 use eth_types::Field;
-use gadgets::util::{and, select, sum};
+use gadgets::util::{and, select, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
@@ -645,6 +645,52 @@ pub trait RLCChainable<F> {
 impl<F: Field> RLCChainable<F> for (Expression<F>, Expression<F>) {
     fn rlc_chain(&self, other: Expression<F>) -> Expression<F> {
         self.0.expr() + self.1.expr() * other.expr()
+    }
+}
+
+pub(crate) fn rlc_acc<F: Field>(
+    values: &[u8],
+    rlc: F,
+    mult: F,
+    r: F,
+) -> (F, F) {
+    let mut rlc = rlc;
+    let mut mult = mult;
+    for &value in values.iter() {
+        rlc = rlc + F::from(value as u64) * mult;
+        mult *= r;
+    }
+    (rlc, mult)
+}
+
+
+/// Trait around RLC
+pub trait RLCableValue<F> {
+    /// Returns the RLC of itself
+    fn rlc_value(&self, r: F) -> F;
+}
+
+impl<F: Field> RLCableValue<F> for Vec<u8> {
+    fn rlc_value(&self, r: F) -> F {
+        rlc::value(self, r)
+    }
+}
+
+impl<F: Field> RLCableValue<F> for [u8] {
+    fn rlc_value(&self, r: F) -> F {
+        rlc::value(self, r)
+    }
+}
+
+/// Trait around RLC
+pub trait RLCChainableValue<F> {
+    /// Returns the RLC of itself with a starting rlc/multiplier
+    fn rlc_chain_value(&self, values: &[u8], r: F) -> (F, F);
+}
+
+impl<F: Field> RLCChainableValue<F> for (F, F) {
+    fn rlc_chain_value(&self, values: &[u8], r: F) -> (F, F) {
+        rlc_acc(values, self.0, self.1, r)
     }
 }
 
