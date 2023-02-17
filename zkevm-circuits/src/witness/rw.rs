@@ -137,15 +137,6 @@ pub enum Rw {
         tx_id: usize,
         committed_value: Word,
     },
-    /// AccountDestructed
-    AccountDestructed {
-        rw_counter: usize,
-        is_write: bool,
-        tx_id: usize,
-        account_address: Address,
-        is_destructed: bool,
-        is_destructed_prev: bool,
-    },
     /// CallContext
     CallContext {
         rw_counter: usize,
@@ -392,7 +383,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { rw_counter, .. }
             | Self::TxRefund { rw_counter, .. }
             | Self::Account { rw_counter, .. }
-            | Self::AccountDestructed { rw_counter, .. }
             | Self::CallContext { rw_counter, .. }
             | Self::TxLog { rw_counter, .. }
             | Self::TxReceipt { rw_counter, .. } => *rw_counter,
@@ -409,7 +399,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_write, .. }
             | Self::TxRefund { is_write, .. }
             | Self::Account { is_write, .. }
-            | Self::AccountDestructed { is_write, .. }
             | Self::CallContext { is_write, .. }
             | Self::TxLog { is_write, .. }
             | Self::TxReceipt { is_write, .. } => *is_write,
@@ -426,7 +415,6 @@ impl Rw {
             Self::TxAccessListAccountStorage { .. } => RwTableTag::TxAccessListAccountStorage,
             Self::TxRefund { .. } => RwTableTag::TxRefund,
             Self::Account { .. } => RwTableTag::Account,
-            Self::AccountDestructed { .. } => RwTableTag::AccountDestructed,
             Self::CallContext { .. } => RwTableTag::CallContext,
             Self::TxLog { .. } => RwTableTag::TxLog,
             Self::TxReceipt { .. } => RwTableTag::TxReceipt,
@@ -444,7 +432,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            Self::Start { .. } | Self::Account { .. } | Self::AccountDestructed { .. } => None,
+            Self::Start { .. } | Self::Account { .. } => None,
         }
     }
 
@@ -460,9 +448,6 @@ impl Rw {
                 account_address, ..
             }
             | Self::AccountStorage {
-                account_address, ..
-            }
-            | Self::AccountDestructed {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
@@ -497,8 +482,7 @@ impl Rw {
             | Self::TxAccessListAccount { .. }
             | Self::TxAccessListAccountStorage { .. }
             | Self::TxRefund { .. }
-            | Self::TxLog { .. }
-            | Self::AccountDestructed { .. } => None,
+            | Self::TxLog { .. } => None,
         }
     }
 
@@ -513,7 +497,6 @@ impl Rw {
             | Self::TxRefund { .. }
             | Self::Account { .. }
             | Self::TxAccessListAccount { .. }
-            | Self::AccountDestructed { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
         }
@@ -555,7 +538,6 @@ impl Rw {
 
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::AccountDestructed { is_destructed, .. } => F::from(*is_destructed as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
@@ -582,9 +564,6 @@ impl Rw {
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
                 Some(F::from(*is_warm_prev as u64))
             }
-            Self::AccountDestructed {
-                is_destructed_prev, ..
-            } => Some(F::from(*is_destructed_prev as u64)),
             Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
@@ -641,7 +620,7 @@ impl From<&operation::OperationContainer> for RwMap {
                 .iter()
                 .map(|op| Rw::TxAccessListAccountStorage {
                     rw_counter: op.rwc().into(),
-                    is_write: true,
+                    is_write: op.rw().is_write(),
                     tx_id: op.op().tx_id,
                     account_address: op.op().address,
                     storage_key: op.op().key,
@@ -697,21 +676,6 @@ impl From<&operation::OperationContainer> for RwMap {
                     value_prev: op.op().value_prev,
                     tx_id: op.op().tx_id,
                     committed_value: op.op().committed_value,
-                })
-                .collect(),
-        );
-        rws.insert(
-            RwTableTag::AccountDestructed,
-            container
-                .account_destructed
-                .iter()
-                .map(|op| Rw::AccountDestructed {
-                    rw_counter: op.rwc().into(),
-                    is_write: true,
-                    tx_id: op.op().tx_id,
-                    account_address: op.op().address,
-                    is_destructed: op.op().is_destructed,
-                    is_destructed_prev: op.op().is_destructed_prev,
                 })
                 .collect(),
         );

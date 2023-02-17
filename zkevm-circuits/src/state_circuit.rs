@@ -20,10 +20,9 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
 };
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Region, Value},
     plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        VirtualCells,
+        Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, VirtualCells,
     },
     poly::Rotation,
 };
@@ -39,6 +38,9 @@ use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},
     lexicographic_ordering::LimbIndex,
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 const N_LIMBS_RW_COUNTER: usize = 2;
 const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
@@ -413,7 +415,6 @@ impl<F: Field> StateCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
 impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     type Config = StateCircuitConfig<F>;
 
@@ -488,7 +489,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for StateCircuit<F>
 where
     F: Field,
