@@ -23,10 +23,9 @@ mod tests {
     use mock::test_ctx::TestContext;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+    use std::env::var;
     use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
     use zkevm_circuits::exp_circuit::ExpCircuit;
-
-    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -38,9 +37,14 @@ mod tests {
 
         // Initialize the circuit
 
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
+
         let base = Word::from(132);
         let exponent = Word::from(27);
-        let block = generate_full_events_block(DEGREE, base, exponent);
+        let block = generate_full_events_block(degree, base, exponent);
         let circuit = ExpCircuit::<Fr>::new(
             block.exp_events.clone(),
             block.circuits_params.max_exp_steps,
@@ -53,9 +57,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -66,7 +70,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, DEGREE);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -109,7 +113,7 @@ mod tests {
         end_timer!(start3);
     }
 
-    fn generate_full_events_block(degree: usize, base: Word, exponent: Word) -> Block<Fr> {
+    fn generate_full_events_block(degree: u32, base: Word, exponent: Word) -> Block<Fr> {
         let code = bytecode! {
             PUSH32(exponent)
             PUSH32(base)
