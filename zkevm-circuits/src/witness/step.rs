@@ -1,18 +1,13 @@
+use crate::evm_circuit::{
+    param::{N_BYTES_WORD, STACK_CAPACITY},
+    step::ExecutionState,
+};
 use bus_mapping::{
     circuit_input_builder,
     error::{ExecError, OogError},
     evm::OpcodeId,
-    operation,
 };
 use eth_types::evm_unimplemented;
-
-use crate::{
-    evm_circuit::{
-        param::{N_BYTES_WORD, STACK_CAPACITY},
-        step::ExecutionState,
-    },
-    table::RwTableTag,
-};
 
 /// Step executed in a transaction
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -20,7 +15,7 @@ pub struct ExecStep {
     /// The index in the Transaction calls
     pub call_index: usize,
     /// The indices in the RW trace incurred in this step
-    pub rw_indices: Vec<(RwTableTag, usize)>,
+    pub rw_indices: Vec<usize>,
     /// The execution state for the step
     pub execution_state: ExecutionState,
     /// The Read/Write counter before the step
@@ -198,30 +193,9 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
     ExecStep {
         call_index: step.call_index,
-        rw_indices: step
-            .bus_mapping_instance
-            .iter()
-            .map(|x| {
-                let tag = match x.target() {
-                    operation::Target::Memory => RwTableTag::Memory,
-                    operation::Target::Stack => RwTableTag::Stack,
-                    operation::Target::Storage => RwTableTag::AccountStorage,
-                    operation::Target::TxAccessListAccount => RwTableTag::TxAccessListAccount,
-                    operation::Target::TxAccessListAccountStorage => {
-                        RwTableTag::TxAccessListAccountStorage
-                    }
-                    operation::Target::TxRefund => RwTableTag::TxRefund,
-                    operation::Target::Account => RwTableTag::Account,
-                    operation::Target::CallContext => RwTableTag::CallContext,
-                    operation::Target::TxReceipt => RwTableTag::TxReceipt,
-                    operation::Target::TxLog => RwTableTag::TxLog,
-                    operation::Target::Start => RwTableTag::Start,
-                };
-                (tag, x.as_usize())
-            })
-            .collect(),
+        rw_indices: step.bus_mapping_instance.clone(),
         execution_state: ExecutionState::from(step),
-        rw_counter: usize::from(step.rwc),
+        rw_counter: step.rwc,
         program_counter: usize::from(step.pc) as u64,
         stack_pointer: STACK_CAPACITY - step.stack_size,
         gas_left: step.gas_left.0,

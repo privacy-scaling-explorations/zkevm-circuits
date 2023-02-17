@@ -241,7 +241,7 @@ pub fn block_convert<F: Field>(
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
-        rws: RwMap::from(&block.container),
+        rws: block.container.clone(),
         txs: block
             .txs()
             .iter()

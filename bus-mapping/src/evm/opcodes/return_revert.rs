@@ -1,13 +1,9 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::AccountOp;
-use crate::operation::MemoryOp;
-use crate::{
-    circuit_input_builder::CircuitInputStateRef,
-    evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, RW},
-    Error,
+use crate::circuit_input_builder::{
+    AccountFieldTag, CallContextFieldTag, CopyDataType, CopyEvent, NumberOrHash,
 };
+
+use crate::{circuit_input_builder::CircuitInputStateRef, evm::opcodes::ExecStep, Error};
 use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 use keccak256::EMPTY_HASH_LE;
@@ -40,7 +36,7 @@ impl Opcode for ReturnRevert {
         state.call_context_read(
             &mut exec_step,
             call.call_id,
-            CallContextField::IsSuccess,
+            CallContextFieldTag::IsSuccess,
             call.is_success.to_word(),
         );
 
@@ -62,26 +58,26 @@ impl Opcode for ReturnRevert {
             )?;
 
             for (field, value) in [
-                (CallContextField::CallerId, call.caller_id.to_word()),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (CallContextFieldTag::CallerId, call.caller_id.to_word()),
+                (CallContextFieldTag::CalleeAddress, call.address.to_word()),
                 (
-                    CallContextField::RwCounterEndOfReversion,
+                    CallContextFieldTag::RwCounterEndOfReversion,
                     call.rw_counter_end_of_reversion.to_word(),
                 ),
-                (CallContextField::IsPersistent, call.is_persistent.to_word()),
+                (
+                    CallContextFieldTag::IsPersistent,
+                    call.is_persistent.to_word(),
+                ),
             ] {
                 state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
             }
 
-            state.push_op_reversible(
+            state.account_write::<true>(
                 &mut exec_step,
-                RW::WRITE,
-                AccountOp {
-                    address: state.call()?.address,
-                    field: AccountField::CodeHash,
-                    value: code_hash.to_word(),
-                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
-                },
+                state.call()?.address,
+                AccountFieldTag::CodeHash,
+                code_hash.to_word(),
+                Word::from_little_endian(&*EMPTY_HASH_LE),
             )?;
         }
 
@@ -90,7 +86,7 @@ impl Opcode for ReturnRevert {
             state.call_context_read(
                 &mut exec_step,
                 call.call_id,
-                CallContextField::IsPersistent,
+                CallContextFieldTag::IsPersistent,
                 call.is_persistent.to_word(),
             );
         }
@@ -103,8 +99,14 @@ impl Opcode for ReturnRevert {
         // Case D in the specs.
         if !call.is_root && !call.is_create() {
             for (field, value) in [
-                (CallContextField::ReturnDataOffset, call.return_data_offset),
-                (CallContextField::ReturnDataLength, call.return_data_length),
+                (
+                    CallContextFieldTag::ReturnDataOffset,
+                    call.return_data_offset,
+                ),
+                (
+                    CallContextFieldTag::ReturnDataLength,
+                    call.return_data_length,
+                ),
             ] {
                 state.call_context_read(&mut exec_step, call.call_id, field, value.into());
             }
@@ -139,21 +141,21 @@ impl Opcode for ReturnRevert {
             state.call_context_write(
                 &mut exec_step,
                 state.caller()?.call_id,
-                CallContextField::LastCalleeId,
+                CallContextFieldTag::LastCalleeId,
                 state.call()?.call_id.into(),
             );
 
             state.call_context_write(
                 &mut exec_step,
                 state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataOffset,
+                CallContextFieldTag::LastCalleeReturnDataOffset,
                 offset.into(),
             );
 
             state.call_context_write(
                 &mut exec_step,
                 state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataLength,
+                CallContextFieldTag::LastCalleeReturnDataLength,
                 length.into(),
             );
         }
@@ -189,16 +191,8 @@ fn handle_copy(
 
     let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _is_code)) in bytes.iter().enumerate() {
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
-        state.push_op(
-            step,
-            RW::WRITE,
-            MemoryOp::new(destination.id, (destination.offset + i).into(), *byte),
-        );
+        state.memory_read(step, source.id, (source.offset + i).into(), *byte)?;
+        state.memory_write(step, destination.id, (destination.offset + i).into(), *byte)?;
     }
 
     state.push_copy(CopyEvent {
@@ -233,11 +227,7 @@ fn handle_create(
 
     let rw_counter_start = state.block_ctx.rwc;
     for (i, (byte, _)) in bytes.iter().enumerate() {
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+        state.memory_read(step, source.id, (source.offset + i).into(), *byte)?;
     }
 
     state.push_copy(CopyEvent {

@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
+    table::{CallContextFieldTag, TxLogFieldTag},
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
@@ -212,7 +212,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             step.rw_indices[6 + call.is_persistent as usize]
         } else {
             // if topic_count == 0, this value will be no used anymore
-            (RwTableTag::Stack, 0usize)
+            0
         };
 
         for i in 0..4 {
@@ -220,7 +220,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             if i < topic_count {
                 topic = region.word_rlc(block.rws[topic_stack_entry].stack_value());
                 self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
-                topic_stack_entry.1 += 1;
+                topic_stack_entry += 1 + is_persistent as usize;
             } else {
                 self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
             }

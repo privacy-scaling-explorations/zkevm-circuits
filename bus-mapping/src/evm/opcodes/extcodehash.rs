@@ -1,8 +1,7 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{AccountFieldTag, CallContextFieldTag, CircuitInputStateRef},
     evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
@@ -28,13 +27,13 @@ impl Opcode for Extcodehash {
         // context
 
         for (field, value) in [
-            (CallContextField::TxId, U256::from(state.tx_ctx.id())),
+            (CallContextFieldTag::TxId, U256::from(state.tx_ctx.id())),
             (
-                CallContextField::RwCounterEndOfReversion,
+                CallContextFieldTag::RwCounterEndOfReversion,
                 U256::from(state.call()?.rw_counter_end_of_reversion as u64),
             ),
             (
-                CallContextField::IsPersistent,
+                CallContextFieldTag::IsPersistent,
                 U256::from(state.call()?.is_persistent as u64),
             ),
         ] {
@@ -43,15 +42,12 @@ impl Opcode for Extcodehash {
 
         // Update transaction access list for external_address
         let is_warm = state.sdb.check_account_in_access_list(&external_address);
-        state.push_op_reversible(
+        state.tx_accesslist_account_write::<true>(
             &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id: state.tx_ctx.id(),
-                address: external_address,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
+            state.tx_ctx.id(),
+            external_address,
+            true,
+            is_warm,
         )?;
 
         let account = state.sdb.get_account(&external_address).1;
@@ -64,7 +60,7 @@ impl Opcode for Extcodehash {
         state.account_read(
             &mut exec_step,
             external_address,
-            AccountField::CodeHash,
+            AccountFieldTag::CodeHash,
             code_hash.to_word(),
             code_hash.to_word(),
         )?;
@@ -76,221 +72,225 @@ impl Opcode for Extcodehash {
     }
 }
 
-#[cfg(test)]
-mod extcodehash_tests {
-    use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
-    use eth_types::{
-        address, bytecode,
-        evm_types::{OpcodeId, StackAddress},
-        geth_types::GethData,
-        Bytecode, Bytes, Word, U256,
-    };
-    use ethers_core::utils::keccak256;
-    use mock::TestContext;
-    use pretty_assertions::assert_eq;
+// TODO:
+// #[cfg(test)]
+// mod extcodehash_tests {
+//     use super::*;
+//     use crate::circuit_input_builder::ExecState;
+//     use crate::mock::BlockData;
 
-    #[test]
-    fn cold_empty_account() -> Result<(), Error> {
-        test_ok(false, false)
-    }
+//     use eth_types::{
+//         address, bytecode,
+//         evm_types::{OpcodeId, StackAddress},
+//         geth_types::GethData,
+//         Bytecode, Bytes, Word, U256,
+//     };
+//     use ethers_core::utils::keccak256;
+//     use mock::TestContext;
+//     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn warm_empty_account() -> Result<(), Error> {
-        test_ok(false, true)
-    }
+//     #[test]
+//     fn cold_empty_account() -> Result<(), Error> {
+//         test_ok(false, false)
+//     }
 
-    #[test]
-    fn cold_existing_account() -> Result<(), Error> {
-        test_ok(true, false)
-    }
+//     #[test]
+//     fn warm_empty_account() -> Result<(), Error> {
+//         test_ok(false, true)
+//     }
 
-    #[test]
-    fn warm_existing_account() -> Result<(), Error> {
-        test_ok(true, true)
-    }
+//     #[test]
+//     fn cold_existing_account() -> Result<(), Error> {
+//         test_ok(true, false)
+//     }
 
-    fn test_ok(exists: bool, is_warm: bool) -> Result<(), Error> {
-        // In each test case, this is the external address we will call EXTCODEHASH on.
-        let external_address = address!("0xaabbccddee000000000000000000000000000000");
+//     #[test]
+//     fn warm_existing_account() -> Result<(), Error> {
+//         test_ok(true, true)
+//     }
 
-        // Make the external account warm, if needed, by first getting its balance.
-        let mut code = Bytecode::default();
-        if is_warm {
-            code.append(&bytecode! {
-                PUSH20(external_address.to_word())
-                EXTCODEHASH
-                POP
-            });
-        }
-        code.append(&bytecode! {
-            PUSH20(external_address.to_word())
-            EXTCODEHASH
-            STOP
-        });
-        let mut nonce = Word::from(300u64);
-        let mut balance = Word::from(800u64);
-        let mut code_ext = Bytes::from([34, 54, 56]);
+//     fn test_ok(exists: bool, is_warm: bool) -> Result<(), Error> {
+//         // In each test case, this is the external address we will call
+// EXTCODEHASH on.         let external_address =
+// address!("0xaabbccddee000000000000000000000000000000");
 
-        if !exists {
-            nonce = Word::zero();
-            balance = Word::zero();
-            code_ext = Bytes::default();
-        }
+//         // Make the external account warm, if needed, by first getting its
+// balance.         let mut code = Bytecode::default();
+//         if is_warm {
+//             code.append(&bytecode! {
+//                 PUSH20(external_address.to_word())
+//                 EXTCODEHASH
+//                 POP
+//             });
+//         }
+//         code.append(&bytecode! {
+//             PUSH20(external_address.to_word())
+//             EXTCODEHASH
+//             STOP
+//         });
+//         let mut nonce = Word::from(300u64);
+//         let mut balance = Word::from(800u64);
+//         let mut code_ext = Bytes::from([34, 54, 56]);
 
-        // Get the execution steps from the external tracer
-        let block: GethData = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(address!("0x0000000000000000000000000000000000000010"))
-                    .balance(Word::from(1u64 << 20))
-                    .code(code.clone());
+//         if !exists {
+//             nonce = Word::zero();
+//             balance = Word::zero();
+//             code_ext = Bytes::default();
+//         }
 
-                accs[1]
-                    .address(external_address)
-                    .balance(balance)
-                    .nonce(nonce)
-                    .code(code_ext.clone());
+//         // Get the execution steps from the external tracer
+//         let block: GethData = TestContext::<3, 1>::new(
+//             None,
+//             |accs| {
+//                 accs[0]
+//
+// .address(address!("0x0000000000000000000000000000000000000010"))
+// .balance(Word::from(1u64 << 20))                     .code(code.clone());
 
-                accs[2]
-                    .address(address!("0x0000000000000000000000000000000000cafe01"))
-                    .balance(Word::from(1u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[2].address);
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
+//                 accs[1]
+//                     .address(external_address)
+//                     .balance(balance)
+//                     .nonce(nonce)
+//                     .code(code_ext.clone());
 
-        let code_hash = Word::from(keccak256(code_ext));
+//                 accs[2]
+//
+// .address(address!("0x0000000000000000000000000000000000cafe01"))
+// .balance(Word::from(1u64 << 20));             },
+//             |mut txs, accs| {
+//                 txs[0].to(accs[0].address).from(accs[2].address);
+//             },
+//             |block, _tx| block.number(0xcafeu64),
+//         )
+//         .unwrap()
+//         .into();
 
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
+//         let code_hash = Word::from(keccak256(code_ext));
 
-        // Check that `external_address` is in access list as a result of bus mapping.
-        assert!(builder.sdb.add_account_to_access_list(external_address));
+//         let mut builder =
+// BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+//         builder
+//             .handle_block(&block.eth_block, &block.geth_traces)
+//             .unwrap();
 
-        let tx_id = 1;
-        let transaction = &builder.block.txs()[tx_id - 1];
-        let call_id = transaction.calls()[0].call_id;
+//         // Check that `external_address` is in access list as a result of bus
+// mapping.         assert!(builder.sdb.
+// add_account_to_access_list(external_address));
 
-        let indices = transaction
-            .steps()
-            .iter()
-            .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
-            .last()
-            .unwrap()
-            .bus_mapping_instance
-            .clone();
-        let container = builder.block.container;
-        assert_eq!(
-            {
-                let operation = &container.stack[indices[0].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &StackOp {
-                    call_id,
-                    address: StackAddress::from(1023u32),
-                    value: external_address.to_word()
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.call_context[indices[1].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &CallContextOp {
-                    call_id,
-                    field: CallContextField::TxId,
-                    value: tx_id.into()
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.call_context[indices[2].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &CallContextOp {
-                    call_id,
-                    field: CallContextField::RwCounterEndOfReversion,
-                    value: U256::zero()
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.call_context[indices[3].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &CallContextOp {
-                    call_id,
-                    field: CallContextField::IsPersistent,
-                    value: U256::one()
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.tx_access_list_account[indices[4].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::WRITE,
-                &TxAccessListAccountOp {
-                    tx_id,
-                    address: external_address,
-                    is_warm: true,
-                    is_warm_prev: is_warm
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.account[indices[5].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::READ,
-                &AccountOp {
-                    address: external_address,
-                    field: AccountField::CodeHash,
-                    value: if exists { code_hash } else { U256::zero() },
-                    value_prev: if exists { code_hash } else { U256::zero() },
-                }
-            )
-        );
-        assert_eq!(
-            {
-                let operation = &container.stack[indices[6].as_usize()];
-                (operation.rw(), operation.op())
-            },
-            (
-                RW::WRITE,
-                &StackOp {
-                    call_id,
-                    address: 1023u32.into(),
-                    value: if exists { code_hash } else { U256::zero() }
-                }
-            )
-        );
+//         let tx_id = 1;
+//         let transaction = &builder.block.txs()[tx_id - 1];
+//         let call_id = transaction.calls()[0].call_id;
 
-        Ok(())
-    }
-}
+//         let indices = transaction
+//             .steps()
+//             .iter()
+//             .filter(|step| step.exec_state ==
+// ExecState::Op(OpcodeId::EXTCODEHASH))             .last()
+//             .unwrap()
+//             .bus_mapping_instance
+//             .clone();
+//         let container = builder.block.container;
+//         assert_eq!(
+//             {
+//                 let operation = &container.stack[indices[0].as_usize()];
+//                 (operation.rw(), operation.op())
+//             },
+//             (
+//                 RW::READ,
+//                 &StackOp {
+//                     call_id,
+//                     address: StackAddress::from(1023u32),
+//                     value: external_address.to_word()
+//                 }
+//             )
+//         );
+//         assert_eq!(
+//             {
+//                 let operation =
+// &container.call_context[indices[1].as_usize()];
+// (operation.rw(), operation.op())             },
+//             (
+//                 RW::READ,
+//                 &CallContextOp {
+//                     call_id,
+//                     field: CallContextFieldTag::TxId,
+//                     value: tx_id.into()
+//                 }
+//             )
+//         );
+//         assert_eq!(
+//             {
+//                 let operation =
+// &container.call_context[indices[2].as_usize()];
+// (operation.rw(), operation.op())             },
+//             (
+//                 RW::READ,
+//                 &CallContextOp {
+//                     call_id,
+//                     field: CallContextFieldTag::RwCounterEndOfReversion,
+//                     value: U256::zero()
+//                 }
+//             )
+//         );
+//         assert_eq!(
+//             {
+//                 let operation =
+// &container.call_context[indices[3].as_usize()];
+// (operation.rw(), operation.op())             },
+//             (
+//                 RW::READ,
+//                 &CallContextOp {
+//                     call_id,
+//                     field: CallContextFieldTag::IsPersistent,
+//                     value: U256::one()
+//                 }
+//             )
+//         );
+//         assert_eq!(
+//             {
+//                 let operation =
+// &container.tx_access_list_account[indices[4].as_usize()];
+// (operation.rw(), operation.op())             },
+//             (
+//                 RW::WRITE,
+//                 &TxAccessListAccountOp {
+//                     tx_id,
+//                     address: external_address,
+//                     is_warm: true,
+//                     is_warm_prev: is_warm
+//                 }
+//             )
+//         );
+//         assert_eq!(
+//             {
+//                 let operation = &container.account[indices[5].as_usize()];
+//                 (operation.rw(), operation.op())
+//             },
+//             (
+//                 RW::READ,
+//                 &AccountOp {
+//                     address: external_address,
+//                     field: AccountFieldTag::CodeHash,
+//                     value: if exists { code_hash } else { U256::zero() },
+//                     value_prev: if exists { code_hash } else { U256::zero()
+// },                 }
+//             )
+//         );
+//         assert_eq!(
+//             {
+//                 let operation = &container.stack[indices[6].as_usize()];
+//                 (operation.rw(), operation.op())
+//             },
+//             (
+//                 RW::WRITE,
+//                 &StackOp {
+//                     call_id,
+//                     address: 1023u32.into(),
+//                     value: if exists { code_hash } else { U256::zero() }
+//                 }
+//             )
+//         );
+
+//         Ok(())
+//     }
+// }

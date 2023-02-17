@@ -1,6 +1,8 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::circuit_input_builder::{
+    AccountFieldTag, CallContextFieldTag, CallKind, CircuitInputStateRef, CodeSource, ExecStep,
+};
+
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
@@ -43,32 +45,32 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         };
 
         let mut field_values = vec![
-            (CallContextField::TxId, tx_id.into()),
+            (CallContextFieldTag::TxId, tx_id.into()),
             // NOTE: For `RwCounterEndOfReversion` we use the `0` value as a
             // placeholder, and later set the proper value in
             // `CircuitInputBuilder::set_value_ops_call_context_rwc_eor`
-            (CallContextField::RwCounterEndOfReversion, 0.into()),
+            (CallContextFieldTag::RwCounterEndOfReversion, 0.into()),
             (
-                CallContextField::IsPersistent,
+                CallContextFieldTag::IsPersistent,
                 (current_call.is_persistent as u64).into(),
             ),
             (
-                CallContextField::IsStatic,
+                CallContextFieldTag::IsStatic,
                 (current_call.is_static as u64).into(),
             ),
-            (CallContextField::Depth, current_call.depth.into()),
+            (CallContextFieldTag::Depth, current_call.depth.into()),
             (
-                CallContextField::CalleeAddress,
+                CallContextFieldTag::CalleeAddress,
                 current_call.address.to_word(),
             ),
         ];
         if call.kind == CallKind::DelegateCall {
             field_values.extend([
                 (
-                    CallContextField::CallerAddress,
+                    CallContextFieldTag::CallerAddress,
                     current_call.caller_address.to_word(),
                 ),
-                (CallContextField::Value, current_call.value),
+                (CallContextFieldTag::Value, current_call.value),
             ]);
         }
         for (field, value) in field_values {
@@ -103,30 +105,27 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state.account_read(
             &mut exec_step,
             callee_address,
-            AccountField::CodeHash,
+            AccountFieldTag::CodeHash,
             callee_code_hash_word,
             callee_code_hash_word,
         )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
-        state.push_op_reversible(
+        state.tx_accesslist_account_write::<true>(
             &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id,
-                address: callee_address,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
+            tx_id,
+            callee_address,
+            true,
+            is_warm,
         )?;
 
         // Switch to callee's call context
         state.push_call(call.clone());
 
         for (field, value) in [
-            (CallContextField::RwCounterEndOfReversion, 0.into()),
+            (CallContextFieldTag::RwCounterEndOfReversion, 0.into()),
             (
-                CallContextField::IsPersistent,
+                CallContextFieldTag::IsPersistent,
                 (call.is_persistent as u64).into(),
             ),
         ] {
@@ -154,7 +153,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state.account_read(
             &mut exec_step,
             call.caller_address,
-            AccountField::Balance,
+            AccountFieldTag::Balance,
             caller_balance,
             caller_balance,
         )?;
@@ -218,9 +217,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 2. Call to account with empty code.
             (false, _, true) => {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                    (CallContextFieldTag::LastCalleeId, 0.into()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextFieldTag::LastCalleeReturnDataLength, 0.into()),
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
@@ -231,20 +230,23 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (false, _, false) => {
                 for (field, value) in [
                     (
-                        CallContextField::ProgramCounter,
+                        CallContextFieldTag::ProgramCounter,
                         (geth_step.pc.0 + 1).into(),
                     ),
                     (
-                        CallContextField::StackPointer,
+                        CallContextFieldTag::StackPointer,
                         (geth_step.stack.stack_pointer().0 + N_ARGS - 1).into(),
                     ),
                     (
-                        CallContextField::GasLeft,
+                        CallContextFieldTag::GasLeft,
                         (geth_step.gas.0 - gas_cost - callee_gas_left).into(),
                     ),
-                    (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
-                        CallContextField::ReversibleWriteCounter,
+                        CallContextFieldTag::MemorySize,
+                        next_memory_word_size.into(),
+                    ),
+                    (
+                        CallContextFieldTag::ReversibleWriteCounter,
                         (exec_step.reversible_write_counter + 1).into(),
                     ),
                 ] {
@@ -252,39 +254,45 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 }
 
                 for (field, value) in [
-                    (CallContextField::CallerId, current_call.call_id.into()),
-                    (CallContextField::TxId, tx_id.into()),
-                    (CallContextField::Depth, call.depth.into()),
+                    (CallContextFieldTag::CallerId, current_call.call_id.into()),
+                    (CallContextFieldTag::TxId, tx_id.into()),
+                    (CallContextFieldTag::Depth, call.depth.into()),
                     (
-                        CallContextField::CallerAddress,
+                        CallContextFieldTag::CallerAddress,
                         call.caller_address.to_word(),
                     ),
-                    (CallContextField::CalleeAddress, call.address.to_word()),
+                    (CallContextFieldTag::CalleeAddress, call.address.to_word()),
                     (
-                        CallContextField::CallDataOffset,
+                        CallContextFieldTag::CallDataOffset,
                         call.call_data_offset.into(),
                     ),
                     (
-                        CallContextField::CallDataLength,
+                        CallContextFieldTag::CallDataLength,
                         call.call_data_length.into(),
                     ),
                     (
-                        CallContextField::ReturnDataOffset,
+                        CallContextFieldTag::ReturnDataOffset,
                         call.return_data_offset.into(),
                     ),
                     (
-                        CallContextField::ReturnDataLength,
+                        CallContextFieldTag::ReturnDataLength,
                         call.return_data_length.into(),
                     ),
-                    (CallContextField::Value, call.value),
-                    (CallContextField::IsSuccess, (call.is_success as u64).into()),
-                    (CallContextField::IsStatic, (call.is_static as u64).into()),
-                    (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                    (CallContextField::IsRoot, 0.into()),
-                    (CallContextField::IsCreate, 0.into()),
-                    (CallContextField::CodeHash, call.code_hash.to_word()),
+                    (CallContextFieldTag::Value, call.value),
+                    (
+                        CallContextFieldTag::IsSuccess,
+                        (call.is_success as u64).into(),
+                    ),
+                    (
+                        CallContextFieldTag::IsStatic,
+                        (call.is_static as u64).into(),
+                    ),
+                    (CallContextFieldTag::LastCalleeId, 0.into()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextFieldTag::LastCalleeReturnDataLength, 0.into()),
+                    (CallContextFieldTag::IsRoot, 0.into()),
+                    (CallContextFieldTag::IsCreate, 0.into()),
+                    (CallContextFieldTag::CodeHash, call.code_hash.to_word()),
                 ] {
                     state.call_context_write(&mut exec_step, call.call_id, field, value);
                 }
@@ -295,9 +303,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 4. insufficient balance or error depth cases.
             (true, _, _) => {
                 for (field, value) in [
-                    (CallContextField::LastCalleeId, 0.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (CallContextField::LastCalleeReturnDataLength, 0.into()),
+                    (CallContextFieldTag::LastCalleeId, 0.into()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.into()),
+                    (CallContextFieldTag::LastCalleeReturnDataLength, 0.into()),
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }

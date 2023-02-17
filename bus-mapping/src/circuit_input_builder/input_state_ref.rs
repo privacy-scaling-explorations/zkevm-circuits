@@ -1,18 +1,13 @@
 //! CircuitInput builder tooling module.
 
 use super::{
-    get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
-    TransactionContext,
+    get_call_memory_offset_length, get_create_init_code,
+    rw::{AccountFieldTag, CallContextFieldTag, Rw, TxLogFieldTag, TxReceiptFieldTag},
+    Block, BlockContext, Call, CallContext, CallKind, CodeSource, CopyEvent, ExecState, ExecStep,
+    ExpEvent, Transaction, TransactionContext,
 };
 use crate::{
     error::{get_step_reported_error, ExecError},
-    exec_trace::OperationRef,
-    operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        RW,
-    },
     state_db::{CodeDB, StateDB},
     Error,
 };
@@ -43,6 +38,12 @@ pub struct CircuitInputStateRef<'a> {
 }
 
 impl<'a> CircuitInputStateRef<'a> {
+    fn increment_rw_counter(&mut self) -> usize {
+        let rwc = self.block_ctx.rwc;
+        self.block_ctx.rwc += 1;
+        rwc
+    }
+
     /// Create a new step from a `GethExecStep`
     pub fn new_step(&self, geth_step: &GethExecStep) -> Result<ExecStep, Error> {
         let call_ctx = self.tx_ctx.call_ctx()?;
@@ -93,374 +94,435 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
-    /// reference to the stored operation ([`OperationRef`]) inside the
-    /// bus-mapping instance of the current [`ExecStep`].  Then increase the
-    /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
-    pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
-        if let OpEnum::Account(op) = op.clone().into_enum() {
-            self.check_update_sdb_account(rw, &op)
+    /// TODO:
+    fn push_op<const REVERSIBLE: bool>(
+        &mut self,
+        step: &mut ExecStep,
+        rw: Rw,
+    ) -> Result<(), Error> {
+        if rw.is_write() {
+            self.apply_rw(&rw);
         }
-        let op_ref =
-            self.block
-                .container
-                .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
-        step.bus_mapping_instance.push(op_ref);
+        let rw_idx = self.block.container.push(rw);
+        step.bus_mapping_instance.push(rw_idx);
+
+        if REVERSIBLE {
+            // Increase reversible_write_counter
+            self.call_ctx_mut()?.reversible_write_counter += 1;
+
+            // Add the operation into reversible_ops if this call is not persistent
+            if !self.call()?.is_persistent {
+                self.tx_ctx
+                    .reversion_groups
+                    .last_mut()
+                    .expect("reversion_groups should not be empty for non-persistent call")
+                    .rw_indices
+                    .push((self.tx.steps().len(), rw_idx));
+            }
+        }
+        Ok(())
     }
 
-    /// Push a read type [`CallContextOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with
-    /// the next [`RWCounter`](crate::operation::RWCounter)  and then adds a
-    /// reference to the stored operation ([`OperationRef`]) inside the
-    /// bus-mapping instance of the current [`ExecStep`].  Then increase the
-    /// block_ctx [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn call_context_read(
         &mut self,
         step: &mut ExecStep,
         call_id: usize,
-        field: CallContextField,
+        field_tag: CallContextFieldTag,
         value: Word,
     ) {
-        let op = CallContextOp {
-            call_id,
-            field,
-            value,
-        };
-
-        self.push_op(step, RW::READ, op);
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::CallContext {
+                rw_counter,
+                is_write: false,
+                call_id,
+                field_tag,
+                value,
+            },
+        )
+        .unwrap();
     }
 
-    /// Push a write type [`CallContextOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with
-    /// the next [`RWCounter`](crate::operation::RWCounter)  and then adds a
-    /// reference to the stored operation ([`OperationRef`]) inside the
-    /// bus-mapping instance of the current [`ExecStep`].  Then increase the
-    /// block_ctx [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn call_context_write(
         &mut self,
         step: &mut ExecStep,
         call_id: usize,
-        field: CallContextField,
+        field_tag: CallContextFieldTag,
         value: Word,
     ) {
-        let op = CallContextOp {
-            call_id,
-            field,
-            value,
-        };
-
-        self.push_op(step, RW::WRITE, op);
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::CallContext {
+                rw_counter,
+                is_write: true,
+                call_id,
+                field_tag,
+                value,
+            },
+        )
+        .unwrap();
     }
 
-    /// Push an [`Operation`](crate::operation::Operation) with reversible to be
-    /// true into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and then adds a
-    /// reference to the stored operation
-    /// ([`OperationRef`]) inside the
-    /// bus-mapping instance of the current [`ExecStep`]. Then increase the
-    /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
-    /// This method should be used in `Opcode::gen_associated_ops` instead of
-    /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
-    /// example, a write [`StorageOp`](crate::operation::StorageOp)).
-    pub fn push_op_reversible<T: Op>(
-        &mut self,
-        step: &mut ExecStep,
-        rw: RW,
-        op: T,
-    ) -> Result<(), Error> {
-        if matches!(rw, RW::WRITE) {
-            self.apply_op(&op.clone().into_enum());
-        }
-        let op_ref = self.block.container.insert(Operation::new_reversible(
-            self.block_ctx.rwc.inc_pre(),
-            rw,
-            op,
-        ));
-        step.bus_mapping_instance.push(op_ref);
-
-        // Increase reversible_write_counter
-        self.call_ctx_mut()?.reversible_write_counter += 1;
-
-        // Add the operation into reversible_ops if this call is not persistent
-        if !self.call()?.is_persistent {
-            self.tx_ctx
-                .reversion_groups
-                .last_mut()
-                .expect("reversion_groups should not be empty for non-persistent call")
-                .op_refs
-                .push((self.tx.steps().len(), op_ref));
-        }
-
-        Ok(())
-    }
-
-    /// Push a read type [`MemoryOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
+    /// TODO:
     pub fn memory_read(
         &mut self,
         step: &mut ExecStep,
-        address: MemoryAddress,
-        value: u8,
+        call_id: usize,
+        memory_address: MemoryAddress,
+        byte: u8,
     ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::Memory {
+                rw_counter,
+                is_write: false,
+                call_id,
+                memory_address: memory_address.0 as u64,
+                byte,
+            },
+        )?;
         Ok(())
     }
 
-    /// Push a write type [`MemoryOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn memory_write(
         &mut self,
         step: &mut ExecStep,
-        address: MemoryAddress,
-        value: u8,
+        call_id: usize,
+        memory_address: MemoryAddress,
+        byte: u8,
     ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::Memory {
+                rw_counter,
+                is_write: true,
+                call_id,
+                memory_address: memory_address.0 as u64,
+                byte,
+            },
+        )?;
         Ok(())
     }
 
-    /// Push a write type [`StackOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter)  and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
+    /// TODO:
     pub fn stack_write(
         &mut self,
         step: &mut ExecStep,
-        address: StackAddress,
+        stack_pointer: StackAddress,
         value: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::WRITE, StackOp::new(call_id, address, value));
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::Stack {
+                rw_counter,
+                is_write: true,
+                call_id,
+                stack_pointer: stack_pointer.0,
+                value,
+            },
+        )?;
         Ok(())
     }
 
-    /// Push a read type [`StackOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter)  and `call_id`, and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn stack_read(
         &mut self,
         step: &mut ExecStep,
-        address: StackAddress,
+        stack_pointer: StackAddress,
         value: Word,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
-        self.push_op(step, RW::READ, StackOp::new(call_id, address, value));
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::Stack {
+                rw_counter,
+                is_write: false,
+                call_id,
+                stack_pointer: stack_pointer.0,
+                value,
+            },
+        )?;
         Ok(())
     }
 
-    /// First check the validity and consistency of the rw operation against the
-    /// account in the StateDB, then if the rw operation is a write, apply
-    /// it to the corresponding account in the StateDB.
-    fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
-        let account = self.sdb.get_account_mut(&op.address).1;
-        // -- sanity check begin --
-        // Verify that a READ doesn't change the field value
-        if matches!(rw, RW::READ) && op.value_prev != op.value {
-            panic!(
-                "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
-                self.block_ctx.rwc.0, op
-            )
-        }
-        let account_value_prev = match op.field {
-            AccountField::Nonce => account.nonce,
-            AccountField::Balance => account.balance,
-            AccountField::CodeHash => {
-                if account.is_empty() {
-                    Word::zero()
-                } else {
-                    account.code_hash.to_word()
-                }
-            }
-        };
-        // Verify that the previous value matches the account field value in the StateDB
-        if op.value_prev != account_value_prev {
-            panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
-                rw,
-                account,
-                self.block_ctx.rwc.0,
-                op
-            );
-        }
-        // Verify that no read is done to a field other than CodeHash to a non-existing
-        // account (only CodeHash reads with value=0 can be done to non-existing
-        // accounts, which the State Circuit translates to MPT
-        // AccountNonExisting proofs lookups).
-        if (!matches!(op.field, AccountField::CodeHash)
-            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
-            && account.is_empty()
-        {
-            panic!(
-                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
-                rw, self.block_ctx.rwc.0, op
-            );
-        }
-        // -- sanity check end --
-        // Perform the write to the account in the StateDB
-        if matches!(rw, RW::WRITE) {
-            match op.field {
-                AccountField::Nonce => account.nonce = op.value,
-                AccountField::Balance => account.balance = op.value,
-                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
-            }
-        }
-    }
-
-    /// Push a read type [`AccountOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter), and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn account_read(
         &mut self,
         step: &mut ExecStep,
-        address: Address,
-        field: AccountField,
+        account_address: Address,
+        field_tag: AccountFieldTag,
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        let op = AccountOp::new(address, field, value, value_prev);
-        self.push_op(step, RW::READ, op);
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::Account {
+                rw_counter,
+                is_write: false,
+                account_address,
+                field_tag,
+                value,
+                value_prev,
+            },
+        )?;
         Ok(())
     }
 
-    /// Push a write type [`AccountOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter), and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn account_write(
+    /// TODO:
+    pub fn account_write<const REVERSIBLE: bool>(
         &mut self,
         step: &mut ExecStep,
-        address: Address,
-        field: AccountField,
+        account_address: Address,
+        field_tag: AccountFieldTag,
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        let op = AccountOp::new(address, field, value, value_prev);
-        self.push_op(step, RW::WRITE, op);
+        let rw = Rw::Account {
+            rw_counter: self.increment_rw_counter(),
+            is_write: true,
+            account_address,
+            field_tag,
+            value,
+            value_prev,
+        };
+        self.push_op::<REVERSIBLE>(step, rw)?;
         Ok(())
     }
 
-    /// Push a write type [`TxLogOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter), and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
+    pub fn account_storage_read(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        account_address: Address,
+        storage_key: Word,
+        value: Word,
+        committed_value: Word,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::AccountStorage {
+                rw_counter,
+                is_write: false,
+                tx_id,
+                account_address,
+                storage_key,
+                value,
+                value_prev: value,
+                committed_value,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// TODO:
+    #[allow(clippy::too_many_arguments)]
+    pub fn account_storage_write<const REVERSIBLE: bool>(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        account_address: Address,
+        storage_key: Word,
+        value: Word,
+        value_prev: Word,
+        committed_value: Word,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        let rw = Rw::AccountStorage {
+            rw_counter,
+            is_write: true,
+            tx_id,
+            account_address,
+            storage_key,
+            value,
+            value_prev,
+            committed_value,
+        };
+        self.push_op::<REVERSIBLE>(step, rw)?;
+        Ok(())
+    }
+
+    /// TODO:
     pub fn tx_log_write(
         &mut self,
         step: &mut ExecStep,
         tx_id: usize,
         log_id: usize,
-        field: TxLogField,
+        field_tag: TxLogFieldTag,
         index: usize,
         value: Word,
     ) -> Result<(), Error> {
-        self.push_op(
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
             step,
-            RW::WRITE,
-            TxLogOp::new(tx_id, log_id, field, index, value),
-        );
+            Rw::TxLog {
+                rw_counter,
+                is_write: true,
+                tx_id,
+                log_id: log_id as u64,
+                field_tag,
+                index,
+                value,
+            },
+        )?;
         Ok(())
     }
 
-    /// Push a read type [`TxReceiptOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter), and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn tx_receipt_read(
         &mut self,
         step: &mut ExecStep,
         tx_id: usize,
-        field: TxReceiptField,
+        field_tag: TxReceiptFieldTag,
         value: u64,
     ) -> Result<(), Error> {
-        self.push_op(
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
             step,
-            RW::READ,
-            TxReceiptOp {
+            Rw::TxReceipt {
+                rw_counter,
+                is_write: false,
                 tx_id,
-                field,
+                field_tag,
                 value,
             },
-        );
+        )?;
         Ok(())
     }
 
-    /// Push a write type [`TxReceiptOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter), and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
+    /// TODO:
     pub fn tx_receipt_write(
         &mut self,
         step: &mut ExecStep,
         tx_id: usize,
-        field: TxReceiptField,
+        field_tag: TxReceiptFieldTag,
         value: u64,
     ) -> Result<(), Error> {
-        self.push_op(
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
             step,
-            RW::WRITE,
-            TxReceiptOp {
+            Rw::TxReceipt {
+                rw_counter,
+                is_write: true,
                 tx_id,
-                field,
+                field_tag,
                 value,
             },
-        );
+        )?;
         Ok(())
     }
 
-    /// Push a write type [`TxAccessListAccountOp`] into the
-    /// [`OperationContainer`](crate::operation::OperationContainer) with the
-    /// next [`RWCounter`](crate::operation::RWCounter), and then
-    /// adds a reference to the stored operation ([`OperationRef`]) inside
-    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
-    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter)  by one.
-    pub fn tx_accesslist_account_write(
+    /// TODO:
+    pub fn tx_accesslist_account_read(
         &mut self,
         step: &mut ExecStep,
         tx_id: usize,
-        address: Address,
+        account_address: Address,
         is_warm: bool,
-        is_warm_prev: bool,
     ) -> Result<(), Error> {
-        self.push_op(
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
             step,
-            RW::WRITE,
-            TxAccessListAccountOp {
+            Rw::TxAccessListAccount {
+                rw_counter,
+                is_write: false,
                 tx_id,
-                address,
+                account_address,
                 is_warm,
-                is_warm_prev,
+                is_warm_prev: is_warm,
             },
-        );
+        )?;
         Ok(())
     }
 
-    /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
+    /// TODO:
+    pub fn tx_accesslist_account_write<const REVERSIBLE: bool>(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        account_address: Address,
+        is_warm: bool,
+        is_warm_prev: bool,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<REVERSIBLE>(
+            step,
+            Rw::TxAccessListAccount {
+                rw_counter,
+                is_write: true,
+                tx_id,
+                account_address,
+                is_warm,
+                is_warm_prev,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// TODO:
+    pub fn tx_accesslist_account_storage_read(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        account_address: Address,
+        storage_key: Word,
+        is_warm: bool,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::TxAccessListAccountStorage {
+                rw_counter,
+                is_write: false,
+                tx_id,
+                account_address,
+                storage_key,
+                is_warm,
+                is_warm_prev: is_warm,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// TODO:
+    pub fn tx_accesslist_account_storage_write<const REVERSIBLE: bool>(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        account_address: Address,
+        storage_key: Word,
+        is_warm: bool,
+        is_warm_prev: bool,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<REVERSIBLE>(
+            step,
+            Rw::TxAccessListAccountStorage {
+                rw_counter,
+                is_write: true,
+                tx_id,
+                account_address,
+                storage_key,
+                is_warm,
+                is_warm_prev,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Push 2 reversible [`Rw::Account`] to update `sender` and `receiver`'s
     /// balance by `value`, with `sender` being extraly charged with `fee`.
     pub fn transfer_with_fee(
         &mut self,
@@ -476,12 +538,14 @@ impl<'a> CircuitInputStateRef<'a> {
         }
         let sender_balance_prev = sender_account.balance;
         let sender_balance = sender_account.balance - value - fee;
-        self.push_op_reversible(
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<true>(
             step,
-            RW::WRITE,
-            AccountOp {
-                address: sender,
-                field: AccountField::Balance,
+            Rw::Account {
+                rw_counter,
+                is_write: true,
+                account_address: sender,
+                field_tag: AccountFieldTag::Balance,
                 value: sender_balance,
                 value_prev: sender_balance_prev,
             },
@@ -490,17 +554,62 @@ impl<'a> CircuitInputStateRef<'a> {
         let (_found, receiver_account) = self.sdb.get_account(&receiver);
         let receiver_balance_prev = receiver_account.balance;
         let receiver_balance = receiver_account.balance + value;
-        self.push_op_reversible(
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<true>(
             step,
-            RW::WRITE,
-            AccountOp {
-                address: receiver,
-                field: AccountField::Balance,
+            Rw::Account {
+                rw_counter,
+                is_write: true,
+                account_address: receiver,
+                field_tag: AccountFieldTag::Balance,
                 value: receiver_balance,
                 value_prev: receiver_balance_prev,
             },
         )?;
 
+        Ok(())
+    }
+
+    /// TODO:
+    pub fn tx_refund_read(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        refund: u64,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<false>(
+            step,
+            Rw::TxRefund {
+                rw_counter,
+                is_write: false,
+                tx_id,
+                value: refund,
+                value_prev: refund,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// TODO:
+    pub fn tx_refund_write(
+        &mut self,
+        step: &mut ExecStep,
+        tx_id: usize,
+        refund: u64,
+        refund_prev: u64,
+    ) -> Result<(), Error> {
+        let rw_counter = self.increment_rw_counter();
+        self.push_op::<true>(
+            step,
+            Rw::TxRefund {
+                rw_counter,
+                is_write: true,
+                tx_id,
+                value: refund,
+                value_prev: refund_prev,
+            },
+        )?;
         Ok(())
     }
 
@@ -700,7 +809,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let caller = self.call()?;
         let call = Call {
-            call_id: self.block_ctx.rwc.0,
+            call_id: self.block_ctx.rwc,
             caller_id: caller.call_id,
             last_callee_id: 0,
             kind,
@@ -728,88 +837,170 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Return the reverted version of an op by op_ref only if the original op
     /// was reversible.
-    fn get_rev_op_by_ref(&self, op_ref: &OperationRef) -> Option<OpEnum> {
-        match op_ref {
-            OperationRef(Target::Storage, idx) => {
-                let operation = &self.block.container.storage[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::Storage(operation.op().reverse()))
-                } else {
-                    None
-                }
+    fn get_rev_rw_by_idx(&mut self, rw_idx: usize) -> Option<Rw> {
+        match self.block.container[rw_idx] {
+            Rw::Account {
+                is_write: true,
+                account_address,
+                field_tag,
+                value,
+                value_prev,
+                ..
+            } => {
+                let rw_counter = self.increment_rw_counter();
+                Some(Rw::Account {
+                    rw_counter,
+                    is_write: true,
+                    account_address,
+                    field_tag,
+                    value: value_prev,
+                    value_prev: value,
+                })
             }
-            OperationRef(Target::TxAccessListAccount, idx) => {
-                let operation = &self.block.container.tx_access_list_account[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::TxAccessListAccount(operation.op().reverse()))
-                } else {
-                    None
-                }
+            Rw::AccountStorage {
+                is_write: true,
+                account_address,
+                storage_key,
+                value,
+                value_prev,
+                tx_id,
+                committed_value,
+                ..
+            } => {
+                let rw_counter = self.increment_rw_counter();
+                Some(Rw::AccountStorage {
+                    rw_counter,
+                    is_write: true,
+                    account_address,
+                    storage_key,
+                    value: value_prev,
+                    value_prev: value,
+                    tx_id,
+                    committed_value,
+                })
             }
-            OperationRef(Target::TxAccessListAccountStorage, idx) => {
-                let operation = &self.block.container.tx_access_list_account_storage[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::TxAccessListAccountStorage(operation.op().reverse()))
-                } else {
-                    None
-                }
+            Rw::TxAccessListAccount {
+                is_write: true,
+                tx_id,
+                account_address,
+                is_warm,
+                is_warm_prev,
+                ..
+            } => {
+                let rw_counter = self.increment_rw_counter();
+                Some(Rw::TxAccessListAccount {
+                    rw_counter,
+                    is_write: true,
+                    tx_id,
+                    account_address,
+                    is_warm: is_warm_prev,
+                    is_warm_prev: is_warm,
+                })
             }
-            OperationRef(Target::TxRefund, idx) => {
-                let operation = &self.block.container.tx_refund[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::TxRefund(operation.op().reverse()))
-                } else {
-                    None
-                }
+            Rw::TxAccessListAccountStorage {
+                is_write: true,
+                tx_id,
+                account_address,
+                storage_key,
+                is_warm,
+                is_warm_prev,
+                ..
+            } => {
+                let rw_counter = self.increment_rw_counter();
+                Some(Rw::TxAccessListAccountStorage {
+                    rw_counter,
+                    is_write: true,
+                    tx_id,
+                    account_address,
+                    storage_key,
+                    is_warm: is_warm_prev,
+                    is_warm_prev: is_warm,
+                })
             }
-            OperationRef(Target::Account, idx) => {
-                let operation = &self.block.container.account[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::Account(operation.op().reverse()))
-                } else {
-                    None
-                }
+            Rw::TxRefund {
+                is_write: true,
+                tx_id,
+                value,
+                value_prev,
+                ..
+            } => {
+                let rw_counter = self.increment_rw_counter();
+                Some(Rw::TxRefund {
+                    rw_counter,
+                    is_write: true,
+                    tx_id,
+                    value: value_prev,
+                    value_prev: value,
+                })
             }
             _ => None,
         }
     }
 
     /// Apply op to state.
-    fn apply_op(&mut self, op: &OpEnum) {
-        match &op {
-            OpEnum::Storage(op) => {
-                self.sdb.set_storage(&op.address, &op.key, &op.value);
-            }
-            OpEnum::TxAccessListAccount(op) => {
-                if !op.is_warm_prev && op.is_warm {
-                    self.sdb.add_account_to_access_list(op.address);
+    fn apply_rw(&mut self, rw: &Rw) {
+        match rw {
+            Rw::Account {
+                is_write: true,
+                account_address,
+                field_tag,
+                value,
+                ..
+            } => {
+                let (_, account) = self.sdb.get_account_mut(account_address);
+                match field_tag {
+                    AccountFieldTag::Nonce => account.nonce = *value,
+                    AccountFieldTag::Balance => account.balance = *value,
+                    AccountFieldTag::CodeHash => account.code_hash = value.to_be_bytes().into(),
+                    _ => {}
                 }
-                if op.is_warm_prev && !op.is_warm {
-                    self.sdb.remove_account_from_access_list(&op.address);
+            }
+            Rw::AccountStorage {
+                is_write: true,
+                account_address,
+                storage_key,
+                value,
+                ..
+            } => self.sdb.set_storage(account_address, storage_key, value),
+            Rw::TxAccessListAccount {
+                is_write: true,
+                account_address,
+                is_warm,
+                is_warm_prev,
+                ..
+            } => {
+                if !is_warm_prev && *is_warm {
+                    self.sdb.add_account_to_access_list(*account_address);
+                }
+                if *is_warm_prev && !is_warm {
+                    self.sdb.remove_account_from_access_list(account_address);
                 }
             }
-            OpEnum::TxAccessListAccountStorage(op) => {
-                if !op.is_warm_prev && op.is_warm {
+            Rw::TxAccessListAccountStorage {
+                is_write: true,
+                account_address,
+                storage_key,
+                is_warm,
+                is_warm_prev,
+                ..
+            } => {
+                if !is_warm_prev && *is_warm {
                     self.sdb
-                        .add_account_storage_to_access_list((op.address, op.key));
+                        .add_account_storage_to_access_list((*account_address, *storage_key));
                 }
-                if op.is_warm_prev && !op.is_warm {
+                if *is_warm_prev && !is_warm {
                     self.sdb
-                        .remove_account_storage_from_access_list(&(op.address, op.key));
+                        .remove_account_storage_from_access_list(&(*account_address, *storage_key));
                 }
             }
-            OpEnum::Account(op) => {
-                let (_, account) = self.sdb.get_account_mut(&op.address);
-                match op.field {
-                    AccountField::Nonce => account.nonce = op.value,
-                    AccountField::Balance => account.balance = op.value,
-                    AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
-                }
+            Rw::TxRefund {
+                is_write: true,
+                value,
+                ..
+            } => {
+                self.sdb.set_refund(*value);
             }
-            OpEnum::TxRefund(op) => {
-                self.sdb.set_refund(op.value);
-            }
-            _ => unreachable!(),
+            _ => {}
         };
     }
 
@@ -822,23 +1013,18 @@ impl<'a> CircuitInputStateRef<'a> {
             .expect("reversion_groups should not be empty for non-persistent call");
 
         // Apply reversions
-        for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
-            if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                self.apply_op(&op);
-                let rev_op_ref = self.block.container.insert_op_enum(
-                    self.block_ctx.rwc.inc_pre(),
-                    RW::WRITE,
-                    false,
-                    op,
-                );
+        for (step_index, rw_idx) in reversion_group.rw_indices.iter().rev().copied() {
+            if let Some(rw) = self.get_rev_rw_by_idx(rw_idx) {
+                self.apply_rw(&rw);
+                let rev_rw_idx = self.block.container.push(rw);
                 self.tx.steps_mut()[step_index]
                     .bus_mapping_instance
-                    .push(rev_op_ref);
+                    .push(rev_rw_idx);
             }
         }
 
         // Set calls' `rw_counter_end_of_reversion`
-        let rwc = self.block_ctx.rwc.0 - 1;
+        let rwc = self.block_ctx.rwc - 1;
         for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
             self.tx.calls_mut()[call_idx].rw_counter_end_of_reversion =
                 rwc - reversible_write_counter_offset;
@@ -927,7 +1113,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.call_context_read(
             exec_step,
             call.call_id,
-            CallContextField::CallerId,
+            CallContextFieldTag::CallerId,
             caller.call_id.into(),
         );
 
@@ -973,24 +1159,27 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller_gas_left = geth_step_next.gas.0 - gas_refund;
 
         for (field, value) in [
-            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (CallContextFieldTag::IsRoot, (caller.is_root as u64).into()),
             (
-                CallContextField::IsCreate,
+                CallContextFieldTag::IsCreate,
                 (caller.is_create() as u64).into(),
             ),
-            (CallContextField::CodeHash, caller.code_hash.to_word()),
-            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (CallContextFieldTag::CodeHash, caller.code_hash.to_word()),
             (
-                CallContextField::StackPointer,
+                CallContextFieldTag::ProgramCounter,
+                geth_step_next.pc.0.into(),
+            ),
+            (
+                CallContextFieldTag::StackPointer,
                 geth_step_next.stack.stack_pointer().0.into(),
             ),
-            (CallContextField::GasLeft, caller_gas_left.into()),
+            (CallContextFieldTag::GasLeft, caller_gas_left.into()),
             (
-                CallContextField::MemorySize,
+                CallContextFieldTag::MemorySize,
                 self.caller_ctx()?.memory.word_size().into(),
             ),
             (
-                CallContextField::ReversibleWriteCounter,
+                CallContextFieldTag::ReversibleWriteCounter,
                 self.caller_ctx()?.reversible_write_counter.into(),
             ),
         ] {
@@ -998,13 +1187,13 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         for (field, value) in [
-            (CallContextField::LastCalleeId, call.call_id.into()),
+            (CallContextFieldTag::LastCalleeId, call.call_id.into()),
             (
-                CallContextField::LastCalleeReturnDataOffset,
+                CallContextFieldTag::LastCalleeReturnDataOffset,
                 last_callee_return_data_offset,
             ),
             (
-                CallContextField::LastCalleeReturnDataLength,
+                CallContextFieldTag::LastCalleeReturnDataLength,
                 last_callee_return_data_length,
             ),
         ] {
@@ -1230,7 +1419,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(
                 exec_step,
                 call.call_id,
-                CallContextField::IsSuccess,
+                CallContextFieldTag::IsSuccess,
                 0u64.into(),
             );
 
@@ -1241,7 +1430,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(
                 exec_step,
                 call.call_id,
-                CallContextField::RwCounterEndOfReversion,
+                CallContextFieldTag::RwCounterEndOfReversion,
                 call.rw_counter_end_of_reversion.into(),
             );
 
@@ -1254,7 +1443,7 @@ impl<'a> CircuitInputStateRef<'a> {
         self.call_context_read(
             exec_step,
             call.call_id,
-            CallContextField::CallerId,
+            CallContextFieldTag::CallerId,
             caller.call_id.into(),
         );
 
@@ -1267,24 +1456,27 @@ impl<'a> CircuitInputStateRef<'a> {
         };
 
         for (field, value) in [
-            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (CallContextFieldTag::IsRoot, (caller.is_root as u64).into()),
             (
-                CallContextField::IsCreate,
+                CallContextFieldTag::IsCreate,
                 (caller.is_create() as u64).into(),
             ),
-            (CallContextField::CodeHash, caller.code_hash.to_word()),
-            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (CallContextFieldTag::CodeHash, caller.code_hash.to_word()),
             (
-                CallContextField::StackPointer,
+                CallContextFieldTag::ProgramCounter,
+                geth_step_next.pc.0.into(),
+            ),
+            (
+                CallContextFieldTag::StackPointer,
                 geth_step_next.stack.stack_pointer().0.into(),
             ),
-            (CallContextField::GasLeft, caller_gas_left.into()),
+            (CallContextFieldTag::GasLeft, caller_gas_left.into()),
             (
-                CallContextField::MemorySize,
+                CallContextFieldTag::MemorySize,
                 caller_ctx.memory.word_size().into(),
             ),
             (
-                CallContextField::ReversibleWriteCounter,
+                CallContextFieldTag::ReversibleWriteCounter,
                 self.caller_ctx()?.reversible_write_counter.into(),
             ),
         ] {
@@ -1292,9 +1484,9 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         for (field, value) in [
-            (CallContextField::LastCalleeId, call.call_id.into()),
-            (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-            (CallContextField::LastCalleeReturnDataLength, 0.into()),
+            (CallContextFieldTag::LastCalleeId, call.call_id.into()),
+            (CallContextFieldTag::LastCalleeReturnDataOffset, 0.into()),
+            (CallContextFieldTag::LastCalleeReturnDataLength, 0.into()),
         ] {
             self.call_context_write(exec_step, caller.call_id, field, value);
         }

@@ -6,16 +6,20 @@ mod block;
 mod call;
 mod execution;
 mod input_state_ref;
+mod rw;
 #[cfg(test)]
 mod tracer_tests;
 mod transaction;
 
-use self::access::gen_state_access_trace;
+pub use crate::circuit_input_builder::rw::{
+    AccountFieldTag, CallContextFieldTag, Rw, RwMap, RwRow, RwTableTag, TxLogFieldTag,
+    TxReceiptFieldTag,
+};
 use crate::error::Error;
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, Operation, RWCounter, StartOp, RW};
 use crate::rpc::GethClient;
 use crate::state_db::{self, CodeDB, StateDB};
+use access::gen_state_access_trace;
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
@@ -30,6 +34,7 @@ pub use execution::{
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
+use rw::RW;
 use std::collections::HashMap;
 pub use transaction::{Transaction, TransactionContext};
 
@@ -92,14 +97,6 @@ impl Default for CircuitsParams {
 /// [`eth_types::GethExecTrace`] to build the circuit input associated with
 /// each transaction, and the bus-mapping operations associated with each
 /// [`eth_types::GethExecStep`] in the [`eth_types::GethExecTrace`].
-///
-/// The generated bus-mapping operations are:
-/// [`StackOp`](crate::operation::StackOp)s,
-/// [`MemoryOp`](crate::operation::MemoryOp)s and
-/// [`StorageOp`](crate::operation::StorageOp), which correspond to each
-/// [`OpcodeId`](crate::evm::OpcodeId)s used in each `ExecTrace` step so that
-/// the State Proof witnesses are already generated on a structured manner and
-/// ready to be added into the State circuit.
 #[derive(Debug)]
 pub struct CircuitInputBuilder {
     /// StateDB key-value DB
@@ -148,7 +145,7 @@ impl<'a> CircuitInputBuilder {
         eth_tx: &eth_types::Transaction,
         is_success: bool,
     ) -> Result<Transaction, Error> {
-        let call_id = self.block_ctx.rwc.0;
+        let call_id = self.block_ctx.rwc;
 
         self.block_ctx.call_map.insert(
             call_id,
@@ -170,15 +167,20 @@ impl<'a> CircuitInputBuilder {
     /// `gen_associated_ops` we don't know yet which value it will take,
     /// so we put a placeholder; so we do it here after the values are known.
     pub fn set_value_ops_call_context_rwc_eor(&mut self) {
-        for oper in self.block.container.call_context.iter_mut() {
-            let op = oper.op_mut();
-            if matches!(op.field, CallContextField::RwCounterEndOfReversion) {
+        for rw in self.block.container.0.iter_mut() {
+            if let Rw::CallContext {
+                field_tag: CallContextFieldTag::RwCounterEndOfReversion,
+                call_id,
+                value,
+                ..
+            } = rw
+            {
                 let (tx_idx, call_idx) = self
                     .block_ctx
                     .call_map
-                    .get(&op.call_id)
+                    .get(call_id)
                     .expect("call_id not found in call_map");
-                op.value = self.block.txs[*tx_idx].calls()[*call_idx]
+                *value = self.block.txs[*tx_idx].calls()[*call_idx]
                     .rw_counter_end_of_reversion
                     .into();
             }
@@ -217,17 +219,17 @@ impl<'a> CircuitInputBuilder {
             state.call_context_read(
                 &mut end_block_last,
                 call_id,
-                CallContextField::TxId,
+                CallContextFieldTag::TxId,
                 Word::from(state.block.txs.len() as u64),
             );
         }
 
-        let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
-            let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
-            step.bus_mapping_instance.push(op_ref);
+        let mut push_op = |step: &mut ExecStep, rw: Rw| {
+            let idx = state.block.container.push(rw);
+            step.bus_mapping_instance.push(idx);
         };
 
-        let total_rws = state.block_ctx.rwc.0 - 1;
+        let total_rws = state.block_ctx.rwc - 1;
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
@@ -238,12 +240,12 @@ impl<'a> CircuitInputBuilder {
                 max_rws
             );
         }
-        push_op(&mut end_block_last, RWCounter(1), RW::READ, StartOp {});
+        push_op(&mut end_block_last, Rw::Start { rw_counter: 1 });
         push_op(
             &mut end_block_last,
-            RWCounter(max_rws - total_rws),
-            RW::READ,
-            StartOp {},
+            Rw::Start {
+                rw_counter: max_rws - total_rws,
+            },
         );
 
         self.block.block_steps.end_block_not_last = end_block_not_last;
@@ -251,10 +253,7 @@ impl<'a> CircuitInputBuilder {
     }
 
     /// Handle a transaction with its corresponding execution trace to generate
-    /// all the associated operations.  Each operation is registered in
-    /// `self.block.container`, and each step stores the
-    /// [`OperationRef`](crate::exec_trace::OperationRef) to each of the
-    /// generated operations.
+    /// all the associated operations.
     fn handle_tx(
         &mut self,
         eth_tx: &eth_types::Transaction,

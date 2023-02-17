@@ -1,5 +1,5 @@
 use super::CodeSource;
-use crate::{exec_trace::OperationRef, Error};
+use crate::Error;
 use eth_types::evm_types::Memory;
 use eth_types::{evm_types::OpcodeId, Address, Hash, Word};
 
@@ -127,7 +127,7 @@ pub struct CallContext {
 }
 
 /// A reversion group is the collection of calls and the operations which are
-/// [`Operation::reversible`](crate::operation::Operation::reversible) that
+/// reversible that
 /// happened in them, that will be reverted at once when the call that initiated
 /// this reversion group eventually ends with failure (and thus reverts).
 #[derive(Debug, Default)]
@@ -137,15 +137,15 @@ pub struct ReversionGroup {
     /// reversible operations that have happened before the call within the
     /// same reversion group.
     pub(crate) calls: Vec<(usize, usize)>,
-    /// List of `step_index` and [`OperationRef`] that have been done in this
+    /// List of `step_index` and `rw_index` that have been done in this
     /// group.
-    pub(crate) op_refs: Vec<(usize, OperationRef)>,
+    pub(crate) rw_indices: Vec<(usize, usize)>,
 }
 
 impl ReversionGroup {
     /// Creates a new `ReversionGroup` instance from the calls and operation
     /// references lists.
-    pub fn new(calls: Vec<(usize, usize)>, op_refs: Vec<(usize, OperationRef)>) -> Self {
-        Self { calls, op_refs }
+    pub fn new(calls: Vec<(usize, usize)>, rw_indices: Vec<(usize, usize)>) -> Self {
+        Self { calls, rw_indices }
     }
 }

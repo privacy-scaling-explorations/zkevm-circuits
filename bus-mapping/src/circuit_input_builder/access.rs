@@ -1,4 +1,4 @@
-use crate::{operation::RW, Error};
+use crate::{circuit_input_builder::rw::RW, Error};
 use eth_types::{evm_types::OpcodeId, Address, GethExecStep, GethExecTrace, ToAddress, Word};
 use ethers_core::utils::get_contract_address;
 use std::collections::{hash_map::Entry, HashMap, HashSet};

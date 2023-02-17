@@ -1,8 +1,8 @@
 use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    CallContextFieldTag, CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
 };
 use crate::evm::Opcode;
-use crate::operation::{CallContextField, MemoryOp, RW};
+
 use crate::Error;
 use eth_types::GethExecStep;
 
@@ -86,13 +86,13 @@ fn gen_returndatacopy_step(
 
     // read last callee info
     for (field, value) in [
-        (CallContextField::LastCalleeId, last_callee_id.into()),
+        (CallContextFieldTag::LastCalleeId, last_callee_id.into()),
         (
-            CallContextField::LastCalleeReturnDataOffset,
+            CallContextFieldTag::LastCalleeReturnDataOffset,
             last_callee_return_data_offset.into(),
         ),
         (
-            CallContextField::LastCalleeReturnDataLength,
+            CallContextFieldTag::LastCalleeReturnDataLength,
             return_data.len().into(),
         ),
     ] {
@@ -119,15 +119,16 @@ fn gen_copy_steps(
             unreachable!("return data copy out of bound")
         };
         // Read
-        state.push_op(
-            exec_step,
-            RW::READ,
-            MemoryOp::new(state.call()?.last_callee_id, addr.into(), value),
-        );
+        state.memory_read(exec_step, state.call()?.last_callee_id, addr.into(), value)?;
 
         // Write
         copy_steps.push((value, false));
-        state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
+        state.memory_write(
+            exec_step,
+            state.call()?.call_id,
+            (dst_addr + idx).into(),
+            value,
+        )?;
     }
     Ok(copy_steps)
 }

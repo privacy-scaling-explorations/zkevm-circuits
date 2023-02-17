@@ -6,8 +6,9 @@ use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
 use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
-use crate::witness::{
-    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+use crate::witness::{Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, RwRow, Transaction};
+pub(crate) use bus_mapping::circuit_input_builder::{
+    AccountFieldTag, CallContextFieldTag, Rw, RwMap, RwTableTag, TxLogFieldTag, TxReceiptFieldTag,
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
@@ -23,7 +24,6 @@ use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
-use strum_macros::{EnumCount, EnumIter};
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {
@@ -276,150 +276,6 @@ impl<F: Field> LookupTable<F> for TxTable {
         ]
     }
 }
-
-/// Tag to identify the operation type in a RwTable row
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
-pub enum RwTableTag {
-    /// Start (used for padding)
-    Start = 1,
-    /// Stack operation
-    Stack,
-    /// Memory operation
-    Memory,
-    /// Account Storage operation
-    AccountStorage,
-    /// Tx Access List Account operation
-    TxAccessListAccount,
-    /// Tx Access List Account Storage operation
-    TxAccessListAccountStorage,
-    /// Tx Refund operation
-    TxRefund,
-    /// Account operation
-    Account,
-    /// Call Context operation
-    CallContext,
-    /// Tx Log operation
-    TxLog,
-    /// Tx Receipt operation
-    TxReceipt,
-}
-impl_expr!(RwTableTag);
-
-impl RwTableTag {
-    /// Returns true if the RwTable operation is reversible
-    pub fn is_reversible(self) -> bool {
-        matches!(
-            self,
-            RwTableTag::TxAccessListAccount
-                | RwTableTag::TxAccessListAccountStorage
-                | RwTableTag::TxRefund
-                | RwTableTag::Account
-                | RwTableTag::AccountStorage
-        )
-    }
-}
-
-impl From<RwTableTag> for usize {
-    fn from(t: RwTableTag) -> Self {
-        t as usize
-    }
-}
-
-/// Tag for an AccountField in RwTable
-#[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AccountFieldTag {
-    /// Nonce field
-    Nonce = 1,
-    /// Balance field
-    Balance,
-    /// CodeHash field
-    CodeHash,
-    /// NonExisting field
-    NonExisting,
-}
-impl_expr!(AccountFieldTag);
-
-/// Tag for a TxLogField in RwTable
-#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
-pub enum TxLogFieldTag {
-    /// Address field
-    Address = 1,
-    /// Topic field
-    Topic,
-    /// Data field
-    Data,
-}
-impl_expr!(TxLogFieldTag);
-
-/// Tag for a TxReceiptField in RwTable
-#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter, EnumCount)]
-pub enum TxReceiptFieldTag {
-    /// Tx result
-    PostStateOrStatus = 1,
-    /// CumulativeGasUsed in the tx
-    CumulativeGasUsed,
-    /// Number of logs in the tx
-    LogLength,
-}
-impl_expr!(TxReceiptFieldTag);
-
-/// Tag for a CallContextField in RwTable
-#[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
-pub enum CallContextFieldTag {
-    /// RwCounterEndOfReversion
-    RwCounterEndOfReversion = 1,
-    /// CallerId
-    CallerId,
-    /// TxId
-    TxId,
-    /// Depth
-    Depth,
-    /// CallerAddress
-    CallerAddress,
-    /// CalleeAddress
-    CalleeAddress,
-    /// CallDataOffset
-    CallDataOffset,
-    /// CallDataLength
-    CallDataLength,
-    /// ReturnDataOffset
-    ReturnDataOffset,
-    /// ReturnDataLength
-    ReturnDataLength,
-    /// Value
-    Value,
-    /// IsSuccess
-    IsSuccess,
-    /// IsPersistent
-    IsPersistent,
-    /// IsStatic
-    IsStatic,
-
-    /// LastCalleeId
-    LastCalleeId,
-    /// LastCalleeReturnDataOffset
-    LastCalleeReturnDataOffset,
-    /// LastCalleeReturnDataLength
-    LastCalleeReturnDataLength,
-
-    /// IsRoot
-    IsRoot,
-    /// IsCreate
-    IsCreate,
-    /// CodeHash
-    CodeHash,
-    /// ProgramCounter
-    ProgramCounter,
-    /// StackPointer
-    StackPointer,
-    /// GasLeft
-    GasLeft,
-    /// MemorySize
-    MemorySize,
-    /// ReversibleWriteCounter
-    ReversibleWriteCounter,
-}
-impl_expr!(CallContextFieldTag);
 
 /// The RwTable shared between EVM Circuit and State Circuit, which contains
 /// traces of the EVM state operations.

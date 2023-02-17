@@ -424,10 +424,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        (
-            block.rws.0.values().flatten().count() + 1,
-            block.circuits_params.max_rws,
-        )
+        (block.rws.0.len() + 1, block.circuits_params.max_rws)
     }
 
     /// Make the assignments to the StateCircuit
@@ -705,7 +702,7 @@ mod state_circuit_stats {
                 let step = &builder.block.txs[0].steps()[step_index];
                 let step_next = &builder.block.txs[0].steps()[step_index + 1];
                 assert_eq!(ExecState::Op(opcode), step.exec_state);
-                let h = step_next.rwc.0 - step.rwc.0;
+                let h = step_next.rwc - step.rwc;
 
                 let gas_cost = block.geth_traces[0].struct_logs[11].gas_cost.0;
                 stats.push((state, opcode, h, gas_cost));

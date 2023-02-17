@@ -1,11 +1,10 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    circuit_input_builder::{
+        AccountFieldTag, CallContextFieldTag, CircuitInputStateRef, ExecStep, TxReceiptFieldTag,
+    },
     error::{ExecError, OogError},
     evm::OpcodeId,
-    operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
-    },
     Error,
 };
 use core::fmt::Debug;
@@ -103,14 +102,8 @@ use stop::Stop;
 use swap::Swap;
 
 /// Generic opcode trait which defines the logic of the
-/// [`Operation`](crate::operation::Operation) that should be generated for one
-/// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending
-/// of the [`OpcodeId`] it contains.
 pub trait Opcode: Debug {
-    /// Generate the associated [`MemoryOp`](crate::operation::MemoryOp)s,
-    /// [`StackOp`](crate::operation::StackOp)s, and
-    /// [`StorageOp`](crate::operation::StorageOp)s associated to the Opcode
-    /// is implemented for.
+    /// TODO:
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
@@ -348,16 +341,16 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let call = state.call()?.clone();
 
     for (field, value) in [
-        (CallContextField::TxId, state.tx_ctx.id().into()),
+        (CallContextFieldTag::TxId, state.tx_ctx.id().into()),
         (
-            CallContextField::RwCounterEndOfReversion,
+            CallContextFieldTag::RwCounterEndOfReversion,
             call.rw_counter_end_of_reversion.into(),
         ),
         (
-            CallContextField::IsPersistent,
+            CallContextFieldTag::IsPersistent,
             (call.is_persistent as usize).into(),
         ),
-        (CallContextField::IsSuccess, call.is_success.to_word()),
+        (CallContextFieldTag::IsSuccess, call.is_success.to_word()),
     ] {
         state.call_context_write(&mut exec_step, call.call_id, field, value);
     }
@@ -365,10 +358,10 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // Increase caller's nonce
     let caller_address = call.caller_address;
     let nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
-    state.account_write(
+    state.account_write::<false>(
         &mut exec_step,
         caller_address,
-        AccountField::Nonce,
+        AccountFieldTag::Nonce,
         nonce_prev + 1,
         nonce_prev,
     )?;
@@ -376,7 +369,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // Add caller and callee into access list
     for address in [call.caller_address, call.address] {
         state.sdb.add_account_to_access_list(address);
-        state.tx_accesslist_account_write(
+        state.tx_accesslist_account_write::<false>(
             &mut exec_step,
             state.tx_ctx.id(),
             address,
@@ -428,28 +421,31 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         // 1. Creation transaction.
         (true, _, _) => {
             for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
+                (CallContextFieldTag::Depth, call.depth.into()),
                 (
-                    CallContextField::CallerAddress,
+                    CallContextFieldTag::CallerAddress,
                     call.caller_address.to_word(),
                 ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (CallContextFieldTag::CalleeAddress, call.address.to_word()),
                 (
-                    CallContextField::CallDataOffset,
+                    CallContextFieldTag::CallDataOffset,
                     call.call_data_offset.into(),
                 ),
                 (
-                    CallContextField::CallDataLength,
+                    CallContextFieldTag::CallDataLength,
                     state.tx.input.len().into(),
                 ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, call.code_hash.to_word()),
+                (CallContextFieldTag::Value, call.value),
+                (
+                    CallContextFieldTag::IsStatic,
+                    (call.is_static as usize).into(),
+                ),
+                (CallContextFieldTag::LastCalleeId, 0.into()),
+                (CallContextFieldTag::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextFieldTag::LastCalleeReturnDataLength, 0.into()),
+                (CallContextFieldTag::IsRoot, 1.into()),
+                (CallContextFieldTag::IsCreate, 1.into()),
+                (CallContextFieldTag::CodeHash, call.code_hash.to_word()),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -464,7 +460,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             state.account_read(
                 &mut exec_step,
                 call.address,
-                AccountField::CodeHash,
+                AccountFieldTag::CodeHash,
                 callee_code_hash_word,
                 callee_code_hash_word,
             )?;
@@ -476,28 +472,31 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
             // 4. Call to account with non-empty code.
             for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
+                (CallContextFieldTag::Depth, call.depth.into()),
                 (
-                    CallContextField::CallerAddress,
+                    CallContextFieldTag::CallerAddress,
                     call.caller_address.to_word(),
                 ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (CallContextFieldTag::CalleeAddress, call.address.to_word()),
                 (
-                    CallContextField::CallDataOffset,
+                    CallContextFieldTag::CallDataOffset,
                     call.call_data_offset.into(),
                 ),
                 (
-                    CallContextField::CallDataLength,
+                    CallContextFieldTag::CallDataLength,
                     call.call_data_length.into(),
                 ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
-                (CallContextField::LastCalleeId, 0.into()),
-                (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                (CallContextField::LastCalleeReturnDataLength, 0.into()),
-                (CallContextField::IsRoot, 1.into()),
-                (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeHash, callee_code_hash_word),
+                (CallContextFieldTag::Value, call.value),
+                (
+                    CallContextFieldTag::IsStatic,
+                    (call.is_static as usize).into(),
+                ),
+                (CallContextFieldTag::LastCalleeId, 0.into()),
+                (CallContextFieldTag::LastCalleeReturnDataOffset, 0.into()),
+                (CallContextFieldTag::LastCalleeReturnDataLength, 0.into()),
+                (CallContextFieldTag::IsRoot, 1.into()),
+                (CallContextFieldTag::IsCreate, 0.into()),
+                (CallContextFieldTag::CodeHash, callee_code_hash_word),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -514,26 +513,18 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     state.call_context_read(
         &mut exec_step,
         call.call_id,
-        CallContextField::TxId,
+        CallContextFieldTag::TxId,
         state.tx_ctx.id().into(),
     );
     state.call_context_read(
         &mut exec_step,
         call.call_id,
-        CallContextField::IsPersistent,
+        CallContextFieldTag::IsPersistent,
         Word::from(call.is_persistent as u8),
     );
 
     let refund = state.sdb.refund();
-    state.push_op(
-        &mut exec_step,
-        RW::READ,
-        TxRefundOp {
-            tx_id: state.tx_ctx.id(),
-            value: refund,
-            value_prev: refund,
-        },
-    );
+    state.tx_refund_read(&mut exec_step, state.tx_ctx.id(), refund)?;
 
     let effective_refund =
         refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
@@ -544,10 +535,10 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
         caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
-    state.account_write(
+    state.account_write::<false>(
         &mut exec_step,
         call.caller_address,
-        AccountField::Balance,
+        AccountFieldTag::Balance,
         caller_balance,
         caller_balance_prev,
     )?;
@@ -560,10 +551,10 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
         coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
-    state.account_write(
+    state.account_write::<false>(
         &mut exec_step,
         state.block.coinbase,
-        AccountField::Balance,
+        AccountFieldTag::Balance,
         coinbase_balance,
         coinbase_balance_prev,
     )?;
@@ -572,7 +563,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
-        TxReceiptField::PostStateOrStatus,
+        TxReceiptFieldTag::PostStateOrStatus,
         call.is_persistent as u64,
     )?;
 
@@ -580,7 +571,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
-        TxReceiptField::LogLength,
+        TxReceiptFieldTag::LogLength,
         log_id as u64,
     )?;
 
@@ -589,7 +580,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         state.tx_receipt_read(
             &mut exec_step,
             state.tx_ctx.id() - 1,
-            TxReceiptField::CumulativeGasUsed,
+            TxReceiptFieldTag::CumulativeGasUsed,
             state.block_ctx.cumulative_gas_used,
         )?;
     }
@@ -598,15 +589,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
     state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
-        TxReceiptField::CumulativeGasUsed,
+        TxReceiptFieldTag::CumulativeGasUsed,
         state.block_ctx.cumulative_gas_used,
     )?;
 
     if !state.tx_ctx.is_last_tx() {
         state.call_context_write(
             &mut exec_step,
-            state.block_ctx.rwc.0 + 1,
-            CallContextField::TxId,
+            state.block_ctx.rwc + 1,
+            CallContextFieldTag::TxId,
             (state.tx_ctx.id() + 1).into(),
         );
     }
@@ -635,15 +626,12 @@ fn dummy_gen_selfdestruct_ops(
     let receiver = geth_step.stack.last()?.to_address();
 
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
-    state.push_op_reversible(
+    state.tx_accesslist_account_write::<true>(
         &mut exec_step,
-        RW::WRITE,
-        TxAccessListAccountOp {
-            tx_id: state.tx_ctx.id(),
-            address: receiver,
-            is_warm: true,
-            is_warm_prev: is_warm,
-        },
+        state.tx_ctx.id(),
+        receiver,
+        true,
+        is_warm,
     )?;
 
     let (found, _) = state.sdb.get_account(&receiver);

@@ -1,6 +1,8 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::circuit_input_builder::{
+    AccountFieldTag, CallContextFieldTag, CircuitInputStateRef, ExecStep,
+};
 use crate::evm::Opcode;
-use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp, RW};
+
 use crate::Error;
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
 use keccak256::EMPTY_HASH;
@@ -67,41 +69,32 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // > add the address being created to accessed_addresses,
         // > but gas costs of CREATE and CREATE2 are unchanged
         let is_warm = state.sdb.check_account_in_access_list(&address);
-        state.push_op_reversible(
+        state.tx_accesslist_account_write::<true>(
             &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id: state.tx_ctx.id(),
-                address,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm,
         )?;
 
         // Increase caller's nonce
         let nonce_prev = state.sdb.get_nonce(&call.caller_address);
-        state.push_op_reversible(
+        state.account_write::<true>(
             &mut exec_step,
-            RW::WRITE,
-            AccountOp {
-                address: call.caller_address,
-                field: AccountField::Nonce,
-                value: (nonce_prev + 1).into(),
-                value_prev: nonce_prev.into(),
-            },
+            call.caller_address,
+            AccountFieldTag::Nonce,
+            (nonce_prev + 1).into(),
+            nonce_prev.into(),
         )?;
 
         // Add callee into access list
         let is_warm = state.sdb.check_account_in_access_list(&call.address);
-        state.push_op_reversible(
+        state.tx_accesslist_account_write::<true>(
             &mut exec_step,
-            RW::WRITE,
-            TxAccessListAccountOp {
-                tx_id,
-                address: call.address,
-                is_warm: true,
-                is_warm_prev: is_warm,
-            },
+            tx_id,
+            call.address,
+            true,
+            is_warm,
         )?;
 
         state.push_call(call.clone());
@@ -109,15 +102,12 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // Increase callee's nonce
         let nonce_prev = state.sdb.get_nonce(&call.address);
         debug_assert!(nonce_prev == 0);
-        state.push_op_reversible(
+        state.account_write::<true>(
             &mut exec_step,
-            RW::WRITE,
-            AccountOp {
-                address: call.address,
-                field: AccountField::Nonce,
-                value: 1.into(),
-                value_prev: 0.into(),
-            },
+            call.address,
+            AccountFieldTag::Nonce,
+            1.into(),
+            0.into(),
         )?;
 
         state.transfer(
@@ -136,17 +126,20 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         for (field, value) in [
             (
-                CallContextField::ProgramCounter,
+                CallContextFieldTag::ProgramCounter,
                 (geth_step.pc.0 + 1).into(),
             ),
             (
-                CallContextField::StackPointer,
+                CallContextFieldTag::StackPointer,
                 geth_step.stack.nth_last_filled(n_pop - 1).0.into(),
             ),
-            (CallContextField::GasLeft, caller_gas_left.into()),
-            (CallContextField::MemorySize, next_memory_word_size.into()),
+            (CallContextFieldTag::GasLeft, caller_gas_left.into()),
             (
-                CallContextField::ReversibleWriteCounter,
+                CallContextFieldTag::MemorySize,
+                next_memory_word_size.into(),
+            ),
+            (
+                CallContextFieldTag::ReversibleWriteCounter,
                 // +3 is because we do some transfers after pushing the call. can be just push the
                 // call later?
                 (exec_step.reversible_write_counter + 3).into(),
@@ -156,20 +149,26 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         }
 
         for (field, value) in [
-            (CallContextField::CallerId, current_call.call_id.into()),
-            (CallContextField::IsSuccess, call.is_success.to_word()),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
-            (CallContextField::TxId, state.tx_ctx.id().into()),
+            (CallContextFieldTag::CallerId, current_call.call_id.into()),
+            (CallContextFieldTag::IsSuccess, call.is_success.to_word()),
             (
-                CallContextField::CallerAddress,
+                CallContextFieldTag::IsPersistent,
+                call.is_persistent.to_word(),
+            ),
+            (CallContextFieldTag::TxId, state.tx_ctx.id().into()),
+            (
+                CallContextFieldTag::CallerAddress,
                 current_call.address.to_word(),
             ),
-            (CallContextField::CalleeAddress, call.address.to_word()),
+            (CallContextFieldTag::CalleeAddress, call.address.to_word()),
             (
-                CallContextField::RwCounterEndOfReversion,
+                CallContextFieldTag::RwCounterEndOfReversion,
                 call.rw_counter_end_of_reversion.to_word(),
             ),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (
+                CallContextFieldTag::IsPersistent,
+                call.is_persistent.to_word(),
+            ),
         ] {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }

@@ -1,12 +1,10 @@
 //! Block-related utility module
 
 use super::{
-    execution::ExecState, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep, ExpEvent,
+    execution::ExecState, rw::RwMap, transaction::Transaction, CircuitsParams, CopyEvent, ExecStep,
+    ExpEvent,
 };
-use crate::{
-    operation::{OperationContainer, RWCounter},
-    Error,
-};
+use crate::Error;
 use eth_types::{evm_unimplemented, Address, Hash, Word};
 use std::collections::HashMap;
 
@@ -15,7 +13,7 @@ use std::collections::HashMap;
 pub struct BlockContext {
     /// Used to track the global counter in every operation in the block.
     /// Contains the next available value.
-    pub(crate) rwc: RWCounter,
+    pub(crate) rwc: usize,
     /// Map call_id to (tx_index, call_index) (where tx_index is the index used
     /// in Block.txs and call_index is the index used in Transaction.
     /// calls).
@@ -34,7 +32,7 @@ impl BlockContext {
     /// Create a new Self
     pub fn new() -> Self {
         Self {
-            rwc: RWCounter::new(),
+            rwc: 1,
             call_map: HashMap::new(),
             cumulative_gas_used: 0,
         }
@@ -75,7 +73,7 @@ pub struct Block {
     /// State root of the previous block
     pub prev_state_root: Word,
     /// Container of operations done in this block.
-    pub container: OperationContainer,
+    pub container: RwMap,
     /// Transactions contained in the block
     pub txs: Vec<Transaction>,
     /// Block-wise steps
@@ -125,7 +123,7 @@ impl Block {
             difficulty: eth_block.difficulty,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
             prev_state_root,
-            container: OperationContainer::new(),
+            container: RwMap::new(),
             txs: Vec::new(),
             block_steps: BlockSteps {
                 end_block_not_last: ExecStep {

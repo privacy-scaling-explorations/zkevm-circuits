@@ -1,6 +1,8 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::circuit_input_builder::{
+    AccountFieldTag, CallContextFieldTag, CircuitInputStateRef, ExecStep,
+};
+
 use crate::Error;
 use eth_types::evm_types::OpcodeId;
 use eth_types::{GethExecStep, ToAddress, ToWord, Word};
@@ -37,9 +39,9 @@ impl Opcode for OOGCall {
 
         let current_call = state.call()?.clone();
         for (field, value) in [
-            (CallContextField::TxId, tx_id.into()),
+            (CallContextFieldTag::TxId, tx_id.into()),
             (
-                CallContextField::IsStatic,
+                CallContextFieldTag::IsStatic,
                 (current_call.is_static as u64).into(),
             ),
         ] {
@@ -73,22 +75,13 @@ impl Opcode for OOGCall {
         state.account_read(
             &mut exec_step,
             call_address,
-            AccountField::CodeHash,
+            AccountFieldTag::CodeHash,
             callee_code_hash_word,
             callee_code_hash_word,
         )?;
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
-        state.push_op(
-            &mut exec_step,
-            RW::READ,
-            TxAccessListAccountOp {
-                tx_id,
-                address: call_address,
-                is_warm,
-                is_warm_prev: is_warm,
-            },
-        );
+        state.tx_accesslist_account_read(&mut exec_step, tx_id, call_address, is_warm)?;
 
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;

@@ -1,8 +1,7 @@
 use super::{Opcode, OpcodeId};
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
+use crate::circuit_input_builder::{CallContextFieldTag, CircuitInputStateRef, ExecStep};
 use crate::error::{ExecError, OogError};
-use crate::operation::{CallContextField, RW};
-use crate::operation::{StorageOp, TxAccessListAccountStorageOp};
+
 use crate::Error;
 use eth_types::{GethExecStep, ToWord};
 
@@ -30,21 +29,21 @@ impl Opcode for OOGSloadSstore {
         state.call_context_read(
             &mut exec_step,
             call_id,
-            CallContextField::TxId,
+            CallContextFieldTag::TxId,
             tx_id.into(),
         );
 
         state.call_context_read(
             &mut exec_step,
             call_id,
-            CallContextField::IsStatic,
+            CallContextFieldTag::IsStatic,
             (state.call()?.is_static as u8).into(),
         );
 
         state.call_context_read(
             &mut exec_step,
             call_id,
-            CallContextField::CalleeAddress,
+            CallContextFieldTag::CalleeAddress,
             callee_address.to_word(),
         );
 
@@ -54,17 +53,13 @@ impl Opcode for OOGSloadSstore {
         let is_warm = state
             .sdb
             .check_account_storage_in_access_list(&(callee_address, key));
-        state.push_op(
+        state.tx_accesslist_account_storage_read(
             &mut exec_step,
-            RW::READ,
-            TxAccessListAccountStorageOp {
-                tx_id,
-                address: callee_address,
-                key,
-                is_warm,
-                is_warm_prev: is_warm,
-            },
-        );
+            tx_id,
+            callee_address,
+            key,
+            is_warm,
+        )?;
 
         // Special operations are only used for SSTORE.
         if geth_step.op == OpcodeId::SSTORE {
@@ -74,18 +69,14 @@ impl Opcode for OOGSloadSstore {
             let (_, value_prev) = state.sdb.get_storage(&callee_address, &key);
             let (_, original_value) = state.sdb.get_committed_storage(&callee_address, &key);
 
-            state.push_op(
+            state.account_storage_read(
                 &mut exec_step,
-                RW::READ,
-                StorageOp::new(
-                    callee_address,
-                    key,
-                    *value_prev,
-                    *value_prev,
-                    tx_id,
-                    *original_value,
-                ),
-            );
+                tx_id,
+                callee_address,
+                key,
+                *value_prev,
+                *original_value,
+            )?;
         }
 
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;

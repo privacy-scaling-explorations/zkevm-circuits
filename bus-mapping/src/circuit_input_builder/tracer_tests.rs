@@ -5,7 +5,6 @@ use crate::geth_errors::{
     GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
     GETH_ERR_STACK_UNDERFLOW,
 };
-use crate::operation::RWCounter;
 use crate::state_db::Account;
 use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 use eth_types::{
@@ -54,7 +53,7 @@ impl CircuitInputBuilderTx {
         };
 
         let call_ctx = tx_ctx.call_ctx().unwrap();
-        let exec_step = ExecStep::new(geth_step, call_ctx, RWCounter::new(), 0, prev_log_id);
+        let exec_step = ExecStep::new(geth_step, call_ctx, 1, 0, prev_log_id);
         Self {
             builder,
             tx,

@@ -43,8 +43,8 @@
 //! [`GethExecStep`](eth_types::GethExecStep).  Then the
 //! [`CircuitInputBuilder`](crate::circuit_input_builder::CircuitInputBuilder)
 //! will fill in an
-//! [`OperationContainer`](crate::operation::container::OperationContainer)
-//! with all of the Memory, Stack and Storage ops performed
+//! [`RwMap`](crate::circuit_input_builder::RwMap)
+//! with all of rws performed
 //! by the provided trace.
 //!
 //! ```rust
@@ -144,9 +144,6 @@
 //!     struct_logs: geth_steps,
 //! };
 //!
-//! // Get an ordered vector with all of the Stack operations of this trace.
-//! let stack_ops = builder.block.container.sorted_stack();
-//!
 //! // You can also iterate over the steps of the trace and witness the EVM Proof.
 //! builder.block.txs()[0].steps().iter();
 //! ```
@@ -230,10 +227,8 @@ extern crate core;
 pub mod circuit_input_builder;
 pub mod error;
 pub mod evm;
-pub mod exec_trace;
 pub(crate) mod geth_errors;
 pub mod mock;
-pub mod operation;
 pub mod rpc;
 pub mod state_db;
 pub use error::Error;
