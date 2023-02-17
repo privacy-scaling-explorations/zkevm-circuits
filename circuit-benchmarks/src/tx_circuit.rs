@@ -17,9 +17,8 @@ mod tests {
     };
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
+    use std::env::var;
     use zkevm_circuits::tx_circuit::TxCircuit;
-
-    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -31,19 +30,26 @@ mod tests {
 
         // Approximate value, adjust with changes on the TxCircuit.
         const ROWS_PER_TX: usize = 175_000;
-        const MAX_TXS: usize = 2_usize.pow(DEGREE as u32) / ROWS_PER_TX;
+
         const MAX_CALLDATA: usize = 1024;
+
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
+
+        let max_txs: usize = 2_usize.pow(degree) / ROWS_PER_TX;
 
         let mut rng = ChaCha20Rng::seed_from_u64(42);
 
         let chain_id: u64 = mock::MOCK_CHAIN_ID.low_u64();
         let txs = vec![mock::CORRECT_MOCK_TXS[0].clone().into()];
-        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, txs);
+        let circuit = TxCircuit::<Fr>::new(max_txs, MAX_CALLDATA, chain_id, txs);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -54,7 +60,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, DEGREE);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,

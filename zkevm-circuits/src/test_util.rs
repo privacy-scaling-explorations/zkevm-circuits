@@ -67,7 +67,7 @@ fn init_env_logger() {
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+///     .block_modifier(Box::new(|block| block.circuits_params.max_evm_rows = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
