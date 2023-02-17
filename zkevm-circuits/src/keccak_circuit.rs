@@ -22,13 +22,14 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{and, not, select, sum, Expr};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{
-        Circuit, Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells,
-    },
+    circuit::{Layouter, Region, Value},
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, TableColumn, VirtualCells},
     poly::Rotation,
 };
 use log::info;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
@@ -990,7 +991,7 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for KeccakCircuit<F> {
     type Config = (KeccakCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

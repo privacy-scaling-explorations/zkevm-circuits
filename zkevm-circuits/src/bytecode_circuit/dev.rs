@@ -1,59 +1,10 @@
 use super::bytecode_unroller::{unroll, UnrolledBytecode};
-use super::circuit::{BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs};
-use crate::table::{BytecodeTable, KeccakTable};
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+use super::circuit::BytecodeCircuit;
+
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::Layouter,
-    plonk::{ConstraintSystem, Error},
-};
-use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
+
+use halo2_proofs::dev::MockProver;
 use log::error;
-
-impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
-    type Config = (BytecodeCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let bytecode_table = BytecodeTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            BytecodeCircuitConfig::new(
-                meta,
-                BytecodeCircuitConfigArgs {
-                    bytecode_table,
-                    keccak_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-
-        config.keccak_table.dev_load(
-            &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
-            &challenges,
-        )?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)?;
-        Ok(())
-    }
-}
 
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit

@@ -53,9 +53,9 @@ pub struct CircuitsParams {
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
     /// Pad evm circuit number of rows.
-    /// When 0, the EVM circuit number of rows will be dynamically calculated,
-    /// so the same circuit will not be able to proof different witnesses.
-    /// In this case it will contain as many rows for all steps + 1 row
+    /// When 0, the EVM circuit number of row will be dynamically calculated, so
+    /// the same circuit will not be able to proof different witnesses. In this
+    /// case it will contain as many rows for all steps + 1 row
     /// for EndBlock.
     pub max_evm_rows: usize,
     // TODO: Rename for consistency
