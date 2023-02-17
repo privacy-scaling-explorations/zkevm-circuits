@@ -690,7 +690,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         Ok(())
     }
 
-    fn annotate_circuit(&self, region: &mut Region<'_, F>) {
+    fn annotate_circuit(&self, region: &mut Region<F>) {
         self.bytecode_table.annotate_columns_in_region(region);
         self.keccak_table.annotate_columns_in_region(region);
 

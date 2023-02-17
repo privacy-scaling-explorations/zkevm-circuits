@@ -92,6 +92,28 @@ where
                 }),
         )
     }
+
+    /// Returns the list of ALL the gadget advice columns.
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        self.bits.to_vec()
+    }
+
+    /// Returns the String annotations associated to each column of the gadget.
+    pub fn annotations(&self) -> Vec<String> {
+        let mut annotations = Vec::new();
+        for (i, _) in self.bits.iter().enumerate() {
+            annotations.push(format!("GADGETS_binary_number_{}", i));
+        }
+        annotations
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        self.advice_columns()
+            .iter()
+            .zip(self.annotations().iter())
+            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col))
+    }
 }
 
 /// This chip helps working with binary encoding of integers of length N bits
@@ -176,7 +198,6 @@ where
         value: &T,
     ) -> Result<(), Error> {
         for (&bit, &column) in value.as_bits().iter().zip(&self.config.bits) {
-            region.name_column(|| format!("GADGETS_binary_number_{:?}", column), column);
             region.assign_advice(
                 || format!("binary number {:?}", column),
                 column,

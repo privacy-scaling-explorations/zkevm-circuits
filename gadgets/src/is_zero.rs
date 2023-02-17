@@ -4,8 +4,10 @@
 //!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
 //!  `1/x` otherwise
 
+use std::vec;
+
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
@@ -15,7 +17,7 @@ use crate::util::Expr;
 
 /// Trait that needs to be implemented for any gadget or circuit that wants to
 /// implement `IsZero`.
-pub trait IsZeroInstruction<F: FieldExt> {
+pub trait IsZeroInstruction<F: Field> {
     /// Given a `value` to be checked if it is zero:
     ///   - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
     ///     `1/x` otherwise
@@ -38,10 +40,28 @@ pub struct IsZeroConfig<F> {
     pub is_zero_expression: Expression<F>,
 }
 
-impl<F: FieldExt> IsZeroConfig<F> {
+impl<F: Field> IsZeroConfig<F> {
     /// Returns the is_zero expression
     pub fn expr(&self) -> Expression<F> {
         self.is_zero_expression.clone()
+    }
+
+    /// Returns the list of ALL the gadget advice columns.
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        vec![self.value_inv]
+    }
+
+    /// Returns the String annotations associated to each column of the gadget.
+    pub fn annotations(&self) -> Vec<String> {
+        vec![String::from("GADGETS_IS_ZERO_inverse_witness")]
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
+        self.advice_columns()
+            .iter()
+            .zip(self.annotations().iter())
+            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col))
     }
 }
 
@@ -51,7 +71,7 @@ pub struct IsZeroChip<F> {
 }
 
 #[rustfmt::skip]
-impl<F: FieldExt> IsZeroChip<F> {
+impl<F: Field> IsZeroChip<F> {
     /// Sets up the configuration of the chip by creating the required columns
     /// and defining the constraints that take part when using `is_zero` gate.
     ///
@@ -101,7 +121,7 @@ impl<F: FieldExt> IsZeroChip<F> {
     }
 }
 
-impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
+impl<F: Field> IsZeroInstruction<F> for IsZeroChip<F> {
     fn assign(
         &self,
         region: &mut Region<'_, F>,
@@ -109,10 +129,6 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
         value: Value<F>,
     ) -> Result<(), Error> {
         let config = self.config();
-
-        // annotate columns
-        region.name_column(|| "GADGETS_IS_ZERO_inverse_witness", config.value_inv);
-
         let value_invert = value.map(|value| value.invert().unwrap_or(F::zero()));
         region.assign_advice(
             || "witness inverse of value",
@@ -125,7 +141,7 @@ impl<F: FieldExt> IsZeroInstruction<F> for IsZeroChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
+impl<F: Field> Chip<F> for IsZeroChip<F> {
     type Config = IsZeroConfig<F>;
     type Loaded = ();
 
@@ -141,8 +157,8 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 #[cfg(test)]
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+    use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
@@ -196,14 +212,14 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<u64>>,
             // checks[i] = is_zero(values[i + 1] - values[i])
             checks: Option<Vec<bool>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -266,10 +282,6 @@ mod test {
                 layouter.assign_region(
                     || "witness",
                     |mut region| {
-                        // annotate columns
-                        region.name_column(|| "GADGETS_IS_ZERO_TEST_value", config.value);
-                        region.name_column(|| "GADGETS_IS_ZERO_TEST_check", config.check);
-
                         region.assign_advice(
                             || "first row value",
                             config.value,
@@ -327,14 +339,14 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<(u64, u64)>>,
             // checks[i] = is_zero(values[i].0 - values[i].1)
             checks: Option<Vec<bool>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -401,10 +413,6 @@ mod test {
                 layouter.assign_region(
                     || "witness",
                     |mut region| {
-                        region.name_column(|| "GADGETS_IS_ZERO_TEST_value_a", config.value_a);
-                        region.name_column(|| "GADGETS_IS_ZERO_TEST_value_b", config.value_b);
-                        region.name_column(|| "GADGETS_IS_ZERO_TEST_check", config.check);
-
                         for (idx, ((value_a, value_b), check)) in
                             values.iter().zip(checks).enumerate()
                         {
