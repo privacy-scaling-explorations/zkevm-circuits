@@ -160,11 +160,11 @@ impl<F: Field> ConstraintBuilder<F> {
                 "first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
             );
-            // cb.require_equal(
-            //     "value_prev column is initial_value for first access",
-            //     q.value_prev_column(),
-            //     q.initial_value.clone(),
-            // );
+            cb.require_equal(
+                "value_prev column is initial_value for first access",
+                q.value_prev_column(),
+                q.initial_value.clone(),
+            );
         });
 
         // When all the keys in the current row and previous row are equal.
@@ -223,7 +223,11 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_zero("value_prev column is 0 for Memory", q.value_prev_column());
+        self.require_equal(
+            "value_prev column equals initial_value for Memory",
+            q.value_prev_column(),
+            q.initial_value(),
+        );
     }
 
     fn build_stack_constraints(&mut self, q: &Queries<F>) {
@@ -251,7 +255,11 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_zero("value_prev column is 0 for Stack", q.value_prev_column());
+        self.require_equal(
+            "value_prev column equals initial_value for Stack",
+            q.value_prev_column(),
+            q.initial_value(),
+        );
     }
 
     fn build_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -490,7 +498,11 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
-        self.require_zero("value_prev column is 0 for TxLog", q.value_prev_column());
+        self.require_equal(
+            "value_prev column equals initial_value for TxLog",
+            q.value_prev_column(),
+            q.initial_value(),
+        );
     }
 
     fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
