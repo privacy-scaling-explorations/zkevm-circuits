@@ -8,15 +8,12 @@
 //! The dataflow:
 //! ```
 //! +----------+         +-----------+       +------------+
-//! |   txs    +---------> compress  +------->   hash     |
+//! |   txs    +---------> compress? +------->   hash     |
 //! |          |         |           |       |            |
 //! +----------+         +-----------+       +------------+
 //! ```
 
-use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
-    witness::{Block, BlockContext},
-};
+use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
 use bytes::Bytes;
 use eth_types::geth_types::BlockConstants;
 use eth_types::sign_types::SignData;
@@ -26,10 +23,7 @@ use eth_types::{
     Word,
 };
 use ethers_core::utils::keccak256;
-use halo2_proofs::{
-    circuit,
-    plonk::{Expression, Instance},
-};
+use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
 use rlp::RlpStream;
 use std::marker::PhantomData;
@@ -54,6 +48,7 @@ const EXTRA_LEN: usize = 2;
 const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
 const MAX_DEGREE: usize = 10;
+const BYTE_POW_BASE: u64 = 1 << 8;
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
@@ -107,11 +102,83 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
-    /// Block context
-    pub block_ctx: BlockContext,
+
+    block_ctx: BlockContext,
+    block_txs: Vec<witness::Transaction>,
 }
 
 impl PublicData {
+    fn get_block_rlc<F: Field>(&self, challenges: &Challenges<Value<F>>) -> (Value<F>, Value<F>) {
+        use crate::evm_circuit::util::rlc;
+        let (rlp, hash) = self.get_block_hash();
+        let randomness = challenges.evm_word();
+        let rlp_rlc = randomness.map(|randomness| rlc::value(rlp.iter(), randomness));
+        let hash_rlc = randomness.map(|randomness| rlc::value(hash.as_bytes(), randomness));
+        (rlp_rlc, hash_rlc)
+    }
+
+    fn get_txs_rlc<F: Field>(&self, challenges: &Challenges<Value<F>>) -> (Value<F>, Value<F>) {
+        use crate::evm_circuit::util::rlc;
+        let (rlp, hash) = self.get_txs_hash();
+        let randomness = challenges.evm_word();
+        let rlp_rlc = randomness.map(|randomness| rlc::value(rlp.iter(), randomness));
+        let hash_rlc = randomness.map(|randomness| rlc::value(hash.as_bytes(), randomness));
+        (rlp_rlc, hash_rlc)
+    }
+
+    fn get_txs_hash(&self) -> (Bytes, H256) {
+        let mut stream = RlpStream::new_list(self.transactions.len());
+        for tx in &self.transactions {
+            stream.append_raw(&tx.rlp(), 1);
+        }
+        let rlp: Bytes = stream.out().into();
+        let hash = keccak256(&rlp);
+        (rlp, hash.into())
+    }
+
+    fn get_block_hash(&self) -> (Bytes, H256) {
+        let (_, txs_hash) = self.get_txs_hash();
+        let mut stream = RlpStream::new();
+        stream.begin_unbounded_list();
+        stream
+            .append(&self.block_constants.coinbase)
+            .append(&self.block_constants.gas_limit)
+            .append(&self.block_constants.number)
+            .append(&self.block_constants.timestamp)
+            .append(&self.block_constants.difficulty)
+            .append(&self.block_constants.base_fee)
+            .append(&self.chain_id)
+            .append_list(&self.history_hashes)
+            .append(&self.state_root)
+            .append(&self.prev_state_root)
+            .append(&txs_hash);
+        stream.finalize_unbounded_list();
+
+        let rlp: Bytes = stream.out().into();
+        let hash = keccak256(&rlp);
+        (rlp, hash.into())
+    }
+
+    fn new<F>(block: &witness::Block<F>) -> Self {
+        PublicData {
+            chain_id: block.context.chain_id,
+            history_hashes: block.context.history_hashes.clone(),
+            transactions: block.eth_block.transactions.clone(),
+            state_root: block.eth_block.state_root,
+            prev_state_root: H256::from_uint(&block.prev_state_root),
+            block_constants: BlockConstants {
+                coinbase: block.context.coinbase,
+                timestamp: block.context.timestamp,
+                number: block.context.number.as_u64().into(),
+                difficulty: block.context.difficulty,
+                gas_limit: block.context.gas_limit.into(),
+                base_fee: block.context.base_fee,
+            },
+            block_ctx: block.context.clone(),
+            block_txs: block.txs.clone(),
+        }
+    }
+
     /// Returns struct with values for the block table
     pub fn get_block_table_values(&self) -> BlockValues {
         let history_hashes = [
@@ -169,14 +236,6 @@ impl PublicData {
         tx_vals
     }
 
-    fn get_block_rlc<F: Field>(&self) -> Value<F> {
-        todo!()
-    }
-
-    fn get_txs_rlc<F: Field>(&self) -> Value<F> {
-        todo!()
-    }
-
     /// Returns struct with the extra values
     pub fn get_extra_values(&self) -> ExtraValues {
         ExtraValues {
@@ -188,55 +247,6 @@ impl PublicData {
 
     fn txs(&self) -> Vec<Transaction> {
         self.transactions.iter().map(Transaction::from).collect()
-    }
-
-    fn get_block_rlp_and_hash<F: Field>(
-        &self,
-        txs_hash: H256,
-        challenges: &Challenges<Value<F>>,
-    ) -> (Bytes, Value<F>, usize, Value<F>) {
-        use crate::evm_circuit::util::rlc;
-        let mut stream = RlpStream::new();
-        stream.begin_unbounded_list();
-        stream
-            .append(&self.block_constants.coinbase)
-            .append(&self.block_constants.gas_limit)
-            .append(&self.block_constants.number)
-            .append(&self.block_constants.timestamp)
-            .append(&self.block_constants.difficulty)
-            .append(&self.block_constants.base_fee)
-            .append(&self.chain_id)
-            .append_list(&self.history_hashes)
-            .append(&self.state_root)
-            .append(&self.prev_state_root)
-            .append(&txs_hash);
-        stream.finalize_unbounded_list();
-
-        let rlp: Bytes = stream.out().into();
-        let randomness = challenges.evm_word();
-        let rlp_rlc = randomness.map(|randomness| rlc::value(rlp.iter(), randomness));
-        let len = rlp.len();
-        let hash = keccak256(rlp);
-        let hash_rlc = randomness.map(|randomness| rlc::value(hash.iter(), randomness));
-        (rlp, rlp_rlc, len, hash_rlc)
-    }
-
-    fn get_txs_rlp_and_hash<F: Field>(
-        &self,
-        challenges: &Challenges<Value<F>>,
-    ) -> (Bytes, Value<F>, usize, H256, Value<F>) {
-        use crate::evm_circuit::util::rlc;
-        let mut stream = RlpStream::new_list(self.transactions.len());
-        for tx in self.transactions {
-            stream.append_raw(&tx.rlp(), 1);
-        }
-        let rlp: Bytes = stream.out().into();
-        let randomness = challenges.evm_word();
-        let rlp_rlc = randomness.map(|randomness| rlc::value(rlp.iter(), randomness));
-        let len = rlp.len();
-        let hash = keccak256(rlp);
-        let hash_rlc = randomness.map(|randomness| rlc::value(hash.iter(), randomness));
-        (rlp, rlp_rlc, len, hash.into(), hash_rlc)
     }
 }
 
@@ -316,11 +326,12 @@ pub struct PiCircuitConfigArgs<F: Field> {
 macro_rules! format_str {
         ($($arg:tt)*) => {{
             let res = format!($($arg)*);
-            ::std::boxed::Box::leak(res.into_boxed_str())
+            ::std::boxed::Box::leak(::std::boxed::Box::from(res))
         }}
 }
 
 impl<F: Field> PiCircuitConfig<F> {
+    #[allow(clippy::too_many_arguments)]
     fn constraint(
         meta: &mut ConstraintSystem<F>,
         name: &'static str,
@@ -514,7 +525,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_rlp_table,
             rlp_table,
             q_keccak_table,
-            keccak_table,
+            keccak_table.clone(),
             &challenges,
         );
 
@@ -532,7 +543,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             q_rlp_table,
             rlp_table,
             q_keccak_table,
-            keccak_table,
+            keccak_table.clone(),
             &challenges,
         );
 
@@ -876,7 +887,7 @@ impl<F: Field> PiCircuitConfig<F> {
         tag: TxFieldTag,
         index: usize,
         tx_value: Value<F>,
-        raw_pi_vals: &mut [Value<F>],
+        rpi_vals: &mut [Value<F>],
     ) -> Result<(), Error> {
         let tx_id = F::from(tx_id as u64);
         // tx_id_inv = (tag - CallDataLength)^(-1)
@@ -944,9 +955,9 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
 
         // Add copy to vec
-        raw_pi_vals[offset] = Value::known(tx_id);
-        raw_pi_vals[offset + index_offset] = Value::known(index);
-        raw_pi_vals[offset + value_offset] = tx_value;
+        rpi_vals[offset] = Value::known(tx_id);
+        rpi_vals[offset + index_offset] = Value::known(index);
+        rpi_vals[offset + value_offset] = tx_value;
 
         Ok(())
     }
@@ -1052,12 +1063,13 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     fn assign_block(
         &self,
         region: &mut Region<'_, F>,
         public_data: &PublicData,
         challenges: &Challenges<Value<F>>,
-    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
+    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>, Value<F>), Error> {
         let block_values = public_data.get_block_table_values();
         let extra_values = public_data.get_extra_values();
         let randomness = challenges.evm_word();
@@ -1108,62 +1120,112 @@ impl<F: Field> PiCircuitConfig<F> {
         {
             self.q_block_table.enable(region, offset)?;
             self.q_block_not_end.enable(region, offset)?;
-            region.assign_advice(|| name, self.block_table.value, offset, || val)?;
             region.assign_advice(|| name, self.block, offset, || val)?;
             rlc_acc = rlc_acc * randomness + val;
             region.assign_advice(|| name, self.block_rlc_acc, offset, || rlc_acc)?;
         }
 
         // last row
+        let (block_rlp, _) = public_data.get_block_hash();
+        let (block_rlp_rlc, block_hash_rlc) = public_data.get_block_rlc(challenges);
+        let (_, txs_hash_rlc) = public_data.get_txs_rlc(challenges);
         let last = BLOCK_LEN + 1 + EXTRA_LEN;
-        let (_, _, _, hash, _) = public_data.get_txs_rlp_and_hash(challenges);
-        let (_, rlp_rlc, len, hash_rlc) = public_data.get_block_rlp_and_hash(hash, challenges);
         self.q_block_table.enable(region, last)?;
-        region.assign_advice(|| "txs_hash", self.block_table.value, last, || hash_rlc)?;
-        let txs_hash_cell = region.assign_advice(|| "txs_hash", self.block, last, || hash_rlc)?;
-        rlc_acc = rlc_acc * randomness + hash_rlc;
-        region.assign_advice(|| "txs_hash", self.block_rlc_acc, last, || rlc_acc)?;
+        let txs_hash_cell = region.assign_advice(|| "block", self.block, last, || txs_hash_rlc)?;
+        rlc_acc = rlc_acc * randomness + txs_hash_rlc;
+        region.assign_advice(|| "block_rlc_acc", self.block_rlc_acc, last, || rlc_acc)?;
 
-        region.assign_advice(|| "txs_hash", self.block_rlp, last, || rlp_rlc)?;
+        region.assign_advice(|| "block_rlp", self.block_rlp, last, || block_rlp_rlc)?;
         region.assign_advice(
-            || "txs_hash",
+            || "block_rlp_len",
             self.block_rlp_len,
             last,
-            || Value::known(F::from(len as u64)),
+            || Value::known(F::from(block_rlp.len() as u64)),
         )?;
         let hash_cell =
-            region.assign_advice(|| "txs_hash", self.block_keccak, last, || hash_rlc)?;
-        Ok((hash_cell, txs_hash_cell))
+            region.assign_advice(|| "block_hash", self.block_keccak, last, || block_hash_rlc)?;
+        Ok((hash_cell, txs_hash_cell, rlc_acc))
     }
 
-    // TODO:
-    // 1. assign txs_rlp_len
-    // 2. assign txs_keccak and return it
     fn assign_txs(
         &self,
         region: &mut Region<'_, F>,
+        public_data: &PublicData,
         challenges: &Challenges<Value<F>>,
         rpi_vals: Vec<Value<F>>,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<(AssignedCell<F, F>, Value<F>), Error> {
         self.q_txs_start.enable(region, 0)?;
 
         let r = challenges.evm_word();
 
         let last = rpi_vals.len() - 1;
         let mut rlc_acc = Value::known(F::zero());
-        // the last rpi_rlc == rpi_rlc_acc
-        let mut rpi_rlc;
-        // Next rows
-        for (offset, val) in rpi_vals.iter().enumerate() {
+        for (offset, val) in rpi_vals.iter().take(last).enumerate() {
             rlc_acc = rlc_acc * r + val;
-            rpi_rlc = region.assign_advice(|| "rpi_rlc_acc", self.txs, offset, || rlc_acc)?;
-
-            if offset != last {
-                self.q_txs_not_end.enable(region, offset)?;
-            }
+            self.q_txs_not_end.enable(region, offset)?;
+            region.assign_advice(|| "txs", self.txs, offset, || *val)?;
+            region.assign_advice(|| "txs_rlc_acc", self.txs_rlc_acc, offset, || rlc_acc)?;
         }
 
-        Ok(rpi_rlc)
+        // last row
+        let (txs_rlp, _) = public_data.get_txs_hash();
+        let (txs_rlp_rlc, txs_hash_rlc) = public_data.get_txs_rlc(challenges);
+        let last_val = rpi_vals.last().unwrap();
+        rlc_acc = rlc_acc * r + last_val;
+        region.assign_advice(|| "txs", self.txs, last, || *last_val)?;
+        region.assign_advice(|| "txs_rlc_acc", self.txs_rlc_acc, last, || rlc_acc)?;
+        region.assign_advice(|| "txs_rlp", self.txs_rlp, last, || txs_rlp_rlc)?;
+        region.assign_advice(
+            || "txs_rlp_len",
+            self.txs_rlp_len,
+            last,
+            || Value::known(F::from(txs_rlp.len() as u64)),
+        )?;
+        let hash_cell =
+            region.assign_advice(|| "txs_hash", self.txs_keccak, last, || txs_hash_rlc)?;
+        Ok((hash_cell, rlc_acc))
+    }
+
+    fn assign_rlp_table(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        challenges: &Challenges<Value<F>>,
+        txs_rlc_acc: Value<F>,
+        block_rlc_acc: Value<F>,
+        public_data: &PublicData,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "rlp table",
+            |mut region| {
+                let (txs_rlp, _) = public_data.get_txs_hash();
+                let (block_rlp, _) = public_data.get_block_hash();
+                let (block_rlp_rlc, _) = public_data.get_block_rlc(challenges);
+                let (txs_rlp_rlc, _) = public_data.get_txs_rlc(challenges);
+                for (offset, vals) in [
+                    [
+                        Value::known(F::one()),
+                        txs_rlc_acc,
+                        txs_rlp_rlc,
+                        Value::known(F::from(txs_rlp.len() as u64)),
+                    ],
+                    [
+                        Value::known(F::one()),
+                        block_rlc_acc,
+                        block_rlp_rlc,
+                        Value::known(F::from(block_rlp.len() as u64)),
+                    ],
+                ]
+                .iter()
+                .enumerate()
+                {
+                    for (val, row) in vals.iter().zip_eq(self.rlp_table.iter()) {
+                        region.assign_advice(|| "", *row, offset, || *val)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        Ok(())
     }
 }
 
@@ -1175,24 +1237,16 @@ pub struct PiCircuit<F: Field> {
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
 
-    block: Block<F>,
-
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> PiCircuit<F> {
     /// Creates a new PiCircuit
-    pub fn new(
-        max_txs: usize,
-        max_calldata: usize,
-        public_data: PublicData,
-        block: Block<F>,
-    ) -> Self {
+    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData) -> Self {
         Self {
             max_txs,
             max_calldata,
             public_data,
-            block,
             _marker: PhantomData,
         }
     }
@@ -1202,33 +1256,34 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let public_data = PublicData {
-            chain_id: block.context.chain_id,
-            history_hashes: block.context.history_hashes.clone(),
-            transactions: block.eth_block.transactions.clone(),
-            state_root: block.eth_block.state_root,
-            prev_state_root: H256::from_uint(&block.prev_state_root),
-            block_constants: BlockConstants {
-                coinbase: block.context.coinbase,
-                timestamp: block.context.timestamp,
-                number: block.context.number.as_u64().into(),
-                difficulty: block.context.difficulty,
-                gas_limit: block.context.gas_limit.into(),
-                base_fee: block.context.base_fee,
-            },
-            block_ctx: block.context,
-        };
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            public_data,
-            block.clone(),
+            PublicData::new(block),
         )
     }
 
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
-        vec![]
+        let (_, keccak_rpi) = self.public_data.get_block_hash();
+        let keccak_hi = keccak_rpi
+            .to_fixed_bytes()
+            .iter()
+            .take(16)
+            .fold(F::zero(), |acc, byte| {
+                acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
+            });
+
+        let keccak_lo = keccak_rpi
+            .to_fixed_bytes()
+            .iter()
+            .skip(16)
+            .fold(F::zero(), |acc, byte| {
+                acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
+            });
+
+        let public_inputs = vec![keccak_hi, keccak_lo];
+        vec![public_inputs]
     }
 
     /// Make the assignments to the PiCircuit
@@ -1253,11 +1308,11 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 Ok(())
             },
         )?;
-        let hash_cell = layouter.assign_region(
+        let (hash_cell, txs_rlc_acc, block_rlc_acc) = layouter.assign_region(
             || "region 0",
             |mut region| {
                 // Assign block table
-                let (hash_cell, txs_hash_cell) =
+                let (hash_cell, txs_hash_cell, block_rlc_acc) =
                     config.assign_block(&mut region, &self.public_data, challenges)?;
 
                 // Assign Tx table
@@ -1401,14 +1456,21 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 //      otherwise it will emit CellNotAssigned Error
                 let tx_table_len = TX_LEN * self.max_txs + 1;
                 config.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
-                let origin_txs_hash_cell = config.assign_txs(&mut region, challenges, rpi_vals)?;
+                let (origin_txs_hash_cell, txs_rlc_acc) =
+                    config.assign_txs(&mut region, &self.public_data, challenges, rpi_vals)?;
                 // assert two txs hash are equal
                 region.constrain_equal(txs_hash_cell.cell(), origin_txs_hash_cell.cell())?;
-                Ok(hash_cell)
+                Ok((hash_cell, txs_rlc_acc, block_rlc_acc))
             },
         )?;
 
-        // Constrain hash value of block to public inputs
+        config.assign_rlp_table(
+            layouter,
+            challenges,
+            txs_rlc_acc,
+            block_rlc_acc,
+            &self.public_data,
+        )?;
         layouter.constrain_instance(hash_cell.cell(), config.pi, 0)?;
 
         Ok(())
@@ -1469,49 +1531,21 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
+        let public_data = &self.0.public_data;
         // assign block table
         config
             .block_table
-            .load(&mut layouter, &self.0.public_data.block_ctx, &challenges)?;
+            .load(&mut layouter, &public_data.block_ctx, &challenges)?;
         // assign tx table
         config.tx_table.load(
             &mut layouter,
-            &self.0.block.txs,
+            &public_data.block_txs,
             self.0.max_txs,
             &challenges,
         )?;
-        let (txs_rlp, txs_rlp_rlc, txs_len, hash, _) =
-            self.0.public_data.get_txs_rlp_and_hash(&challenges);
-        let (block_rlp, block_rlp_rlc, block_len, _) =
-            self.0.public_data.get_block_rlp_and_hash(hash, &challenges);
-        // assign rlp table
-        layouter.assign_region(
-            || "rlp table",
-            |region| {
-                for (offset, vals) in [
-                    [
-                        Value::known(F::one()),
-                        self.0.public_data.get_txs_rlc(),
-                        txs_rlp_rlc,
-                        Value::known(F::from(txs_len as u64)),
-                    ],
-                    [
-                        Value::known(F::one()),
-                        self.0.public_data.get_block_rlc(),
-                        block_rlp_rlc,
-                        Value::known(F::from(block_len as u64)),
-                    ],
-                ]
-                .iter()
-                .enumerate()
-                {
-                    for (val, row) in vals.iter().zip_eq(config.rlp_table.iter()) {
-                        region.assign_advice(|| "", *row, 0, || *val)?;
-                    }
-                }
-                Ok(())
-            },
-        )?;
+
+        let (txs_rlp, _) = public_data.get_txs_hash();
+        let (block_rlp, _) = public_data.get_block_hash();
         // assign keccak table
         config.keccak_table.dev_load(
             &mut layouter,
@@ -1540,15 +1574,9 @@ mod pi_circuit_test {
         k: u32,
         public_data: PublicData,
     ) -> Result<(), Vec<VerifyFailure>> {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = F::random(&mut rng);
-        let rand_rpi = F::random(&mut rng);
-
         let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
             MAX_TXS,
             MAX_CALLDATA,
-            randomness,
-            rand_rpi,
             public_data,
         ));
         let public_inputs = circuit.0.instance();
