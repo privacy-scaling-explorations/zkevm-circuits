@@ -1175,7 +1175,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // last row
-        let (block_rlp_rlc, block_hash_rlc) = public_data.get_block_rlc(challenges);
+        let (block_rlp_rlc, _) = public_data.get_block_rlc(challenges);
         let (_, txs_hash_rlc) = public_data.get_txs_rlc(challenges);
         let last = BLOCK_LEN + 1 + EXTRA_LEN;
         self.q_block_table.enable(region, last)?;
@@ -1230,6 +1230,7 @@ impl<F: Field> PiCircuitConfig<F> {
         ))
     }
 
+    #[allow(clippy::type_complexity)]
     fn assign_txs(
         &self,
         region: &mut Region<'_, F>,
@@ -1251,7 +1252,7 @@ impl<F: Field> PiCircuitConfig<F> {
         }
 
         // last row
-        let (txs_rlp_rlc, txs_hash_rlc) = public_data.get_txs_rlc(challenges);
+        let (txs_rlp_rlc, _) = public_data.get_txs_rlc(challenges);
         let last_val = rpi_vals.last().unwrap();
         rlc_acc = rlc_acc * r + last_val;
         region.assign_advice(|| "txs", self.txs, last, || *last_val)?;
