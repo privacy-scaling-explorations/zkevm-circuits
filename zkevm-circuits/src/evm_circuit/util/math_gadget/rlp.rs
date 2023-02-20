@@ -295,11 +295,11 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     /// Length of the input data to the keccak hash function.
     pub(crate) fn input_length(&self) -> Expression<F> {
         if IS_CREATE2 {
-            // 0xff | caller_address | salt | code_hash
+            // | 0xff | caller_address | salt | code_hash |
+            // |------|----------------|------|-----------|
+            // | 1    | 20             | 32   | 32        |
             (1 + 20 + 32 + 32).expr()
         } else {
-            // RLP([caller_address, caller_nonce])
-            //
             // | prefix | addr-prefix | addr | nonce-bytes       |
             // |--------|-------------|------|-------------------|
             // | 1      | 1           | 20   | rlp_length(nonce) |
@@ -312,7 +312,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
         let challenges = cb.challenges().keccak_powers_of_randomness::<21>();
         let challenge_power_20 = challenges[19].clone();
         if IS_CREATE2 {
-            // RLC(0xff | caller_address | salt | code_hash)
+            // RLC(le-bytes([0xff | caller_address | salt | code_hash]))
             //
             // | 0xff | caller address | salt | init code hash |
             // |------|----------------|------|----------------|
