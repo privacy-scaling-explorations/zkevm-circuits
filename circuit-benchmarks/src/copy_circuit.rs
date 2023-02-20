@@ -30,9 +30,9 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_copy_circuit_prover() {
-        let setup_prfx = constants::SETUP_PREFIX;
-        let proof_gen_prfx = constants::PROOFGEN_PREFIX;
-        let proof_ver_prfx = constants::PROOFVER_PREFIX;
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         let degree: u32 = var("DEGREE")
             .unwrap_or_else(|_| "14".to_string())
             .parse()

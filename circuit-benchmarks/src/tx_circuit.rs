@@ -24,9 +24,9 @@ mod tests {
     #[test]
     fn bench_tx_circuit_prover() {
         env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-        let setup_prfx = constants::SETUP_PREFIX;
-        let proof_gen_prfx = constants::PROOFGEN_PREFIX;
-        let proof_ver_prfx = constants::PROOFVER_PREFIX;
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         //Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Tx Circuit";
 
