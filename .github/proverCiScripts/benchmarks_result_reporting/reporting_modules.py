@@ -91,6 +91,9 @@ def log_processor(pull_request,circuit, degree):
     '''
     Exports test metadata and result metrics from prover logfile
     '''
+    SETUP_PREFIX     = "[Setup generation]"
+    PROOFGEN_PREFIX  = "[Proof generation]"
+    PROOFVER_PREFIX  = "[Proof verification]"
     logfile = [i for i in os.listdir('/home/ubuntu/') if 'proverlog' in i][0]
     f = open(f'/home/ubuntu/{logfile}', 'r')
     logdata = f.read()
@@ -101,15 +104,15 @@ def log_processor(pull_request,circuit, degree):
         if r == 'ok':
             result = 'PASSED'
             try:
-                sg = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'Setup generation' in i ][0])).split('.', 1)[-1]
+                sg = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and SETUP_PREFIX in i ][0])).split('.', 1)[-1]
             except:
                 sg = 'None'
             try:
-                pg = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'Circuit Proof generation' in i ][0])).split('.', 1)[-1]
+                pg = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and PROOFGEN_PREFIX in i ][0])).split('.', 1)[-1]
             except:
                 pg = 'None'                
             try:
-                pv = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and 'Circuit Proof verification' in i ][0])).split('.', 1)[-1]
+                pv = ''.join(g[0] for g in itertools.groupby([i for i in logdata if 'End' in i and PROOFVER_PREFIX in i ][0])).split('.', 1)[-1]
             except:
                 pv = 'None'
             logdata = {
