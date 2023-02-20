@@ -1,6 +1,8 @@
 //! Public input circuit benchmarks
 #[cfg(test)]
 mod tests {
+    use std::env::var;
+
     use ark_std::{end_timer, start_timer};
     use bus_mapping::mock::BlockData;
     use eth_types::bytecode;
@@ -19,7 +21,6 @@ mod tests {
     use mock::TestContext;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::env::var;
     use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit};
     use zkevm_circuits::util::SubCircuit;
     use zkevm_circuits::witness::{block_convert, Block};
@@ -33,6 +34,11 @@ mod tests {
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
         const MAX_INNER_BLOCKS: usize = 64;
+
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
 
         let block = generate_block::<MAX_TXS, MAX_CALLDATA>();
         let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(

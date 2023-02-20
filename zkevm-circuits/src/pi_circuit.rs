@@ -4,7 +4,7 @@ use std::iter;
 use std::marker::PhantomData;
 
 use crate::table::TxTable;
-use crate::table::{BlockTable, KeccakTable};
+use crate::table::{BlockTable, KeccakTable, LookupTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, ToBigEndian, Word};
 use eth_types::{Hash, H256};
@@ -15,7 +15,6 @@ use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
-use crate::table::{BlockTable, LookupTable};
 
 use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use crate::state_circuit::StateCircuitExports;
@@ -28,7 +27,7 @@ use gadgets::util::{not, select, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 use once_cell::sync::Lazy;
@@ -1058,21 +1057,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     config.assign(&mut region, &self.public_data, challenges)?;
                 config.block_table.annotate_columns_in_region(&mut region);
 
-                region.name_column(|| "raw_public_inputs", config.raw_public_inputs);
-                region.name_column(|| "tx_id_inv", config.tx_id_inv);
-                region.name_column(|| "tx_value_inv", config.tx_value_inv);
-                region.name_column(|| "tx_id_diff_inv", config.tx_id_diff_inv);
-
-                region.name_column(|| "fixed_u16", config.fixed_u16);
-                region.name_column(|| "calldata_gas_cost", config.calldata_gas_cost);
-                region.name_column(|| "is_final", config.is_final);
-
-                region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
-                region.name_column(|| "rand_rpi", config.rand_rpi);
-
-                region.name_column(|| "Public_Inputs", config.pi);
-
-
                 Ok(vec![keccak_hi_cell, keccak_lo_cell])
             },
         )?;
@@ -1107,7 +1091,7 @@ pub struct PiTestCircuit<
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
-    Circuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+    PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
 {
     /// Compute the public inputs for this circuit.
     pub fn instance(&self) -> Vec<Vec<F>> {
@@ -1116,6 +1100,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
 }
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
+    Circuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
 {
     type Config = (PiCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -1167,6 +1153,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_
             &mut layouter,
             &self.0.public_data.transactions,
             self.0.max_txs,
+            self.0.max_calldata,
             self.0.public_data.chain_id.as_u64(),
             &challenges,
         )?;
@@ -1194,7 +1181,6 @@ mod pi_circuit_test {
         halo2curves::bn256::Fr,
     };
     use mock::TestContext;
-    use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
     use pretty_assertions::assert_eq;
 
     fn run<
@@ -1207,8 +1193,6 @@ mod pi_circuit_test {
         block: Block<F>,
     ) -> Result<(), Vec<VerifyFailure>> {
         let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>(PiCircuit::new(
-        let mut public_data = public_data;
-        public_data.chain_id = *MOCK_CHAIN_ID;
             MAX_TXS,
             MAX_CALLDATA,
             MAX_INNER_BLOCKS,

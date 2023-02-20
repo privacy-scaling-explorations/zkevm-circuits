@@ -578,6 +578,7 @@ impl<
             &mut layouter,
             &block.txs,
             block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
             block.chain_id.as_u64(),
             &challenges,
         )?;
@@ -882,6 +883,7 @@ pub(crate) mod super_circuit_tests {
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_exp_steps: 256,
+            max_evm_rows: 0,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
             block,
@@ -930,6 +932,7 @@ pub(crate) mod super_circuit_tests {
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
             max_exp_steps: 256,
+            max_evm_rows: 0,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, TEST_MOCK_RANDOMNESS>(
             block,

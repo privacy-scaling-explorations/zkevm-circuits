@@ -20,10 +20,8 @@ use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Cell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{
-        Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
-    },
+    circuit::{AssignedCell, Cell, Layouter, Region, Value},
+    plonk::{Advice, Assigned, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use lexicographic_ordering::Config as LexicographicOrderingConfig;

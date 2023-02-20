@@ -180,11 +180,6 @@ impl<F: Field> Challenges<Expression<F>> {
         Self::powers_of(self.keccak_input.clone())
     }
 
-    /// Returns powers of randomness for keccak circuit's input
-    pub fn keccak_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
-        Self::powers_of(self.keccak_input.clone())
-    }
-
     /// Returns powers of randomness for lookups
     pub fn lookup_input_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
         Self::powers_of(self.lookup_input.clone())

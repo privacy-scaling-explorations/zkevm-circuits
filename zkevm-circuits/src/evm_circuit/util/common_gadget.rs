@@ -815,5 +815,3 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
         warm_case_gas.0 + GasCost::COLD_SLOAD.0
     }
 }
-    }
-}

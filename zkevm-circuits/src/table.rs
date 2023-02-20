@@ -260,31 +260,15 @@ impl TxTable {
                         padding_tx.id = tx_id + 1;
 
                         padding_tx
-                let padding_txs: Vec<_> = (txs.len()..max_txs)
                     })
                     .collect::<Vec<Transaction>>();
                 for (i, tx) in txs.iter().chain(padding_txs.iter()).enumerate() {
                     debug_assert_eq!(i + 1, tx.id);
-                    for row in tx.table_assignments_fixed(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
+                    let tx_data = tx.table_assignments_fixed(*challenges);
+                    let tx_calldata = tx.table_assignments_dyn(*challenges);
+                    for row in tx_data {
+                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
-                    }
-                }
-                for tx in txs.iter() {
-                    for row in tx.table_assignments_dyn(*challenges) {
                         offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());

@@ -29,8 +29,8 @@ use gadgets::util::{and, not, select, sum, Expr};
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::poly::Rotation;
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, VirtualCells},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
 };
 use log::error;
 use num::Zero;
@@ -59,10 +59,9 @@ use halo2_proofs::plonk::Fixed;
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
 use halo2_proofs::plonk::SecondPhase;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
 pub const TX_LEN: usize = 19;
@@ -1765,6 +1764,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
             &mut layouter,
             &self.txs,
             self.max_txs,
+            self.max_calldata,
             self.chain_id,
             &challenges,
         )?;

@@ -16,7 +16,7 @@ pub mod table;
 use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
 };
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+use crate::util::{SubCircuit, SubCircuitConfig};
 pub use crate::witness;
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -45,7 +45,7 @@ pub struct EvmCircuitConfig<F> {
 /// Circuit configuration arguments
 pub struct EvmCircuitConfigArgs<F: Field> {
     /// Challenge
-    pub challenges: Challenges<Expression<F>>,
+    pub challenges: crate::util::Challenges<Expression<F>>,
     /// TxTable
     pub tx_table: TxTable,
     /// RwTable
@@ -254,13 +254,12 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
         (
             num_rows_required_for_execution_steps,
             std::cmp::max(
-                block.evm_circuit_pad_to,
+                block.circuits_params.max_evm_rows,
                 std::cmp::max(
                     num_rows_required_for_fixed_table,
                     num_rows_required_for_execution_steps,
                 ),
             ),
-            block.circuits_params.max_evm_rows,
         )
     }
 
@@ -268,7 +267,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
+        challenges: &crate::util::Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         let block = self.block.as_ref().unwrap();
@@ -304,10 +303,10 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
 
 // Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
 
-    #[cfg(not(feature = "onephase"))]
-    use crate::util::Challenges;
-    #[cfg(feature = "onephase")]
-    use crate::util::MockChallenges as Challenges;
+#[cfg(not(feature = "onephase"))]
+use crate::util::Challenges;
+#[cfg(feature = "onephase")]
+use crate::util::MockChallenges as Challenges;
 
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
@@ -318,10 +317,10 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let challenges = Challenges::construct(meta);
-            let challenges_expr = challenges.exprs(meta);
+        let challenges = Challenges::construct(meta);
+        let challenges_expr = challenges.exprs(meta);
         let rw_table = RwTable::construct(meta);
-            let tx_table = TxTable::construct(meta);
+        let tx_table = TxTable::construct(meta);
         let bytecode_table = BytecodeTable::construct(meta);
         let block_table = BlockTable::construct(meta);
         let q_copy_table = meta.fixed_column();
@@ -354,13 +353,14 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         let block = self.block.as_ref().unwrap();
 
         let (config, challenges) = config;
-            let challenges = challenges.values(&layouter);
+        let challenges = challenges.values(&layouter);
 
         config.tx_table.load(
             &mut layouter,
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
+            0,
             &challenges,
         )?;
         block.rws.check_rw_counter_sanity();
@@ -375,7 +375,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             .load(&mut layouter, block.bytecodes.values(), &challenges)?;
         config
             .block_table
-                .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
+            .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
         config.copy_table.load(&mut layouter, block, &challenges)?;
         config
             .keccak_table

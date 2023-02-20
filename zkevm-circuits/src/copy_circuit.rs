@@ -846,13 +846,14 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), halo2_proofs::plonk::Error> {
-            let challenge_values = config.1.values(&layouter);
+        let challenge_values = config.1.values(&layouter);
 
         config.0.tx_table.load(
             &mut layouter,
             &self.external_data.txs,
             self.external_data.max_txs,
             self.external_data.max_calldata,
+            0,
             &challenge_values,
         )?;
 

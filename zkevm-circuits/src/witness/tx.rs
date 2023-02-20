@@ -129,10 +129,12 @@ impl Transaction {
             msg_hash,
         })
     }
+
+    /// Assignments for tx table
     pub fn table_assignments_fixed<F: Field>(
         &self,
         challenges: Challenges<Value<F>>,
-    ) -> [Vec<[Value<F>; 4]>; 2] {
+    ) -> Vec<[Value<F>; 4]> {
         let rlp_signed_hash = H256(keccak256(&self.rlp_signed));
         if self.hash != rlp_signed_hash {
             log::debug!(
@@ -262,6 +264,7 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.block_number)),
+            ],
         ];
 
         ret

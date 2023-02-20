@@ -9,12 +9,8 @@ use halo2_proofs::{
 };
 use log::{debug, trace};
 use rayon::iter::IntoParallelRefIterator;
-use std::{env::var, vec};
 use rayon::prelude::ParallelIterator;
-#[cfg(feature = "onephase")]
-use halo2_proofs::plonk::FirstPhase as SecondPhase;
-#[cfg(not(feature = "onephase"))]
-use halo2_proofs::plonk::SecondPhase;
+use std::{env::var, vec};
 
 const MAX_DEGREE: usize = 9;
 
@@ -110,28 +106,10 @@ impl<F: FieldExt> KeccakRegion<F> {
     }
 }
 
-        let chunk_num = block
-            .keccak_inputs
-            .iter()
-            .map(|bytes| (bytes.len() as f64 / 136.0).ceil() as usize)
-            .sum::<usize>();
-        log::debug!(
-            "keccak rows needed: {}x{}({}/136)={}",
-            rows_per_chunk,
-            chunk_num,
-            bytes_len_sum,
-            rows_per_chunk * chunk_num
-        );
-        (
-            rows_per_chunk * chunk_num,
-                .checked_sub(2)
-                .unwrap_or_default()
-        })
 /// Recombines parts back together
 pub(crate) mod decode {
     use super::{Part, PartValue};
-    use crate::keccak_circuit::util::BIT_COUNT;
-    use crate::keccak_circuit::param::BIT_SIZE;
+    use crate::keccak_circuit::param::BIT_COUNT;
     use crate::util::Expr;
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
@@ -223,9 +201,8 @@ pub(crate) mod split {
 // table layout in `output_cells` regardless of rotation.
 pub(crate) mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{
-        pack, pack_part, rotate, rotate_rev, unpack, WordParts, BIT_COUNT,
-    };
+    use crate::keccak_circuit::param::BIT_COUNT;
+    use crate::keccak_circuit::util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts};
     use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
@@ -512,58 +489,17 @@ pub(crate) mod transform_to {
     }
 }
 
-pub(crate) fn keccak<F: Field>(
-    rows: &mut Vec<KeccakRow<F>>,
-    bytes: &[u8],
-    challenges: Challenges<Value<F>>,
-) {
-        assert!(
-            get_num_rows_per_round() > NUM_BYTES_PER_WORD,
-            "KeccakCircuit requires KECCAK_ROWS>=9"
-        );
-
-            let data_rlcs: Vec<_> = (0..NUM_BYTES_PER_WORD + 1)
-                .map(|i| meta.query_advice(data_rlc, Rotation(i as i32)))
-                .collect();
-            assert_eq!(data_rlcs.len(), input_bytes.len() + 1);
-
-                let mut new_data_rlc = data_rlcs[NUM_BYTES_PER_WORD].expr();
-
-                // At the start of a hash, start at 0. Otherwise, continue from the previous
-                // value.
-                let data_rlc_zero_or_prev =
-                cb.require_equal(
-                    "initial data rlc",
-                    data_rlc_zero_or_prev,
-                    new_data_rlc.clone(),
-                );
-
-                // Add the word `input_bytes` to `data_rlc`. It has a variable length
-                // represented by `is_paddings`, which requires intermediate
-                // cells to keep the degree low.
-                    let data_rlc_after_this_byte = data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)].expr();
-                    cb.require_equal(
-                        "intermediate data rlc",
-                        data_rlc_after_this_byte.clone(),
-                        new_data_rlc,
-                    );
-                    new_data_rlc = data_rlc_after_this_byte;
-                // At this point, `data_rlcs[0]` includes the new input word. It
-                // will be copied into the next round, or it is
-                // the final `input_rlc` in the lookup table.
-        let mut is_first_time = true;
-                if is_first_time {
-                    is_first_time = false;
-                    let offset = witness.len() - 1;
-                    self.set_row(&mut region, offset, &witness[offset])?;
-                    return Ok(());
-                }
 fn keccak_rows<F: Field>(bytes: &[u8], challenges: Challenges<Value<F>>) -> Vec<KeccakRow<F>> {
     let mut rows = Vec::new();
     keccak(&mut rows, bytes, challenges);
     rows
 }
 
+pub(crate) fn keccak<F: Field>(
+    rows: &mut Vec<KeccakRow<F>>,
+    bytes: &[u8],
+    challenges: Challenges<Value<F>>,
+) {
     let mut bits = into_bits(bytes);
     let mut s = [[F::zero(); 5]; 5];
     let absorb_positions = get_absorb_positions();
