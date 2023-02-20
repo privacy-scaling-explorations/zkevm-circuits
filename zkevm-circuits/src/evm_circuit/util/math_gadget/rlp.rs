@@ -370,7 +370,7 @@ mod test {
             );
             cb.condition(IS_CREATE2.expr(), |cb| {
                 cb.require_equal(
-                    "RLP-encoding correct",
+                    "CREATE2 RLP-encoding correct",
                     cb.keccak_rlc::<85>(
                         create2_input_rlc_expected
                             .iter()
