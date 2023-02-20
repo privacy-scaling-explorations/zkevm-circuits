@@ -436,9 +436,9 @@ use zkevm_circuits::tx_circuit::PrimeField;
 #[clap(version, about)]
 pub(crate) struct ProverCmdConfig {
     /// geth_url
-    geth_url: String,
+    geth_url: Option<String>,
     /// block_num
-    block_num: u64,
+    block_num: Option<u64>,
     /// output_file
     output: Option<String>,
 }
@@ -456,39 +456,27 @@ pub struct CircuitConfig {
     pub keccak_padding: usize,
 }
 
-const circuit_config: CircuitConfig = CircuitConfig {
-    block_gas_limit: 600000,
-    max_txs: 80,
-    max_calldata: 697500,
-    max_bytecode: 139500,
-    max_rws: 3161966,
-    min_k: 21,
-    pad_to: 2097152,
-    min_k_aggregation: 26,
-    keccak_padding: 1600000,
-};
-
 // from zkevm-chain
 macro_rules! select_circuit_config {
     ($txs:expr, $on_match:expr, $on_error:expr) => {
         match $txs {
-            0..=40 => {
+            0..=15 => {
                 const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
-                    block_gas_limit: 300000,
-                    max_txs: 40,
-                    max_calldata: 105000,
-                    max_bytecode: 24634,
-                    max_rws: 476052,
-                    min_k: 20,
-                    pad_to: 476052,
+                    block_gas_limit: 5000000,
+                    max_txs: 15,
+                    max_calldata: 131072,
+                    max_bytecode: 131072,
+                    max_rws: 3161966,
+                    min_k: 19,
+                    pad_to: 2097152,
                     min_k_aggregation: 26,
                     keccak_padding: 336000,
                 };
                 $on_match
             }
-            41..=80 => {
+            16..=80 => {
                 const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
-                    block_gas_limit: 600000,
+                    block_gas_limit: 6000000,
                     max_txs: 80,
                     max_calldata: 697500,
                     max_bytecode: 139500,
@@ -509,29 +497,25 @@ macro_rules! select_circuit_config {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let txs: u32 = var("TXS")
-        .unwrap_or_else(|_| "80".to_string())
+        .unwrap_or_else(|_| "21".to_string())
         .parse()
         .expect("Cannot parse TXS env var as u32");
 
-    // let config = ProverCmdConfig::parse();
-    let config = ProverCmdConfig {
-        geth_url: String::from("https://l2rpc.internal.taiko.xyz"),
-        block_num: 622,
-        output: None,
-    };
+    let config = ProverCmdConfig::parse();
+    let block_num = config.block_num.map_or_else(|| 1, |n| n);
 
-    let provider = Http::from_str(&config.geth_url).expect("Http geth url");
+    let provider = Http::from_str(&config.geth_url.unwrap()).expect("Http geth url");
     let geth_client = GethClient::new(provider);
 
     let circuit_params = select_circuit_config!(
         txs,
         {
             CircuitsParams {
-                max_rws: circuit_config.max_rws,
-                max_txs: circuit_config.max_txs,
-                max_calldata: circuit_config.max_calldata,
-                max_bytecode: circuit_config.max_bytecode,
-                keccak_padding: Some(circuit_config.keccak_padding),
+                max_rws: CIRCUIT_CONFIG.max_rws,
+                max_txs: CIRCUIT_CONFIG.max_txs,
+                max_calldata: CIRCUIT_CONFIG.max_calldata,
+                max_bytecode: CIRCUIT_CONFIG.max_bytecode,
+                keccak_padding: Some(CIRCUIT_CONFIG.keccak_padding),
             }
         },
         {
@@ -540,7 +524,7 @@ async fn main() -> Result<(), Error> {
     );
 
     let builder = BuilderClient::new(geth_client, circuit_params.clone()).await?;
-    let (builder, eth_block) = builder.gen_inputs(config.block_num).await?;
+    let (builder, eth_block) = builder.gen_inputs(block_num).await?;
     let mut block = block_convert(&builder.block, &builder.code_db).unwrap();
     // block.randomness = Fr::from(MOCK_RANDOMNESS);
     select_circuit_config!(
@@ -550,7 +534,7 @@ async fn main() -> Result<(), Error> {
                 PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>(
                     PiCircuit::new_from_block(&block),
                 );
-            assert!(block.txs.len() <= circuit_config.max_txs);
+            assert!(block.txs.len() <= CIRCUIT_CONFIG.max_txs);
 
             let params = get_circuit_params::<0>(CIRCUIT_CONFIG.min_k as usize);
 
@@ -567,8 +551,8 @@ async fn main() -> Result<(), Error> {
             let deployment_code = gen_evm_verifier(
                     &params,
                     pk.get_vk(),
-                    PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>::num_instance(),
-                    );
+                    PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, {
+            CIRCUIT_CONFIG.max_calldata }>::num_instance(),         );
 
             let start = start_timer!(|| "EVM circuit Proof verification");
             let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
@@ -594,7 +578,7 @@ async fn main() -> Result<(), Error> {
             let output_file = if let Some(output) = config.output {
                 output
             } else {
-                format!("./block-{}_proof-new.json", config.block_num)
+                format!("./block-{}_proof-new.json", block_num)
             };
             File::create(output_file)
                 .expect("open output_file")
