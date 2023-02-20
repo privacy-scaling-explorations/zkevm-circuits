@@ -555,9 +555,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
             storage_key: meta.query_advice(c.rw_table.storage_key, Rotation::cur()),
             value: meta.query_advice(c.rw_table.value, Rotation::cur()),
-            // TODO: we should constain value.prev() <-> value_prev.cur() later
-            // see https://github.com/privacy-scaling-explorations/zkevm-specs/issues/202 for more details
             value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
+            value_prev_column: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         },
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
