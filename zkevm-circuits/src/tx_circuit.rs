@@ -1611,6 +1611,15 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
+        debug_assert_eq!(block.chain_id, block.context.chain_id());
+        for tx in &block.txs {
+            if tx.chain_id != block.chain_id.as_u64() {
+                panic!(
+                    "inconsistent chain id, block chain id {}, tx {:?}",
+                    block.chain_id, tx.chain_id
+                );
+            }
+        }
         Self::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,

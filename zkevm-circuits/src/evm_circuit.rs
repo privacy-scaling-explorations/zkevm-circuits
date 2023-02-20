@@ -360,7 +360,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             &block.txs,
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            0,
+            block.chain_id.as_u64(),
             &challenges,
         )?;
         block.rws.check_rw_counter_sanity();

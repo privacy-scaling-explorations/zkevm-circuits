@@ -158,11 +158,15 @@ impl<F: Field> ConstraintBuilder<F> {
                 "first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
             );
-            cb.require_equal(
-                "value_prev column is initial_value for first access",
-                q.value_prev_column(),
-                q.initial_value.clone(),
-            );
+            // FIXME
+            // https://github.com/scroll-tech/zkevm-circuits/issues/343
+            /*
+                        cb.require_equal(
+                            "value_prev column is initial_value for first access",
+                            q.value_prev_column(),
+                            q.initial_value.clone(),
+                        );
+            */
         });
 
         // When all the keys in the current row and previous row are equal.

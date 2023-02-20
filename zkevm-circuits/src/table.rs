@@ -269,7 +269,6 @@ impl TxTable {
                     for row in tx_data {
                         assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
-                        offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());
                 }
