@@ -1310,3 +1310,128 @@ impl<F: Field> LookupTable<F> for ExpTable {
         ]
     }
 }
+
+/// Keccak Table, used to verify keccak hashing from RLC'ed input.
+#[derive(Clone, Debug)]
+pub struct KeccakTable2 {
+    /// True when the row is enabled
+    pub is_enabled: Column<Advice>,
+    /// Byte array input as `RLC(reversed(input))`
+    pub input_rlc: Column<Advice>, // RLC of input bytes
+    /// Byte array input length
+    pub input_len: Column<Advice>,
+    /// hash high 16 bytes
+    pub output_hi: Column<Advice>,
+    /// hash low 16 bytes
+    pub output_lo: Column<Advice>,
+}
+
+impl KeccakTable2 {
+    /// Construct a new KeccakTable
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            is_enabled: meta.advice_column(),
+            input_rlc: meta.advice_column_in(SecondPhase),
+            input_len: meta.advice_column(),
+            output_hi: meta.advice_column(),
+            output_lo: meta.advice_column(),
+        }
+    }
+
+    /// Generate the keccak table assignments from a byte array input.
+    pub fn assignments<F: Field>(
+        input: &[u8],
+        challenges: &Challenges<Value<F>>,
+    ) -> Vec<[Value<F>; 5]> {
+        const BYTE_POW_BASE: u64 = 1 << 8;
+        let input_rlc = challenges
+            .keccak_input()
+            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+        let input_len = F::from(input.len() as u64);
+        let mut keccak = Keccak::default();
+        keccak.update(input);
+        let output = keccak.digest();
+        let output_hi = output.iter().take(16).fold(F::zero(), |acc, byte| {
+            acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
+        });
+
+        let output_lo = output.iter().skip(16).fold(F::zero(), |acc, byte| {
+            acc * F::from(BYTE_POW_BASE) + F::from(*byte as u64)
+        });
+
+        vec![[
+            Value::known(F::one()),
+            input_rlc,
+            Value::known(input_len),
+            Value::known(output_hi),
+            Value::known(output_lo),
+        ]]
+    }
+
+    /// Assign a table row for keccak table
+    pub fn assign_row<F: Field>(
+        &self,
+        region: &mut Region<F>,
+        offset: usize,
+        values: [Value<F>; 4],
+    ) -> Result<(), Error> {
+        for (column, value) in self.columns().iter().zip(values.iter()) {
+            region.assign_advice(|| format!("assign {}", offset), *column, offset, || *value)?;
+        }
+        Ok(())
+    }
+
+    /// Provide this function for the case that we want to consume a keccak
+    /// table but without running the full keccak circuit
+    pub fn dev_load<'a, F: Field>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "keccak table",
+            |mut region| {
+                let mut offset = 0;
+                for column in self.columns() {
+                    region.assign_advice(
+                        || "keccak table all-zero row",
+                        column,
+                        offset,
+                        || Value::known(F::zero()),
+                    )?;
+                }
+                offset += 1;
+
+                let keccak_table_columns = self.columns();
+                for input in inputs.clone() {
+                    for row in Self::assignments(input, challenges) {
+                        // let mut column_index = 0;
+                        for (column, value) in keccak_table_columns.iter().zip_eq(row) {
+                            region.assign_advice(
+                                || format!("keccak table row {}", offset),
+                                *column,
+                                offset,
+                                || value,
+                            )?;
+                        }
+                        offset += 1;
+                    }
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
+impl DynamicTableColumns for KeccakTable2 {
+    fn columns(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.is_enabled,
+            self.input_rlc,
+            self.input_len,
+            self.output_hi,
+            self.output_lo,
+        ]
+    }
+}
