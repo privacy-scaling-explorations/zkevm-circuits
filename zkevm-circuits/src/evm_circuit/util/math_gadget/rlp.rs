@@ -384,7 +384,7 @@ mod test {
             });
             cb.condition(not::expr(IS_CREATE2.expr()), |cb| {
                 cb.require_equal(
-                    "RLP-encoding correct",
+                    "CREATE RLP-encoding correct",
                     cb.keccak_rlc::<32>(
                         create_input_rlc_expected
                             .iter()
