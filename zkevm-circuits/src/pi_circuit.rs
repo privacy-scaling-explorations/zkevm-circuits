@@ -1635,6 +1635,7 @@ pub fn gen_rand_rpi<F: Field>(
 mod pi_circuit_test {
     use super::*;
     use halo2_proofs::{
+        arithmetic::Field,
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
@@ -1696,4 +1697,53 @@ mod pi_circuit_test {
         let k = 17;
         assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     }
+
+    // #[test]
+    // fn variadic_size_check() {
+    //     const MAX_TXS: usize = 8;
+    //     const MAX_CALLDATA: usize = 200;
+
+    //     let mut rng = ChaCha20Rng::seed_from_u64(2);
+    //     let randomness = Fr::random(&mut rng);
+    //     let rand_rpi = Fr::random(&mut rng);
+
+    //     let mut public_data = PublicData::default();
+    //     let chain_id = 1337u64;
+    //     public_data.chain_id = Word::from(chain_id);
+
+    //     let n_tx = 2;
+    //     for i in 0..n_tx {
+    //         public_data
+    //             .transactions
+    //             .push(CORRECT_MOCK_TXS[i].clone().into());
+    //     }
+    //     let circuit = PiTestCircuit::<Fr, MAX_TXS,
+    // MAX_CALLDATA>(PiCircuit::new(         MAX_TXS,
+    //         MAX_CALLDATA,
+    //         randomness,
+    //         rand_rpi,
+    //         public_data.clone(),
+    //     ));
+    //     let public_inputs = circuit.0.instance();
+    //     let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
+
+    //     // Push 2 more txs
+    //     for i in 0..n_tx {
+    //         public_data
+    //             .transactions
+    //             .push(CORRECT_MOCK_TXS[i + 2].clone().into());
+    //     }
+    //     let circuit2 = PiTestCircuit::<Fr, MAX_TXS,
+    // MAX_CALLDATA>(PiCircuit::new(         MAX_TXS,
+    //         MAX_CALLDATA,
+    //         randomness,
+    //         rand_rpi,
+    //         public_data,
+    //     ));
+    //     let public_inputs = circuit2.0.instance();
+    //     let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
+
+    //     assert_eq!(prover1.fixed(), prover2.fixed());
+    //     assert_eq!(prover1.permutation(), prover2.permutation());
+    // }
 }
