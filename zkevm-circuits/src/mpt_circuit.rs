@@ -262,15 +262,11 @@ pub(crate) struct ProofValues<F> {
     pub(crate) is_long: bool,
     pub(crate) rlc1: F,
     pub(crate) rlc2: F,
-    pub(crate) nonce_value_s: F,
-    pub(crate) balance_value_s: F,
     pub(crate) storage_root_value_s: F,
     pub(crate) storage_root_value_c: F,
     pub(crate) codehash_value_s: F,
     pub(crate) before_account_leaf: bool,
     pub(crate) nibbles_num: usize,
-
-    pub(crate) account_key_rlc: F,
 
     pub(crate) is_hashed_s: bool,
     pub(crate) is_hashed_c: bool,
@@ -775,8 +771,8 @@ impl<F: Field> MPTConfig<F> {
     /// Make the assignments to the MPTCircuit
     pub fn assign(
         &mut self,
-        mut layouter: impl Layouter<F>,
-        witness: &[MptWitnessRow<F>],
+        layouter: &mut impl Layouter<F>,
+        witness: &mut [MptWitnessRow<F>],
         randomness: F,
     ) {
         self.randomness = randomness;
@@ -808,7 +804,8 @@ impl<F: Field> MPTConfig<F> {
                         ]);
                     }
 
-                    for (idx, row) in witness
+                    let working_witness = witness.to_owned().clone();
+                    for (idx, row) in working_witness
                         .iter()
                         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
                         .enumerate()
@@ -816,7 +813,7 @@ impl<F: Field> MPTConfig<F> {
                         //println!("offset: {}", offset);
                         let mut new_proof = offset == 0;
                         if offset > 0 {
-                            let row_prev = &witness[offset - 1];
+                            let row_prev = working_witness[offset - 1].clone();
                             let not_first_level_prev = row_prev.not_first_level();
                             let not_first_level_cur = row.not_first_level();
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
@@ -881,9 +878,9 @@ impl<F: Field> MPTConfig<F> {
                         row.assign_lookup_columns(&mut region, self, &pv, offset)?;
 
                         let prev_row = if offset > 0 {
-                            &witness[offset - 1]
+                            working_witness[offset - 1].clone()
                         } else {
-                            row
+                            row.clone()
                         };
 
                         // leaf s or leaf c or leaf key s or leaf key c
@@ -949,7 +946,7 @@ impl<F: Field> MPTConfig<F> {
                         if !(row.get_type() == MptWitnessRowType::InitBranch
                             || row.get_type() == MptWitnessRowType::BranchChild)
                         {
-                            row.assign(
+                            witness[idx].assign(
                                 &mut region,
                                 self,
                                 account_leaf,
@@ -960,12 +957,12 @@ impl<F: Field> MPTConfig<F> {
                         }
 
                         if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
-                            println!("{}: branch", offset);
+                            //println!("{}: branch", offset);
                             self.branch_config
                                 .assign(&mut region, witness, self, &mut pv, offset)
                                 .ok();
                         } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                            println!("{}: storage", offset);
+                            //println!("{}: storage", offset);
                             self.storage_config.assign(
                                 &mut region,
                                 self,
@@ -974,7 +971,7 @@ impl<F: Field> MPTConfig<F> {
                                 offset,
                             )?;
                         } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                            println!("{}: account", offset);
+                            //println!("{}: account", offset);
                             self.account_config.assign(
                                 &mut region,
                                 self,
@@ -994,7 +991,7 @@ impl<F: Field> MPTConfig<F> {
             )
             .ok();
 
-        memory.assign(&mut layouter, height).ok();
+        memory.assign(layouter, height).ok();
     }
 
     fn load_fixed_table(
@@ -1161,14 +1158,14 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
             }
         }
 
+        config.load_fixed_table(&mut layouter, self.randomness).ok();
+        config.assign(&mut layouter, &mut witness_rows, self.randomness);
+
         let challenges = Challenges::mock(Value::known(self.randomness));
         config
             .keccak_table
             .dev_load(&mut layouter, &to_be_hashed, &challenges, false)
             .ok();
-
-        config.load_fixed_table(&mut layouter, self.randomness).ok();
-        config.assign(layouter, &witness_rows, self.randomness);
 
         Ok(())
     }

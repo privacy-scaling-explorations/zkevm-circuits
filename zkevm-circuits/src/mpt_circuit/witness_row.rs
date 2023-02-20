@@ -44,6 +44,7 @@ pub(crate) enum MptWitnessRowType {
     StorageNonExisting = 19,
 }
 
+#[derive(Clone, Debug)]
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     _marker: PhantomData<F>,

@@ -600,6 +600,7 @@ impl<F: Field> BranchConfig<F> {
                 require!(branch.is_key_odd() => not!(config.key_data.is_odd));
             }}
 
+            // TODO(Brecht): Add checks that when placeholder another branch cannot follow
             for is_s in [true, false] {
                 branch.set_is_s(is_s);
                 ifx! {not!(branch.is_placeholder()) => {

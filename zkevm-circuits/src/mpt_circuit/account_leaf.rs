@@ -1,6 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Expression};
+use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
@@ -8,41 +8,29 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
+use crate::circuit_tools::constraint_builder::RLCChainable;
 use crate::circuit_tools::gadgets::RequireNotZeroGadget;
-use crate::mpt_circuit::helpers::Indexable;
+use crate::mpt_circuit::helpers::{drifted_nibble_rlc, Indexable, IsEmptyTreeGadget};
 use crate::table::ProofType;
 use crate::{
-    assign,
-    circuit,
-    circuit_tools::cell_manager::{Cell, DataTransition},
-    circuit_tools::constraint_builder::{ConstraintBuilder, RLCable},
+    assign, circuit,
+    circuit_tools::cell_manager::Cell,
+    circuit_tools::constraint_builder::RLCable,
     mpt_circuit::{
-        helpers::{get_num_bytes_short, BranchNodeInfo},
-        param::{BRANCH_ROWS_NUM, S_START},
-    },
-    mpt_circuit::{
-        helpers::{
-            get_num_nibbles, get_parent_rlc_state, key_memory, parent_memory, AccountLeafInfo,
-            KeyData, MPTConstraintBuilder, ParentData,
-        },
-        param::{KEY_LEN_IN_NIBBLES, RLP_HASH_VALUE, RLP_LIST_LONG, RLP_LONG},
+        helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
+        param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         FixedTableTag,
     },
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
-    mpt_circuit::{
-        witness_row::{MptWitnessRow, MptWitnessRowType},
-        MPTContext,
-    },
+    mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
 };
 
 use super::helpers::{LeafKeyGadget, RLPValueGadget};
 use super::{
     helpers::bytes_into_rlc,
     param::{
-        ACCOUNT_LEAF_KEY_C_IND, ACCOUNT_LEAF_KEY_S_IND, ACCOUNT_LEAF_NONCE_BALANCE_C_IND,
-        ACCOUNT_LEAF_NONCE_BALANCE_S_IND, ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND,
-        ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND, C_START, HASH_WIDTH, IS_BALANCE_MOD_POS,
-        IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
+        HASH_WIDTH, IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS,
+        IS_NON_EXISTING_ACCOUNT_POS,
     },
 };
 
@@ -73,30 +61,6 @@ impl<F: Field> AccountLeafCols<F> {
             _marker: PhantomData,
         }
     }
-
-    pub(crate) fn is_key(&self, is_s: bool) -> Column<Advice> {
-        if is_s {
-            self.is_key_s
-        } else {
-            self.is_key_c
-        }
-    }
-
-    pub(crate) fn is_nonce_balance(&self, is_s: bool) -> Column<Advice> {
-        if is_s {
-            self.is_nonce_balance_s
-        } else {
-            self.is_nonce_balance_c
-        }
-    }
-
-    pub(crate) fn is_storage_codehash(&self, is_s: bool) -> Column<Advice> {
-        if is_s {
-            self.is_storage_codehash_s
-        } else {
-            self.is_storage_codehash_c
-        }
-    }
 }
 
 #[derive(Default, Debug)]
@@ -115,15 +79,21 @@ pub(crate) struct AccountLeaf {
 pub(crate) struct AccountLeafConfig<F> {
     key_data: [KeyData<F>; 2],
     key_data_w: KeyData<F>,
-    key_data_d: KeyData<F>,
     parent_data: [ParentData<F>; 2],
     check_is_wrong_leaf: RequireNotZeroGadget<F>,
     rlp_key: [LeafKeyGadget<F>; 2],
-    mult: [Cell<F>; 2],
+    key_mult: [Cell<F>; 2],
     wrong_rlp_key: LeafKeyGadget<F>,
     is_wrong_leaf: Cell<F>,
     rlp_nonce: [RLPValueGadget<F>; 2],
     rlp_balance: [RLPValueGadget<F>; 2],
+    rlp_storage: [RLPValueGadget<F>; 2],
+    rlp_codehash: [RLPValueGadget<F>; 2],
+    nonce_mult: [Cell<F>; 2],
+    balance_mult: [Cell<F>; 2],
+    drifted_rlp_key: LeafKeyGadget<F>,
+    drifted_mult: Cell<F>,
+    is_empty_trie: [IsEmptyTreeGadget<F>; 2],
 }
 
 impl<F: Field> AccountLeafConfig<F> {
@@ -133,46 +103,66 @@ impl<F: Field> AccountLeafConfig<F> {
         ctx: MPTContext<F>,
     ) -> Self {
         let proof_type = ctx.proof_type;
-        let not_first_level = ctx.position_cols.not_first_level;
-        let address_rlc = ctx.address_rlc;
-        let s_main = ctx.s_main;
-        let c_main = ctx.c_main;
-        let accs = ctx.accumulators;
-        let value_prev = ctx.value_prev;
-        let value = ctx.value;
         let r = ctx.r.clone();
-
-        let mut offset = -1;
-
-        // key rlc is in the first branch node
-        let rot_parent = offset - 1;
-        let rot_first_child = offset - BRANCH_ROWS_NUM + 1;
-        let rot_branch_init = rot_first_child - 1;
 
         cb.base.cell_manager.as_mut().unwrap().reset();
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb.base], {
-            let key_bytes = [ctx.expr(meta, -1), ctx.expr(meta, 0)];
-            let wrong_bytes = ctx.expr(meta, 1);
-            let nonce_bytes = [ctx.expr(meta, 2)[..34].to_owned(), ctx.expr(meta, 3)[..34].to_owned()];
-            let balance_bytes = [ctx.expr(meta, 2)[34..].to_owned(), ctx.expr(meta, 3)[..34].to_owned()];
-            //let value_bytes = [ctx.expr(meta, 1), ctx.expr(meta, 3)];
-            //let drifted_bytes = ctx.expr(meta, 4);
-            //
-            //let lookup_offset = 3;
+            let key_bytes = [
+                ctx.expr(meta, -1)[..36].to_owned(),
+                ctx.expr(meta, 0)[..36].to_owned(),
+            ];
+            let wrong_bytes = ctx.expr(meta, 1)[..36].to_owned();
+            let value_rlp_bytes = [
+                [
+                    ctx.expr(meta, 2)[..2].to_owned(),
+                    ctx.expr(meta, 2)[34..36].to_owned(),
+                ]
+                .concat(),
+                [
+                    ctx.expr(meta, 3)[..2].to_owned(),
+                    ctx.expr(meta, 3)[34..36].to_owned(),
+                ]
+                .concat(),
+            ];
+            let nonce_bytes = [
+                ctx.expr(meta, 2)[..34].to_owned(),
+                ctx.expr(meta, 3)[..34].to_owned(),
+            ];
+            let balance_bytes = [
+                ctx.expr(meta, 2)[34..].to_owned(),
+                ctx.expr(meta, 3)[34..].to_owned(),
+            ];
+            let storage_bytes = [
+                ctx.expr(meta, 4)[..34].to_owned(),
+                ctx.expr(meta, 5)[..34].to_owned(),
+            ];
+            let codehash_bytes = [
+                ctx.expr(meta, 4)[34..].to_owned(),
+                ctx.expr(meta, 5)[34..].to_owned(),
+            ];
+            let drifted_bytes = ctx.expr(meta, 6)[..36].to_owned();
+
+            let nonce_lookup_offset = 2;
+            let balance_lookup_offset = 3;
+            let storage_lookup_offset = 4;
+            let codehash_lookup_offset = 5;
             let wrong_offset = 1;
 
+            // The two string RLP bytes stored in the s RLP bytes.
+            // The two list RLP bytes are stored in the c RLP bytes.
+            // The RLP bytes of nonce/balance are stored bytes[0].
+
+            config.is_wrong_leaf = cb.base.query_cell();
+
             let mut key_rlc = vec![0.expr(); 2];
+            let mut nonce_rlc = vec![0.expr(); 2];
+            let mut balance_rlc = vec![0.expr(); 2];
+            let mut storage_rlc = vec![0.expr(); 2];
+            let mut codehash_rlc = vec![0.expr(); 2];
+            let mut leaf_no_key_rlc = vec![0.expr(); 2];
             for is_s in [true, false] {
-                // Account leaf always starts with RLP_LIST_LONG + 1 because its length is
-                // always longer than 55 bytes due to containing two hashes -
-                // storage root and codehash.
-                require!(key_bytes[is_s.idx()][0] => RLP_LIST_LONG + 1);
-
-                // Calculate and store the leaf data RLC
-                require!(a!(accs.acc_s.rlc, offset) => key_bytes[is_s.idx()][0..36].rlc(&r));
-
                 // Key data
                 let key_data = &mut config.key_data[is_s.idx()];
                 *key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], 0.expr());
@@ -186,9 +176,67 @@ impl<F: Field> AccountLeafConfig<F> {
                     0.expr(),
                 );
 
+                // Placeholder leaf checks
+                config.is_empty_trie[is_s.idx()] =
+                    IsEmptyTreeGadget::construct(&mut cb.base, parent_data.rlc.expr(), &r);
+
                 // Calculate the key RLC
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
                 *rlp_key = LeafKeyGadget::construct(&mut cb.base, &key_bytes[is_s.idx()]);
+                config.rlp_nonce[is_s.idx()] =
+                    RLPValueGadget::construct(&mut cb.base, &nonce_bytes[is_s.idx()][2..]);
+                config.rlp_balance[is_s.idx()] =
+                    RLPValueGadget::construct(&mut cb.base, &balance_bytes[is_s.idx()][2..]);
+                config.rlp_storage[is_s.idx()] =
+                    RLPValueGadget::construct(&mut cb.base, &storage_bytes[is_s.idx()][1..]);
+                config.rlp_codehash[is_s.idx()] =
+                    RLPValueGadget::construct(&mut cb.base, &codehash_bytes[is_s.idx()][1..]);
+
+                ifx! {not!(and::expr(&[a!(ctx.proof_type.is_non_existing_account_proof), not!(config.is_wrong_leaf)])) => {
+                    // Storage root and codehash are always 32-byte hashes.
+                    require!(config.rlp_storage[is_s.idx()].len() => HASH_WIDTH);
+                    require!(config.rlp_codehash[is_s.idx()].len() => HASH_WIDTH);
+                }}
+
+                config.key_mult[is_s.idx()] = cb.base.query_cell();
+                config.nonce_mult[is_s.idx()] = cb.base.query_cell();
+                config.balance_mult[is_s.idx()] = cb.base.query_cell();
+                require!((FixedTableTag::RMult, rlp_key.num_bytes_on_key_row(), config.key_mult[is_s.idx()].expr()) => @"fixed");
+                require!((FixedTableTag::RMult, config.rlp_nonce[is_s.idx()].num_bytes() + 4.expr(), config.nonce_mult[is_s.idx()].expr()) => @format!("fixed"));
+                require!((FixedTableTag::RMult, config.rlp_balance[is_s.idx()].num_bytes(), config.balance_mult[is_s.idx()].expr()) => @format!("fixed"));
+
+                // RLC bytes zero check
+                // TODO(Brecht): add all these checks back
+                cb.set_length(rlp_key.num_bytes_on_key_row());
+
+                let nonce_rlp_rlc;
+                let balance_rlp_rlc;
+                let storage_rlp_rlc;
+                let codehash_rlp_rlc;
+                (nonce_rlc[is_s.idx()], nonce_rlp_rlc) = config.rlp_nonce[is_s.idx()].rlc(&r);
+                (balance_rlc[is_s.idx()], balance_rlp_rlc) = config.rlp_balance[is_s.idx()].rlc(&r);
+                (storage_rlc[is_s.idx()], storage_rlp_rlc) = config.rlp_storage[is_s.idx()].rlc(&r);
+                (codehash_rlc[is_s.idx()], codehash_rlp_rlc) =
+                    config.rlp_codehash[is_s.idx()].rlc(&r);
+
+                // Calculate the leaf RLC
+                leaf_no_key_rlc[is_s.idx()] = (0.expr(), 1.expr()).rlc_chain(
+                    (
+                        [value_rlp_bytes[is_s.idx()].clone(), vec![nonce_rlp_rlc]]
+                            .concat()
+                            .rlc(&r),
+                        config.nonce_mult[is_s.idx()].expr(),
+                    )
+                        .rlc_chain(
+                            (balance_rlp_rlc, config.balance_mult[is_s.idx()].expr()).rlc_chain(
+                                (storage_rlp_rlc, r[32].expr()).rlc_chain(codehash_rlp_rlc),
+                            ),
+                        ),
+                );
+                let leaf_rlc = (rlp_key.rlc(&r), config.key_mult[is_s.idx()].expr())
+                    .rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+
+                // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
                     + rlp_key.key_rlc(
                         &mut cb.base,
@@ -198,10 +246,33 @@ impl<F: Field> AccountLeafConfig<F> {
                         true,
                         &r,
                     );
-
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
                 let num_nibbles = rlp_key.num_key_nibbles(key_data.is_odd.expr());
                 require!(key_data.num_nibbles.expr() + num_nibbles.expr() => KEY_LEN_IN_NIBBLES);
+
+                // Check if the account is in its parent.
+                // Check is skipped for placeholder leafs which are dummy leafs
+                ifx! {not!(and::expr(&[not!(config.parent_data[is_s.idx()].is_placeholder), config.is_empty_trie[is_s.idx()].expr()])) => {
+                    require!((1, leaf_rlc, config.rlp_key[is_s.idx()].num_bytes(), config.parent_data[is_s.idx()].rlc) => @"keccak");
+                }}
+
+                // Check the RLP encoding consistency.
+                // RlP encoding: account = [key, [nonce, balance, storage, codehash]]
+                ifx! {not!(and::expr(&[a!(ctx.proof_type.is_non_existing_account_proof), not!(config.is_wrong_leaf)])) => {
+                    // We always store between 55 and 256 bytes of data in the values list.
+                    require!(value_rlp_bytes[is_s.idx()][0] => RLP_LONG + 1);
+                    // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
+                    require!(value_rlp_bytes[is_s.idx()][1] => value_rlp_bytes[is_s.idx()][3].expr() + 2.expr());
+                    // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
+                    require!(value_rlp_bytes[is_s.idx()][2] => RLP_LIST_LONG + 1);
+                    // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
+                    require!(value_rlp_bytes[is_s.idx()][3] => config.rlp_nonce[is_s.idx()].num_bytes() + config.rlp_balance[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
+                    // Now check that the the key and value list length matches the account length.
+                    // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
+                    let value_list_num_bytes = value_rlp_bytes[is_s.idx()][1].expr() + 2.expr();
+                    // Account length needs to equal all key bytes and all values list bytes.
+                    require!(config.rlp_key[is_s.idx()].num_bytes() => config.rlp_key[is_s.idx()].num_bytes_on_key_row() + value_list_num_bytes);
+                }}
 
                 // Key done, set the starting values
                 KeyData::store(
@@ -209,56 +280,83 @@ impl<F: Field> AccountLeafConfig<F> {
                     &ctx.memory[key_memory(is_s)],
                     KeyData::default_values(),
                 );
-
-                // Num bytes used in RLC
-                let num_bytes = rlp_key.num_bytes_on_key_row();
-                // Update `mult_diff`
-                config.mult[is_s.idx()] = cb.base.query_cell();
-                require!((FixedTableTag::RMult, num_bytes.expr(), config.mult[is_s.idx()].expr()) => @"fixed");
-                // RLC bytes zero check
-                //cb.set_length(num_bytes.expr());
-
-                // The computed key RLC needs to be the same as the value in `address_rlc`
-                // column. Note that `key_rlc` is used in `account_leaf_key_in_added_branch` and
-                // in cases when there is a placeholder branch we have `key_rlc -
-                // address_rlc != 0` because `key_rlc` is computed for the branch
-                // that is parallel to the placeholder branch.
-                ifx! {not!(parent_data.is_placeholder), not!(a!(proof_type.is_non_existing_account_proof, offset)) => {
-                    require!(key_rlc[is_s.idx()] => a!(address_rlc, offset));
-                }}
-
-                // Account delete
-                // We need to make sure there is no leaf when account is deleted. Two possible
-                // cases:
-                // - 1. Account leaf is deleted and there is a nil object in
-                // branch. In this case we have a placeholder leaf.
-                // - 2. Account leaf is deleted from a branch with two leaves, the remaining
-                // leaf moves one level up and replaces the branch. In this case we
-                // have a branch placeholder. So we need to check there is a
-                // placeholder branch when we have the second case. Note: we do not
-                // need to cover the case when the (only) branch dissapears and only one
-                // leaf remains in the trie because there will always be at least two leaves
-                // (the genesis account) when account will be deleted,
-                // so there will always be a branch / extension node (and thus placeholder
-                // branch).
-                if !is_s {
-                    // Note: this constraint suffices because the proper transition from branch to a
-                    // leaf (2. case) are checked as well.
-                    ifx! {a!(proof_type.is_account_delete_mod, offset) => {
-                        let branch_contains_placeholder_leaf = if is_s { key_data.is_placeholder_leaf_s.expr() } else { key_data.is_placeholder_leaf_c.expr() };
-                        require!(or::expr([branch_contains_placeholder_leaf.expr(), parent_data.is_placeholder.expr()]) => true);
-                    }}
-                }
-
-                config.rlp_nonce[is_s.idx()] = RLPValueGadget::construct(&mut cb.base, &nonce_bytes[is_s.idx()][2..]);
-                config.rlp_balance[is_s.idx()] = RLPValueGadget::construct(&mut cb.base, &balance_bytes[is_s.idx()][2..]);
-
-                offset += 1;
+                // Store the new parent
+                ParentData::store(
+                    &mut cb.base,
+                    &ctx.memory[parent_memory(is_s)],
+                    [
+                        storage_rlc[is_s.idx()].expr(),
+                        true.expr(),
+                        false.expr(),
+                        storage_rlc[is_s.idx()].expr(),
+                    ],
+                );
             }
 
+            // A drifted leaf appears only when there is a placeholder branch
+            ifx! {config.parent_data[true.idx()].is_placeholder.expr() + config.parent_data[false.idx()].is_placeholder.expr() => {
+                config.drifted_rlp_key = LeafKeyGadget::construct(&mut cb.base, &drifted_bytes);
+
+                // TODO(Brecht): seems like we have to verify the RLP encoding because the key length can change
+
+                // The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
+                // the drift - the nibbles are the same in both cases, the difference is that before the
+                // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
+                // position in a branch or/and nibbles of the extension node.
+                // We need the intermediate key RLC right before `drifted_index` is added to it.
+                let (key_rlc_prev, key_mult_prev, placeholder_nibble, placeholder_is_odd) = ifx!{config.parent_data[true.idx()].is_placeholder.expr() => {
+                    (
+                        config.key_data[true.idx()].parent_rlc.expr(),
+                        config.key_data[true.idx()].parent_mult.expr(),
+                        config.key_data[true.idx()].placeholder_nibble.expr(),
+                        config.key_data[true.idx()].placeholder_is_odd.expr(),
+                    )
+                } elsex {
+                    (
+                        config.key_data[false.idx()].parent_rlc.expr(),
+                        config.key_data[false.idx()].parent_mult.expr(),
+                        config.key_data[false.idx()].placeholder_nibble.expr(),
+                        config.key_data[false.idx()].placeholder_is_odd.expr(),
+                    )
+                }};
+
+                // Calculate the drifted key RLC
+                let drifted_key_rlc = key_rlc_prev +
+                    drifted_nibble_rlc(&mut cb.base, placeholder_nibble.expr(), key_mult_prev.expr(), placeholder_is_odd.expr()) +
+                    config.drifted_rlp_key.key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), false, &r);
+
+                // RLC bytes zero check
+                cb.set_length(config.drifted_rlp_key.num_bytes_on_key_row());
+                config.drifted_mult = cb.base.query_cell();
+                require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"mult");
+
+                // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
+                let calc_rlc = |is_s: bool| {
+                    // Calculate the drifted leaf rlc
+                    let rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                    (true.expr(), key_rlc[is_s.idx()].expr(), rlc, config.parent_data[is_s.idx()].placeholder_rlc.expr())
+                };
+                let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
+                    config.parent_data[true.idx()].is_placeholder => {
+                        // Neighbour leaf in the added branch
+                        calc_rlc(true)
+                    },
+                    config.parent_data[false.idx()].is_placeholder => {
+                        // Neighbour leaf in the deleted branch
+                        calc_rlc(false)
+                    },
+                    _ => (false.expr(), 0.expr(), 0.expr(), 0.expr()),
+                };
+                ifx! {do_checks => {
+                    // The key of the drifted leaf needs to match the key of the leaf
+                    require!(key_rlc => drifted_key_rlc);
+                    // The drifted leaf needs to be stored in the branch at `drifted_index`.
+                    // TODO(Brecht): re-enable after witness change
+                    //require!((1, drifted_rlc, config.drifted_rlp_key.num_bytes(), mod_hash) => @"keccak");
+                }}
+            }}
 
             // Wrong leaf
-            config.is_wrong_leaf = cb.base.query_cell();
             // Make sure is_wrong_leaf is boolean
             require!(config.is_wrong_leaf => bool);
             ifx! {a!(ctx.proof_type.is_non_existing_account_proof, wrong_offset) => {
@@ -285,8 +383,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     // Make sure the lengths of the keys are the same
                     require!(config.wrong_rlp_key.key_len() => config.rlp_key[true.idx()].key_len());
                     // RLC bytes zero check
-                    let num_bytes = config.wrong_rlp_key.num_bytes_on_key_row();
-                    //cb.set_length(num_bytes);
+                    cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
                 } elsex {
                     // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
                     require!(config.key_data_w.is_placeholder_leaf_s => true);
@@ -296,331 +393,71 @@ impl<F: Field> AccountLeafConfig<F> {
                 require!(config.is_wrong_leaf => false);
             }}
 
-            let rot_key_s = offset - 2;
-            let rot_key_c = rot_key_s + 1;
-            let rot_nonce_s = rot_key_c + 2;
-            let rot_nonce_c = rot_nonce_s + 1;
-            let rot_storage_s = rot_nonce_c + 1;
-            let rot_storage_c = rot_storage_s + 1;
+            // Account delete
+            // We need to make sure there is no leaf when account is deleted. Two possible
+            // cases:
+            // - 1. Account leaf is deleted and there is a nil object in
+            // branch. In this case we have a placeholder leaf.
+            // - 2. Account leaf is deleted from a branch with two leaves, the remaining
+            // leaf moves one level up and replaces the branch. In this case we
+            // have a branch placeholder. So we need to check there is a
+            // placeholder branch when we have the second case. Note: we do not
+            // need to cover the case when the (only) branch dissapears and only one
+            // leaf remains in the trie because there will always be at least two leaves
+            // (the genesis account) when account will be deleted,
+            // so there will always be a branch / extension node (and thus placeholder
+            // branch).
+            // Note: this constraint suffices because the proper transition from branch to a
+            // leaf (2. case) are checked as well.
+            ifx! {a!(ctx.proof_type.is_account_delete_mod) => {
+                require!(or::expr([
+                    config.key_data[false.idx()].is_placeholder_leaf_c.expr(),
+                    config.parent_data[false.idx()].is_placeholder.expr()
+                ]) => true);
+            }}
 
-            offset += 1;
-
-            ifx! {f!(ctx.position_cols.q_not_first) => {
-                // Nonce/balance
-                let mut nonce_rlc = vec![0.expr(); 2];
-                let mut balance_rlc = vec![0.expr(); 2];
-                for is_s in [true, false] {
-                    let rot_key = offset - 3;
-                    let rot_s = if is_s { offset } else { offset - 1 };
-                    let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-
-                    // The two string RLP bytes stored in the s RLP bytes.
-                    // The two list RLP bytes are stored in the c RLP bytes.
-                    // The RLP bytes of nonce/balance are stored bytes[0].
-
-                    // RLC calculation for nonce/balance
-                    let nonce = DataTransition::new_with_rot(meta, accs.s_mod_node_rlc, offset - 1, offset);
-                    let balance = DataTransition::new_with_rot(meta, accs.c_mod_node_rlc, offset - 1, offset);
-                    let mult_diff_nonce = a!(accs.acc_c.rlc, offset);
-                    let mult_diff_balance = a!(accs.key.mult, offset);
-                    let mut calc_rlc = |data: Expression<F>,
-                                        is_long: Expression<F>,
-                                        mult_diff: Expression<F>,
-                                        mult_offset: u64,
-                                        is_s: bool| {
-                        // The is_long selector needs to be boolean
-                        require!(is_long => bool);
-                        // Calculate the RLC
-                        let (num_bytes, value_rlc) = ifx! {is_long => {
-                            let num_bytes = get_num_bytes_short::expr(a!(ctx.main(is_s).bytes[0], offset));
-                            let value_rlc = ctx.main(is_s).bytes(meta, offset)[1..].to_vec().rlc(&r);
-                            (num_bytes, value_rlc)
-                        } elsex {
-                            (1.expr(), a!(ctx.main(is_s).bytes[0], offset))
-                        }};
-                        require!(data => value_rlc);
-                        // RLC bytes zero check (+2 because data starts at bytes[0])
-                        //cb.set_length_sc(is_s, 2.expr() + num_bytes.expr());
-                        // Get the correct multiplier for the length
-                        require!((FixedTableTag::RMult, num_bytes.expr() + mult_offset.expr(), mult_diff) => @format!("fixed"));
-
-                        // Go from the value rlc to the data rlc
-                        let rlc = account.to_data_rlc(meta, ctx.main(is_s), value_rlc, is_long, offset);
-                        (rlc, num_bytes)
-                    };
-                    //config.rlp_nonce[is_s.idx()] = RLPValueGadget::construct(&mut cb.base, &nonce_bytes[is_s.idx()][2..]);
-                    //config.rlp_balance[is_s.idx()] = RLPValueGadget::construct(&mut cb.base, &balance_bytes[is_s.idx()][2..]);
-
-                    let nonce_num_bytes;
-                    (nonce_rlc[is_s.idx()], nonce_num_bytes) = calc_rlc(
-                        nonce.expr(),
-                        account.is_nonce_long(),
-                        mult_diff_nonce.expr(),
-                        4,
-                        true,
-                    );
-                    let balance_num_bytes;
-                    (balance_rlc[is_s.idx()], balance_num_bytes) = calc_rlc(
-                        balance.expr(),
-                        account.is_balance_long(),
-                        mult_diff_balance.expr(),
-                        0,
-                        false,
-                    );
-
-                    /*require!(config.rlp_nonce[is_s.idx()].is_long() => account.is_nonce_long());
-                    require!(config.rlp_balance[is_s.idx()].is_long() => account.is_balance_long());
-
-                    let (nonce_value_rlc, nonce_leaf_rlc_value) = config.rlp_nonce[is_s.idx()].rlc(&r);
-                    let (balance_value_rlc, balance_leaf_rlc_value) = config.rlp_balance[is_s.idx()].rlc(&r);*/
-
-                    /*require!(nonce_value_rlc => nonce_rlc[is_s.idx()]);
-                    require!(config.rlp_nonce[is_s.idx()].num_bytes() => nonce_num_bytes);
-                    require!(balance_value_rlc => balance_rlc[is_s.idx()]);
-                    require!(config.rlp_balance[is_s.idx()].num_bytes() => balance_num_bytes);*/
-
-                    // Calculate and store the combined nonce + balance multipliers
-                    let account_rlc = DataTransition::new_with_rot(meta, accs.acc_s.rlc, rot_key, offset);
-                    let mult_prev = a!(accs.acc_s.mult, rot_key);
-                    // Multipliers
-                    let mult_after_nonce = a!(accs.acc_c.mult, offset);
-                    let mult_diff_balance = a!(accs.key.mult, offset);
-                    let acc_mult_final = a!(accs.acc_s.mult, offset);
-                    require!(mult_after_nonce => mult_prev.expr() * mult_diff_nonce.expr());
-                    require!(acc_mult_final => mult_after_nonce.expr() * mult_diff_balance.expr());
-                    // Store the RLP bytes + nonce + balance RLC.
-                    let rlc = account_rlc.prev()
-                        + account.nonce_balance_rlc(
-                            meta,
-                            nonce_rlc[is_s.idx()].expr(),
-                            balance_rlc[is_s.idx()].expr(),
-                            mult_prev.expr(),
-                            mult_diff_nonce.expr(),
-                            offset,
-                        );
-                    require!(account_rlc => rlc);
-
-                    // Check the RLP encoding consistency.
-                    // RlP encoding: account = [key, [nonce, balance, storage, codehash]]
-                    // The only exception is when `is_non_existing_account_proof = 1` &
-                    // `is_wrong_leaf = 0`. In this case the value does not matter as
-                    // the account leaf is only a placeholder and does not use
-                    // `s_main.rlp1` and `s_main.rlp2`.
-                    //  TODO(Brecht): Can we remove this if by just making this pass in this special
-                    // case?
-                    ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof, offset), not!(account.is_wrong_leaf(meta, is_s))])) => {
-                        // We always store between 55 and 256 bytes of data in the values list.
-                        require!(a!(s_main.rlp1, offset) => RLP_LONG + 1);
-                        // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
-                        require!(a!(s_main.rlp2, offset) => a!(c_main.rlp2, offset) + 2.expr());
-                        // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
-                        require!(a!(c_main.rlp1, offset) => RLP_LIST_LONG + 1);
-                        // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
-                        require!(a!(c_main.rlp2, offset) => nonce_num_bytes.expr() + balance_num_bytes.expr() + (2 * (1 + 32)).expr());
-                        // Now check that the the key and value list length matches the account length.
-                        let len = account.num_bytes(meta);
-                        let key_num_bytes = account.num_bytes_on_key_row(meta);
-                        // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
-                        let value_list_num_bytes = a!(s_main.rlp2, offset) + 2.expr();
-                        // Account length needs to equal all key bytes and all values list bytes.
-                        require!(len => key_num_bytes + value_list_num_bytes);
-                    }}
-
-                    // To enable lookups we need to have the previous/current nonce/balance on the
-                    // same row
-                    if !is_s {
-                        require!(a!(value_prev, rot_s) => nonce.prev());
-                        require!(a!(value, rot_s) => nonce);
-                        require!(a!(value_prev, offset) => balance.prev());
-                        require!(a!(value, offset) => balance);
-                    }
-
-                    // Check that there is only one modification.
-                    if !is_s {
-                        // Note: For `is_non_existing_account_proof` we do not need this constraint,
-                        // `S` and `C` proofs are the same and we need to do a lookup into only one
-                        // (the other one could really be whatever).
-                        ifx! {not!(a!(proof_type.is_account_delete_mod, offset)) => {
-                            // Nonce needs to remain the same when not modifying the nonce
-                            ifx!{not!(a!(proof_type.is_nonce_mod, offset)) => {
-                                require!(nonce => nonce.prev());
-                            }}
-                            // Balance needs to remain the same when not modifying the balance
-                            ifx!{not!(a!(proof_type.is_balance_mod, offset)) => {
-                                require!(balance => balance.prev());
-                            }}
-                        }}
-                    }
-
-                    offset += 1;
-                }
-
-                for is_s in [true, false] {
-                    let rot_key = offset - 5;
-                    let rot_nonce_balance = offset - 2;
-                    let rot_s = if is_s { offset } else { offset - 1 };
-                    // rlp1 is not used, rlp2 is used to store the first RLP byte.
-                    let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-
-                    // When non_existing_account_proof and not wrong leaf there is only a placeholder account leaf
-                    // and the constraints in this gate are not triggered. In that case it is checked
-                    // that there is nil in the parent branch at the proper position (see `account_non_existing.rs`), note
-                    // that we need (placeholder) account leaf for lookups and to know when to check that parent branch
-                    // has a nil.
-                    // TODO(Brecht): Can we remove this if by just making this pass in this special case?
-                    ifx! {not!(and::expr(&[a!(proof_type.is_non_existing_account_proof, offset), not!(account.is_wrong_leaf(meta, is_s))])) => {
-                        // Storage root and codehash are always 32-byte hashes.
-                        require!(a!(s_main.rlp2, offset) => RLP_HASH_VALUE);
-                        require!(a!(c_main.rlp2, offset) => RLP_HASH_VALUE);
-                    }}
-
-                    // RLC calculation
-                    let account_rlc = DataTransition::new_with_rot(meta, accs.acc_s.rlc, rot_nonce_balance, offset);
-                    let mult_prev = a!(accs.acc_s.mult, rot_nonce_balance);
-                    // - Storage root
-                    let storage_root = DataTransition::new_with_rot(meta, accs.s_mod_node_rlc, offset - 1, offset);
-                    require!(storage_root => s_main.bytes(meta, offset).rlc(&r));
-                    // - Codehash
-                    let codehash = DataTransition::new_with_rot(meta, accs.c_mod_node_rlc, offset - 1, offset);
-                    require!(codehash => c_main.bytes(meta, offset).rlc(&r));
-                    // The full account leaf RLC
-                    let rlc = account_rlc.prev() + account.storage_codehash_rlc(meta, storage_root.expr(), codehash.expr(), mult_prev.expr(), offset);
-                    require!(account_rlc => rlc);
-
-                    // Parent data
-                    let parent_data = &mut config.parent_data[is_s.idx()];
-                    // Check if the account is in its parent.
-                    let branch = BranchNodeInfo::new(meta, ctx.clone(), is_s, rot_branch_init);
-                    // Check is skipped for placeholder leafs which are dummy leafs
-                    ifx!{not!(and::expr(&[a!(ctx.position_cols.not_first_level, offset), not!(branch.is_placeholder()), branch.contains_placeholder_leaf(meta, is_s)])) => {
-                        let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-                        require!((1, account_rlc, account.num_bytes(meta), parent_data.rlc) => @"keccak");
-                    }}
-                    // Store the new parent
-                    ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [storage_root.expr(), true.expr(), false.expr(), storage_root.expr()]);
-
-                    if !is_s {
-                        // To enable lookups we need to have the previous/current storage root/code hash on the same row.
-                        require!(a!(value_prev, rot_s) => storage_root.prev());
-                        require!(a!(value, rot_s) => storage_root);
-                        require!(a!(value_prev, offset) => codehash.prev());
-                        require!(a!(value, offset) => codehash);
-
-                        // Check that there is only one modification (except when the account is being deleted).
-                        ifx!{not!(a!(proof_type.is_account_delete_mod, offset)) => {
-                            // Storage root needs to remain the same when not modifying the storage root
-                            ifx!{not!(a!(proof_type.is_storage_mod, offset)) => {
-                                require!(storage_root => storage_root.prev());
-                            }}
-                            // Codehash root needs to remain the same when not modifying the codehash
-                            ifx!{not!(a!(proof_type.is_codehash_mod, offset)) => {
-                                require!(codehash => codehash.prev());
-                            }}
-                        }}
-                    }
-
-                    offset += 1;
-                }
-
-                ifx! {a!(ctx.position_cols.not_first_level) => {
-                    let branch = BranchNodeInfo::new(meta, ctx.clone(), true, rot_branch_init);
-                    let drifted_account = AccountLeafInfo::new(meta, ctx.clone(), offset);
-
-                    // A drifted leaf appears only when there is a placeholder branch
-                    ifx! {branch.is_placeholder_s_or_c() => {
-                        // Calculate and store the leaf RLC (RLP + key)
-                        let drifted_rlc = a!(accs.acc_s.rlc, offset);
-                        require!(drifted_rlc => ctx.rlc(meta, 0..36, offset));
-
-                        // `s_rlp1` is always RLP_LIST_LONG + 1 because the account leaf is always > 55 bytes (and < 256)
-                        require!(a!(s_main.rlp1, offset) => RLP_LIST_LONG + 1);
-
-                        // The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
-                        // the drift - the nibbles are the same in both cases, the difference is that before the
-                        // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
-                        // position in a branch or/and nibbles of the extension node.
-                        let is_branch_in_first_level = not!(a!(not_first_level, rot_branch_init));
-                        let (key_rlc_prev, key_mult_prev) = get_parent_rlc_state(meta, ctx.clone(), is_branch_in_first_level, rot_parent);
-
-                        // Load the last key values
-                        config.key_data_d = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 2.expr());
-
-                        // TODO(Brecht): make this work with loaded key data when extension node is separate
-                        ifx! {not!(branch.is_extension()) => {
-                            require!(config.key_data_d.rlc => key_rlc_prev);
-                            require!(config.key_data_d.mult => key_mult_prev);
-                        }}
-
-                        // Calculate the drifted key RLC
-                        let drifted_key_rlc = key_rlc_prev +
-                            branch.drifted_nibble_rlc(meta, &mut cb.base, key_mult_prev.expr()) +
-                            drifted_account.key_rlc(meta, &mut cb.base, key_mult_prev.expr(), branch.is_key_odd(), r[0].expr(), 0);
-
-                        // RLC bytes zero check
-                        let num_bytes = drifted_account.num_bytes_on_key_row(meta);
-                        cb.set_length(num_bytes.expr());
-                        // Update `mult_diff`
-                        let mult = a!(accs.acc_s.mult, offset);
-                        require!((FixedTableTag::RMult, num_bytes.expr(), mult) => @"mult");
-
-                        // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                        let calc_rlc = |is_s, meta: &mut VirtualCells<'_, F>, cb: &mut ConstraintBuilder<F>| {
-                            circuit!([meta, cb], {
-                                let rot_key = if is_s { rot_key_s } else { rot_key_c };
-                                let rot_nonce = if is_s { rot_nonce_s } else { rot_nonce_c };
-                                let rot_storage = if is_s { rot_storage_s } else { rot_storage_c };
-
-                                let account = AccountLeafInfo::new(meta, ctx.clone(), rot_key);
-
-                                // Calculate the drifted leaf rlc
-                                // Nonce data rlc
-                                let nonce_stored = a!(accs.s_mod_node_rlc, rot_nonce);
-                                let nonce_rlc = account.to_data_rlc(meta, ctx.s_main, nonce_stored, account.is_nonce_long(), rot_nonce);
-                                // Balance data rlc
-                                let balance_stored = a!(accs.c_mod_node_rlc, rot_nonce);
-                                let balance_rlc = account.to_data_rlc(meta, ctx.c_main, balance_stored, account.is_balance_long(), rot_nonce);
-                                let mult_nonce = a!(accs.acc_c.rlc, rot_nonce);
-                                let mult_balance = a!(accs.key.mult, rot_nonce);
-                                let rlc = drifted_rlc.expr() + account.nonce_balance_rlc(meta, nonce_rlc.expr(), balance_rlc.expr(), mult.expr(), mult_nonce.expr(), rot_nonce);
-                                // Add storage/codehash rlc
-                                let storage_rlc = a!(accs.s_mod_node_rlc, rot_storage);
-                                let codehash_rlc = a!(accs.c_mod_node_rlc, rot_storage);
-                                let mult_prev = mult.expr() * mult_nonce.expr() * mult_balance.expr();
-                                let rlc = rlc + account.storage_codehash_rlc(meta, storage_rlc.expr(), codehash_rlc.expr(), mult_prev.expr(), rot_storage);
-
-                                (true.expr(), key_rlc[is_s.idx()].expr(), rlc, a!(accs.mod_node_rlc(is_s), rot_first_child))
-                            })
-                        };
-                        let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
-                            branch.is_placeholder_s() => {
-                                // Neighbour leaf in the added branch
-                                // - `leaf_key_s_rlc` is the key RLC of the leaf before it drifted down
-                                // in a new branch.
-                                // - `s_mod_node_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-                                // This is because `c_mod_node_rlc` in the added branch stores the hash of
-                                // `modified_index` (the leaf that has been added).
-                                calc_rlc(true, meta, &mut cb.base)
-                            },
-                            branch.is_placeholder_c() => {
-                                // Neighbour leaf in the deleted branch
-                                // -`leaf_key_c_rlc` is the key RLC of the leaf after its neighbour leaf
-                                // has been deleted (and there were only two leaves, so the branch was deleted).
-                                // - `c_mod_node_hash_rlc` in the placeholder branch stores the hash of a neighbour leaf.
-                                // This is because `s_mod_node_rlc` in the deleted branch stores the hash of
-                                // `modified_index` (the leaf that is to be deleted).
-                                calc_rlc(false, meta, &mut cb.base)
-                            },
-                            _ => (false.expr(), 0.expr(), 0.expr(), 0.expr()),
-                        };
-                        ifx! {do_checks => {
-                            // The key of the drifted leaf needs to match the key of the leaf
-                            require!(key_rlc => drifted_key_rlc);
-                            // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                            require!((1, drifted_rlc, drifted_account.num_bytes(meta), mod_hash) => @"keccak");
-                        }}
-                    }}
+            // Check that there is only one modification (except when the account is being
+            // deleted).
+            ifx! {not!(a!(ctx.proof_type.is_account_delete_mod)) => {
+                // Nonce needs to remain the same when not modifying the nonce
+                ifx!{not!(a!(proof_type.is_nonce_mod, nonce_lookup_offset)) => {
+                    require!(nonce_rlc[false.idx()] => nonce_rlc[true.idx()]);
+                }}
+                // Balance needs to remain the same when not modifying the balance
+                ifx!{not!(a!(proof_type.is_balance_mod, balance_lookup_offset)) => {
+                    require!(balance_rlc[false.idx()] => balance_rlc[true.idx()]);
+                }}
+                // Storage root needs to remain the same when not modifying the storage root
+                ifx!{not!(a!(proof_type.is_storage_mod, storage_lookup_offset)) => {
+                    require!(storage_rlc[false.idx()] => storage_rlc[true.idx()]);
+                }}
+                // Codehash root needs to remain the same when not modifying the codehash
+                ifx!{not!(a!(proof_type.is_codehash_mod, codehash_lookup_offset)) => {
+                    require!(codehash_rlc[false.idx()] => codehash_rlc[true.idx()]);
                 }}
             }}
+
+            for is_s in [true, false] {
+                // The computed key RLC needs to be the same as the value in `address_rlc`
+                // column. Note that `key_rlc` is used in `account_leaf_key_in_added_branch` and
+                // in cases when there is a placeholder branch we have `key_rlc -
+                // address_rlc != 0` because `key_rlc` is computed for the branch
+                // that is parallel to the placeholder branch.
+                ifx! {not!(config.parent_data[is_s.idx()].is_placeholder), not!(a!(ctx.proof_type.is_non_existing_account_proof)) => {
+                    require!(a!(ctx.mpt_table.address_rlc) => key_rlc[is_s.idx()]);
+                }}
+            }
+
+            // Lookup data
+            // TODO(Brecht): check key_rlc?
+            require!(a!(ctx.mpt_table.value_prev, nonce_lookup_offset) => nonce_rlc[true.idx()]);
+            require!(a!(ctx.mpt_table.value, nonce_lookup_offset) => nonce_rlc[false.idx()]);
+            require!(a!(ctx.mpt_table.value_prev, balance_lookup_offset) => balance_rlc[true.idx()]);
+            require!(a!(ctx.mpt_table.value, balance_lookup_offset) => balance_rlc[false.idx()]);
+            require!(a!(ctx.mpt_table.value_prev, storage_lookup_offset) => storage_rlc[true.idx()]);
+            require!(a!(ctx.mpt_table.value, storage_lookup_offset) => storage_rlc[false.idx()]);
+            require!(a!(ctx.mpt_table.value_prev, codehash_lookup_offset) => codehash_rlc[true.idx()]);
+            require!(a!(ctx.mpt_table.value, codehash_lookup_offset) => codehash_rlc[false.idx()]);
         });
 
         config
@@ -630,56 +467,138 @@ impl<F: Field> AccountLeafConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
-        witness: &[MptWitnessRow<F>],
+        witness: &mut [MptWitnessRow<F>],
         pv: &mut ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
         let base_offset = offset;
-        let mut offset = offset - 1;
 
-        let key_bytes = [&witness[base_offset - 1], &witness[base_offset + 0]];
-        let wrong_bytes = &witness[base_offset + 1];
-        let nonce_bytes = [&witness[base_offset + 2].bytes[..34].to_owned(), &witness[base_offset + 3].bytes[..34].to_owned()];
-        let balance_bytes = [&witness[base_offset + 2].bytes[34..].to_owned(), &witness[base_offset + 3].bytes[34..].to_owned()];
-        //let value_bytes = [&witness[offset + 1], &witness[offset + 3]];
-        //let drifted_bytes = &witness[offset + 4];
-        //let lookup_offset = offset + 3;
+        let key_s = witness[base_offset - 1].to_owned();
+        let key_c = witness[base_offset].to_owned();
+        let nonce_balance_s = witness[base_offset + 2].to_owned();
+        let nonce_balance_c = witness[base_offset + 3].to_owned();
+        let storage_codehash_s = witness[base_offset + 4].to_owned();
+        let storage_codehash_c = witness[base_offset + 5].to_owned();
+
+        let key_bytes = [key_s.to_owned(), key_c.to_owned()];
+        let wrong_bytes = witness[base_offset + 1].to_owned();
+        let nonce_bytes = [
+            nonce_balance_s.bytes[..34].to_owned(),
+            nonce_balance_c.bytes[..34].to_owned(),
+        ];
+        let balance_bytes = [
+            nonce_balance_s.bytes[34..68].to_owned(),
+            nonce_balance_c.bytes[34..68].to_owned(),
+        ];
+        let storage_bytes = [
+            storage_codehash_s.bytes[..34].to_owned(),
+            storage_codehash_c.bytes[..34].to_owned(),
+        ];
+        let codehash_bytes = [
+            storage_codehash_s.bytes[34..68].to_owned(),
+            storage_codehash_c.bytes[34..68].to_owned(),
+        ];
+        //let drifted_bytes = witness[base_offset + 6].to_owned();
+
+        let key_s_lookup_offset = base_offset - 1;
+        let nonce_lookup_offset = base_offset + 2;
+        let balance_lookup_offset = base_offset + 3;
+        let storage_lookup_offset = base_offset + 4;
+        let codehash_lookup_offset = base_offset + 5;
         let wrong_offset = base_offset + 1;
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
+        let mut nonce_value_rlc = vec![0.scalar(); 2];
+        let mut balance_value_rlc = vec![0.scalar(); 2];
+        let mut storage_value_rlc = vec![0.scalar(); 2];
+        let mut codehash_value_rlc = vec![0.scalar(); 2];
         for is_s in [true, false] {
-            let key_row = key_bytes[is_s.idx()];
+            let key_row = &key_bytes[is_s.idx()];
 
-            //let key_row = &key_bytes[is_s.idx()];
+            self.key_data[is_s.idx()].witness_load(
+                region,
+                base_offset,
+                &mut pv.memory[key_memory(is_s)],
+                0,
+            )?;
 
-            let rlp_key_witness = self.rlp_key[is_s.idx()]
-                .assign(region, base_offset, &key_row.bytes)
-                .ok()
-                .unwrap();
+            let parent_values = self.parent_data[is_s.idx()].witness_load(
+                region,
+                base_offset,
+                &mut pv.memory[parent_memory(is_s)],
+                0,
+            )?;
 
-            // account leaf key S & C
-            let mut acc = F::zero();
-            let mut acc_mult = F::one();
-            // 35 = 2 (leaf rlp) + 1 (key rlp) + key_len
-            let key_len = (key_row.get_byte(2) - 128) as usize;
-            for b in key_row.bytes.iter().take(3 + key_len) {
-                acc += F::from(*b as u64) * acc_mult;
-                acc_mult *= ctx.randomness;
+            self.is_empty_trie[is_s.idx()].assign(
+                region,
+                base_offset,
+                parent_values[0],
+                ctx.randomness,
+            )?;
+
+            let rlp_key_witness =
+                self.rlp_key[is_s.idx()].assign(region, base_offset, &key_row.bytes)?;
+            let nonce_witness = self.rlp_nonce[is_s.idx()].assign(
+                region,
+                base_offset,
+                &nonce_bytes[is_s.idx()][2..],
+            )?;
+            let balance_witness = self.rlp_balance[is_s.idx()].assign(
+                region,
+                base_offset,
+                &balance_bytes[is_s.idx()][2..],
+            )?;
+            let storage_witness = self.rlp_storage[is_s.idx()].assign(
+                region,
+                base_offset,
+                &storage_bytes[is_s.idx()][1..],
+            )?;
+            let codehash_witness = self.rlp_codehash[is_s.idx()].assign(
+                region,
+                base_offset,
+                &codehash_bytes[is_s.idx()][1..],
+            )?;
+
+            nonce_value_rlc[is_s.idx()] = nonce_witness.rlc_value(ctx.randomness);
+            balance_value_rlc[is_s.idx()] = balance_witness.rlc_value(ctx.randomness);
+            storage_value_rlc[is_s.idx()] = storage_witness.rlc_value(ctx.randomness);
+            codehash_value_rlc[is_s.idx()] = codehash_witness.rlc_value(ctx.randomness);
+
+            // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
+            let mut mult_nonce = F::one();
+            for _ in 0..nonce_witness.num_bytes() + 4 {
+                mult_nonce *= ctx.randomness;
             }
+            let mut mult_balance = F::one();
+            for _ in 0..balance_witness.num_bytes() {
+                mult_balance *= ctx.randomness;
+            }
+            self.nonce_mult[is_s.idx()].assign(region, base_offset, mult_nonce)?;
+            self.balance_mult[is_s.idx()].assign(region, base_offset, mult_balance)?;
 
-            if key_row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                pv.acc_account_s = acc;
-                pv.acc_mult_account_s = acc_mult;
-                if key_row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
-                    assign!(region, (ctx.proof_type.proof_type, offset) => ProofType::AccountDoesNotExist.scalar()).ok();
-                }
+            // Key
+            // For leaf S and leaf C we need to start with the same rlc.
+            let is_branch_placeholder = if is_s {
+                pv.is_branch_s_placeholder
             } else {
-                pv.acc_account_c = acc;
-                pv.acc_mult_account_c = acc_mult;
-            }
+                pv.is_branch_c_placeholder
+            };
+            let (key_rlc_new, key_rlc_mult) = if is_branch_placeholder {
+                (pv.key_rlc_prev, pv.key_rlc_mult_prev)
+            } else {
+                (pv.key_rlc, pv.key_rlc_mult)
+            };
+            (key_rlc[is_s.idx()], _) =
+                rlp_key_witness.key_rlc(key_rlc_new, key_rlc_mult, ctx.randomness);
 
-            self.key_data[is_s.idx()].witness_load(region, base_offset, &mut pv.memory[key_memory(is_s)], 0)?;
+            let mut key_mult = F::one();
+            for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
+                key_mult *= ctx.randomness;
+            }
+            self.key_mult[is_s.idx()].assign(region, base_offset, key_mult)?;
+
+            // Update key and parent state
             self.key_data[is_s.idx()].witness_store(
                 region,
                 base_offset,
@@ -694,562 +613,99 @@ impl<F: Field> AccountLeafConfig<F> {
                 F::zero(),
                 F::one(),
             )?;
-
-            // For leaf S and leaf C we need to start with the same rlc.
-            let mut key_rlc_new = pv.key_rlc;
-            let mut key_rlc_mult_new = pv.key_rlc_mult;
-            if (pv.is_branch_s_placeholder && key_row.get_type() == MptWitnessRowType::AccountLeafKeyS)
-                || (pv.is_branch_c_placeholder
-                    && key_row.get_type() == MptWitnessRowType::AccountLeafKeyC)
-            {
-                key_rlc_new = pv.key_rlc_prev;
-                key_rlc_mult_new = pv.key_rlc_mult_prev;
-            }
-
-            ctx.compute_key_rlc(
-                &key_row.bytes,
-                &mut key_rlc_new,
-                &mut key_rlc_mult_new,
-                S_START,
-            );
-            pv.account_key_rlc = key_rlc_new;
-            region.assign_advice(
-                || "assign key_rlc".to_string(),
-                ctx.accumulators.key.rlc,
-                offset,
-                || Value::known(key_rlc_new),
+            self.parent_data[is_s.idx()].witness_store(
+                region,
+                base_offset,
+                &mut pv.memory[parent_memory(is_s)],
+                storage_value_rlc[is_s.idx()],
+                true,
+                false,
+                storage_value_rlc[is_s.idx()],
             )?;
+        }
 
-            ctx
-                .assign_acc(region, acc, acc_mult, F::zero(), F::zero(), offset)
-                .ok();
+        // Drifted leaf handling
+        if pv.is_branch_s_placeholder || pv.is_branch_c_placeholder {
+            // TODO(Brecht): Change how the witness is generated
+            let drifted_bytes = &mut witness[base_offset + 6].bytes;
+            let key_bytes = if pv.is_branch_s_placeholder {
+                &key_bytes[true.idx()]
+            } else {
+                &key_bytes[false.idx()]
+            };
+            drifted_bytes[0] = key_bytes.bytes[0];
+            drifted_bytes[1] = key_bytes.bytes[1];
+            drifted_bytes[2] = key_bytes.bytes[2];
 
-            self.mult[is_s.idx()]
-                    .assign(region, base_offset, acc_mult)
-                    .ok();
+            let drifted_key_witness =
+                self.drifted_rlp_key
+                    .assign(region, base_offset, &drifted_bytes)?;
 
-            key_rlc[is_s.idx()] = key_rlc_new;
-            offset += 1;
+            let (_, leaf_mult) = drifted_key_witness.rlc_leaf(ctx.randomness);
+
+            self.drifted_mult.assign(region, base_offset, leaf_mult)?;
         }
 
         // Non-existing
-        {
-            let row = wrong_bytes;
-
-            self.key_data_w
-                .witness_load(region, base_offset, &mut pv.memory[key_memory(true)], 1)
-                .ok();
+        let row = wrong_bytes;
+        if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
+            self.key_data_w.witness_load(
+                region,
+                base_offset,
+                &mut pv.memory[key_memory(true)],
+                1,
+            )?;
 
             // TODO(Brecht): Change how the witness is generated
             let is_wrong = row.bytes[0] != 0;
             self.is_wrong_leaf
-                .assign(region, base_offset, F::from(is_wrong))
-                .ok();
+                .assign(region, base_offset, F::from(is_wrong))?;
 
             let mut row_bytes = row.bytes.clone();
             row_bytes[0] = key_bytes[true.idx()].bytes[0];
 
-            let wrong_witness = self
-                .wrong_rlp_key
-                .assign(region, base_offset, &row_bytes)
-                .ok()
-                .unwrap();
+            let wrong_witness = self.wrong_rlp_key.assign(region, base_offset, &row_bytes)?;
+            let (key_rlc_wrong, _) =
+                wrong_witness.key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.randomness);
 
             let address_rlc = bytes_into_rlc(row.address_bytes(), ctx.randomness);
-            self.check_is_wrong_leaf
-                    .assign(region, base_offset, address_rlc - key_rlc[true.idx()])
-                    .ok();
+            self.check_is_wrong_leaf.assign(
+                region,
+                base_offset,
+                address_rlc - key_rlc[true.idx()],
+            )?;
 
-            if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
-                assign!(region, (ctx.proof_type.proof_type, offset) => ProofType::AccountDestructed.scalar()).ok();
-            }
+            assign!(region, (ctx.mpt_table.key_rlc, wrong_offset) => key_rlc_wrong)?;
+            assign!(region, (ctx.proof_type.proof_type, wrong_offset) => ProofType::AccountDestructed.scalar())?;
         }
 
-        offset += 1;
-
-        /* NONCE/BALANCE */
-
-        for is_s in [true, false] {
-            let value_row = &witness[offset];
-
-            let nonce_witness = self.rlp_nonce[is_s.idx()]
-                .assign(region, base_offset, &nonce_bytes[is_s.idx()][2..])
-                .ok()
-                .unwrap();
-
-            let balance_witness = self.rlp_balance[is_s.idx()]
-                .assign(region, base_offset, &balance_bytes[is_s.idx()][2..])
-                .ok()
-                .unwrap();
-
-            let mut nonce_len: usize = 1;
-            // Note: when nonce or balance is 0, the actual value stored in RLP encoding is
-            // 128.
-            if value_row.get_byte(S_START) > 128 {
-                nonce_len = value_row.get_byte(S_START) as usize - 128 + 1; // +1 for byte with length info
-                region
-                    .assign_advice(
-                        || "assign sel1".to_string(),
-                        ctx.denoter.sel1,
-                        offset
-                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
-                        || Value::known(F::one()),
-                    )
-                    .ok();
-            } else {
-                region
-                    .assign_advice(
-                        || "assign sel1".to_string(),
-                        ctx.denoter.sel1,
-                        offset
-                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
-                        || Value::known(F::zero()),
-                    )
-                    .ok();
-            }
-
-            let mut balance_len: usize = 1;
-            if value_row.get_byte(C_START) > 128 {
-                balance_len = value_row.get_byte(C_START) as usize - 128 + 1; // +1 for byte with length info
-                region
-                    .assign_advice(
-                        || "assign sel2".to_string(),
-                        ctx.denoter.sel2,
-                        offset
-                            - (ACCOUNT_LEAF_NONCE_BALANCE_S_IND - ACCOUNT_LEAF_KEY_S_IND) as usize,
-                        || Value::known(F::one()),
-                    )
-                    .ok();
-            } else {
-                region
-                    .assign_advice(
-                        || "assign sel2".to_string(),
-                        ctx.denoter.sel2,
-                        offset
-                            - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_KEY_C_IND) as usize,
-                        || Value::known(F::zero()),
-                    )
-                    .ok();
-            }
-
-            // nonce value RLC and balance value RLC:
-            pv.rlc1 = F::zero();
-            pv.rlc2 = F::zero();
-            // Note: Below, it first computes and assigns the nonce RLC and balance RLC
-            // without RLP specific byte (there is a RLP specific byte when
-            // nonce/balance RLP length > 1).
-            if nonce_len == 1 && balance_len == 1 {
-                ctx
-                    .compute_rlc_and_assign(
-                        region,
-                        &value_row.bytes,
-                        pv,
-                        offset,
-                        (S_START, HASH_WIDTH),
-                        (C_START, HASH_WIDTH),
-                    )
-                    .ok();
-            } else if nonce_len > 1 && balance_len == 1 {
-                ctx
-                    .compute_rlc_and_assign(
-                        region,
-                        &value_row.bytes,
-                        pv,
-                        offset,
-                        (S_START + 1, HASH_WIDTH - 1),
-                        (C_START, HASH_WIDTH),
-                    )
-                    .ok();
-            } else if nonce_len == 1 && balance_len > 1 {
-                ctx
-                    .compute_rlc_and_assign(
-                        region,
-                        &value_row.bytes,
-                        pv,
-                        offset,
-                        (S_START, HASH_WIDTH),
-                        (C_START + 1, HASH_WIDTH - 1),
-                    )
-                    .ok();
-            } else if nonce_len > 1 && balance_len > 1 {
-                ctx
-                    .compute_rlc_and_assign(
-                        region,
-                        &value_row.bytes,
-                        pv,
-                        offset,
-                        (S_START + 1, HASH_WIDTH - 1),
-                        (C_START + 1, HASH_WIDTH - 1),
-                    )
-                    .ok();
-            }
-
-            let mut acc_account;
-            let mut acc_mult_account;
-            if value_row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
-                pv.nonce_value_s = pv.rlc1;
-                pv.balance_value_s = pv.rlc2;
-
-                acc_account = pv.acc_account_s;
-                acc_mult_account = pv.acc_mult_account_s;
-
-                if value_row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
-                    region
-                        .assign_advice(
-                            || "assign which lookup type enabled".to_string(),
-                            ctx.proof_type.proof_type,
-                            offset,
-                            || Value::known(F::from(1_u64)),
-                        )
-                        .ok();
-                }
-            } else {
-                acc_account = pv.acc_account_c;
-                acc_mult_account = pv.acc_mult_account_c;
-
-                let nonce_value_c = pv.rlc1;
-                let balance_value_c = pv.rlc2;
-
-                if value_row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
-                    region
-                        .assign_advice(
-                            || "assign which lookup type enabled".to_string(),
-                            ctx.proof_type.proof_type,
-                            offset,
-                            || Value::known(F::from(2_u64)),
-                        )
-                        .ok();
-                }
-
-                let offset_s = offset
-                    - (ACCOUNT_LEAF_NONCE_BALANCE_C_IND - ACCOUNT_LEAF_NONCE_BALANCE_S_IND)
-                        as usize;
-
-                // assign nonce S RLC in ACCOUNT_LEAF_NONCE_BALANCE_S row.
-                region
-                    .assign_advice(
-                        || "assign nonce S".to_string(),
-                        ctx.value_prev,
-                        offset_s,
-                        || Value::known(pv.nonce_value_s),
-                    )
-                    .ok();
-
-                // Assign nonce C RLC in ACCOUNT_LEAF_NONCE_BALANCE_S row.
-                region
-                    .assign_advice(
-                        || "assign nonce C".to_string(),
-                        ctx.value,
-                        offset_s,
-                        || Value::known(nonce_value_c),
-                    )
-                    .ok();
-
-                // assign balance S RLC in ACCOUNT_LEAF_NONCE_BALANCE_C row.
-                region
-                    .assign_advice(
-                        || "assign value_prev".to_string(),
-                        ctx.value_prev,
-                        offset,
-                        || Value::known(pv.balance_value_s),
-                    )
-                    .ok();
-
-                // Assign balance C RLC in ACCOUNT_LEAF_NONCE_BALANCE_C row.
-                region
-                    .assign_advice(
-                        || "assign balance C".to_string(),
-                        ctx.value,
-                        offset,
-                        || Value::known(balance_value_c),
-                    )
-                    .ok();
-            }
-
-            // s_rlp1, s_rlp2
-            ctx.compute_acc_and_mult(
-                &value_row.bytes,
-                &mut acc_account,
-                &mut acc_mult_account,
-                S_START - 2,
-                2,
-            );
-            // c_rlp1, c_rlp2
-            ctx.compute_acc_and_mult(
-                &value_row.bytes,
-                &mut acc_account,
-                &mut acc_mult_account,
-                C_START - 2,
-                2,
-            );
-            // nonce contribution to leaf RLC:
-            /*
-            If nonce stream length is 1, it doesn't have
-            the first byte with length info. Same for balance.
-            There are four possibilities:
-                - nonce is short (length 1), balance is short (length 1)
-                - nonce is short, balance is long
-                - nonce is long, balance is short
-                - nonce is long, balance is long
-            We put this info in sel1/sel2 in the key row (sel1/sel2 are
-                already used for other purposes in nonce balance row):
-                - sel1/sel2: 0/0 (how to check: (1-sel1)*(1-sel2))
-                - sel1/sel2: 0/1 (how to check: (1-sel1)*sel2)
-                - sel1/sel2: 1/0 (how to check: sel1*(1-sel2))
-                - sel1/sel2: 1/1 (how to check: sel1*sel2)
-            */
-
-            ctx.compute_acc_and_mult(
-                &value_row.bytes,
-                &mut acc_account,
-                &mut acc_mult_account,
-                S_START,
-                nonce_len,
-            );
-
-            let mut mult_diff_s = F::one();
-            for _ in 0..nonce_len + 4 {
-                // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
-                mult_diff_s *= ctx.randomness;
-            }
-
-            // It's easier to constrain (in account_leaf_nonce_balance.rs)
-            // the multiplier if we store acc_mult both after nonce and after
-            // balance.
-            let acc_mult_tmp = acc_mult_account;
-
-            // balance contribution to leaf RLC
-            ctx.compute_acc_and_mult(
-                &value_row.bytes,
-                &mut acc_account,
-                &mut acc_mult_account,
-                C_START,
-                balance_len,
-            );
-
-            let mut mult_diff_c = F::one();
-            for _ in 0..balance_len {
-                mult_diff_c *= ctx.randomness;
-            }
-
-            ctx
-                .assign_acc(
-                    region,
-                    acc_account,
-                    acc_mult_account,
-                    F::zero(),
-                    acc_mult_tmp,
-                    offset,
-                )
-                .ok();
-
-            region
-                .assign_advice(
-                    || "assign mult diff".to_string(),
-                    ctx.accumulators.acc_c.rlc, /* assigning key_rlc leads into
-                                                        * PoisonedConstraint */
-                    offset,
-                    || Value::known(mult_diff_s),
-                )
-                .ok();
-            region
-                .assign_advice(
-                    || "assign mult diff".to_string(),
-                    ctx.accumulators.key.mult,
-                    offset,
-                    || Value::known(mult_diff_c),
-                )
-                .ok();
-            if value_row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
-                pv.acc_nonce_balance_s = acc_account;
-                pv.acc_mult_nonce_balance_s = acc_mult_account;
-            } else {
-                pv.acc_nonce_balance_c = acc_account;
-                pv.acc_mult_nonce_balance_c = acc_mult_account;
-            }
-
-            offset += 1;
+        // Lookup data
+        if key_s.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
+            assign!(region, (ctx.proof_type.proof_type, key_s_lookup_offset) => ProofType::AccountDoesNotExist.scalar())?;
         }
 
-        /* STORAGE/CODEHASH */
-
-        for is_s in [true, false] {
-            let row = &witness[offset];
-
-            if is_s {
-                pv.acc_s = pv.acc_nonce_balance_s;
-                pv.acc_mult_s = pv.acc_mult_nonce_balance_s;
-
-                // storage root RLC and code hash RLC
-                pv.rlc1 = F::zero();
-                pv.rlc2 = F::zero();
-                ctx
-                    .compute_rlc_and_assign(
-                        region,
-                        &row.bytes,
-                        pv,
-                        offset,
-                        (S_START, HASH_WIDTH),
-                        (C_START, HASH_WIDTH),
-                    )
-                    .ok();
-                pv.storage_root_value_s = pv.rlc1;
-                pv.codehash_value_s = pv.rlc2;
-            } else {
-                pv.acc_s = pv.acc_nonce_balance_c;
-                pv.acc_mult_s = pv.acc_mult_nonce_balance_c;
-
-                // assign storage root RLC and code hash RLC for this row
-                pv.rlc1 = F::zero();
-                pv.rlc2 = F::zero();
-                ctx
-                    .compute_rlc_and_assign(
-                        region,
-                        &row.bytes,
-                        pv,
-                        offset,
-                        (S_START, HASH_WIDTH),
-                        (C_START, HASH_WIDTH),
-                    )
-                    .ok();
-
-                let storage_root_value_c = pv.rlc1;
-                let codehash_value_c = pv.rlc2;
-
-                pv.storage_root_value_c = storage_root_value_c;
-
-                if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
-                    region
-                        .assign_advice(
-                            || "assign lookup enabled".to_string(),
-                            ctx.proof_type.proof_type,
-                            offset,
-                            || Value::known(F::from(3_u64)), /* codehash mod lookup enabled in
-                                                              * this row if it is
-                                                              * is_codehash_mod proof */
-                        )
-                        .ok();
-                }
-
-                let offset_s = offset
-                    - (ACCOUNT_LEAF_STORAGE_CODEHASH_C_IND - ACCOUNT_LEAF_STORAGE_CODEHASH_S_IND)
-                        as usize;
-
-                // Assign storage root S
-                region
-                    .assign_advice(
-                        || "assign storage root S".to_string(),
-                        ctx.value_prev,
-                        offset_s,
-                        || Value::known(pv.storage_root_value_s),
-                    )
-                    .ok();
-
-                // Assign storage root C
-                region
-                    .assign_advice(
-                        || "assign code hash C".to_string(),
-                        ctx.value,
-                        offset_s,
-                        || Value::known(storage_root_value_c),
-                    )
-                    .ok();
-
-                // Assign code hash S
-                region
-                    .assign_advice(
-                        || "assign code hash S".to_string(),
-                        ctx.value_prev,
-                        offset,
-                        || Value::known(pv.codehash_value_s),
-                    )
-                    .ok();
-
-                // Assign code hash C
-                region
-                    .assign_advice(
-                        || "assign code hash C".to_string(),
-                        ctx.value,
-                        offset,
-                        || Value::known(codehash_value_c),
-                    )
-                    .ok();
-            }
-
-            let storage_root = if is_s {
-                pv.storage_root_value_s
-            } else {
-                pv.storage_root_value_c
-            };
-            self.parent_data[is_s.idx()]
-                .witness_load(region, base_offset, &mut pv.memory[parent_memory(is_s)], 0)
-                .ok();
-            self.parent_data[is_s.idx()]
-                .witness_store(
-                    region,
-                    base_offset,
-                    &mut pv.memory[parent_memory(is_s)],
-                    storage_root,
-                    true,
-                    false,
-                    storage_root,
-                )
-                .ok();
-
-            // storage
-            ctx.compute_acc_and_mult(
-                &row.bytes,
-                &mut pv.acc_s,
-                &mut pv.acc_mult_s,
-                S_START - 1,
-                HASH_WIDTH + 1,
-            );
-            // code hash
-            ctx.compute_acc_and_mult(
-                &row.bytes,
-                &mut pv.acc_s,
-                &mut pv.acc_mult_s,
-                C_START - 1,
-                HASH_WIDTH + 1,
-            );
-            ctx
-                .assign_acc(
-                    region,
-                    pv.acc_s,
-                    pv.acc_mult_s,
-                    F::zero(),
-                    F::zero(),
-                    offset,
-                )
-                .ok();
-
-            offset += 1;
+        if nonce_balance_s.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
+            assign!(region, (ctx.proof_type.proof_type, nonce_lookup_offset) => ProofType::NonceChanged.scalar())?;
         }
+        //assign!(region, (ctx.mpt_table.key_rlc, nonce_lookup_offset) =>
+        // key_rlc[false.idx()])?;
+        assign!(region, (ctx.mpt_table.value_prev, nonce_lookup_offset) => nonce_value_rlc[true.idx()])?;
+        assign!(region, (ctx.mpt_table.value, nonce_lookup_offset) => nonce_value_rlc[false.idx()])?;
 
-        /* DRIFTED */
-
-        let row = &witness[offset];
-        if row.get_byte(1) != 0 {
-            pv.acc_s = F::zero();
-            pv.acc_mult_s = F::one();
-            let len = (row.bytes[2] - 128) as usize + 3;
-            ctx.compute_acc_and_mult(&row.bytes, &mut pv.acc_s, &mut pv.acc_mult_s, 0, len);
-
-            self.key_data_d
-                .witness_load(region, base_offset, &mut pv.memory[key_memory(true)], 2)
-                .ok();
-
-            ctx
-                .assign_acc(
-                    region,
-                    pv.acc_s,
-                    pv.acc_mult_s,
-                    F::zero(),
-                    F::zero(),
-                    offset,
-                )
-                .ok();
+        if nonce_balance_c.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
+            assign!(region, (ctx.proof_type.proof_type, balance_lookup_offset) => ProofType::BalanceChanged.scalar())?;
         }
+        assign!(region, (ctx.mpt_table.value_prev, balance_lookup_offset) => balance_value_rlc[true.idx()])?;
+        assign!(region, (ctx.mpt_table.value, balance_lookup_offset) => balance_value_rlc[false.idx()])?;
+
+        assign!(region, (ctx.mpt_table.value_prev, storage_lookup_offset) => storage_value_rlc[true.idx()])?;
+        assign!(region, (ctx.mpt_table.value, storage_lookup_offset) => storage_value_rlc[false.idx()])?;
+
+        if storage_codehash_c.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
+            assign!(region, (ctx.proof_type.proof_type, codehash_lookup_offset) => ProofType::CodeHashExists.scalar())?;
+        }
+        assign!(region, (ctx.mpt_table.value_prev, codehash_lookup_offset) => codehash_value_rlc[true.idx()])?;
+        assign!(region, (ctx.mpt_table.value, codehash_lookup_offset) => codehash_value_rlc[false.idx()])?;
 
         Ok(())
     }

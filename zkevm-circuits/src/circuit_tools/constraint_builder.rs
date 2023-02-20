@@ -648,12 +648,7 @@ impl<F: Field> RLCChainable<F> for (Expression<F>, Expression<F>) {
     }
 }
 
-pub(crate) fn rlc_acc<F: Field>(
-    values: &[u8],
-    rlc: F,
-    mult: F,
-    r: F,
-) -> (F, F) {
+pub(crate) fn rlc_acc<F: Field>(values: &[u8], rlc: F, mult: F, r: F) -> (F, F) {
     let mut rlc = rlc;
     let mut mult = mult;
     for &value in values.iter() {
@@ -662,7 +657,6 @@ pub(crate) fn rlc_acc<F: Field>(
     }
     (rlc, mult)
 }
-
 
 /// Trait around RLC
 pub trait RLCableValue<F> {
