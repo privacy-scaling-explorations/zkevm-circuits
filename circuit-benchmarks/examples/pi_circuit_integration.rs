@@ -9,7 +9,7 @@ use halo2_proofs::{
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 use std::env::var;
-use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit};
+use zkevm_circuits::pi_circuit2::{PiCircuit, PiTestCircuit, PublicData};
 use zkevm_circuits::util::SubCircuit;
 
 #[cfg(test)]
@@ -39,16 +39,11 @@ mod test {
         const MAX_TXS: usize = 80;
         const MAX_CALLDATA: usize = 65536 * 16;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = Fr::random(&mut rng);
-        let rand_rpi = Fr::random(&mut rng);
         let public_data = generate_publicdata::<MAX_TXS, MAX_CALLDATA>();
         let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>(PiCircuit::<Fr>::new(
             MAX_TXS,
             MAX_CALLDATA,
             randomness,
-            rand_rpi,
-            public_data,
         ));
         let public_inputs = circuit.0.instance();
         let instance: Vec<&[Fr]> = public_inputs.iter().map(|input| &input[..]).collect();
@@ -188,16 +183,11 @@ mod test {
 
     fn new_pi_circuit<const MAX_TXS: usize, const MAX_CALLDATA: usize>(
     ) -> PiTestCircuit<Fr, MAX_TXS, MAX_CALLDATA> {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = Fr::random(&mut rng);
-        let rand_rpi = Fr::random(&mut rng);
         let public_data = generate_publicdata::<MAX_TXS, MAX_CALLDATA>();
         let circuit = PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>(PiCircuit::<Fr>::new(
             MAX_TXS,
             MAX_CALLDATA,
             randomness,
-            rand_rpi,
-            public_data,
         ));
         circuit
     }
@@ -421,6 +411,7 @@ pub(crate) struct ProverCmdConfig {
     geth_url: Option<String>,
     /// block_num
     block_num: Option<u64>,
+    address: Option<String>,
     /// output_file
     output: Option<String>,
 }
@@ -485,6 +476,9 @@ async fn main() -> Result<(), Error> {
 
     let config = ProverCmdConfig::parse();
     let block_num = config.block_num.map_or_else(|| 1, |n| n);
+    let prover = eth_types::Address::from_slice(
+        &hex::decode(config.address.expect("needs prover").as_bytes()).expect("parse_address"),
+    );
 
     let provider = Http::from_str(&config.geth_url.unwrap()).expect("Http geth url");
     let geth_client = GethClient::new(provider);
@@ -511,9 +505,14 @@ async fn main() -> Result<(), Error> {
     select_circuit_config!(
         txs,
         {
+            let public_data = PublicData::new(&block, prover);
             let circuit =
                 PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>(
-                    PiCircuit::new_from_block(&block),
+                    PiCircuit::new(
+                        CIRCUIT_CONFIG.max_txs,
+                        CIRCUIT_CONFIG.max_calldata,
+                        public_data,
+                    ),
                 );
             assert!(block.txs.len() <= CIRCUIT_CONFIG.max_txs);
 

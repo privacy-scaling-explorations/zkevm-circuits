@@ -26,7 +26,7 @@ use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
 use rlp::RlpStream;
-use std::{marker::PhantomData, ops::Add};
+use std::marker::PhantomData;
 
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
@@ -213,7 +213,8 @@ impl<F: Field> PublicData<F> {
         }
     }
 
-    fn new(block: &witness::Block<F>, prover: Address) -> Self {
+    /// create PublicData from block and prover
+    pub fn new(block: &witness::Block<F>, prover: Address) -> Self {
         let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(Some(block));
         let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
             Self::get_block_hash(Some(block), prover, txs_hash);

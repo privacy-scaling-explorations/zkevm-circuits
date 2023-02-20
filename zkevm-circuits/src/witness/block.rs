@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    evm_circuit::util::{rlc, RandomLinearCombination},
-    table::BlockContextFieldTag,
-    util::Challenges,
-};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::Challenges};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
