@@ -61,9 +61,7 @@ use crate::bytecode_circuit::circuit::{BytecodeCircuit, BytecodeCircuitConfigArg
 use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
 use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
 use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
-use crate::keccak_circuit::keccak_packed_multi::{
-    KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
-};
+use crate::keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs};
 use crate::poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs};
 
 #[cfg(feature = "zktrie")]
@@ -857,6 +855,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
@@ -904,6 +903,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };
@@ -950,6 +950,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: MAX_INNER_BLOCKS,
         };

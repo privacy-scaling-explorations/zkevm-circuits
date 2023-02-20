@@ -748,12 +748,10 @@ impl<F: Field> SstoreGasGadget<F> {
         self.gas_cost.clone()
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        _gas_cost: u64,
         value: eth_types::Word,
         value_prev: eth_types::Word,
         original_value: eth_types::Word,
@@ -815,5 +813,7 @@ pub(crate) fn cal_sstore_gas_cost_for_assignment(
         warm_case_gas.0
     } else {
         warm_case_gas.0 + GasCost::COLD_SLOAD.0
+    }
+}
     }
 }

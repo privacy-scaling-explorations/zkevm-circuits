@@ -1,6 +1,7 @@
 name: CI checks
 
 on:
+  merge_group:
   pull_request:
     types: [synchronize, opened, reopened, ready_for_review]
     # Ignore when target branch is `main` and source branch is scroll-stable.
@@ -13,6 +14,10 @@ on:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 ## `actions-rs/toolchain@v1` overwrite set to false so that
 ## `rust-toolchain` is always used and the only source of truth.
@@ -30,23 +35,13 @@ jobs:
           concurrent_skipping: 'same_content_newer'
           paths_ignore: '["**/README.md"]'
 
-  runner:
     needs: [skip_check]
     if: |
       github.event.pull_request.draft == false &&
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
-    uses: ./.github/workflows/select-runner.yml
-
   test:
     name: Test
-    needs: [runner]
-    runs-on: ${{ matrix.os }}
-    concurrency: ${{ needs.runner.outputs.concurrency-group }}
-    strategy:
-      matrix:
-        # We don't need to test across multiple platforms yet
-        # os: [ubuntu-latest, windows-latest, macOS-latest]
-        os: ${{ fromJSON(needs.runner.outputs.runner-matrix) }}
+    runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
     steps:
       - uses: actions/checkout@v2

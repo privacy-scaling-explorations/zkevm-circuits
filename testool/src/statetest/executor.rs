@@ -272,6 +272,7 @@ pub fn run_test(
             max_calldata: 5000,
             max_bytecode: 5000,
             max_copy_rows: 55000,
+            max_evm_rows: 0,
             max_exp_steps: 5000,
             keccak_padding: None,
             max_inner_blocks: 64,
@@ -298,6 +299,7 @@ pub fn run_test(
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
             max_inner_blocks: 64,
         };

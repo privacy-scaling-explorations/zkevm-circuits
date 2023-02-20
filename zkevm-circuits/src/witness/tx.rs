@@ -72,6 +72,8 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Assignments for tx table, split into tx_data (all fields except
+    /// calldata) and tx_calldata
     /// Return a fixed dummy tx for chain_id
     pub fn dummy(chain_id: u64) -> Self {
         let (dummy_tx, dummy_sig) = get_dummy_tx(chain_id);
@@ -127,11 +129,10 @@ impl Transaction {
             msg_hash,
         })
     }
-    /// Assignments for tx table
     pub fn table_assignments_fixed<F: Field>(
         &self,
         challenges: Challenges<Value<F>>,
-    ) -> Vec<[Value<F>; 4]> {
+    ) -> [Vec<[Value<F>; 4]>; 2] {
         let rlp_signed_hash = H256(keccak256(&self.rlp_signed));
         if self.hash != rlp_signed_hash {
             log::debug!(
@@ -261,7 +262,6 @@ impl Transaction {
                 Value::known(F::from(TxContextFieldTag::BlockNumber as u64)),
                 Value::known(F::zero()),
                 Value::known(F::from(self.block_number)),
-            ],
         ];
 
         ret
