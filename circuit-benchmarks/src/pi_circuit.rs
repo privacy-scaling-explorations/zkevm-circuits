@@ -18,10 +18,9 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
+    use std::env::var;
     use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit, PublicData};
     use zkevm_circuits::util::SubCircuit;
-
-    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -31,6 +30,11 @@ mod tests {
 
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
+
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
 
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = Fr::random(&mut rng);
@@ -53,9 +57,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("Setup generation with degree = {}", degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -66,7 +70,7 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, DEGREE);
+        let proof_message = format!("{} Proof generation with degree = {}", BENCHMARK_ID, degree);
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
