@@ -619,16 +619,12 @@ mod state_circuit_stats {
     pub fn get_state_states_stats() {
         print_circuit_stats_by_states(
             |state| {
-                // TODO: Create valid inputs to test all execution states
                 // TODO: Enable CREATE/CREATE2 once they are supported
                 !matches!(
                     state,
                     ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::JUMP
-                        | ExecutionState::JUMPI
                         | ExecutionState::CREATE
                         | ExecutionState::CREATE2
-                        | ExecutionState::CALL_OP
                         | ExecutionState::SELFDESTRUCT
                 )
             },

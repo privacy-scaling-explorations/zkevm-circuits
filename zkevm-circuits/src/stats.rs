@@ -134,6 +134,22 @@ pub(crate) fn print_circuit_stats_by_states(
             implemented_states.push(state);
         }
     }
+    let smallcode = bytecode! {
+        PUSH4(0x1000) // size
+        PUSH2(0x00) // offset
+        RETURN
+    };
+    let proxy_code = bytecode! {
+        PUSH2(0x1000) // retLength
+        PUSH1(0x00) // retOffset
+        PUSH1(0x00) // argsLength
+        PUSH1(0x00) // argsOffset
+        PUSH1(0x00) // value
+        PUSH32(MOCK_ACCOUNTS[2].to_word())
+        PUSH32(800_000) // gas
+        CALL
+        STOP
+    };
 
     let mut table = DisplayTable::new(["state", "opcode", "h", "g", "h/g"].map(|s| s.into()));
     for state in implemented_states {
@@ -162,23 +178,9 @@ pub(crate) fn print_circuit_stats_by_states(
             let bytecode_prefix_op = fn_bytecode_prefix_op(opcode);
             code.append(&bytecode_prefix_op);
             code.write_op(opcode);
+            let opcode_pc = code.code.len() - 1;
+            // let opcode_step_index = (proxy_code.num_opcodes - 1 + code.num_opcodes) - 1;
             code.write_op(OpcodeId::STOP);
-            let smallcode = bytecode! {
-                PUSH4(0x1000) // size
-                PUSH2(0x00) // offset
-                RETURN
-            };
-            let proxy_code = bytecode! {
-                PUSH2(0x1000) // retLength
-                PUSH1(0x00) // retOffset
-                PUSH1(0x00) // argsLength
-                PUSH1(0x00) // argsOffset
-                PUSH1(0x00) // value
-                PUSH32(MOCK_ACCOUNTS[2].to_word())
-                PUSH32(800_000) // gas
-                CALL
-                STOP
-            };
             let block: GethData = TestContext::<10, 1>::new(
                 None,
                 |accs| {
@@ -186,7 +188,7 @@ pub(crate) fn print_circuit_stats_by_states(
                     accs[1]
                         .address(MOCK_ACCOUNTS[1])
                         .balance(eth(10))
-                        .code(proxy_code);
+                        .code(proxy_code.clone());
                     accs[2]
                         .address(MOCK_ACCOUNTS[2])
                         .balance(eth(10))
@@ -216,17 +218,20 @@ pub(crate) fn print_circuit_stats_by_states(
             builder
                 .handle_block(&block.eth_block, &block.geth_traces)
                 .unwrap();
-            // The steps end with [... `opcode`, STOP, STOP, EndTx] when opcode doesn't
-            // halt, [... `opcode`, STOP, EndTx] otherwise
-            let step_index =
-                (builder.block.txs[0].steps().len() - 1) - 3 + if state.halts() { 1 } else { 0 };
-            let step = &builder.block.txs[0].steps()[step_index];
+            // Find the step that executed our opcode by filtering on second call (because
+            // we run it via proxy) and the PC where we wrote the opcode.
+            let (step_index, step) = builder.block.txs[0]
+                .steps()
+                .iter()
+                .enumerate()
+                .find(|(_, s)| s.call_index == 1 && s.pc.0 == opcode_pc)
+                .unwrap();
             assert_eq!(ExecState::Op(opcode), step.exec_state);
             let h = fn_height(&builder.block, state, step_index);
 
-            let geth_step_index = (block.geth_traces[0].struct_logs.len() - 1) - 2
-                + if state.halts() { 1 } else { 0 };
-            let geth_step = &block.geth_traces[0].struct_logs[geth_step_index];
+            // Substract 1 to step_index to remove the `BeginTx` step, which doesn't appear
+            // in the geth trace.
+            let geth_step = &block.geth_traces[0].struct_logs[step_index - 1];
             assert_eq!(opcode, geth_step.op);
             let gas_cost = geth_step.gas_cost.0;
             table.push_row([

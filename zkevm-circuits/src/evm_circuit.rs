@@ -442,16 +442,12 @@ mod evm_circuit_stats {
     fn get_evm_states_stats() {
         print_circuit_stats_by_states(
             |state| {
-                // TODO: Create valid inputs to test all execution states
                 // TODO: Enable CREATE/CREATE2 once they are supported
                 !matches!(
                     state,
                     ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::JUMP
-                        | ExecutionState::JUMPI
                         | ExecutionState::CREATE
                         | ExecutionState::CREATE2
-                        | ExecutionState::CALL_OP
                         | ExecutionState::SELFDESTRUCT
                 )
             },

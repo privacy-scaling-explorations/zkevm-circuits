@@ -1192,7 +1192,6 @@ mod copy_circuit_stats {
     fn get_copy_states_stats() {
         print_circuit_stats_by_states(
             |state| {
-                // TODO: Create valid inputs to test all execution states
                 // TODO: Enable CREATE/CREATE2 once they are supported
                 matches!(
                     state,
