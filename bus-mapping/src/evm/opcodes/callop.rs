@@ -3,12 +3,12 @@ use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, E
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
 use crate::operation::{MemoryOp, RW};
 use crate::precompile::{execute_precompiled, is_precompiled};
+use crate::util::POSEIDON_CODE_HASH_ZERO;
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
 use eth_types::evm_types::OpcodeId;
 use eth_types::{GethExecStep, ToWord, Word};
-use keccak256::EMPTY_HASH;
 use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -99,7 +99,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
                 callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+                callee_code_hash
+                    .eq(&*POSEIDON_CODE_HASH_ZERO),
             )
         } else {
             (Word::zero(), true)
@@ -107,7 +108,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         state.account_read(
             &mut exec_step,
             callee_address,
-            AccountField::CodeHash,
+            AccountField::PoseidonCodeHash,
             callee_code_hash_word,
         );
 

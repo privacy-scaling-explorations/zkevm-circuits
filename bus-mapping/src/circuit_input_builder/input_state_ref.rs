@@ -289,7 +289,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let account_value_prev = match op.field {
             AccountField::Nonce => account.nonce,
             AccountField::Balance => account.balance,
-            AccountField::CodeHash => {
+            AccountField::KeccakCodeHash => {
                 if account.is_empty() {
                     if op.value.is_zero() {
                         // Writing code_hash=0 to empty account is a noop to the StateDB.
@@ -299,9 +299,17 @@ impl<'a> CircuitInputStateRef<'a> {
                     // as code_hash=0 (non-existing account encoding) in the State Circuit.
                     Word::zero()
                 } else {
-                    account.code_hash.to_word()
+                    account.keccak_code_hash.to_word()
                 }
             }
+            AccountField::PoseidonCodeHash => {
+                if account.is_empty() {
+                    Word::zero()
+                } else {
+                    account.poseidon_code_hash.to_word()
+                }
+            }
+            AccountField::CodeSize => account.code_size,
         };
 
         // Verify that the previous value matches the account field value in the StateDB
@@ -316,8 +324,10 @@ impl<'a> CircuitInputStateRef<'a> {
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
         // AccountNonExisting proofs lookups).
-        if (!matches!(op.field, AccountField::CodeHash)
-            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
+        if (!matches!(
+            op.field,
+            AccountField::PoseidonCodeHash | AccountField::KeccakCodeHash
+        ) && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
             && account.is_empty()
         {
             log::error!(
@@ -333,7 +343,13 @@ impl<'a> CircuitInputStateRef<'a> {
             match op.field {
                 AccountField::Nonce => account.nonce = op.value,
                 AccountField::Balance => account.balance = op.value,
-                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
+                AccountField::KeccakCodeHash => {
+                    account.keccak_code_hash = H256::from(op.value.to_be_bytes())
+                }
+                AccountField::PoseidonCodeHash => {
+                    account.poseidon_code_hash = H256::from(op.value.to_be_bytes())
+                }
+                AccountField::CodeSize => account.code_size = op.value,
             }
         }
     }
@@ -799,13 +815,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     _ => address,
                 };
                 if is_precompiled(&code_address) {
-                    (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                    (CodeSource::Address(code_address), *POSEIDON_CODE_HASH_ZERO)
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        (CodeSource::Address(code_address), H256::from(*EMPTY_HASH))
+                        (CodeSource::Address(code_address), *POSEIDON_CODE_HASH_ZERO)
                     } else {
-                        (CodeSource::Address(code_address), account.code_hash)
+                        (CodeSource::Address(code_address), account.poseidon_code_hash)
                     }
                 }
             }
@@ -1035,12 +1051,15 @@ impl<'a> CircuitInputStateRef<'a> {
             let code = call_ctx
                 .memory
                 .read_chunk(offset.low_u64().into(), length.low_u64().into());
-            let code_hash = self.code_db.insert(code);
+            let code_hash = H256(keccak256(&code));
+            let poseidon_code_hash = self.code_db.insert(code);
             let (found, callee_account) = self.sdb.get_account_mut(&call.address);
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
-            callee_account.code_hash = code_hash;
+            callee_account.keccak_code_hash = poseidon_code_hash;
+            callee_account.keccak_code_hash = code_hash;
+            callee_account.code_size = length;
         }
 
         // Handle reversion if this call doesn't end successfully

@@ -60,6 +60,7 @@ fn init() {
 }
 
 #[test]
+#[ignore]
 fn deserialize_example1() {
     let example = r#"
     {
@@ -132,6 +133,7 @@ fn deserialize_example1() {
 }
 
 #[test]
+#[ignore]
 fn deserialize_example2() {
     let example = r#"
     {

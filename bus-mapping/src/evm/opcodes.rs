@@ -7,6 +7,7 @@ use crate::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
         TxRefundOp, RW,
     },
+    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
     Error,
 };
 use core::fmt::Debug;
@@ -418,6 +419,7 @@ pub fn gen_associated_ops(
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
+    //dbg!("hiiii");
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
@@ -490,9 +492,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (true, _) => (call.code_hash.to_word(), false),
         (_, true) => {
             debug_assert_eq!(
-                callee_account.code_hash, call.code_hash,
+                callee_account.poseidon_code_hash, call.code_hash,
                 "callee account's code hash: {:?}, call's code hash: {:?}",
-                callee_account.code_hash, call.code_hash
+                callee_account.poseidon_code_hash, call.code_hash
             );
             (
                 call.code_hash.to_word(),
@@ -588,10 +590,54 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         // 2. Call to precompiled.
-        (_, true, _) => Ok(exec_step),
+        (_, true, _) => {
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::PoseidonCodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            );
+
+            Ok(exec_step)
+        }
         (_, _, is_empty_code_hash) => {
+            state.account_read(
+                &mut exec_step,
+                call.address,
+                AccountField::PoseidonCodeHash,
+                callee_code_hash,
+                callee_code_hash,
+            );
+
             // 3. Call to account with empty code.
             if is_empty_code_hash {
+                // if the transfer values make an account from non-exist to exist
+                // we need to handle to codehash change
+                if !call.value.is_zero() {
+                    // these should be reads?
+                    state.account_write(
+                        &mut exec_step,
+                        call.address,
+                        AccountField::KeccakCodeHash,
+                        KECCAK_CODE_HASH_ZERO.to_word(),
+                        KECCAK_CODE_HASH_ZERO.to_word(),
+                    )?;
+                    state.account_write(
+                        &mut exec_step,
+                        call.address,
+                        AccountField::PoseidonCodeHash,
+                        POSEIDON_CODE_HASH_ZERO.to_word(),
+                        POSEIDON_CODE_HASH_ZERO.to_word(),
+                    )?;
+                    state.account_write(
+                        &mut exec_step,
+                        call.address,
+                        AccountField::CodeSize,
+                        Word::zero(),
+                        Word::zero(),
+                    )?;
+                }
                 return Ok(exec_step);
             }
 

@@ -1,7 +1,7 @@
 //! Represent the storage state under zktrie as implement
 
 use bus_mapping::state_db::{Account, StateDB};
-use eth_types::{Address, Hash, Word, H256, U256};
+use eth_types::{Address, Hash, Word, H256};
 use mpt_circuits::MPTProofType;
 
 use std::collections::HashMap;
@@ -20,10 +20,12 @@ pub fn as_proof_type(v: i32) -> MPTProofType {
         1 => MPTProofType::NonceChanged,
         2 => MPTProofType::BalanceChanged,
         3 => MPTProofType::CodeHashExists,
-        4 => MPTProofType::AccountDoesNotExist,
-        5 => MPTProofType::AccountDestructed,
-        6 => MPTProofType::StorageChanged,
-        7 => MPTProofType::StorageDoesNotExist,
+        4 => MPTProofType::PoseidonCodeHashExists,
+        5 => MPTProofType::CodeSizeExists,
+        6 => MPTProofType::AccountDoesNotExist,
+        7 => MPTProofType::AccountDestructed,
+        8 => MPTProofType::StorageChanged,
+        9 => MPTProofType::StorageDoesNotExist,
         _ => unreachable!("unexpected proof type number {:?}", v),
     }
 }
@@ -121,9 +123,11 @@ impl ZktrieState {
                 sdb.set_account(
                     addr,
                     Account {
-                        nonce: U256::from(acc_data.nonce),
+                        nonce: acc_data.nonce.into(),
                         balance: acc_data.balance,
-                        code_hash: acc_data.code_hash,
+                        keccak_code_hash: acc_data.keccak_code_hash,
+                        poseidon_code_hash: acc_data.poseidon_code_hash,
+                        code_size: acc_data.code_size.into(),
                         storage: Default::default(),
                     },
                 );

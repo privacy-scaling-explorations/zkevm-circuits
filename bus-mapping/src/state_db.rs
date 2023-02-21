@@ -1,46 +1,26 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use crate::precompile::is_precompiled;
-use eth_types::{Address, Hash, Word, H256, U256};
-use ethers_core::utils::keccak256;
+use crate::{
+    precompile::is_precompiled,
+    util::{hash_code, KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+};
+use eth_types::{Address, Hash, Word, U256};
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
     static ref VALUE_ZERO: Word = Word::zero();
-    static ref CODE_HASH_ZERO: Hash = H256(keccak256([]));
-}
-
-/// Define any object can encode the code to a 32 bytes hash
-pub trait CodeHash: std::fmt::Debug {
-    /// encode code
-    fn hash_code(&self, code: &[u8]) -> Hash;
-}
-
-/// Helper trait for clone object in a object-safe way
-pub trait CodeHashCopy: CodeHash {
-    /// clone to a boxed object
-    fn clone_box(&self) -> Box<dyn CodeHashCopy>;
-}
-
-impl<T> CodeHashCopy for T
-where
-    T: 'static + CodeHash + Clone,
-{
-    fn clone_box(&self) -> Box<dyn CodeHashCopy> {
-        Box::new(self.clone())
-    }
 }
 
 /// Memory storage for contract code by code hash.
 #[derive(Debug)]
-pub struct CodeDB(pub HashMap<Hash, Vec<u8>>, Box<dyn CodeHashCopy>);
+pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
 
 impl Clone for CodeDB {
     fn clone(&self) -> Self {
-        CodeDB(self.0.clone(), self.1.clone_box())
+        CodeDB(self.0.clone())
     }
 }
 
@@ -50,41 +30,25 @@ impl Default for CodeDB {
     }
 }
 
-#[derive(Debug, Clone)]
-struct EthCodeHash;
-
-impl CodeHash for EthCodeHash {
-    fn hash_code(&self, code: &[u8]) -> Hash {
-        H256(keccak256(code))
-    }
-}
-
 impl CodeDB {
-    /// Create a new empty Self with specified code hash method
-    pub fn new_with_code_hasher(hasher: Box<dyn CodeHashCopy>) -> Self {
-        Self(HashMap::new(), hasher)
-    }
     /// Create a new empty Self.
     pub fn new() -> Self {
-        Self::new_with_code_hasher(Box::new(EthCodeHash))
+        Self(HashMap::new())
     }
-    /// Insert code indexed by code hash, and return the code hash. Notice we
-    /// always return Self::empty_code_hash() for empty code
+    /// Insert code indexed by code hash, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
         let hash = if code.is_empty() {
-            Self::empty_code_hash()
+            *POSEIDON_CODE_HASH_ZERO
         } else {
-            self.1.hash_code(&code)
+            hash_code(&code)
         };
         self.0.insert(hash, code);
         hash
     }
-    /// Specify code hash for empty code (nil), it should be kept consistent
-    /// between different methods because many contract use this magic hash
-    /// for distinguishing accounts without contracts
+    /// Specify code hash for empty code (nil)
     pub fn empty_code_hash() -> Hash {
-        *CODE_HASH_ZERO
-    }
+        *POSEIDON_CODE_HASH_ZERO
+    }    
 }
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value
@@ -97,8 +61,12 @@ pub struct Account {
     pub balance: Word,
     /// Storage key-value map
     pub storage: HashMap<Word, Word>,
-    /// Code hash
-    pub code_hash: Hash,
+    /// Keccak hash of code
+    pub keccak_code_hash: Hash,
+    /// Poseidon hash of code
+    pub poseidon_code_hash: Hash,
+    /// Size of code, i.e. code length
+    pub code_size: Word,
 }
 
 impl Account {
@@ -108,13 +76,20 @@ impl Account {
             nonce: Word::zero(),
             balance: Word::zero(),
             storage: HashMap::new(),
-            code_hash: *CODE_HASH_ZERO,
+            keccak_code_hash: *KECCAK_CODE_HASH_ZERO,
+            poseidon_code_hash: *POSEIDON_CODE_HASH_ZERO,
+            code_size: Word::zero(),
         }
     }
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&CODE_HASH_ZERO)
+        self.nonce.is_zero()
+            //&& self.balance.is_zero()
+            && self.storage.is_empty()
+            && self.keccak_code_hash.eq(&KECCAK_CODE_HASH_ZERO)
+            && self.poseidon_code_hash.eq(&POSEIDON_CODE_HASH_ZERO)
+            && self.code_size.is_zero()
     }
 }
 

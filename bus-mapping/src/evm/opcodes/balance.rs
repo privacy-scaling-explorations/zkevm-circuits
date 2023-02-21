@@ -55,17 +55,18 @@ impl Opcode for Balance {
 
         // Read account balance.
         let account = state.sdb.get_account(&address).1;
+        dbg!(account, account.is_empty());
         let exists = !account.is_empty();
         let balance = account.balance;
         let code_hash = if exists {
-            account.code_hash
+            account.poseidon_code_hash
         } else {
             H256::zero()
         };
         state.account_read(
             &mut exec_step,
             address,
-            AccountField::CodeHash,
+            AccountField::PoseidonCodeHash,
             code_hash.to_word(),
         );
         if exists {
@@ -88,30 +89,34 @@ mod balance_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp, RW};
+    use crate::operation::{AccountOp, CallContextOp, StackOp};
+    use crate::util::POSEIDON_CODE_HASH_ZERO;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
     use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
-    use keccak256::EMPTY_HASH_LE;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_balance_of_non_existing_address() {
-        test_ok(false, false);
+        test_ok(false, false, None);
     }
 
     #[test]
     fn test_balance_of_cold_address() {
-        test_ok(true, false);
+        test_ok(true, false, None);
+        test_ok(true, false, Some(vec![1, 2, 3]))
     }
 
     #[test]
     fn test_balance_of_warm_address() {
-        test_ok(true, true);
+        test_ok(true, true, None);
+        test_ok(true, true, Some(vec![2, 3, 4]))
     }
 
-    fn test_ok(exists: bool, is_warm: bool) {
+    // account_code = None should be the same as exists = false, so we can remove
+    // it.
+    fn test_ok(exists: bool, is_warm: bool, account_code: Option<Vec<u8>>) {
         let address = address!("0xaabbccddee000000000000000000000000000000");
 
         // Pop balance first for warm account.
@@ -144,7 +149,11 @@ mod balance_tests {
                     .balance(Word::from(1u64 << 20))
                     .code(code.clone());
                 if exists {
-                    accs[1].address(address).balance(balance);
+                    if let Some(code) = account_code.clone() {
+                        accs[1].address(address).balance(balance).code(code);
+                    } else {
+                        accs[1].address(address).balance(balance);
+                    }
                 } else {
                     accs[1]
                         .address(address!("0x0000000000000000000000000000000000000020"))
@@ -241,14 +250,20 @@ mod balance_tests {
             }
         );
 
-        let code_hash = Word::from_little_endian(&*EMPTY_HASH_LE);
+        let code_hash = if let Some(code) = account_code {
+            POSEIDON_CODE_HASH_ZERO.to_word()
+        } else if exists {
+            POSEIDON_CODE_HASH_ZERO.to_word()
+        } else {
+            U256::zero()
+        };
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
             &AccountOp {
                 address,
-                field: AccountField::CodeHash,
+                field: AccountField::PoseidonCodeHash,
                 value: if exists { code_hash } else { U256::zero() },
                 value_prev: if exists { code_hash } else { U256::zero() },
             }

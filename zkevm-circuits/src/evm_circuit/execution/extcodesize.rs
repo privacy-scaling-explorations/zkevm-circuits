@@ -52,14 +52,23 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         );
 
         let code_hash = cb.query_cell_phase2();
+        // TODO: we don't need to lookup the keccak code hash here anymore.
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
+        cb.account_read(
+            address.expr(),
+            AccountFieldTag::KeccakCodeHash,
+            code_hash.expr(),
+        );
         let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
         let exists = not::expr(not_exists.expr());
 
         let code_size = cb.query_word_rlc();
-        cb.condition(exists.expr(), |cb| {
-            cb.bytecode_length(code_hash.expr(), from_bytes::expr(&code_size.cells));
+        cb.condition(exists.clone(), |cb| {
+            cb.account_read(
+                address.expr(),
+                AccountFieldTag::CodeSize,
+                from_bytes::expr(&code_size.cells),
+            );
         });
         cb.condition(not_exists.expr(), |cb| {
             cb.require_zero("code_size is zero when non_exists", code_size.expr());
@@ -74,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         );
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Delta(7.expr()),
+            rw_counter: Delta(7.expr() + exists),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(0.expr()),
             gas_left: Delta(-gas_cost),
@@ -132,7 +141,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
         self.not_exists
             .assign_value(region, offset, region.word_rlc(code_hash))?;
 
-        let code_size = block.rws[step.rw_indices[6]].stack_value().as_u64();
+        // TODO: we don't need the code hash anymore. 1 account read should be enough.
+        let code_size = if code_hash.is_zero() {
+            0u64
+        } else {
+            block.rws[step.rw_indices[7]].stack_value().as_u64()
+        };
         self.code_size
             .assign(region, offset, Some(code_size.to_le_bytes()))?;
 

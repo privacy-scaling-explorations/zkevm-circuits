@@ -482,6 +482,7 @@ dependencies = [
  "pallet-evm-precompile-curve25519",
  "pallet-evm-precompile-modexp",
  "pallet-evm-precompile-simple",
+ "poseidon-circuit",
  "pretty_assertions",
  "primitive-types 0.12.1",
  "rand 0.8.5",
@@ -1583,7 +1584,6 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-signers",
- "halo2-mpt-circuits",
  "halo2_proofs",
  "hex",
  "itertools",
@@ -1591,6 +1591,7 @@ dependencies = [
  "libsecp256k1",
  "num",
  "num-bigint",
+ "poseidon-circuit",
  "regex",
  "serde",
  "serde_json",
@@ -2506,7 +2507,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 [[package]]
 name = "halo2-mpt-circuits"
 version = "0.1.0"
-source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=scroll-dev-0129#631d71fd4dbe070fee34416efbfd12241d78c62f"
+source = "git+https://github.com/scroll-tech/mpt-circuit.git?branch=goerli-0215-dual-hash#eb59421948d5e755539cd1f3d2a777fe7f859005"
 dependencies = [
  "halo2_proofs",
  "hex",
@@ -6820,8 +6821,8 @@ dependencies = [
 
 [[package]]
 name = "zktrie"
-version = "0.1.1"
-source = "git+https://github.com/scroll-tech/zktrie.git?branch=dev-1102#0ba3e060f7447c57175e2a70b1366053b5199a8a"
+version = "0.1.2"
+source = "git+https://github.com/scroll-tech/zktrie.git?branch=scroll-dev-0226#ba9ad07341b9a544c0395e976d1f625b2858b8de"
 dependencies = [
  "gobuild",
 ]

@@ -19,6 +19,11 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
+/* 
+use bus_mapping::{
+    circuit_input_builder::CopyDataType, evm::OpcodeId,
+};
+*/
 use eth_types::{Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -40,7 +45,9 @@ pub(crate) struct ReturnRevertGadget<F> {
     return_data_length: Cell<F>,
 
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
-    code_hash: Cell<F>,
+    keccak_code_hash: Cell<F>,
+    poseidon_code_hash: Cell<F>,
+    code_size: Cell<F>,
 
     caller_id: Cell<F>,
     address: Cell<F>,
@@ -97,15 +104,17 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment =
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
-        let (caller_id, address, reversion_info, code_hash) =
+        let (caller_id, address, reversion_info, keccak_code_hash, poseidon_code_hash, code_size) =
             cb.condition(is_contract_deployment.clone(), |cb| {
+                // poseidon hash of code.
+                //
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
-                let code_hash = cb.query_cell_phase2();
+                let poseidon_code_hash = cb.query_cell_phase2();
                 cb.copy_table_lookup(
                     cb.curr.state.call_id.expr(),
                     CopyDataType::Memory.expr(),
-                    code_hash.expr(),
+                    poseidon_code_hash.expr(),
                     CopyDataType::Bytecode.expr(),
                     range.offset(),
                     range.address(),
@@ -122,15 +131,45 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 .map(|tag| cb.call_context(None, tag));
                 let mut reversion_info = cb.reversion_info_read(None);
 
+                // keccak hash of code.
+                //
+                // TODO(rohit): constraints on keccak hash of code.
+                // lookup to keccak table?
+                let keccak_code_hash = cb.query_cell_phase2();
                 cb.account_write(
                     address.expr(),
-                    AccountFieldTag::CodeHash,
-                    code_hash.expr(),
-                    cb.empty_hash_rlc(),
+                    AccountFieldTag::KeccakCodeHash,
+                    keccak_code_hash.expr(),
+                    cb.empty_keccak_hash_rlc(),
+                    Some(&mut reversion_info),
+                );
+                cb.account_write(
+                    address.expr(),
+                    AccountFieldTag::PoseidonCodeHash,
+                    poseidon_code_hash.expr(),
+                    cb.empty_poseidon_hash_rlc(),
                     Some(&mut reversion_info),
                 );
 
-                (caller_id, address, reversion_info, code_hash)
+                // code size.
+                let code_size = cb.query_cell_phase2();
+                cb.require_equal("range == code size", range.length(), code_size.expr());
+                cb.account_write(
+                    address.expr(),
+                    AccountFieldTag::CodeSize,
+                    code_size.expr(),
+                    0.expr(),
+                    Some(&mut reversion_info),
+                );
+
+                (
+                    caller_id,
+                    address,
+                    reversion_info,
+                    keccak_code_hash,
+                    poseidon_code_hash,
+                    code_size,
+                )
             });
 
         // Case B in the specs.
@@ -166,7 +205,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
-                is_contract_deployment, // There is one reversible write in this case.
+                3.expr() * is_contract_deployment, /* There are three reversible writes in this
+                                                    * case. */
             )
         });
 
@@ -229,7 +269,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             return_data_length,
             restore_context,
             memory_expansion,
-            code_hash,
+            keccak_code_hash,
+            poseidon_code_hash,
+            code_size,
             address,
             caller_id,
             reversion_info,
@@ -279,13 +321,27 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
-            let mut code_hash = keccak256(values);
-            code_hash.reverse();
-            self.code_hash.assign(
+
+            // keccak hash of code.
+            let keccak_code_hash = keccak256(&values);
+            self.keccak_code_hash.assign(
                 region,
                 offset,
-                region.word_rlc(U256::from_little_endian(&code_hash)),
+                region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
             )?;
+
+            // poseidon hash of code.
+            let poseidon_code_hash =
+                bus_mapping::util::hash_code(&values);
+            self.poseidon_code_hash.assign(
+                region,
+                offset,
+                region.word_rlc(U256::from_big_endian(poseidon_code_hash.as_bytes())),
+            )?;
+
+            // code size.
+            self.code_size
+                .assign(region, offset, Value::known(F::from(values.len() as u64)))?;
         }
 
         let copy_rw_increase = if call.is_create && call.is_success {
@@ -302,8 +358,9 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
+            // here....
             let rw_counter_offset = 3 + if is_contract_deployment {
-                5 + length.as_u64()
+                7 + length.as_u64()
             } else {
                 0
             };

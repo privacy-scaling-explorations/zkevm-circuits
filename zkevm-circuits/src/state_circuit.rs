@@ -349,7 +349,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     Rw::Account { field_tag, .. } => {
                         if pair[0].is_zero_vartime()
                             && pair[1].is_zero_vartime()
-                            && matches!(field_tag, AccountFieldTag::CodeHash)
+                            && matches!(field_tag, AccountFieldTag::PoseidonCodeHash)
                         {
                             ProofType::AccountDoesNotExist as u64
                         } else {

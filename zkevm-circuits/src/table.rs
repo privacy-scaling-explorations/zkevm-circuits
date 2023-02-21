@@ -375,8 +375,12 @@ pub enum AccountFieldTag {
     Nonce = 1,
     /// Balance field
     Balance,
-    /// CodeHash field
-    CodeHash,
+    /// Variant representing the keccak hash of an account's code.
+    KeccakCodeHash,
+    /// Variant representing the poseidon hash of an account's code.
+    PoseidonCodeHash,
+    /// Variant representing the code size, i.e. length of account's code.
+    CodeSize,
     /// NonExisting field
     NonExisting,
 }
@@ -605,8 +609,12 @@ pub enum ProofType {
     NonceChanged = AccountFieldTag::Nonce as isize,
     /// Balance updated
     BalanceChanged = AccountFieldTag::Balance as isize,
-    /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    /// Keccak Code hash exists
+    KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
+    /// Poseidon Code hash exits
+    PoseidonCodeHashExists = AccountFieldTag::PoseidonCodeHash as isize,
+    /// Code size exists
+    CodeSizeExists = AccountFieldTag::CodeSize as isize,
     /// Account does not exist
     AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
     /// Storage updated
@@ -621,7 +629,9 @@ impl From<AccountFieldTag> for ProofType {
         match tag {
             AccountFieldTag::Nonce => Self::NonceChanged,
             AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
+            AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
+            AccountFieldTag::PoseidonCodeHash => Self::PoseidonCodeHashExists,
+            AccountFieldTag::CodeSize => Self::CodeSizeExists,
             AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
         }
     }

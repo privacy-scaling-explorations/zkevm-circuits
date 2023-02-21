@@ -222,6 +222,21 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
+        // Initialise cells/gadgets required for contract deployment case.
+        let phase2_code_hash = cb.query_cell_phase2();
+        // TODO: guard against call to precompiled contracts.
+        let is_empty_code_hash =
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
+        let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
+        let is_empty_code = or::expr([is_empty_code_hash.expr(), is_zero_code_hash.expr()]);
+
+        cb.condition(not::expr(tx_is_create.expr()), |cb| {
+            cb.account_read(
+                call_callee_address.expr(),
+                AccountFieldTag::PoseidonCodeHash,
+                phase2_code_hash.expr(),
+            );
+        });
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal(
@@ -369,8 +384,72 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        // 3. Call to account with empty code.
+        // check callop.rs
+        // 3. Handle call to account with empty code.
+        let native_transfer = and::expr([
+            not::expr(tx_is_create.expr()),
+            is_empty_code.expr(),
+            not::expr(is_precompile.expr()),
+        ]);
+        let native_nonzero_transfer = native_transfer.expr() * not::expr(tx_value_is_zero.expr());
+        cb.condition(native_nonzero_transfer, |cb| {
+            // this should only happen if an account for transferring to an account that was
+            // previously non-existent.
+            cb.account_write(
+                call_callee_address.expr(),
+                AccountFieldTag::KeccakCodeHash,
+                cb.empty_keccak_hash_rlc(),
+                cb.empty_keccak_hash_rlc(),
+                None, // native transfer cannot fail
+            );
+            cb.account_write(
+                call_callee_address.expr(),
+                AccountFieldTag::PoseidonCodeHash,
+                cb.empty_poseidon_hash_rlc(),
+                cb.empty_poseidon_hash_rlc(),
+                None, // native transfer cannot fail
+            );
+            cb.account_write(
+                call_callee_address.expr(),
+                AccountFieldTag::CodeSize,
+                0.expr(),
+                0.expr(),
+                None, // native transfer cannot fail
+            );
+        });
+        cb.condition(native_transfer, |cb| {
+            cb.require_equal(
+                "Tx to account with empty code should be persistent",
+                reversion_info.is_persistent(),
+                1.expr(),
+            );
+            cb.require_equal(
+                "Go to EndTx when Tx to account with empty code",
+                cb.next.execution_state_selector([ExecutionState::EndTx]),
+                1.expr(),
+            );
 
+            cb.require_step_state_transition(StepStateTransition {
+                // 11 reads and writes:
+                //   - Write CallContext TxId
+                //   - Write CallContext RwCounterEndOfReversion
+                //   - Write CallContext IsPersistent
+                //   - Write CallContext IsSuccess
+                //   - Write Account Nonce
+                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount
+                //   - Write Account Balance (Not Reversible)
+                //   - Write Account Balance (Reversible)
+                //   - Write Account Balance (Reversible)
+                //   - Read Account CodeHash
+                //   - Read Account PoseidonCodeHash
+                rw_counter: Delta(11.expr() + 3.expr() * not::expr(tx_value_is_zero.expr())),
+                call_id: To(call_id.expr()),
+                ..StepStateTransition::any()
+            });
+        });
+
+        // 4. Call to account with non-empty code.
         cb.condition(
             and::expr([
                 not::expr(tx_is_create.expr()),
@@ -636,7 +715,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.empty_hash_rlc(),
+            region.empty_poseidon_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, region.word_rlc(callee_code_hash))?;

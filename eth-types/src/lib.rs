@@ -46,7 +46,7 @@ use std::str::FromStr;
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
 pub trait Field:
-    FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> + mpt_circuits::hash::Hashable
+    FieldExt + Halo2Field + PrimeField<Repr = [u8; 32]> + poseidon_circuit::hash::Hashable
 {
 }
 
@@ -255,8 +255,12 @@ pub struct EIP1186ProofResponse {
     pub address: Address,
     /// The balance of the account
     pub balance: U256,
-    /// The hash of the code of the account
-    pub code_hash: H256,
+    /// The keccak hash of the code of the account
+    pub keccak_code_hash: H256,
+    /// The poseidon hash of the code of the account
+    pub poseidon_code_hash: H256,
+    /// Size of the code, i.e. code length
+    pub code_size: U256,
     /// The nonce of the account
     pub nonce: U256,
     /// SHA3 of the StorageRoot

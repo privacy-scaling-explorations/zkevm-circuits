@@ -181,7 +181,8 @@ impl MptUpdate {
     pub(crate) fn value_assignments<F: Field>(&self, word_randomness: F) -> (F, F) {
         let assign = |x: Word| match self.key {
             Key::Account {
-                field_tag: AccountFieldTag::Nonce | AccountFieldTag::NonExisting,
+                field_tag:
+                    AccountFieldTag::Nonce | AccountFieldTag::NonExisting | AccountFieldTag::CodeSize,
                 ..
             } => x.to_scalar().unwrap(),
             _ => rlc::value(&x.to_le_bytes(), word_randomness),
@@ -220,7 +221,7 @@ impl Key {
         if value_prev.is_zero() && value.is_zero() {
             match self {
                 Key::Account { address, field_tag } => {
-                    if matches!(field_tag, AccountFieldTag::CodeHash) {
+                    if matches!(field_tag, AccountFieldTag::PoseidonCodeHash) {
                         Key::Account {
                             address,
                             field_tag: AccountFieldTag::NonExisting,

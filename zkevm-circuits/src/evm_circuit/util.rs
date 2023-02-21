@@ -9,8 +9,9 @@ use crate::{
     table::RwTableTag,
     util::{query_expression, Challenges, Expr},
 };
+use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
 use eth_types::U256;
-use eth_types::{Address, ToLittleEndian};
+use eth_types::{ToLittleEndian, ToWord};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
@@ -194,8 +195,15 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
-    pub fn empty_hash_rlc(&self) -> Value<F> {
+
+    pub fn empty_keccak_hash_rlc(&self) -> Value<F> {
         self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
+    }
+
+    pub fn empty_poseidon_hash_rlc(&self) -> Value<F> {
+        self.word_rlc(
+            POSEIDON_CODE_HASH_ZERO.to_word(),
+        )
     }
 
     /// Constrains a cell to have a constant value.

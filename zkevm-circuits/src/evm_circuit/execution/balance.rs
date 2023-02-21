@@ -51,7 +51,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         );
         let code_hash = cb.query_cell_phase2();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
+        cb.account_read(
+            address.expr(),
+            AccountFieldTag::PoseidonCodeHash,
+            code_hash.expr(),
+        );
         let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
         let exists = not::expr(not_exists.expr());
         let balance = cb.query_cell_phase2();
@@ -212,6 +216,7 @@ mod test {
             STOP
         });
 
+        // TODO: this does not actually test a non-existent account if account is None.
         let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {

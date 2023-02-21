@@ -22,8 +22,10 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, U256};
+use bus_mapping::{
+    circuit_input_builder::CopyDataType, evm::OpcodeId,
+};
+use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, U256};
 use ethers_core::utils::{keccak256, rlp};
 use halo2_proofs::{
     circuit::Value,
@@ -60,7 +62,8 @@ pub(crate) struct CreateGadget<F> {
 
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
 
-    code_hash: Cell<F>,
+    keccak_code_hash: Cell<F>,
+    poseidon_code_hash: Cell<F>,
 
     keccak_input: Cell<F>,
     keccak_input_length: Cell<F>,
@@ -114,12 +117,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let callee_is_success = cb.query_bool();
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
-        let code_hash = cb.query_cell_phase2();
+        let keccak_code_hash = cb.query_cell_phase2();
+        let poseidon_code_hash = cb.query_cell_phase2();
         cb.condition(initialization_code.has_length(), |cb| {
+            // TODO(rohit): lookup to keccak table to verify keccak code hash?
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                code_hash.expr(),
+                poseidon_code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 initialization_code.offset(),
                 initialization_code.address(),
@@ -130,7 +135,16 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             );
         });
         cb.condition(not::expr(initialization_code.has_length()), |cb| {
-            cb.require_equal("", code_hash.expr(), cb.empty_hash_rlc());
+            cb.require_equal(
+                "keccak hash of empty bytes",
+                keccak_code_hash.expr(),
+                cb.empty_keccak_hash_rlc(),
+            );
+            cb.require_equal(
+                "poseidon hash of empty bytes",
+                poseidon_code_hash.expr(),
+                cb.empty_poseidon_hash_rlc(),
+            );
         });
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -253,8 +267,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (CallContextFieldTag::IsRoot, false.expr()),
             (CallContextFieldTag::IsStatic, false.expr()),
             (CallContextFieldTag::IsCreate, true.expr()),
-            (CallContextFieldTag::CodeHash, code_hash.expr()),
+            (CallContextFieldTag::CodeHash, poseidon_code_hash.expr()),
             (CallContextFieldTag::Value, value.expr()),
+
         ] {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }
@@ -265,7 +280,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(true.expr()),
-                code_hash: To(code_hash.expr()),
+                code_hash: To(poseidon_code_hash.expr()),
                 gas_left: To(callee_gas_left),
                 reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
                 ..StepStateTransition::new_context()
@@ -364,7 +379,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             memory_expansion,
             gas_left,
             callee_is_success,
-            code_hash,
+            keccak_code_hash,
+            poseidon_code_hash,
             keccak_output,
             keccak_input,
             keccak_input_length,
@@ -404,10 +420,18 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             ..4 + usize::from(is_create2) + initialization_code_length.as_usize())
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
-        let mut code_hash = keccak256(&values);
-        code_hash.reverse();
-        let code_hash_rlc = region.word_rlc(U256::from_little_endian(&code_hash));
-        self.code_hash.assign(region, offset, code_hash_rlc)?;
+        let keccak_code_hash = keccak256(&values);
+        self.keccak_code_hash.assign(
+            region,
+            offset,
+            region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
+        )?;
+        let poseidon_code_hash = bus_mapping::util::hash_code(&values);
+        self.poseidon_code_hash.assign(
+            region,
+            offset,
+            region.word_rlc(poseidon_code_hash.to_word()),
+        )?;
 
         for (word, assignment) in [(&self.value, value), (&self.salt, salt)] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;

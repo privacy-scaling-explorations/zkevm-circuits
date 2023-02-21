@@ -11,7 +11,8 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use eth_types::Field;
+use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
+use eth_types::{Field, ToLittleEndian, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
@@ -464,8 +465,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
-    pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
+    pub(crate) fn empty_keccak_hash_rlc(&self) -> Expression<F> {
         self.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()))
+    }
+
+    pub(crate) fn empty_poseidon_hash_rlc(&self) -> Expression<F> {
+        let bytes = POSEIDON_CODE_HASH_ZERO
+            .to_word()
+            .to_le_bytes();
+        self.word_rlc(bytes.map(|byte| byte.expr()))
     }
 
     // Common

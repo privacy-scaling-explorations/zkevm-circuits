@@ -1,7 +1,7 @@
 //! witness generator
 use super::builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof};
 use super::{MPTProofType, ZktrieState};
-use bus_mapping::state_db::CodeDB;
+use bus_mapping::util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO};
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
@@ -18,12 +18,16 @@ impl From<AccountData> for SMTAccount {
         let mut balance: [u8; 32] = [0; 32];
         acc.balance.to_big_endian(balance.as_mut_slice());
         let balance = BigUint::from_bytes_be(balance.as_slice());
-        let code_hash = BigUint::from_bytes_be(acc.code_hash.as_bytes());
+        let code_hash = BigUint::from_bytes_be(acc.keccak_code_hash.as_bytes());
+        let poseidon_code_hash = BigUint::from_bytes_be(acc.poseidon_code_hash.as_bytes());
+        let code_size = acc.code_size;
 
         Self {
             nonce: acc.nonce,
             balance,
             code_hash,
+            poseidon_code_hash,
+            code_size,
         }
     }
 }
@@ -55,7 +59,9 @@ impl From<&ZktrieState> for WitnessGenerator {
                     AccountData {
                         nonce: acc_data.nonce.as_u64(),
                         balance: acc_data.balance,
-                        code_hash: acc_data.code_hash,
+                        poseidon_code_hash: acc_data.poseidon_code_hash,
+                        keccak_code_hash: acc_data.keccak_code_hash,
+                        code_size: acc_data.code_size.as_u64(),
                         storage_root: H256::from(storage_root),
                     },
                 )
@@ -79,6 +85,12 @@ impl From<&ZktrieState> for WitnessGenerator {
 }
 
 impl WitnessGenerator {
+
+    /// dump inner data for debugging
+    pub fn dump(&self) {
+        log::info!("account data {:#?}", self.accounts);
+    }
+
     fn trace_storage_update(
         &mut self,
         address: Address,
@@ -169,19 +181,32 @@ impl WitnessGenerator {
         let account_data_after = update_account_data(&account_data_before.unwrap_or_default());
 
         if let Some(account_data_after) = account_data_after {
-            let mut nonce = [0u8; 32];
-            U256::from(account_data_after.nonce).to_big_endian(nonce.as_mut_slice());
+            let mut nonce_codesize = [0u8; 32];
+            let u64factor = U256::from(0x10000000000000000u128);
+            (U256::from(account_data_after.code_size) * u64factor 
+                + U256::from(account_data_after.nonce)).to_big_endian(nonce_codesize.as_mut_slice());
             let mut balance = [0u8; 32];
             account_data_after
                 .balance
                 .to_big_endian(balance.as_mut_slice());
+            let mut poseidon_code_hash = [0u8; 32];
+            U256::from(account_data_after.poseidon_code_hash.0)
+                .to_big_endian(poseidon_code_hash.as_mut_slice());
             let mut code_hash = [0u8; 32];
-            U256::from(account_data_after.code_hash.0).to_big_endian(code_hash.as_mut_slice());
+            U256::from(account_data_after.keccak_code_hash.0)
+                .to_big_endian(code_hash.as_mut_slice());
 
-            let acc_data = [nonce, balance, code_hash, account_data_after.storage_root.0];
-            self.trie
-                .update_account(address.as_bytes(), &acc_data)
-                .expect("todo: handle this");
+            let acc_data = [
+                nonce_codesize,
+                balance,
+                account_data_after.storage_root.0,
+                code_hash,
+                poseidon_code_hash,
+            ];
+            let rs = self.trie.update_account(address.as_bytes(), &acc_data);
+            if rs.is_err() {
+                log::warn!("invalid update {:?}", rs);
+            }
             self.accounts.insert(address, account_data_after);
         } else {
             self.trie.delete(address.as_bytes());
@@ -240,17 +265,38 @@ impl WitnessGenerator {
                     MPTProofType::CodeHashExists => {
                         let mut code_hash = [0u8; 32];
                         old_val.to_big_endian(code_hash.as_mut_slice());
-                        if H256::from(code_hash) != acc_data.code_hash {
+                        if H256::from(code_hash) != acc_data.poseidon_code_hash {
                             if H256::from(code_hash).is_zero()
-                                && acc_data.code_hash == CodeDB::empty_code_hash()
+                                && acc_data.keccak_code_hash == *KECCAK_CODE_HASH_ZERO
                             {
                                 log::trace!("codehash 0->keccak(nil)");
                             } else {
-                                debug_assert_eq!(H256::from(code_hash), acc_data.code_hash);
+                                debug_assert_eq!(H256::from(code_hash), acc_data.keccak_code_hash);
                             }
                         }
                         new_val.to_big_endian(code_hash.as_mut_slice());
-                        acc_data.code_hash = H256::from(code_hash);
+                        acc_data.keccak_code_hash = H256::from(code_hash);
+                    }
+                    MPTProofType::PoseidonCodeHashExists => {
+                        let mut code_hash = [0u8; 32];
+                        old_val.to_big_endian(code_hash.as_mut_slice());
+                        if H256::from(code_hash) != acc_data.poseidon_code_hash {
+                            if H256::from(code_hash).is_zero()
+                                && acc_data.poseidon_code_hash == *POSEIDON_CODE_HASH_ZERO
+                            {
+                                log::trace!("codehash 0->poseidon(nil)");
+                            } else {
+                                debug_assert_eq!(H256::from(code_hash), acc_data.poseidon_code_hash);
+                            }
+                        }
+                        new_val.to_big_endian(code_hash.as_mut_slice());
+                        acc_data.poseidon_code_hash = H256::from(code_hash);
+                    }
+                    MPTProofType::CodeSizeExists => {
+                        // code size can only change from 0
+                        debug_assert_eq!(0u64, old_val.as_u64());
+                        debug_assert_eq!(0u64, acc_data.code_size);
+                        acc_data.code_size = new_val.as_u64();
                     }
                     MPTProofType::AccountDoesNotExist => (),
                     _ => unreachable!("invalid proof type: {:?}", proof_type),
