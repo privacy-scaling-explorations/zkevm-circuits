@@ -938,6 +938,7 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         Ok(())
     }
+
     /// Assigns a tx_table row and stores the values in a vec for the
     /// raw_public_inputs column
     #[allow(clippy::too_many_arguments)]
@@ -1133,7 +1134,6 @@ impl<F: Field> PiCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
     ) -> Result<
         (
-            AssignedCell<F, F>, // prover
             AssignedCell<F, F>, // block hash hi
             AssignedCell<F, F>, // block hash lo
             AssignedCell<F, F>, // txs hash hi
@@ -1200,7 +1200,7 @@ impl<F: Field> PiCircuitConfig<F> {
         // prover
         self.q_block_not_end.enable(region, offset)?;
         let val: Value<F> = Value::known(public_data.prover.to_scalar().unwrap());
-        let prover_cell = region.assign_advice(|| "prover", self.block, offset, || val)?;
+        region.assign_advice(|| "prover", self.block, offset, || val)?;
         rlc_acc = rlc_acc * randomness + val;
         region.assign_advice(|| "prover", self.block_rlc_acc, offset, || rlc_acc)?;
         offset += 1;
@@ -1258,7 +1258,6 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
 
         Ok((
-            prover_cell,
             block_hash_hi_cell,
             block_hash_lo_cell,
             txs_hash_hi_cell,
@@ -1362,65 +1361,15 @@ impl<F: Field> PiCircuitConfig<F> {
         )?;
         Ok(())
     }
-}
 
-/// Public Inputs Circuit
-#[derive(Clone, Default, Debug)]
-pub struct PiCircuit<F: Field> {
-    max_txs: usize,
-    max_calldata: usize,
-    /// PublicInputs data known by the verifier
-    pub public_data: PublicData<F>,
-
-    _marker: PhantomData<F>,
-}
-
-impl<F: Field> PiCircuit<F> {
-    /// Creates a new PiCircuit
-    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData<F>) -> Self {
-        Self {
-            max_txs,
-            max_calldata,
-            public_data,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<F: Field> SubCircuit<F> for PiCircuit<F> {
-    type Config = PiCircuitConfig<F>;
-
-    fn new_from_block(block: &witness::Block<F>) -> Self {
-        PiCircuit::new(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
-            PublicData::new(block, Address::default()),
-        )
-    }
-
-    /// Compute the public inputs for this circuit.
-    fn instance(&self) -> Vec<Vec<F>> {
-        vec![vec![
-            self.public_data.prover.to_scalar().unwrap(),
-            self.public_data.block_hash_hi,
-            self.public_data.block_hash_lo,
-        ]]
-    }
-
-    /// Make the assignments to the PiCircuit
-    fn synthesize_sub(
-        &self,
-        config: &Self::Config,
-        challenges: &Challenges<Value<F>>,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
+    fn assign_fixed_u16(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "fixed u16 table",
             |mut region| {
                 for i in 0..(1 << 16) {
                     region.assign_fixed(
                         || format!("row_{}", i),
-                        config.fixed_u16,
+                        self.fixed_u16,
                         i,
                         || Value::known(F::from(i as u64)),
                     )?;
@@ -1428,31 +1377,39 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 Ok(())
             },
-        )?;
+        )
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        public_data: &PublicData<F>,
+        challenges: &Challenges<Value<F>>,
+    ) -> Result<(), Error> {
+        self.assign_fixed_u16(layouter)?;
         let (public_inputs, txs_rlc_acc, block_rlc_acc) = layouter.assign_region(
             || "region 0",
             |mut region| {
                 // Assign block table
                 let (
-                    prover_cell,
                     block_hash_hi_cell,
                     block_hash_lo_cell,
                     txs_hash_hi_cell,
                     txs_hash_lo_cell,
                     block_rlc_acc,
-                ) = config.assign_block(&mut region, &self.public_data, challenges)?;
+                ) = self.assign_block(&mut region, public_data, challenges)?;
 
                 // Assign Tx table
                 let mut offset = 0;
-                let txs = self.public_data.get_tx_table_values();
-                assert!(txs.len() <= config.max_txs);
+                let txs = public_data.get_tx_table_values();
+                assert!(txs.len() <= self.max_txs);
                 let tx_default = TxValues::default();
 
-                let circuit_txs_len = config.circuit_txs_len();
+                let circuit_txs_len = self.circuit_txs_len();
                 let mut rpi_vals = vec![Value::known(F::zero()); circuit_txs_len];
 
                 // Add empty row
-                config.assign_tx_row(
+                self.assign_tx_row(
                     &mut region,
                     offset,
                     0,
@@ -1465,7 +1422,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 let randomness = challenges.evm_word();
 
-                for i in 0..config.max_txs {
+                for i in 0..self.max_txs {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
                     for (tag, value) in &[
@@ -1507,7 +1464,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             randomness.map(|randomness| rlc(tx.tx_sign_hash, randomness)),
                         ),
                     ] {
-                        config.assign_tx_row(
+                        self.assign_tx_row(
                             &mut region,
                             offset,
                             i + 1,
@@ -1521,15 +1478,15 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 }
                 // Tx Table CallData
                 let mut calldata_count = 0;
-                config.q_calldata_start.enable(&mut region, offset)?;
+                self.q_calldata_start.enable(&mut region, offset)?;
                 // the call data bytes assignment starts at offset 0
                 offset = 0;
-                let txs = self.public_data.txs();
-                for (i, tx) in self.public_data.txs().iter().enumerate() {
+                let txs = public_data.txs();
+                for (i, tx) in public_data.txs().iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
                     let mut gas_cost = F::zero();
                     for (index, byte) in tx.call_data.0.iter().enumerate() {
-                        assert!(calldata_count < config.max_calldata);
+                        assert!(calldata_count < self.max_calldata);
                         let is_final = index == call_data_length - 1;
                         gas_cost += if *byte == 0 {
                             F::from(ZERO_BYTE_GAS_COST)
@@ -1550,7 +1507,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             i + 1
                         };
 
-                        config.assign_tx_calldata_row(
+                        self.assign_tx_calldata_row(
                             &mut region,
                             offset,
                             i + 1,
@@ -1565,8 +1522,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                         calldata_count += 1;
                     }
                 }
-                for _ in calldata_count..config.max_calldata {
-                    config.assign_tx_calldata_row(
+                for _ in calldata_count..self.max_calldata {
+                    self.assign_tx_calldata_row(
                         &mut region,
                         offset,
                         0, // tx_id
@@ -1582,31 +1539,86 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 // NOTE: we add this empty row so as to pass mock prover's check
                 //      otherwise it will emit CellNotAssigned Error
                 let tx_table_len = TX_LEN * self.max_txs + 1;
-                config.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
+                self.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
                 let (origin_txs_hash_hi_cell, origin_txs_hash_lo_cell, txs_rlc_acc) =
-                    config.assign_txs(&mut region, &self.public_data, challenges, rpi_vals)?;
+                    self.assign_txs(&mut region, public_data, challenges, rpi_vals)?;
                 // assert two txs hash are equal
                 region.constrain_equal(txs_hash_hi_cell.cell(), origin_txs_hash_hi_cell.cell())?;
                 region.constrain_equal(txs_hash_lo_cell.cell(), origin_txs_hash_lo_cell.cell())?;
                 Ok((
-                    [prover_cell, block_hash_hi_cell, block_hash_lo_cell],
+                    [block_hash_hi_cell, block_hash_lo_cell],
                     txs_rlc_acc,
                     block_rlc_acc,
                 ))
             },
         )?;
         // assign rlp table
-        config.assign_rlp_table(
+        self.assign_rlp_table(
             layouter,
             challenges,
             txs_rlc_acc,
             block_rlc_acc,
-            &self.public_data,
+            public_data,
         )?;
+
+        // constraint public inputs
         for (offset, cell) in public_inputs.iter().enumerate() {
-            layouter.constrain_instance(cell.cell(), config.pi, offset)?;
+            layouter.constrain_instance(cell.cell(), self.pi, offset)?;
         }
         Ok(())
+    }
+}
+
+/// Public Inputs Circuit
+#[derive(Clone, Default, Debug)]
+pub struct PiCircuit<F: Field> {
+    max_txs: usize,
+    max_calldata: usize,
+    /// PublicInputs data known by the verifier
+    pub public_data: PublicData<F>,
+
+    _marker: PhantomData<F>,
+}
+
+impl<F: Field> PiCircuit<F> {
+    /// Creates a new PiCircuit
+    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData<F>) -> Self {
+        Self {
+            max_txs,
+            max_calldata,
+            public_data,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: Field> SubCircuit<F> for PiCircuit<F> {
+    type Config = PiCircuitConfig<F>;
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        PiCircuit::new(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            PublicData::new(block, Address::default()),
+        )
+    }
+
+    /// Compute the public inputs for this circuit.
+    fn instance(&self) -> Vec<Vec<F>> {
+        vec![vec![
+            self.public_data.block_hash_hi,
+            self.public_data.block_hash_lo,
+        ]]
+    }
+
+    /// Make the assignments to the PiCircuit
+    fn synthesize_sub(
+        &self,
+        config: &Self::Config,
+        challenges: &Challenges<Value<F>>,
+        layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        config.assign(layouter, &self.public_data, challenges)
     }
 }
 
