@@ -509,7 +509,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                             offset,
                             || Value::known(f),
                         )?;
-                        region.name_column(|| "STATE_test_override", advice_column);
                     }
                 }
 
