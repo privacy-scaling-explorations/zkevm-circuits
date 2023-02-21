@@ -25,7 +25,7 @@ First take a look at our [specs](https://github.com/privacy-scaling-explorations
     
 7. Once you made the changes, give the commit message a sufficient description of the change. The message content can be brief, including only enough details to summarize the purpose of the commit. In other instances, more in-depth explanations about how the commit accomplishes its goals are better suited as comments in the code.
     - ******************NOTE:****************** The commits in a pull request should be organized in a manner where each commit represents a small, coherent step towards the pull request's overall objective. The structure of the pull request should facilitate the reviewer in easily tracking and understanding each change made.
-8. You may run into unnecessary commits, such as merge conflicts or minor refactorings. In that case, always `git rebase -i`  and [squash](https://www.git-tower.com/learn/git/faq/git-squash) all your commits to one commit. 
+8. [OPTIONAL] You may run into unnecessary commits, such as merge conflicts or minor refactorings. In that case, always `git rebase -i`  and [squash](https://www.git-tower.com/learn/git/faq/git-squash) all your commits to one commit. 
 9. Please do not merge master into your branch as you develop your pull request; instead, rebase your branch on top of the latest master if your pull request branch is long-lived.
     1. How to regularly update your PR with master:
         
