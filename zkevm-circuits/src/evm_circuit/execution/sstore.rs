@@ -1,13 +1,14 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
             common_gadget::{SameContextGadget, SstoreGasGadget},
             constraint_builder::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -35,6 +36,8 @@ pub(crate) struct SstoreGadget<F> {
     phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Cell<F>,
+    // Constrain for SSTORE reentrancy sentry.
+    sufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
     gas_cost: SstoreGasGadget<F>,
     tx_refund: SstoreTxRefundGadget<F>,
 }
@@ -86,6 +89,18 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             Some(&mut reversion_info),
         );
 
+        // Constrain for SSTORE reentrancy sentry.
+        let sufficient_gas_sentry = LtGadget::construct(
+            cb,
+            GasCost::SSTORE_SENTRY.0.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+        cb.require_equal(
+            "Gas left must be greater than gas sentry",
+            sufficient_gas_sentry.expr(),
+            1.expr(),
+        );
+
         let gas_cost = SstoreGasGadget::construct(
             cb,
             phase2_value.clone(),
@@ -131,6 +146,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             phase2_original_value,
             is_warm,
             tx_refund_prev,
+            sufficient_gas_sentry,
             gas_cost,
             tx_refund,
         }
@@ -187,6 +203,13 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         let (tx_refund, tx_refund_prev) = block.rws[step.rw_indices[9]].tx_refund_value_pair();
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
+
+        self.sufficient_gas_sentry.assign_value(
+            region,
+            offset,
+            Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
+            Value::known(F::from(step.gas_left)),
+        )?;
 
         self.gas_cost
             .assign(region, offset, value, value_prev, original_value, is_warm)?;
