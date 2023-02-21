@@ -405,12 +405,21 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
-    use crate::stats::print_circuit_stats_by_states;
+    use crate::evm_circuit::{
+        param::{
+            LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+        },
+        step::ExecutionState,
+        EvmCircuit,
+    };
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
-    use mock::test_ctx::TestContext;
-    use mock::MOCK_ACCOUNTS;
+    use cli_table::{print_stdout, Cell, Style, Table};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData};
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use itertools::Itertools;
+    use mock::test_ctx::{helpers::*, TestContext};
+    use strum::IntoEnumIterator;
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -431,48 +440,139 @@ mod evm_circuit_stats {
         .run();
     }
 
-    /// Prints the stats of EVM circuit per execution state.  See
-    /// `print_circuit_stats_by_states` for more details.
+    /// This function prints to stdout a table with all the implemented states
+    /// and their responsible opcodes with the following stats:
+    /// - height: number of rows in the EVM circuit used by the execution state
+    /// - gas: gas value used for the opcode execution
+    /// - height/gas: ratio between circuit cost and gas cost
+    /// - counts of used and unused cells
+    /// - utilization ratios of cells (used / available)
     ///
     /// Run with:
     /// `cargo test -p zkevm-circuits --release --all-features
     /// get_evm_states_stats -- --nocapture --ignored`
     #[ignore]
     #[test]
-    fn get_evm_states_stats() {
-        print_circuit_stats_by_states(
-            |state| {
-                // TODO: Enable CREATE/CREATE2 once they are supported
-                !matches!(
-                    state,
-                    ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::CREATE
-                        | ExecutionState::CREATE2
-                        | ExecutionState::SELFDESTRUCT
-                )
-            },
-            |opcode| match opcode {
-                OpcodeId::RETURNDATACOPY => {
-                    bytecode! {
-                    PUSH1(0x00) // retLength
-                    PUSH1(0x00) // retOffset
-                    PUSH1(0x00) // argsLength
-                    PUSH1(0x00) // argsOffset
-                    PUSH1(0x00) // value
-                    PUSH32(MOCK_ACCOUNTS[3].to_word())
-                    PUSH32(0x1_0000) // gas
-                    CALL
-                    PUSH2(0x01) // size
-                    PUSH2(0x00) // offset
-                    PUSH2(0x00) // destOffset
-                    }
-                }
-                _ => bytecode! {
+    pub fn get_evm_states_stats() {
+        let mut implemented_states = Vec::new();
+
+        for state in ExecutionState::iter() {
+            let mut meta = ConstraintSystem::<Fr>::default();
+            let circuit = EvmCircuit::configure(&mut meta);
+            implemented_states.push((
+                state,
+                circuit.0.execution.height_map.get(&state).copied().unwrap(),
+            ));
+        }
+
+        let mut stats = Vec::new();
+        for (state, h) in implemented_states {
+            for opcode in state.responsible_opcodes() {
+                let mut code = bytecode! {
+                    PUSH2(0x8000)
+                    PUSH2(0x00)
+                    PUSH2(0x10)
+                    PUSH2(0x20)
+                    PUSH2(0x30)
                     PUSH2(0x40)
                     PUSH2(0x50)
-                },
-            },
-            |_, state, _| state.get_step_height_option().unwrap(),
+                };
+                code.write_op(opcode);
+                code.write_op(OpcodeId::STOP);
+                let geth_data: GethData = TestContext::<2, 1>::new(
+                    None,
+                    account_0_code_account_1_no_code(code),
+                    tx_from_1_to_0,
+                    |block, _tx| block.number(0xcafeu64),
+                )
+                .unwrap()
+                .into();
+
+                let gas_cost = geth_data.geth_traces[0].struct_logs[7].gas_cost.0;
+                stats.push((state, opcode, h, gas_cost));
+            }
+        }
+
+        println!(
+            "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
+            "state", "opcode", "h", "g", "h/g"
+        );
+    }
+
+    /// This function prints to stdout a table with the top X ExecutionState
+    /// cell consumers of each EVM Cell type.
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release get_exec_step_reports --features
+    /// test -- --nocapture --ignored`
+    #[ignore]
+    #[test]
+    fn get_exec_step_reports() {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let circuit = EvmCircuit::configure(&mut meta);
+
+        let report = circuit.0.execution.instrument().clone().analyze();
+        macro_rules! gen_report {
+            ($report:expr, $($id:ident, $cols:expr), +) => {
+                $(
+                let _report = report
+                    .iter()
+                    .sorted_by(|a, b| a.$id.utilization.partial_cmp(&b.$id.utilization).unwrap())
+                    .rev()
+                    .take(10)
+                    .map(|exec| {
+                        vec![
+                            format!("{:?}", exec.state),
+                            format!("{:?}", exec.$id.avaliable_cells),
+                            format!("{:?}", exec.$id.unused_cells),
+                            format!("{:?}", exec.$id.used_cells),
+                            format!("{:?}", exec.$id.top_height),
+                            format!("{:?}", exec.$id.used_columns),
+                            format!("{:?}", exec.$id.utilization),
+                        ]
+                    })
+                    .collect::<Vec<Vec<String>>>();
+
+                let table = _report.table().title(vec![
+                    format!("{:?}", stringify!($id)).cell().bold(true),
+                    format!("total_avaliable_cells").cell().bold(true),
+                    format!("unused_cells").cell().bold(true),
+                    format!("cells").cell().bold(true),
+                    format!("top_height").cell().bold(true),
+                    format!("used columns (Max: {:?})", $cols).cell().bold(true),
+                    format!("Utilization").cell().bold(true),
+                ]);
+                print_stdout(table).unwrap();
+                )*
+            };
+        }
+
+        gen_report!(
+            report,
+            storage_1,
+            N_PHASE1_COLUMNS,
+            storage_2,
+            N_PHASE2_COLUMNS,
+            storage_perm,
+            N_COPY_COLUMNS,
+            byte_lookup,
+            N_BYTE_LOOKUPS,
+            fixed_table,
+            LOOKUP_CONFIG[0].1,
+            tx_table,
+            LOOKUP_CONFIG[1].1,
+            rw_table,
+            LOOKUP_CONFIG[2].1,
+            bytecode_table,
+            LOOKUP_CONFIG[3].1,
+            block_table,
+            LOOKUP_CONFIG[4].1,
+            copy_table,
+            LOOKUP_CONFIG[5].1,
+            keccak_table,
+            LOOKUP_CONFIG[6].1,
+            exp_table,
+            LOOKUP_CONFIG[7].1
         );
     }
 }
