@@ -527,7 +527,7 @@ mod tx_circuit_tests {
     }
 
     #[test]
-    fn variadic_size_tx_circuit() {
+    fn variadic_size_check() {
         const MAX_TXS: usize = 2;
         const MAX_CALLDATA: usize = 32;
 

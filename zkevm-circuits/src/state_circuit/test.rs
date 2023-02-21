@@ -991,7 +991,7 @@ fn bad_initial_tx_log_value() {
 }
 
 #[test]
-fn variadic_size_state_circuit() {
+fn variadic_size_check() {
     let mut rows = vec![
         Rw::Stack {
             rw_counter: 24,

@@ -1729,7 +1729,7 @@ mod pi_circuit_test {
     }
 
     #[test]
-    fn variadic_size_pi_circuit() {
+    fn variadic_size_check() {
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 

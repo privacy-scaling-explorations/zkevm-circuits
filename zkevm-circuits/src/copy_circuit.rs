@@ -1159,7 +1159,7 @@ mod tests {
     }
 
     #[test]
-    fn variadic_size_copy_circuit() {
+    fn variadic_size_check() {
         let builder = gen_tx_log_data();
         let block1 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
 

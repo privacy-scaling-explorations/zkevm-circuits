@@ -32,7 +32,7 @@ fn packed_multi_keccak_simple() {
 }
 
 #[test]
-fn variadic_size_keccak_circuit() {
+fn variadic_size_check() {
     let k = 11;
     let num_rows = Some(2usize.pow(k));
     // Empty
