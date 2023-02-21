@@ -597,6 +597,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
@@ -614,6 +615,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
@@ -631,6 +633,7 @@ pub(crate) mod super_circuit_tests {
             max_copy_rows: 256,
             max_exp_steps: 256,
             max_bytecode: 512,
+            max_evm_rows: 0,
             keccak_padding: None,
         };
         test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
