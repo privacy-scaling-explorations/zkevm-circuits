@@ -525,4 +525,22 @@ mod tx_circuit_tests {
         )
         .is_err(),);
     }
+
+    #[test]
+    fn variadic_size_tx_circuit() {
+        const MAX_TXS: usize = 2;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+        let tx1: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
+        let tx2: Transaction = mock::CORRECT_MOCK_TXS[1].clone().into();
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, vec![tx1.clone()]);
+        let prover1 = MockProver::<Fr>::run(20, &circuit, vec![vec![]]).unwrap();
+
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, vec![tx1, tx2]);
+        let prover2 = MockProver::<Fr>::run(20, &circuit, vec![vec![]]).unwrap();
+
+        assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
+    }
 }

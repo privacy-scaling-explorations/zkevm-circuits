@@ -1635,7 +1635,6 @@ pub fn gen_rand_rpi<F: Field>(
 mod pi_circuit_test {
     use super::*;
     use halo2_proofs::{
-        arithmetic::Field,
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
@@ -1698,52 +1697,61 @@ mod pi_circuit_test {
         assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
     }
 
-    // #[test]
-    // fn variadic_size_check() {
-    //     const MAX_TXS: usize = 8;
-    //     const MAX_CALLDATA: usize = 200;
+    fn run_size_check<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
+        public_data: [PublicData; 2],
+    ) {
+        let mut rng = ChaCha20Rng::seed_from_u64(2);
+        let randomness = F::random(&mut rng);
+        let rand_rpi = F::random(&mut rng);
 
-    //     let mut rng = ChaCha20Rng::seed_from_u64(2);
-    //     let randomness = Fr::random(&mut rng);
-    //     let rand_rpi = Fr::random(&mut rng);
+        let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
+            MAX_TXS,
+            MAX_CALLDATA,
+            randomness,
+            rand_rpi,
+            public_data[0].clone(),
+        ));
+        let public_inputs = circuit.0.instance();
+        let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
-    //     let mut public_data = PublicData::default();
-    //     let chain_id = 1337u64;
-    //     public_data.chain_id = Word::from(chain_id);
+        let circuit2 = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
+            MAX_TXS,
+            MAX_CALLDATA,
+            randomness,
+            rand_rpi,
+            public_data[1].clone(),
+        ));
+        let public_inputs = circuit2.0.instance();
+        let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
 
-    //     let n_tx = 2;
-    //     for i in 0..n_tx {
-    //         public_data
-    //             .transactions
-    //             .push(CORRECT_MOCK_TXS[i].clone().into());
-    //     }
-    //     let circuit = PiTestCircuit::<Fr, MAX_TXS,
-    // MAX_CALLDATA>(PiCircuit::new(         MAX_TXS,
-    //         MAX_CALLDATA,
-    //         randomness,
-    //         rand_rpi,
-    //         public_data.clone(),
-    //     ));
-    //     let public_inputs = circuit.0.instance();
-    //     let prover1 = MockProver::run(20, &circuit, public_inputs).unwrap();
+        assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
+    }
 
-    //     // Push 2 more txs
-    //     for i in 0..n_tx {
-    //         public_data
-    //             .transactions
-    //             .push(CORRECT_MOCK_TXS[i + 2].clone().into());
-    //     }
-    //     let circuit2 = PiTestCircuit::<Fr, MAX_TXS,
-    // MAX_CALLDATA>(PiCircuit::new(         MAX_TXS,
-    //         MAX_CALLDATA,
-    //         randomness,
-    //         rand_rpi,
-    //         public_data,
-    //     ));
-    //     let public_inputs = circuit2.0.instance();
-    //     let prover2 = MockProver::run(20, &circuit, public_inputs).unwrap();
+    #[test]
+    fn variadic_size_pi_circuit() {
+        const MAX_TXS: usize = 8;
+        const MAX_CALLDATA: usize = 200;
 
-    //     assert_eq!(prover1.fixed(), prover2.fixed());
-    //     assert_eq!(prover1.permutation(), prover2.permutation());
-    // }
+        let mut pub_dat_1 = PublicData::default();
+        pub_dat_1.chain_id = *MOCK_CHAIN_ID;
+
+        let n_tx = 2;
+        for i in 0..n_tx {
+            pub_dat_1
+                .transactions
+                .push(CORRECT_MOCK_TXS[i].clone().into());
+        }
+
+        let mut pub_dat_2 = PublicData::default();
+        pub_dat_2.chain_id = *MOCK_CHAIN_ID;
+        let n_tx = 4;
+        for i in 0..n_tx {
+            pub_dat_2
+                .transactions
+                .push(CORRECT_MOCK_TXS[i].clone().into());
+        }
+
+        // run_size_check::<Fr, MAX_TXS, MAX_CALLDATA>([pub_dat_1, pub_dat_2]);
+    }
 }
