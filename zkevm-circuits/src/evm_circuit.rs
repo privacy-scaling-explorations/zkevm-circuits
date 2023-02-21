@@ -503,11 +503,11 @@ mod evm_circuit_stats {
     /// cell consumers of each EVM Cell type.
     ///
     /// Run with:
-    /// `cargo test -p zkevm-circuits --release get_exec_step_reports --features
-    /// test -- --nocapture --ignored`
+    /// `cargo test -p zkevm-circuits --release get_exec_steps_occupancy
+    /// --features test -- --nocapture --ignored`
     #[ignore]
     #[test]
-    fn get_exec_step_reports() {
+    fn get_exec_steps_occupancy() {
         let mut meta = ConstraintSystem::<Fr>::default();
         let circuit = EvmCircuit::configure(&mut meta);
 
