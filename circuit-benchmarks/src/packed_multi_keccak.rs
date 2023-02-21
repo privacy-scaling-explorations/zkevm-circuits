@@ -24,7 +24,7 @@ mod tests {
     fn bench_packed_multi_keccak_circuit_prover() {
         let setup_prfx = crate::constants::SETUP_PREFIX;
         let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
-        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;       
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
         //Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Packed Multi-Keccak Circuit";
 
@@ -46,7 +46,7 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("{} {} with degree = {}",  BENCHMARK_ID, setup_prfx, degree); 
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -59,7 +59,10 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("{} {} with degree = {}", BENCHMARK_ID, proof_gen_prfx, degree); 
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
