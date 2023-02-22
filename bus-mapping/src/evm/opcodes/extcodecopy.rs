@@ -120,7 +120,7 @@ fn gen_extcodecopy_step(
         AccountField::CodeHash,
         code_hash.to_word(),
         code_hash.to_word(),
-    )?;
+    );
     Ok(exec_step)
 }
 

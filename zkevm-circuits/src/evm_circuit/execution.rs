@@ -65,6 +65,7 @@ mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
 mod error_oog_log;
+mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
@@ -133,6 +134,7 @@ use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
 use error_oog_log::ErrorOOGLogGadget;
+use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use exp::ExponentiationGadget;
@@ -274,14 +276,13 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: ErrorOOGLogGadget<F>,
-    error_oog_sload: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSLOAD }>,
-    error_oog_sstore: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSSTORE }>,
     error_oog_memory_copy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasMemoryCopy }>,
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
@@ -397,6 +398,14 @@ impl<F: Field> ExecutionConfig<F> {
                     step_curr.state.rw_counter.expr(),
                     1.expr(),
                 )
+            });
+            // For every step, is_create and is_root are boolean.
+            cb.condition(q_step.clone(), |cb| {
+                cb.require_boolean(
+                    "step.is_create is boolean",
+                    step_curr.state.is_create.expr(),
+                );
+                cb.require_boolean("step.is_root is boolean", step_curr.state.is_root.expr());
             });
             // q_step needs to be enabled on the last row
             cb.condition(q_step_last, |cb| {
@@ -527,8 +536,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_stack: configure_gadget!(),
             error_oog_dynamic_memory_gadget: configure_gadget!(),
             error_oog_log: configure_gadget!(),
-            error_oog_sload: configure_gadget!(),
-            error_oog_sstore: configure_gadget!(),
+            error_oog_sload_sstore: configure_gadget!(),
             error_oog_call: configure_gadget!(),
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
@@ -847,7 +855,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
 
-                let evm_rows = block.evm_circuit_pad_to;
+                let evm_rows = block.circuits_params.max_evm_rows;
                 let no_padding = evm_rows == 0;
 
                 // part1: assign real steps
@@ -981,6 +989,7 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
+        region.name_column(|| "EVM_q_step", self.q_step);
         region.name_column(|| "EVM_num_rows_inv", self.num_rows_inv);
         region.name_column(|| "EVM_rows_until_next_step", self.num_rows_until_next_step);
         region.name_column(|| "Copy_Constr_const", self.constants);
@@ -1176,11 +1185,8 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorOutOfGasLOG => {
                 assign_exec_step!(self.error_oog_log)
             }
-            ExecutionState::ErrorOutOfGasSLOAD => {
-                assign_exec_step!(self.error_oog_sload)
-            }
-            ExecutionState::ErrorOutOfGasSSTORE => {
-                assign_exec_step!(self.error_oog_sstore)
+            ExecutionState::ErrorOutOfGasSloadSstore => {
+                assign_exec_step!(self.error_oog_sload_sstore)
             }
             ExecutionState::ErrorOutOfGasMemoryCopy => {
                 assign_exec_step!(self.error_oog_memory_copy)
