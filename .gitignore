@@ -3,3 +3,5 @@
 .DS_Store
 .vscode
 .idea
+generated/
+./pi_circuit_integration

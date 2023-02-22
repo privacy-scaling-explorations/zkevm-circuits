@@ -413,6 +413,7 @@ pub(crate) struct ProverCmdConfig {
     geth_url: Option<String>,
     /// block_num
     block_num: Option<u64>,
+    /// prover address
     address: Option<String>,
     /// generate yul
     yul_output: Option<String>,
