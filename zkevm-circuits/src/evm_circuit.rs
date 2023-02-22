@@ -291,6 +291,7 @@ pub(crate) mod cached {
     use halo2_proofs::halo2curves::bn256::Fr;
     use lazy_static::lazy_static;
 
+    /// Cache
     struct Cache {
         cs: ConstraintSystem<Fr>,
         config: (EvmCircuitConfig<Fr>, Challenges),
@@ -300,10 +301,7 @@ pub(crate) mod cached {
         static ref CACHE: Cache = {
             let mut meta = ConstraintSystem::<Fr>::default();
             let config = EvmCircuit::<Fr>::configure(&mut meta);
-            Cache {
-                cs: meta,
-                config: config,
-            }
+            Cache { cs: meta, config }
         };
     }
 
