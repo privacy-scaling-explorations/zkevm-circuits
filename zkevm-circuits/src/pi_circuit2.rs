@@ -15,9 +15,8 @@
 
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
 use bytes::Bytes;
-use eth_types::geth_types::BlockConstants;
 use eth_types::sign_types::SignData;
-use eth_types::H256;
+use eth_types::{geth_types::BlockConstants, H256};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
@@ -40,6 +39,7 @@ use halo2_proofs::{
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
+use lazy_static::lazy_static;
 
 /// Fixed by the spec
 const TX_LEN: usize = 10;
@@ -49,6 +49,12 @@ const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
 const MAX_DEGREE: usize = 10;
 const BYTE_POW_BASE: u64 = 1 << 8;
+
+lazy_static! {
+    static ref OMMERS_HASH: H256 = H256::from_slice(
+        &hex::decode("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347").unwrap()
+    );
+}
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
@@ -172,18 +178,23 @@ impl<F: Field> PublicData<F> {
                 let mut stream = RlpStream::new();
                 stream.begin_unbounded_list();
                 stream
-                    .append(&block.context.coinbase)
-                    .append(&block.context.gas_limit)
-                    .append(&block.context.number)
-                    .append(&block.context.timestamp)
-                    .append(&block.context.difficulty)
-                    .append(&block.context.base_fee)
-                    .append(&block.context.chain_id)
-                    .append_list(&block.context.history_hashes)
+                    .append(&block.eth_block.parent_hash)
+                    .append(&OMMERS_HASH.as_ref())
+                    .append(&block.eth_block.author)
                     .append(&block.eth_block.state_root)
-                    .append(&block.prev_state_root)
-                    .append(&txs_hash)
-                    .append(&prover);
+                    .append(&block.eth_block.transactions_root)
+                    .append(&block.eth_block.receipts_root)
+                    .append(&block.eth_block.logs_bloom)
+                    .append(&block.eth_block.difficulty)
+                    .append(&block.eth_block.number)
+                    .append(&block.eth_block.gas_limit)
+                    .append(&block.eth_block.gas_used)
+                    .append(&block.eth_block.timestamp)
+                    .append(&block.eth_block.extra_data.as_ref())
+                    .append(&block.eth_block.mix_hash)
+                    .append(&block.eth_block.nonce)
+                    .append(&prover)
+                    .append(&txs_hash);
                 stream.finalize_unbounded_list();
 
                 stream.out().into()
@@ -192,6 +203,7 @@ impl<F: Field> PublicData<F> {
         };
 
         let hash = keccak256(&rlp);
+        // append prover and txs_hash
         let (hi, lo) = Self::split_hash(hash);
         (rlp, hash.into(), hi, lo)
     }
@@ -1182,10 +1194,6 @@ impl<F: Field> PiCircuitConfig<F> {
             (
                 "parent_block.hash",
                 randomness.map(|v| rlc(extra_values.prev_state_root.to_fixed_bytes(), v)),
-            ),
-            (
-                "prover",
-                Value::known(public_data.prover.to_scalar().unwrap()),
             ),
         ]) {
             self.q_block_table.enable(region, offset)?;

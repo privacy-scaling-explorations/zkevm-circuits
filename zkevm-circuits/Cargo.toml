@@ -42,6 +42,7 @@ snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-
 ] }
 rlp = "0.5.2"
 bytes = "1.4.0"
+hex = "0.4.3"
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
