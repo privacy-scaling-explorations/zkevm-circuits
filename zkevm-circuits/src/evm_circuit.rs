@@ -290,7 +290,6 @@ pub(crate) mod cached {
     use super::*;
     use halo2_proofs::halo2curves::bn256::Fr;
     use lazy_static::lazy_static;
-    use std::sync::Mutex;
 
     struct Cache {
         cs: ConstraintSystem<Fr>,
@@ -298,7 +297,14 @@ pub(crate) mod cached {
     }
 
     lazy_static! {
-        static ref CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+        static ref CACHE: Cache = {
+            let mut meta = ConstraintSystem::<Fr>::default();
+            let config = EvmCircuit::<Fr>::configure(&mut meta);
+            Cache {
+                cs: meta,
+                config: config,
+            }
+        };
     }
 
     pub struct EvmCircuitCached(EvmCircuit<Fr>);
@@ -312,21 +318,8 @@ pub(crate) mod cached {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-            let mut cache = CACHE.lock().unwrap();
-            match &*cache {
-                Some(Cache { cs, config }) => {
-                    *meta = cs.clone();
-                    config.clone()
-                }
-                None => {
-                    let config = EvmCircuit::<Fr>::configure(meta);
-                    *cache = Some(Cache {
-                        cs: meta.clone(),
-                        config: config.clone(),
-                    });
-                    config
-                }
-            }
+            *meta = CACHE.cs.clone();
+            CACHE.config.clone()
         }
 
         fn synthesize(
