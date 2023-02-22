@@ -15,13 +15,13 @@
 
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
 use bytes::Bytes;
+use eth_types::sign_types::SignData;
 use eth_types::{geth_types::BlockConstants, H256};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
 };
-use eth_types::{sign_types::SignData, U256};
-use ethers_core::{types::U128, utils::keccak256};
+use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
 use rlp::RlpStream;
@@ -1302,7 +1302,6 @@ impl<F: Field> PiCircuitConfig<F> {
             if offset != last {
                 self.q_txs_not_end.enable(region, offset)?;
             }
-            region.assign_advice(|| "txs", self.txs, offset, || *val)?;
             rlc_acc = rlc_acc * r + val;
             region.assign_advice(|| "txs_rlc_acc", self.txs_rlc_acc, offset, || rlc_acc)?;
         }
@@ -1695,13 +1694,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
         let public_data = &self.0.public_data;
-        // assign tx table
-        config.tx_table.load(
-            &mut layouter,
-            &public_data.block_txs,
-            self.0.max_txs,
-            &challenges,
-        )?;
 
         // assign keccak table
         config.keccak_table.dev_load(
