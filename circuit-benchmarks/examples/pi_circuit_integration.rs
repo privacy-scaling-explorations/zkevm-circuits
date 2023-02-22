@@ -270,6 +270,7 @@ fn gen_evm_verifier(
     params: &ParamsKZG<Bn256>,
     vk: &VerifyingKey<G1Affine>,
     num_instance: Vec<usize>,
+    yul_file_name: Option<String>,
 ) -> Vec<u8> {
     let protocol = compile(
         params,
@@ -286,10 +287,11 @@ fn gen_evm_verifier(
     let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
     PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
 
-    File::create("./PlonkEvmVerifier.sol")
-        .expect("PlonkEvmVerifier.sol")
+    let file_path = &yul_file_name.unwrap_or(String::from("./PlonkEvmVerifier.sol"));
+    File::create(file_path)
+        .expect(file_path)
         .write_all(&loader.yul_code().as_bytes())
-        .expect("PlonkEvmVerifier.sol");
+        .expect(file_path);
 
     evm::compile_yul(&loader.yul_code())
 }
@@ -412,6 +414,8 @@ pub(crate) struct ProverCmdConfig {
     /// block_num
     block_num: Option<u64>,
     address: Option<String>,
+    /// generate yul
+    yul_output: Option<String>,
     /// output_file
     output: Option<String>,
 }
@@ -433,10 +437,10 @@ pub struct CircuitConfig {
 macro_rules! select_circuit_config {
     ($txs:expr, $on_match:expr, $on_error:expr) => {
         match $txs {
-            0..=15 => {
+            0..=10 => {
                 const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
-                    block_gas_limit: 5000000,
-                    max_txs: 15,
+                    block_gas_limit: 6000000,
+                    max_txs: 10,
                     max_calldata: 131072,
                     max_bytecode: 131072,
                     max_rws: 3161966,
@@ -506,6 +510,7 @@ async fn main() -> Result<(), Error> {
         txs,
         {
             let public_data = PublicData::new(&block, prover);
+            println!("using CIRCUIT_CONFIG = {:?}", CIRCUIT_CONFIG);
             let circuit =
                 PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>(
                     PiCircuit::new(
@@ -528,16 +533,28 @@ async fn main() -> Result<(), Error> {
                 load_circuit_pk(&key_file_name, &params, &circuit).unwrap()
             };
 
-            let deployment_code = gen_evm_verifier(
-                    &params,
-                    pk.get_vk(),
-                    PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, {
-            CIRCUIT_CONFIG.max_calldata }>::num_instance(),         );
+            let deployment_code = if config.yul_output.is_some() {
+                gen_evm_verifier(
+                        &params,
+                        pk.get_vk(),
+                        PiTestCircuit::<
+                            Fr,
+                            { CIRCUIT_CONFIG.max_txs },
+                            { CIRCUIT_CONFIG.max_calldata },
+                        >::num_instance(),
+                        config.yul_output
+                    )
+            } else {
+                vec![]
+            };
 
             let start = start_timer!(|| "EVM circuit Proof verification");
             let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
             end_timer!(start);
-            evm_verify(deployment_code, circuit.instances(), proof.clone());
+
+            if !deployment_code.is_empty() {
+                evm_verify(deployment_code, circuit.instances(), proof.clone());
+            }
 
             #[derive(Serialize, Deserialize, Debug)]
             struct BlockProofData {

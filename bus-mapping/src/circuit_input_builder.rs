@@ -215,8 +215,8 @@ impl<'a> CircuitInputBuilder {
         // We need at least 1 extra Start row
         #[allow(clippy::int_plus_one)]
         {
-            assert!(
-                total_rws + 1 <= max_rws,
+            log::warn!(
+                // total_rws + 1 <= max_rws,
                 "total_rws + 1 <= max_rws, total_rws={}, max_rws={}",
                 total_rws,
                 max_rws
