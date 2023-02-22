@@ -231,25 +231,15 @@ impl Config {
         Ok(index)
     }
 
-    /// Returns the list of ALL the gadget advice columns.
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![self.limb_difference, self.limb_difference_inverse]
-    }
-
-    /// Returns the String annotations associated to each column of the gadget.
-    pub fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("LO_limb_difference"),
-            String::from("LO_limb_difference_inverse"),
-        ]
-    }
-
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
-        self.advice_columns()
-            .iter()
-            .zip(self.annotations().iter())
-            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col));
+        [
+            (self.limb_difference, "LO_limb_difference"),
+            (self.limb_difference_inverse, "LO_limb_difference_inverse"),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+        // fixed column
         region.name_column(
             || format!("{}_LO_upper_limb_difference", prefix),
             self.selector,

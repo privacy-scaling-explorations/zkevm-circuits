@@ -4,8 +4,6 @@
 //!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
 //!  `1/x` otherwise
 
-use std::vec;
-
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Chip, Region, Value},
@@ -46,22 +44,11 @@ impl<F: Field> IsZeroConfig<F> {
         self.is_zero_expression.clone()
     }
 
-    /// Returns the list of ALL the gadget advice columns.
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![self.value_inv]
-    }
-
-    /// Returns the String annotations associated to each column of the gadget.
-    pub fn annotations(&self) -> Vec<String> {
-        vec![String::from("GADGETS_IS_ZERO_inverse_witness")]
-    }
-
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region(&self, region: &mut Region<F>, prefix: &str) {
-        self.advice_columns()
+        [(self.value_inv, "GADGETS_IS_ZERO_inverse_witness")]
             .iter()
-            .zip(self.annotations().iter())
-            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col))
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 

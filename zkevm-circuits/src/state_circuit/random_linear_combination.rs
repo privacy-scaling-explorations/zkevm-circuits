@@ -48,26 +48,16 @@ impl<const N: usize> Config<N> {
         Ok(())
     }
 
-    /// Returns the list of ALL the gadget advice columns.
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        self.bytes.to_vec()
-    }
-
-    /// Returns the String annotations associated to each column of the gadget.
-    pub fn annotations(&self) -> Vec<String> {
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
         let mut annotations = Vec::new();
         for (i, _) in self.bytes.iter().enumerate() {
             annotations.push(format!("RLC_byte{}", i));
         }
-        annotations
-    }
-
-    /// Annotates columns of this gadget embedded within a circuit region.
-    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
-        self.advice_columns()
+        self.bytes
             .iter()
-            .zip(self.annotations().iter())
-            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col))
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 

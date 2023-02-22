@@ -28,25 +28,17 @@ pub struct BatchedIsZeroConfig {
 }
 
 impl BatchedIsZeroConfig {
-    /// Returns the list of ALL the gadget advice columns.
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![self.is_zero, self.nonempty_witness]
-    }
-
-    /// Returns the String annotations associated to each column of the gadget.
-    pub fn annotations(&self) -> Vec<String> {
-        vec![
-            String::from("GADGETS_BATCHED_IS_ZERO_is_zero"),
-            String::from("GADGETS_BATCHED_IS_ZERO_nonempty_witness"),
-        ]
-    }
-
     /// Annotates columns of this gadget embedded within a circuit region.
     pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
-        self.advice_columns()
-            .iter()
-            .zip(self.annotations().iter())
-            .for_each(|(&col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), col))
+        [
+            (self.is_zero, "GADGETS_BATCHED_IS_ZERO_is_zero"),
+            (
+                self.nonempty_witness,
+                "GADGETS_BATCHED_IS_ZERO_nonempty_witness",
+            ),
+        ]
+        .iter()
+        .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 
