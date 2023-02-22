@@ -15,13 +15,13 @@
 
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
 use bytes::Bytes;
-use eth_types::sign_types::SignData;
 use eth_types::{geth_types::BlockConstants, H256};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
 };
-use ethers_core::utils::keccak256;
+use eth_types::{sign_types::SignData, U256};
+use ethers_core::{types::U128, utils::keccak256};
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
 use rlp::RlpStream;
@@ -52,7 +52,7 @@ const BYTE_POW_BASE: u64 = 1 << 8;
 
 lazy_static! {
     static ref OMMERS_HASH: H256 = H256::from_slice(
-        &hex::decode("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347").unwrap()
+        &hex::decode("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347").unwrap()
     );
 }
 
@@ -127,17 +127,25 @@ pub struct PublicData<F: Field> {
     txs_hash_lo: F,
 }
 
+pub(super) fn rlp_opt<T: rlp::Encodable>(rlp: &mut rlp::RlpStream, opt: &Option<T>) {
+    if let Some(inner) = opt {
+        rlp.append(inner);
+    } else {
+        rlp.append(&"");
+    }
+}
+
 impl<F: Field> PublicData<F> {
     fn get_block_rlp_rlc(&self, challenges: &Challenges<Value<F>>) -> Value<F> {
         use crate::evm_circuit::util::rlc;
         let randomness = challenges.keccak_input();
-        randomness.map(|randomness| rlc::value(self.block_rlp.iter(), randomness))
+        randomness.map(|randomness| rlc::value(self.block_rlp.iter().rev(), randomness))
     }
 
     fn get_txs_rlp_rlc(&self, challenges: &Challenges<Value<F>>) -> Value<F> {
         use crate::evm_circuit::util::rlc;
         let randomness = challenges.keccak_input();
-        randomness.map(|randomness| rlc::value(self.txs_rlp.iter(), randomness))
+        randomness.map(|randomness| rlc::value(self.txs_rlp.iter().rev(), randomness))
     }
 
     fn split_hash(hash: [u8; 32]) -> (F, F) {
@@ -179,22 +187,24 @@ impl<F: Field> PublicData<F> {
                 stream.begin_unbounded_list();
                 stream
                     .append(&block.eth_block.parent_hash)
-                    .append(&OMMERS_HASH.as_ref())
-                    .append(&block.eth_block.author)
+                    .append(&*OMMERS_HASH);
+                rlp_opt(&mut stream, &block.eth_block.author);
+                stream
                     .append(&block.eth_block.state_root)
                     .append(&block.eth_block.transactions_root)
-                    .append(&block.eth_block.receipts_root)
-                    .append(&block.eth_block.logs_bloom)
-                    .append(&block.eth_block.difficulty)
-                    .append(&block.eth_block.number)
+                    .append(&block.eth_block.receipts_root);
+                rlp_opt(&mut stream, &block.eth_block.logs_bloom);
+                stream.append(&block.eth_block.difficulty);
+                rlp_opt(&mut stream, &block.eth_block.number);
+                stream
                     .append(&block.eth_block.gas_limit)
                     .append(&block.eth_block.gas_used)
                     .append(&block.eth_block.timestamp)
-                    .append(&block.eth_block.extra_data.as_ref())
-                    .append(&block.eth_block.mix_hash)
-                    .append(&block.eth_block.nonce)
-                    .append(&prover)
-                    .append(&txs_hash);
+                    .append(&block.eth_block.extra_data.as_ref());
+                rlp_opt(&mut stream, &block.eth_block.mix_hash);
+                rlp_opt(&mut stream, &block.eth_block.nonce);
+                // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
+                stream.append(&prover).append(&txs_hash);
                 stream.finalize_unbounded_list();
 
                 stream.out().into()
@@ -891,7 +901,7 @@ impl<F: Field> PiCircuitConfig<F> {
     fn circuit_block_len(&self) -> usize {
         // +1 empty row in block table, hash_hi, hash_lo
         // EXTRA_LEN: state_root, prev_root
-        BLOCK_LEN + 1 + EXTRA_LEN + 2
+        BLOCK_LEN + 1 + EXTRA_LEN + 3
     }
 
     #[inline]
@@ -1709,9 +1719,12 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
 #[cfg(test)]
 mod pi_circuit_test {
+    use std::default;
+
     use super::*;
 
     use crate::test_util::rand_tx;
+    use eth_types::{H64, U256, U64};
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
@@ -1736,7 +1749,28 @@ mod pi_circuit_test {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        prover.verify()
+        let res = prover.verify();
+        let hash_byte_hi: Vec<u8> = circuit
+            .0
+            .public_data
+            .block_hash
+            .as_bytes()
+            .iter()
+            .take(16)
+            .copied()
+            .collect();
+        let hash_byte_lo: Vec<u8> = circuit
+            .0
+            .public_data
+            .block_hash
+            .as_bytes()
+            .iter()
+            .skip(16)
+            .copied()
+            .collect();
+        let _s1 = hex::encode(hash_byte_hi);
+        let _s2 = hex::encode(hash_byte_lo);
+        res
     }
 
     #[test]
@@ -1826,6 +1860,42 @@ mod pi_circuit_test {
         }
 
         let k = 17;
+        assert_eq!(
+            run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data, None),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_verify() {
+        const MAX_TXS: usize = 8;
+        const MAX_CALLDATA: usize = 200;
+        let prover =
+            Address::from_slice(&hex::decode("Df08F82De32B8d460adbE8D72043E3a7e25A3B39").unwrap());
+
+        let logs_bloom:[u8;256] = hex::decode("112d60abc05141f1302248e0f4329627f002380f1413820692911863e7d0871261aa07e90cc01a10c3ce589153570dc2db27b8783aa52bc19a5a4a836722e813190401b4214c3908cb8b468b510c3fe482603b00ca694c806206bf099279919c334541094bd2e085210373c0b064083242d727790d2eecdb2e0b90353b66461050447626366328f0965602e8a9802d25740ad4a33162142b08a1b15292952de423fac45d235622bb0ef3b2d2d4c21690d280a0b948a8a3012136542c1c4d0955a501a022e1a1a4582220d1ae50ba475d88ce0310721a9076702d29a27283e68c2278b93a1c60d8f812069c250042cc3180a8fd54f034a2da9a03098c32b03445").unwrap().try_into().unwrap();
+
+        let mut block = witness::Block::<Fr>::default();
+        block.eth_block.parent_hash = *OMMERS_HASH;
+        block.eth_block.author = Some(prover);
+        block.eth_block.state_root = *OMMERS_HASH;
+        block.eth_block.transactions_root = *OMMERS_HASH;
+        block.eth_block.receipts_root = *OMMERS_HASH;
+        block.eth_block.logs_bloom = Some(logs_bloom.into());
+        block.eth_block.difficulty = U256::from(0);
+        block.eth_block.number = Some(U64::from(0));
+        block.eth_block.gas_limit = U256::from(0);
+        block.eth_block.gas_used = U256::from(0);
+        block.eth_block.timestamp = U256::from(0);
+        block.eth_block.extra_data = eth_types::Bytes::from([0; 0]);
+        block.eth_block.mix_hash = Some(*OMMERS_HASH);
+        block.eth_block.nonce = Some(H64::from([0, 0, 0, 0, 0, 0, 0, 0]));
+        block.eth_block.base_fee_per_gas = Some(U256::from(0));
+
+        let public_data = PublicData::new(&block, prover);
+
+        let k = 17;
+
         assert_eq!(
             run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data, None),
             Ok(())
