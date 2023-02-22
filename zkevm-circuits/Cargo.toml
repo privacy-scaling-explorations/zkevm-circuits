@@ -50,3 +50,5 @@ pretty_assertions = "1.0.0"
 [features]
 default = []
 test = ["ethers-signers", "mock"]
+test-circuits = []
+warn-unimplemented = ["eth-types/warn-unimplemented"]

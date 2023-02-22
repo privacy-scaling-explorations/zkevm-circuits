@@ -9,14 +9,13 @@ pub mod sign_verify;
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
-use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::{
     sign_types::SignData,
     {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
 };
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed},
+    circuit::{AssignedCell, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
 };
 use itertools::Itertools;
 use log::error;
@@ -31,6 +30,10 @@ pub use halo2_proofs::halo2curves::{
     },
     secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,
@@ -382,7 +385,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field> Circuit<F> for TxCircuit<F> {
     type Config = (TxCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;

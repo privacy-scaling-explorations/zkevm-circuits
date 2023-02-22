@@ -42,7 +42,7 @@ pub struct Challenges<T = Challenge> {
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        #[cfg(any(feature = "test", test))]
+        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
         let _dummy_cols = [
             meta.advice_column(),
             meta.advice_column_in(SecondPhase),
@@ -124,6 +124,11 @@ impl<F: Field> Challenges<Expression<F>> {
     /// Returns powers of randomness for word RLC encoding
     pub fn evm_word_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
         Self::powers_of(self.evm_word.clone())
+    }
+
+    /// Returns powers of randomness for keccak circuit's input
+    pub fn keccak_powers_of_randomness<const S: usize>(&self) -> [Expression<F>; S] {
+        Self::powers_of(self.keccak_input.clone())
     }
 
     /// Returns powers of randomness for lookups

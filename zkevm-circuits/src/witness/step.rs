@@ -83,9 +83,8 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
-                OogError::Sload => ExecutionState::ErrorOutOfGasSLOAD,
-                OogError::Sstore => ExecutionState::ErrorOutOfGasSSTORE,
                 OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
@@ -213,7 +212,6 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     }
                     operation::Target::TxRefund => RwTableTag::TxRefund,
                     operation::Target::Account => RwTableTag::Account,
-                    operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
                     operation::Target::TxLog => RwTableTag::TxLog,
