@@ -29,8 +29,9 @@ pub struct RwTableQueries<F: Field> {
     pub field_tag: Expression<F>,
     pub storage_key: Expression<F>,
     pub value: Expression<F>,
-    pub value_prev: Expression<F>,
-    // TODO: aux1 and aux2
+    pub value_prev: Expression<F>, // meta.query(value, Rotation::prev())
+    pub value_prev_column: Expression<F>, /*meta.query(prev_value, Rotation::cur())
+                                    * TODO: aux1 and aux2 */
 }
 
 #[derive(Clone)]
@@ -126,9 +127,6 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::Account), |cb| {
             cb.build_account_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountDestructed), |cb| {
-            cb.build_account_destructed_constraints(q)
-        });
         self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
             cb.build_call_context_constraints(q)
         });
@@ -158,6 +156,11 @@ impl<F: Field> ConstraintBuilder<F> {
             cb.require_zero(
                 "first access reads don't change value",
                 q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
+            );
+            cb.require_equal(
+                "value_prev column is initial_value for first access",
+                q.value_prev_column(),
+                q.initial_value.clone(),
             );
         });
 
@@ -192,6 +195,7 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.state_root_prev(),
             )
         });
+        self.require_zero("value_prev column is 0 for Start", q.value_prev_column());
     }
 
     fn build_memory_constraints(&mut self, q: &Queries<F>) {
@@ -215,6 +219,11 @@ impl<F: Field> ConstraintBuilder<F> {
             "state_root is unchanged for Memory",
             q.state_root(),
             q.state_root_prev(),
+        );
+        self.require_equal(
+            "value_prev column equals initial_value for Memory",
+            q.value_prev_column(),
+            q.initial_value(),
         );
     }
 
@@ -242,6 +251,11 @@ impl<F: Field> ConstraintBuilder<F> {
             "state_root is unchanged for Stack",
             q.state_root(),
             q.state_root_prev(),
+        );
+        self.require_equal(
+            "value_prev column equals initial_value for Stack",
+            q.value_prev_column(),
+            q.initial_value(),
         );
     }
 
@@ -281,7 +295,16 @@ impl<F: Field> ConstraintBuilder<F> {
                 ],
             );
         });
+
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
+
     fn build_tx_access_list_account_constraints(&mut self, q: &Queries<F>) {
         self.require_zero("field_tag is 0 for TxAccessListAccount", q.field_tag());
         self.require_zero(
@@ -299,6 +322,14 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
+
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_tx_access_list_account_storage_constraints(&mut self, q: &Queries<F>) {
@@ -317,21 +348,44 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
+
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_tx_refund_constraints(&mut self, q: &Queries<F>) {
+        // 7.0. `address`, `field_tag` and `storage_key` are 0
         self.require_zero("address is 0 for TxRefund", q.rw_table.address.clone());
         self.require_zero("field_tag is 0 for TxRefund", q.field_tag());
         self.require_zero(
             "storage_key is 0 for TxRefund",
             q.rw_table.storage_key.clone(),
         );
-        self.require_zero("initial TxRefund value is 0", q.initial_value());
-
+        // 7.1. `state root` is not changed
         self.require_equal(
             "state_root is unchanged for TxRefund",
             q.state_root(),
             q.state_root_prev(),
+        );
+
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
+        // 7.2. `initial value` is 0
+        self.require_zero("initial TxRefund value is 0", q.initial_value());
+        // 7.3. First access for a set of all keys are 0 if READ
+        self.require_zero(
+            "first access for a set of all keys are 0 if READ",
+            q.first_access() * q.is_read() * q.value(),
         );
     }
 
@@ -394,16 +448,14 @@ impl<F: Field> ConstraintBuilder<F> {
                 ],
             );
         });
-    }
 
-    fn build_account_destructed_constraints(&mut self, q: &Queries<F>) {
-        self.require_zero("id is 0 for AccountDestructed", q.id());
-        self.require_zero("field_tag is 0 for AccountDestructed", q.field_tag());
-        self.require_zero(
-            "storage_key is 0 for AccountDestructed",
-            q.rw_table.storage_key.clone(),
-        );
-        // TODO: Missing constraints
+        self.condition(q.not_first_access.clone(), |cb| {
+            cb.require_equal(
+                "value column at Rotation::prev() equals value_prev at Rotation::cur()",
+                q.rw_table.value_prev.clone(),
+                q.value_prev_column(),
+            );
+        });
     }
 
     fn build_call_context_constraints(&mut self, q: &Queries<F>) {
@@ -422,6 +474,10 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
+        self.require_zero(
+            "value_prev column is 0 for CallContext",
+            q.value_prev_column(),
+        );
     }
 
     fn build_tx_log_constraints(&mut self, q: &Queries<F>) {
@@ -437,6 +493,11 @@ impl<F: Field> ConstraintBuilder<F> {
             q.state_root(),
             q.state_root_prev(),
         );
+        self.require_equal(
+            "value_prev column equals initial_value for TxLog",
+            q.value_prev_column(),
+            q.initial_value(),
+        );
     }
 
     fn build_tx_receipt_constraints(&mut self, q: &Queries<F>) {
@@ -447,6 +508,10 @@ impl<F: Field> ConstraintBuilder<F> {
             "state_root is unchanged for TxReceipt",
             q.state_root(),
             q.state_root_prev(),
+        );
+        self.require_zero(
+            "value_prev_column is 0 for TxReceipt",
+            q.value_prev_column(),
         );
     }
 
@@ -582,6 +647,10 @@ impl<F: Field> Queries<F> {
 
     fn state_root_prev(&self) -> Expression<F> {
         self.state_root_prev.clone()
+    }
+
+    fn value_prev_column(&self) -> Expression<F> {
+        self.rw_table.value_prev_column.clone()
     }
 }
 

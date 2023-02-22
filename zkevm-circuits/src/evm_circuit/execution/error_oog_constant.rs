@@ -8,7 +8,6 @@ use crate::evm_circuit::{
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
-use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
