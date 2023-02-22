@@ -911,4 +911,3 @@ impl<F: Field> CommonErrorGadget<F> {
         Ok(1u64)
     }
 }
-
