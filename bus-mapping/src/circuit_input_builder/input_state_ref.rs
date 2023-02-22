@@ -473,8 +473,41 @@ impl<'a> CircuitInputStateRef<'a> {
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let sender_balance_prev = sender_account.balance;
-        let sender_balance = sender_account.balance - value - fee;
+        let mut sender_balance_prev = sender_account.balance;
+        debug_assert!(
+            sender_account.balance >= value + fee,
+            "invalid amount balance {:?} value {:?} fee {:?}",
+            sender_balance_prev,
+            value,
+            fee
+        );
+        if !fee.is_zero() {
+            let sender_balance = sender_balance_prev - fee;
+            log::trace!(
+                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
+                sender,
+                sender_balance_prev,
+                sender_balance
+            );
+            self.push_op(
+                step,
+                RW::WRITE,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            );
+            sender_balance_prev = sender_balance;
+        }
+        let sender_balance = sender_balance_prev - value;
+        log::trace!(
+            "sender balance update with value: {:?} {:?}->{:?}",
+            sender,
+            sender_balance_prev,
+            sender_balance
+        );
         self.push_op_reversible(
             step,
             RW::WRITE,
