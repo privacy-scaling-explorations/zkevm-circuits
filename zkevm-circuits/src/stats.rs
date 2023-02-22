@@ -156,7 +156,8 @@ pub(crate) fn print_circuit_stats_by_states(
         if !fn_filter(state) {
             continue;
         }
-        for opcode in state.responsible_opcodes() {
+        for responsible_op in state.responsible_opcodes() {
+            let opcode = responsible_op.opcode();
             let mut code = bytecode! {
                 PUSH2(0x00)
                 EXTCODESIZE // Warm up 0x0 address
