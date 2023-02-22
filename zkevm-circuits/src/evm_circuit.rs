@@ -285,6 +285,66 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
         .collect()
 }
 
+#[cfg(any(feature = "test", test))]
+pub(crate) mod cached {
+    use super::*;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use lazy_static::lazy_static;
+    use std::sync::Mutex;
+
+    struct Cache {
+        cs: ConstraintSystem<Fr>,
+        config: (EvmCircuitConfig<Fr>, Challenges),
+    }
+
+    lazy_static! {
+        static ref CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+    }
+
+    pub struct EvmCircuitCached(EvmCircuit<Fr>);
+
+    impl Circuit<Fr> for EvmCircuitCached {
+        type Config = (EvmCircuitConfig<Fr>, Challenges);
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self(self.0.without_witnesses())
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+            let mut cache = CACHE.lock().unwrap();
+            match &*cache {
+                Some(Cache { cs, config }) => {
+                    *meta = cs.clone();
+                    config.clone()
+                }
+                None => {
+                    let config = EvmCircuit::<Fr>::configure(meta);
+                    *cache = Some(Cache {
+                        cs: meta.clone(),
+                        config: config.clone(),
+                    });
+                    config
+                }
+            }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            layouter: impl Layouter<Fr>,
+        ) -> Result<(), Error> {
+            self.0.synthesize(config, layouter)
+        }
+    }
+
+    impl EvmCircuitCached {
+        pub fn get_test_cicuit_from_block(block: Block<Fr>) -> Self {
+            Self(EvmCircuit::<Fr>::get_test_cicuit_from_block(block))
+        }
+    }
+}
+
 // Always exported because of `EXECUTION_STATE_HEIGHT_MAP`
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
