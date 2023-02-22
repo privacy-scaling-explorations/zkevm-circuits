@@ -697,6 +697,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         self.bytecode_table.annotate_columns_in_region(region);
         self.keccak_table.annotate_columns_in_region(region);
 
+        self.push_data_left_is_zero
+            .annotate_columns_in_region(region, "BYTECODE");
         region.name_column(|| "BYTECODE_q_enable", self.q_enable);
         region.name_column(|| "BYTECODE_q_first", self.q_first);
         region.name_column(|| "BYTECODE_q_last", self.q_last);
