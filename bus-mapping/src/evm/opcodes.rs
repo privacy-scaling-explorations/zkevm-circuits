@@ -527,7 +527,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 AccountField::CodeHash,
                 callee_code_hash,
                 callee_code_hash,
-            )?;
+            );
 
             Ok(exec_step)
         }

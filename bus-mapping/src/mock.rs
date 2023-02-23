@@ -2,7 +2,9 @@
 
 use crate::{
     circuit_input_builder::BlockHead,
-    circuit_input_builder::{get_state_accesses, Block, CircuitInputBuilder, CircuitsParams},
+    circuit_input_builder::{
+        get_state_accesses, AccessSet, Block, CircuitInputBuilder, CircuitsParams,
+    },
     state_db::{self, CodeDB, StateDB},
 };
 use eth_types::{geth_types::GethData, Word};
@@ -54,8 +56,10 @@ impl BlockData {
         let mut sdb = StateDB::new();
         let mut code_db = CodeDB::new();
 
-        let access_set = get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces)
-            .expect("state accesses");
+        let access_set: AccessSet =
+            get_state_accesses(&geth_data.eth_block, &geth_data.geth_traces)
+                .expect("state accesses")
+                .into();
         // Initialize all accesses accounts to zero
         for addr in access_set.state.keys() {
             sdb.set_account(addr, state_db::Account::zero());

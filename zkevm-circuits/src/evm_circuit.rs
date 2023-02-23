@@ -515,13 +515,9 @@ mod evm_circuit_stats {
     fn get_evm_states_stats() {
         print_circuit_stats_by_states(
             |state| {
-                // TODO: Enable CREATE/CREATE2 once they are supported
                 !matches!(
                     state,
-                    ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::CREATE
-                        | ExecutionState::CREATE2
-                        | ExecutionState::SELFDESTRUCT
+                    ExecutionState::ErrorInvalidOpcode | ExecutionState::SELFDESTRUCT
                 )
             },
             |opcode| match opcode {

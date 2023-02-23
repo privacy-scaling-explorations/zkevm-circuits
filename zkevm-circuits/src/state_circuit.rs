@@ -689,10 +689,7 @@ mod state_circuit_stats {
                 // TODO: Enable CREATE/CREATE2 once they are supported
                 !matches!(
                     state,
-                    ExecutionState::ErrorInvalidOpcode
-                        | ExecutionState::CREATE
-                        | ExecutionState::CREATE2
-                        | ExecutionState::SELFDESTRUCT
+                    ExecutionState::ErrorInvalidOpcode | ExecutionState::SELFDESTRUCT
                 )
             },
             bytecode_prefix_op_big_rws,

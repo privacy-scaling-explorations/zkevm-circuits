@@ -701,7 +701,7 @@ pub struct BuilderClient<P: JsonRpcClient> {
 pub fn get_state_accesses(
     eth_block: &EthBlock,
     geth_traces: &[eth_types::GethExecTrace],
-) -> Result<AccessSet, Error> {
+) -> Result<Vec<Access>, Error> {
     let mut block_access_trace = vec![Access::new(
         None,
         RW::WRITE,
@@ -717,7 +717,7 @@ pub fn get_state_accesses(
         block_access_trace.extend(tx_access_trace);
     }
 
-    Ok(AccessSet::from(block_access_trace))
+    Ok(block_access_trace)
 }
 
 /// Build a partial StateDB from step 3
@@ -858,8 +858,6 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         codes: HashMap<Address, Vec<u8>>,
     ) -> (StateDB, CodeDB) {
         build_state_code_db(proofs, codes)
-                
-            
     }
 
     /// Step 5. For each step in TxExecTraces, gen the associated ops and state
@@ -953,12 +951,12 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let mut access_set = AccessSet::default();
         for block_num in block_num_begin..block_num_end {
             let (eth_block, geth_traces, _, _) = self.get_block(block_num).await?;
-            let access_list = self.get_state_accesses(&eth_block, &geth_traces)?;
+            let access_list = Self::get_state_accesses(&eth_block, &geth_traces)?;
             access_set.add(access_list);
             blocks_and_traces.push((eth_block, geth_traces));
         }
         let (proofs, codes) = self.get_state(block_num_begin, access_set).await?;
-        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state_multi(state_db, code_db, &blocks_and_traces)?;
         Ok(builder)
     }
@@ -1004,7 +1002,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let (proofs, codes) = self
             .get_state(tx.block_number.unwrap().as_u64(), access_set)
             .await?;
-        let (state_db, code_db) = self.build_state_code_db(proofs, codes);
+        let (state_db, code_db) = Self::build_state_code_db(proofs, codes);
         let builder = self.gen_inputs_from_state(
             state_db,
             code_db,
