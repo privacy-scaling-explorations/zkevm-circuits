@@ -440,7 +440,7 @@ macro_rules! select_circuit_config {
         match $txs {
             0..=10 => {
                 const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
-                    block_gas_limit: 6000000,
+                    block_gas_limit: 6300000,
                     max_txs: 10,
                     max_calldata: 131072,
                     max_bytecode: 131072,
@@ -454,7 +454,7 @@ macro_rules! select_circuit_config {
             }
             16..=80 => {
                 const CIRCUIT_CONFIG: CircuitConfig = CircuitConfig {
-                    block_gas_limit: 6000000,
+                    block_gas_limit: 6300000,
                     max_txs: 80,
                     max_calldata: 697500,
                     max_bytecode: 139500,
