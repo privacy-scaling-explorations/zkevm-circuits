@@ -122,7 +122,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
             cb,
             opcode.expr(),
             7.expr() + 2.expr() * is_sstore.expr().0,
-            false,
         );
 
         Self {

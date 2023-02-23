@@ -76,7 +76,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
             cb.curr.state.is_root.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 0.expr(), true);
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 0.expr());
 
         Self {
             opcode,

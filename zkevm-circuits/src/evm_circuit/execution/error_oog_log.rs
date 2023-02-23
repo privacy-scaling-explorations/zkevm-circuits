@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
             1.expr(),
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 5.expr(), false);
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 5.expr());
 
         Self {
             opcode,

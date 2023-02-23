@@ -94,7 +94,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
             cb,
             opcode.expr(),
             13.expr() + is_call.expr() + is_callcode.expr(),
-            false,
         );
 
         Self {

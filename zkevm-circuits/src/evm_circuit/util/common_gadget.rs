@@ -827,8 +827,6 @@ impl<F: Field> CommonErrorGadget<F> {
         cb: &mut ConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
-        // indicates for error only happen in internal call, like ErrorWriteProtection
-        only_internal: bool,
     ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -845,26 +843,22 @@ impl<F: Field> CommonErrorGadget<F> {
         );
 
         // Go to EndTx only when is_root
-        if !only_internal {
-            let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
-            cb.require_equal(
-                "Go to EndTx only when is_root",
-                cb.curr.state.is_root.expr(),
-                is_to_end_tx,
-            );
+        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
+        cb.require_equal(
+            "Go to EndTx only when is_root",
+            cb.curr.state.is_root.expr(),
+            is_to_end_tx,
+        );
 
-            // When it's a root call
-            cb.condition(cb.curr.state.is_root.expr(), |cb| {
-                // Do step state transition
-                cb.require_step_state_transition(StepStateTransition {
-                    call_id: Same,
-                    rw_counter: Delta(
-                        rw_counter_delta + cb.curr.state.reversible_write_counter.expr(),
-                    ),
-                    ..StepStateTransition::any()
-                });
+        // When it's a root call
+        cb.condition(cb.curr.state.is_root.expr(), |cb| {
+            // Do step state transition
+            cb.require_step_state_transition(StepStateTransition {
+                call_id: Same,
+                rw_counter: Delta(rw_counter_delta + cb.curr.state.reversible_write_counter.expr()),
+                ..StepStateTransition::any()
             });
-        }
+        });
 
         // When it's an internal call, need to restore caller's state as finishing this
         // call. Restore caller state to next StepState
