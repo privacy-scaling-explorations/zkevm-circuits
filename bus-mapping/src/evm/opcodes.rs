@@ -59,6 +59,7 @@ mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_stack_oog_constant;
+mod error_write_protection;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -83,6 +84,7 @@ use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_stack_oog_constant::ErrorStackOogConstant;
+use error_write_protection::ErrorWriteProtection;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -270,11 +272,12 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
 
         // more future errors place here
@@ -467,7 +470,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 AccountField::CodeHash,
                 callee_code_hash_word,
                 callee_code_hash_word,
-            )?;
+            );
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {

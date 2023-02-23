@@ -555,9 +555,8 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             field_tag: meta.query_advice(c.rw_table.field_tag, Rotation::cur()),
             storage_key: meta.query_advice(c.rw_table.storage_key, Rotation::cur()),
             value: meta.query_advice(c.rw_table.value, Rotation::cur()),
-            // TODO: we should constain value.prev() <-> value_prev.cur() later
-            // see https://github.com/privacy-scaling-explorations/zkevm-specs/issues/202 for more details
             value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
+            value_prev_column: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         },
         // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
@@ -607,125 +606,34 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 #[cfg(test)]
 mod state_circuit_stats {
     use crate::evm_circuit::step::ExecutionState;
-    use bus_mapping::{circuit_input_builder::ExecState, mock::BlockData};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address};
-    use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
-    use strum::IntoEnumIterator;
+    use crate::stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
 
-    /// This function prints to stdout a table with all the implemented states
-    /// and their responsible opcodes with the following stats:
-    /// - height: number of rows in the State circuit used by the execution
-    ///   state
-    /// - gas: gas value used for the opcode execution
-    /// - height/gas: ratio between circuit cost and gas cost
+    /// Prints the stats of State circuit per execution state.  See
+    /// `print_circuit_stats_by_states` for more details.
     ///
     /// Run with:
-    /// `cargo test -p zkevm-circuits --release get_state_states_stats --
-    /// --nocapture --ignored`
+    /// `cargo test -p zkevm-circuits --release --all-features
+    /// get_state_states_stats -- --nocapture --ignored`
     #[ignore]
     #[test]
     pub fn get_state_states_stats() {
-        // Get the list of implemented execution states by configuring the EVM Circuit
-        // and querying the step height for each possible execution state (only those
-        // implemented will return a Some value).
-
-        let mut implemented_states = Vec::new();
-        for state in ExecutionState::iter() {
-            let height = state.get_step_height_option();
-            if height.is_some() {
-                implemented_states.push(state);
-            }
-        }
-
-        let mut stats = Vec::new();
-        for state in implemented_states {
-            for opcode in state.responsible_opcodes() {
-                let mut code = bytecode! {
-                    PUSH2(0x100)
-                    MLOAD // Expand memory a bit
-                    PUSH2(0x00)
-                    EXTCODESIZE // Warm up 0x0 address
-                    PUSH2(0x8000)
-                    PUSH2(0x00)
-                    PUSH2(0x10)
-                    PUSH2(0x20)
-                    PUSH2(0x30)
-                };
-                // Make sure that opcodes that take an address as argument use addres 0x0, which
-                // will exist in the test.
-                match opcode {
-                    OpcodeId::BALANCE
-                    | OpcodeId::EXTCODESIZE
-                    | OpcodeId::EXTCODECOPY
-                    | OpcodeId::SELFDESTRUCT
-                    | OpcodeId::EXTCODEHASH => code.append(&bytecode! {
-                        PUSH2(0x40)
-                        PUSH2(0x00)
-                    }),
-                    OpcodeId::CALL
-                    | OpcodeId::CALLCODE
-                    | OpcodeId::DELEGATECALL
-                    | OpcodeId::STATICCALL => code.append(&bytecode! {
-                        PUSH2(0x00)
-                        PUSH2(0x50)
-                    }),
-                    _ => code.append(&bytecode! {
-                        PUSH2(0x40)
-                        PUSH2(0x50)
-                    }),
-                };
-                code.write_op(opcode);
-                code.write_op(OpcodeId::STOP);
-                let block: GethData = TestContext::<3, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(MOCK_ACCOUNTS[0])
-                            .balance(eth(10))
-                            .code(code.clone());
-                        accs[1].address(MOCK_ACCOUNTS[1]).balance(eth(10));
-                        accs[2].address(Address::zero()).balance(eth(10)).code(code);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[1].address)
-                            .to(accs[0].address)
-                            .input(vec![1, 2, 3, 4, 5, 6, 7].into());
-                    },
-                    |block, _tx| block.number(0xcafeu64),
+        print_circuit_stats_by_states(
+            |state| {
+                // TODO: Enable CREATE/CREATE2 once they are supported
+                !matches!(
+                    state,
+                    ExecutionState::ErrorInvalidOpcode
+                        | ExecutionState::CREATE
+                        | ExecutionState::CREATE2
+                        | ExecutionState::SELFDESTRUCT
                 )
-                .unwrap()
-                .into();
-                let mut builder =
-                    BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-                builder
-                    .handle_block(&block.eth_block, &block.geth_traces)
-                    .unwrap();
-                let step_index = 1 + 11; // 1 is for the BeginTx, 11 for the bytecode opcodes.
-                let step = &builder.block.txs[0].steps()[step_index];
-                let step_next = &builder.block.txs[0].steps()[step_index + 1];
-                assert_eq!(ExecState::Op(opcode), step.exec_state);
-                let h = step_next.rwc.0 - step.rwc.0;
-
-                let gas_cost = block.geth_traces[0].struct_logs[11].gas_cost.0;
-                stats.push((state, opcode, h, gas_cost));
-            }
-        }
-
-        println!(
-            "| {: <14} | {: <14} | {: <2} | {: >6} | {: <5} |",
-            "state", "opcode", "h", "g", "h/g"
+            },
+            bytecode_prefix_op_big_rws,
+            |block, _, step_index| {
+                let step = &block.txs[0].steps()[step_index];
+                let step_next = &block.txs[0].steps()[step_index + 1];
+                step_next.rwc.0 - step.rwc.0
+            },
         );
-        println!("| ---            | ---            | ---|    --- | ---   |");
-        for (state, opcode, height, gas_cost) in stats {
-            println!(
-                "| {: <14?} | {: <14?} | {: >2} | {: >6} | {: >1.3} |",
-                state,
-                opcode,
-                height,
-                gas_cost,
-                height as f64 / gas_cost as f64
-            );
-        }
     }
 }
