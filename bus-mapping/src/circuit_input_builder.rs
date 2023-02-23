@@ -61,7 +61,7 @@ pub struct CircuitsParams {
     /// Pad the keccak circuit with this number of invocations to a static
     /// capacity.  Number of keccak_f that the Keccak circuit will support.
     /// When 0, the Keccak circuit number of rows will be dynamically
-    /// calculated, so the same circuit will not be able to proof different
+    /// calculated, so the same circuit will not be able to prove different
     /// witnesses.
     pub max_keccak_rows: usize,
 }
