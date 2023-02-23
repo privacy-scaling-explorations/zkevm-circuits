@@ -440,7 +440,6 @@ impl<F: Field> ExecutionConfig<F> {
 
         let mut stored_expressions_map = HashMap::new();
 
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -453,7 +452,6 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_last,
                     &challenges,
                     &step_curr,
-                    &step_next,
                     &mut height_map,
                     &mut stored_expressions_map,
                 )
@@ -592,16 +590,16 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
         step_curr: &Step<F>,
-        step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
-                step_next.clone(),
+                dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
