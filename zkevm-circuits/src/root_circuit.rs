@@ -23,6 +23,7 @@ pub use snark_verifier::system::halo2::{compile, Config};
 pub use aggregation::TestAggregationCircuit;
 
 /// RootCircuit for aggregating SuperCircuit into a much smaller proof.
+#[derive(Clone)]
 pub struct RootCircuit<'a, M: MultiMillerLoop> {
     svk: KzgSvk<M>,
     snark: SnarkWitness<'a, M::G1Affine>,
