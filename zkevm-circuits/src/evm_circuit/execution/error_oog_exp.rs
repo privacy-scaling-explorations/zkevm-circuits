@@ -170,44 +170,107 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::evm_circuit::test::rand_word;
+    use crate::evm_circuit::test::{rand_bytes, rand_word};
     use crate::test_util::CircuitTestBuilder;
     use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::{bytecode, U256};
+    use eth_types::{bytecode, Bytecode, ToWord, U256};
     use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
+    use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     #[test]
     fn test_oog_exp() {
-        test_ok(U256::zero());
-        test_ok(U256::one());
-        test_ok(1023.into());
-        test_ok(U256::MAX);
-        test_ok(rand_word());
+        [
+            U256::zero(),
+            U256::one(),
+            1023.into(),
+            U256::MAX,
+            rand_word(),
+        ]
+        .into_iter()
+        .for_each(|exponent| {
+            let testing_data = TestingData::new(exponent);
+
+            test_root(&testing_data);
+            test_internal(&testing_data);
+        })
     }
 
-    fn test_ok(exponent: U256) {
-        let code = bytecode! {
-            PUSH32(exponent)
-            PUSH32(rand_word())
-            EXP
-        };
+    struct TestingData {
+        bytecode: Bytecode,
+        gas_cost: u64,
+    }
 
-        let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 2
-            + OpcodeId::EXP.constant_gas_cost().0
-            + ((exponent.bits() as u64 + 7) / 8) * GasCost::EXP_BYTE_TIMES.0;
+    impl TestingData {
+        pub fn new(exponent: U256) -> Self {
+            let bytecode = bytecode! {
+                PUSH32(exponent)
+                PUSH32(rand_word())
+                EXP
+            };
 
+            let gas_cost = OpcodeId::PUSH32.constant_gas_cost().0 * 2
+                + OpcodeId::EXP.constant_gas_cost().0
+                + ((exponent.bits() as u64 + 7) / 8) * GasCost::EXP_BYTE_TIMES.0;
+
+            Self { bytecode, gas_cost }
+        }
+    }
+
+    fn test_root(testing_data: &TestingData) {
         let ctx = TestContext::<2, 1>::new(
             None,
-            account_0_code_account_1_no_code(code),
+            account_0_code_account_1_no_code(testing_data.bytecode.clone()),
             |mut txs, accs| {
                 // Decrease expected gas cost (by 1) to trigger out of gas error.
                 txs[0]
                     .from(accs[1].address)
                     .to(accs[0].address)
-                    .gas((GasCost::TX.0 + gas_cost - 1).into());
+                    .gas((GasCost::TX.0 + testing_data.gas_cost - 1).into());
             },
             |block, _tx| block.number(0xcafe_u64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    fn test_internal(testing_data: &TestingData) {
+        let (addr_a, addr_b) = (MOCK_ACCOUNTS[0], MOCK_ACCOUNTS[1]);
+
+        // code B gets called by code A, so the call is an internal call.
+        let code_b = testing_data.bytecode.clone();
+        let gas_cost_b = testing_data.gas_cost;
+
+        // Code A calls code B.
+        let code_a = bytecode! {
+            // populate memory in A's context.
+            PUSH8(U256::from_big_endian(&rand_bytes(8)))
+            PUSH1(0x00) // offset
+            MSTORE
+            // call ADDR_B.
+            PUSH1(0x00) // retLength
+            PUSH1(0x00) // retOffset
+            PUSH32(0x00) // argsLength
+            PUSH32(0x20) // argsOffset
+            PUSH1(0x00) // value
+            PUSH32(addr_b.to_word()) // addr
+            // Decrease expected gas cost (by 1) to trigger out of gas error.
+            PUSH32(gas_cost_b - 1) // gas
+            CALL
+            STOP
+        };
+
+        let ctx = TestContext::<3, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(addr_b).code(code_b);
+                accs[1].address(addr_a).code(code_a);
+                accs[2].address(MOCK_ACCOUNTS[2]).balance(eth(10));
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[2].address).to(accs[1].address);
+            },
+            |block, _tx| block,
         )
         .unwrap();
 
