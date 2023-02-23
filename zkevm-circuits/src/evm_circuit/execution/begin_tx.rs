@@ -175,7 +175,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
 
             cb.require_step_state_transition(StepStateTransition {
-                // 10 reads and writes:
+                // 11 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -183,10 +183,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
+                //   - Write Account Balance (Not Reversible)
                 //   - Write Account Balance
                 //   - Write Account Balance
                 //   - Read Account CodeHash
-                rw_counter: Delta(10.expr()),
+                rw_counter: Delta(11.expr()),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
@@ -216,7 +217,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 22-23 reads and writes:
+                // 23-24 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -224,6 +225,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
+                //   - Write Account Balance (Not Reversible)
                 //   - Write Account Balance
                 //   - Write Account Balance
                 //   - Read Account CodeHash (only if tx is not create)
@@ -240,7 +242,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(22.expr() + (1.expr() - tx_is_create.expr())),
+                rw_counter: Delta(23.expr() + (1.expr() - tx_is_create.expr())),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -283,12 +285,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-        let [caller_balance_pair, callee_balance_pair] =
-            [step.rw_indices[7], step.rw_indices[8]].map(|idx| block.rws[idx].account_value_pair());
+
+        let [caller_balance_sub_fee_pair, caller_balance_sub_value_pair, callee_balance_pair] =
+            [7, 8, 9].map(|idx| block.rws[step.rw_indices[idx]].account_value_pair());
         let callee_code_hash = if tx.is_create {
             call.code_hash
         } else {
-            block.rws[step.rw_indices[9]].account_value_pair().0
+            block.rws[step.rw_indices[10]].account_value_pair().0
         };
 
         self.tx_id
@@ -341,7 +344,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.transfer_with_gas_fee.assign(
             region,
             offset,
-            caller_balance_pair,
+            caller_balance_sub_fee_pair,
+            caller_balance_sub_value_pair,
             callee_balance_pair,
             tx.value,
             gas_fee,
