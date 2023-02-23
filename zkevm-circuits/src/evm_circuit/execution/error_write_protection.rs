@@ -61,7 +61,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         );
 
         // Lookup values from stack if opcode is call
-        // Precondition: If there's a StackUnderflow CALL, is handled before this error 
+        // Precondition: If there's a StackUnderflow CALL, is handled before this error
         cb.condition(is_call.expr(), |cb| {
             cb.stack_pop(gas_word.expr());
             cb.stack_pop(code_address_word.expr());
