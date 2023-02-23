@@ -257,7 +257,7 @@ impl<const MAX_TXS: usize, const MAX_CALLDATA: usize> InstancesExport
     for PiTestCircuit<Fr, MAX_TXS, MAX_CALLDATA>
 {
     fn num_instance() -> Vec<usize> {
-        vec![5]
+        vec![2]
     }
 
     fn instances(&self) -> Vec<Vec<Fr>> {
@@ -334,7 +334,7 @@ fn gen_proof<C: Circuit<Fr>>(
         .collect_vec();
     let proof = {
         let mut transcript = TranscriptWriterBuffer::<_, G1Affine, _>::init(Vec::new());
-        create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, EvmTranscript<_, _, _, _>, _>(
+        create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, EvmTranscript<_, _, _, _>, _>(
             params,
             pk,
             &[circuit],

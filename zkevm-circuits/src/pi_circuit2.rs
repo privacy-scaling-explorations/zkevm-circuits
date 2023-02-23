@@ -1657,7 +1657,7 @@ pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
-    type Config = (PiCircuitConfig<F>, Challenges);
+    type Config = PiCircuitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -1669,31 +1669,28 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
         let tx_table = TxTable::construct(meta);
         let rlp_table = array_init::array_init(|_| meta.advice_column());
         let keccak_table = KeccakTable2::construct(meta);
-        let challenges = Challenges::construct(meta);
-        let challenge_exprs = challenges.exprs(meta);
-        (
-            PiCircuitConfig::new(
-                meta,
-                PiCircuitConfigArgs {
-                    max_txs: MAX_TXS,
-                    max_calldata: MAX_CALLDATA,
-                    block_table,
-                    tx_table,
-                    rlp_table,
-                    keccak_table,
-                    challenges: challenge_exprs,
-                },
-            ),
-            challenges,
+        let challenges = Challenges::mock(100.expr(), 100.expr());
+        PiCircuitConfig::new(
+            meta,
+            PiCircuitConfigArgs {
+                max_txs: MAX_TXS,
+                max_calldata: MAX_CALLDATA,
+                block_table,
+                tx_table,
+                rlp_table,
+                keccak_table,
+                challenges,
+            },
         )
     }
 
     fn synthesize(
         &self,
-        (config, challenges): Self::Config,
+        config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
+        // let challenges = challenges.values(&mut layouter);
+        let challenges = Challenges::mock(Value::known(F::from(100)), Value::known(F::from(100)));
         let public_data = &self.0.public_data;
         // assign keccak table
         config.keccak_table.dev_load(
