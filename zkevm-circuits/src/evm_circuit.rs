@@ -456,12 +456,21 @@ pub mod test {
 
 #[cfg(test)]
 mod evm_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
+    use crate::evm_circuit::{
+        param::{
+            LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+        },
+        step::ExecutionState,
+        EvmCircuit,
+    };
     use crate::stats::print_circuit_stats_by_states;
     use crate::test_util::CircuitTestBuilder;
+    use cli_table::{print_stdout, Cell, Style, Table};
     use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
-    use mock::test_ctx::TestContext;
-    use mock::MOCK_ACCOUNTS;
+    use halo2_proofs::halo2curves::bn256::Fr;
+    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use itertools::Itertools;
+    use mock::{test_ctx::TestContext, MOCK_ACCOUNTS};
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {
@@ -524,6 +533,83 @@ mod evm_circuit_stats {
                 },
             },
             |_, state, _| state.get_step_height_option().unwrap(),
+        );
+    }
+
+    /// This function prints to stdout a table with the top X ExecutionState
+    /// cell consumers of each EVM Cell type.
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release get_exec_steps_occupancy
+    /// --features test -- --nocapture --ignored`
+    #[ignore]
+    #[test]
+    fn get_exec_steps_occupancy() {
+        let mut meta = ConstraintSystem::<Fr>::default();
+        let circuit = EvmCircuit::configure(&mut meta);
+
+        let report = circuit.0.execution.instrument().clone().analyze();
+        macro_rules! gen_report {
+            ($report:expr, $($id:ident, $cols:expr), +) => {
+                $(
+                let row_report = report
+                    .iter()
+                    .sorted_by(|a, b| a.$id.utilization.partial_cmp(&b.$id.utilization).unwrap())
+                    .rev()
+                    .take(10)
+                    .map(|exec| {
+                        vec![
+                            format!("{:?}", exec.state),
+                            format!("{:?}", exec.$id.available_cells),
+                            format!("{:?}", exec.$id.unused_cells),
+                            format!("{:?}", exec.$id.used_cells),
+                            format!("{:?}", exec.$id.top_height),
+                            format!("{:?}", exec.$id.used_columns),
+                            format!("{:?}", exec.$id.utilization),
+                        ]
+                    })
+                    .collect::<Vec<Vec<String>>>();
+
+                let table = row_report.table().title(vec![
+                    format!("{:?}", stringify!($id)).cell().bold(true),
+                    format!("total_available_cells").cell().bold(true),
+                    format!("unused_cells").cell().bold(true),
+                    format!("cells").cell().bold(true),
+                    format!("top_height").cell().bold(true),
+                    format!("used columns (Max: {:?})", $cols).cell().bold(true),
+                    format!("Utilization").cell().bold(true),
+                ]);
+                print_stdout(table).unwrap();
+                )*
+            };
+        }
+
+        gen_report!(
+            report,
+            storage_1,
+            N_PHASE1_COLUMNS,
+            storage_2,
+            N_PHASE2_COLUMNS,
+            storage_perm,
+            N_COPY_COLUMNS,
+            byte_lookup,
+            N_BYTE_LOOKUPS,
+            fixed_table,
+            LOOKUP_CONFIG[0].1,
+            tx_table,
+            LOOKUP_CONFIG[1].1,
+            rw_table,
+            LOOKUP_CONFIG[2].1,
+            bytecode_table,
+            LOOKUP_CONFIG[3].1,
+            block_table,
+            LOOKUP_CONFIG[4].1,
+            copy_table,
+            LOOKUP_CONFIG[5].1,
+            keccak_table,
+            LOOKUP_CONFIG[6].1,
+            exp_table,
+            LOOKUP_CONFIG[7].1
         );
     }
 }
