@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             vec![1.expr(), 2.expr(), 3.expr()],
         );
 
-        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr());
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr(), false);
 
         Self {
             opcode,
