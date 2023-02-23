@@ -222,8 +222,8 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         // state circuit and evm circuit must be same
         {
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
-            let power_of_randomness = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(18, &state_circuit, power_of_randomness).unwrap();
+            let instance = state_circuit.instance();
+            let prover = MockProver::<Fr>::run(18, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
