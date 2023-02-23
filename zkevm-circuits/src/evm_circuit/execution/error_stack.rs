@@ -1,13 +1,13 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
     step::ExecutionState,
+    table::{FixedTableTag, Lookup},
     util::{
         common_gadget::RestoreContextGadget,
         constraint_builder::{
             ConstraintBuilder, StepStateTransition,
             Transition::{Delta, Same},
         },
-        math_gadget::LtGadget,
         CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
@@ -17,15 +17,9 @@ use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-const N_BYTES_STACK: usize = 2;
-
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
     opcode: Cell<F>,
-    min_stack_pointer: Cell<F>,
-    max_stack_pointer: Cell<F>,
-    is_overflow: LtGadget<F, N_BYTES_STACK>,
-    is_underflow: LtGadget<F, N_BYTES_STACK>,
     rw_counter_end_of_reversion: Cell<F>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -39,40 +33,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
-        let min_stack_pointer = cb.query_cell();
-        let max_stack_pointer = cb.query_cell();
-        let rw_counter_end_of_reversion = cb.query_cell();
-
-        cb.opcode_stack_lookup(
-            opcode.expr(),
-            min_stack_pointer.expr(),
-            max_stack_pointer.expr(),
-        );
-        // Check whether current stack pointer is underflow or overflow
-
-        let is_overflow = LtGadget::construct(
-            cb,
-            cb.curr.state.stack_pointer.expr(),
-            min_stack_pointer.expr(),
-        );
-        let is_underflow = LtGadget::construct(
-            cb,
-            max_stack_pointer.expr(),
-            cb.curr.state.stack_pointer.expr(),
-        );
-        // is_overflow and is_underflow is bool ensure by LtGadget.
-
-        // constrain one of [is_underflow, is_overflow] must be true when stack error
-        // happens
-        cb.require_equal(
-            "is_underflow + is_overflow = 1",
-            is_underflow.expr() + is_overflow.expr(),
-            1.expr(),
+        cb.add_lookup(
+            "Responsible opcode lookup for invalid stack pointer",
+            Lookup::Fixed {
+                tag: FixedTableTag::ResponsibleOpcode.expr(),
+                values: [
+                    Self::EXECUTION_STATE.as_u64().expr(),
+                    opcode.expr(),
+                    cb.curr.state.stack_pointer.expr(),
+                ],
+            },
         );
 
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
+        let rw_counter_end_of_reversion = cb.query_cell();
         cb.call_context_lookup(
             false.expr(),
             None,
@@ -124,10 +100,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
         Self {
             opcode,
-            min_stack_pointer,
-            max_stack_pointer,
-            is_overflow,
-            is_underflow,
             rw_counter_end_of_reversion,
             restore_context,
         }
@@ -143,29 +115,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-
-        let (min_stack, max_stack) = opcode.valid_stack_ptr_range();
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        // Inputs/Outputs
-        self.min_stack_pointer
-            .assign(region, offset, Value::known(F::from(min_stack as u64)))?;
-        self.max_stack_pointer
-            .assign(region, offset, Value::known(F::from(max_stack as u64)))?;
-
-        self.is_overflow.assign(
-            region,
-            offset,
-            F::from(step.stack_pointer as u64),
-            F::from(min_stack as u64),
-        )?;
-        self.is_underflow.assign(
-            region,
-            offset,
-            F::from(max_stack as u64),
-            F::from(step.stack_pointer as u64),
-        )?;
 
         self.rw_counter_end_of_reversion.assign(
             region,
@@ -181,15 +132,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
-    use crate::test_util::{run_test_circuits, run_test_circuits_with_params};
 
+    use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
     };
-    use halo2_proofs::halo2curves::bn256::Fr;
 
     use mock::TestContext;
 
@@ -201,13 +150,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -250,17 +196,14 @@ mod test {
         // append final stop op code
         bytecode.write_op(OpcodeId::STOP);
 
-        assert_eq!(
-            run_test_circuits_with_params(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None,
-                CircuitsParams {
-                    max_rws: 2048,
-                    ..Default::default()
-                }
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .params(CircuitsParams {
+            max_rws: 2048,
+            ..Default::default()
+        })
+        .run();
     }
 
     #[derive(Clone, Copy, Debug, Default)]
@@ -313,7 +256,7 @@ mod test {
     }
 
     fn stack_error_internal_call(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -338,15 +281,9 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     fn callee(code: Bytecode) -> Account {

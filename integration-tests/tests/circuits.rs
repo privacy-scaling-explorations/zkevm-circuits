@@ -1,39 +1,43 @@
+macro_rules! run_test {
+    ($test_instance:expr, $block_tag:expr, $real_prover:expr) => {
+        log_init();
+
+        let mut test = $test_instance.lock().await;
+        test.test_at_block_tag($block_tag, $real_prover).await;
+    };
+}
+
 macro_rules! declare_tests {
     (($name:ident, $block_tag:expr),$real_prover:expr) => {
         paste! {
             #[tokio::test]
             async fn [<serial_test_evm_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_evm_circuit_block(*block_num, $real_prover).await;
+                run_test! (EVM_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_state_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_state_circuit_block(*block_num, $real_prover).await;
+                run_test! (STATE_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_tx_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_tx_circuit_block(*block_num, $real_prover).await;
+                run_test! (TX_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_bytecode_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_bytecode_circuit_block(*block_num, $real_prover).await;
+                run_test! (BYTECODE_CIRCUIT_TEST, $block_tag, $real_prover);
             }
 
             #[tokio::test]
             async fn [<serial_test_copy_ $name>]() {
-                log_init();
-                let block_num = GEN_DATA.blocks.get($block_tag).unwrap();
-                test_copy_circuit_block(*block_num, $real_prover).await;
+                run_test! (COPY_CIRCUIT_TEST, $block_tag, $real_prover);
+            }
+
+            #[tokio::test]
+            async fn [<serial_test_super_ $name>]() {
+                run_test! (SUPER_CIRCUIT_TEST, $block_tag, $real_prover);
             }
         }
     };
@@ -41,25 +45,25 @@ macro_rules! declare_tests {
 
 macro_rules! unroll_tests {
     ($($arg:tt),*) => {
+        use paste::paste;
+        use integration_tests::integration_test_circuits::{
+            EVM_CIRCUIT_TEST,
+            STATE_CIRCUIT_TEST,
+            TX_CIRCUIT_TEST,
+            BYTECODE_CIRCUIT_TEST,
+            COPY_CIRCUIT_TEST,
+            SUPER_CIRCUIT_TEST
+        };
+        use integration_tests::log_init;
         mod real_prover {
-            use paste::paste;
-            use integration_tests::integration_test_circuits::{
-                test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
-                test_state_circuit_block, test_tx_circuit_block, GEN_DATA,
-            };
-            use integration_tests::log_init;
+            use super::*;
             $(
                 declare_tests! ($arg, true) ;
             )*
         }
 
         mod mock_prover {
-            use paste::paste;
-            use integration_tests::integration_test_circuits::{
-                test_bytecode_circuit_block, test_copy_circuit_block, test_evm_circuit_block,
-                test_state_circuit_block, test_tx_circuit_block, GEN_DATA,
-            };
-            use integration_tests::log_init;
+            use super::*;
             $(
                 declare_tests! ($arg, false) ;
             )*

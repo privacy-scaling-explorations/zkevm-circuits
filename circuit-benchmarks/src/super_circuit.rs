@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use ark_std::{end_timer, start_timer};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::geth_types::GethData;
     use eth_types::{address, bytecode, Word};
     use ethers_signers::LocalWallet;
@@ -28,6 +29,12 @@ mod tests {
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_super_circuit_prover() {
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Super Circuit";
+
         let degree: u32 = var("DEGREE")
             .expect("No DEGREE env var was provided")
             .parse()
@@ -71,11 +78,24 @@ mod tests {
 
         block.sign(&wallets);
 
-        let (_, circuit, instance, _) = SuperCircuit::<_, 1, 32, 512, 512>::build(block).unwrap();
+        const MAX_TXS: usize = 1;
+        const MAX_CALLDATA: usize = 32;
+        let circuits_params = CircuitsParams {
+            max_txs: MAX_TXS,
+            max_calldata: MAX_CALLDATA,
+            max_rws: 256,
+            max_copy_rows: 256,
+            max_exp_steps: 256,
+            max_bytecode: 512,
+            max_evm_rows: 0,
+            keccak_padding: None,
+        };
+        let (_, circuit, instance, _) =
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 0x100>::build(block, circuits_params).unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", degree);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
         let general_params = ParamsKZG::<Bn256>::setup(degree, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
@@ -88,7 +108,10 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("SuperCircuit Proof generation with degree = {}", degree);
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -96,7 +119,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, 1, 32, 512, 512>,
+            SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, 0x100>,
         >(
             &general_params,
             &pk,
@@ -110,7 +133,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "SuperCircuit Proof verification");
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 

@@ -18,17 +18,26 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
+    use std::env::var;
     use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit, PublicData};
-    use zkevm_circuits::test_util::rand_tx;
     use zkevm_circuits::util::SubCircuit;
-
-    use crate::bench_params::DEGREE;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
     fn bench_pi_circuit_prover() {
+        let setup_prfx = crate::constants::SETUP_PREFIX;
+        let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
+        let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
+        //Unique string used by bench results module for parsing the result
+        const BENCHMARK_ID: &str = "Pi Circuit";
+
         const MAX_TXS: usize = 10;
         const MAX_CALLDATA: usize = 128;
+
+        let degree: u32 = var("DEGREE")
+            .unwrap_or_else(|_| "19".to_string())
+            .parse()
+            .expect("Cannot parse DEGREE env var as u32");
 
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = Fr::random(&mut rng);
@@ -51,9 +60,9 @@ mod tests {
         ]);
 
         // Bench setup generation
-        let setup_message = format!("Setup generation with degree = {}", DEGREE);
+        let setup_message = format!("{} {} with degree = {}", BENCHMARK_ID, setup_prfx, degree);
         let start1 = start_timer!(|| setup_message);
-        let general_params = ParamsKZG::<Bn256>::setup(DEGREE as u32, &mut rng);
+        let general_params = ParamsKZG::<Bn256>::setup(degree as u32, &mut rng);
         let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
         end_timer!(start1);
 
@@ -64,7 +73,10 @@ mod tests {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
         // Bench proof generation time
-        let proof_message = format!("PI_circuit Proof generation with {} rows", DEGREE);
+        let proof_message = format!(
+            "{} {} with degree = {}",
+            BENCHMARK_ID, proof_gen_prfx, degree
+        );
         let start2 = start_timer!(|| proof_message);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -86,7 +98,7 @@ mod tests {
         end_timer!(start2);
 
         // Bench verification time
-        let start3 = start_timer!(|| "PI_circuit Proof verification");
+        let start3 = start_timer!(|| format!("{} {}", BENCHMARK_ID, proof_ver_prfx));
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
 
@@ -108,14 +120,13 @@ mod tests {
     }
 
     fn generate_publicdata<const MAX_TXS: usize, const MAX_CALLDATA: usize>() -> PublicData {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
         let mut public_data = PublicData::default();
         let chain_id = 1337u64;
         public_data.chain_id = Word::from(chain_id);
 
         let n_tx = MAX_TXS;
         for _ in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, true));
+            let eth_tx = eth_types::Transaction::from(mock::CORRECT_MOCK_TXS[0].clone());
             public_data.transactions.push(eth_tx);
         }
         public_data

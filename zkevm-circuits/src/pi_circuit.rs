@@ -10,20 +10,24 @@ use eth_types::{
     Word,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
+use keccak256::plain::Keccak;
 
-use crate::table::BlockTable;
 use crate::table::TxFieldTag;
 use crate::table::TxTable;
+use crate::table::{BlockTable, LookupTable};
 use crate::tx_circuit::TX_LEN;
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
 use crate::witness;
 use gadgets::is_zero::IsZeroChip;
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
+    circuit::{AssignedCell, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Fixed by the spec
 const BLOCK_LEN: usize = 7 + 256;
@@ -68,7 +72,7 @@ pub struct ExtraValues {
 }
 
 /// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PublicData {
     /// chain id
     pub chain_id: Word,
@@ -83,6 +87,19 @@ pub struct PublicData {
     pub prev_state_root: H256,
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
+}
+
+impl Default for PublicData {
+    fn default() -> Self {
+        PublicData {
+            chain_id: Word::default(),
+            history_hashes: vec![],
+            transactions: vec![],
+            state_root: H256::zero(),
+            prev_state_root: H256::zero(),
+            block_constants: BlockConstants::default(),
+        }
+    }
 }
 
 impl PublicData {
@@ -244,6 +261,10 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_end = meta.selector();
 
         let pi = meta.instance_column();
+
+        // Annotate table columns
+        tx_table.annotate_columns(meta);
+        block_table.annotate_columns(meta);
 
         meta.enable_equality(raw_public_inputs);
         meta.enable_equality(rpi_rlc_acc);
@@ -1134,11 +1155,17 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 base_fee: block.context.base_fee,
             },
         };
+        let rand_rpi = gen_rand_rpi::<F>(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            &public_data,
+            block.randomness,
+        );
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.randomness,
-            block.randomness + F::from_u128(1),
+            rand_rpi,
             public_data,
         )
     }
@@ -1224,6 +1251,25 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let pi_cells = layouter.assign_region(
             || "region 0",
             |mut region| {
+                // Annotate columns
+
+                config.tx_table.annotate_columns_in_region(&mut region);
+                config.block_table.annotate_columns_in_region(&mut region);
+
+                region.name_column(|| "raw_public_inputs", config.raw_public_inputs);
+                region.name_column(|| "tx_id_inv", config.tx_id_inv);
+                region.name_column(|| "tx_value_inv", config.tx_value_inv);
+                region.name_column(|| "tx_id_diff_inv", config.tx_id_diff_inv);
+
+                region.name_column(|| "fixed_u16", config.fixed_u16);
+                region.name_column(|| "calldata_gas_cost", config.calldata_gas_cost);
+                region.name_column(|| "is_final", config.is_final);
+
+                region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
+                region.name_column(|| "rand_rpi", config.rand_rpi);
+
+                region.name_column(|| "Public_Inputs", config.pi);
+
                 let circuit_len = config.circuit_len();
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
@@ -1403,13 +1449,23 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 // that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
 // during the configuration.
 /// Test Circuit for PiCircuit
-#[cfg(any(feature = "test", test))]
-#[derive(Default)]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[derive(Default, Clone)]
 pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
     pub PiCircuit<F>,
 );
 
-#[cfg(any(feature = "test", test))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
+    PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
+{
+    /// Compute the public inputs for this circuit.
+    pub fn instance(&self) -> Vec<Vec<F>> {
+        self.0.instance()
+    }
+}
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
@@ -1557,15 +1613,32 @@ fn raw_public_inputs_col<F: Field>(
     result
 }
 
+/// Computes `rand_rpi` - a commitment to the `raw_public_inputs_col` values.
+pub fn gen_rand_rpi<F: Field>(
+    max_txs: usize,
+    max_calldata: usize,
+    public_data: &PublicData,
+    randomness: F,
+) -> F {
+    let rlc_rpi_col = raw_public_inputs_col::<F>(max_txs, max_calldata, public_data, randomness);
+    let mut keccak = Keccak::default();
+    for value in rlc_rpi_col.iter() {
+        let mut tmp = value.to_repr();
+        tmp.reverse();
+        keccak.update(&tmp);
+    }
+    let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
+    rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
+}
+
 #[cfg(test)]
 mod pi_circuit_test {
     use super::*;
-
-    use crate::test_util::rand_tx;
     use halo2_proofs::{
         dev::{MockProver, VerifyFailure},
         halo2curves::bn256::Fr,
     };
+    use mock::{CORRECT_MOCK_TXS, MOCK_CHAIN_ID};
     use pretty_assertions::assert_eq;
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
@@ -1577,6 +1650,8 @@ mod pi_circuit_test {
         let mut rng = ChaCha20Rng::seed_from_u64(2);
         let randomness = F::random(&mut rng);
         let rand_rpi = F::random(&mut rng);
+        let mut public_data = public_data;
+        public_data.chain_id = *MOCK_CHAIN_ID;
 
         let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
             MAX_TXS,
@@ -1609,16 +1684,13 @@ mod pi_circuit_test {
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-
         let mut public_data = PublicData::default();
-        let chain_id = 1337u64;
-        public_data.chain_id = Word::from(chain_id);
 
         let n_tx = 4;
         for i in 0..n_tx {
-            let eth_tx = eth_types::Transaction::from(&rand_tx(&mut rng, chain_id, i & 2 == 0));
-            public_data.transactions.push(eth_tx);
+            public_data
+                .transactions
+                .push(CORRECT_MOCK_TXS[i].clone().into());
         }
 
         let k = 17;

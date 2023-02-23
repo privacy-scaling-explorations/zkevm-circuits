@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{evm_circuit::util::RandomLinearCombination, table::BlockContextFieldTag};
+#[cfg(any(feature = "test", test))]
+use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
+
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -34,11 +37,6 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
     pub exp_events: Vec<ExpEvent>,
-    // TODO: Rename to `max_evm_rows`, maybe move to CircuitsParams
-    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
-    /// When 0, the EVM circuit contains as many rows for all steps + 1 row
-    /// for EndBlock.
-    pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
@@ -68,6 +66,72 @@ impl<F: Field> Block<F> {
         }
     }
 }
+
+#[cfg(feature = "test")]
+use crate::exp_circuit::OFFSET_INCREMENT;
+#[cfg(feature = "test")]
+use crate::util::log2_ceil;
+
+#[cfg(feature = "test")]
+impl<F: Field> Block<F> {
+    /// Obtains the expected Circuit degree needed in order to be able to test
+    /// the EvmCircuit with this block without needing to configure the
+    /// `ConstraintSystem`.
+    pub fn get_test_degree(&self) -> u32 {
+        let num_rows_required_for_execution_steps: usize =
+            EvmCircuit::<F>::get_num_rows_required(self);
+        let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
+        let num_rows_required_for_fixed_table: usize = detect_fixed_table_tags(self)
+            .iter()
+            .map(|tag| tag.build::<F>().count())
+            .sum();
+        let num_rows_required_for_bytecode_table: usize = self
+            .bytecodes
+            .values()
+            .map(|bytecode| bytecode.bytes.len() + 1)
+            .sum();
+        let num_rows_required_for_copy_table: usize =
+            self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
+        let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
+        let num_rows_required_for_tx_table: usize =
+            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+        let num_rows_required_for_exp_table: usize = self
+            .exp_events
+            .iter()
+            .map(|e| e.steps.len() * OFFSET_INCREMENT)
+            .sum();
+
+        const NUM_BLINDING_ROWS: usize = 64;
+
+        let rows_needed: usize = itertools::max([
+            num_rows_required_for_execution_steps,
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table,
+        ])
+        .unwrap();
+
+        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        log::debug!(
+            "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
+            copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
+            num_rows_required_for_rw_table,
+            num_rows_required_for_fixed_table,
+            num_rows_required_for_bytecode_table,
+            num_rows_required_for_copy_table,
+            num_rows_required_for_keccak_table,
+            num_rows_required_for_tx_table,
+            num_rows_required_for_exp_table
+        );
+        log::debug!("evm circuit uses k = {}, rows = {}", k, rows_needed);
+        k
+    }
+}
+
 /// Block context for execution
 #[derive(Debug, Default, Clone)]
 pub struct BlockContext {
@@ -112,12 +176,8 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
                     Value::known(F::zero()),
-                    randomness.map(|randomness| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.difficulty.to_le_bytes(),
-                            randomness,
-                        )
-                    }),
+                    randomness
+                        .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
@@ -127,22 +187,14 @@ impl BlockContext {
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
                     Value::known(F::zero()),
-                    randomness.map(|randomness| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.base_fee.to_le_bytes(),
-                            randomness,
-                        )
-                    }),
+                    randomness
+                        .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
                     Value::known(F::zero()),
-                    randomness.map(|randomness| {
-                        RandomLinearCombination::random_linear_combine(
-                            self.chain_id.to_le_bytes(),
-                            randomness,
-                        )
-                    }),
+                    randomness
+                        .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
                 ],
             ],
             {
@@ -154,12 +206,8 @@ impl BlockContext {
                         [
                             Value::known(F::from(BlockContextFieldTag::BlockHash as u64)),
                             Value::known((self.number - len_history + idx).to_scalar().unwrap()),
-                            randomness.map(|randomness| {
-                                RandomLinearCombination::random_linear_combine(
-                                    hash.to_le_bytes(),
-                                    randomness,
-                                )
-                            }),
+                            randomness
+                                .map(|randomness| rlc::value(&hash.to_le_bytes(), randomness)),
                         ]
                     })
                     .collect()
@@ -213,8 +261,7 @@ pub fn block_convert<F: Field>(
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
-        circuits_params: block.circuits_params.clone(),
-        evm_circuit_pad_to: <usize>::default(),
+        circuits_params: block.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

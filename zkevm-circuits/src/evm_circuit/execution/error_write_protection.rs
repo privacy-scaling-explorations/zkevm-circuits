@@ -171,13 +171,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::run_test_circuit;
-    use crate::evm_circuit::witness::block_convert;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode::Bytecode;
     use eth_types::evm_types::OpcodeId;
     use eth_types::geth_types::Account;
     use eth_types::{address, bytecode, Address, ToWord, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
     use mock::TestContext;
 
     // internal call test
@@ -294,9 +292,7 @@ mod test {
         } else {
             callee_bytecode.append(&bytecode! {
                 SSTORE
-                PUSH1(0)
-                PUSH1(0)
-                PUSH1(10)
+                STOP
             });
         }
 
@@ -312,7 +308,7 @@ mod test {
     }
 
     fn test_ok(caller: Account, callee: Account) {
-        let block = TestContext::<3, 1>::new(
+        let ctx = TestContext::<3, 1>::new(
             None,
             |accs| {
                 accs[0]
@@ -337,15 +333,8 @@ mod test {
             },
             |block, _tx| block.number(0xcafeu64),
         )
-        .unwrap()
-        .into();
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
+        .unwrap();
 
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(run_test_circuit(block), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 }
