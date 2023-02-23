@@ -538,7 +538,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 AccountField::CodeHash,
                 callee_code_hash,
                 callee_code_hash,
-            )?;
+            );
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {

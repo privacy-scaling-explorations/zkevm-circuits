@@ -337,10 +337,9 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
         value_prev: Word,
-    ) -> Result<(), Error> {
+    ) {
         let op = AccountOp::new(address, field, value, value_prev);
         self.push_op(step, RW::READ, op);
-        Ok(())
     }
 
     /// Push a write type [`AccountOp`] into the
