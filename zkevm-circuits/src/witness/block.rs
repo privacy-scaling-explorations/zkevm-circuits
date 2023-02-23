@@ -237,11 +237,13 @@ pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
+    let rws = RwMap::from(&block.container);
+    rws.check_value();
     Ok(Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
-        rws: RwMap::from(&block.container),
+        rws,
         txs: block
             .txs()
             .iter()
