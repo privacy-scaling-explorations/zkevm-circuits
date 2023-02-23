@@ -62,6 +62,7 @@ mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_log;
 mod error_oog_sload_sstore;
+mod error_oog_static_memory;
 mod error_precompile_failed;
 mod error_return_data_outofbound;
 mod error_stack_oog_constant;
@@ -88,6 +89,7 @@ use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
+use error_oog_static_memory::OOGStaticMemory;
 use error_precompile_failed::PrecompileFailed;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_stack_oog_constant::ErrorStackOogConstant;
@@ -272,6 +274,9 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::OutOfGas(OogError::StaticMemoryExpansion) => {
+            Some(OOGStaticMemory::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
