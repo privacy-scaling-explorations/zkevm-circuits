@@ -47,7 +47,16 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         cb.stack_pop(base.expr());
         cb.stack_pop(exponent.expr());
 
-        let exponent_byte_size = ByteSizeGadget::construct(cb, &exponent);
+        let exponent_byte_size = ByteSizeGadget::construct(
+            cb,
+            exponent
+                .cells
+                .iter()
+                .map(Expr::expr)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        );
 
         let insufficient_gas_cost = LtGadget::construct(
             cb,
