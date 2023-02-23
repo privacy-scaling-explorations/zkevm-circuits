@@ -62,10 +62,7 @@ impl Account {
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero()
-            && self.balance.is_zero()
-            && self.storage.is_empty()
-            && self.code_hash.eq(&CODE_HASH_ZERO)
+        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&CODE_HASH_ZERO)
     }
 }
 
