@@ -148,10 +148,16 @@ impl From<&ExecutionState> for ExecStateReport {
 /// costs of a particular `ColumnType` of an `ExecStateReport`
 #[derive(Debug, Clone, Default)]
 pub(crate) struct StateReportRow {
+    // Given a rigion of x columns and y rows, we have x * y cells available for computation.
     pub(crate) available_cells: usize,
+    // The cells not used in the computation in the x*y region. These are the wasted cells.
     pub(crate) unused_cells: usize,
+    // The cells used in the computation in the x*y region.
     pub(crate) used_cells: usize,
+    // The largest y within all the `CellType`.
     pub(crate) top_height: usize,
+    // If we fully utilize y, how large is the x really needed?
     pub(crate) used_columns: usize,
+    // The percentage of cells used in computation in the x * y region.
     pub(crate) utilization: f64,
 }
