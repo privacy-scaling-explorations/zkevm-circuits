@@ -157,6 +157,10 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             power_of_randomness.clone(),
         );
 
+        // annotate columns
+        rw_table.annotate_columns(meta);
+        mpt_table.annotate_columns(meta);
+
         let config = Self {
             selector,
             sort_keys,
@@ -236,6 +240,8 @@ impl<F: Field> StateCircuitConfig<F> {
 
         let mut start_state_root: Option<AssignedCell<_, F>> = None;
         let mut end_state_root: Option<AssignedCell<_, F>> = None;
+        // annotate columns
+        self.annotate_circuit_in_region(region);
 
         for (offset, (row, prev_row)) in rows.zip(prev_rows).enumerate() {
             if offset == 0 || offset + 1 >= padding_length {
@@ -405,6 +411,21 @@ impl<F: Field> StateCircuitConfig<F> {
             end_state_root: (end_state_root.cell(), end_state_root.value_field()),
         })
     }
+
+    fn annotate_circuit_in_region(&self, region: &mut Region<F>) {
+        self.rw_table.annotate_columns_in_region(region);
+        self.mpt_table.annotate_columns_in_region(region);
+        self.is_non_exist
+            .annotate_columns_in_region(region, "STATE");
+        self.lexicographic_ordering
+            .annotate_columns_in_region(region, "STATE");
+        self.sort_keys.annotate_columns_in_region(region, "STATE");
+        region.name_column(|| "STATE_selector", self.selector);
+        region.name_column(|| "STATE_not_first_access", self.not_first_access);
+        region.name_column(|| "STATE_phase2_initial_value", self.initial_value);
+        region.name_column(|| "STATE_phase2_mpt_proof_type", self.mpt_proof_type);
+        region.name_column(|| "STATE_phase2_state_root", self.state_root);
+    }
 }
 
 /// Keys for sorting the rows of the state circuit
@@ -416,6 +437,18 @@ pub struct SortKeysConfig {
     field_tag: Column<Advice>,
     storage_key: RlcConfig<N_BYTES_WORD>,
     rw_counter: MpiConfig<u32, N_LIMBS_RW_COUNTER>,
+}
+
+impl SortKeysConfig {
+    /// Annotates this config within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        self.tag.annotate_columns_in_region(region, prefix);
+        self.address.annotate_columns_in_region(region, prefix);
+        self.id.annotate_columns_in_region(region, prefix);
+        self.storage_key.annotate_columns_in_region(region, prefix);
+        self.rw_counter.annotate_columns_in_region(region, prefix);
+        region.name_column(|| format!("{}_field_tag", prefix), self.field_tag);
+    }
 }
 
 type Lookup<F> = (&'static str, Expression<F>, Expression<F>);
