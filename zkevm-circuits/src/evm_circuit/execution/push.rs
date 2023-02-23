@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         // linear combination uses little-endian, so we lookup from the LSB
         // which has index (program_counter + num_pushed), and then move left
         // (program_counter + num_pushed - idx) to lookup all 32 bytes
-        // condiionally by selectors.
+        // conditionally by selectors.
         // For PUSH2 as an example, we lookup from byte0, byte1, ..., byte31,
         // where the byte2 is actually the PUSH2 itself, and lookup are only
         // enabled for byte0 and byte1.
