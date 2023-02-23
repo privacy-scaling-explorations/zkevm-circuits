@@ -274,7 +274,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_RWS: u
 
         config
             .block_table
-            .load(&mut layouter, &block.context, block.randomness)?;
+            .load(&mut layouter, &block.context, &challenges)?;
 
         config.mpt_table.load(
             &mut layouter,

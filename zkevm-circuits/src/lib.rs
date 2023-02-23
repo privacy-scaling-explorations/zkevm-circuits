@@ -17,11 +17,13 @@
 #![deny(clippy::debug_assert_with_mut_call)]
 
 pub mod bytecode_circuit;
+mod compress_circuit;
 pub mod copy_circuit;
 pub mod evm_circuit;
 pub mod exp_circuit;
 pub mod keccak_circuit;
 pub mod pi_circuit;
+pub mod pi_circuit2;
 pub mod root_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
