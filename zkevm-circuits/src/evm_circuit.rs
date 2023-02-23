@@ -501,7 +501,7 @@ mod evm_circuit_stats {
         macro_rules! gen_report {
             ($report:expr, $($id:ident, $cols:expr), +) => {
                 $(
-                let _report = report
+                let row_report = report
                     .iter()
                     .sorted_by(|a, b| a.$id.utilization.partial_cmp(&b.$id.utilization).unwrap())
                     .rev()
@@ -509,7 +509,7 @@ mod evm_circuit_stats {
                     .map(|exec| {
                         vec![
                             format!("{:?}", exec.state),
-                            format!("{:?}", exec.$id.avaliable_cells),
+                            format!("{:?}", exec.$id.available_cells),
                             format!("{:?}", exec.$id.unused_cells),
                             format!("{:?}", exec.$id.used_cells),
                             format!("{:?}", exec.$id.top_height),
@@ -519,9 +519,9 @@ mod evm_circuit_stats {
                     })
                     .collect::<Vec<Vec<String>>>();
 
-                let table = _report.table().title(vec![
+                let table = row_report.table().title(vec![
                     format!("{:?}", stringify!($id)).cell().bold(true),
-                    format!("total_avaliable_cells").cell().bold(true),
+                    format!("total_available_cells").cell().bold(true),
                     format!("unused_cells").cell().bold(true),
                     format!("cells").cell().bold(true),
                     format!("top_height").cell().bold(true),

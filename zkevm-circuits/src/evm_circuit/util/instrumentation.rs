@@ -6,6 +6,7 @@ use halo2_proofs::arithmetic::FieldExt;
 use itertools::Itertools;
 
 type StepSize = Vec<(CellType, ColumnSize)>;
+/// Contains (width, height, num_cells)
 type ColumnSize = (usize, usize, usize);
 
 /// Instrument captures metrics during the compilation of a circuit.
@@ -48,19 +49,18 @@ impl Instrument {
             // Obtain `ExecutionState` metrics per column type.
             for (cell_type, (width, _, cells)) in sizes {
                 let unused_cells = width * top_height - cells;
-                let total_avaliable_cells = width * top_height;
-                let _utilization =
+                let total_available_cells = width * top_height;
+                let utilization =
                     ((*cells as f64) / (*width as f64 * top_height as f64) * 100f64).round();
 
-                let data_entry: StateReportRow = (
-                    total_avaliable_cells,
+                let data_entry = StateReportRow {
+                    available_cells: total_available_cells,
                     unused_cells,
-                    *cells,
+                    used_cells: *cells,
                     top_height,
-                    cells / top_height,
-                    _utilization,
-                )
-                    .into();
+                    used_columns: cells / top_height,
+                    utilization,
+                };
 
                 match cell_type {
                     CellType::StoragePhase1 => {
@@ -148,23 +148,10 @@ impl From<&ExecutionState> for ExecStateReport {
 /// costs of a particular `ColumnType` of an `ExecStateReport`
 #[derive(Debug, Clone, Default)]
 pub(crate) struct StateReportRow {
-    pub(crate) avaliable_cells: usize,
+    pub(crate) available_cells: usize,
     pub(crate) unused_cells: usize,
     pub(crate) used_cells: usize,
     pub(crate) top_height: usize,
     pub(crate) used_columns: usize,
     pub(crate) utilization: f64,
-}
-
-impl From<(usize, usize, usize, usize, usize, f64)> for StateReportRow {
-    fn from(tuple: (usize, usize, usize, usize, usize, f64)) -> Self {
-        StateReportRow {
-            avaliable_cells: tuple.0,
-            unused_cells: tuple.1,
-            used_cells: tuple.2,
-            top_height: tuple.3,
-            used_columns: tuple.4,
-            utilization: tuple.5,
-        }
-    }
 }
