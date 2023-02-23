@@ -291,13 +291,14 @@ pub(crate) mod cached {
     use halo2_proofs::halo2curves::bn256::Fr;
     use lazy_static::lazy_static;
 
-    /// Cache
     struct Cache {
         cs: ConstraintSystem<Fr>,
         config: (EvmCircuitConfig<Fr>, Challenges),
     }
 
     lazy_static! {
+        /// Cached values of the ConstraintSystem after the EVM Circuit configuration and the EVM
+        /// Circuit configuration.  These values are calculated just once.
         static ref CACHE: Cache = {
             let mut meta = ConstraintSystem::<Fr>::default();
             let config = EvmCircuit::<Fr>::configure(&mut meta);
@@ -305,6 +306,11 @@ pub(crate) mod cached {
         };
     }
 
+    /// Wrapper over the EvmCircuit that behaves the same way and also
+    /// implements the halo2 Circuit trait, but reuses the precalculated
+    /// results of the configuration which are cached in the public variable
+    /// `CACHE`.  This wrapper is useful for testing because it allows running
+    /// many unit tests while reusing the configuration step of the circuit.
     pub struct EvmCircuitCached(EvmCircuit<Fr>);
 
     impl Circuit<Fr> for EvmCircuitCached {
