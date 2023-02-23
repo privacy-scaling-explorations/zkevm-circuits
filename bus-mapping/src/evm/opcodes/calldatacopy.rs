@@ -28,16 +28,17 @@ impl Opcode for Calldatacopy {
 
             let mem_starts = memory_offset as usize;
             let mem_ends = mem_starts + length as usize;
+            let dst_slice = &mut memory.0[mem_starts..mem_ends];
+            dst_slice.fill(0);
             let data_starts = data_offset as usize;
-            let data_ends = data_starts + length as usize;
             let call_data = &call_ctx.call_data;
-            if data_ends <= call_data.len() {
-                memory.0[mem_starts..mem_ends].copy_from_slice(&call_data[data_starts..data_ends]);
-            } else if let Some(actual_length) = call_data.len().checked_sub(data_starts) {
-                let mem_code_ends = mem_starts + actual_length;
-                memory.0[mem_starts..mem_code_ends].copy_from_slice(&call_data[data_starts..]);
-                // since we already resize the memory, no need to copy 0s for
-                // out of bound bytes
+            let actual_length = std::cmp::min(
+                length,
+                call_data.len().checked_sub(data_starts).unwrap_or_default(),
+            );
+            if actual_length != 0 {
+                let src_slice = &call_data[data_starts..data_starts + actual_length];
+                dst_slice[..actual_length].copy_from_slice(src_slice);
             }
         }
 
