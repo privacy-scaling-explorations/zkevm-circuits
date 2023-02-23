@@ -1,9 +1,9 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
     step::ExecutionState,
+    table::{FixedTableTag, Lookup},
     util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-        math_gadget::LtGadget, CachedRegion, Cell,
+        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
@@ -11,15 +11,9 @@ use crate::util::Expr;
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-const N_BYTES_STACK: usize = 2;
-
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorStackGadget<F> {
     opcode: Cell<F>,
-    min_stack_pointer: Cell<F>,
-    max_stack_pointer: Cell<F>,
-    is_overflow: LtGadget<F, N_BYTES_STACK>,
-    is_underflow: LtGadget<F, N_BYTES_STACK>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
@@ -31,44 +25,22 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let min_stack_pointer = cb.query_cell();
-        let max_stack_pointer = cb.query_cell();
-
-        cb.opcode_stack_lookup(
-            opcode.expr(),
-            min_stack_pointer.expr(),
-            max_stack_pointer.expr(),
-        );
-        // Check whether current stack pointer is underflow or overflow
-
-        let is_overflow = LtGadget::construct(
-            cb,
-            cb.curr.state.stack_pointer.expr(),
-            min_stack_pointer.expr(),
-        );
-        let is_underflow = LtGadget::construct(
-            cb,
-            max_stack_pointer.expr(),
-            cb.curr.state.stack_pointer.expr(),
-        );
-        // is_overflow and is_underflow is bool ensure by LtGadget.
-
-        // constrain one of [is_underflow, is_overflow] must be true when stack error
-        // happens
-        cb.require_equal(
-            "is_underflow + is_overflow = 1",
-            is_underflow.expr() + is_overflow.expr(),
-            1.expr(),
+        cb.add_lookup(
+            "Responsible opcode lookup for invalid stack pointer",
+            Lookup::Fixed {
+                tag: FixedTableTag::ResponsibleOpcode.expr(),
+                values: [
+                    Self::EXECUTION_STATE.as_u64().expr(),
+                    opcode.expr(),
+                    cb.curr.state.stack_pointer.expr(),
+                ],
+            },
         );
 
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 2.expr());
 
         Self {
             opcode,
-            min_stack_pointer,
-            max_stack_pointer,
-            is_overflow,
-            is_underflow,
             common_error_gadget,
         }
     }
@@ -83,29 +55,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
-
-        let (min_stack, max_stack) = opcode.valid_stack_ptr_range();
-
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
-        // Inputs/Outputs
-        self.min_stack_pointer
-            .assign(region, offset, Value::known(F::from(min_stack as u64)))?;
-        self.max_stack_pointer
-            .assign(region, offset, Value::known(F::from(max_stack as u64)))?;
-
-        self.is_overflow.assign(
-            region,
-            offset,
-            F::from(step.stack_pointer as u64),
-            F::from(min_stack as u64),
-        )?;
-        self.is_underflow.assign(
-            region,
-            offset,
-            F::from(max_stack as u64),
-            F::from(step.stack_pointer as u64),
-        )?;
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
