@@ -906,7 +906,7 @@ impl<F: Field> PiCircuitConfig<F> {
 
     #[inline]
     fn circuit_txs_len(&self) -> usize {
-        1 + 3 * (TX_LEN * self.max_txs + 1) + self.max_calldata
+        3 * (TX_LEN * self.max_txs + 1) + self.max_calldata
     }
 
     fn assign_tx_empty_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
@@ -1557,6 +1557,7 @@ impl<F: Field> PiCircuitConfig<F> {
                 //      otherwise it will emit CellNotAssigned Error
                 let tx_table_len = TX_LEN * self.max_txs + 1;
                 self.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
+
                 let (origin_txs_hash_hi_cell, origin_txs_hash_lo_cell, txs_rlc_acc) =
                     self.assign_txs(&mut region, public_data, challenges, rpi_vals)?;
                 // assert two txs hash are equal
@@ -1694,7 +1695,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
         let public_data = &self.0.public_data;
-
         // assign keccak table
         config.keccak_table.dev_load(
             &mut layouter,
@@ -1711,7 +1711,6 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
 
 #[cfg(test)]
 mod pi_circuit_test {
-    use std::default;
 
     use super::*;
 
