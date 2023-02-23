@@ -410,7 +410,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         call.caller_address,
         call.address,
         call.value,
-        state.tx.gas_price * state.tx.gas,
+        Some(state.tx.gas_price * state.tx.gas),
     )?;
 
     // Get code_hash of callee

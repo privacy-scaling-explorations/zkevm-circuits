@@ -183,7 +183,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
-                //   - Write Account Balance
+                //   - Write Account Balance (Not Reversible)
                 //   - Write Account Balance
                 //   - Write Account Balance
                 //   - Read Account CodeHash
