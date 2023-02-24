@@ -85,15 +85,17 @@ impl RwMap {
                 }
             }
         }
-        log::debug!("after rw value check, err num: {}", errs.len());
-        for (idx, err_msg, row, prev_row) in errs {
-            log::debug!(
-                "err: rw idx: {}, reason: \"{}\", row: {:?}, prev_row: {:?}",
-                idx,
-                err_msg,
-                row,
-                prev_row
-            );
+        if !errs.is_empty() {
+            log::error!("after rw value check, err num: {}", errs.len());
+            for (idx, err_msg, row, prev_row) in errs {
+                log::error!(
+                    "err: rw idx: {}, reason: \"{}\", row: {:?}, prev_row: {:?}",
+                    idx,
+                    err_msg,
+                    row,
+                    prev_row
+                );
+            }
         }
     }
     /// Calculates the number of Rw::Start rows needed.
