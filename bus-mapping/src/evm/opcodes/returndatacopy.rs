@@ -29,21 +29,7 @@ impl Opcode for Returndatacopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
         let length = size.as_usize();
-        if length != 0 {
-            let mem_starts = dest_offset.as_usize();
-            let mem_ends = mem_starts + length;
-            let data_starts = offset.as_usize();
-            let data_ends = data_starts + length;
-            let minimal_length = dest_offset.as_usize() + length;
-            if data_ends <= return_data.len() {
-                memory.extend_at_least(minimal_length);
-                memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
-            } else {
-                assert_eq!(geth_steps.len(), 1);
-                // if overflows this opcode would fails current context, so
-                // there is no more steps.
-            }
-        }
+        memory.copy_from(dest_offset.as_u64(), &return_data, offset.as_u64(), length);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
