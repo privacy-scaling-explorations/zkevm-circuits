@@ -831,20 +831,22 @@ pub(crate) fn keccak<F: Field>(
         }
     }
 
-    let hash_bytes = s
-        .into_iter()
-        .take(4)
-        .map(|a| {
-            pack_with_base::<F>(&unpack(a[0]), 2)
-                .to_repr()
-                .into_iter()
-                .take(8)
-                .collect::<Vec<_>>()
-                .to_vec()
-        })
-        .collect::<Vec<_>>();
-    debug!("hash: {:x?}", &(hash_bytes[0..4].concat()));
-    debug!("data rlc: {:x?}", data_rlc);
+    if log::log_enabled!(log::Level::Debug) {
+        let hash_bytes = s
+            .into_iter()
+            .take(4)
+            .map(|a| {
+                pack_with_base::<F>(&unpack(a[0]), 2)
+                    .to_repr()
+                    .into_iter()
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .to_vec()
+            })
+            .collect::<Vec<_>>();
+        debug!("hash: {:x?}", &(hash_bytes[0..4].concat()));
+        debug!("data rlc: {:x?}", data_rlc);
+    }
 }
 
 pub(crate) fn multi_keccak<F: Field>(
@@ -876,9 +878,14 @@ pub(crate) fn multi_keccak<F: Field>(
         keccak(&mut rows, bytes, challenges);
     }
     if let Some(capacity) = capacity {
+        let padding_rows = {
+            let mut rows = Vec::new();
+            keccak(&mut rows, &[], challenges);
+            rows
+        };
         // Pad with no data hashes to the expected capacity
         while rows.len() < (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
-            keccak(&mut rows, &[], challenges);
+            rows.extend(padding_rows.clone());
         }
         // Check that we are not over capacity
         if rows.len() > (1 + capacity * (NUM_ROUNDS + 1)) * get_num_rows_per_round() {
