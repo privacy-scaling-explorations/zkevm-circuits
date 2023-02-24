@@ -471,11 +471,17 @@ mod evm_circuit_stats {
     };
     use crate::stats::print_circuit_stats_by_states;
     use crate::test_util::CircuitTestBuilder;
+    use crate::witness::block_convert;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use bus_mapping::mock::BlockData;
     use cli_table::{print_stdout, Cell, Style, Table};
+    use eth_types::geth_types::GethData;
     use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
-    use halo2_proofs::halo2curves::bn256::Fr;
     use halo2_proofs::plonk::{Circuit, ConstraintSystem};
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
     use itertools::Itertools;
+    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
+    use mock::test_ctx::helpers::tx_from_1_to_0;
     use mock::{test_ctx::TestContext, MOCK_ACCOUNTS};
 
     #[test]
@@ -617,5 +623,48 @@ mod evm_circuit_stats {
             exp_table,
             LOOKUP_CONFIG[7].1
         );
+    }
+    #[test]
+    fn variadic_size_check() {
+        let mut params = CircuitsParams::default();
+        params.max_evm_rows = 1 << 12;
+        // Empty
+        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
+            .unwrap()
+            .into();
+        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+            .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let k = block.get_test_degree();
+
+        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+        let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+        let code = bytecode! {
+            STOP
+        };
+        let block: GethData = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(code),
+            tx_from_1_to_0,
+            |b, _| b,
+        )
+        .unwrap()
+        .into();
+        let mut builder = BlockData::new_from_geth_data_with_params(block.clone(), params)
+            .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        let k = block.get_test_degree();
+        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+        let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+        assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
     }
 }
