@@ -621,6 +621,43 @@ impl<F: Field> ExecutionConfig<F> {
 
         let gadget = G::configure(&mut cb);
 
+        Self::configure_gadget_impl(
+            meta,
+            q_usable,
+            q_step,
+            num_rows_until_next_step,
+            q_step_first,
+            q_step_last,
+            step_curr,
+            step_next,
+            height_map,
+            stored_expressions_map,
+            G::NAME,
+            G::EXECUTION_STATE,
+            height,
+            cb,
+        );
+
+        gadget
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn configure_gadget_impl(
+        meta: &mut ConstraintSystem<F>,
+        q_usable: Selector,
+        q_step: Column<Advice>,
+        num_rows_until_next_step: Column<Advice>,
+        q_step_first: Selector,
+        q_step_last: Selector,
+        step_curr: &Step<F>,
+        step_next: &Step<F>,
+        height_map: &mut HashMap<ExecutionState, usize>,
+        stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        name: &'static str,
+        execution_state: ExecutionState,
+        height: usize,
+        mut cb: ConstraintBuilder<F>,
+    ) {
         // Enforce the step height for this opcode
         let num_rows_until_next_step_next = query_expression(meta, |meta| {
             meta.query_advice(num_rows_until_next_step, Rotation::next())
@@ -633,16 +670,16 @@ impl<F: Field> ExecutionConfig<F> {
 
         let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(
-            !height_map.contains_key(&G::EXECUTION_STATE),
+            !height_map.contains_key(&execution_state),
             "execution state already configured"
         );
 
-        height_map.insert(G::EXECUTION_STATE, height);
+        height_map.insert(execution_state, height);
         debug_assert!(
-            !stored_expressions_map.contains_key(&G::EXECUTION_STATE),
+            !stored_expressions_map.contains_key(&execution_state),
             "execution state already configured"
         );
-        stored_expressions_map.insert(G::EXECUTION_STATE, stored_expressions);
+        stored_expressions_map.insert(execution_state, stored_expressions);
 
         // Enforce the logic for this opcode
         let sel_step: &dyn Fn(&mut VirtualCells<F>) -> Expression<F> =
@@ -662,7 +699,7 @@ impl<F: Field> ExecutionConfig<F> {
             (sel_not_step_last, constraints.not_step_last),
         ] {
             if !constraints.is_empty() {
-                meta.create_gate(G::NAME, |meta| {
+                meta.create_gate(name, |meta| {
                     let q_usable = meta.query_selector(q_usable);
                     let selector = selector(meta);
                     constraints.into_iter().map(move |(name, constraint)| {
@@ -693,7 +730,7 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndBlock],
                         ),
                     ])
-                    .filter(move |(_, from, _)| *from == G::EXECUTION_STATE)
+                    .filter(move |(_, from, _)| *from == execution_state)
                     .map(|(_, _, to)| 1.expr() - step_next.execution_state_selector(to)),
                 )
                 .chain(
@@ -717,7 +754,7 @@ impl<F: Field> ExecutionConfig<F> {
                             vec![ExecutionState::EndTx, ExecutionState::EndBlock],
                         ),
                     ])
-                    .filter(move |(_, _, from)| !from.contains(&G::EXECUTION_STATE))
+                    .filter(move |(_, _, from)| !from.contains(&execution_state))
                     .map(|(_, to, _)| step_next.execution_state_selector([to])),
                 )
                 // Accumulate all state transition checks.
@@ -727,12 +764,10 @@ impl<F: Field> ExecutionConfig<F> {
                     q_usable.clone()
                         * q_step.clone()
                         * (1.expr() - q_step_last.clone())
-                        * step_curr.execution_state_selector([G::EXECUTION_STATE])
+                        * step_curr.execution_state_selector([execution_state])
                         * poly
                 })
         });
-
-        gadget
     }
 
     #[allow(clippy::too_many_arguments)]
