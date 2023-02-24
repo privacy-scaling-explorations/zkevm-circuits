@@ -43,7 +43,7 @@ use lazy_static::lazy_static;
 
 /// Fixed by the spec
 const TX_LEN: usize = 10;
-const BLOCK_LEN: usize = 8 + 256;
+const BLOCK_LEN: usize = 7 + 256;
 const EXTRA_LEN: usize = 2;
 const ZERO_BYTE_GAS_COST: u64 = 4;
 const NONZERO_BYTE_GAS_COST: u64 = 16;
@@ -347,27 +347,15 @@ pub struct PiCircuitConfig<F: Field> {
     /// Max number of supported calldata bytes
     max_calldata: usize,
 
-    // total rpi = block + history hashes + rlc(hash(rlp(txlist))) (keccak output)
-    block: Column<Advice>,
-    block_rlc_acc: Column<Advice>, // rlp input
-    block_rlp_len: Column<Advice>, // rlp result len(keccak len)
-    block_rlp_rlc: Column<Advice>, // keccak input
-    block_hash: Column<Advice>,    // keccak
+    rpi: Column<Advice>,
+    rpi_rlc_acc: Column<Advice>, // rlp input
     q_block_start: Selector,
     q_block_not_end: Selector,
-    q_block_rlp_table: Selector,
-    q_block_keccak_table: Selector,
-
-    // txlist
-    txs: Column<Advice>,
-    txs_rlc_acc: Column<Advice>, // rlp input
-    txs_rlp_len: Column<Advice>, // rlp result len(keccak len)
-    txs_rlp_rlc: Column<Advice>, // keccak input
-    txs_hash: Column<Advice>,    // keccak input
     q_txs_start: Selector,
     q_txs_not_end: Selector,
-    q_txs_rlp_table: Selector,
-    q_txs_keccak_table: Selector,
+
+    rpi_encoding: Column<Advice>, // rlc_acc, rlp_rlc, rlp_len, hash_hi, hash_lo
+    q_rpi_encoding: Selector,
 
     pi: Column<Instance>, // keccak_hi, keccak_lo
     // rlp_table
@@ -414,117 +402,6 @@ pub struct PiCircuitConfigArgs<F: Field> {
     pub challenges: Challenges<Expression<F>>,
 }
 
-macro_rules! format_str {
-        ($($arg:tt)*) => {{
-            let res = format!($($arg)*);
-            ::std::boxed::Box::leak(::std::boxed::Box::from(res))
-        }}
-}
-
-impl<F: Field> PiCircuitConfig<F> {
-    #[allow(clippy::too_many_arguments)]
-    fn constraint(
-        meta: &mut ConstraintSystem<F>,
-        name: &'static str,
-        q_rpi_start: Selector,
-        q_rpi_not_end: Selector,
-        rpi: Column<Advice>,
-        rpi_rlc_acc: Column<Advice>,
-        rpi_rlp_len: Column<Advice>,
-        rpi_rlp_rlc: Column<Advice>,
-        rpi_hash: Column<Advice>,
-        q_rlp_table: Selector,
-        rlp_table: [Column<Advice>; 4],
-        q_keccak_table: Selector,
-        keccak_table: KeccakTable2,
-        challenges: &Challenges<Expression<F>>,
-    ) {
-        meta.create_gate(
-            format_str!("{name}_rlc_acc_next = {name}_rlc_acc * r + {name}_next"),
-            |meta| {
-                let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-                let q_rpi_not_end = meta.query_selector(q_rpi_not_end);
-                let rpi_rlc_acc_next = meta.query_advice(rpi_rlc_acc, Rotation::next());
-                let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-                let rpi_next = meta.query_advice(rpi, Rotation::next());
-                let r = challenges.evm_word();
-
-                cb.require_equal("left=right", rpi_rlc_acc_next, rpi_rlc_acc * r + rpi_next);
-
-                cb.gate(q_rpi_not_end)
-            },
-        );
-
-        meta.create_gate(format_str!("{name}_rlc_acc[0] = {name}[0]"), |meta| {
-            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-            let q_rpi_start = meta.query_selector(q_rpi_start);
-            let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-            let rpi = meta.query_advice(rpi, Rotation::cur());
-
-            cb.require_equal("", rpi_rlc_acc, rpi);
-
-            cb.gate(q_rpi_start)
-        });
-
-        meta.lookup_any(format_str!("lookup {name} rlp"), |meta| {
-            let q_rlp_table = meta.query_selector(q_rlp_table);
-
-            let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-            let rpi_rlp_rlc = meta.query_advice(rpi_rlp_rlc, Rotation::cur());
-            let rpi_rlp_len = meta.query_advice(rpi_rlp_len, Rotation::cur());
-            vec![
-                (
-                    q_rlp_table.expr(),
-                    meta.query_advice(rlp_table[0], Rotation::cur()),
-                ),
-                (
-                    q_rlp_table.expr() * rpi_rlc_acc,
-                    meta.query_advice(rlp_table[1], Rotation::cur()),
-                ),
-                (
-                    q_rlp_table.expr() * rpi_rlp_rlc,
-                    meta.query_advice(rlp_table[2], Rotation::cur()),
-                ),
-                (
-                    q_rlp_table * rpi_rlp_len,
-                    meta.query_advice(rlp_table[3], Rotation::cur()),
-                ),
-            ]
-        });
-
-        meta.lookup_any(format_str!("lookup {name} keccak"), |meta| {
-            let q_keccak_table = meta.query_selector(q_keccak_table);
-
-            let rpi_rlp_rlc = meta.query_advice(rpi_rlp_rlc, Rotation::cur());
-            let rpi_rlp_len = meta.query_advice(rpi_rlp_len, Rotation::cur());
-            let rpi_hash_hi = meta.query_advice(rpi_hash, Rotation::cur());
-            let rpi_hash_lo = meta.query_advice(rpi_hash, Rotation::next());
-            vec![
-                (
-                    q_keccak_table.expr(),
-                    meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-                ),
-                (
-                    q_keccak_table.expr() * rpi_rlp_rlc,
-                    meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
-                ),
-                (
-                    q_keccak_table.expr() * rpi_rlp_len,
-                    meta.query_advice(keccak_table.input_len, Rotation::cur()),
-                ),
-                (
-                    q_keccak_table.expr() * rpi_hash_hi,
-                    meta.query_advice(keccak_table.output_hi, Rotation::cur()),
-                ),
-                (
-                    q_keccak_table * rpi_hash_lo,
-                    meta.query_advice(keccak_table.output_lo, Rotation::cur()),
-                ),
-            ]
-        });
-    }
-}
-
 impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
     type ConfigArgs = PiCircuitConfigArgs<F>;
 
@@ -546,27 +423,14 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_tx_calldata = meta.complex_selector();
         let q_calldata_start = meta.complex_selector();
 
-        // block
-        let block = meta.advice_column();
-        let block_rlc_acc = meta.advice_column();
-        let block_rlp_len = meta.advice_column();
-        let block_rlp_rlc = meta.advice_column();
-        let block_hash = meta.advice_column();
-        let q_block_start = meta.selector();
-        let q_block_not_end = meta.selector();
-        let q_block_rlp_table = meta.complex_selector();
-        let q_block_keccak_table = meta.complex_selector();
-
-        // txlist
-        let txs = meta.advice_column();
-        let txs_rlc_acc = meta.advice_column();
-        let txs_rlp_len = meta.advice_column();
-        let txs_rlp_rlc = meta.advice_column();
-        let txs_hash = meta.advice_column();
-        let q_txs_start = meta.selector();
-        let q_txs_not_end = meta.selector();
-        let q_txs_rlp_table = meta.complex_selector();
-        let q_txs_keccak_table = meta.complex_selector();
+        let rpi = meta.advice_column();
+        let rpi_rlc_acc = meta.advice_column();
+        let rpi_encoding = meta.advice_column();
+        let q_rpi_encoding = meta.complex_selector();
+        let q_block_start = meta.complex_selector();
+        let q_block_not_end = meta.complex_selector();
+        let q_txs_start = meta.complex_selector();
+        let q_txs_not_end = meta.complex_selector();
 
         // Tx Table
         let tx_id = tx_table.tx_id;
@@ -586,90 +450,141 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
         let pi = meta.instance_column();
 
-        meta.enable_equality(block);
-        meta.enable_equality(block_rlc_acc);
-        meta.enable_equality(block_hash);
-        meta.enable_equality(txs_rlc_acc);
-        meta.enable_equality(txs_hash);
+        meta.enable_equality(rpi);
+        meta.enable_equality(rpi_rlc_acc);
+        meta.enable_equality(rpi_encoding);
         meta.enable_equality(pi);
 
-        // block
-        Self::constraint(
-            meta,
-            "block",
-            q_block_start,
-            q_block_not_end,
-            block,
-            block_rlc_acc,
-            block_rlp_len,
-            block_rlp_rlc,
-            block_hash,
-            q_block_rlp_table,
-            rlp_table,
-            q_block_keccak_table,
-            keccak_table.clone(),
-            &challenges,
-        );
+        // rlc_acc
+        meta.create_gate("rpi_rlc_acc_next = rpi_rlc_acc * r + rpi_next", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+            let q_block_not_end = meta.query_selector(q_block_not_end);
+            let q_txs_not_end = meta.query_selector(q_txs_not_end);
+            let rpi_rlc_acc_next = meta.query_advice(rpi_rlc_acc, Rotation::next());
+            let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            let rpi_next = meta.query_advice(rpi, Rotation::next());
+            let r = challenges.evm_word();
 
-        // txs
-        Self::constraint(
-            meta,
-            "txs",
-            q_txs_start,
-            q_txs_not_end,
-            txs,
-            txs_rlc_acc,
-            txs_rlp_len,
-            txs_rlp_rlc,
-            txs_hash,
-            q_txs_rlp_table,
-            rlp_table,
-            q_txs_keccak_table,
-            keccak_table.clone(),
-            &challenges,
-        );
+            cb.condition(or::expr([q_block_not_end, q_txs_not_end]), |cb| {
+                cb.require_equal("left=right", rpi_rlc_acc_next, rpi_rlc_acc * r + rpi_next);
+            });
+
+            cb.gate(1.expr())
+        });
+
+        meta.create_gate("rpi_rlc_acc[0] = rpi[0]", |meta| {
+            let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
+            let q_block_start = meta.query_selector(q_block_start);
+            let q_txs_start = meta.query_selector(q_txs_start);
+            let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
+            let rpi = meta.query_advice(rpi, Rotation::cur());
+
+            cb.condition(or::expr([q_block_start, q_txs_start]), |cb| {
+                cb.require_equal("", rpi_rlc_acc, rpi);
+            });
+
+            cb.gate(1.expr())
+        });
+
+        meta.lookup_any("lookup rlp", |meta| {
+            let q_rpi_encoding = meta.query_selector(q_rpi_encoding);
+
+            let rpi_rlc_acc = meta.query_advice(rpi_encoding, Rotation(0));
+            let rpi_rlp_rlc = meta.query_advice(rpi_encoding, Rotation(1));
+            let rpi_rlp_len = meta.query_advice(rpi_encoding, Rotation(2));
+            vec![
+                (
+                    q_rpi_encoding.expr(),
+                    meta.query_advice(rlp_table[0], Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * rpi_rlc_acc,
+                    meta.query_advice(rlp_table[1], Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * rpi_rlp_rlc,
+                    meta.query_advice(rlp_table[2], Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding * rpi_rlp_len,
+                    meta.query_advice(rlp_table[3], Rotation::cur()),
+                ),
+            ]
+        });
+
+        meta.lookup_any("lookup keccak", |meta| {
+            let q_rpi_encoding = meta.query_selector(q_rpi_encoding);
+
+            let rpi_rlp_rlc = meta.query_advice(rpi_encoding, Rotation(1));
+            let rpi_rlp_len = meta.query_advice(rpi_encoding, Rotation(2));
+            let rpi_hash_hi = meta.query_advice(rpi_encoding, Rotation(3));
+            let rpi_hash_lo = meta.query_advice(rpi_encoding, Rotation(4));
+            vec![
+                (
+                    q_rpi_encoding.expr(),
+                    meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * rpi_rlp_rlc,
+                    meta.query_advice(keccak_table.input_rlc, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * rpi_rlp_len,
+                    meta.query_advice(keccak_table.input_len, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding.expr() * rpi_hash_hi,
+                    meta.query_advice(keccak_table.output_hi, Rotation::cur()),
+                ),
+                (
+                    q_rpi_encoding * rpi_hash_lo,
+                    meta.query_advice(keccak_table.output_lo, Rotation::cur()),
+                ),
+            ]
+        });
 
         // 0.2 Block table -> value column match with raw_public_inputs at expected
         // offset
         meta.create_gate("block_table[i] = block[i]", |meta| {
             let q_block_table = meta.query_selector(q_block_table);
             let block_value = meta.query_advice(block_table.value, Rotation::cur());
-            let rpi_block_value = meta.query_advice(block, Rotation::cur());
+            let rpi_block_value = meta.query_advice(rpi, Rotation::cur());
             vec![q_block_table * (block_value - rpi_block_value)]
         });
 
+        let offset = BLOCK_LEN + 1 + EXTRA_LEN + 3;
         let tx_table_len = max_txs * TX_LEN + 1;
 
         //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
         // at expected offset
-        meta.create_gate("tx_table.tx_id[i] == txs[i]", |meta| {
+        meta.create_gate("tx_table.tx_id[i] == rpi[i]", |meta| {
             // row.q_tx_table * row.tx_table.tx_id
             // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
             let q_tx_table = meta.query_selector(q_tx_table);
             let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
-            let rpi_tx_id = meta.query_advice(txs, Rotation::cur());
+            let rpi_tx_id = meta.query_advice(rpi, Rotation(offset as i32));
 
             vec![q_tx_table * (tx_id - rpi_tx_id)]
         });
 
-        meta.create_gate("tx_table.index[i] == txs[tx_table_len + i]", |meta| {
+        meta.create_gate("tx_table.index[i] == rpi[tx_table_len + i]", |meta| {
             // row.q_tx_table * row.tx_table.tx_index
             // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
             let q_tx_table = meta.query_selector(q_tx_table);
             let tx_index = meta.query_advice(tx_table.index, Rotation::cur());
-            let rpi_tx_index = meta.query_advice(txs, Rotation(tx_table_len as i32));
+            let rpi_tx_index = meta.query_advice(rpi, Rotation((offset + tx_table_len) as i32));
 
             vec![q_tx_table * (tx_index - rpi_tx_index)]
         });
 
-        meta.create_gate("tx_table.tx_value[i] == txs[2* tx_table_len + i]", |meta| {
+        meta.create_gate("tx_table.tx_value[i] == rpi[2* tx_table_len + i]", |meta| {
             // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
             // == (row.q_tx_calldata | row.q_tx_table) *
             // row_offset_tx_table_tx_value.raw_public_inputs
             let q_tx_table = meta.query_selector(q_tx_table);
             let tx_value = meta.query_advice(tx_value, Rotation::cur());
             let q_tx_calldata = meta.query_selector(q_tx_calldata);
-            let rpi_tx_value = meta.query_advice(txs, Rotation((2 * tx_table_len) as i32));
+            let rpi_tx_value = meta.query_advice(rpi, Rotation((offset + 2 * tx_table_len) as i32));
 
             vec![or::expr([q_tx_table, q_tx_calldata]) * (tx_value - rpi_tx_value)]
         });
@@ -867,27 +782,14 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             is_final,
             pi,
 
-            // rpi
-            block,
-            block_rlc_acc,
-            block_rlp_len,
-            block_rlp_rlc,
-            block_hash,
+            rpi,
+            rpi_rlc_acc,
+            rpi_encoding,
+            q_rpi_encoding,
             q_block_start,
             q_block_not_end,
-            q_block_rlp_table,
-            q_block_keccak_table,
-
-            // txlist
-            txs,
-            txs_rlc_acc,
-            txs_rlp_len,
-            txs_rlp_rlc,
-            txs_hash,
             q_txs_start,
             q_txs_not_end,
-            q_txs_rlp_table,
-            q_txs_keccak_table,
 
             rlp_table,
             keccak_table,
@@ -897,10 +799,13 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 }
 
 impl<F: Field> PiCircuitConfig<F> {
+    /// Return the number of rows in the circuit
     #[inline]
     fn circuit_block_len(&self) -> usize {
-        // +1 empty row in block table, hash_hi, hash_lo
+        // +1 empty row in block table
+        // +3 prover, txs_hash_hi, txs_hash_lo
         // EXTRA_LEN: state_root, prev_root
+        // total = 269
         BLOCK_LEN + 1 + EXTRA_LEN + 3
     }
 
@@ -1020,29 +925,35 @@ impl<F: Field> PiCircuitConfig<F> {
         // Assign vals to raw_public_inputs column
         let tx_table_len = TX_LEN * self.max_txs + 1;
 
-        let index_offset = tx_table_len;
+        let id_offset = self.circuit_block_len();
+        let index_offset = id_offset + tx_table_len;
         let value_offset = index_offset + tx_table_len;
 
-        region.assign_advice(|| "txlist.tx_id", self.txs, offset, || Value::known(tx_id))?;
+        region.assign_advice(
+            || "txlist.tx_id",
+            self.rpi,
+            offset + id_offset,
+            || Value::known(tx_id),
+        )?;
 
         region.assign_advice(
             || "txlist.tx_index",
-            self.txs,
+            self.rpi,
             offset + index_offset,
             || Value::known(index),
         )?;
 
         region.assign_advice(
             || "txlist.tx_value",
-            self.txs,
+            self.rpi,
             offset + value_offset,
             || tx_value,
         )?;
 
         // Add copy to vec
         rpi_vals[offset] = Value::known(tx_id);
-        rpi_vals[offset + index_offset] = Value::known(index);
-        rpi_vals[offset + value_offset] = tx_value;
+        rpi_vals[offset + tx_table_len] = Value::known(index);
+        rpi_vals[offset + 2 * tx_table_len] = tx_value;
 
         Ok(())
     }
@@ -1137,8 +1048,8 @@ impl<F: Field> PiCircuitConfig<F> {
 
         region.assign_advice(
             || "raw_pi.tx_value",
-            self.txs,
-            offset + value_offset,
+            self.rpi,
+            offset + value_offset + self.circuit_block_len(),
             || Value::known(tx_value),
         )?;
 
@@ -1169,108 +1080,113 @@ impl<F: Field> PiCircuitConfig<F> {
         let randomness = challenges.evm_word();
         self.q_block_start.enable(region, 0)?;
         let mut rlc_acc = Value::known(F::zero());
-        let mut offset = 0;
-        for (name, val) in [
-            ("zero", Value::known(F::zero())),
+        let mut cells = vec![];
+        for (offset, (name, val, not_in_table)) in [
+            ("zero", Value::known(F::zero()), false),
             (
                 "coinbase",
                 Value::known(block_values.coinbase.to_scalar().unwrap()),
+                false,
             ),
-            ("gas_limit", Value::known(F::from(block_values.gas_limit))),
-            ("number", Value::known(F::from(block_values.number))),
-            ("timestamp", Value::known(F::from(block_values.timestamp))),
+            (
+                "gas_limit",
+                Value::known(F::from(block_values.gas_limit)),
+                false,
+            ),
+            ("number", Value::known(F::from(block_values.number)), false),
+            (
+                "timestamp",
+                Value::known(F::from(block_values.timestamp)),
+                false,
+            ),
             (
                 "difficulty",
                 randomness.map(|randomness| rlc(block_values.difficulty.to_le_bytes(), randomness)),
+                false,
             ),
             (
                 "base_fee",
                 randomness.map(|randomness| rlc(block_values.base_fee.to_le_bytes(), randomness)),
+                false,
             ),
-            ("chain_id", Value::known(F::from(block_values.chain_id))),
+            (
+                "chain_id",
+                Value::known(F::from(block_values.chain_id)),
+                false,
+            ),
         ]
         .into_iter()
-        .chain(
-            block_values
-                .history_hashes
-                .iter()
-                .map(|h| ("prev_hash", randomness.map(|v| rlc(h.to_fixed_bytes(), v)))),
-        )
+        .chain(block_values.history_hashes.iter().map(|h| {
+            (
+                "prev_hash",
+                randomness.map(|v| rlc(h.to_fixed_bytes(), v)),
+                false,
+            )
+        }))
         .chain([
             (
                 "state.root",
                 randomness.map(|v| rlc(extra_values.state_root.to_fixed_bytes(), v)),
+                false,
             ),
             (
                 "parent_block.hash",
                 randomness.map(|v| rlc(extra_values.prev_state_root.to_fixed_bytes(), v)),
+                false,
             ),
-        ]) {
-            self.q_block_table.enable(region, offset)?;
-            self.q_block_not_end.enable(region, offset)?;
-            region.assign_advice(|| name, self.block, offset, || val)?;
+            (
+                "prover",
+                Value::known(public_data.prover.to_scalar().unwrap()),
+                true,
+            ),
+            ("txs_hash_hi", Value::known(public_data.txs_hash_hi), true),
+            ("txs_hash_lo", Value::known(public_data.txs_hash_lo), true),
+        ])
+        .enumerate()
+        {
+            if offset < self.circuit_block_len() - 1 {
+                self.q_block_not_end.enable(region, offset)?;
+            }
+            let val_cell = region.assign_advice(|| name, self.rpi, offset, || val)?;
             rlc_acc = rlc_acc * randomness + val;
-            region.assign_advice(|| name, self.block_rlc_acc, offset, || rlc_acc)?;
-            region.assign_advice(|| name, self.block_table.value, offset, || val)?;
-            offset += 1;
+            region.assign_advice(|| name, self.rpi_rlc_acc, offset, || rlc_acc)?;
+            if not_in_table {
+                cells.push(val_cell);
+            } else {
+                self.q_block_table.enable(region, offset)?;
+                region.assign_advice(|| name, self.block_table.value, offset, || val)?;
+            }
         }
 
-        // prover
-        self.q_block_not_end.enable(region, offset)?;
-        let val: Value<F> = Value::known(public_data.prover.to_scalar().unwrap());
-        region.assign_advice(|| "prover", self.block, offset, || val)?;
-        rlc_acc = rlc_acc * randomness + val;
-        region.assign_advice(|| "prover", self.block_rlc_acc, offset, || rlc_acc)?;
+        let mut offset = 0;
+        self.q_rpi_encoding.enable(region, offset)?;
+        region.assign_advice(|| "block_rlc_acc", self.rpi_encoding, offset, || rlc_acc)?;
         offset += 1;
-        // last two rows hash_hi, hash_lo
-        // hi
         let block_rlp_rlc = public_data.get_block_rlp_rlc(challenges);
-        self.q_block_not_end.enable(region, offset)?;
-        self.q_block_rlp_table.enable(region, offset)?;
-        self.q_block_keccak_table.enable(region, offset)?;
-        let txs_hash_hi_cell = region.assign_advice(
-            || "txs_hash_hi",
-            self.block,
-            offset,
-            || Value::known(public_data.txs_hash_hi),
-        )?;
-        rlc_acc = rlc_acc * randomness + Value::known(public_data.txs_hash_hi);
-        region.assign_advice(|| "txs_hash_hi", self.block_rlc_acc, offset, || rlc_acc)?;
-        let block_rlc_acc = rlc_acc;
-        // assign rlp and hash
         region.assign_advice(
             || "block_rlp_rlc",
-            self.block_rlp_rlc,
+            self.rpi_encoding,
             offset,
             || block_rlp_rlc,
         )?;
+        offset += 1;
         region.assign_advice(
             || "block_rlp_len",
-            self.block_rlp_len,
+            self.rpi_encoding,
             offset,
             || Value::known(F::from(public_data.block_rlp.len() as u64)),
         )?;
+        offset += 1;
         let block_hash_hi_cell = region.assign_advice(
-            || "block_hash",
-            self.block_hash,
+            || "block_hash_hi",
+            self.rpi_encoding,
             offset,
             || Value::known(public_data.block_hash_hi),
         )?;
-
-        // lo
         offset += 1;
-        let txs_hash_lo_cell = region.assign_advice(
-            || "txs_hash_lo",
-            self.block,
-            offset,
-            || Value::known(public_data.txs_hash_lo),
-        )?;
-        rlc_acc = rlc_acc * randomness + Value::known(public_data.txs_hash_lo);
-        region.assign_advice(|| "txs_hash_lo", self.block_rlc_acc, offset, || rlc_acc)?;
-
         let block_hash_lo_cell = region.assign_advice(
-            || "block_hash",
-            self.block_hash,
+            || "block_hash_lo",
+            self.rpi_encoding,
             offset,
             || Value::known(public_data.block_hash_lo),
         )?;
@@ -1278,9 +1194,9 @@ impl<F: Field> PiCircuitConfig<F> {
         Ok((
             block_hash_hi_cell,
             block_hash_lo_cell,
-            txs_hash_hi_cell,
-            txs_hash_lo_cell,
-            block_rlc_acc,
+            cells[1].clone(),
+            cells[2].clone(),
+            rlc_acc,
         ))
     }
 
@@ -1300,37 +1216,47 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut rlc_acc = Value::known(F::zero());
         for (offset, val) in rpi_vals.iter().enumerate() {
             if offset != last {
-                self.q_txs_not_end.enable(region, offset)?;
+                self.q_txs_not_end
+                    .enable(region, offset + self.circuit_block_len())?;
             }
             rlc_acc = rlc_acc * r + val;
-            region.assign_advice(|| "txs_rlc_acc", self.txs_rlc_acc, offset, || rlc_acc)?;
+            region.assign_advice(
+                || "txs_rlc_acc",
+                self.rpi_rlc_acc,
+                offset + self.circuit_block_len(),
+                || rlc_acc,
+            )?;
         }
 
-        // last row
+        let mut offset = 5;
+        self.q_rpi_encoding.enable(region, offset)?;
+        region.assign_advice(|| "txs_rlc_acc", self.rpi_encoding, offset, || rlc_acc)?;
+        offset += 1;
         let txs_rlp_rlc = public_data.get_txs_rlp_rlc(challenges);
-        self.q_txs_rlp_table.enable(region, last)?;
-        self.q_txs_keccak_table.enable(region, last)?;
-        region.assign_advice(|| "txs_rlp_rlc", self.txs_rlp_rlc, last, || txs_rlp_rlc)?;
+        region.assign_advice(|| "txs_rlp_rlc", self.rpi_encoding, offset, || txs_rlp_rlc)?;
+        offset += 1;
         region.assign_advice(
             || "txs_rlp_len",
-            self.txs_rlp_len,
-            last,
+            self.rpi_encoding,
+            offset,
             || Value::known(F::from(public_data.txs_rlp.len() as u64)),
         )?;
-        let hash_hi_cell = region.assign_advice(
-            || "txs_hash",
-            self.txs_hash,
-            last,
+        offset += 1;
+        let txs_hash_hi_cell = region.assign_advice(
+            || "txs_hash_hi",
+            self.rpi_encoding,
+            offset,
             || Value::known(public_data.txs_hash_hi),
         )?;
-
-        let hash_lo_cell = region.assign_advice(
-            || "txs_hash",
-            self.txs_hash,
-            last + 1,
+        offset += 1;
+        let txs_hash_lo_cell = region.assign_advice(
+            || "txs_hash_lo",
+            self.rpi_encoding,
+            offset,
             || Value::known(public_data.txs_hash_lo),
         )?;
-        Ok((hash_hi_cell, hash_lo_cell, rlc_acc))
+
+        Ok((txs_hash_hi_cell, txs_hash_lo_cell, rlc_acc))
     }
 
     fn assign_rlp_table(
