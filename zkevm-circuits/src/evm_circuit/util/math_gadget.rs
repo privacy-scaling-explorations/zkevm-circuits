@@ -5,6 +5,7 @@ use halo2_proofs::plonk::Expression;
 mod abs_word;
 mod add_words;
 mod batched_is_zero;
+mod binary_number;
 mod byte_size;
 mod cmp_words;
 mod comparison;
@@ -26,7 +27,6 @@ mod test_util;
 
 pub(crate) use abs_word::AbsWordGadget;
 pub(crate) use add_words::AddWordsGadget;
-pub use batched_is_zero::BatchedIsZeroGadget;
 pub(crate) use byte_size::ByteSizeGadget;
 pub(crate) use cmp_words::CmpWordsGadget;
 pub(crate) use comparison::ComparisonGadget;
@@ -42,7 +42,6 @@ pub(crate) use mul_add_words512::MulAddWords512Gadget;
 pub(crate) use mul_word_u64::MulWordByU64Gadget;
 pub(crate) use pair_select::PairSelectGadget;
 pub(crate) use range_check::RangeCheckGadget;
-#[allow(unused_imports)]
 pub(crate) use rlp::ContractCreateGadget;
 
 // This function generates a Lagrange polynomial in the range [start, end) which

@@ -4,6 +4,7 @@ use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
 use bus_mapping::mock::BlockData;
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
 use ethers_core::k256::ecdsa::SigningKey;
+use ethers_core::types::transaction::eip2718::TypedTransaction;
 use ethers_core::types::TransactionRequest;
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
@@ -119,8 +120,9 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     if let Some(to) = st.to {
         tx = tx.to(to);
     }
+    let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx.into());
+    let sig = wallet.sign_transaction_sync(&tx);
 
     (
         st.id,
@@ -222,6 +224,8 @@ pub fn run_test(
             r: tx.r,
             s: tx.s,
             v: U64::from(tx.v),
+            block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
+            chain_id: Some(trace_config.chain_id),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -239,7 +243,10 @@ pub fn run_test(
 
     let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
     let mut wallets = HashMap::new();
-    wallets.insert(wallet.address(), wallet.with_chain_id(1u64));
+    wallets.insert(
+        wallet.address(),
+        wallet.with_chain_id(trace_config.chain_id.as_u64()),
+    );
 
     // process the transaction
     let mut geth_data = eth_types::geth_types::GethData {
@@ -261,7 +268,7 @@ pub fn run_test(
             max_copy_rows: 55000,
             max_evm_rows: 0,
             max_exp_steps: 5000,
-            keccak_padding: None,
+            max_keccak_rows: 0,
         };
         let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
@@ -286,7 +293,7 @@ pub fn run_test(
             max_exp_steps: 256,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
         };
         let (k, circuit, instance, _builder) =
             SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)

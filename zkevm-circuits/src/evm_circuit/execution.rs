@@ -4,7 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
-    util::{CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
     evm_circuit::{
@@ -64,11 +64,13 @@ mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
+mod error_write_protection;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -133,10 +135,12 @@ use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
+use error_write_protection::ErrorWriteProtectionGadget;
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
@@ -210,6 +214,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
@@ -276,10 +281,12 @@ pub(crate) struct ExecutionConfig<F> {
     // error gadgets
     error_oog_call: ErrorOOGCallGadget<F>,
     error_oog_constant: ErrorOOGConstantGadget<F>,
+    error_oog_exp: ErrorOOGExpGadget<F>,
     error_oog_sload_sstore: ErrorOOGSloadSstoreGadget<F>,
     error_oog_static_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasStaticMemoryExpansion }>,
     error_stack: ErrorStackGadget<F>,
+    error_write_protection: ErrorWriteProtectionGadget<F>,
     error_oog_dynamic_memory_gadget:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasDynamicMemoryExpansion }>,
     error_oog_log: ErrorOOGLogGadget<F>,
@@ -287,7 +294,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_account_access: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>,
     error_oog_sha3: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>,
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
-    error_oog_exp: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXP }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
     error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
@@ -295,7 +301,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
-    error_write_protection: DummyGadget<F, 0, 0, { ExecutionState::ErrorWriteProtection }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
     error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
@@ -317,6 +322,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
     ) -> Self {
+        let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
         let constants = meta.fixed_column();
@@ -399,6 +405,14 @@ impl<F: Field> ExecutionConfig<F> {
                     1.expr(),
                 )
             });
+            // For every step, is_create and is_root are boolean.
+            cb.condition(q_step.clone(), |cb| {
+                cb.require_boolean(
+                    "step.is_create is boolean",
+                    step_curr.state.is_create.expr(),
+                );
+                cb.require_boolean("step.is_root is boolean", step_curr.state.is_root.expr());
+            });
             // q_step needs to be enabled on the last row
             cb.condition(q_step_last, |cb| {
                 cb.require_equal("q_step == 1", q_step.clone(), 1.expr());
@@ -428,7 +442,6 @@ impl<F: Field> ExecutionConfig<F> {
 
         let mut stored_expressions_map = HashMap::new();
 
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -441,9 +454,9 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_last,
                     &challenges,
                     &step_curr,
-                    &step_next,
                     &mut height_map,
                     &mut stored_expressions_map,
+                    &mut instrument,
                 )
             };
         }
@@ -550,6 +563,7 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             height_map,
             stored_expressions_map,
+            instrument,
         };
 
         Self::configure_lookup(
@@ -569,6 +583,10 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
+    pub(crate) fn instrument(&self) -> &Instrument {
+        &self.instrument
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -580,16 +598,17 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
         step_curr: &Step<F>,
-        step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
-                step_next.clone(),
+                dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
@@ -618,6 +637,8 @@ impl<F: Field> ExecutionConfig<F> {
             num_rows_until_next_step_next,
             (height - 1).expr(),
         );
+
+        instrument.on_gadget_built(G::EXECUTION_STATE, &cb);
 
         let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(

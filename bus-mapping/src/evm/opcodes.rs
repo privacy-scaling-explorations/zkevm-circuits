@@ -4,7 +4,8 @@ use crate::{
     error::{ExecError, OogError},
     evm::OpcodeId,
     operation::{
-        AccountField, CallContextField, TxAccessListAccountOp, TxReceiptField, TxRefundOp, RW,
+        AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
+        TxRefundOp, RW,
     },
     Error,
 };
@@ -13,6 +14,7 @@ use eth_types::{
     evm_types::{GasCost, MAX_REFUND_QUOTIENT_OF_GAS_USED},
     evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
+use ethers_core::utils::get_contract_address;
 use keccak256::EMPTY_HASH;
 
 #[cfg(any(feature = "test", test))]
@@ -55,10 +57,12 @@ mod swap;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
+mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_stack_oog_constant;
+mod error_write_protection;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -79,10 +83,12 @@ use dup::Dup;
 use error_invalid_jump::InvalidJump;
 use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
+use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_stack_oog_constant::ErrorStackOogConstant;
+use error_write_protection::ErrorWriteProtection;
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -269,12 +275,14 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
 
         // more future errors place here
@@ -404,20 +412,38 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         call.caller_address,
         call.address,
         call.value,
-        state.tx.gas_price * state.tx.gas,
+        Some(state.tx.gas_price * state.tx.gas),
     )?;
 
     // Get code_hash of callee
-    let callee_code_hash = call.code_hash;
-    let callee_exists = !state.sdb.get_account(&call.address).1.is_empty();
-    let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
+    let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_exists = !callee_account.is_empty();
+    let (callee_code_hash, is_empty_code_hash) = if callee_exists {
         (
-            callee_code_hash.to_word(),
-            callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            call.code_hash.to_word(),
+            call.code_hash.to_fixed_bytes() == *EMPTY_HASH,
         )
     } else {
         (Word::zero(), true)
     };
+
+    // In case of contract creation we wish to verify the correctness of the
+    // contract's address (callee). This address is defined as:
+    //
+    // Keccak256(RLP([tx_caller, tx_nonce]))[12:]
+    //
+    // We feed the RLP-encoded bytes to the block's SHA3 inputs, which gets assigned
+    // to the Keccak circuit, so that the BeginTxGadget can do a lookup to the
+    // Keccak table and verify the contract address.
+    if state.tx.is_create() {
+        state.block.sha3_inputs.push({
+            let mut stream = ethers_core::utils::rlp::RlpStream::new();
+            stream.begin_list(2);
+            stream.append(&caller_address);
+            stream.append(&nonce_prev);
+            stream.out().to_vec()
+        });
+    }
 
     // There are 4 branches from here.
     match (
@@ -427,13 +453,26 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     ) {
         // 1. Creation transaction.
         (true, _, _) => {
+            state.push_op_reversible(
+                &mut exec_step,
+                RW::WRITE,
+                AccountOp {
+                    address: call.address,
+                    field: AccountField::Nonce,
+                    value: 1.into(),
+                    value_prev: 0.into(),
+                },
+            )?;
             for (field, value) in [
                 (CallContextField::Depth, call.depth.into()),
                 (
                     CallContextField::CallerAddress,
                     call.caller_address.to_word(),
                 ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CalleeAddress,
+                    get_contract_address(caller_address, nonce_prev).to_word(),
+                ),
                 (
                     CallContextField::CallDataOffset,
                     call.call_data_offset.into(),
@@ -465,9 +504,9 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 &mut exec_step,
                 call.address,
                 AccountField::CodeHash,
-                callee_code_hash_word,
-                callee_code_hash_word,
-            )?;
+                callee_code_hash,
+                callee_code_hash,
+            );
 
             // 3. Call to account with empty code.
             if is_empty_code_hash {
@@ -497,7 +536,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 0.into()),
-                (CallContextField::CodeHash, callee_code_hash_word),
+                (CallContextField::CodeHash, callee_code_hash),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }

@@ -335,10 +335,9 @@ impl<'a> CircuitInputStateRef<'a> {
         field: AccountField,
         value: Word,
         value_prev: Word,
-    ) -> Result<(), Error> {
+    ) {
         let op = AccountOp::new(address, field, value, value_prev);
         self.push_op(step, RW::READ, op);
-        Ok(())
     }
 
     /// Push a write type [`AccountOp`] into the
@@ -461,21 +460,55 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
-    /// balance by `value`, with `sender` being extraly charged with `fee`.
+    /// balance by `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
         value: Word,
-        fee: Word,
+        fee: Option<Word>,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let sender_balance_prev = sender_account.balance;
-        let sender_balance = sender_account.balance - value - fee;
+        let mut sender_balance_prev = sender_account.balance;
+        debug_assert!(
+            sender_account.balance >= value + fee.unwrap_or_default(),
+            "invalid amount balance {:?} value {:?} fee {:?}",
+            sender_balance_prev,
+            value,
+            fee
+        );
+        if let Some(fee) = fee {
+            let sender_balance = sender_balance_prev - fee;
+            log::trace!(
+                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
+                sender,
+                sender_balance_prev,
+                sender_balance
+            );
+            self.push_op(
+                step,
+                RW::WRITE,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            );
+            sender_balance_prev = sender_balance;
+        }
+        let sender_balance = sender_balance_prev - value;
+        log::trace!(
+            "sender balance update with value: {:?} {:?}->{:?}",
+            sender,
+            sender_balance_prev,
+            sender_balance
+        );
         self.push_op_reversible(
             step,
             RW::WRITE,
@@ -512,7 +545,7 @@ impl<'a> CircuitInputStateRef<'a> {
         receiver: Address,
         value: Word,
     ) -> Result<(), Error> {
-        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
+        self.transfer_with_fee(step, sender, receiver, value, None)
     }
 
     /// Fetch and return code for the given code hash from the code DB.
