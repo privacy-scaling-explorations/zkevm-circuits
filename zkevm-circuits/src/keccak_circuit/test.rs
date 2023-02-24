@@ -4,7 +4,7 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 
 fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
-    let circuit = KeccakCircuit::new(Some(2usize.pow(k)), inputs);
+    let circuit = KeccakCircuit::new(2usize.pow(k), inputs);
 
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
     let verify_result = prover.verify();

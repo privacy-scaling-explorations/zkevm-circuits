@@ -4,7 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
-    util::{CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
 };
 use crate::{
     evm_circuit::{
@@ -214,6 +214,7 @@ pub(crate) struct ExecutionConfig<F> {
     step: Step<F>,
     pub(crate) height_map: HashMap<ExecutionState, usize>,
     stored_expressions_map: HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+    instrument: Instrument,
     // internal state gadgets
     begin_tx_gadget: BeginTxGadget<F>,
     end_block_gadget: EndBlockGadget<F>,
@@ -321,6 +322,7 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
     ) -> Self {
+        let mut instrument = Instrument::default();
         let q_usable = meta.complex_selector();
         let q_step = meta.advice_column();
         let constants = meta.fixed_column();
@@ -440,7 +442,6 @@ impl<F: Field> ExecutionConfig<F> {
 
         let mut stored_expressions_map = HashMap::new();
 
-        let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         macro_rules! configure_gadget {
             () => {
                 Self::configure_gadget(
@@ -453,9 +454,9 @@ impl<F: Field> ExecutionConfig<F> {
                     q_step_last,
                     &challenges,
                     &step_curr,
-                    &step_next,
                     &mut height_map,
                     &mut stored_expressions_map,
+                    &mut instrument,
                 )
             };
         }
@@ -562,6 +563,7 @@ impl<F: Field> ExecutionConfig<F> {
             step: step_curr,
             height_map,
             stored_expressions_map,
+            instrument,
         };
 
         Self::configure_lookup(
@@ -581,6 +583,10 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
+    pub(crate) fn instrument(&self) -> &Instrument {
+        &self.instrument
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget<G: ExecutionGadget<F>>(
         meta: &mut ConstraintSystem<F>,
@@ -592,16 +598,17 @@ impl<F: Field> ExecutionConfig<F> {
         q_step_last: Selector,
         challenges: &Challenges<Expression<F>>,
         step_curr: &Step<F>,
-        step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        instrument: &mut Instrument,
     ) -> G {
         // Configure the gadget with the max height first so we can find out the actual
         // height
         let height = {
+            let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
             let mut cb = ConstraintBuilder::new(
                 step_curr.clone(),
-                step_next.clone(),
+                dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
@@ -632,6 +639,7 @@ impl<F: Field> ExecutionConfig<F> {
             step_next,
             height_map,
             stored_expressions_map,
+            instrument,
             G::NAME,
             G::EXECUTION_STATE,
             height,
@@ -653,6 +661,7 @@ impl<F: Field> ExecutionConfig<F> {
         step_next: &Step<F>,
         height_map: &mut HashMap<ExecutionState, usize>,
         stored_expressions_map: &mut HashMap<ExecutionState, Vec<StoredExpression<F>>>,
+        instrument: &mut Instrument,
         name: &'static str,
         execution_state: ExecutionState,
         height: usize,
@@ -667,6 +676,8 @@ impl<F: Field> ExecutionConfig<F> {
             num_rows_until_next_step_next,
             (height - 1).expr(),
         );
+
+        instrument.on_gadget_built(execution_state, &cb);
 
         let (constraints, stored_expressions, _) = cb.build();
         debug_assert!(
@@ -1354,10 +1365,10 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        let rlc_assignments: BTreeSet<_> = block
-            .rws
-            .table_assignments()
+        let rlc_assignments: BTreeSet<_> = step
+            .rw_indices
             .iter()
+            .map(|rw_idx| block.rws[*rw_idx])
             .map(|rw| {
                 rw.table_assignment_aux(evm_randomness)
                     .rlc(lookup_randomness)
