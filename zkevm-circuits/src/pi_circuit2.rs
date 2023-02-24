@@ -349,10 +349,8 @@ pub struct PiCircuitConfig<F: Field> {
 
     rpi: Column<Advice>,
     rpi_rlc_acc: Column<Advice>, // rlp input
-    q_block_start: Selector,
-    q_block_not_end: Selector,
-    q_txs_start: Selector,
-    q_txs_not_end: Selector,
+    q_start: Selector,
+    q_not_end: Selector,
 
     rpi_encoding: Column<Advice>, // rlc_acc, rlp_rlc, rlp_len, hash_hi, hash_lo
     q_rpi_encoding: Selector,
@@ -360,7 +358,7 @@ pub struct PiCircuitConfig<F: Field> {
     pi: Column<Instance>, // keccak_hi, keccak_lo
     // rlp_table
     // rlc(txlist) -> rlc(rlp(txlist))
-    rlp_table: [Column<Advice>; 4], // [enable, input, len, output]
+    rlp_table: [Column<Advice>; 3], // [enable, input, len, output]
     // keccak_table
     // rlc(compressed) -> rlc(keccak(compressed)
     keccak_table: KeccakTable2,
@@ -395,7 +393,7 @@ pub struct PiCircuitConfigArgs<F: Field> {
     /// BlockTable
     pub block_table: BlockTable,
     /// RlpTable
-    pub rlp_table: [Column<Advice>; 4],
+    pub rlp_table: [Column<Advice>; 3],
     /// KeccakTable
     pub keccak_table: KeccakTable2,
     /// Challenges
@@ -427,10 +425,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let rpi_rlc_acc = meta.advice_column();
         let rpi_encoding = meta.advice_column();
         let q_rpi_encoding = meta.complex_selector();
-        let q_block_start = meta.complex_selector();
-        let q_block_not_end = meta.complex_selector();
-        let q_txs_start = meta.complex_selector();
-        let q_txs_not_end = meta.complex_selector();
+        let q_start = meta.complex_selector();
+        let q_not_end = meta.complex_selector();
 
         // Tx Table
         let tx_id = tx_table.tx_id;
@@ -458,32 +454,25 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         // rlc_acc
         meta.create_gate("rpi_rlc_acc_next = rpi_rlc_acc * r + rpi_next", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-            let q_block_not_end = meta.query_selector(q_block_not_end);
-            let q_txs_not_end = meta.query_selector(q_txs_not_end);
+            let q_not_end = meta.query_selector(q_not_end);
             let rpi_rlc_acc_next = meta.query_advice(rpi_rlc_acc, Rotation::next());
             let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
             let rpi_next = meta.query_advice(rpi, Rotation::next());
             let r = challenges.evm_word();
 
-            cb.condition(or::expr([q_block_not_end, q_txs_not_end]), |cb| {
-                cb.require_equal("left=right", rpi_rlc_acc_next, rpi_rlc_acc * r + rpi_next);
-            });
-
-            cb.gate(1.expr())
+            cb.require_equal("left=right", rpi_rlc_acc_next, rpi_rlc_acc * r + rpi_next);
+            cb.gate(q_not_end)
         });
 
         meta.create_gate("rpi_rlc_acc[0] = rpi[0]", |meta| {
             let mut cb = BaseConstraintBuilder::new(MAX_DEGREE);
-            let q_block_start = meta.query_selector(q_block_start);
-            let q_txs_start = meta.query_selector(q_txs_start);
+            let q_start = meta.query_selector(q_start);
             let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
             let rpi = meta.query_advice(rpi, Rotation::cur());
 
-            cb.condition(or::expr([q_block_start, q_txs_start]), |cb| {
-                cb.require_equal("", rpi_rlc_acc, rpi);
-            });
+            cb.require_equal("", rpi_rlc_acc, rpi);
 
-            cb.gate(1.expr())
+            cb.gate(q_start)
         });
 
         meta.lookup_any("lookup rlp", |meta| {
@@ -494,20 +483,16 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let rpi_rlp_len = meta.query_advice(rpi_encoding, Rotation(2));
             vec![
                 (
-                    q_rpi_encoding.expr(),
+                    q_rpi_encoding.expr() * rpi_rlc_acc,
                     meta.query_advice(rlp_table[0], Rotation::cur()),
                 ),
                 (
-                    q_rpi_encoding.expr() * rpi_rlc_acc,
+                    q_rpi_encoding.expr() * rpi_rlp_rlc,
                     meta.query_advice(rlp_table[1], Rotation::cur()),
                 ),
                 (
-                    q_rpi_encoding.expr() * rpi_rlp_rlc,
-                    meta.query_advice(rlp_table[2], Rotation::cur()),
-                ),
-                (
                     q_rpi_encoding * rpi_rlp_len,
-                    meta.query_advice(rlp_table[3], Rotation::cur()),
+                    meta.query_advice(rlp_table[2], Rotation::cur()),
                 ),
             ]
         });
@@ -786,10 +771,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             rpi_rlc_acc,
             rpi_encoding,
             q_rpi_encoding,
-            q_block_start,
-            q_block_not_end,
-            q_txs_start,
-            q_txs_not_end,
+            q_start,
+            q_not_end,
 
             rlp_table,
             keccak_table,
@@ -1078,7 +1061,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let block_values = public_data.get_block_table_values();
         let extra_values = public_data.get_extra_values();
         let randomness = challenges.evm_word();
-        self.q_block_start.enable(region, 0)?;
+        self.q_start.enable(region, 0)?;
         let mut rlc_acc = Value::known(F::zero());
         let mut cells = vec![];
         for (offset, (name, val, not_in_table)) in [
@@ -1145,7 +1128,7 @@ impl<F: Field> PiCircuitConfig<F> {
         .enumerate()
         {
             if offset < self.circuit_block_len() - 1 {
-                self.q_block_not_end.enable(region, offset)?;
+                self.q_not_end.enable(region, offset)?;
             }
             let val_cell = region.assign_advice(|| name, self.rpi, offset, || val)?;
             rlc_acc = rlc_acc * randomness + val;
@@ -1208,7 +1191,7 @@ impl<F: Field> PiCircuitConfig<F> {
         challenges: &Challenges<Value<F>>,
         rpi_vals: Vec<Value<F>>,
     ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>, Value<F>), Error> {
-        self.q_txs_start.enable(region, 0)?;
+        self.q_start.enable(region, 0)?;
 
         let r = challenges.evm_word();
 
@@ -1216,7 +1199,7 @@ impl<F: Field> PiCircuitConfig<F> {
         let mut rlc_acc = Value::known(F::zero());
         for (offset, val) in rpi_vals.iter().enumerate() {
             if offset != last {
-                self.q_txs_not_end
+                self.q_not_end
                     .enable(region, offset + self.circuit_block_len())?;
             }
             rlc_acc = rlc_acc * r + val;
@@ -1277,16 +1260,13 @@ impl<F: Field> PiCircuitConfig<F> {
                         Value::known(F::zero()),
                         Value::known(F::zero()),
                         Value::known(F::zero()),
-                        Value::known(F::zero()),
                     ],
                     [
-                        Value::known(F::one()),
                         txs_rlc_acc,
                         txs_rlp_rlc,
                         Value::known(F::from(public_data.txs_rlp.len() as u64)),
                     ],
                     [
-                        Value::known(F::one()),
                         block_rlc_acc,
                         block_rlp_rlc,
                         Value::known(F::from(public_data.block_rlp.len() as u64)),

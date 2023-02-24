@@ -4194,7 +4194,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/johntaiko/snark-verifier?branch=feat/more_limit#1ee7635591d99a17d4fe92bd3d39c175deec4dcc"
+source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2022_12_23#dda742375cf87a268cba416b85a1d1b4e3383378"
 dependencies = [
  "bytes",
  "ecc",
