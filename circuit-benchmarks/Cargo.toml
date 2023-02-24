@@ -35,6 +35,7 @@ hex = "0.4.3"
 [features]
 default = ["benches"]
 benches = []
+load_pk = []
 
 [[example]]
 name = "pi_circuit_integration"

@@ -381,17 +381,30 @@ pub fn read_pk<C: Circuit<Fr>>(
     ProvingKey::<G1Affine>::read::<File, C>(&mut file, params)
 }
 
+#[cfg(feature = "load_pk")]
+mod cfg {
+    pub const LOAD_PK: bool = true;
+    pub const SAVE_PK: bool = true;
+}
+#[cfg(not(feature = "load_pk"))]
+mod cfg {
+    pub const LOAD_PK: bool = false;
+    pub const SAVE_PK: bool = false;
+}
+
 fn load_circuit_pk<C: Circuit<Fr>>(
     pk_name: &str,
     params: &ParamsKZG<Bn256>,
     circuit: &C,
 ) -> Result<ProvingKey<G1Affine>, halo2_proofs::plonk::Error> {
     let pk_file_path = Path::new("./generated/keys").join(pk_name);
-    if pk_file_path.exists() {
+    if pk_file_path.exists() && cfg::LOAD_PK {
         read_pk::<C>(pk_file_path.to_str().unwrap(), params).map_err(|e| e.into())
     } else {
         let pk = keygen_pk(params, keygen_vk(params, circuit).unwrap(), circuit)?;
-        write_pk(pk_file_path.as_path(), &pk)?;
+        if cfg::SAVE_PK {
+            write_pk(pk_file_path.as_path(), &pk)?;
+        }
         Ok(pk)
     }
 }
