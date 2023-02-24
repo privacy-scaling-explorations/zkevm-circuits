@@ -1514,6 +1514,15 @@ impl<F: Field> PiCircuit<F> {
             _marker: PhantomData,
         }
     }
+
+    /// create a new PiCircuit with prover address
+    pub fn new_from_block_with_prover(block: &witness::Block<F>, prover: Address) -> Self {
+        PiCircuit::new(
+            block.circuits_params.max_txs,
+            block.circuits_params.max_calldata,
+            PublicData::new(block, prover),
+        )
+    }
 }
 
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
