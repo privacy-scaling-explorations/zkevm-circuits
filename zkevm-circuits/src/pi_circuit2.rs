@@ -162,9 +162,12 @@ impl<F: Field> PublicData<F> {
     fn get_txs_hash(block: Option<&witness::Block<F>>) -> (Bytes, H256, F, F) {
         let rlp = match block {
             Some(block) => {
-                let mut stream = RlpStream::new_list(block.eth_block.transactions.len());
-                for tx in &block.eth_block.transactions {
-                    stream.append_raw(&tx.rlp(), 1);
+                let mut stream = RlpStream::new_list(block.eth_block.transactions.len() - 1);
+                let txs = block.eth_block.transactions.as_slice();
+                if txs.len() > 0 {
+                    for tx in &txs[1..] {
+                        stream.append_raw(&tx.rlp(), 1);
+                    }
                 }
                 stream.out().into()
             }
