@@ -34,7 +34,7 @@ fn packed_multi_keccak_simple() {
 #[test]
 fn variadic_size_check() {
     let k = 11;
-    let num_rows = Some(2usize.pow(k));
+    let num_rows = 2usize.pow(k);
     // Empty
     let inputs = vec![];
     let circuit = KeccakCircuit::new(num_rows, inputs);
