@@ -33,6 +33,7 @@ pub use halo2_proofs::halo2curves::{
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,

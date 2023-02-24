@@ -1733,8 +1733,10 @@ mod pi_circuit_test {
         const MAX_TXS: usize = 8;
         const MAX_CALLDATA: usize = 200;
 
-        let mut pub_dat_1 = PublicData::default();
-        pub_dat_1.chain_id = *MOCK_CHAIN_ID;
+        let mut pub_dat_1 = PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            ..Default::default()
+        };
 
         let n_tx = 2;
         for i in 0..n_tx {
@@ -1743,8 +1745,11 @@ mod pi_circuit_test {
                 .push(CORRECT_MOCK_TXS[i].clone().into());
         }
 
-        let mut pub_dat_2 = PublicData::default();
-        pub_dat_2.chain_id = *MOCK_CHAIN_ID;
+        let mut pub_dat_2 = PublicData {
+            chain_id: *MOCK_CHAIN_ID,
+            ..Default::default()
+        };
+
         let n_tx = 4;
         for i in 0..n_tx {
             pub_dat_2
@@ -1752,6 +1757,6 @@ mod pi_circuit_test {
                 .push(CORRECT_MOCK_TXS[i].clone().into());
         }
 
-        // run_size_check::<Fr, MAX_TXS, MAX_CALLDATA>([pub_dat_1, pub_dat_2]);
+        run_size_check::<Fr, MAX_TXS, MAX_CALLDATA>([pub_dat_1, pub_dat_2]);
     }
 }

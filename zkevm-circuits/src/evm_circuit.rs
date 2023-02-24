@@ -626,8 +626,10 @@ mod evm_circuit_stats {
     }
     #[test]
     fn variadic_size_check() {
-        let mut params = CircuitsParams::default();
-        params.max_evm_rows = 1 << 12;
+        let params = CircuitsParams {
+            max_evm_rows: 1 << 12,
+            ..Default::default()
+        };
         // Empty
         let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
             .unwrap()
@@ -640,7 +642,7 @@ mod evm_circuit_stats {
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         let k = block.get_test_degree();
 
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         let code = bytecode! {
@@ -661,7 +663,7 @@ mod evm_circuit_stats {
             .unwrap();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         let k = block.get_test_degree();
-        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+        let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block);
         let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
         assert_eq!(prover1.fixed(), prover2.fixed());
