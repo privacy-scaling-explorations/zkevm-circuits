@@ -327,8 +327,15 @@ pub fn gen_associated_ops(
                     state.call_ctx()?.memory.0.len(),
                     geth_steps[0].memory.0.len(),
                 ) {
-                    if state.call_ctx()?.memory.0[i] != geth_steps[0].memory.0[i] {
-                        log::error!("diff at {}", i);
+                    let state_mem = state.call_ctx()?.memory.0[i];
+                    let step_mem = geth_steps[0].memory.0[i];
+                    if state_mem != step_mem {
+                        log::error!(
+                            "diff at {}: state {:?} != step {:?}",
+                            i,
+                            state_mem,
+                            step_mem
+                        );
                     }
                 }
                 if check_level >= 2 {
@@ -454,7 +461,12 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
     // consistent codehash for precompile contract.
     let (_, callee_account) = state.sdb.get_account(&call.address);
+    let callee_account = callee_account.clone();
+    let callee_account = &callee_account;
     let callee_exists = !callee_account.is_empty();
+    if !callee_exists {
+        state.sdb.get_account_mut(&call.address).1.storage.clear();
+    }
     let (callee_code_hash, is_empty_code_hash) = match (state.tx.is_create(), callee_exists) {
         (true, _) => (call.code_hash.to_word(), false),
         (_, true) => {
