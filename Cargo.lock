@@ -2053,7 +2053,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_02_02#0a8646b78286a13d320759b1c585262d6536dce4"
+source = "git+https://github.com/scroll-tech/halo2.git?branch=pse-mockprover-util#92075854b584ec2fe69999fbc2da39bcc2f641ad"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -5033,3 +5033,8 @@ dependencies = [
  "strum_macros",
  "subtle",
 ]
+
+[[patch.unused]]
+name = "halo2_proofs"
+version = "0.2.0"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_02_02#0a8646b78286a13d320759b1c585262d6536dce4"
