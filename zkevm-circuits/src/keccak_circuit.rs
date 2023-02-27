@@ -338,7 +338,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                     s[i][j].clone(),
                     RHO_MATRIX[i][j],
                     part_size,
-                    true,
                 );
                 // Normalize the data to the target cells
                 let s_parts = transform_to::expr(

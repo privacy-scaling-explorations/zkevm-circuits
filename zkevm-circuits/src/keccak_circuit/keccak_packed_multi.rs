@@ -212,11 +212,10 @@ pub(crate) mod split_uniform {
         input: Expression<F>,
         rot: usize,
         target_part_size: usize,
-        normalize: bool,
     ) -> Vec<Part<F>> {
         let mut input_parts = Vec::new();
         let mut output_parts = Vec::new();
-        let word = WordParts::new(target_part_size, rot, normalize);
+        let word = WordParts::new(target_part_size, rot, true);
 
         let word = rotate(word.parts, rot, target_part_size);
 
@@ -287,14 +286,13 @@ pub(crate) mod split_uniform {
         input: F,
         rot: usize,
         target_part_size: usize,
-        normalize: bool,
     ) -> Vec<PartValue<F>> {
         let input_bits = unpack(input);
         debug_assert_eq!(pack::<F>(&input_bits), input);
 
         let mut input_parts = Vec::new();
         let mut output_parts = Vec::new();
-        let word = WordParts::new(target_part_size, rot, normalize);
+        let word = WordParts::new(target_part_size, rot, true);
 
         let word = rotate(word.parts, rot, target_part_size);
 
@@ -698,7 +696,6 @@ pub(crate) fn keccak<F: Field>(
                             s[i][j],
                             RHO_MATRIX[i][j],
                             part_size,
-                            true,
                         );
 
                         let s_parts = transform_to::value(
