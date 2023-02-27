@@ -1,6 +1,7 @@
+use super::util::extract_field;
 use super::*;
 use crate::evm_circuit::util::rlc;
-use halo2_proofs::dev::{unwrap_value, CellValue, MockProver};
+use halo2_proofs::dev::{CellValue, MockProver};
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::plonk::Assignment;
 use itertools::izip;
@@ -12,8 +13,8 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, digests: Vec<String>, success:
     let circuit = KeccakCircuit::new(2usize.pow(k), inputs.clone());
     let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
     let (config, challenges) = KeccakCircuit::configure(&mut ConstraintSystem::<F>::default());
-    let input_challenge = unwrap_value(prover.get_challenge(challenges.keccak_input()));
-    let hash_challenge = unwrap_value(prover.get_challenge(challenges.evm_word()));
+    let input_challenge = extract_field(prover.get_challenge(challenges.keccak_input()));
+    let hash_challenge = extract_field(prover.get_challenge(challenges.evm_word()));
 
     // Check constraints.
     let verify_result = prover.verify();
