@@ -589,6 +589,66 @@ impl_selectable!(
         Expression<F>
     )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr()] }
 );
+impl_selectable!(
+    (
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    ),
+    |t: &(
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr(), t.5.expr()] }
+);
+impl_selectable!(
+    (
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    ),
+    |t: &(
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr(), t.5.expr(), t.6.expr()] }
+);
+impl_selectable!(
+    (
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    ),
+    |t: &(
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+        Expression<F>,
+    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr(), t.5.expr(), t.6.expr(), t.7.expr()] }
+);
 
 /// Trait that conditionally combines multiple types
 pub trait Conditionable<F, E> {
@@ -648,11 +708,11 @@ impl<F: Field> RLCChainable<F> for (Expression<F>, Expression<F>) {
     }
 }
 
-pub(crate) fn rlc_acc<F: Field>(values: &[u8], rlc: F, mult: F, r: F) -> (F, F) {
+pub(crate) fn rlc_acc<F: Field>(values: &[F], rlc: F, mult: F, r: F) -> (F, F) {
     let mut rlc = rlc;
     let mut mult = mult;
     for &value in values.iter() {
-        rlc = rlc + F::from(value as u64) * mult;
+        rlc = rlc + value * mult;
         mult *= r;
     }
     (rlc, mult)
@@ -680,10 +740,18 @@ impl<F: Field> RLCableValue<F> for [u8] {
 pub trait RLCChainableValue<F> {
     /// Returns the RLC of itself with a starting rlc/multiplier
     fn rlc_chain_value(&self, values: &[u8], r: F) -> (F, F);
+
+    /// Returns the RLC of itself with a starting rlc/multiplier
+    fn rlc_chain_value_f(&self, values: &[F], r: F) -> (F, F);
 }
 
 impl<F: Field> RLCChainableValue<F> for (F, F) {
     fn rlc_chain_value(&self, values: &[u8], r: F) -> (F, F) {
+        let values = values.iter().map(|byte| byte.scalar()).collect::<Vec<F>>();
+        rlc_acc(&values, self.0, self.1, r)
+    }
+
+    fn rlc_chain_value_f(&self, values: &[F], r: F) -> (F, F) {
         rlc_acc(values, self.0, self.1, r)
     }
 }
@@ -1098,6 +1166,9 @@ macro_rules! circuit {
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
                 _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d => $when_true elsex $when_false)
+            }};
+            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr, $condition_f:expr, $condition_g:expr => $when_true:block elsex $when_false:block) => {{
+                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d, $condition_e, $condition_f, $condition_g => $when_true elsex $when_false)
             }};
 
             ($condition:expr => $when_true:block) => {{

@@ -1,12 +1,10 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::circuit_tools::constraint_builder::RLCChainable;
 use crate::circuit_tools::gadgets::RequireNotZeroGadget;
@@ -33,47 +31,6 @@ use super::{
         IS_NON_EXISTING_ACCOUNT_POS,
     },
 };
-
-#[derive(Clone, Debug)]
-pub(crate) struct AccountLeafCols<F> {
-    pub(crate) is_key_s: Column<Advice>,
-    pub(crate) is_key_c: Column<Advice>,
-    pub(crate) is_non_existing: Column<Advice>,
-    pub(crate) is_nonce_balance_s: Column<Advice>,
-    pub(crate) is_nonce_balance_c: Column<Advice>,
-    pub(crate) is_storage_codehash_s: Column<Advice>,
-    pub(crate) is_storage_codehash_c: Column<Advice>,
-    pub(crate) is_in_added_branch: Column<Advice>,
-    _marker: PhantomData<F>,
-}
-
-impl<F: Field> AccountLeafCols<F> {
-    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            is_key_s: meta.advice_column(),
-            is_key_c: meta.advice_column(),
-            is_non_existing: meta.advice_column(),
-            is_nonce_balance_s: meta.advice_column(),
-            is_nonce_balance_c: meta.advice_column(),
-            is_storage_codehash_s: meta.advice_column(),
-            is_storage_codehash_c: meta.advice_column(),
-            is_in_added_branch: meta.advice_column(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-pub(crate) struct AccountLeaf {
-    pub(crate) is_key_s: bool,
-    pub(crate) is_key_c: bool,
-    pub(crate) is_non_existing_account_row: bool,
-    pub(crate) is_nonce_balance_s: bool,
-    pub(crate) is_nonce_balance_c: bool,
-    pub(crate) is_storage_codehash_s: bool,
-    pub(crate) is_storage_codehash_c: bool,
-    pub(crate) is_in_added_branch: bool,
-}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafConfig<F> {
@@ -238,7 +195,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
-                    + rlp_key.key_rlc(
+                    + rlp_key.leaf_key_rlc(
                         &mut cb.base,
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
@@ -323,7 +280,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Calculate the drifted key RLC
                 let drifted_key_rlc = key_rlc_prev +
                     drifted_nibble_rlc(&mut cb.base, placeholder_nibble.expr(), key_mult_prev.expr(), placeholder_is_odd.expr()) +
-                    config.drifted_rlp_key.key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), false, &r);
+                    config.drifted_rlp_key.leaf_key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), false, &r);
 
                 // RLC bytes zero check
                 cb.set_length(config.drifted_rlp_key.num_bytes_on_key_row());
@@ -351,7 +308,7 @@ impl<F: Field> AccountLeafConfig<F> {
                     // The key of the drifted leaf needs to match the key of the leaf
                     require!(key_rlc => drifted_key_rlc);
                     // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                    // TODO(Brecht): re-enable after witness change
+                    // TODO(Brecht): 53 "src/mpt_circuit/tests/AccountAddPlaceholderExtension.json"
                     //require!((1, drifted_rlc, config.drifted_rlp_key.num_bytes(), mod_hash) => @"keccak");
                 }}
             }}
@@ -365,7 +322,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 ifx! {config.is_wrong_leaf => {
                     // Calculate the key
                     config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
-                    let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.key_rlc(
+                    let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
                         &mut cb.base,
                         config.key_data_w.mult.expr(),
                         config.key_data_w.is_odd.expr(),
@@ -590,7 +547,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 (pv.key_rlc, pv.key_rlc_mult)
             };
             (key_rlc[is_s.idx()], _) =
-                rlp_key_witness.key_rlc(key_rlc_new, key_rlc_mult, ctx.randomness);
+                rlp_key_witness.leaf_key_rlc(key_rlc_new, key_rlc_mult, ctx.randomness);
 
             let mut key_mult = F::one();
             for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
@@ -666,7 +623,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
             let wrong_witness = self.wrong_rlp_key.assign(region, base_offset, &row_bytes)?;
             let (key_rlc_wrong, _) =
-                wrong_witness.key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.randomness);
+                wrong_witness.leaf_key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.randomness);
 
             let address_rlc = bytes_into_rlc(row.address_bytes(), ctx.randomness);
             self.check_is_wrong_leaf.assign(

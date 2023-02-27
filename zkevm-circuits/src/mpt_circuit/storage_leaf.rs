@@ -1,12 +1,10 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
-use halo2_proofs::plonk::{Advice, Column, ConstraintSystem};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
 use crate::circuit_tools::cell_manager::Cell;
 use crate::circuit_tools::constraint_builder::{RLCChainable, RLCableValue};
@@ -28,41 +26,6 @@ use crate::{
 };
 
 use super::helpers::{Indexable, LeafKeyGadget, RLPValueGadget};
-
-#[derive(Clone, Debug)]
-pub(crate) struct StorageLeafCols<F> {
-    pub(crate) is_s_key: Column<Advice>,
-    pub(crate) is_s_value: Column<Advice>,
-    pub(crate) is_c_key: Column<Advice>,
-    pub(crate) is_c_value: Column<Advice>,
-    pub(crate) is_in_added_branch: Column<Advice>,
-    pub(crate) is_non_existing: Column<Advice>,
-    _marker: PhantomData<F>,
-}
-
-impl<F: Field> StorageLeafCols<F> {
-    pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            is_s_key: meta.advice_column(),
-            is_s_value: meta.advice_column(),
-            is_c_key: meta.advice_column(),
-            is_c_value: meta.advice_column(),
-            is_in_added_branch: meta.advice_column(),
-            is_non_existing: meta.advice_column(),
-            _marker: PhantomData,
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-pub(crate) struct StorageLeaf {
-    pub(crate) is_s_key: bool,
-    pub(crate) is_s_value: bool,
-    pub(crate) is_c_key: bool,
-    pub(crate) is_c_value: bool,
-    pub(crate) is_in_added_branch: bool,
-    pub(crate) is_non_existing: bool,
-}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StorageLeafConfig<F> {
@@ -144,7 +107,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
-                    + rlp_key.key_rlc(
+                    + rlp_key.leaf_key_rlc(
                         &mut cb.base,
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
@@ -171,8 +134,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // Make sure the RLP encoding is correct.
                 // storage = [key, value]
                 ifx! {not!(is_placeholder_leaf) => {
-                    let key_num_bytes = rlp_key.num_bytes_on_key_row();
-                    require!(rlp_key.num_bytes() => key_num_bytes.expr() + config.rlp_value[is_s.idx()].num_bytes());
+                    require!(rlp_key.num_bytes() => rlp_key.num_bytes_on_key_row() + config.rlp_value[is_s.idx()].num_bytes());
                 }};
 
                 // Check if the account is in its parent.
@@ -226,7 +188,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 // Calculate the drifted key RLC
                 let drifted_key_rlc = key_rlc_prev.expr() +
                     drifted_nibble_rlc(&mut cb.base, placeholder_nibble.expr(), key_mult_prev.expr(), placeholder_is_odd.expr()) +
-                    config.drifted_rlp_key.key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), true, &r);
+                    config.drifted_rlp_key.leaf_key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), true, &r);
 
                 // Check zero bytes and mult_diff
                 config.drifted_mult = cb.base.query_cell();
@@ -265,7 +227,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 ifx! {config.is_wrong_leaf => {
                     // Calculate the key
                     config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
-                    let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.key_rlc(
+                    let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
                         &mut cb.base,
                         config.key_data_w.mult.expr(),
                         config.key_data_w.is_odd.expr(),
@@ -371,7 +333,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 key_rlc_mult_new = pv.key_rlc_mult_prev;
             }
             (key_rlc[is_s.idx()], _) =
-                rlp_key_witness.key_rlc(key_rlc_new, key_rlc_mult_new, ctx.randomness);
+                rlp_key_witness.leaf_key_rlc(key_rlc_new, key_rlc_mult_new, ctx.randomness);
 
             // Value
             let value_row = &value_bytes[is_s.idx()];
@@ -440,7 +402,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
             let wrong_witness = self.wrong_rlp_key.assign(region, base_offset, &row_bytes)?;
             let (key_rlc_wrong, _) =
-                wrong_witness.key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.randomness);
+                wrong_witness.leaf_key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.randomness);
 
             self.check_is_wrong_leaf.assign(
                 region,

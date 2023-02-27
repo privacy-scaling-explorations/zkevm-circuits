@@ -19,17 +19,16 @@ mod selectors;
 mod storage_leaf;
 mod witness_row;
 
-use account_leaf::{AccountLeaf, AccountLeafCols};
-use branch::{Branch, BranchCols, BranchConfig};
-use columns::{AccumulatorCols, DenoteCols, MainCols, PositionCols, ProofTypeCols};
+use branch::{BranchConfig};
+use columns::{MainCols, PositionCols, ProofTypeCols};
 use proof_chain::ProofChainConfig;
-use storage_leaf::{StorageLeaf, StorageLeafCols};
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::HASH_WIDTH;
 use selectors::SelectorsConfig;
 
 use crate::{
+    assign,
     circuit,
     circuit_tools::{
         cell_manager::CellManager,
@@ -45,33 +44,6 @@ use crate::{
 };
 
 use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memory};
-
-/*
-    MPT circuit contains S and C columns (other columns are mostly selectors).
-
-    With S columns the prover proves the knowledge of key1/val1 that is in the
-    trie with rootS.
-
-    With C columns the prover proves the knowledge of key1/val2 that is in the
-    trie with rootC. Note that key is the same for both S and C, whereas value
-    is different. The prover thus proves the knowledge how to change value at key
-    key1 from val1 to val2 that results the root being changed from rootS to rootC.
-
-    The branch contains 16 nodes which are stored in 16 rows.
-    A row looks like:
-    [0,        160,      123,    ...,  148,     0,        160,    232,    ..., 92     ]
-    [rlp1 (S), rlp2 (S), b0 (S), ...,  b31 (S), rlp1 (C), rlp2 C, b0 (C), ..., b31 (C)]
-
-    Values bi (S) and bi(C) present hash of a node. Thus, the first half of a row
-    is a S node:
-    [rlp1, rlp2, b0, ..., b31]
-
-    The second half of the row is a C node (same structure):
-    [rlp1, rlp2, b0, ..., b31]
-
-    We start with top level branch and then we follow branches (could be also extension
-    nodes) down to the leaf.
-*/
 
 /// Merkle Patricia Trie config.
 pub struct RowConfig<F> {
@@ -90,13 +62,8 @@ pub struct MPTContext<F> {
     pub(crate) inter_final_root: Column<Advice>,
     pub(crate) value_prev: Column<Advice>,
     pub(crate) value: Column<Advice>,
-    pub(crate) accumulators: AccumulatorCols<F>,
-    pub(crate) branch: BranchCols<F>,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
-    pub(crate) account_leaf: AccountLeafCols<F>,
-    pub(crate) storage_leaf: StorageLeafCols<F>,
-    pub(crate) denoter: DenoteCols<F>,
     pub(crate) address_rlc: Column<Advice>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) r: Vec<Expression<F>>,
@@ -141,10 +108,6 @@ impl<F: Field> MPTContext<F> {
     ) -> Expression<F> {
         self.expr(meta, rot)[range].rlc(&self.r)
     }
-
-    pub(crate) fn is_account(&self, meta: &mut VirtualCells<F>, rot_above: i32) -> Expression<F> {
-        meta.query_advice(self.account_leaf.is_in_added_branch, Rotation(rot_above))
-    }
 }
 
 /// Merkle Patricia Trie config.
@@ -156,13 +119,8 @@ pub struct MPTConfig<F> {
     pub(crate) inter_final_root: Column<Advice>,
     pub(crate) value_prev: Column<Advice>,
     pub(crate) value: Column<Advice>,
-    pub(crate) accumulators: AccumulatorCols<F>,
-    pub(crate) branch: BranchCols<F>,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
-    pub(crate) account_leaf: AccountLeafCols<F>,
-    pub(crate) storage_leaf: StorageLeafCols<F>,
-    pub(crate) denoter: DenoteCols<F>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
@@ -177,6 +135,9 @@ pub struct MPTConfig<F> {
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
+    pub(crate) is_branch: Column<Advice>,
+    pub(crate) is_account: Column<Advice>,
+    pub(crate) is_storage: Column<Advice>,
     pub(crate) randomness: F,
     pub(crate) mpt_table: MPTTable,
     cb: MPTConstraintBuilder<F>,
@@ -212,76 +173,25 @@ Also, for example, `modified_node` is given in branch init but needed to be set 
 pub(crate) struct ProofValues<F> {
     pub(crate) modified_node: u8, /* branch child that is being changed, it is the same in all
                                    * branch children rows */
-    pub(crate) s_mod_node_hash_rlc: F, /* hash rlc of the modified_node for S proof, it is the
-                                        * same in all branch children rows */
-    pub(crate) c_mod_node_hash_rlc: F, /* hash rlc of the modified_node for C proof, it is the
-                                        * same in all branch children rows */
-    pub(crate) node_index: u8, // branch child index
-    pub(crate) acc_s: F,       /* RLC accumulator for the whole node (taking into account all
-                                * RLP bytes of the node) */
-    pub(crate) acc_mult_s: F, // multiplier for acc_s
-    pub(crate) acc_account_s: F,
-    pub(crate) acc_mult_account_s: F,
-    pub(crate) acc_account_c: F,
-    pub(crate) acc_mult_account_c: F,
-    pub(crate) acc_nonce_balance_s: F,
-    pub(crate) acc_mult_nonce_balance_s: F,
-    pub(crate) acc_nonce_balance_c: F,
-    pub(crate) acc_mult_nonce_balance_c: F,
     pub(crate) acc_c: F, /* RLC accumulator for the whole node (taking into account all RLP
                           * bytes of the node) */
     pub(crate) acc_mult_c: F,          // multiplier for acc_c
     pub(crate) key_rlc: F,             /* used first for account address, then for storage key */
     pub(crate) key_rlc_mult: F,        // multiplier for key_rlc
-    pub(crate) extension_node_rlc: F,  // RLC accumulator for extension node
-    pub(crate) extension_node_mult: F, // RLC multiplier for extension node
     pub(crate) key_rlc_prev: F,        /* for leaf after placeholder extension/branch, we need
                                         * to go one level
                                         * back
                                         * to get previous key_rlc */
     pub(crate) key_rlc_mult_prev: F,
-    pub(crate) nibbles_num_prev: usize,
-    pub(crate) mult_diff: F, /* power of randomness r: multiplier_curr = multiplier_prev *
-                              * mult_diff */
-    pub(crate) key_rlc_sel: bool, /* If true, nibble is multiplied by 16, otherwise by 1. */
     pub(crate) is_branch_s_placeholder: bool, // whether S branch is just a placeholder
     pub(crate) is_branch_c_placeholder: bool, // whether C branch is just a placeholder
     pub(crate) drifted_pos: u8,   /* needed when leaf turned into branch and leaf moves into a
                                    * branch where
                                    * it's at drifted_pos position */
-    pub(crate) rlp_len_rem_s: i32, /* branch RLP length remainder, in each branch children row
-                                    * this value
-                                    * is subtracted by the number of RLP bytes in
-                                    * this row (1 or 33) */
-    pub(crate) rlp_len_rem_c: i32,
-    pub(crate) is_extension_node: bool,
     pub(crate) is_even: bool,
     pub(crate) is_odd: bool,
-    pub(crate) is_short: bool,
-    pub(crate) is_short_c1: bool,
-    pub(crate) is_long: bool,
-    pub(crate) rlc1: F,
-    pub(crate) rlc2: F,
-    pub(crate) storage_root_value_s: F,
-    pub(crate) storage_root_value_c: F,
-    pub(crate) codehash_value_s: F,
     pub(crate) before_account_leaf: bool,
     pub(crate) nibbles_num: usize,
-
-    pub(crate) is_hashed_s: bool,
-    pub(crate) is_hashed_c: bool,
-
-    pub(crate) ext_is_hashed_s: bool,
-    pub(crate) ext_is_hashed_c: bool,
-
-    pub(crate) parent_rlc_s: F,
-    pub(crate) parent_is_hashed_s: bool,
-
-    pub(crate) parent_rlc_c: F,
-    pub(crate) parent_is_hashed_c: bool,
-
-    pub(crate) is_placeholder_leaf_s: bool,
-    pub(crate) is_placeholder_leaf_c: bool,
 
     pub(crate) memory: Memory<F>,
 }
@@ -292,10 +202,7 @@ impl<F: Field> ProofValues<F> {
             memory: memory.clone(),
             key_rlc_mult: F::one(),
             key_rlc_mult_prev: F::one(),
-            mult_diff: F::one(),
-            key_rlc_sel: true,
             before_account_leaf: true,
-            extension_node_mult: F::one(),
             ..Default::default()
         }
     }
@@ -323,12 +230,13 @@ impl<F: Field> MPTConfig<F> {
         let value_prev = meta.advice_column();
         let value = meta.advice_column();
 
+        let is_branch = meta.advice_column();
+        let is_account = meta.advice_column();
+        let is_storage = meta.advice_column();
+
         let position_cols = PositionCols::new(meta);
 
         let proof_type = ProofTypeCols::new(meta);
-        let account_leaf = AccountLeafCols::new(meta);
-        let storage_leaf = StorageLeafCols::new(meta);
-        let branch = BranchCols::new(meta);
 
         let s_main = MainCols::new(meta);
         let c_main = MainCols::new(meta);
@@ -349,42 +257,13 @@ impl<F: Field> MPTConfig<F> {
         memory.allocate(meta, parent_memory(false));
         memory.allocate(meta, parent_memory(true));
 
-        /*
-        Note: `key_rlc_mult` would not be needed if we would have
-        big endian instead of little endian. However, then it would be much more
-        difficult to handle the accumulator when we iterate over the key.
-        At some point (but we do not know this point at compile time), the key ends
-        and from there on the values in the row need to be 0s.
-        However, if we are computing the RLC using little endian:
-        `rlc = rlc + row[i] * r`,
-        `rlc` will stay the same once r[i] = 0.
-        If big endian would be used:
-        `rlc = rlc * r + row[i]`,
-        `rlc` would be multiplied by `r` when `row[i] = 0`.
-
-        However, we need to ensure there are truly 0s after the RLP stream ends, this is done
-        by `key_len_lookup` calls.
-        */
-
-        let accumulators = AccumulatorCols::new(meta);
-
-        /*
-        Note: `acc_s.mult` and `acc_c.mult` would not be needed if we would have
-        big endian instead of little endian. However, then it would be much more
-        difficult to handle the accumulator when we iterate over the row.
-        For example, big endian would mean to compute `acc = acc * mult_r + row[i]`,
-        but we do not want `acc` to be multiplied by `mult_r` when `row[i] = 0` where
-        the stream already ended and 0s are only to fulfill the row.
-        */
-
-        let denoter = DenoteCols::new(meta);
-
         let address_rlc = meta.advice_column();
+        let key_rlc = meta.advice_column();
 
         let mpt_table = MPTTable {
             address_rlc,
             proof_type: proof_type.proof_type,
-            key_rlc: accumulators.key.mult,
+            key_rlc,
             value_prev,
             value,
             root_prev: inter_start_root,
@@ -399,13 +278,8 @@ impl<F: Field> MPTConfig<F> {
             inter_final_root: inter_final_root.clone(),
             value_prev: value_prev.clone(),
             value: value.clone(),
-            branch: branch.clone(),
             s_main: s_main.clone(),
             c_main: c_main.clone(),
-            account_leaf: account_leaf.clone(),
-            storage_leaf: storage_leaf.clone(),
-            accumulators: accumulators.clone(),
-            denoter: denoter.clone(),
             address_rlc: address_rlc.clone(),
             managed_columns: managed_columns.clone(),
             r: extend_rand(&power_of_randomness),
@@ -414,7 +288,7 @@ impl<F: Field> MPTConfig<F> {
 
         let mut row_config: Option<RowConfig<F>> = None;
 
-        let mut cb = MPTConstraintBuilder::new(17, None);
+        let mut cb = MPTConstraintBuilder::new(33, None);
         meta.create_gate("MPT", |meta| {
             let cell_manager = CellManager::new(meta, &ctx.managed_columns);
             cb.base.set_cell_manager(cell_manager);
@@ -431,8 +305,7 @@ impl<F: Field> MPTConfig<F> {
                     KeyData::store_initial_values(&mut cb.base, &ctx.memory[key_memory(false)]);
                 }}
                 // Initial parent values
-                ifx!{f!(position_cols.q_enable), not!(a!(ctx.position_cols.not_first_level)),
-                        a!(branch.is_init) + a!(storage_leaf.is_s_key) + a!(account_leaf.is_key_s) => {
+                ifx!{f!(position_cols.q_enable), not!(a!(ctx.position_cols.not_first_level)), a!(is_branch, 1) + a!(is_storage) + a!(is_account, 1) => {
                     for is_s in [true, false] {
                         let root = a!(ctx.inter_root(is_s));
                         ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [root.expr(), true.expr(), false.expr(), root.expr()]);
@@ -445,16 +318,14 @@ impl<F: Field> MPTConfig<F> {
                 let account_config;
                 ifx!{f!(position_cols.q_enable) => {
                     matchx! {
-                        and::expr(&[a!(branch.is_init, -1), f!(position_cols.q_not_first)]) => {
+                        a!(is_branch) => {
                             branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(account_leaf.is_key_c) => {
+                        a!(is_account) => {
                             account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(storage_leaf.is_s_key) => {
-                            ifx!{f!(position_cols.q_not_first), a!(position_cols.not_first_level) => {
-                                storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
-                            }};
+                        a!(is_storage) => {
+                            storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         _ => (),
                     }
@@ -568,19 +439,17 @@ impl<F: Field> MPTConfig<F> {
         let row_config = row_config.unwrap();
         let randomness = F::zero();
         MPTConfig {
+            is_branch,
+            is_account,
+            is_storage,
             proof_type,
             position_cols,
             inter_start_root,
             inter_final_root,
             value_prev,
             value,
-            branch,
             s_main,
             c_main,
-            account_leaf,
-            storage_leaf,
-            accumulators,
-            denoter,
             managed_columns,
             memory,
             keccak_table,
@@ -595,179 +464,6 @@ impl<F: Field> MPTConfig<F> {
         }
     }
 
-    pub(crate) fn compute_key_rlc(
-        &self,
-        row: &[u8],
-        key_rlc: &mut F,
-        key_rlc_mult: &mut F,
-        start: usize,
-    ) {
-        let even_num_of_nibbles = row[start + 1] == 32;
-        // If odd number of nibbles, we have nibble+48 in s_advices[0].
-        if !even_num_of_nibbles {
-            *key_rlc += F::from((row[start + 1] - 48) as u64) * *key_rlc_mult;
-            *key_rlc_mult *= self.randomness;
-
-            let len = row[start] as usize - 128;
-            self.compute_acc_and_mult(
-                row,
-                key_rlc,
-                key_rlc_mult,
-                start + 2,
-                len - 1, // -1 because one byte was already considered
-            );
-        } else {
-            let len = row[start] as usize - 128;
-            self.compute_acc_and_mult(
-                row,
-                key_rlc,
-                key_rlc_mult,
-                start + 2,
-                len - 1, /* -1 because the first byte doesn't
-                          * contain any key byte (it's just 32) */
-            );
-        }
-    }
-
-    pub(crate) fn compute_acc_and_mult(
-        &self,
-        row: &[u8],
-        acc: &mut F,
-        mult: &mut F,
-        start: usize,
-        len: usize,
-    ) {
-        for i in 0..len {
-            *acc += F::from(row[start + i] as u64) * *mult;
-            *mult *= self.randomness;
-        }
-    }
-
-    pub(crate) fn compute_rlc_and_assign(
-        &self,
-        region: &mut Region<'_, F>,
-        row: &[u8],
-        pv: &mut ProofValues<F>,
-        offset: usize,
-        s_start_len: (usize, usize),
-        c_start_len: (usize, usize),
-    ) -> Result<(), Error> {
-        self.compute_acc_and_mult(
-            row,
-            &mut pv.rlc1,
-            &mut F::one(),
-            s_start_len.0,
-            s_start_len.1,
-        );
-        region.assign_advice(
-            || "assign s_mod_node_hash_rlc".to_string(),
-            self.accumulators.s_mod_node_rlc,
-            offset,
-            || Value::known(pv.rlc1),
-        )?;
-
-        self.compute_acc_and_mult(
-            row,
-            &mut pv.rlc2,
-            &mut F::one(),
-            c_start_len.0,
-            c_start_len.1,
-        );
-        region.assign_advice(
-            || "assign c_mod_node_hash_rlc".to_string(),
-            self.accumulators.c_mod_node_rlc,
-            offset,
-            || Value::known(pv.rlc2),
-        )?;
-
-        Ok(())
-    }
-
-    pub(crate) fn assign_acc(
-        &self,
-        region: &mut Region<'_, F>,
-        acc_s: F,
-        acc_mult_s: F,
-        acc_c: F,
-        acc_mult_c: F,
-        offset: usize,
-    ) -> Result<(), Error> {
-        region.assign_advice(
-            || "assign acc_s".to_string(),
-            self.accumulators.acc_s.rlc,
-            offset,
-            || Value::known(acc_s),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_s".to_string(),
-            self.accumulators.acc_s.mult,
-            offset,
-            || Value::known(acc_mult_s),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_c".to_string(),
-            self.accumulators.acc_c.rlc,
-            offset,
-            || Value::known(acc_c),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_c".to_string(),
-            self.accumulators.acc_c.mult,
-            offset,
-            || Value::known(acc_mult_c),
-        )?;
-
-        Ok(())
-    }
-
-    /*
-    assign_long_short is used for setting flags for storage leaf and storage value.
-    For storage leaf, it sets whether it is short (one RLP byte) or long (two RLP bytes)
-    or last level (no nibbles in leaf, all nibbles in the path above the leaf) or one nibble.
-    Note that last_level and one_nibble imply having only one RLP byte.
-
-    For storage value, it sets whether it is short or long (value having more than one byte).
-    */
-    pub(crate) fn assign_long_short(
-        &self,
-        region: &mut Region<'_, F>,
-        typ: &str,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let mut flag1 = false;
-        let mut flag2 = false;
-        // for one_nibble, it is both 0
-        if typ == "long" {
-            flag1 = true;
-        } else if typ == "short" {
-            flag2 = true;
-        } else if typ == "last_level" {
-            flag1 = true;
-            flag2 = true;
-        }
-        region
-            .assign_advice(
-                || "assign s_modified_node_rlc".to_string(),
-                self.accumulators.s_mod_node_rlc,
-                offset,
-                || Value::known(F::from(flag1 as u64)),
-            )
-            .ok();
-        region
-            .assign_advice(
-                || "assign c_modified_node_rlc".to_string(),
-                self.accumulators.c_mod_node_rlc,
-                offset,
-                || Value::known(F::from(flag2 as u64)),
-            )
-            .ok();
-
-        Ok(())
-    }
-
     /// Make the assignments to the MPTCircuit
     pub fn assign(
         &mut self,
@@ -778,7 +474,54 @@ impl<F: Field> MPTConfig<F> {
         self.randomness = randomness;
         let mut height = 0;
 
+        // TODO(Brecht): change this on the witness generation side
         let mut memory = self.memory.clone();
+        for (_, row) in witness
+            .iter_mut()
+            .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+            .enumerate()
+        {
+            if row.get_type() == MptWitnessRowType::BranchChild {
+                //println!("- {:?}", row.bytes);
+                let mut child_s_bytes = row.bytes[0..34].to_owned();
+                if child_s_bytes[1] == 160 {
+                    child_s_bytes[0] = 0;
+                    child_s_bytes.rotate_left(1);
+                } else {
+                    child_s_bytes[0] = 0;
+                    child_s_bytes[1] = 0;
+                    child_s_bytes.rotate_left(2);
+                };
+
+                let mut child_c_bytes = row.bytes[34..68].to_owned();
+                if child_c_bytes[1] == 160 {
+                    child_c_bytes[0] = 0;
+                    child_c_bytes.rotate_left(1);
+                } else {
+                    child_c_bytes[0] = 0;
+                    child_c_bytes[1] = 0;
+                    child_c_bytes.rotate_left(2);
+                };
+
+                row.bytes = [child_s_bytes.clone(), child_c_bytes.clone(), row.bytes[68..].to_owned()].concat();
+                //println!("+ {:?}", row.bytes);
+            }
+
+            if row.get_type() == MptWitnessRowType::ExtensionNodeS || row.get_type() == MptWitnessRowType::ExtensionNodeC {
+                //println!("- {:?}", row.bytes);
+                let mut value_bytes = row.bytes[34..68].to_owned();
+                if value_bytes[1] == 160 {
+                    value_bytes[0] = 0;
+                    value_bytes.rotate_left(1);
+                } else {
+                    value_bytes[0] = 0;
+                    value_bytes[1] = 0;
+                    value_bytes.rotate_left(2);
+                };
+                row.bytes = [row.bytes[0..34].to_owned(), value_bytes.clone(), row.bytes[68..].to_owned()].concat();
+                //println!("+ {:?}", row.bytes);
+            }
+        }
 
         layouter
             .assign_region(
@@ -883,85 +626,22 @@ impl<F: Field> MPTConfig<F> {
                             row.clone()
                         };
 
-                        // leaf s or leaf c or leaf key s or leaf key c
-                        let mut account_leaf = AccountLeaf::default();
-                        let mut storage_leaf = StorageLeaf::default();
-                        let mut branch = Branch::default();
-
-                        if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                            storage_leaf.is_s_key = true;
-                        } else if row.get_type() == MptWitnessRowType::StorageLeafCKey {
-                            storage_leaf.is_c_key = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                            account_leaf.is_key_s = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                            account_leaf.is_key_c = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS {
-                            account_leaf.is_nonce_balance_s = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC {
-                            account_leaf.is_nonce_balance_c = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS {
-                            account_leaf.is_storage_codehash_s = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC {
-                            account_leaf.is_storage_codehash_c = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf {
-                            account_leaf.is_in_added_branch = true;
+                        if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf {
                             pv.key_rlc = F::zero(); // account address until here, storage key from here on
                             pv.key_rlc_mult = F::one();
                             pv.key_rlc_prev = F::zero();
                             pv.key_rlc_mult_prev = F::one();
-                            pv.nibbles_num_prev = 0;
-                            pv.key_rlc_sel = true;
                             pv.nibbles_num = 0;
-                        } else if row.get_type() == MptWitnessRowType::StorageLeafSValue {
-                            storage_leaf.is_s_value = true;
-                        } else if row.get_type() == MptWitnessRowType::StorageLeafCValue {
-                            storage_leaf.is_c_value = true;
-                        } else if row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf {
-                            storage_leaf.is_in_added_branch = true;
-                        } else if row.get_type() == MptWitnessRowType::StorageNonExisting {
-                            storage_leaf.is_non_existing = true;
-                        } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
-                            branch.is_extension_node_s = true;
-                        } else if row.get_type() == MptWitnessRowType::ExtensionNodeC {
-                            branch.is_extension_node_c = true;
-                        } else if row.get_type() == MptWitnessRowType::AccountNonExisting {
-                            account_leaf.is_non_existing_account_row = true;
-                        }
-
-                        /*if row.not_first_level() == 0 && (row.get_type() == MptWitnessRowType::InitBranch ||
-                             row.get_type() == MptWitnessRowType::StorageLeafSKey ||
-                             row.get_type() == MptWitnessRowType::AccountLeafKeyC) {
-                            pv.memory[parent_memory(true)].witness_store(
-                                offset,
-                                &[row.s_root_bytes_rlc(self.randomness), true.scalar(), false.scalar()],
-                            );
-                            pv.memory[parent_memory(false)].witness_store(
-                                offset,
-                                &[row.c_root_bytes_rlc(self.randomness), true.scalar(), false.scalar()],
-                            );
-                            println!("set new parent: {}", offset);
-                        }*/
-
-                        if !(row.get_type() == MptWitnessRowType::InitBranch
-                            || row.get_type() == MptWitnessRowType::BranchChild)
-                        {
-                            witness[idx].assign(
-                                &mut region,
-                                self,
-                                account_leaf,
-                                storage_leaf,
-                                branch,
-                                offset,
-                            )?;
                         }
 
                         if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
                             //println!("{}: branch", offset);
+                            assign!(region, (self.is_branch, offset) => 1.scalar()).ok();
                             self.branch_config
                                 .assign(&mut region, witness, self, &mut pv, offset)
                                 .ok();
                         } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                            assign!(region, (self.is_storage, offset) => 1.scalar()).ok();
                             //println!("{}: storage", offset);
                             self.storage_config.assign(
                                 &mut region,
@@ -971,6 +651,7 @@ impl<F: Field> MPTConfig<F> {
                                 offset,
                             )?;
                         } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
+                            assign!(region, (self.is_account, offset) => 1.scalar()).ok();
                             //println!("{}: account", offset);
                             self.account_config.assign(
                                 &mut region,
@@ -980,6 +661,13 @@ impl<F: Field> MPTConfig<F> {
                                 offset,
                             )?;
                         }
+
+                        // assign bytes
+                        witness[idx].assign(
+                            &mut region,
+                            self,
+                            offset,
+                        )?;
 
                         offset += 1;
                     }
