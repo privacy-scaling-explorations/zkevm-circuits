@@ -1183,7 +1183,6 @@ mod tests {
             block2.circuits_params.max_copy_rows,
         );
         let prover2 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
-        eprintln!("The len is {}", block2.copy_events.len());
 
         assert_eq!(prover1.fixed(), prover2.fixed());
         assert_eq!(prover1.permutation(), prover2.permutation());
