@@ -152,7 +152,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             input,
             0,
             part_size,
-            false,
             None,
         );
         cell_manager.start_region();
@@ -189,7 +188,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             absorb_data.expr(),
             0,
             8,
-            false,
             None,
         );
         cell_manager.start_region();
@@ -242,7 +240,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 c,
                 1,
                 part_size_c,
-                false,
                 None,
             ));
         }
@@ -432,7 +429,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             input,
             0,
             part_size,
-            false,
             None,
         );
         cell_manager.start_region();
@@ -483,7 +479,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             squeeze_from.expr(),
             0,
             8,
-            false,
             None,
         );
         cell_manager.start_region();
