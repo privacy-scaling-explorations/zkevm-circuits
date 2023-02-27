@@ -13,7 +13,7 @@
 //! +----------+         +-----------+       +------------+
 //! ```
 
-use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
+use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use eth_types::{geth_types::BlockConstants, H256};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
@@ -155,49 +155,42 @@ impl<F: Field> PublicData<F> {
         (hi, lo)
     }
 
-    fn get_txs_hash(txs_rlp: Option<Bytes>) -> (Bytes, H256, F, F) {
-        let rlp = txs_rlp.unwrap_or_default();
-        let hash = keccak256(&rlp);
+    fn get_txs_hash(txs_rlp: &Bytes) -> (H256, F, F) {
+        let hash = keccak256(&txs_rlp);
         let (hi, lo) = Self::split_hash(hash);
-        (rlp, hash.into(), hi, lo)
+        (hash.into(), hi, lo)
     }
 
     fn get_block_hash(
-        block: Option<&witness::Block<F>>,
+        block: &witness::Block<F>,
         prover: Address,
         txs_hash: H256,
     ) -> (Bytes, H256, F, F) {
-        let rlp = match block {
-            Some(block) => {
-                let mut stream = RlpStream::new();
-                stream.begin_unbounded_list();
-                stream
-                    .append(&block.eth_block.parent_hash)
-                    .append(&*OMMERS_HASH);
-                rlp_opt(&mut stream, &block.eth_block.author);
-                stream
-                    .append(&block.eth_block.state_root)
-                    .append(&block.eth_block.transactions_root)
-                    .append(&block.eth_block.receipts_root);
-                rlp_opt(&mut stream, &block.eth_block.logs_bloom);
-                stream.append(&block.eth_block.difficulty);
-                rlp_opt(&mut stream, &block.eth_block.number);
-                stream
-                    .append(&block.eth_block.gas_limit)
-                    .append(&block.eth_block.gas_used)
-                    .append(&block.eth_block.timestamp)
-                    .append(&block.eth_block.extra_data.as_ref());
-                rlp_opt(&mut stream, &block.eth_block.mix_hash);
-                rlp_opt(&mut stream, &block.eth_block.nonce);
-                // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
-                stream.append(&prover).append(&txs_hash);
-                stream.finalize_unbounded_list();
-                let out: bytes::Bytes = stream.out().into();
-                out.into()
-            }
-            None => Bytes::default(),
-        };
-
+        let mut stream = RlpStream::new();
+        stream.begin_unbounded_list();
+        stream
+            .append(&block.eth_block.parent_hash)
+            .append(&*OMMERS_HASH);
+        rlp_opt(&mut stream, &block.eth_block.author);
+        stream
+            .append(&block.eth_block.state_root)
+            .append(&block.eth_block.transactions_root)
+            .append(&block.eth_block.receipts_root);
+        rlp_opt(&mut stream, &block.eth_block.logs_bloom);
+        stream.append(&block.eth_block.difficulty);
+        rlp_opt(&mut stream, &block.eth_block.number);
+        stream
+            .append(&block.eth_block.gas_limit)
+            .append(&block.eth_block.gas_used)
+            .append(&block.eth_block.timestamp)
+            .append(&block.eth_block.extra_data.as_ref());
+        rlp_opt(&mut stream, &block.eth_block.mix_hash);
+        rlp_opt(&mut stream, &block.eth_block.nonce);
+        // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
+        stream.append(&prover).append(&txs_hash);
+        stream.finalize_unbounded_list();
+        let out: bytes::Bytes = stream.out().into();
+        let rlp = out.into();
         let hash = keccak256(&rlp);
         // append prover and txs_hash
         let (hi, lo) = Self::split_hash(hash);
@@ -205,32 +198,23 @@ impl<F: Field> PublicData<F> {
     }
 
     fn decode_txs_rlp(txs_rlp: &Bytes) -> Vec<eth_types::Transaction> {
-        Rlp::new(txs_rlp).as_list().unwrap_or_default()
+        Rlp::new(txs_rlp).as_list().expect("invalid txs rlp")
     }
 
     fn default() -> Self {
-        let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(None);
-        let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
-            Self::get_block_hash(None, Address::default(), txs_hash);
-        PublicData {
-            block_rlp,
-            block_hash,
-            block_hash_hi,
-            block_hash_lo,
-            txs_rlp,
-            txs_hash,
-            txs_hash_hi,
-            txs_hash_lo,
-            ..Default::default()
-        }
+        Self::new(
+            &witness::Block::default(),
+            Address::default(),
+            Bytes::default(),
+        )
     }
 
     /// create PublicData from block and prover
     pub fn new(block: &witness::Block<F>, prover: Address, txs_rlp: Bytes) -> Self {
         let txs = Self::decode_txs_rlp(&txs_rlp);
-        let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(Some(txs_rlp));
+        let (txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(&txs_rlp);
         let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
-            Self::get_block_hash(Some(block), prover, txs_hash);
+            Self::get_block_hash(block, prover, txs_hash);
         PublicData {
             chain_id: block.context.chain_id,
             history_hashes: block.context.history_hashes.clone(),
@@ -347,7 +331,7 @@ pub struct PiCircuitConfig<F: Field> {
     pi: Column<Instance>, // keccak_hi, keccak_lo
     // rlp_table
     // rlc(txlist) -> rlc(rlp(txlist))
-    rlp_table: [Column<Advice>; 3], // [enable, input, len, output]
+    rlp_table: [Column<Advice>; 3], // [input, len, output]
     // keccak_table
     // rlc(compressed) -> rlc(keccak(compressed)
     keccak_table: KeccakTable2,
