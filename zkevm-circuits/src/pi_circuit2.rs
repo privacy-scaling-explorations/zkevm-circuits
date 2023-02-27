@@ -14,13 +14,12 @@
 //! ```
 
 use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
-use bytes::Bytes;
-use eth_types::sign_types::SignData;
 use eth_types::{geth_types::BlockConstants, H256};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
 };
+use eth_types::{sign_types::SignData, Bytes};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
@@ -159,21 +158,8 @@ impl<F: Field> PublicData<F> {
         (hi, lo)
     }
 
-    fn get_txs_hash(block: Option<&witness::Block<F>>) -> (Bytes, H256, F, F) {
-        let rlp = match block {
-            Some(block) => {
-                let mut stream = RlpStream::new_list(block.eth_block.transactions.len() - 1);
-                let txs = block.eth_block.transactions.as_slice();
-                if txs.len() > 0 {
-                    for tx in &txs[1..] {
-                        stream.append_raw(&tx.rlp(), 1);
-                    }
-                }
-                stream.out().into()
-            }
-            None => Bytes::new(),
-        };
-
+    fn get_txs_hash(txs_rlp: Option<Bytes>) -> (Bytes, H256, F, F) {
+        let rlp = txs_rlp.unwrap_or_default();
         let hash = keccak256(&rlp);
         let (hi, lo) = Self::split_hash(hash);
         (rlp, hash.into(), hi, lo)
@@ -209,10 +195,10 @@ impl<F: Field> PublicData<F> {
                 // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
                 stream.append(&prover).append(&txs_hash);
                 stream.finalize_unbounded_list();
-
-                stream.out().into()
+                let out: bytes::Bytes = stream.out().into();
+                out.into()
             }
-            None => Bytes::new(),
+            None => Bytes::default(),
         };
 
         let hash = keccak256(&rlp);
@@ -239,8 +225,8 @@ impl<F: Field> PublicData<F> {
     }
 
     /// create PublicData from block and prover
-    pub fn new(block: &witness::Block<F>, prover: Address) -> Self {
-        let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(Some(block));
+    pub fn new(block: &witness::Block<F>, prover: Address, txs_rlp: Bytes) -> Self {
+        let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(Some(txs_rlp));
         let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
             Self::get_block_hash(Some(block), prover, txs_hash);
         PublicData {
@@ -1518,12 +1504,18 @@ impl<F: Field> PiCircuit<F> {
         }
     }
 
-    /// create a new PiCircuit with prover address
-    pub fn new_from_block_with_prover(block: &witness::Block<F>, prover: Address) -> Self {
+    /// create a new PiCircuit with extra data
+    /// prover: for l2
+    /// txs_rlp: get from l1 contract
+    pub fn new_from_block_with_extra(
+        block: &witness::Block<F>,
+        prover: Address,
+        txs_rlp: Bytes,
+    ) -> Self {
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            PublicData::new(block, prover),
+            PublicData::new(block, prover, txs_rlp),
         )
     }
 }
@@ -1535,7 +1527,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            PublicData::new(block, Address::default()),
+            PublicData::new(block, Address::default(), Bytes::default()),
         )
     }
 
@@ -1798,7 +1790,7 @@ mod pi_circuit_test {
         block.eth_block.nonce = Some(H64::from([0, 0, 0, 0, 0, 0, 0, 0]));
         block.eth_block.base_fee_per_gas = Some(U256::from(0));
 
-        let public_data = PublicData::new(&block, prover);
+        let public_data = PublicData::new(&block, prover, Default::default());
 
         let k = 17;
 
