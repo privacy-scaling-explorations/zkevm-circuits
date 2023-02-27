@@ -29,8 +29,16 @@ pub async fn get_txs_rlp<P: JsonRpcClient>(
     propose_tx_hash: H256,
 ) -> Result<Bytes, Error> {
     let tx = l1_cli.get_transaction_by_hash(propose_tx_hash).await?;
+    // remove 4bytes short signature
+    // signature+inputs
+    if tx.input.len() < 4 {
+        return Err(Error::InternalError(
+            "parse propose input: unexpected input length",
+        ));
+    }
+
     let mut result = PROPOSE_TX
-        .decode_input(&tx.input)
+        .decode_input(&tx.input[4..])
         .map_err(|_| Error::InternalError("parse propose input: failed"))?;
     if result.len() != 1 {
         return Err(Error::InternalError(
