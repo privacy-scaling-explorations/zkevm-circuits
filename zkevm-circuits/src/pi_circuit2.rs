@@ -23,7 +23,7 @@ use eth_types::{sign_types::SignData, Bytes};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
-use rlp::RlpStream;
+use rlp::{Rlp, RlpStream};
 use std::marker::PhantomData;
 
 use crate::table::TxFieldTag;
@@ -108,13 +108,10 @@ pub struct PublicData<F: Field> {
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
 
-    // private
-    block_ctx: BlockContext,
-    block_txs: Vec<witness::Transaction>,
-
     /// Prover address
     pub prover: Address,
 
+    // private values
     block_rlp: Bytes,
     block_hash: H256,
     block_hash_hi: F,
@@ -207,6 +204,10 @@ impl<F: Field> PublicData<F> {
         (rlp, hash.into(), hi, lo)
     }
 
+    fn decode_txs_rlp(txs_rlp: &Bytes) -> Vec<eth_types::Transaction> {
+        Rlp::new(txs_rlp).as_list().unwrap_or_default()
+    }
+
     fn default() -> Self {
         let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(None);
         let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
@@ -226,13 +227,14 @@ impl<F: Field> PublicData<F> {
 
     /// create PublicData from block and prover
     pub fn new(block: &witness::Block<F>, prover: Address, txs_rlp: Bytes) -> Self {
+        let txs = Self::decode_txs_rlp(&txs_rlp);
         let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(Some(txs_rlp));
         let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
             Self::get_block_hash(Some(block), prover, txs_hash);
         PublicData {
             chain_id: block.context.chain_id,
             history_hashes: block.context.history_hashes.clone(),
-            transactions: block.eth_block.transactions.clone(),
+            transactions: txs,
             state_root: block.eth_block.state_root,
             prev_state_root: H256::from_uint(&block.prev_state_root),
             block_constants: BlockConstants {
@@ -243,8 +245,6 @@ impl<F: Field> PublicData<F> {
                 gas_limit: block.context.gas_limit.into(),
                 base_fee: block.context.base_fee,
             },
-            block_ctx: block.context.clone(),
-            block_txs: block.txs.clone(),
             block_rlp,
             block_hash,
             block_hash_hi,
