@@ -1260,6 +1260,9 @@ impl<'a> CircuitInputStateRef<'a> {
             if account.balance < value {
                 return Ok(Some(ExecError::InsufficientBalance));
             }
+            if account.nonce >= Word::from(u64::MAX) {
+                return Ok(Some(ExecError::NonceOverflow));
+            }
 
             // Address collision
             if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {

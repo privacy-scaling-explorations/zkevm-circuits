@@ -203,7 +203,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let callee_gas_left = eip150_gas(geth_step.gas.0 - gas_cost, gas_specified);
 
         // There are 4 branches from here.
-        // add failure case for insufficient balance or error depth in the future.
         match (
             insufficient_balance,
             state.is_precompiled(&call.address),

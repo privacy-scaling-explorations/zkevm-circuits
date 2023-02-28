@@ -131,6 +131,8 @@ pub enum ExecError {
     CodeStoreOutOfGas,
     /// For RETURN in a CREATE, CREATE2
     MaxCodeSizeExceeded,
+    /// For CREATE, CREATE2
+    NonceOverflow,
 }
 
 // TODO: Move to impl block.

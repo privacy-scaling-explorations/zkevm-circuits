@@ -5,6 +5,7 @@ use crate::geth_errors::{
     GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
     GETH_ERR_STACK_UNDERFLOW,
 };
+use crate::mock::BlockData;
 use crate::operation::RWCounter;
 use crate::state_db::Account;
 use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
@@ -478,6 +479,7 @@ fn tracer_err_address_collision() {
             code_hash: Hash::zero(),
         },
     );
+
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::ContractAddressCollision)
@@ -1647,6 +1649,182 @@ fn tracer_err_stack_underflow() {
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::StackUnderflow)
+    );
+}
+
+#[test]
+fn tracer_err_nonce_uint_overflow() {
+    // nonce uint overflow err, this specific error type is only happened in CREATE,
+    // CREATE2 refer source code https://github.com/ethereum/go-ethereum/blob/master/core/vm/evm.go#L428
+
+    // code_a calls code_b which executes code_creator in CREATE2
+
+    let code_creator = bytecode! {
+        PUSH1(0x00) // value
+        PUSH1(0x00) // offset
+        MSTORE
+        PUSH1(0x01) // length
+        PUSH1(0x00) // offset
+        RETURN
+    };
+
+    let mut code4create = Bytecode::default();
+    // pad code_creator to multiple of 32 bytes
+    let len = code_creator.to_vec().len();
+    let code_creator: Vec<u8> = code_creator
+        .to_vec()
+        .iter()
+        .cloned()
+        .chain(0u8..((32 - len % 32) as u8))
+        .collect();
+    for (index, word) in code_creator.chunks(32).enumerate() {
+        code4create.push(32, Word::from_big_endian(word));
+        code4create.push(32, Word::from(index * 32));
+        code4create.write_op(OpcodeId::MSTORE);
+    }
+
+    let mut code_a = code4create.clone();
+    code_a.append(&bytecode! {
+        PUSH3(0x0) // salt
+        PUSH1(len) // length
+        PUSH1(0x00) // offset
+        PUSH1(0x00) // value
+        CREATE2
+
+        PUSH3(0x1) // salt
+        PUSH1(len) // length
+        PUSH1(0x00) // offset
+        PUSH1(0x00) // value
+        CREATE2
+
+        // PUSH1(0x0) // retLength
+        // PUSH1(0x0) // retOffset
+        // PUSH1(0x0) // argsLength
+        // PUSH1(0x0) // argsOffset
+        // PUSH1(0x0) // value
+        // PUSH32(*WORD_ADDR_B) // addr
+        // PUSH32(0x1_0000) // gas
+        // CALL
+
+        PUSH2(0xaa)
+    });
+
+    let mut code_b = code4create.clone();
+    code_b.append(&bytecode! {
+        PUSH3(0x0) // salt
+        PUSH1(len) // length
+        PUSH1(0x00) // offset
+        PUSH1(0x00) // value
+        CREATE2
+
+        PUSH3(0xbb)
+    });
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 1>::new_with_logger_config(
+        None,
+        |accs| {
+            accs[0]
+                .address(address!("0x0000000000000000000000000000000000000000"))
+                .code(code_a)
+                .nonce(Word::from(u64::MAX - 1));
+            accs[1].address(*ADDR_B).code(code_b);
+            accs[2]
+                .address(address!("0x000000000000000000000000000000000cafe007"))
+                .balance(Word::from(1u64 << 30))
+                .nonce(Word::zero());
+        },
+        |mut txs, accs| {
+            txs[0]
+                .to(accs[0].address)
+                .from(accs[2].address)
+                .nonce(Word::zero());
+        },
+        |block, _tx| block.number(0xcafeu64),
+        LoggerConfig::enable_memory(),
+    )
+    .unwrap()
+    .into();
+
+    println!("struct_logs {:#?}", block.geth_traces[0].struct_logs);
+
+    // get last CREATE2
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::CREATE2)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    let memory = next_step.unwrap().memory.clone();
+
+    // let mut builder = CircuitInputBuilderTx::new(&block, step);
+    // // builder.builder.sdb.commit_tx(); // commit tx
+
+    let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+    builder
+        .handle_block(&block.eth_block, &block.geth_traces)
+        .unwrap();
+
+    let create2_address: Address = {
+        // get first RETURN
+        let (index, _) = block.geth_traces[0]
+            .struct_logs
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.op == OpcodeId::RETURN)
+            .unwrap();
+        let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+        let addr_word = next_step.unwrap().stack.last().unwrap();
+        addr_word.to_address()
+    };
+
+    // let mut builder = CircuitInputBuilderTx::new(&block, step);
+    // // Set up call context at CREATE
+    // builder.tx_ctx.call_is_success.push(false);
+    // builder.state_ref().push_call(mock_internal_create());
+    // assert_eq!(
+    //     builder.state_ref().get_step_err(step, next_step).unwrap(),
+    //     Some(ExecError::CodeStoreOutOfGas)
+    // );
+
+    // Set up call context at CREATE2
+    // builder.tx_ctx.call_is_success.push(false);
+    // builder.state_ref().push_call(mock_internal_create());
+    // builder.state_ref().call_ctx_mut().unwrap().memory = memory;
+    // // Set up account and contract that exist during the second CREATE2
+    // builder.builder.sdb.set_account(
+    //     &ADDR_B,
+    //     Account {
+    //         nonce: Word::zero(),
+    //         balance: Word::from(555u64), /* same value as in
+    //                                       * `mock::new_tracer_account` */
+    //         storage: HashMap::new(),
+    //         code_hash: Hash::zero(),
+    //     },
+    // );
+    // builder.builder.sdb.set_account(
+    //     &create2_address,
+    //     Account {
+    //         nonce: Word::zero(),
+    //         balance: Word::zero(),
+    //         storage: HashMap::new(),
+    //         code_hash: Hash::zero(),
+    //     },
+    // );
+    let mut dummy_tx = Transaction::dummy();
+    let mut dummy_tx_ctx = TransactionContext::default();
+
+    let mut state = builder.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
+    // let call = state.parse_call(step).unwrap();
+    state.push_call(mock_internal_create());
+    assert_eq!(
+        // builder.get(step, next_step).unwrap(),
+        builder
+            .state_ref(&mut dummy_tx, &mut dummy_tx_ctx)
+            .get_step_err(step, next_step)
+            .unwrap(),
+        Some(ExecError::NonceOverflow),
     );
 }
 
