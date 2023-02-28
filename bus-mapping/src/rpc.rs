@@ -75,6 +75,15 @@ impl<P: JsonRpcClient> GethClient<P> {
         Ok(net_id.as_u64())
     }
 
+    /// Calls `get_transaction_by_hash` via JSON-RPC returning a [`Transaction`]
+    pub async fn get_transaction_by_hash(&self, hash: Hash) -> Result<Transaction, Error> {
+        let hash = serialize(&hash);
+        self.0
+            .request("eth_getTransactionByHash", [hash])
+            .await
+            .map_err(|e| Error::JSONRpcError(e.into()))
+    }
+
     /// Calls `eth_getBlockByHash` via JSON-RPC returning a [`Block`] returning
     /// all the block information including it's transaction's details.
     pub async fn get_block_by_hash(&self, hash: Hash) -> Result<Block<Transaction>, Error> {

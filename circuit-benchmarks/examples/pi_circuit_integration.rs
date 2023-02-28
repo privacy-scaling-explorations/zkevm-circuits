@@ -410,6 +410,7 @@ fn load_circuit_pk<C: Circuit<Fr>>(
 }
 
 use bus_mapping::circuit_input_builder::{BuilderClient, CircuitsParams};
+use bus_mapping::public_input_builder::get_txs_rlp;
 use bus_mapping::rpc::GethClient;
 use bus_mapping::Error;
 use clap::Parser;
@@ -422,8 +423,12 @@ use zkevm_circuits::tx_circuit::PrimeField;
 #[derive(Parser, Debug)]
 #[clap(version, about)]
 pub(crate) struct ProverCmdConfig {
-    /// geth_url
-    geth_url: Option<String>,
+    /// l1_geth_url
+    l1_geth_url: Option<String>,
+    /// propose tx hash
+    propose_tx_hash: Option<String>,
+    /// l2_geth_url
+    l2_geth_url: Option<String>,
     /// block_num
     block_num: Option<u64>,
     /// prover address
@@ -498,8 +503,15 @@ async fn main() -> Result<(), Error> {
         &hex::decode(config.address.expect("needs prover").as_bytes()).expect("parse_address"),
     );
 
-    let provider = Http::from_str(&config.geth_url.unwrap()).expect("Http geth url");
-    let geth_client = GethClient::new(provider);
+    let l1_provider = Http::from_str(&config.l1_geth_url.unwrap()).expect("Http geth url");
+    let l1_geth_client = GethClient::new(l1_provider);
+    let propose_tx_hash = eth_types::H256::from_slice(
+        &hex::decode(config.propose_tx_hash.unwrap().as_bytes()).expect("parse_hash"),
+    );
+    let txs_rlp = get_txs_rlp(&l1_geth_client, propose_tx_hash).await?;
+
+    let l2_provider = Http::from_str(&config.l2_geth_url.unwrap()).expect("Http geth url");
+    let l2_geth_client = GethClient::new(l2_provider);
 
     let circuit_params = select_circuit_config!(
         txs,
@@ -517,13 +529,13 @@ async fn main() -> Result<(), Error> {
         }
     );
 
-    let builder = BuilderClient::new(geth_client, circuit_params.clone()).await?;
+    let builder = BuilderClient::new(l2_geth_client, circuit_params.clone()).await?;
     let (builder, _) = builder.gen_inputs(block_num).await?;
     let block = block_convert(&builder.block, &builder.code_db).unwrap();
     select_circuit_config!(
         txs,
         {
-            let public_data = PublicData::new(&block, prover);
+            let public_data = PublicData::new(&block, prover, txs_rlp);
             println!("using CIRCUIT_CONFIG = {:?}", CIRCUIT_CONFIG);
             let circuit =
                 PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>(

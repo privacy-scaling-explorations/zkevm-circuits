@@ -13,18 +13,17 @@
 //! +----------+         +-----------+       +------------+
 //! ```
 
-use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, witness::BlockContext};
-use bytes::Bytes;
-use eth_types::sign_types::SignData;
+use crate::evm_circuit::util::constraint_builder::BaseConstraintBuilder;
 use eth_types::{geth_types::BlockConstants, H256};
 use eth_types::{
     geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
     Word,
 };
+use eth_types::{sign_types::SignData, Bytes};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Expression, Instance};
 use itertools::Itertools;
-use rlp::RlpStream;
+use rlp::{Rlp, RlpStream};
 use std::marker::PhantomData;
 
 use crate::table::TxFieldTag;
@@ -109,13 +108,10 @@ pub struct PublicData<F: Field> {
     /// Constants related to Ethereum block
     pub block_constants: BlockConstants,
 
-    // private
-    block_ctx: BlockContext,
-    block_txs: Vec<witness::Transaction>,
-
     /// Prover address
     pub prover: Address,
 
+    // private values
     block_rlp: Bytes,
     block_hash: H256,
     block_hash_hi: F,
@@ -159,94 +155,70 @@ impl<F: Field> PublicData<F> {
         (hi, lo)
     }
 
-    fn get_txs_hash(block: Option<&witness::Block<F>>) -> (Bytes, H256, F, F) {
-        let rlp = match block {
-            Some(block) => {
-                let mut stream = RlpStream::new_list(block.eth_block.transactions.len() - 1);
-                let txs = block.eth_block.transactions.as_slice();
-                if txs.len() > 0 {
-                    for tx in &txs[1..] {
-                        stream.append_raw(&tx.rlp(), 1);
-                    }
-                }
-                stream.out().into()
-            }
-            None => Bytes::new(),
-        };
-
-        let hash = keccak256(&rlp);
+    fn get_txs_hash(txs_rlp: &Bytes) -> (H256, F, F) {
+        let hash = keccak256(&txs_rlp);
         let (hi, lo) = Self::split_hash(hash);
-        (rlp, hash.into(), hi, lo)
+        (hash.into(), hi, lo)
     }
 
     fn get_block_hash(
-        block: Option<&witness::Block<F>>,
+        block: &witness::Block<F>,
         prover: Address,
         txs_hash: H256,
     ) -> (Bytes, H256, F, F) {
-        let rlp = match block {
-            Some(block) => {
-                let mut stream = RlpStream::new();
-                stream.begin_unbounded_list();
-                stream
-                    .append(&block.eth_block.parent_hash)
-                    .append(&*OMMERS_HASH);
-                rlp_opt(&mut stream, &block.eth_block.author);
-                stream
-                    .append(&block.eth_block.state_root)
-                    .append(&block.eth_block.transactions_root)
-                    .append(&block.eth_block.receipts_root);
-                rlp_opt(&mut stream, &block.eth_block.logs_bloom);
-                stream.append(&block.eth_block.difficulty);
-                rlp_opt(&mut stream, &block.eth_block.number);
-                stream
-                    .append(&block.eth_block.gas_limit)
-                    .append(&block.eth_block.gas_used)
-                    .append(&block.eth_block.timestamp)
-                    .append(&block.eth_block.extra_data.as_ref());
-                rlp_opt(&mut stream, &block.eth_block.mix_hash);
-                rlp_opt(&mut stream, &block.eth_block.nonce);
-                // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
-                stream.append(&prover).append(&txs_hash);
-                stream.finalize_unbounded_list();
-
-                stream.out().into()
-            }
-            None => Bytes::new(),
-        };
-
+        let mut stream = RlpStream::new();
+        stream.begin_unbounded_list();
+        stream
+            .append(&block.eth_block.parent_hash)
+            .append(&*OMMERS_HASH);
+        rlp_opt(&mut stream, &block.eth_block.author);
+        stream
+            .append(&block.eth_block.state_root)
+            .append(&block.eth_block.transactions_root)
+            .append(&block.eth_block.receipts_root);
+        rlp_opt(&mut stream, &block.eth_block.logs_bloom);
+        stream.append(&block.eth_block.difficulty);
+        rlp_opt(&mut stream, &block.eth_block.number);
+        stream
+            .append(&block.eth_block.gas_limit)
+            .append(&block.eth_block.gas_used)
+            .append(&block.eth_block.timestamp)
+            .append(&block.eth_block.extra_data.as_ref());
+        rlp_opt(&mut stream, &block.eth_block.mix_hash);
+        rlp_opt(&mut stream, &block.eth_block.nonce);
+        // rlp_opt(&mut stream, &block.eth_block.base_fee_per_gas);
+        stream.append(&prover).append(&txs_hash);
+        stream.finalize_unbounded_list();
+        let out: bytes::Bytes = stream.out().into();
+        let rlp = out.into();
         let hash = keccak256(&rlp);
         // append prover and txs_hash
         let (hi, lo) = Self::split_hash(hash);
         (rlp, hash.into(), hi, lo)
     }
 
+    fn decode_txs_rlp(txs_rlp: &Bytes) -> Vec<eth_types::Transaction> {
+        Rlp::new(txs_rlp).as_list().expect("invalid txs rlp")
+    }
+
     fn default() -> Self {
-        let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(None);
-        let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
-            Self::get_block_hash(None, Address::default(), txs_hash);
-        PublicData {
-            block_rlp,
-            block_hash,
-            block_hash_hi,
-            block_hash_lo,
-            txs_rlp,
-            txs_hash,
-            txs_hash_hi,
-            txs_hash_lo,
-            ..Default::default()
-        }
+        Self::new(
+            &witness::Block::default(),
+            Address::default(),
+            Bytes::default(),
+        )
     }
 
     /// create PublicData from block and prover
-    pub fn new(block: &witness::Block<F>, prover: Address) -> Self {
-        let (txs_rlp, txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(Some(block));
+    pub fn new(block: &witness::Block<F>, prover: Address, txs_rlp: Bytes) -> Self {
+        let txs = Self::decode_txs_rlp(&txs_rlp);
+        let (txs_hash, txs_hash_hi, txs_hash_lo) = Self::get_txs_hash(&txs_rlp);
         let (block_rlp, block_hash, block_hash_hi, block_hash_lo) =
-            Self::get_block_hash(Some(block), prover, txs_hash);
+            Self::get_block_hash(block, prover, txs_hash);
         PublicData {
             chain_id: block.context.chain_id,
             history_hashes: block.context.history_hashes.clone(),
-            transactions: block.eth_block.transactions.clone(),
+            transactions: txs,
             state_root: block.eth_block.state_root,
             prev_state_root: H256::from_uint(&block.prev_state_root),
             block_constants: BlockConstants {
@@ -257,8 +229,6 @@ impl<F: Field> PublicData<F> {
                 gas_limit: block.context.gas_limit.into(),
                 base_fee: block.context.base_fee,
             },
-            block_ctx: block.context.clone(),
-            block_txs: block.txs.clone(),
             block_rlp,
             block_hash,
             block_hash_hi,
@@ -361,7 +331,7 @@ pub struct PiCircuitConfig<F: Field> {
     pi: Column<Instance>, // keccak_hi, keccak_lo
     // rlp_table
     // rlc(txlist) -> rlc(rlp(txlist))
-    rlp_table: [Column<Advice>; 3], // [enable, input, len, output]
+    rlp_table: [Column<Advice>; 3], // [input, len, output]
     // keccak_table
     // rlc(compressed) -> rlc(keccak(compressed)
     keccak_table: KeccakTable2,
@@ -1518,12 +1488,18 @@ impl<F: Field> PiCircuit<F> {
         }
     }
 
-    /// create a new PiCircuit with prover address
-    pub fn new_from_block_with_prover(block: &witness::Block<F>, prover: Address) -> Self {
+    /// create a new PiCircuit with extra data
+    /// prover: for l2
+    /// txs_rlp: get from l1 contract
+    pub fn new_from_block_with_extra(
+        block: &witness::Block<F>,
+        prover: Address,
+        txs_rlp: Bytes,
+    ) -> Self {
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            PublicData::new(block, prover),
+            PublicData::new(block, prover, txs_rlp),
         )
     }
 }
@@ -1535,7 +1511,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            PublicData::new(block, Address::default()),
+            PublicData::new(block, Address::default(), Bytes::default()),
         )
     }
 
@@ -1798,7 +1774,7 @@ mod pi_circuit_test {
         block.eth_block.nonce = Some(H64::from([0, 0, 0, 0, 0, 0, 0, 0]));
         block.eth_block.base_fee_per_gas = Some(U256::from(0));
 
-        let public_data = PublicData::new(&block, prover);
+        let public_data = PublicData::new(&block, prover, Default::default());
 
         let k = 17;
 

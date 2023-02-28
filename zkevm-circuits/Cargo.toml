@@ -15,8 +15,8 @@ array-init = "2.0.0"
 bus-mapping = { path = "../bus-mapping" }
 eth-types = { path = "../eth-types" }
 gadgets = { path = "../gadgets" }
-ethers-core = "0.17.0"
-ethers-signers = { version = "0.17.0", optional = true }
+ethers-core = "1.0.2"
+ethers-signers = { version = "1.0.2", optional = true }
 mock = { path = "../mock", optional = true }
 strum = "0.24"
 strum_macros = "0.24"
@@ -48,7 +48,7 @@ hex = "0.4.3"
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
 criterion = "0.3"
 ctor = "0.1.22"
-ethers-signers = "0.17.0"
+ethers-signers = "1.0.2"
 hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }
