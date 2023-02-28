@@ -54,7 +54,7 @@ impl<F: Field> ProofChainConfig<F> {
 
             let start_root = DataTransition::new(meta, ctx.inter_start_root);
             let final_root = DataTransition::new(meta, ctx.inter_final_root);
-            let address_rlc = DataTransition::new(meta, ctx.address_rlc);
+            let address_rlc = DataTransition::new(meta, ctx.mpt_table.address_rlc);
 
             /*let is_branch_or_account = is_account_leaf_key_s.expr() + is_branch_init.expr();
 

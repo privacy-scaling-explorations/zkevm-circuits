@@ -9,10 +9,10 @@ use std::{convert::TryFrom, marker::PhantomData};
 use crate::{
     mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::param::{
-        COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
+        COUNTER_WITNESS_LEN, C_RLP_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
         IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
         IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START,
-        S_START, WITNESS_ROW_WIDTH,
+        WITNESS_ROW_WIDTH,
     },
     mpt_circuit::{MPTConfig, ProofValues},
 };
@@ -119,7 +119,6 @@ impl<F: Field> MptWitnessRow<F> {
             0
         };
         &self.bytes[S_RLP_START+offset..34]
-        //&self.bytes[S_RLP_START..S_RLP_START + 34]
     }
 
     pub(crate) fn c_hash_bytes(&self) -> &[u8] {
@@ -129,7 +128,6 @@ impl<F: Field> MptWitnessRow<F> {
             0
         };
         &self.bytes[C_RLP_START+offset..68]
-        //&self.bytes[C_RLP_START..C_RLP_START + 34]
     }
 
     pub(crate) fn main(&self) -> &[u8] {
@@ -214,8 +212,8 @@ impl<F: Field> MptWitnessRow<F> {
         pv: &ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let s_root_rlc = self.s_root_bytes_rlc(mpt_config.randomness);
-        let c_root_rlc = self.c_root_bytes_rlc(mpt_config.randomness);
+        let s_root_rlc = self.s_root_bytes_rlc(mpt_config.r);
+        let c_root_rlc = self.c_root_bytes_rlc(mpt_config.r);
 
         region.assign_advice(
             || "inter start root",
@@ -243,7 +241,7 @@ impl<F: Field> MptWitnessRow<F> {
             prevent omitting account proof (and having only storage proof
             with the appropriate address RLC)
             */
-            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.randomness);
+            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.r);
 
             region.assign_advice(
                 || "address RLC",

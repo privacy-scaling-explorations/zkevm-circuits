@@ -323,20 +323,6 @@ impl<F: Field> RLPValueGadget<F> {
             RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
             _ => is_list = true,
         }
-        /*const RLP_SHORT_INCLUSIVE: u8 = RLP_SHORT + 1;
-        const RLP_LONG_INCLUSIVE: u8 = RLP_LONG - 1;
-        const RLP_VALUE_MAX: u8 = RLP_LIST_SHORT - 1;
-
-        let mut is_short = false;
-        let mut is_long = false;
-        let mut is_very_long = false;
-        let mut is_list = false;
-        match bytes[0] {
-            0..=RLP_SHORT => is_short = true,
-            RLP_SHORT_INCLUSIVE..=RLP_LONG_INCLUSIVE => is_long = true,
-            RLP_LONG..=RLP_VALUE_MAX => is_very_long = true,
-            _ => is_list = true,
-        }*/
 
         self.is_short.assign(region, offset, F::from(is_short))?;
         self.is_long.assign(region, offset, F::from(is_long))?;
@@ -711,12 +697,12 @@ impl<F: Field> LeafKeyGadget<F> {
         })
     }
 
-    /// Returns the total length of the leaf (including RLP bytes)
+    /// Returns the number of bytes used by the list (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> Expression<F> {
         self.rlp_list.num_bytes()
     }
 
-    /// Length
+    /// Returns the total length of the list (excluding RLP bytes)
     pub(crate) fn len(&self) -> Expression<F> {
         self.rlp_list.len()
     }
@@ -780,7 +766,7 @@ impl<F: Field> LeafKeyGadget<F> {
     }
 
     pub(crate) fn num_key_nibbles(&self, is_key_odd: Expression<F>) -> Expression<F> {
-        get_num_nibbles(self.key_len(), is_key_odd)
+        num_nibbles::expr(self.key_len(), is_key_odd)
     }
 }
 
@@ -799,7 +785,7 @@ pub(crate) fn compute_acc_and_mult<F: Field>(
 }
 
 impl LeafKeyWitness {
-    /// Returns the total length of the leaf (including RLP bytes)
+    /// Returns the number of bytes used by the list (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> usize {
         self.rlp_list.num_bytes()
     }
@@ -945,6 +931,20 @@ pub(crate) struct KeyData<F> {
     pub(crate) parent_mult: Cell<F>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct KeyDataWitness<F> {
+    pub(crate) rlc: F,
+    pub(crate) mult: F,
+    pub(crate) num_nibbles: usize,
+    pub(crate) is_odd: bool,
+    pub(crate) is_placeholder_leaf_s: bool,
+    pub(crate) is_placeholder_leaf_c: bool,
+    pub(crate) placeholder_nibble: usize,
+    pub(crate) placeholder_is_odd: bool,
+    pub(crate) parent_rlc: F,
+    pub(crate) parent_mult: F,
+}
+
 impl<F: Field> Trackable for KeyData<F> {
     fn as_any(&self) -> &dyn Any {
         self
@@ -1031,16 +1031,11 @@ impl<F: Field> KeyData<F> {
         num_nibbles: usize,
         is_placeholder_leaf_s: bool,
         is_placeholder_leaf_c: bool,
-        placeholder_nibble: u8,
+        placeholder_nibble: usize,
         placeholder_is_odd: bool,
         parent_rlc: F,
         parent_mult: F,
     ) -> Result<(), Error> {
-        //println!("offset: {}", offset);
-        //println!("key_rlc_prev: {:?}", pv.key_rlc_prev);
-        //println!("key_mult_prev: {:?}", pv.key_rlc_mult_prev);
-        //println!("nibbles_num_prev: {:?}", pv.nibbles_num_prev);
-
         let values = [
             rlc,
             mult,
@@ -1064,13 +1059,8 @@ impl<F: Field> KeyData<F> {
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
-    ) -> Result<Vec<F>, Error> {
+    ) -> Result<KeyDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
-
-        //println!("offset: {}, values: {:?}", offset, values);
-        //println!("key_rlc_prev: {:?}", pv.key_rlc_prev);
-        //println!("key_mult_prev: {:?}", pv.key_rlc_mult_prev);
-        //println!("nibbles_num_prev: {:?}", pv.nibbles_num_prev);
 
         self.rlc.assign(region, offset, values[0])?;
         self.mult.assign(region, offset, values[1])?;
@@ -1085,7 +1075,18 @@ impl<F: Field> KeyData<F> {
         self.parent_rlc.assign(region, offset, values[8])?;
         self.parent_mult.assign(region, offset, values[9])?;
 
-        Ok(values)
+        Ok(KeyDataWitness {
+            rlc: values[0],
+            mult: values[1],
+            num_nibbles: values[2].get_lower_32() as usize,
+            is_odd: values[3] != F::zero(),
+            is_placeholder_leaf_s: values[4] != F::zero(),
+            is_placeholder_leaf_c: values[5] != F::zero(),
+            placeholder_nibble:  values[6].get_lower_32() as usize,
+            placeholder_is_odd: values[7] != F::zero(),
+            parent_rlc: values[8],
+            parent_mult: values[9],
+        })
     }
 }
 
@@ -1095,6 +1096,14 @@ pub(crate) struct ParentData<F> {
     pub(crate) is_root: Cell<F>,
     pub(crate) is_placeholder: Cell<F>,
     pub(crate) placeholder_rlc: Cell<F>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ParentDataWitness<F> {
+    pub(crate) rlc: F,
+    pub(crate) is_root: bool,
+    pub(crate) is_placeholder: bool,
+    pub(crate) placeholder_rlc: F,
 }
 
 impl<F: Field> ParentData<F> {
@@ -1144,10 +1153,6 @@ impl<F: Field> ParentData<F> {
         is_placeholder: bool,
         placeholder_rlc: F,
     ) -> Result<(), Error> {
-        //println!("offset: {}", offset);
-        //println!("rlc: {:?}", rlc);
-        //println!("is_hashed: {}", is_hashed);
-
         let values = [
             rlc,
             force_hashed.scalar(),
@@ -1165,7 +1170,7 @@ impl<F: Field> ParentData<F> {
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
-    ) -> Result<Vec<F>, Error> {
+    ) -> Result<ParentDataWitness<F>, Error> {
         let values = memory.witness_load(load_offset);
 
         self.rlc.assign(region, offset, values[0])?;
@@ -1173,7 +1178,12 @@ impl<F: Field> ParentData<F> {
         self.is_placeholder.assign(region, offset, values[2])?;
         self.placeholder_rlc.assign(region, offset, values[3])?;
 
-        Ok(values)
+        Ok(ParentDataWitness {
+            rlc: values[0],
+            is_root: values[1] == 1.scalar(),
+            is_placeholder: values[2] == 1.scalar(),
+            placeholder_rlc: values[3],
+        })
     }
 }
 
@@ -1326,17 +1336,29 @@ pub(crate) mod get_num_bytes_list_short {
     }
 }
 
-pub(crate) fn get_num_nibbles<F: Field>(
-    key_len: Expression<F>,
-    is_key_odd: Expression<F>,
-) -> Expression<F> {
-    circuit!([meta, _cb!()], {
-        ifx! {is_key_odd => {
-            key_len.expr() * 2.expr() - 1.expr()
-        } elsex {
-            (key_len.expr() - 1.expr()) * 2.expr()
-        }}
-    })
+// Returns the number of nibbles stored in a key value
+pub(crate) mod num_nibbles {
+    use crate::{_cb, circuit};
+    use crate::circuit_tools::constraint_builder::ConstraintBuilder;
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
+
+    pub(crate) fn expr<F: Field>(key_len: Expression<F>, is_key_odd: Expression<F>) -> Expression<F> {
+        circuit!([meta, _cb!()], {
+            ifx! {is_key_odd => {
+                key_len.expr() * 2.expr() - 1.expr()
+            } elsex {
+                (key_len.expr() - 1.expr()) * 2.expr()
+            }}
+        })
+    }
+    pub(crate) fn value(key_len: usize, is_key_odd: bool) -> usize {
+        if is_key_odd {
+            key_len * 2 - 1
+        } else {
+            (key_len - 1) * 2
+        }
+    }
 }
 
 pub(crate) fn extend_rand<F: Field>(r: &[Expression<F>]) -> Vec<Expression<F>> {
@@ -1381,6 +1403,9 @@ pub struct MPTConstraintBuilder<F> {
     pub range_s: Vec<(Expression<F>, Expression<F>)>,
 }
 
+/// Length is set in the configuration of the rows where unused columns might appear (and which need to be checked to be zeros).
+/// From the vector of lengths, the expression is computed that returns the length of the used columns for each row.
+/// This enables a generalised constraint (for all rows) for the values in the unused columns being zeros in mpt.rs.
 impl<F: Field> MPTConstraintBuilder<F> {
     const DEFAULT_LENGTH_S: usize = 34;
     const DEFAULT_LENGTH_C: usize = 32;
@@ -1620,12 +1645,6 @@ impl<F: Field> RLPItemGadget<F> {
     }
 
     pub(crate) fn rlc_branch(&self, r: &[Expression<F>]) -> Expression<F> {
-        /*circuit!([meta, _cb!()], {
-            matchx! {
-                self.value.is_string() => self.value.rlc_value(r),
-                self.list.is_list() => self.list.rlc(r).1,
-            }
-        })*/
         circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.rlc(r).0,
@@ -1644,45 +1663,6 @@ impl RLPItemWitness {
         }
     }
 
-    // Single RLP byte containing the byte value
-    /*pub(crate) fn is_short(&self) -> bool {
-        matchr! {
-            self.value.is_string() => self.value.is_very_long(),
-            self.list.is_list() => self.list.is_very_long(),
-        }
-    }
-
-    // Single RLP byte containing the length of the value
-    pub(crate) fn is_long(&self) -> bool {
-        self.is_long
-    }
-
-    // RLP byte containing the lenght of the length,
-    // followed by the length, followed by the actual data
-    pub(crate) fn is_very_long(&self) -> bool {
-        self.is_very_long
-    }
-
-    /// Number of RLP bytes
-    pub(crate) fn num_rlp_bytes(&self) -> usize {
-        matchr! {
-            self.is_short() => 0,
-            self.is_long() => 1,
-            self.is_very_long() => 2,
-        }
-    }
-
-    /// Number of bytes in total (including RLP bytes)
-    pub(crate) fn num_bytes(&self) -> usize {
-        matchr! {
-            self.is_short() => 1,
-            self.is_long() => get_num_bytes_short::value(self.bytes[0]),
-            self.is_very_long() => {
-                unreachable!();
-            },
-        }
-    }*/
-
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> usize {
         matchr! {
@@ -1691,38 +1671,7 @@ impl RLPItemWitness {
         }
     }
 
-    /// RLC data
-    /*pub(crate) fn rlc<F: Field>(&self, r: F) -> (F, F) {
-        matchr! {
-            self.is_short() => {
-                let value_rlc = self.bytes[0].scalar();
-                (value_rlc, value_rlc)
-            },
-            self.is_long() => {
-                let value_rlc = self.bytes[1..].rlc_value(r);
-                (value_rlc, self.bytes.rlc_value(r))
-            },
-            self.is_very_long() => {
-                unreachable!();
-            },
-        }
-    }
-
-    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
-        self.rlc(r).1
-    }
-
-    pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
-        self.rlc(r).0
-    }*/
-
     pub(crate) fn rlc_branch<F: Field>(&self, r: F) -> F {
-        /*circuit!([meta, _cb!()], {
-            matchx! {
-                self.value.is_string() => self.value.rlc_value(r),
-                self.list.is_list() => self.list.rlc(r).1,
-            }
-        })*/
         matchr! {
             self.value.is_string() => self.value.rlc(r).0,
             self.list.is_list() => self.list.rlc(r).1,

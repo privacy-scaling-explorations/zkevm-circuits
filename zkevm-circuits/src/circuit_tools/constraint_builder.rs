@@ -1059,6 +1059,17 @@ macro_rules! assign {
     }};
 }
 
+/// assign
+#[macro_export]
+macro_rules! assignf {
+    ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
+        let description =
+            $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value));
+        let value: F = $value;
+        $region.assign_fixed(|| description, $column, $offset, || Value::known(value))
+    }};
+}
+
 /// Circuit builder macros
 /// Nested macro's can't do repetition (https://github.com/rust-lang/rust/issues/35853)
 /// so we expose a couple of permutations here manually.

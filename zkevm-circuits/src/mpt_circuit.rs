@@ -2,7 +2,7 @@
 use eth_types::Field;
 use gadgets::{impl_expr, util::Scalar};
 use halo2_proofs::{
-    circuit::{Layouter, Region, SimpleFloorPlanner, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
@@ -32,7 +32,7 @@ use crate::{
     circuit,
     circuit_tools::{
         cell_manager::CellManager,
-        constraint_builder::{merge_lookups, RLCable},
+        constraint_builder::{merge_lookups},
         memory::Memory,
     },
     mpt_circuit::{
@@ -40,7 +40,7 @@ use crate::{
         storage_leaf::StorageLeafConfig,
     },
     table::{DynamicTableColumns, KeccakTable},
-    util::{power_of_randomness_from_instance, Challenges},
+    util::{power_of_randomness_from_instance, Challenges}, assignf,
 };
 
 use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memory};
@@ -60,25 +60,14 @@ pub struct MPTContext<F> {
     pub(crate) position_cols: PositionCols<F>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
-    pub(crate) value_prev: Column<Advice>,
-    pub(crate) value: Column<Advice>,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
-    pub(crate) address_rlc: Column<Advice>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) r: Vec<Expression<F>>,
     pub(crate) memory: Memory<F>,
 }
 
 impl<F: Field> MPTContext<F> {
-    pub(crate) fn main(&self, is_s: bool) -> MainCols<F> {
-        if is_s {
-            self.s_main
-        } else {
-            self.c_main
-        }
-    }
-
     pub(crate) fn inter_root(&self, is_s: bool) -> Column<Advice> {
         if is_s {
             self.inter_start_root
@@ -99,15 +88,6 @@ impl<F: Field> MPTContext<F> {
             .map(|&byte| meta.query_advice(byte, Rotation(rot)))
             .collect::<Vec<_>>()
     }
-
-    pub(crate) fn rlc(
-        &self,
-        meta: &mut VirtualCells<F>,
-        range: Range<usize>,
-        rot: i32,
-    ) -> Expression<F> {
-        self.expr(meta, rot)[range].rlc(&self.r)
-    }
 }
 
 /// Merkle Patricia Trie config.
@@ -117,28 +97,20 @@ pub struct MPTConfig<F> {
     pub(crate) position_cols: PositionCols<F>,
     pub(crate) inter_start_root: Column<Advice>,
     pub(crate) inter_final_root: Column<Advice>,
-    pub(crate) value_prev: Column<Advice>,
-    pub(crate) value: Column<Advice>,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
-    pub(crate) address_rlc: Column<Advice>, /* The same in all rows of a modification. The same
-                                             * as
-                                             * address_rlc computed in the account leaf key row.
-                                             * Needed to
-                                             * enable lookup for storage key/value (to have
-                                             * address RLC in
-                                             * the same row as storage key/value). */
+    pub(crate) address_rlc: Column<Advice>,
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
     pub(crate) is_branch: Column<Advice>,
     pub(crate) is_account: Column<Advice>,
     pub(crate) is_storage: Column<Advice>,
-    pub(crate) randomness: F,
+    pub(crate) r: F,
     pub(crate) mpt_table: MPTTable,
     cb: MPTConstraintBuilder<F>,
 }
@@ -162,36 +134,15 @@ pub enum FixedTableTag {
 
 impl_expr!(FixedTableTag);
 
-/*
-Some values are accumulating through the rows (or block of rows) and we need to access the previous value
-to continue the calculation, for this reason the previous values are stored in `ProofValues` struct.
-Such accumulated value is for example `key_rlc` which stores the intermediate key RLC (in each branch
-and extension node block a new intermediate key RLC is computed).
-Also, for example, `modified_node` is given in branch init but needed to be set in every branch children row.
-*/
+// TODO(Brecht): remove by refactoring to use memory values instead
 #[derive(Default)]
 pub(crate) struct ProofValues<F> {
-    pub(crate) modified_node: u8, /* branch child that is being changed, it is the same in all
-                                   * branch children rows */
-    pub(crate) acc_c: F, /* RLC accumulator for the whole node (taking into account all RLP
-                          * bytes of the node) */
-    pub(crate) acc_mult_c: F,          // multiplier for acc_c
-    pub(crate) key_rlc: F,             /* used first for account address, then for storage key */
-    pub(crate) key_rlc_mult: F,        // multiplier for key_rlc
-    pub(crate) key_rlc_prev: F,        /* for leaf after placeholder extension/branch, we need
-                                        * to go one level
-                                        * back
-                                        * to get previous key_rlc */
+    pub(crate) key_rlc: F,
+    pub(crate) key_rlc_mult: F,
+    pub(crate) key_rlc_prev: F,
     pub(crate) key_rlc_mult_prev: F,
-    pub(crate) is_branch_s_placeholder: bool, // whether S branch is just a placeholder
-    pub(crate) is_branch_c_placeholder: bool, // whether C branch is just a placeholder
-    pub(crate) drifted_pos: u8,   /* needed when leaf turned into branch and leaf moves into a
-                                   * branch where
-                                   * it's at drifted_pos position */
-    pub(crate) is_even: bool,
-    pub(crate) is_odd: bool,
+
     pub(crate) before_account_leaf: bool,
-    pub(crate) nibbles_num: usize,
 
     pub(crate) memory: Memory<F>,
 }
@@ -215,17 +166,10 @@ impl<F: Field> MPTConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         keccak_table: KeccakTable,
     ) -> Self {
-        // let _pub_root = meta.instance_column();
-        let inter_start_root = meta.advice_column(); // state root before modification - first level S hash needs to be the same as
-                                                     // start_root (works also if only storage proof, without account proof, but if
-                                                     // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
-                                                     // and q_not_first; not_first_level
-                                                     // constraints would need to be added there too)
-        let inter_final_root = meta.advice_column(); // state root after modification - first level C hash needs to be the same as
-                                                     // end_root (works also if only storage proof, without account proof, but if
-                                                     // this is to be allowed LeafKeyChip needs to be changed - careful with q_enable
-                                                     // and q_not_first; not_first_level
-                                                     // constraints would need to be added there too)
+        // state root before modification
+        let inter_start_root = meta.advice_column();
+        // state root after modification
+        let inter_final_root = meta.advice_column();
 
         let value_prev = meta.advice_column();
         let value = meta.advice_column();
@@ -276,11 +220,8 @@ impl<F: Field> MPTConfig<F> {
             position_cols: position_cols.clone(),
             inter_start_root: inter_start_root.clone(),
             inter_final_root: inter_final_root.clone(),
-            value_prev: value_prev.clone(),
-            value: value.clone(),
             s_main: s_main.clone(),
             c_main: c_main.clone(),
-            address_rlc: address_rlc.clone(),
             managed_columns: managed_columns.clone(),
             r: extend_rand(&power_of_randomness),
             memory: memory.clone(),
@@ -333,32 +274,21 @@ impl<F: Field> MPTConfig<F> {
 
                 /* Range checks */
                 // These range checks ensure that the value in the RLP columns are all byte value.
-                // These lookups also enforce the value to be zero if the passed in length is < 0.
-                // TODO(Brecht): would be safer/cleaner if this can be enabled everywhere even for branch child rlp1
+                // These lookups also enforce the byte value to be zero the byte index >= length.
                 // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
                 /*ifx!{f!(position_cols.q_enable) => {
                     // Sanity checks (can be removed, here for safety)
                     require!(cb.length_s.sum_conditions() => bool);
                     require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
-                    ifx!{not!(a!(branch.is_child)) => {
-                        for &byte in ctx.rlp_bytes()[0..1].into_iter() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
-                        }
-                    }}
-                    for &byte in ctx.rlp_bytes()[1..2].into_iter() {
+                    for &byte in ctx.rlp_bytes()[0..2].into_iter() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                     }
                     for (idx, &byte) in ctx.rlp_bytes()[2..34].into_iter().enumerate() {
                         require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
                     ifx!{cb.length_sc => {
-                        ifx!{not!(a!(branch.is_child)) => {
-                            for (idx, &byte) in ctx.rlp_bytes()[34..35].into_iter().enumerate() {
-                                require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
-                            }
-                        }}
-                        for (idx, &byte) in ctx.rlp_bytes()[35..36].into_iter().enumerate() {
+                        for (idx, &byte) in ctx.rlp_bytes()[34..36].into_iter().enumerate() {
                             require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                         }
                     }}
@@ -446,8 +376,6 @@ impl<F: Field> MPTConfig<F> {
             position_cols,
             inter_start_root,
             inter_final_root,
-            value_prev,
-            value,
             s_main,
             c_main,
             managed_columns,
@@ -458,7 +386,7 @@ impl<F: Field> MPTConfig<F> {
             branch_config: row_config.branch_config,
             storage_config: row_config.storage_config,
             account_config: row_config.account_config,
-            randomness,
+            r: randomness,
             mpt_table,
             cb,
         }
@@ -469,9 +397,9 @@ impl<F: Field> MPTConfig<F> {
         &mut self,
         layouter: &mut impl Layouter<F>,
         witness: &mut [MptWitnessRow<F>],
-        randomness: F,
+        r: F,
     ) {
-        self.randomness = randomness;
+        self.r = r;
         let mut height = 0;
 
         // TODO(Brecht): change this on the witness generation side
@@ -570,19 +498,19 @@ impl<F: Field> MPTConfig<F> {
                             pv.memory[parent_memory(true)].witness_store(
                                 offset,
                                 &[
-                                    row.s_root_bytes_rlc(self.randomness),
+                                    row.s_root_bytes_rlc(self.r),
                                     true.scalar(),
                                     false.scalar(),
-                                    row.s_root_bytes_rlc(self.randomness),
+                                    row.s_root_bytes_rlc(self.r),
                                 ],
                             );
                             pv.memory[parent_memory(false)].witness_store(
                                 offset,
                                 &[
-                                    row.c_root_bytes_rlc(self.randomness),
+                                    row.c_root_bytes_rlc(self.r),
                                     true.scalar(),
                                     false.scalar(),
-                                    row.c_root_bytes_rlc(self.randomness),
+                                    row.c_root_bytes_rlc(self.r),
                                 ],
                             );
                             //println!("set root: {} -> {:?}", offset,
@@ -590,12 +518,7 @@ impl<F: Field> MPTConfig<F> {
                         }
                         //println!("{} -> {:?}", offset, row.get_type());
 
-                        region.assign_fixed(
-                            || "q_enable",
-                            self.position_cols.q_enable,
-                            offset,
-                            || Value::known(F::one()),
-                        )?;
+                        assignf!(region, (self.position_cols.q_enable, offset) => 1.scalar())?;
                         height += 1;
 
                         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
@@ -604,19 +527,8 @@ impl<F: Field> MPTConfig<F> {
                         }
 
                         let q_not_first = if idx == 0 { F::zero() } else { F::one() };
-                        region.assign_fixed(
-                            || "not first",
-                            self.position_cols.q_not_first,
-                            offset,
-                            || Value::known(q_not_first),
-                        )?;
-
-                        region.assign_advice(
-                            || "not first level",
-                            self.position_cols.not_first_level,
-                            offset,
-                            || Value::known(F::from(row.not_first_level() as u64)),
-                        )?;
+                        assignf!(region, (self.position_cols.q_not_first, offset) => q_not_first)?;
+                        assign!(region, (self.position_cols.not_first_level, offset) => row.not_first_level().scalar())?;
 
                         row.assign_lookup_columns(&mut region, self, &pv, offset)?;
 
@@ -631,7 +543,6 @@ impl<F: Field> MPTConfig<F> {
                             pv.key_rlc_mult = F::one();
                             pv.key_rlc_prev = F::zero();
                             pv.key_rlc_mult_prev = F::one();
-                            pv.nibbles_num = 0;
                         }
 
                         if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
@@ -694,111 +605,54 @@ impl<F: Field> MPTConfig<F> {
 
                 // Zero lookup
                 for fixed_table in self.fixed_table.iter() {
-                    region.assign_fixed(
-                        || "fixed table zero",
-                        *fixed_table,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
+                    assignf!(region, (*fixed_table, offset) => 0.scalar())?;
                 }
                 offset += 1;
 
+                // Mult table
                 let mut mult = F::one();
                 for ind in 0..(2 * HASH_WIDTH + 1) {
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[0],
-                        offset,
-                        || Value::known(F::from(FixedTableTag::RMult as u64)),
-                    )?;
-
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[1],
-                        offset,
-                        || Value::known(F::from(ind as u64)),
-                    )?;
-
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[2],
-                        offset,
-                        || Value::known(mult),
-                    )?;
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::RMult.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
+                    assignf!(region, (self.fixed_table[2], offset) => mult)?;
                     mult *= randomness;
-
                     offset += 1;
                 }
 
+                // Byte range table
                 for ind in 0..256 {
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[0],
-                        offset,
-                        || Value::known(F::from(FixedTableTag::Range256 as u64)),
-                    )?;
-
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[1],
-                        offset,
-                        || Value::known(F::from(ind as u64)),
-                    )?;
-
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::Range256.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
                     offset += 1;
                 }
 
+                // Byte range with length table
+                // These fixed rows enable to easily check whether there are zeros in the unused columns (the number of unused columns vary).
+                // The lookups ensure that when the unused columns start, the values in these columns are zeros -
+                // when the unused columns start, the value that is used for the lookup in the last column is negative
+                // and thus a zero is enforced.
                 let max_length = 34i32 + 1;
                 for (tag, range) in [
                     (FixedTableTag::RangeKeyLen256, 256),
                     (FixedTableTag::RangeKeyLen16, 16),
                 ] {
-                    for n in /* -192-max_length */ -512..max_length {
+                    for n in -512..max_length {
                         let range = if n < 0 { 1 } else { range };
                         for idx in 0..range {
-                            region.assign_fixed(
-                                || "fixed table[0]",
-                                self.fixed_table[0],
-                                offset,
-                                || Value::known(F::from(tag as u64)),
-                            )?;
-
-                            region.assign_fixed(
-                                || "fixed table[1]",
-                                self.fixed_table[1],
-                                offset,
-                                || Value::known(F::from(idx as u64)),
-                            )?;
-
                             let v = F::from(n.unsigned_abs() as u64)
                                 * if n.is_negative() { -F::one() } else { F::one() };
-                            region.assign_fixed(
-                                || "fixed table[2]",
-                                self.fixed_table[2],
-                                offset,
-                                || Value::known(v),
-                            )?;
-
+                            assignf!(region, (self.fixed_table[0], offset) => tag.scalar())?;
+                            assignf!(region, (self.fixed_table[1], offset) => idx.scalar())?;
+                            assignf!(region, (self.fixed_table[2], offset) => v)?;
                             offset += 1;
                         }
                     }
                 }
 
+                // Nibble range table
                 for ind in 0..16 {
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[0],
-                        offset,
-                        || Value::known(F::from(FixedTableTag::Range16 as u64)),
-                    )?;
-
-                    region.assign_fixed(
-                        || "fixed table",
-                        self.fixed_table[1],
-                        offset,
-                        || Value::known(F::from(ind as u64)),
-                    )?;
-
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::Range16.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
                     offset += 1;
                 }
 

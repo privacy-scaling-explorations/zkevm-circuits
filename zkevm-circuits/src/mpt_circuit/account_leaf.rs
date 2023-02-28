@@ -23,7 +23,7 @@ use crate::{
     mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
 };
 
-use super::helpers::{LeafKeyGadget, RLPValueGadget};
+use super::helpers::{LeafKeyGadget, RLPValueGadget, ParentDataWitness};
 use super::{
     helpers::bytes_into_rlc,
     param::{
@@ -149,11 +149,9 @@ impl<F: Field> AccountLeafConfig<F> {
                 config.rlp_codehash[is_s.idx()] =
                     RLPValueGadget::construct(&mut cb.base, &codehash_bytes[is_s.idx()][1..]);
 
-                ifx! {not!(and::expr(&[a!(ctx.proof_type.is_non_existing_account_proof), not!(config.is_wrong_leaf)])) => {
-                    // Storage root and codehash are always 32-byte hashes.
-                    require!(config.rlp_storage[is_s.idx()].len() => HASH_WIDTH);
-                    require!(config.rlp_codehash[is_s.idx()].len() => HASH_WIDTH);
-                }}
+                // Storage root and codehash are always 32-byte hashes.
+                require!(config.rlp_storage[is_s.idx()].len() => HASH_WIDTH);
+                require!(config.rlp_codehash[is_s.idx()].len() => HASH_WIDTH);
 
                 config.key_mult[is_s.idx()] = cb.base.query_cell();
                 config.nonce_mult[is_s.idx()] = cb.base.query_cell();
@@ -163,7 +161,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 require!((FixedTableTag::RMult, config.rlp_balance[is_s.idx()].num_bytes(), config.balance_mult[is_s.idx()].expr()) => @format!("fixed"));
 
                 // RLC bytes zero check
-                // TODO(Brecht): add all these checks back
                 cb.set_length(rlp_key.num_bytes_on_key_row());
 
                 let nonce_rlp_rlc;
@@ -215,21 +212,19 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Check the RLP encoding consistency.
                 // RlP encoding: account = [key, [nonce, balance, storage, codehash]]
-                ifx! {not!(and::expr(&[a!(ctx.proof_type.is_non_existing_account_proof), not!(config.is_wrong_leaf)])) => {
-                    // We always store between 55 and 256 bytes of data in the values list.
-                    require!(value_rlp_bytes[is_s.idx()][0] => RLP_LONG + 1);
-                    // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
-                    require!(value_rlp_bytes[is_s.idx()][1] => value_rlp_bytes[is_s.idx()][3].expr() + 2.expr());
-                    // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
-                    require!(value_rlp_bytes[is_s.idx()][2] => RLP_LIST_LONG + 1);
-                    // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
-                    require!(value_rlp_bytes[is_s.idx()][3] => config.rlp_nonce[is_s.idx()].num_bytes() + config.rlp_balance[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
-                    // Now check that the the key and value list length matches the account length.
-                    // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
-                    let value_list_num_bytes = value_rlp_bytes[is_s.idx()][1].expr() + 2.expr();
-                    // Account length needs to equal all key bytes and all values list bytes.
-                    require!(config.rlp_key[is_s.idx()].num_bytes() => config.rlp_key[is_s.idx()].num_bytes_on_key_row() + value_list_num_bytes);
-                }}
+                // We always store between 55 and 256 bytes of data in the values list.
+                require!(value_rlp_bytes[is_s.idx()][0] => RLP_LONG + 1);
+                // The RLP encoded list always has 2 RLP bytes (the c RLP bytes).
+                require!(value_rlp_bytes[is_s.idx()][1] => value_rlp_bytes[is_s.idx()][3].expr() + 2.expr());
+                // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
+                require!(value_rlp_bytes[is_s.idx()][2] => RLP_LIST_LONG + 1);
+                // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
+                require!(value_rlp_bytes[is_s.idx()][3] => config.rlp_nonce[is_s.idx()].num_bytes() + config.rlp_balance[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
+                // Now check that the the key and value list length matches the account length.
+                // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
+                let value_list_num_bytes = value_rlp_bytes[is_s.idx()][1].expr() + 2.expr();
+                // Account length needs to equal all key bytes and all values list bytes.
+                require!(config.rlp_key[is_s.idx()].num_bytes() => config.rlp_key[is_s.idx()].num_bytes_on_key_row() + value_list_num_bytes);
 
                 // Key done, set the starting values
                 KeyData::store(
@@ -285,7 +280,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // RLC bytes zero check
                 cb.set_length(config.drifted_rlp_key.num_bytes_on_key_row());
                 config.drifted_mult = cb.base.query_cell();
-                require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"mult");
+                require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"fixed");
 
                 // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
                 let calc_rlc = |is_s: bool| {
@@ -470,6 +465,7 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut balance_value_rlc = vec![0.scalar(); 2];
         let mut storage_value_rlc = vec![0.scalar(); 2];
         let mut codehash_value_rlc = vec![0.scalar(); 2];
+        let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             let key_row = &key_bytes[is_s.idx()];
 
@@ -480,7 +476,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 0,
             )?;
 
-            let parent_values = self.parent_data[is_s.idx()].witness_load(
+            parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 base_offset,
                 &mut pv.memory[parent_memory(is_s)],
@@ -490,8 +486,8 @@ impl<F: Field> AccountLeafConfig<F> {
             self.is_empty_trie[is_s.idx()].assign(
                 region,
                 base_offset,
-                parent_values[0],
-                ctx.randomness,
+                parent_data[is_s.idx()].rlc,
+                ctx.r,
             )?;
 
             let rlp_key_witness =
@@ -517,41 +513,35 @@ impl<F: Field> AccountLeafConfig<F> {
                 &codehash_bytes[is_s.idx()][1..],
             )?;
 
-            nonce_value_rlc[is_s.idx()] = nonce_witness.rlc_value(ctx.randomness);
-            balance_value_rlc[is_s.idx()] = balance_witness.rlc_value(ctx.randomness);
-            storage_value_rlc[is_s.idx()] = storage_witness.rlc_value(ctx.randomness);
-            codehash_value_rlc[is_s.idx()] = codehash_witness.rlc_value(ctx.randomness);
+            nonce_value_rlc[is_s.idx()] = nonce_witness.rlc_value(ctx.r);
+            balance_value_rlc[is_s.idx()] = balance_witness.rlc_value(ctx.r);
+            storage_value_rlc[is_s.idx()] = storage_witness.rlc_value(ctx.r);
+            codehash_value_rlc[is_s.idx()] = codehash_witness.rlc_value(ctx.r);
 
             // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
             let mut mult_nonce = F::one();
             for _ in 0..nonce_witness.num_bytes() + 4 {
-                mult_nonce *= ctx.randomness;
+                mult_nonce *= ctx.r;
             }
             let mut mult_balance = F::one();
             for _ in 0..balance_witness.num_bytes() {
-                mult_balance *= ctx.randomness;
+                mult_balance *= ctx.r;
             }
             self.nonce_mult[is_s.idx()].assign(region, base_offset, mult_nonce)?;
             self.balance_mult[is_s.idx()].assign(region, base_offset, mult_balance)?;
 
             // Key
-            // For leaf S and leaf C we need to start with the same rlc.
-            let is_branch_placeholder = if is_s {
-                pv.is_branch_s_placeholder
-            } else {
-                pv.is_branch_c_placeholder
-            };
-            let (key_rlc_new, key_rlc_mult) = if is_branch_placeholder {
+            let (key_rlc_new, key_rlc_mult) = if parent_data[is_s.idx()].is_placeholder {
                 (pv.key_rlc_prev, pv.key_rlc_mult_prev)
             } else {
                 (pv.key_rlc, pv.key_rlc_mult)
             };
             (key_rlc[is_s.idx()], _) =
-                rlp_key_witness.leaf_key_rlc(key_rlc_new, key_rlc_mult, ctx.randomness);
+                rlp_key_witness.leaf_key_rlc(key_rlc_new, key_rlc_mult, ctx.r);
 
             let mut key_mult = F::one();
             for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
-                key_mult *= ctx.randomness;
+                key_mult *= ctx.r;
             }
             self.key_mult[is_s.idx()].assign(region, base_offset, key_mult)?;
 
@@ -582,10 +572,10 @@ impl<F: Field> AccountLeafConfig<F> {
         }
 
         // Drifted leaf handling
-        if pv.is_branch_s_placeholder || pv.is_branch_c_placeholder {
+        if parent_data[true.idx()].is_placeholder || parent_data[false.idx()].is_placeholder {
             // TODO(Brecht): Change how the witness is generated
             let drifted_bytes = &mut witness[base_offset + 6].bytes;
-            let key_bytes = if pv.is_branch_s_placeholder {
+            let key_bytes = if parent_data[true.idx()].is_placeholder {
                 &key_bytes[true.idx()]
             } else {
                 &key_bytes[false.idx()]
@@ -598,7 +588,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 self.drifted_rlp_key
                     .assign(region, base_offset, &drifted_bytes)?;
 
-            let (_, leaf_mult) = drifted_key_witness.rlc_leaf(ctx.randomness);
+            let (_, leaf_mult) = drifted_key_witness.rlc_leaf(ctx.r);
 
             self.drifted_mult.assign(region, base_offset, leaf_mult)?;
         }
@@ -623,9 +613,9 @@ impl<F: Field> AccountLeafConfig<F> {
 
             let wrong_witness = self.wrong_rlp_key.assign(region, base_offset, &row_bytes)?;
             let (key_rlc_wrong, _) =
-                wrong_witness.leaf_key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.randomness);
+                wrong_witness.leaf_key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.r);
 
-            let address_rlc = bytes_into_rlc(row.address_bytes(), ctx.randomness);
+            let address_rlc = bytes_into_rlc(row.address_bytes(), ctx.r);
             self.check_is_wrong_leaf.assign(
                 region,
                 base_offset,

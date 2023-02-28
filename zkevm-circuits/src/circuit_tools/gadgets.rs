@@ -65,7 +65,7 @@ impl<F: Field> RequireNotZeroGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
         circuit!([meta, cb], {
             let inverse = cb.query_cell();
-            require!(value.expr() * inverse.expr() =>1);
+            require!(value.expr() * inverse.expr() => 1);
             Self { inverse }
         })
     }
