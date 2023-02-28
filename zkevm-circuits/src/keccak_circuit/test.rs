@@ -104,3 +104,27 @@ fn unwrap<F: Field>(cv: &CellValue<F>) -> F {
         _ => panic!("the cell should be assigned"),
     }
 }
+
+#[test]
+fn variadic_size_check() {
+    let k = 11;
+    let num_rows = 2usize.pow(k);
+    // Empty
+    let inputs = vec![];
+    let circuit = KeccakCircuit::new(num_rows, inputs);
+    let prover1 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+    // Non-empty
+    let inputs = vec![
+        vec![],
+        (0u8..1).collect::<Vec<_>>(),
+        (0u8..135).collect::<Vec<_>>(),
+        (0u8..136).collect::<Vec<_>>(),
+        (0u8..200).collect::<Vec<_>>(),
+    ];
+    let circuit = KeccakCircuit::new(num_rows, inputs);
+    let prover2 = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
+
+    assert_eq!(prover1.fixed(), prover2.fixed());
+    assert_eq!(prover1.permutation(), prover2.permutation());
+}
