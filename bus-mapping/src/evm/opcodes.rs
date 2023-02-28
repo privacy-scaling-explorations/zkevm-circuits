@@ -63,6 +63,7 @@ mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_stack_oog_constant;
 mod error_write_protection;
+mod error_code_store;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -89,6 +90,8 @@ use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_stack_oog_constant::ErrorStackOogConstant;
 use error_write_protection::ErrorWriteProtection;
+use error_code_store::ErrorCodeStore;
+
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -255,7 +258,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CREATE => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            //evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<false>::gen_associated_ops
         }
         OpcodeId::CREATE2 => {
@@ -284,10 +287,12 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
+        ExecError::OutOfGas(OogError::CodeStore) => Some(ErrorCodeStore::gen_associated_ops),
+        ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
 
         // more future errors place here
         _ => {
-            evm_unimplemented!("TODO: error state {:?} not implemented", error);
+            //evm_unimplemented!("TODO: error state {:?} not implemented", error);
             None
         }
     }

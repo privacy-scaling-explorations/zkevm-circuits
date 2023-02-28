@@ -1003,8 +1003,13 @@ impl<'a> CircuitInputStateRef<'a> {
         };
         let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
 
-        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
-
+        //let caller_gas_left = geth_step_next.gas.0 - gas_refund;
+        let caller_gas_left = if !call.is_success && geth_step.op == OpcodeId::RETURN {
+            geth_step_next.gas.0
+        } else {
+            geth_step_next.gas.0 - gas_refund
+        };
+        
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
             (

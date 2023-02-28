@@ -71,6 +71,8 @@ mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
 mod error_write_protection;
+mod error_code_store;
+
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -141,6 +143,8 @@ use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use error_write_protection::ErrorWriteProtectionGadget;
+use error_code_store::ErrorCodeStoreGadget;
+
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
@@ -296,7 +300,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_ext_codecopy: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>,
     error_oog_create2: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>,
     error_oog_self_destruct: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>,
-    error_oog_code_store: DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>,
+    error_code_store: ErrorCodeStoreGadget<F>,
     error_insufficient_balance: DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>,
     error_invalid_jump: ErrorInvalidJumpGadget<F>,
     error_invalid_opcode: ErrorInvalidOpcodeGadget<F>,
@@ -550,7 +554,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
-            error_oog_code_store: configure_gadget!(),
+            error_code_store: configure_gadget!(),
             error_insufficient_balance: configure_gadget!(),
             error_invalid_jump: configure_gadget!(),
             error_invalid_opcode: configure_gadget!(),
@@ -1223,8 +1227,8 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_oog_self_destruct)
             }
 
-            ExecutionState::ErrorOutOfGasCodeStore => {
-                assign_exec_step!(self.error_oog_code_store)
+            ExecutionState::ErrorCodeStore => {
+                assign_exec_step!(self.error_code_store)
             }
             ExecutionState::ErrorStack => {
                 assign_exec_step!(self.error_stack)
@@ -1254,8 +1258,6 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
-
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }
 
         // Fill in the witness values for stored expressions

@@ -93,7 +93,7 @@ pub enum ExecutionState {
     ErrorInsufficientBalance,
     ErrorContractAddressCollision,
     ErrorInvalidCreationCode,
-    ErrorMaxCodeSizeExceeded,
+    ErrorCodeStore,
     ErrorInvalidJump,
     ErrorReturnDataOutOfBound,
     ErrorOutOfGasConstant,
@@ -101,7 +101,6 @@ pub enum ExecutionState {
     ErrorOutOfGasDynamicMemoryExpansion,
     ErrorOutOfGasMemoryCopy,
     ErrorOutOfGasAccountAccess,
-    ErrorOutOfGasCodeStore,
     ErrorOutOfGasLOG,
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
@@ -143,7 +142,7 @@ impl ExecutionState {
                 | Self::ErrorInsufficientBalance
                 | Self::ErrorContractAddressCollision
                 | Self::ErrorInvalidCreationCode
-                | Self::ErrorMaxCodeSizeExceeded
+                | Self::ErrorCodeStore
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
                 | Self::ErrorOutOfGasConstant
@@ -151,7 +150,6 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasDynamicMemoryExpansion
                 | Self::ErrorOutOfGasMemoryCopy
                 | Self::ErrorOutOfGasAccountAccess
-                | Self::ErrorOutOfGasCodeStore
                 | Self::ErrorOutOfGasLOG
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
