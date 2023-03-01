@@ -145,16 +145,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
         let input = absorb_from.expr() + absorb_data.expr();
-        let absorb_fat = split::expr(
-            meta,
-            &mut cell_manager,
-            &mut cb,
-            input,
-            0,
-            part_size,
-            false,
-            None,
-        );
+        let absorb_fat = split::expr(meta, &mut cell_manager, &mut cb, input, 0, part_size, false);
         cell_manager.start_region();
         let absorb_res = transform::expr(
             "absorb",
@@ -190,7 +181,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             0,
             8,
             false,
-            None,
         );
         cell_manager.start_region();
         let input_bytes = transform::expr(
@@ -243,7 +233,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 1,
                 part_size_c,
                 false,
-                None,
             ));
         }
         // Now calculate `bc` by normalizing `c`
@@ -426,16 +415,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         cell_manager.start_region();
         let part_size = get_num_bits_per_absorb_lookup();
         let input = s[0][0].clone() + round_cst_expr.clone();
-        let iota_parts = split::expr(
-            meta,
-            &mut cell_manager,
-            &mut cb,
-            input,
-            0,
-            part_size,
-            false,
-            None,
-        );
+        let iota_parts = split::expr(meta, &mut cell_manager, &mut cb, input, 0, part_size, false);
         cell_manager.start_region();
         // Could share columns with absorb which may end up using 1 lookup/column
         // fewer...
@@ -485,7 +465,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             0,
             8,
             false,
-            None,
         );
         cell_manager.start_region();
         let squeeze_bytes = transform::expr(
