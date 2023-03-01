@@ -157,10 +157,11 @@ mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
+        word,
     };
 
     use lazy_static::lazy_static;
-    use mock::{eth, TestContext};
+    use mock::{eth, TestContext, gwei, MOCK_ACCOUNTS};
 
     use crate::test_util::CircuitTestBuilder;
 
@@ -293,4 +294,32 @@ mod test {
             run_test_circuits(test_context(caller, false));
         }
     }
+
+    #[test]
+    fn tx_deploy_code_store_oog() {
+
+        let code = initialization_bytecode(true);
+        
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(MOCK_ACCOUNTS[0])
+                    .balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    //.gas(53424u64.into())
+                    .gas(53446u64.into())
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
 }
