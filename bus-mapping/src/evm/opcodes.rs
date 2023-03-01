@@ -383,16 +383,14 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Add caller and callee into access list
     for address in [call.caller_address, call.address] {
-        let is_cold = state.sdb.add_account_to_access_list(address);
-        if is_cold {
-            state.tx_accesslist_account_write(
-                &mut exec_step,
-                state.tx_ctx.id(),
-                address,
-                true,
-                false,
-            )?;
-        }
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
+        state.tx_accesslist_account_write(
+            &mut exec_step,
+            state.tx_ctx.id(),
+            address,
+            true,
+            is_warm_prev,
+        )?;
     }
 
     // Calculate intrinsic gas cost
