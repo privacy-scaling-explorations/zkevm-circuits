@@ -1,9 +1,11 @@
 // This file is intended to be used with fixtures generated from zkevm-chain.
-// Copy the `errors/<block number>` directory into the zkevm-circuits git root as `block` and
-// run via `cargo test -p zkevm-circuits --features test prover_error -- --nocapture --ignored`.
-// Change any constant variables like `MAX_TXS` to suit your needs.
+// Copy the `errors/<block number>` directory into the zkevm-circuits git root
+// as `block` and run via `cargo test -p zkevm-circuits --features test
+// prover_error -- --nocapture --ignored`. Change any constant variables like
+// `MAX_TXS` to suit your needs.
 use bus_mapping::circuit_input_builder::CircuitsParams;
 use bus_mapping::mock::BlockData;
+use env_logger::Env;
 use eth_types::geth_types::{Account, GethData};
 use eth_types::{Block, Bytes, Error, Transaction, Word, H160, U256};
 use halo2_proofs::dev::MockProver;
@@ -49,6 +51,7 @@ fn prover_error() {
         ..Default::default()
     };
 
+    env_logger::Builder::from_env(Env::default().default_filter_or("trace")).init();
     let eth_block = load_json("../block/block.json");
     let mut eth_block: Block<Transaction> = from_value(eth_block).unwrap();
     eth_block.base_fee_per_gas = Some(U256::zero());
