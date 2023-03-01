@@ -1,6 +1,7 @@
 use super::{helpers::MPTConstraintBuilder, MPTContext};
-use crate::{circuit, circuit_tools::DataTransition};
-use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
+use crate::{circuit, circuit_tools::cell_manager::DataTransition};
+use eth_types::Field;
+use halo2_proofs::{plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
@@ -8,7 +9,7 @@ pub(crate) struct SelectorsConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SelectorsConfig<F> {
+impl<F: Field> SelectorsConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -16,10 +17,6 @@ impl<F: FieldExt> SelectorsConfig<F> {
     ) -> Self {
         let proof_type = ctx.proof_type;
         let position_cols = ctx.position_cols;
-        let branch = ctx.branch;
-        let account_leaf = ctx.account_leaf;
-        let storage_leaf = ctx.storage_leaf;
-        let denoter = ctx.denoter;
         // It needs to be ensured that:
         // - The selectors denoting the row type are boolean values.
         // - For sets of selectors that are mutually exclusive, it needs to be ensured
@@ -29,39 +26,6 @@ impl<F: FieldExt> SelectorsConfig<F> {
             let q_enable = f!(position_cols.q_enable);
             let q_not_first = f!(position_cols.q_not_first);
             let not_first_level = a!(position_cols.not_first_level);
-            let sel1 = a!(denoter.sel1);
-            let sel2 = a!(denoter.sel2);
-
-            let is_leaf_s_key = DataTransition::new(meta, storage_leaf.is_s_key);
-            let is_leaf_s_value = DataTransition::new(meta, storage_leaf.is_s_value);
-            let is_leaf_c_key = DataTransition::new(meta, storage_leaf.is_c_key);
-            let is_leaf_c_value = DataTransition::new(meta, storage_leaf.is_c_value);
-            let is_leaf_in_added_branch =
-                DataTransition::new(meta, storage_leaf.is_in_added_branch);
-            let is_leaf_non_existing = DataTransition::new(meta, storage_leaf.is_non_existing);
-            let is_non_existing_storage_row =
-                DataTransition::new(meta, storage_leaf.is_non_existing);
-            let is_account_leaf_key_s = DataTransition::new(meta, account_leaf.is_key_s);
-            let is_account_leaf_key_c = DataTransition::new(meta, account_leaf.is_key_c);
-            let is_account_leaf_nonce_balance_s =
-                DataTransition::new(meta, account_leaf.is_nonce_balance_s);
-            let is_account_leaf_nonce_balance_c =
-                DataTransition::new(meta, account_leaf.is_nonce_balance_c);
-            let is_account_leaf_storage_codehash_s =
-                DataTransition::new(meta, account_leaf.is_storage_codehash_s);
-            let is_account_leaf_storage_codehash_c =
-                DataTransition::new(meta, account_leaf.is_storage_codehash_c);
-            let is_account_leaf_in_added_branch =
-                DataTransition::new(meta, account_leaf.is_in_added_branch);
-            let is_non_existing_account_row =
-                DataTransition::new(meta, account_leaf.is_non_existing);
-            let is_extension_node_s = DataTransition::new(meta, branch.is_extension_node_s);
-            let is_extension_node_c = DataTransition::new(meta, branch.is_extension_node_c);
-            let is_branch_init = DataTransition::new(meta, branch.is_init);
-            let is_branch_child = DataTransition::new(meta, branch.is_child);
-            let is_last_branch_child = DataTransition::new(meta, branch.is_last_child);
-            let is_modified = DataTransition::new(meta, branch.is_modified);
-            let is_drifted = DataTransition::new(meta, branch.is_drifted);
 
             let proof_type_id = DataTransition::new(meta, proof_type.proof_type);
             let is_storage_mod = DataTransition::new(meta, proof_type.is_storage_mod);
@@ -76,7 +40,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
 
             // Row type selectors
             let row_type_selectors = [
-                is_branch_init.expr(),
+                /*is_branch_init.expr(),
                 is_branch_child.expr(),
                 is_extension_node_s.expr(),
                 is_extension_node_c.expr(),
@@ -93,7 +57,7 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 is_account_leaf_nonce_balance_c.expr(),
                 is_account_leaf_storage_codehash_s.expr(),
                 is_account_leaf_storage_codehash_c.expr(),
-                is_account_leaf_in_added_branch.expr(),
+                is_account_leaf_in_added_branch.expr(),*/
             ];
 
             // Proof type selectors
@@ -112,12 +76,6 @@ impl<F: FieldExt> SelectorsConfig<F> {
                 // It needs to be ensured that all selectors are boolean.
                 let misc_selectors = vec![
                     not_first_level.expr(),
-                    is_last_branch_child.expr(),
-                    is_branch_child.expr(),
-                    is_modified.expr(),
-                    is_drifted.expr(),
-                    sel1.expr(),
-                    sel2.expr(),
                 ];
                 for selector in misc_selectors
                     .iter()
@@ -128,14 +86,14 @@ impl<F: FieldExt> SelectorsConfig<F> {
 
                 // The type of the row needs to be set (if all selectors would be 0 for a row,
                 // then all constraints would be switched off).
-                require!(sum::expr(row_type_selectors.iter()) => 1);
+                //require!(sum::expr(row_type_selectors.iter()) => 1);
 
                 // The type of the proof needs to be set.
                 require!(sum::expr(proof_type_selectors.iter()) => 1);
 
                 // We need to prevent lookups into non-lookup rows and we need to prevent for
                 // example nonce lookup into balance lookup row.
-                let proof_type_lookup_row_types = [
+                /*let proof_type_lookup_row_types = [
                     is_account_leaf_nonce_balance_s.expr(),
                     is_account_leaf_nonce_balance_c.expr(),
                     is_account_leaf_storage_codehash_c.expr(),
@@ -158,19 +116,19 @@ impl<F: FieldExt> SelectorsConfig<F> {
                             require!(proof_type_id => 0);
                         }}
                     }}
-                }
+                }*/
             }};
 
             // First row
-            ifx! {q_enable, not!(q_not_first) => {
+            /*ifx! {q_enable, not!(q_not_first) => {
                 // In the first row only account leaf key S row or branch init row can occur
                 require!(or::expr([is_account_leaf_key_s.cur(), is_branch_init.cur()]) => true);
-            }};
+            }};*/
 
             // All rows except the first row
             ifx! {q_not_first => {
                 // State transitions
-                let transitions = [
+                /*let transitions = [
                     // Branch init can start:
                     // - after another branch (means after extension node C)
                     // - after account leaf (account -> storage proof)
@@ -292,12 +250,12 @@ impl<F: FieldExt> SelectorsConfig<F> {
                         vec![is_leaf_in_added_branch.prev()],
                         is_leaf_non_existing.cur(),
                     ),
-                ];
-                for (name, condition, from, to) in transitions {
+                ];*/
+                /*for (name, condition, from, to) in transitions {
                     ifx!{condition => {
                         require!(name, to => from);
                     }}
-                }
+                }*/
 
                 // Data transitions
                 // Note that these constraints do not prevent attacks like putting account leaf
@@ -321,9 +279,9 @@ impl<F: FieldExt> SelectorsConfig<F> {
                         require!(is_mod => is_mod.prev());
                     } elsex {
                         // Does not change inside first level except in the first row
-                        ifx!{not!(is_branch_init), not!(is_account_leaf_key_s) => {
+                        /*ifx!{not!(is_branch_init), not!(is_account_leaf_key_s) => {
                             require!(is_mod => is_mod.prev());
-                        }}
+                        }}*/
                     }};
                 }
             }}

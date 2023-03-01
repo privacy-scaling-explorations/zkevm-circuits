@@ -1,5 +1,5 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Region, Value},
     plonk::Error,
 };
@@ -7,18 +7,17 @@ use num_enum::TryFromPrimitive;
 use std::{convert::TryFrom, marker::PhantomData};
 
 use crate::{
-    mpt_circuit::account_leaf::AccountLeaf,
-    mpt_circuit::branch::Branch,
     mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::param::{
-        COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
+        COUNTER_WITNESS_LEN, C_RLP_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
         IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
         IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START,
-        S_START, WITNESS_ROW_WIDTH,
+        WITNESS_ROW_WIDTH,
     },
-    mpt_circuit::storage_leaf::StorageLeaf,
     mpt_circuit::{MPTConfig, ProofValues},
 };
+
+use super::param::RLP_LIST_SHORT;
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -44,12 +43,13 @@ pub(crate) enum MptWitnessRowType {
     StorageNonExisting = 19,
 }
 
+#[derive(Clone, Debug)]
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> MptWitnessRow<F> {
+impl<F: Field> MptWitnessRow<F> {
     pub fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes,
@@ -95,6 +95,14 @@ impl<F: FieldExt> MptWitnessRow<F> {
                 + HASH_WIDTH]
     }
 
+    pub(crate) fn s_root_bytes_rlc(&self, r: F) -> F {
+        bytes_into_rlc(self.s_root_bytes(), r)
+    }
+
+    pub(crate) fn c_root_bytes_rlc(&self, r: F) -> F {
+        bytes_into_rlc(self.c_root_bytes(), r)
+    }
+
     pub(crate) fn address_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - 2 * HASH_WIDTH
@@ -105,11 +113,21 @@ impl<F: FieldExt> MptWitnessRow<F> {
     }
 
     pub(crate) fn s_hash_bytes(&self) -> &[u8] {
-        &self.bytes[S_START..S_START + HASH_WIDTH]
+        let offset = if self.bytes[S_RLP_START] < RLP_LIST_SHORT {
+            1
+        } else {
+            0
+        };
+        &self.bytes[S_RLP_START + offset..34]
     }
 
     pub(crate) fn c_hash_bytes(&self) -> &[u8] {
-        &self.bytes[C_START..C_START + HASH_WIDTH]
+        let offset = if self.bytes[C_RLP_START] < RLP_LIST_SHORT {
+            1
+        } else {
+            0
+        };
+        &self.bytes[C_RLP_START + offset..68]
     }
 
     pub(crate) fn main(&self) -> &[u8] {
@@ -120,245 +138,9 @@ impl<F: FieldExt> MptWitnessRow<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        account_leaf: AccountLeaf,
-        storage_leaf: StorageLeaf,
-        branch: Branch,
         offset: usize,
     ) -> Result<(), Error> {
         let row = self.main();
-
-        region.assign_advice(
-            || "assign is_branch_init".to_string(),
-            mpt_config.branch.is_init,
-            offset,
-            || Value::known(F::from(branch.is_branch_init as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_branch_child".to_string(),
-            mpt_config.branch.is_child,
-            offset,
-            || Value::known(F::from(branch.is_branch_child as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_s".to_string(),
-            mpt_config.accumulators.acc_s.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_s".to_string(),
-            mpt_config.accumulators.acc_s.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_c".to_string(),
-            mpt_config.accumulators.acc_c.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_c".to_string(),
-            mpt_config.accumulators.acc_c.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        // because used for is_long
-        region.assign_advice(
-            || "assign s_modified_node_rlc".to_string(),
-            mpt_config.accumulators.s_mod_node_rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-        // because used for is_short
-        region.assign_advice(
-            || "assign c_modified_node_rlc".to_string(),
-            mpt_config.accumulators.c_mod_node_rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign is_last_branch_child".to_string(),
-            mpt_config.branch.is_last_child,
-            offset,
-            || Value::known(F::from(branch.is_last_branch_child as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign node_index".to_string(),
-            mpt_config.branch.node_index,
-            offset,
-            || Value::known(F::from(branch.node_index as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign modified node".to_string(),
-            mpt_config.branch.modified_index,
-            offset,
-            || Value::known(F::from(branch.modified_index as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign drifted_index".to_string(),
-            mpt_config.branch.drifted_index,
-            offset,
-            || Value::known(F::from(branch.drifted_index as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_drifted".to_string(),
-            mpt_config.branch.is_drifted,
-            offset,
-            || Value::known(F::from((branch.drifted_index == branch.node_index) as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign key rlc".to_string(),
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign key rlc mult".to_string(),
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign mult diff".to_string(),
-            mpt_config.accumulators.mult_diff,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign sel1".to_string(),
-            mpt_config.denoter.sel1,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-        region.assign_advice(
-            || "assign sel2".to_string(),
-            mpt_config.denoter.sel2,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign is_modified".to_string(),
-            mpt_config.branch.is_modified,
-            offset,
-            || Value::known(F::from((branch.modified_index == branch.node_index) as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_leaf_s".to_string(),
-            mpt_config.storage_leaf.is_s_key,
-            offset,
-            || Value::known(F::from(storage_leaf.is_s_key as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is_leaf_c".to_string(),
-            mpt_config.storage_leaf.is_c_key,
-            offset,
-            || Value::known(F::from(storage_leaf.is_c_key as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_leaf_s_value".to_string(),
-            mpt_config.storage_leaf.is_s_value,
-            offset,
-            || Value::known(F::from(storage_leaf.is_s_value as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is_leaf_c_value".to_string(),
-            mpt_config.storage_leaf.is_c_value,
-            offset,
-            || Value::known(F::from(storage_leaf.is_c_value as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is leaf in added branch".to_string(),
-            mpt_config.storage_leaf.is_in_added_branch,
-            offset,
-            || Value::known(F::from(storage_leaf.is_in_added_branch as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is storage non existing".to_string(),
-            mpt_config.storage_leaf.is_non_existing,
-            offset,
-            || Value::known(F::from(storage_leaf.is_non_existing as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is account leaf key s".to_string(),
-            mpt_config.account_leaf.is_key_s,
-            offset,
-            || Value::known(F::from(account_leaf.is_key_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf key c".to_string(),
-            mpt_config.account_leaf.is_key_c,
-            offset,
-            || Value::known(F::from(account_leaf.is_key_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is non existing account row".to_string(),
-            mpt_config.account_leaf.is_non_existing,
-            offset,
-            || Value::known(F::from(account_leaf.is_non_existing_account_row as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf nonce balance s".to_string(),
-            mpt_config.account_leaf.is_nonce_balance_s,
-            offset,
-            || Value::known(F::from(account_leaf.is_nonce_balance_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf nonce balance c".to_string(),
-            mpt_config.account_leaf.is_nonce_balance_c,
-            offset,
-            || Value::known(F::from(account_leaf.is_nonce_balance_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf storage codehash s".to_string(),
-            mpt_config.account_leaf.is_storage_codehash_s,
-            offset,
-            || Value::known(F::from(account_leaf.is_storage_codehash_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf storage codehash c".to_string(),
-            mpt_config.account_leaf.is_storage_codehash_c,
-            offset,
-            || Value::known(F::from(account_leaf.is_storage_codehash_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf in added branch".to_string(),
-            mpt_config.account_leaf.is_in_added_branch,
-            offset,
-            || Value::known(F::from(account_leaf.is_in_added_branch as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is extension node s".to_string(),
-            mpt_config.branch.is_extension_node_s,
-            offset,
-            || Value::known(F::from(branch.is_extension_node_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is extension node c".to_string(),
-            mpt_config.branch.is_extension_node_c,
-            offset,
-            || Value::known(F::from(branch.is_extension_node_c as u64)),
-        )?;
 
         region.assign_advice(
             || "assign s_rlp1".to_string(),
@@ -419,104 +201,6 @@ impl<F: FieldExt> MptWitnessRow<F> {
         Ok(())
     }
 
-    pub(crate) fn assign_branch_row(
-        &self,
-        region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        pv: &ProofValues<F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let row = self.main();
-
-        let account_leaf = AccountLeaf::default();
-        let storage_leaf = StorageLeaf::default();
-        let branch = Branch {
-            is_branch_child: true,
-            is_last_branch_child: pv.node_index == 15,
-            node_index: pv.node_index,
-            modified_index: pv.modified_node,
-            drifted_index: pv.drifted_pos,
-            ..Default::default()
-        };
-
-        self.assign(
-            region,
-            mpt_config,
-            account_leaf,
-            storage_leaf,
-            branch,
-            offset,
-        )?;
-
-        region.assign_advice(
-            || "s_mod_node_hash_rlc",
-            mpt_config.accumulators.s_mod_node_rlc,
-            offset,
-            || Value::known(pv.s_mod_node_hash_rlc),
-        )?;
-        region.assign_advice(
-            || "c_mod_node_hash_rlc",
-            mpt_config.accumulators.c_mod_node_rlc,
-            offset,
-            || Value::known(pv.c_mod_node_hash_rlc),
-        )?;
-
-        region.assign_advice(
-            || "key rlc",
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Value::known(pv.key_rlc),
-        )?;
-        region.assign_advice(
-            || "key rlc mult",
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Value::known(pv.key_rlc_mult),
-        )?;
-        region.assign_advice(
-            || "mult diff",
-            mpt_config.accumulators.mult_diff,
-            offset,
-            || Value::known(pv.mult_diff),
-        )?;
-
-        region.assign_advice(
-            || "s_rlp1",
-            mpt_config.s_main.rlp1,
-            offset,
-            || Value::known(F::from(pv.rlp_len_rem_s as u64)),
-        )?;
-        region.assign_advice(
-            || "c_rlp1",
-            mpt_config.c_main.rlp1,
-            offset,
-            || Value::known(F::from(pv.rlp_len_rem_c as u64)),
-        )?;
-
-        region.assign_advice(
-            || "is_not_hashed_s",
-            mpt_config.denoter.is_not_hashed_s,
-            offset,
-            || {
-                Value::known(F::from(
-                    (row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64,
-                ))
-            },
-        )?;
-        region.assign_advice(
-            || "is_not_hashed_c",
-            mpt_config.denoter.is_not_hashed_c,
-            offset,
-            || {
-                Value::known(F::from(
-                    (row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64,
-                ))
-            },
-        )?;
-
-        Ok(())
-    }
-
     /*
     Assignment of the columns that are used for all lookups. There are other columns used for
     lookups which are lookup-specific (for example requiring old and new nonce value).
@@ -528,8 +212,8 @@ impl<F: FieldExt> MptWitnessRow<F> {
         pv: &ProofValues<F>,
         offset: usize,
     ) -> Result<(), Error> {
-        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.randomness);
-        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.randomness);
+        let s_root_rlc = self.s_root_bytes_rlc(mpt_config.r);
+        let c_root_rlc = self.c_root_bytes_rlc(mpt_config.r);
 
         region.assign_advice(
             || "inter start root",
@@ -557,7 +241,7 @@ impl<F: FieldExt> MptWitnessRow<F> {
             prevent omitting account proof (and having only storage proof
             with the appropriate address RLC)
             */
-            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.randomness);
+            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.r);
 
             region.assign_advice(
                 || "address RLC",

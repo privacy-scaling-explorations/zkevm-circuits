@@ -429,6 +429,7 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
+#[derive(Clone, Copy, Debug)]
 pub enum ProofType {
     /// Nonce updated
     NonceChanged = AccountFieldTag::Nonce as isize,
@@ -442,6 +443,8 @@ pub enum ProofType {
     AccountDoesNotExist,
     /// Storage updated
     StorageChanged,
+    /// Storage does not exist
+    StorageDoesNotExist,
 }
 impl_expr!(ProofType);
 

@@ -1,8 +1,9 @@
-use halo2_proofs::{arithmetic::FieldExt, plonk::VirtualCells, poly::Rotation};
+use eth_types::Field;
+use halo2_proofs::{plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
 
 use super::{helpers::MPTConstraintBuilder, MPTContext};
-use crate::{circuit, circuit_tools::DataTransition};
+use crate::{circuit, circuit_tools::cell_manager::DataTransition};
 
 /*
 The selector `not_first_level` denotes whether the node is not in the first account trie level.
@@ -39,7 +40,7 @@ pub(crate) struct ProofChainConfig<F> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> ProofChainConfig<F> {
+impl<F: Field> ProofChainConfig<F> {
     pub fn configure(
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
@@ -49,18 +50,13 @@ impl<F: FieldExt> ProofChainConfig<F> {
             let q_enable = f!(ctx.position_cols.q_enable);
             let q_not_first = f!(ctx.position_cols.q_not_first);
             let not_first_level = DataTransition::new(meta, ctx.position_cols.not_first_level);
-            let is_branch_init = a!(ctx.branch.is_init);
-            let is_account_leaf_key_s = a!(ctx.account_leaf.is_key_s);
-            let is_storage_leaf_key_s = a!(ctx.storage_leaf.is_s_key);
-            let is_storage_leaf_last_row_prev = a!(ctx.storage_leaf.is_non_existing, -1);
-            let is_account_leaf_last_row_prev = a!(ctx.account_leaf.is_in_added_branch, -1);
             let is_non_storage_mod_proof_type_prev = not!(a!(ctx.proof_type.is_storage_mod, -1));
 
             let start_root = DataTransition::new(meta, ctx.inter_start_root);
             let final_root = DataTransition::new(meta, ctx.inter_final_root);
-            let address_rlc = DataTransition::new(meta, ctx.address_rlc);
+            let address_rlc = DataTransition::new(meta, ctx.mpt_table.address_rlc);
 
-            let is_branch_or_account = is_account_leaf_key_s.expr() + is_branch_init.expr();
+            /*let is_branch_or_account = is_account_leaf_key_s.expr() + is_branch_init.expr();
 
             ifx! {q_enable => {
                 ifx!{not!(q_not_first) => {
@@ -147,7 +143,7 @@ impl<F: FieldExt> ProofChainConfig<F> {
                 }}
 
                 // TODO: check public roots to match with first and last inter roots
-            }}
+            }}*/
         });
 
         ProofChainConfig {
