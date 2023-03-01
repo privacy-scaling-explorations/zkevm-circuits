@@ -113,4 +113,5 @@ fn prover_error() {
         .expect("MockProver::run")
         .verify_par();
     println!("MockProver: {res:#?}");
+    res.expect("verify_par");
 }
