@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
@@ -105,13 +105,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             callee_address,
             AccountField::CodeHash,
             callee_code_hash_word,
-            callee_code_hash_word,
         );
 
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id,
                 address: callee_address,
@@ -155,7 +153,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             &mut exec_step,
             call.caller_address,
             AccountField::Balance,
-            caller_balance,
             caller_balance,
         );
 

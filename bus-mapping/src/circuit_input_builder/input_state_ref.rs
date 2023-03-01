@@ -165,18 +165,11 @@ impl<'a> CircuitInputStateRef<'a> {
     /// This method should be used in `Opcode::gen_associated_ops` instead of
     /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
     /// example, a write [`StorageOp`](crate::operation::StorageOp)).
-    pub fn push_op_reversible<T: Op>(
-        &mut self,
-        step: &mut ExecStep,
-        rw: RW,
-        op: T,
-    ) -> Result<(), Error> {
-        if matches!(rw, RW::WRITE) {
-            self.apply_op(&op.clone().into_enum());
-        }
+    pub fn push_op_reversible<T: Op>(&mut self, step: &mut ExecStep, op: T) -> Result<(), Error> {
+        self.check_apply_op(&op.clone().into_enum());
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
-            rw,
+            RW::WRITE,
             op,
         ));
         step.bus_mapping_instance.push(op_ref);
@@ -334,9 +327,8 @@ impl<'a> CircuitInputStateRef<'a> {
         address: Address,
         field: AccountField,
         value: Word,
-        value_prev: Word,
     ) {
-        let op = AccountOp::new(address, field, value, value_prev);
+        let op = AccountOp::new(address, field, value, value);
         self.push_op(step, RW::READ, op);
     }
 
@@ -460,58 +452,23 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
-    /// balance by `value`. If `fee` is existing (not None), also need to push 1
-    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
+    /// balance by `value`, with `sender` being extraly charged with `fee`.
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
         value: Word,
-        fee: Option<Word>,
+        fee: Word,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let mut sender_balance_prev = sender_account.balance;
-        debug_assert!(
-            sender_account.balance >= value + fee.unwrap_or_default(),
-            "invalid amount balance {:?} value {:?} fee {:?}",
-            sender_balance_prev,
-            value,
-            fee
-        );
-        if let Some(fee) = fee {
-            let sender_balance = sender_balance_prev - fee;
-            log::trace!(
-                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
-                sender,
-                sender_balance_prev,
-                sender_balance
-            );
-            self.push_op(
-                step,
-                RW::WRITE,
-                AccountOp {
-                    address: sender,
-                    field: AccountField::Balance,
-                    value: sender_balance,
-                    value_prev: sender_balance_prev,
-                },
-            );
-            sender_balance_prev = sender_balance;
-        }
-        let sender_balance = sender_balance_prev - value;
-        log::trace!(
-            "sender balance update with value: {:?} {:?}->{:?}",
-            sender,
-            sender_balance_prev,
-            sender_balance
-        );
+        let sender_balance_prev = sender_account.balance;
+        let sender_balance = sender_account.balance - value - fee;
         self.push_op_reversible(
             step,
-            RW::WRITE,
             AccountOp {
                 address: sender,
                 field: AccountField::Balance,
@@ -525,7 +482,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let receiver_balance = receiver_account.balance + value;
         self.push_op_reversible(
             step,
-            RW::WRITE,
             AccountOp {
                 address: receiver,
                 field: AccountField::Balance,
@@ -545,7 +501,7 @@ impl<'a> CircuitInputStateRef<'a> {
         receiver: Address,
         value: Word,
     ) -> Result<(), Error> {
-        self.transfer_with_fee(step, sender, receiver, value, None)
+        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
     }
 
     /// Fetch and return code for the given code hash from the code DB.
@@ -663,6 +619,7 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
+    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -807,8 +764,8 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Apply op to state.
-    fn apply_op(&mut self, op: &OpEnum) {
+    /// Check and apply op to state.
+    fn check_apply_op(&mut self, op: &OpEnum) {
         match &op {
             OpEnum::Storage(op) => {
                 self.sdb.set_storage(&op.address, &op.key, &op.value);
@@ -831,14 +788,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
             }
-            OpEnum::Account(op) => {
-                let (_, account) = self.sdb.get_account_mut(&op.address);
-                match op.field {
-                    AccountField::Nonce => account.nonce = op.value,
-                    AccountField::Balance => account.balance = op.value,
-                    AccountField::CodeHash => account.code_hash = op.value.to_be_bytes().into(),
-                }
-            }
+            OpEnum::Account(op) => self.check_update_sdb_account(RW::WRITE, &op),
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
@@ -857,7 +807,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                self.apply_op(&op);
+                self.check_apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
                     self.block_ctx.rwc.inc_pre(),
                     RW::WRITE,
@@ -888,7 +838,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();
-
+                        // TODO: Try to get rid of clone.
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;

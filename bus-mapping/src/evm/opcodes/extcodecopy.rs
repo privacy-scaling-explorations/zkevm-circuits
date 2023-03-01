@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::{
     CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
 use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
@@ -84,7 +84,6 @@ fn gen_extcodecopy_step(
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: external_address,
@@ -105,7 +104,6 @@ fn gen_extcodecopy_step(
         &mut exec_step,
         external_address,
         AccountField::CodeHash,
-        code_hash.to_word(),
         code_hash.to_word(),
     );
     Ok(exec_step)

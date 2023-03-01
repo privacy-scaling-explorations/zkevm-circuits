@@ -412,7 +412,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         call.caller_address,
         call.address,
         call.value,
-        Some(state.tx.gas_price * state.tx.gas),
+        state.tx.gas_price * state.tx.gas,
     )?;
 
     // Get code_hash of callee
@@ -455,7 +455,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (true, _, _) => {
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: call.address,
                     field: AccountField::Nonce,
@@ -504,7 +503,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 &mut exec_step,
                 call.address,
                 AccountField::CodeHash,
-                callee_code_hash,
                 callee_code_hash,
             );
 
@@ -676,7 +674,6 @@ fn dummy_gen_selfdestruct_ops(
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: receiver,
