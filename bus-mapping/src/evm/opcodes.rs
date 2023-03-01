@@ -258,7 +258,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CREATE => {
-            //evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<false>::gen_associated_ops
         }
         OpcodeId::CREATE2 => {
@@ -292,7 +292,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
 
         // more future errors place here
         _ => {
-            //evm_unimplemented!("TODO: error state {:?} not implemented", error);
+            evm_unimplemented!("TODO: error state {:?} not implemented", error);
             None
         }
     }
@@ -324,9 +324,10 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        println!(
+        log::warn!(
             "geth error {:?} occurred in  {:?}",
-            exec_error, geth_step.op
+            exec_error,
+            geth_step.op
         );
 
         exec_step.error = Some(exec_error.clone());

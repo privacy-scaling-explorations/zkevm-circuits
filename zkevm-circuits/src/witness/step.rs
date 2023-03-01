@@ -4,6 +4,7 @@ use bus_mapping::{
     evm::OpcodeId,
     operation,
 };
+use eth_types::evm_unimplemented;
 
 use crate::{
     evm_circuit::{
@@ -114,7 +115,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        //evm_unimplemented!("{:?} is implemented with DummyGadget", $name);
+                        evm_unimplemented!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
