@@ -20,7 +20,7 @@ use crate::{
     table::LookupTable,
     util::{query_expression, Challenges, Expr},
 };
-use eth_types::{evm_unimplemented, Field};
+use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -60,6 +60,7 @@ mod dummy;
 mod dup;
 mod end_block;
 mod end_tx;
+mod error_code_store;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
@@ -71,7 +72,6 @@ mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
 mod error_write_protection;
-mod error_code_store;
 
 mod exp;
 mod extcodecopy;
@@ -133,6 +133,7 @@ use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
 use end_tx::EndTxGadget;
+use error_code_store::ErrorCodeStoreGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
@@ -143,7 +144,6 @@ use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use error_write_protection::ErrorWriteProtectionGadget;
-use error_code_store::ErrorCodeStoreGadget;
 
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;

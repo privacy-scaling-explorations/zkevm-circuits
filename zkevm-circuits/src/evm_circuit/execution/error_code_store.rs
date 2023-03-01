@@ -22,7 +22,6 @@ const MAXCODESIZE: u64 = 0x6000u64;
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorCodeStoreGadget<F> {
     opcode: Cell<F>,
-    is_create: Cell<F>,
     memory_address: MemoryAddressGadget<F>,
     // check for CodeStoreOutOfGas error
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
@@ -49,8 +48,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         cb.stack_pop(length.expr());
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
 
-        let is_create = cb.call_context(None, CallContextFieldTag::IsCreate);
-        cb.require_true("is_create is true", is_create.expr());
+        cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         // constrain code store gas > gas left, that is GasCost::CODE_DEPOSIT_BYTE_COST
         // * length > gas left
@@ -104,7 +102,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
         Self {
             opcode,
-            is_create,
             memory_address,
             code_store_gas_insufficient,
             max_code_size_exceed,
@@ -130,8 +127,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         self.memory_address
             .assign(region, offset, memory_offset, length)?;
 
-        self.is_create
-            .assign(region, offset, Value::known(F::from(call.is_create as u64)))?;
         self.code_store_gas_insufficient.assign(
             region,
             offset,
@@ -152,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
         )?;
         self.restore_context
-            .assign(region, offset, block, call, step, 5)?;
+            .assign(region, offset, block, call, step, 4)?;
         Ok(())
     }
 }

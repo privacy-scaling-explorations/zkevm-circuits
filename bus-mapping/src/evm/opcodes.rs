@@ -54,6 +54,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_code_store;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
@@ -63,7 +64,6 @@ mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_stack_oog_constant;
 mod error_write_protection;
-mod error_code_store;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -81,6 +81,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use error_code_store::ErrorCodeStore;
 use error_invalid_jump::InvalidJump;
 use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
@@ -90,7 +91,6 @@ use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_stack_oog_constant::ErrorStackOogConstant;
 use error_write_protection::ErrorWriteProtection;
-use error_code_store::ErrorCodeStore;
 
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -287,7 +287,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        ExecError::OutOfGas(OogError::CodeStore) => Some(ErrorCodeStore::gen_associated_ops),
+        ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),
         ExecError::MaxCodeSizeExceeded => Some(ErrorCodeStore::gen_associated_ops),
 
         // more future errors place here
@@ -324,10 +324,9 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
+        println!(
             "geth error {:?} occurred in  {:?}",
-            exec_error,
-            geth_step.op
+            exec_error, geth_step.op
         );
 
         exec_step.error = Some(exec_error.clone());

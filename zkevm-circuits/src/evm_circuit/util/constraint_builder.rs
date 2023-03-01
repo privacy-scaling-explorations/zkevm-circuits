@@ -441,7 +441,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn require_true(&mut self, name: &'static str, constraint: Expression<F>) {
         self.require_equal(name, constraint, 1.expr());
     }
-    
+
     pub(crate) fn require_equal(
         &mut self,
         name: &'static str,
