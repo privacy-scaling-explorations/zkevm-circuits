@@ -2053,12 +2053,13 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_02_02#0a8646b78286a13d320759b1c585262d6536dce4"
+source = "git+https://github.com/ed255/halo2.git?branch=feature/generics-inner1#f13451e5ad107d5efc107e318880d32a019cccfa"
 dependencies = [
  "blake2b_simd",
  "ff",
  "group",
  "halo2curves 0.3.1",
+ "rand_chacha",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
