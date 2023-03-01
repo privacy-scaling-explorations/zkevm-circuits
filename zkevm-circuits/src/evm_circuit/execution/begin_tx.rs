@@ -145,11 +145,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             0.expr(),
             None,
         );
-        let is_warm_prev = select::expr(
-            tx_caller_address.expr() - tx_callee_address.expr(),
-            0.expr(),
-            1.expr(),
-        );
+        let is_warm_prev = not::expr(tx_caller_address.expr() - tx_callee_address.expr());
         cb.account_access_list_write(
             tx_id.expr(),
             tx_callee_address.expr(),
