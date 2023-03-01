@@ -2,7 +2,11 @@
 use crate::{evm_circuit::util::rlc, util::Expr};
 use eth_types::Field;
 use gadgets::util::{and, select, sum, Scalar};
-use halo2_proofs::plonk::{ConstraintSystem, Expression};
+use halo2_proofs::{
+    halo2curves::bn256::Fr,
+    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    poly::Rotation,
+};
 use itertools::Itertools;
 
 use super::cell_manager::{Cell, CellManager, CellType, DataTransition, Trackable};
@@ -451,6 +455,24 @@ impl<F: Field, E: Expressable<F>> Expressable<F> for (E, E, E, E) {
         res.append(&mut self.2.to_expr_vec());
         res.append(&mut self.3.to_expr_vec());
         res
+    }
+}
+
+/// Enables column query without knowing the Column type
+pub trait Querier<F: Field> {
+    /// Query a column at a relative position
+    fn query(self, meta: &mut VirtualCells<F>, at: Rotation) -> Expression<F>;
+}
+
+impl<F: Field> Querier<F> for Column<Fixed> {
+    fn query(self, meta: &mut VirtualCells<F>, at: Rotation) -> Expression<F> {
+        meta.query_fixed(self, at)
+    }
+}
+
+impl<F: Field> Querier<F> for Column<Advice> {
+    fn query(self, meta: &mut VirtualCells<F>, at: Rotation) -> Expression<F> {
+        meta.query_advice(self, at)
     }
 }
 
@@ -1111,7 +1133,7 @@ macro_rules! circuit {
         #[allow(unused_imports)]
         use gadgets::util::{and, not, or, sum, Expr};
         #[allow(unused_imports)]
-        use $crate::circuit_tools::constraint_builder::{Conditionable, Expressable, Selectable};
+        use $crate::circuit_tools::constraint_builder::{Conditionable, Expressable, Selectable, Querier};
 
         #[allow(unused_macros)]
         macro_rules! f {
@@ -1130,6 +1152,34 @@ macro_rules! circuit {
             }};
             ($column:expr) => {{
                 $meta.query_advice($column.clone(), Rotation::cur())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! cur {
+            ($column:expr) => {{
+                $column.query($meta, Rotation::cur())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! next {
+            ($column:expr) => {{
+                $column.query($meta, Rotation::next())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! prev {
+            ($column:expr) => {{
+                $column.query($meta, Rotation::prev())
+            }};
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! query {
+            ($column:expr, $rot:expr) => {{
+                $column.query($meta, Rotation($rot as i32))
             }};
         }
 

@@ -234,9 +234,9 @@ impl<F: Field> MPTConfig<F> {
                     KeyData::store_initial_values(&mut cb.base, &ctx.memory[key_memory(false)]);
                 }}
                 // Initial parent values
-                ifx!{f!(position_cols.q_enable), not!(a!(ctx.position_cols.not_first_level)), a!(is_branch, 1) + a!(is_storage) + a!(is_account, 1) => {
+                ifx!{f!(position_cols.q_enable), not!(cur!(ctx.position_cols.not_first_level)), next!(is_branch) + cur!(is_storage) + next!(is_account) => {
                     for is_s in [true, false] {
-                        let root = a!(ctx.inter_root(is_s));
+                        let root = cur!(ctx.inter_root(is_s));
                         ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [root.expr(), true.expr(), false.expr(), root.expr()]);
                     }
                 }}
@@ -247,13 +247,13 @@ impl<F: Field> MPTConfig<F> {
                 let account_config;
                 ifx!{f!(position_cols.q_enable) => {
                     matchx! {
-                        a!(is_branch) => {
+                        cur!(is_branch) => {
                             branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(is_account) => {
+                        cur!(is_account) => {
                             account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(is_storage) => {
+                        cur!(is_storage) => {
                             storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         _ => (),
@@ -270,18 +270,18 @@ impl<F: Field> MPTConfig<F> {
                     require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
                     for &byte in ctx.rlp_bytes()[0..2].into_iter() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
+                        require!((FixedTableTag::RangeKeyLen256, cur!(byte), 0.expr()) => @"fixed");
                     }
                     for (idx, &byte) in ctx.rlp_bytes()[2..34].into_iter().enumerate() {
-                        require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
+                        require!((cb.get_range_s(), cur!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
                     ifx!{cb.length_sc => {
                         for (idx, &byte) in ctx.rlp_bytes()[34..36].into_iter().enumerate() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
+                            require!((FixedTableTag::RangeKeyLen256, cur!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                         }
                     }}
                     for (idx, &byte) in ctx.rlp_bytes()[36..68].into_iter().enumerate() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
+                        require!((FixedTableTag::RangeKeyLen256, cur!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
                     }
                 }}*/
 
@@ -304,7 +304,7 @@ impl<F: Field> MPTConfig<F> {
                 }
 
                 /* Populate lookup tables */
-                require!(@"keccak" => keccak_table.columns().iter().map(|table| a!(table)).collect());
+                require!(@"keccak" => keccak_table.columns().iter().map(|table| cur!(table)).collect());
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 /* Memory banks */
