@@ -605,7 +605,16 @@ impl_selectable!(
         Expression<F>,
         Expression<F>,
         Expression<F>,
-    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr(), t.5.expr()] }
+    )| {
+        vec![
+            t.0.expr(),
+            t.1.expr(),
+            t.2.expr(),
+            t.3.expr(),
+            t.4.expr(),
+            t.5.expr(),
+        ]
+    }
 );
 impl_selectable!(
     (
@@ -625,7 +634,17 @@ impl_selectable!(
         Expression<F>,
         Expression<F>,
         Expression<F>,
-    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr(), t.5.expr(), t.6.expr()] }
+    )| {
+        vec![
+            t.0.expr(),
+            t.1.expr(),
+            t.2.expr(),
+            t.3.expr(),
+            t.4.expr(),
+            t.5.expr(),
+            t.6.expr(),
+        ]
+    }
 );
 impl_selectable!(
     (
@@ -647,7 +666,18 @@ impl_selectable!(
         Expression<F>,
         Expression<F>,
         Expression<F>,
-    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr(), t.5.expr(), t.6.expr(), t.7.expr()] }
+    )| {
+        vec![
+            t.0.expr(),
+            t.1.expr(),
+            t.2.expr(),
+            t.3.expr(),
+            t.4.expr(),
+            t.5.expr(),
+            t.6.expr(),
+            t.7.expr(),
+        ]
+    }
 );
 
 /// Trait that conditionally combines multiple types

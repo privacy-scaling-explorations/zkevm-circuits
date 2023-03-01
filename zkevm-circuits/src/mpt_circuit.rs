@@ -15,11 +15,12 @@ mod columns;
 mod helpers;
 mod param;
 mod proof_chain;
+mod rlp_gadgets;
 mod selectors;
 mod storage_leaf;
 mod witness_row;
 
-use branch::{BranchConfig};
+use branch::BranchConfig;
 use columns::{MainCols, PositionCols, ProofTypeCols};
 use proof_chain::ProofChainConfig;
 use witness_row::{MptWitnessRow, MptWitnessRowType};
@@ -28,19 +29,14 @@ use param::HASH_WIDTH;
 use selectors::SelectorsConfig;
 
 use crate::{
-    assign,
-    circuit,
-    circuit_tools::{
-        cell_manager::CellManager,
-        constraint_builder::{merge_lookups},
-        memory::Memory,
-    },
+    assign, assignf, circuit,
+    circuit_tools::{cell_manager::CellManager, constraint_builder::merge_lookups, memory::Memory},
     mpt_circuit::{
         helpers::{extend_rand, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
         storage_leaf::StorageLeafConfig,
     },
     table::{DynamicTableColumns, KeccakTable},
-    util::{power_of_randomness_from_instance, Challenges}, assignf,
+    util::{power_of_randomness_from_instance, Challenges},
 };
 
 use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memory};
@@ -137,13 +133,7 @@ impl_expr!(FixedTableTag);
 // TODO(Brecht): remove by refactoring to use memory values instead
 #[derive(Default)]
 pub(crate) struct ProofValues<F> {
-    pub(crate) key_rlc: F,
-    pub(crate) key_rlc_mult: F,
-    pub(crate) key_rlc_prev: F,
-    pub(crate) key_rlc_mult_prev: F,
-
     pub(crate) before_account_leaf: bool,
-
     pub(crate) memory: Memory<F>,
 }
 
@@ -151,8 +141,6 @@ impl<F: Field> ProofValues<F> {
     fn new(memory: &Memory<F>) -> Self {
         Self {
             memory: memory.clone(),
-            key_rlc_mult: F::one(),
-            key_rlc_mult_prev: F::one(),
             before_account_leaf: true,
             ..Default::default()
         }
@@ -431,11 +419,18 @@ impl<F: Field> MPTConfig<F> {
                     child_c_bytes.rotate_left(2);
                 };
 
-                row.bytes = [child_s_bytes.clone(), child_c_bytes.clone(), row.bytes[68..].to_owned()].concat();
+                row.bytes = [
+                    child_s_bytes.clone(),
+                    child_c_bytes.clone(),
+                    row.bytes[68..].to_owned(),
+                ]
+                .concat();
                 //println!("+ {:?}", row.bytes);
             }
 
-            if row.get_type() == MptWitnessRowType::ExtensionNodeS || row.get_type() == MptWitnessRowType::ExtensionNodeC {
+            if row.get_type() == MptWitnessRowType::ExtensionNodeS
+                || row.get_type() == MptWitnessRowType::ExtensionNodeC
+            {
                 //println!("- {:?}", row.bytes);
                 let mut value_bytes = row.bytes[34..68].to_owned();
                 if value_bytes[1] == 160 {
@@ -446,7 +441,12 @@ impl<F: Field> MPTConfig<F> {
                     value_bytes[1] = 0;
                     value_bytes.rotate_left(2);
                 };
-                row.bytes = [row.bytes[0..34].to_owned(), value_bytes.clone(), row.bytes[68..].to_owned()].concat();
+                row.bytes = [
+                    row.bytes[0..34].to_owned(),
+                    value_bytes.clone(),
+                    row.bytes[68..].to_owned(),
+                ]
+                .concat();
                 //println!("+ {:?}", row.bytes);
             }
         }
@@ -537,13 +537,6 @@ impl<F: Field> MPTConfig<F> {
                         } else {
                             row.clone()
                         };
-
-                        if row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf {
-                            pv.key_rlc = F::zero(); // account address until here, storage key from here on
-                            pv.key_rlc_mult = F::one();
-                            pv.key_rlc_prev = F::zero();
-                            pv.key_rlc_mult_prev = F::one();
-                        }
 
                         if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
                             //println!("{}: branch", offset);

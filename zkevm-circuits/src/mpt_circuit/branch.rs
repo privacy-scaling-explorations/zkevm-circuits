@@ -1,41 +1,37 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Region},
-    plonk::{Error, VirtualCells, Expression},
+    circuit::Region,
+    plonk::{Error, Expression, VirtualCells},
 };
 
 use super::{
-    helpers::{MPTConstraintBuilder, RLPListGadget, RLPItemGadget, LeafKeyGadget, RLPItemWitness, ParentDataWitness},
-    param::{
-        ARITY, IS_BRANCH_C_PLACEHOLDER_POS,
-    },
+    helpers::{LeafKeyGadget, MPTConstraintBuilder, ParentDataWitness},
+    param::{ARITY, IS_BRANCH_C_PLACEHOLDER_POS},
+    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListGadget},
     MPTContext,
 };
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::{Cell},
-        constraint_builder::{RLCChainable}, gadgets::{IsEqualGadget, LtGadget, IsZeroGadget},
+        cell_manager::Cell,
+        constraint_builder::RLCChainable,
+        gadgets::{IsEqualGadget, IsZeroGadget, LtGadget},
+    },
+    mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{
+        helpers::num_nibbles,
+        param::{
+            BRANCH_0_KEY_POS, DRIFTED_POS, HASH_WIDTH, IS_BRANCH_S_PLACEHOLDER_POS,
+            IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+            IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
+        },
     },
     mpt_circuit::{
-        helpers::{
-            key_memory, parent_memory, Indexable,
-            KeyData, ParentData,
-        },
-        param::{RLP_NIL},
+        helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
+        param::RLP_NIL,
         FixedTableTag,
     },
-    mpt_circuit::{
-        param::{
-            BRANCH_0_KEY_POS,
-            DRIFTED_POS, HASH_WIDTH,
-            IS_BRANCH_S_PLACEHOLDER_POS, IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS,
-            IS_EXT_LONG_ODD_C16_POS, IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS,
-            IS_EXT_SHORT_C1_POS,
-        }, helpers::num_nibbles,
-    },
-    mpt_circuit::{witness_row::MptWitnessRow},
     mpt_circuit::{MPTConfig, ProofValues},
 };
 
@@ -85,7 +81,10 @@ impl<F: Field> BranchConfig<F> {
             let offset = -1;
 
             // Data
-            let rlp_bytes = [ctx.expr(meta, -1)[4..7].to_owned(), ctx.expr(meta, -1)[7..10].to_owned()];
+            let rlp_bytes = [
+                ctx.expr(meta, -1)[4..7].to_owned(),
+                ctx.expr(meta, -1)[7..10].to_owned(),
+            ];
             let branch_bytes: [[Vec<Expression<F>>; ARITY]; 2] = [
                 array_init::array_init(|i| ctx.expr(meta, i as i32)[0..34].to_owned()),
                 array_init::array_init(|i| ctx.expr(meta, i as i32)[34..68].to_owned()),
@@ -253,9 +252,11 @@ impl<F: Field> BranchConfig<F> {
             let mut mult = vec![1.expr(); 2];
             for is_s in [true, false] {
                 // Read the list
-                config.rlp_list[is_s.idx()] = RLPListGadget::construct(&mut cb.base, &rlp_bytes[is_s.idx()]);
+                config.rlp_list[is_s.idx()] =
+                    RLPListGadget::construct(&mut cb.base, &rlp_bytes[is_s.idx()]);
                 // Start the RLC encoding of the branch
-                (branch_node_rlc[is_s.idx()], mult[is_s.idx()]) = config.rlp_list[is_s.idx()].rlc_rlp(&r);
+                (branch_node_rlc[is_s.idx()], mult[is_s.idx()]) =
+                    config.rlp_list[is_s.idx()].rlc_rlp(&r);
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].len();
@@ -264,7 +265,11 @@ impl<F: Field> BranchConfig<F> {
                 config.mod_branch_is_hashed[is_s.idx()] = cb.base.query_cell();
 
                 // Check if the branch is hashed or not
-                config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, config.rlp_list[is_s.idx()].num_bytes(), HASH_WIDTH.expr());
+                config.is_not_hashed[is_s.idx()] = LtGadget::construct(
+                    &mut cb.base,
+                    config.rlp_list[is_s.idx()].num_bytes(),
+                    HASH_WIDTH.expr(),
+                );
             }
 
             // Process the branch children
@@ -278,13 +283,18 @@ impl<F: Field> BranchConfig<F> {
                 require!(config.is_drifted[node_index] => bool);
 
                 // Calculate the modified and drifted index from `is_modified`/`is_drifted`
-                modified_index = modified_index.expr() + config.is_modified[node_index].expr() * node_index.expr();
-                drifted_index = drifted_index.expr() + config.is_drifted[node_index].expr() * node_index.expr();
+                modified_index = modified_index.expr()
+                    + config.is_modified[node_index].expr() * node_index.expr();
+                drifted_index =
+                    drifted_index.expr() + config.is_drifted[node_index].expr() * node_index.expr();
 
                 for is_s in [true, false] {
                     let branch = &mut config.branches[is_s.idx()][node_index];
                     // Read the branch
-                    branch.rlp = RLPItemGadget::construct(&mut cb.base, &branch_bytes[is_s.idx()][node_index]);
+                    branch.rlp = RLPItemGadget::construct(
+                        &mut cb.base,
+                        &branch_bytes[is_s.idx()][node_index],
+                    );
                     let num_bytes = branch.rlp.num_bytes();
                     // Bookkeeping for RLC
                     branch.mult = cb.base.query_cell();
@@ -294,26 +304,30 @@ impl<F: Field> BranchConfig<F> {
                     cb.set_length_sc(is_s, num_bytes.expr());
 
                     // Keep track of how many bytes of the list we've processed
-                    num_bytes_left[is_s.idx()] = num_bytes_left[is_s.idx()].expr() - num_bytes.expr();
+                    num_bytes_left[is_s.idx()] =
+                        num_bytes_left[is_s.idx()].expr() - num_bytes.expr();
 
                     // Update the full branch node RLC with the data of this branch
-                    branch_node_rlc[is_s.idx()] = (branch_node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr()).rlc_chain(
-                        branch.rlp.rlc_rlp(&mut cb.base, &r)
-                    );
+                    branch_node_rlc[is_s.idx()] =
+                        (branch_node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr())
+                            .rlc_chain(branch.rlp.rlc_rlp(&mut cb.base, &r));
 
                     // Store the rlc of the branch
-                    // TODO(Brecht): useless now, but useful when this work is spread over multiple rows
+                    // TODO(Brecht): useless now, but useful when this work is spread over multiple
+                    // rows
                     branch.rlc_branch = cb.base.query_cell();
                     require!(branch.rlc_branch => branch.rlp.rlc_branch(&r));
 
                     // Store if this branch is hashed
-                    branch.is_hashed = IsEqualGadget::construct(&mut cb.base, branch.rlp.len(), 32.expr());
+                    branch.is_hashed =
+                        IsEqualGadget::construct(&mut cb.base, branch.rlp.len(), 32.expr());
 
                     // Update the branch node multiplier
                     mult[is_s.idx()] = mult[is_s.idx()].expr() * mult_diff;
 
                     // Calculate the length of the modified branch
-                    mod_branch_len[is_s.idx()] = mod_branch_len[is_s.idx()].expr() + branch.rlp.len() * config.is_modified[node_index].expr();
+                    mod_branch_len[is_s.idx()] = mod_branch_len[is_s.idx()].expr()
+                        + branch.rlp.len() * config.is_modified[node_index].expr();
 
                     // When in a placeholder branch, both branches are the same - the placeholder
                     // branch and its parallel counterpart, which is not a
@@ -340,7 +354,7 @@ impl<F: Field> BranchConfig<F> {
                 // We need to ensure that the only change in `S` and `C` proof occurs
                 // at `modified_index` so that only a single change can be done.
                 // TODO(Brecht): optimize, only insert the modified branch in the circuit
-                ifx!{not!(config.is_modified[node_index]) => {
+                ifx! {not!(config.is_modified[node_index]) => {
                     let branch_s = config.branches[true.idx()][node_index].rlp.rlc_rlp(&mut cb.base, &r);
                     let branch_c = config.branches[false.idx()][node_index].rlp.rlc_rlp(&mut cb.base, &r);
                     require!(branch_s => branch_c);
@@ -350,10 +364,13 @@ impl<F: Field> BranchConfig<F> {
                 // Number of bytes left needs to be 1 because ValueNode which occupies 1 byte
                 require!(num_bytes_left[is_s.idx()] => 1);
                 // TODO: acc currently doesn'thave branch ValueNode info (which 128 if nil)
-                branch_node_rlc[is_s.idx()] = (branch_node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr()).rlc_chain(RLP_NIL.expr());
+                branch_node_rlc[is_s.idx()] =
+                    (branch_node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr())
+                        .rlc_chain(RLP_NIL.expr());
 
                 // Check if the modified branch is empty, and so a placeholder leaf will follow
-                config.mod_branch_is_empty[is_s.idx()] = IsZeroGadget::construct(&mut cb.base, mod_branch_len[is_s.idx()].expr());
+                config.mod_branch_is_empty[is_s.idx()] =
+                    IsZeroGadget::construct(&mut cb.base, mod_branch_len[is_s.idx()].expr());
             }
 
             // `is_modified` needs to be set to 1 at exactly 1 branch child
@@ -362,7 +379,8 @@ impl<F: Field> BranchConfig<F> {
                 .collect::<Vec<_>>();
             require!(sum::expr(&is_modified_values) => 1);
 
-            // When there's a placeholder, `is_drifted` needs to be set to 1 at exactly 1 branch child
+            // When there's a placeholder, `is_drifted` needs to be set to 1 at exactly 1
+            // branch child
             ifx! {or::expr(&[config.is_placeholder[true.idx()].expr(), config.is_placeholder[false.idx()].expr()]) => {
                 let is_drifted_values = (0..ARITY).map(|rot| config.is_drifted[rot].expr()).collect::<Vec<_>>();
                 require!(sum::expr(&is_drifted_values) => 1);
@@ -371,7 +389,11 @@ impl<F: Field> BranchConfig<F> {
             // Check if the branch is in its parent
             for is_s in [true, false] {
                 let (rlc, num_bytes, is_not_hashed) = {
-                    (branch_node_rlc[is_s.idx()].expr(), config.rlp_list[is_s.idx()].num_bytes(), config.is_not_hashed[is_s.idx()].expr())
+                    (
+                        branch_node_rlc[is_s.idx()].expr(),
+                        config.rlp_list[is_s.idx()].num_bytes(),
+                        config.is_not_hashed[is_s.idx()].expr(),
+                    )
                 };
 
                 // TODO(Brecht): should not need is_extension check
@@ -402,11 +424,13 @@ impl<F: Field> BranchConfig<F> {
                 // The nibble will be added as the least significant nibble, the multiplier needs to advance
                 (1.expr(), r[0].expr())
             }};
-            let key_rlc_post_branch = key_rlc_post_ext.expr() + modified_index.expr() * nibble_mult.expr() * key_mult_post_ext.expr();
+            let key_rlc_post_branch = key_rlc_post_ext.expr()
+                + modified_index.expr() * nibble_mult.expr() * key_mult_post_ext.expr();
             let key_mult_post_branch = key_mult_post_ext.expr() * mult.expr();
 
             // Set the new keys
-            // TODO(Brecht): Probably best to add checks that when placeholder another branch cannot follow etc..
+            // TODO(Brecht): Probably best to add checks that when placeholder another
+            // branch cannot follow etc..
             for is_s in [true, false] {
                 ifx! {not!(config.is_placeholder[is_s.idx()].expr()) => {
                     KeyData::store(
@@ -530,14 +554,12 @@ impl<F: Field> BranchConfig<F> {
             witness[offset + 18].bytes[34..68].to_owned(),
         ];
 
-        self.is_extension.assign(region, base_offset, is_extension_node.scalar())?;
+        self.is_extension
+            .assign(region, base_offset, is_extension_node.scalar())?;
 
-        let key_data = self.key_data.witness_load(
-            region,
-            base_offset,
-            &pv.memory[key_memory(true)],
-            0,
-        )?;
+        let key_data =
+            self.key_data
+                .witness_load(region, base_offset, &pv.memory[key_memory(true)], 0)?;
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
@@ -548,34 +570,39 @@ impl<F: Field> BranchConfig<F> {
             )?;
         }
 
-        pv.key_rlc_prev = pv.key_rlc;
-        pv.key_rlc_mult_prev = pv.key_rlc_mult;
-
         let mut num_nibbles = key_data.num_nibbles;
-        let mut key_rlc_post_ext = pv.key_rlc;
-        let mut key_mult_post_ext = pv.key_rlc_mult;
+        let mut key_rlc_post_ext = key_data.rlc;
+        let mut key_mult_post_ext = key_data.mult;
         let mut is_key_odd = key_data.is_odd;
 
         /* Extension */
 
-        let ext_rlp_key = self.ext_rlp_key.assign(region, base_offset, &ext_key_bytes[0])?;
+        let ext_rlp_key = self
+            .ext_rlp_key
+            .assign(region, base_offset, &ext_key_bytes[0])?;
         if is_extension_node {
-            let mut ext_mult= F::one();
+            let mut ext_mult = F::one();
             for _ in 0..ext_rlp_key.num_bytes_on_key_row() {
                 ext_mult *= mpt_config.r;
             }
             self.ext_mult.assign(region, base_offset, ext_mult)?;
 
-            let first_byte_index = ext_rlp_key.rlp_list.num_rlp_bytes() +
-                if ext_rlp_key.rlp_list.is_short() {
+            let first_byte_index = ext_rlp_key.rlp_list.num_rlp_bytes()
+                + if ext_rlp_key.rlp_list.is_short() {
                     ext_rlp_key.short_list_value.num_rlp_bytes()
                 } else {
                     ext_rlp_key.long_list_value.num_rlp_bytes()
                 };
             let ext_is_key_part_odd = ext_key_bytes[0][first_byte_index] >> 4 == 1;
-            self.ext_is_key_part_odd.assign(region, base_offset, ext_is_key_part_odd.scalar())?;
+            self.ext_is_key_part_odd
+                .assign(region, base_offset, ext_is_key_part_odd.scalar())?;
 
-            self.ext_is_not_hashed.assign(region, base_offset, ext_rlp_key.num_bytes().scalar(), HASH_WIDTH.scalar())?;
+            self.ext_is_not_hashed.assign(
+                region,
+                base_offset,
+                ext_rlp_key.num_bytes().scalar(),
+                HASH_WIDTH.scalar(),
+            )?;
 
             let mut key_len_mult = ext_rlp_key.key_len();
             if !(is_key_odd && ext_is_key_part_odd) {
@@ -594,24 +621,29 @@ impl<F: Field> BranchConfig<F> {
 
             // Key RLC
             let (key_rlc_ext, _) = ext_rlp_key.ext_key_rlc(
-            pv.key_rlc_mult,
+                key_data.mult,
                 ext_is_key_part_odd,
                 !is_key_odd,
                 ext_key_bytes.clone(),
                 mpt_config.r,
             );
-            key_rlc_post_ext = pv.key_rlc + key_rlc_ext;
+            key_rlc_post_ext = key_data.rlc + key_rlc_ext;
 
             // Key mult
             let mut ext_mult_key = 1.scalar();
             for _ in 0..key_len_mult {
                 ext_mult_key = ext_mult_key * mpt_config.r;
             }
-            self.ext_mult_key.assign(region, base_offset, ext_mult_key)?;
-            key_mult_post_ext = pv.key_rlc_mult * ext_mult_key;
+            self.ext_mult_key
+                .assign(region, base_offset, ext_mult_key)?;
+            key_mult_post_ext = key_data.mult * ext_mult_key;
         }
         for is_s in [true, false] {
-            self.ext_rlp_value[is_s.idx()].assign(region, base_offset, &ext_value_bytes[is_s.idx()])?;
+            self.ext_rlp_value[is_s.idx()].assign(
+                region,
+                base_offset,
+                &ext_value_bytes[is_s.idx()],
+            )?;
         }
 
         /* Branch */
@@ -620,15 +652,28 @@ impl<F: Field> BranchConfig<F> {
             let rlp_list_witness =
                 self.rlp_list[is_s.idx()].assign(region, base_offset, &rlp_bytes[is_s.idx()])?;
 
-            self.is_placeholder[is_s.idx()].assign(region, base_offset, is_placeholder[is_s.idx()].scalar())?;
-            self.is_not_hashed[is_s.idx()].assign(region, base_offset, rlp_list_witness.num_bytes().scalar(), HASH_WIDTH.scalar())?;
+            self.is_placeholder[is_s.idx()].assign(
+                region,
+                base_offset,
+                is_placeholder[is_s.idx()].scalar(),
+            )?;
+            self.is_not_hashed[is_s.idx()].assign(
+                region,
+                base_offset,
+                rlp_list_witness.num_bytes().scalar(),
+                HASH_WIDTH.scalar(),
+            )?;
         }
 
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         let mut branch_witnesses = vec![vec![RLPItemWitness::default(); ARITY]; 2];
         for node_index in 0..ARITY {
             for is_s in [true, false] {
-                let child_witness = self.branches[is_s.idx()][node_index].rlp.assign(region, base_offset, &branch_bytes[is_s.idx()][node_index])?;
+                let child_witness = self.branches[is_s.idx()][node_index].rlp.assign(
+                    region,
+                    base_offset,
+                    &branch_bytes[is_s.idx()][node_index],
+                )?;
                 branch_witnesses[is_s.idx()][node_index] = child_witness.clone();
 
                 let mut node_mult_diff = F::one();
@@ -636,24 +681,57 @@ impl<F: Field> BranchConfig<F> {
                     node_mult_diff *= mpt_config.r;
                 }
 
-                self.branches[is_s.idx()][node_index].mult.assign(region, base_offset, node_mult_diff)?;
-                self.branches[is_s.idx()][node_index].rlc_branch.assign(region, base_offset, child_witness.rlc_branch(mpt_config.r))?;
-                let is_hashed = self.branches[is_s.idx()][node_index].is_hashed.assign(region, base_offset, child_witness.len().scalar(), 32.scalar())?;
+                self.branches[is_s.idx()][node_index].mult.assign(
+                    region,
+                    base_offset,
+                    node_mult_diff,
+                )?;
+                self.branches[is_s.idx()][node_index].rlc_branch.assign(
+                    region,
+                    base_offset,
+                    child_witness.rlc_branch(mpt_config.r),
+                )?;
+                let is_hashed = self.branches[is_s.idx()][node_index].is_hashed.assign(
+                    region,
+                    base_offset,
+                    child_witness.len().scalar(),
+                    32.scalar(),
+                )?;
 
-                let mod_pos = if is_placeholder[is_s.idx()] { drifted_index } else { modified_index };
+                let mod_pos = if is_placeholder[is_s.idx()] {
+                    drifted_index
+                } else {
+                    modified_index
+                };
                 if mod_pos == node_index {
                     mod_node_hash_rlc[is_s.idx()] = child_witness.rlc_branch(mpt_config.r);
-                    self.mod_branch_rlc[is_s.idx()].assign(region, base_offset, mod_node_hash_rlc[is_s.idx()])?;
+                    self.mod_branch_rlc[is_s.idx()].assign(
+                        region,
+                        base_offset,
+                        mod_node_hash_rlc[is_s.idx()],
+                    )?;
                     self.mod_branch_is_hashed[is_s.idx()].assign(region, base_offset, is_hashed)?;
                 }
             }
-            self.is_modified[node_index].assign(region, base_offset, (node_index == modified_index).scalar())?;
-            self.is_drifted[node_index].assign(region, base_offset, (node_index == drifted_index).scalar())?;
+            self.is_modified[node_index].assign(
+                region,
+                base_offset,
+                (node_index == modified_index).scalar(),
+            )?;
+            self.is_drifted[node_index].assign(
+                region,
+                base_offset,
+                (node_index == drifted_index).scalar(),
+            )?;
         }
 
         let mut is_placeholder_leaf = [0.scalar(); 2];
         for is_s in [true, false] {
-            is_placeholder_leaf[is_s.idx()] = self.mod_branch_is_empty[is_s.idx()].assign(region, base_offset, branch_witnesses[is_s.idx()][modified_index].len().scalar())?;
+            is_placeholder_leaf[is_s.idx()] = self.mod_branch_is_empty[is_s.idx()].assign(
+                region,
+                base_offset,
+                branch_witnesses[is_s.idx()][modified_index].len().scalar(),
+            )?;
         }
 
         // one nibble is used for position in branch
@@ -664,17 +742,17 @@ impl<F: Field> BranchConfig<F> {
 
         // Update the key RLC and multiplier for the branch nibble.
         let (nibble_mult, mult): (F, F) = if is_key_odd {
-            // The nibble will be added as the most significant nibble using the same multiplier
+            // The nibble will be added as the most significant nibble using the same
+            // multiplier
             (16.scalar(), 1.scalar())
         } else {
-            // The nibble will be added as the least significant nibble, the multiplier needs to advance
+            // The nibble will be added as the least significant nibble, the multiplier
+            // needs to advance
             (1.scalar(), mpt_config.r)
         };
-        let key_rlc_post_branch = key_rlc_post_ext + F::from(modified_index as u64) * nibble_mult * key_mult_post_ext;
+        let key_rlc_post_branch =
+            key_rlc_post_ext + F::from(modified_index as u64) * nibble_mult * key_mult_post_ext;
         let key_mult_post_branch = key_mult_post_ext * mult;
-
-        pv.key_rlc = key_rlc_post_branch;
-        pv.key_rlc_mult = key_mult_post_branch;
 
         // Set the new key
         for is_s in [true, false] {
@@ -683,8 +761,8 @@ impl<F: Field> BranchConfig<F> {
                     region,
                     base_offset,
                     &mut pv.memory[key_memory(is_s)],
-                    pv.key_rlc,
-                    pv.key_rlc_mult,
+                    key_rlc_post_branch,
+                    key_mult_post_branch,
                     num_nibbles,
                     is_placeholder_leaf[true.idx()] == 1.scalar(),
                     is_placeholder_leaf[false.idx()] == 1.scalar(),

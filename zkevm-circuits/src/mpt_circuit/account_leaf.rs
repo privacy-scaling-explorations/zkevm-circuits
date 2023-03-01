@@ -6,9 +6,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::circuit_tools::constraint_builder::RLCChainable;
-use crate::circuit_tools::gadgets::RequireNotZeroGadget;
-use crate::mpt_circuit::helpers::{drifted_nibble_rlc, Indexable, IsEmptyTreeGadget};
+use crate::mpt_circuit::helpers::{Indexable, IsEmptyTreeGadget};
 use crate::table::ProofType;
 use crate::{
     assign, circuit,
@@ -22,35 +20,33 @@ use crate::{
     mpt_circuit::{param::IS_ACCOUNT_DELETE_MOD_POS, MPTConfig, ProofValues},
     mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
 };
+use crate::{
+    circuit_tools::constraint_builder::RLCChainable,
+    mpt_circuit::helpers::{DriftedGadget, WrongGadget},
+};
 
-use super::helpers::{LeafKeyGadget, RLPValueGadget, ParentDataWitness};
+use super::param::{HASH_WIDTH, IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS};
 use super::{
-    helpers::bytes_into_rlc,
-    param::{
-        HASH_WIDTH, IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS,
-        IS_NON_EXISTING_ACCOUNT_POS,
-    },
+    helpers::{LeafKeyGadget, ParentDataWitness},
+    param::IS_NON_EXISTING_ACCOUNT_POS,
+    rlp_gadgets::RLPValueGadget,
 };
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafConfig<F> {
     key_data: [KeyData<F>; 2],
-    key_data_w: KeyData<F>,
     parent_data: [ParentData<F>; 2],
-    check_is_wrong_leaf: RequireNotZeroGadget<F>,
     rlp_key: [LeafKeyGadget<F>; 2],
     key_mult: [Cell<F>; 2],
-    wrong_rlp_key: LeafKeyGadget<F>,
-    is_wrong_leaf: Cell<F>,
     rlp_nonce: [RLPValueGadget<F>; 2],
     rlp_balance: [RLPValueGadget<F>; 2],
     rlp_storage: [RLPValueGadget<F>; 2],
     rlp_codehash: [RLPValueGadget<F>; 2],
     nonce_mult: [Cell<F>; 2],
     balance_mult: [Cell<F>; 2],
-    drifted_rlp_key: LeafKeyGadget<F>,
-    drifted_mult: Cell<F>,
     is_empty_trie: [IsEmptyTreeGadget<F>; 2],
+    drifted: DriftedGadget<F>,
+    wrong: WrongGadget<F>,
 }
 
 impl<F: Field> AccountLeafConfig<F> {
@@ -110,8 +106,6 @@ impl<F: Field> AccountLeafConfig<F> {
             // The two string RLP bytes stored in the s RLP bytes.
             // The two list RLP bytes are stored in the c RLP bytes.
             // The RLP bytes of nonce/balance are stored bytes[0].
-
-            config.is_wrong_leaf = cb.base.query_cell();
 
             let mut key_rlc = vec![0.expr(); 2];
             let mut nonce_rlc = vec![0.expr(); 2];
@@ -197,7 +191,6 @@ impl<F: Field> AccountLeafConfig<F> {
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
                         1.expr(),
-                        true,
                         &r,
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
@@ -218,7 +211,8 @@ impl<F: Field> AccountLeafConfig<F> {
                 require!(value_rlp_bytes[is_s.idx()][1] => value_rlp_bytes[is_s.idx()][3].expr() + 2.expr());
                 // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
                 require!(value_rlp_bytes[is_s.idx()][2] => RLP_LIST_LONG + 1);
-                // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 + #(hash))`.
+                // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 +
+                // #(hash))`.
                 require!(value_rlp_bytes[is_s.idx()][3] => config.rlp_nonce[is_s.idx()].num_bytes() + config.rlp_balance[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
                 // Now check that the the key and value list length matches the account length.
                 // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
@@ -245,105 +239,31 @@ impl<F: Field> AccountLeafConfig<F> {
                 );
             }
 
-            // A drifted leaf appears only when there is a placeholder branch
-            ifx! {config.parent_data[true.idx()].is_placeholder.expr() + config.parent_data[false.idx()].is_placeholder.expr() => {
-                config.drifted_rlp_key = LeafKeyGadget::construct(&mut cb.base, &drifted_bytes);
+            // Drifted leaf handling
+            config.drifted = DriftedGadget::construct(
+                cb,
+                &config.parent_data,
+                &config.key_data,
+                &key_rlc,
+                &leaf_no_key_rlc,
+                &drifted_bytes,
+                &ctx.r,
+            );
 
-                // TODO(Brecht): seems like we have to verify the RLP encoding because the key length can change
-
-                // The key RLC of the drifted leaf needs to be the same as the key RLC of the leaf before
-                // the drift - the nibbles are the same in both cases, the difference is that before the
-                // drift some nibbles are stored in the leaf key, while after the drift these nibbles are used as
-                // position in a branch or/and nibbles of the extension node.
-                // We need the intermediate key RLC right before `drifted_index` is added to it.
-                let (key_rlc_prev, key_mult_prev, placeholder_nibble, placeholder_is_odd) = ifx!{config.parent_data[true.idx()].is_placeholder.expr() => {
-                    (
-                        config.key_data[true.idx()].parent_rlc.expr(),
-                        config.key_data[true.idx()].parent_mult.expr(),
-                        config.key_data[true.idx()].placeholder_nibble.expr(),
-                        config.key_data[true.idx()].placeholder_is_odd.expr(),
-                    )
-                } elsex {
-                    (
-                        config.key_data[false.idx()].parent_rlc.expr(),
-                        config.key_data[false.idx()].parent_mult.expr(),
-                        config.key_data[false.idx()].placeholder_nibble.expr(),
-                        config.key_data[false.idx()].placeholder_is_odd.expr(),
-                    )
-                }};
-
-                // Calculate the drifted key RLC
-                let drifted_key_rlc = key_rlc_prev +
-                    drifted_nibble_rlc(&mut cb.base, placeholder_nibble.expr(), key_mult_prev.expr(), placeholder_is_odd.expr()) +
-                    config.drifted_rlp_key.leaf_key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), false, &r);
-
-                // RLC bytes zero check
-                cb.set_length(config.drifted_rlp_key.num_bytes_on_key_row());
-                config.drifted_mult = cb.base.query_cell();
-                require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"fixed");
-
-                // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                let calc_rlc = |is_s: bool| {
-                    // Calculate the drifted leaf rlc
-                    let rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
-                    (true.expr(), key_rlc[is_s.idx()].expr(), rlc, config.parent_data[is_s.idx()].placeholder_rlc.expr())
-                };
-                let (do_checks, key_rlc, drifted_rlc, mod_hash) = matchx! {
-                    config.parent_data[true.idx()].is_placeholder => {
-                        // Neighbour leaf in the added branch
-                        calc_rlc(true)
-                    },
-                    config.parent_data[false.idx()].is_placeholder => {
-                        // Neighbour leaf in the deleted branch
-                        calc_rlc(false)
-                    },
-                    _ => (false.expr(), 0.expr(), 0.expr(), 0.expr()),
-                };
-                ifx! {do_checks => {
-                    // The key of the drifted leaf needs to match the key of the leaf
-                    require!(key_rlc => drifted_key_rlc);
-                    // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                    // TODO(Brecht): 53 "src/mpt_circuit/tests/AccountAddPlaceholderExtension.json"
-                    //require!((1, drifted_rlc, config.drifted_rlp_key.num_bytes(), mod_hash) => @"keccak");
-                }}
-            }}
-
-            // Wrong leaf
-            // Make sure is_wrong_leaf is boolean
-            require!(config.is_wrong_leaf => bool);
-            ifx! {a!(ctx.proof_type.is_non_existing_account_proof, wrong_offset) => {
-                // Get the previous key data
-                config.key_data_w = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 1.expr());
-                ifx! {config.is_wrong_leaf => {
-                    // Calculate the key
-                    config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
-                    let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
-                        &mut cb.base,
-                        config.key_data_w.mult.expr(),
-                        config.key_data_w.is_odd.expr(),
-                        1.expr(),
-                        false,
-                        &ctx.r,
-                    );
-
-                    // Check that it's the key as requested in the lookup
-                    let key_rlc_lookup = a!(ctx.mpt_table.address_rlc, wrong_offset);
-                    require!(key_rlc_lookup => key_rlc_wrong);
-
-                    // Now make sure this address is different than the one of the leaf
-                    config.check_is_wrong_leaf = RequireNotZeroGadget::construct(&mut cb.base, key_rlc_lookup - key_rlc[true.idx()].expr());
-                    // Make sure the lengths of the keys are the same
-                    require!(config.wrong_rlp_key.key_len() => config.rlp_key[true.idx()].key_len());
-                    // RLC bytes zero check
-                    cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
-                } elsex {
-                    // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                    require!(config.key_data_w.is_placeholder_leaf_s => true);
-                }}
-            } elsex {
-                // is_wrong_leaf needs to be false when not in non_existing_account proof
-                require!(config.is_wrong_leaf => false);
-            }}
+            // Wrong leaf handling
+            let is_non_existing = a!(ctx.proof_type.is_non_existing_account_proof, wrong_offset);
+            config.wrong = WrongGadget::construct(
+                meta,
+                cb,
+                ctx.clone(),
+                is_non_existing,
+                &config.rlp_key,
+                &key_rlc,
+                &wrong_bytes,
+                wrong_offset,
+                true,
+                &ctx.r,
+            );
 
             // Account delete
             // We need to make sure there is no leaf when account is deleted. Two possible
@@ -431,9 +351,10 @@ impl<F: Field> AccountLeafConfig<F> {
         let nonce_balance_c = witness[base_offset + 3].to_owned();
         let storage_codehash_s = witness[base_offset + 4].to_owned();
         let storage_codehash_c = witness[base_offset + 5].to_owned();
+        let row_drifted = witness[base_offset + 6].to_owned();
 
-        let key_bytes = [key_s.to_owned(), key_c.to_owned()];
-        let wrong_bytes = witness[base_offset + 1].to_owned();
+        let row_key = [&key_s, &key_c];
+        let row_wrong = witness[base_offset + 1].to_owned();
         let nonce_bytes = [
             nonce_balance_s.bytes[..34].to_owned(),
             nonce_balance_c.bytes[..34].to_owned(),
@@ -450,7 +371,6 @@ impl<F: Field> AccountLeafConfig<F> {
             storage_codehash_s.bytes[34..68].to_owned(),
             storage_codehash_c.bytes[34..68].to_owned(),
         ];
-        //let drifted_bytes = witness[base_offset + 6].to_owned();
 
         let key_s_lookup_offset = base_offset - 1;
         let nonce_lookup_offset = base_offset + 2;
@@ -467,9 +387,9 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut codehash_value_rlc = vec![0.scalar(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
-            let key_row = &key_bytes[is_s.idx()];
+            let key_row = &row_key[is_s.idx()];
 
-            self.key_data[is_s.idx()].witness_load(
+            let key_data = self.key_data[is_s.idx()].witness_load(
                 region,
                 base_offset,
                 &mut pv.memory[key_memory(is_s)],
@@ -531,13 +451,8 @@ impl<F: Field> AccountLeafConfig<F> {
             self.balance_mult[is_s.idx()].assign(region, base_offset, mult_balance)?;
 
             // Key
-            let (key_rlc_new, key_rlc_mult) = if parent_data[is_s.idx()].is_placeholder {
-                (pv.key_rlc_prev, pv.key_rlc_mult_prev)
-            } else {
-                (pv.key_rlc, pv.key_rlc_mult)
-            };
             (key_rlc[is_s.idx()], _) =
-                rlp_key_witness.leaf_key_rlc(key_rlc_new, key_rlc_mult, ctx.r);
+                rlp_key_witness.leaf_key_rlc(key_data.rlc, key_data.mult, ctx.r);
 
             let mut key_mult = F::one();
             for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
@@ -572,59 +487,25 @@ impl<F: Field> AccountLeafConfig<F> {
         }
 
         // Drifted leaf handling
-        if parent_data[true.idx()].is_placeholder || parent_data[false.idx()].is_placeholder {
-            // TODO(Brecht): Change how the witness is generated
-            let drifted_bytes = &mut witness[base_offset + 6].bytes;
-            let key_bytes = if parent_data[true.idx()].is_placeholder {
-                &key_bytes[true.idx()]
-            } else {
-                &key_bytes[false.idx()]
-            };
-            drifted_bytes[0] = key_bytes.bytes[0];
-            drifted_bytes[1] = key_bytes.bytes[1];
-            drifted_bytes[2] = key_bytes.bytes[2];
+        self.drifted
+            .assign(region, base_offset, &parent_data, &row_drifted.bytes, ctx.r)?;
 
-            let drifted_key_witness =
-                self.drifted_rlp_key
-                    .assign(region, base_offset, &drifted_bytes)?;
-
-            let (_, leaf_mult) = drifted_key_witness.rlc_leaf(ctx.r);
-
-            self.drifted_mult.assign(region, base_offset, leaf_mult)?;
-        }
-
-        // Non-existing
-        let row = wrong_bytes;
-        if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
-            self.key_data_w.witness_load(
-                region,
-                base_offset,
-                &mut pv.memory[key_memory(true)],
-                1,
-            )?;
-
-            // TODO(Brecht): Change how the witness is generated
-            let is_wrong = row.bytes[0] != 0;
-            self.is_wrong_leaf
-                .assign(region, base_offset, F::from(is_wrong))?;
-
-            let mut row_bytes = row.bytes.clone();
-            row_bytes[0] = key_bytes[true.idx()].bytes[0];
-
-            let wrong_witness = self.wrong_rlp_key.assign(region, base_offset, &row_bytes)?;
-            let (key_rlc_wrong, _) =
-                wrong_witness.leaf_key_rlc(pv.key_rlc, pv.key_rlc_mult, ctx.r);
-
-            let address_rlc = bytes_into_rlc(row.address_bytes(), ctx.r);
-            self.check_is_wrong_leaf.assign(
-                region,
-                base_offset,
-                address_rlc - key_rlc[true.idx()],
-            )?;
-
-            assign!(region, (ctx.mpt_table.key_rlc, wrong_offset) => key_rlc_wrong)?;
-            assign!(region, (ctx.proof_type.proof_type, wrong_offset) => ProofType::AccountDestructed.scalar())?;
-        }
+        // Wrong leaf handling
+        let is_non_existing = row_wrong.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1;
+        self.wrong.assign(
+            region,
+            base_offset,
+            ctx,
+            is_non_existing,
+            &mut pv.memory,
+            &key_rlc,
+            &row_wrong.bytes,
+            wrong_offset,
+            row_key,
+            true,
+            ProofType::AccountDoesNotExist,
+            ctx.r,
+        )?;
 
         // Lookup data
         if key_s.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {

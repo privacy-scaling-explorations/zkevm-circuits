@@ -118,7 +118,7 @@ impl<F: Field> MptWitnessRow<F> {
         } else {
             0
         };
-        &self.bytes[S_RLP_START+offset..34]
+        &self.bytes[S_RLP_START + offset..34]
     }
 
     pub(crate) fn c_hash_bytes(&self) -> &[u8] {
@@ -127,7 +127,7 @@ impl<F: Field> MptWitnessRow<F> {
         } else {
             0
         };
-        &self.bytes[C_RLP_START+offset..68]
+        &self.bytes[C_RLP_START + offset..68]
     }
 
     pub(crate) fn main(&self) -> &[u8] {
