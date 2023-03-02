@@ -151,7 +151,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_id.expr(),
             tx_callee_address.expr(),
             1.expr(),
-            // Freely choosen by prover, not a soundness issue
+            // No extra constraint being used here.
+            // Correctness will be enforced in build_tx_access_list_account_constraints
             is_caller_callee_equal.expr(),
             None,
         );
