@@ -6,8 +6,10 @@ use eth_types::GethExecStep;
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ErrorSimple;
 
-// ErrorSimple is for stack error, oog constant, invalid op code buss mapping.
-// in the future may refactor more simple error buss mapping into it.
+// ErrorSimple is to deal with errors with general common ops as below
+// - added error to current `ExecStep`
+// - restore call context
+// no extra ops e.g. stack read etc...
 impl Opcode for ErrorSimple {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
