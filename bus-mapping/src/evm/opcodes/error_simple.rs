@@ -4,9 +4,11 @@ use crate::Error;
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ErrorStackOogConstant;
+pub(crate) struct ErrorSimple;
 
-impl Opcode for ErrorStackOogConstant {
+// ErrorSimple is for stack error, oog constant, invalid op code buss mapping.
+// in the future may refactor more simple error buss mapping into it.
+impl Opcode for ErrorSimple {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],
