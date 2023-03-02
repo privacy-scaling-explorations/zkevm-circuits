@@ -77,7 +77,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -100,7 +100,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -127,7 +127,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -156,7 +156,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -189,7 +189,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -219,7 +219,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -251,7 +251,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -283,7 +283,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -319,7 +319,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -343,7 +343,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
@@ -370,7 +370,7 @@ impl<P: JsonRpcClient> GethClient<P> {
             }
         } else {
             Err(Error::JSONRpcError(
-                ethers_providers::ProviderError::JsonRpcClientError(
+                ethers_providers::ProviderError::CustomError(
                     format!("Timeout: {} no response in 60 seconds.", method).into(),
                 ),
             ))
