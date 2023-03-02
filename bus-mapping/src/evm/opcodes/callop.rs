@@ -156,13 +156,15 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             caller_balance,
         );
 
-        // Transfer value only for CALL opcode, insufficient_balance = false
-        // and value > 0.
-        if call.kind == CallKind::Call && !insufficient_balance && !call.value.is_zero() {
+        // TODO: What about transfer for CALLCODE?
+        // Transfer value only for CALL opcode, insufficient_balance = false.
+        if call.kind == CallKind::Call && !insufficient_balance {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
                 call.address,
+                callee_exists,
+                false,
                 call.value,
             )?;
         }

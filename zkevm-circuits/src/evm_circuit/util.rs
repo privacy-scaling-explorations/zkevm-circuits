@@ -421,7 +421,9 @@ impl<F: FieldExt> CellManager<F> {
         }
         match best_index {
             Some(index) => index,
-            None => unreachable!("not enough cells for query: {:?}", cell_type),
+            // If we reach this case, it means that all the columns of cell_type have assignments
+            // taking self.height rows, so there's no more space.
+            None => panic!("not enough cells for query: {:?}", cell_type),
         }
     }
 

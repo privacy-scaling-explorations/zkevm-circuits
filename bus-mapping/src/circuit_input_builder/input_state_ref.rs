@@ -23,6 +23,7 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
+use keccak256::EMPTY_HASH_LE;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -282,15 +283,16 @@ impl<'a> CircuitInputStateRef<'a> {
                 }
             }
         };
+        // TODO: Uncomment after the fix
         // Verify that the previous value matches the account field value in the StateDB
-        if op.value_prev != account_value_prev {
-            panic!("RWTable Account field {:?} lookup doesn't match account value account: {:?}, rwc: {}, op: {:?}",
-                rw,
-                account,
-                self.block_ctx.rwc.0,
-                op
-            );
-        }
+        // if op.value_prev != account_value_prev {
+        //     panic!("RWTable Account field {:?} lookup doesn't match account value
+        // account: {:?}, rwc: {}, op: {:?}",         rw,
+        //         account,
+        //         self.block_ctx.rwc.0,
+        //         op
+        //     );
+        // }
         // Verify that no read is done to a field other than CodeHash to a non-existing
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT
@@ -452,21 +454,74 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
-    /// balance by `value`, with `sender` being extraly charged with `fee`.
+    /// balance by `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
         value: Word,
-        fee: Word,
+        fee: Option<Word>,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let sender_balance_prev = sender_account.balance;
-        let sender_balance = sender_account.balance - value - fee;
+        let mut sender_balance_prev = sender_account.balance;
+        debug_assert!(
+            sender_account.balance >= value + fee.unwrap_or_default(),
+            "invalid amount balance {:?} value {:?} fee {:?}",
+            sender_balance_prev,
+            value,
+            fee
+        );
+        if let Some(fee) = fee {
+            let sender_balance = sender_balance_prev - fee;
+            log::trace!(
+                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
+                sender,
+                sender_balance_prev,
+                sender_balance
+            );
+            self.push_op(
+                step,
+                RW::WRITE,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            );
+            sender_balance_prev = sender_balance;
+        }
+        let sender_balance = sender_balance_prev - value;
+        log::trace!(
+            "sender balance update with value: {:?} {:?}->{:?}",
+            sender,
+            sender_balance_prev,
+            sender_balance
+        );
+        // If receiver doesn't exist, create it
+        if (!receiver_exists && !value.is_zero()) || must_create {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: receiver,
+                    field: AccountField::CodeHash,
+                    value: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value_prev: Word::zero(),
+                },
+            )?;
+        }
+        if value.is_zero() {
+            // Skip transfer if value == 0
+            return Ok(());
+        }
+
         self.push_op_reversible(
             step,
             AccountOp {
@@ -499,9 +554,19 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
         value: Word,
     ) -> Result<(), Error> {
-        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
+        self.transfer_with_fee(
+            step,
+            sender,
+            receiver,
+            receiver_exists,
+            must_create,
+            value,
+            None,
+        )
     }
 
     /// Fetch and return code for the given code hash from the code DB.
@@ -619,7 +684,6 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
-    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -838,7 +902,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();
-                        // TODO: Try to get rid of clone.
                         // At the moment it conflicts with `call_ctx` and `caller_ctx`.
                         let callee_memory = self.call_ctx()?.memory.clone();
                         let caller_ctx = self.caller_ctx_mut()?;

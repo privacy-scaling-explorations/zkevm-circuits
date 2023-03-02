@@ -204,6 +204,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
         } else {
             panic!("No attribute to build a block was passed to the CircuitTestBuilder")
         };
+        block.debug_print_txs_steps_rw_ops();
 
         // Run evm circuit test
         {

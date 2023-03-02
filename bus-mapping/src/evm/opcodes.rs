@@ -406,15 +406,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } + call_data_gas_cost;
     exec_step.gas_cost = GasCost(intrinsic_gas_cost);
 
-    // Transfer with fee
-    state.transfer_with_fee(
-        &mut exec_step,
-        call.caller_address,
-        call.address,
-        call.value,
-        state.tx.gas_price * state.tx.gas,
-    )?;
-
     // Get code_hash of callee
     let (_, callee_account) = state.sdb.get_account(&call.address);
     let callee_exists = !callee_account.is_empty();
@@ -426,6 +417,25 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } else {
         (Word::zero(), true)
     };
+    if !state.is_precompiled(&call.address) && !call.is_create() {
+        state.account_read(
+            &mut exec_step,
+            call.address,
+            AccountField::CodeHash,
+            callee_code_hash,
+        );
+    }
+
+    // Transfer with fee
+    state.transfer_with_fee(
+        &mut exec_step,
+        call.caller_address,
+        call.address,
+        callee_exists,
+        call.is_create(),
+        call.value,
+        Some(state.tx.gas_price * state.tx.gas),
+    )?;
 
     // In case of contract creation we wish to verify the correctness of the
     // contract's address (callee). This address is defined as:
@@ -499,13 +509,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         (_, _, is_empty_code_hash) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                callee_code_hash,
-            );
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
                 return Ok(exec_step);
@@ -691,7 +694,9 @@ fn dummy_gen_selfdestruct_ops(
         return Err(Error::AccountNotFound(sender));
     }
     let value = sender_account.balance;
-    state.transfer(&mut exec_step, sender, receiver, value)?;
+    // NOTE: In this dummy implementation we assume that the receiver already
+    // exists.
+    state.transfer(&mut exec_step, sender, receiver, true, false, value)?;
 
     if state.call()?.is_persistent {
         state.sdb.destruct_account(sender);

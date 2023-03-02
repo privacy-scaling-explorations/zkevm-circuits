@@ -116,10 +116,14 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             },
         )?;
 
+        // TODO: Make sure we perform the transfer only after the account has been
+        // created by setting its code_hash to != 0.
         state.transfer(
             &mut exec_step,
             call.caller_address,
             call.address,
+            true,
+            true,
             call.value,
         )?;
 
