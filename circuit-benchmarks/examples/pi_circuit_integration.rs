@@ -128,6 +128,7 @@ mod test {
             &params,
             pk.get_vk(),
             PiTestCircuit::<Fr, MAX_TXS, MAX_CALLDATA>::num_instance(),
+            None,
         );
 
         let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
@@ -414,11 +415,15 @@ use bus_mapping::public_input_builder::get_txs_rlp;
 use bus_mapping::rpc::GethClient;
 use bus_mapping::Error;
 use clap::Parser;
-use ethers_providers::Http;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use zkevm_circuits::evm_circuit::witness::block_convert;
 use zkevm_circuits::tx_circuit::PrimeField;
+
+#[cfg(feature = "http_provider")]
+use ethers_providers::Http;
+#[cfg(not(feature = "http_provider"))]
+use ethers_providers::Ws;
 
 #[derive(Parser, Debug)]
 #[clap(version, about)]
@@ -503,14 +508,24 @@ async fn main() -> Result<(), Error> {
         &hex::decode(config.address.expect("needs prover").as_bytes()).expect("parse_address"),
     );
 
+    #[cfg(feature = "http_provider")]
     let l1_provider = Http::from_str(&config.l1_geth_url.unwrap()).expect("Http geth url");
+    #[cfg(not(feature = "http_provider"))]
+    let l1_provider = Ws::connect(&config.l1_geth_url.unwrap())
+        .await
+        .expect("l1 ws rpc connected");
     let l1_geth_client = GethClient::new(l1_provider);
     let propose_tx_hash = eth_types::H256::from_slice(
         &hex::decode(config.propose_tx_hash.unwrap().as_bytes()).expect("parse_hash"),
     );
     let txs_rlp = get_txs_rlp(&l1_geth_client, propose_tx_hash).await?;
 
+    #[cfg(feature = "http_provider")]
     let l2_provider = Http::from_str(&config.l2_geth_url.unwrap()).expect("Http geth url");
+    #[cfg(not(feature = "http_provider"))]
+    let l2_provider = Ws::connect(&config.l2_geth_url.unwrap())
+        .await
+        .expect("l2 ws rpc connected");
     let l2_geth_client = GethClient::new(l2_provider);
 
     let circuit_params = select_circuit_config!(
@@ -601,7 +616,8 @@ async fn main() -> Result<(), Error> {
             let output_file = if let Some(output) = config.output {
                 output
             } else {
-                format!("./block-{}_proof-new.json", block_num)
+                let l1_tx_hash = propose_tx_hash.to_string();
+                format!("./block-{}_proof-new.json", &l1_tx_hash)
             };
             File::create(output_file)
                 .expect("open output_file")

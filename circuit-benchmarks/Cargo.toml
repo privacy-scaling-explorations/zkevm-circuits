@@ -33,9 +33,10 @@ serde_json = "1.0"
 hex = "0.4.3"
 
 [features]
-default = ["benches"]
+default = ["benches", "load_pk", "http_provider"]
 benches = []
 load_pk = []
+http_provider = []
 
 [[example]]
 name = "pi_circuit_integration"

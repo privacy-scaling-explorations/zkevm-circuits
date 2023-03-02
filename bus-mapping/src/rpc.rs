@@ -1,6 +1,8 @@
 //! Module which contains all the RPC calls that are needed at any point to
 //! query a Geth node in order to get a Block, Tx or Trace info.
 
+use std::time::Duration;
+
 use crate::Error;
 use eth_types::{
     Address, Block, Bytes, EIP1186ProofResponse, GethExecTrace, Hash, ResultGethExecTraces,
@@ -57,31 +59,79 @@ impl<P: JsonRpcClient> GethClient<P> {
         Self(provider)
     }
 
+    const REQUEST_TIMEOUT_1_MINUTE: Duration = Duration::from_secs(60);
+
     /// Calls `eth_coinbase` via JSON-RPC returning the coinbase of the network.
     pub async fn get_coinbase(&self) -> Result<Address, Error> {
-        self.0
-            .request("eth_coinbase", ())
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "eth_coinbase";
+
+        if let Ok(result) =
+            tokio::time::timeout(Self::REQUEST_TIMEOUT_1_MINUTE, self.0.request(method, ())).await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: Address = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `eth_chainId` via JSON-RPC returning the chain id of the network.
     pub async fn get_chain_id(&self) -> Result<u64, Error> {
-        let net_id: U64 = self
-            .0
-            .request("eth_chainId", ())
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))?;
-        Ok(net_id.as_u64())
+        let method = "eth_chainId";
+
+        if let Ok(result) =
+            tokio::time::timeout(Self::REQUEST_TIMEOUT_1_MINUTE, self.0.request(method, ())).await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: U64 = response;
+                    Ok(resp.as_u64())
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `get_transaction_by_hash` via JSON-RPC returning a [`Transaction`]
     pub async fn get_transaction_by_hash(&self, hash: Hash) -> Result<Transaction, Error> {
         let hash = serialize(&hash);
-        self.0
-            .request("eth_getTransactionByHash", [hash])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "eth_getTransactionByHash";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [hash]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: Transaction = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `eth_getBlockByHash` via JSON-RPC returning a [`Block`] returning
@@ -89,10 +139,28 @@ impl<P: JsonRpcClient> GethClient<P> {
     pub async fn get_block_by_hash(&self, hash: Hash) -> Result<Block<Transaction>, Error> {
         let hash = serialize(&hash);
         let flag = serialize(&true);
-        self.0
-            .request("eth_getBlockByHash", [hash, flag])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "eth_getBlockByHash";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [hash, flag]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: Block<Transaction> = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `eth_getBlockByNumber` via JSON-RPC returning a [`Block`]
@@ -104,10 +172,28 @@ impl<P: JsonRpcClient> GethClient<P> {
     ) -> Result<Block<Transaction>, Error> {
         let num = serialize(&block_num);
         let flag = serialize(&true);
-        self.0
-            .request("eth_getBlockByNumber", [num, flag])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "eth_getBlockByNumber";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [num, flag]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: Block<Transaction> = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `debug_traceBlockByHash` via JSON-RPC returning a
@@ -116,12 +202,28 @@ impl<P: JsonRpcClient> GethClient<P> {
     pub async fn trace_block_by_hash(&self, hash: Hash) -> Result<Vec<GethExecTrace>, Error> {
         let hash = serialize(&hash);
         let cfg = serialize(&GethLoggerConfig::default());
-        let resp: ResultGethExecTraces = self
-            .0
-            .request("debug_traceBlockByHash", [hash, cfg])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))?;
-        Ok(resp.0.into_iter().map(|step| step.result).collect())
+        let method = "debug_traceBlockByHash";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [hash, cfg]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: ResultGethExecTraces = response;
+                    Ok(resp.0.into_iter().map(|step| step.result).collect())
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `debug_traceBlockByNumber` via JSON-RPC returning a
@@ -133,12 +235,27 @@ impl<P: JsonRpcClient> GethClient<P> {
     ) -> Result<Vec<GethExecTrace>, Error> {
         let num = serialize(&block_num);
         let cfg = serialize(&GethLoggerConfig::default());
-        let resp: ResultGethExecTraces = self
-            .0
-            .request("debug_traceBlockByNumber", [num, cfg])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))?;
-        Ok(resp.0.into_iter().map(|step| step.result).collect())
+        let method = "debug_traceBlockByNumber";
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [num, cfg]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: ResultGethExecTraces = response;
+                    Ok(resp.0.into_iter().map(|step| step.result).collect())
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `eth_getCode` via JSON-RPC returning a contract code
@@ -149,12 +266,28 @@ impl<P: JsonRpcClient> GethClient<P> {
     ) -> Result<Vec<u8>, Error> {
         let address = serialize(&contract_address);
         let num = serialize(&block_num);
-        let resp: Bytes = self
-            .0
-            .request("eth_getCode", [address, num])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))?;
-        Ok(resp.to_vec())
+        let method = "eth_getCode";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [address, num]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: Bytes = response;
+                    Ok(resp.to_vec())
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `eth_getProof` via JSON-RPC returning a
@@ -169,28 +302,79 @@ impl<P: JsonRpcClient> GethClient<P> {
         let account = serialize(&account);
         let keys = serialize(&keys);
         let num = serialize(&block_num);
-        self.0
-            .request("eth_getProof", [account, keys, num])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "eth_getProof";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [account, keys, num]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp: EIP1186ProofResponse = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `miner_stop` via JSON-RPC, which makes the node stop mining
     /// blocks.  Useful for integration tests.
     pub async fn miner_stop(&self) -> Result<(), Error> {
-        self.0
-            .request("miner_stop", ())
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "miner_stop";
+
+        if let Ok(result) =
+            tokio::time::timeout(Self::REQUEST_TIMEOUT_1_MINUTE, self.0.request(method, ())).await
+        {
+            match result {
+                Ok(response) => {
+                    let resp = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 
     /// Calls `miner_start` via JSON-RPC, which makes the node start mining
     /// blocks.  Useful for integration tests.
     pub async fn miner_start(&self) -> Result<(), Error> {
-        self.0
-            .request("miner_start", [serialize(&1)])
-            .await
-            .map_err(|e| Error::JSONRpcError(e.into()))
+        let method = "miner_start";
+
+        if let Ok(result) = tokio::time::timeout(
+            Self::REQUEST_TIMEOUT_1_MINUTE,
+            self.0.request(method, [serialize(&1)]),
+        )
+        .await
+        {
+            match result {
+                Ok(response) => {
+                    let resp = response;
+                    Ok(resp)
+                }
+                Err(e) => Err(Error::JSONRpcError(e.into())),
+            }
+        } else {
+            Err(Error::JSONRpcError(
+                ethers_providers::ProviderError::JsonRpcClientError(
+                    format!("Timeout: {} no response in 60 seconds.", method).into(),
+                ),
+            ))
+        }
     }
 }
 
