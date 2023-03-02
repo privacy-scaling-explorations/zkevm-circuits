@@ -1456,12 +1456,39 @@ pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usi
 );
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>
-    PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
+impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> SubCircuit<F>
+    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
 {
+    type Config = PiCircuitConfig<F>;
+
+    fn new_from_block(block: &witness::Block<F>) -> Self {
+        let mut block = block.clone();
+        block.circuits_params.max_txs = MAX_TXS;
+        block.circuits_params.max_calldata = MAX_CALLDATA;
+
+        Self(PiCircuit::new_from_block(&block))
+    }
+
+    fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
+        let mut block = block.clone();
+        block.circuits_params.max_txs = MAX_TXS;
+        block.circuits_params.max_calldata = MAX_CALLDATA;
+
+        PiCircuit::min_num_rows_block(&block)
+    }
+
     /// Compute the public inputs for this circuit.
-    pub fn instance(&self) -> Vec<Vec<F>> {
+    fn instance(&self) -> Vec<Vec<F>> {
         self.0.instance()
+    }
+
+    fn synthesize_sub(
+        &self,
+        _config: &Self::Config,
+        _challenges: &Challenges<Value<F>>,
+        _layouter: &mut impl Layouter<F>,
+    ) -> Result<(), Error> {
+        panic!("use PiCircuit for embedding instead");
     }
 }
 
