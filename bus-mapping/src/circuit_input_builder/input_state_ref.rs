@@ -1070,12 +1070,15 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(Some(ExecError::InvalidOpcode));
         }
 
+        let call = self.call()?;
         // When last step has opcodes that halt, there's no error.
         if matches!(next_step, None)
             && matches!(
                 step.op,
                 OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
             )
+            && !call.is_create()
+        // if it is tx deploy create, return also can cause err
         {
             return Ok(None);
         }
@@ -1085,7 +1088,6 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
             .unwrap_or_else(Word::zero);
 
-        let call = self.call()?;
         let call_ctx = self.call_ctx()?;
         // get value first if call/create
         let value = match step.op {
@@ -1129,7 +1131,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 });
             } else {
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
-                if !call.is_root && call.is_create() {
+                if call.is_create() {
                     let offset = step.stack.nth_last(0)?;
                     let length = step.stack.nth_last(1)?;
                     if length > Word::from(0x6000u64) {
