@@ -1073,11 +1073,15 @@ impl<'a> CircuitInputStateRef<'a> {
         let call = self.call()?;
         // When last step has opcodes that halt, there's no error.
         if matches!(next_step, None)
-            && matches!(
+            && (matches!(
                 step.op,
-                OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
-            )
-            && !call.is_create()
+                OpcodeId::STOP | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
+            ))
+        {
+            return Ok(None);
+        }
+
+        if matches!(next_step, None) && (step.op == OpcodeId::RETURN && !call.is_create())
         // if it is tx deploy create, return also can cause err
         {
             return Ok(None);
@@ -1144,10 +1148,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     } else if Word::from(200u64) * length > Word::from(step.gas.0) {
                         return Ok(Some(ExecError::CodeStoreOutOfGas));
                     } else {
-                        return Err(Error::UnexpectedExecStepError(
-                            "failure in RETURN from {CREATE, CREATE2}",
-                            step.clone(),
-                        ));
+                        return Ok(None);
                     }
                 } else {
                     return Err(Error::UnexpectedExecStepError(
