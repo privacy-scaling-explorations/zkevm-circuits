@@ -142,26 +142,12 @@ impl<F: Field> MptWitnessRow<F> {
     ) -> Result<(), Error> {
         let row = self.main();
 
-        region.assign_advice(
-            || "assign s_rlp1".to_string(),
-            mpt_config.s_main.rlp1,
-            offset,
-            || Value::known(F::from(row[0] as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign s_rlp2".to_string(),
-            mpt_config.s_main.rlp2,
-            offset,
-            || Value::known(F::from(row[1] as u64)),
-        )?;
-
-        for idx in 0..HASH_WIDTH {
+        for idx in 0..HASH_WIDTH + 2 {
             region.assign_advice(
                 || format!("assign s_advice {}", idx),
                 mpt_config.s_main.bytes[idx],
                 offset,
-                || Value::known(F::from(row[RLP_NUM + idx] as u64)),
+                || Value::known(F::from(row[idx] as u64)),
             )?;
         }
 
@@ -176,21 +162,8 @@ impl<F: Field> MptWitnessRow<F> {
             val as u64
         };
 
-        region.assign_advice(
-            || "assign c_rlp1".to_string(),
-            mpt_config.c_main.rlp1,
-            offset,
-            || Value::known(F::from(get_val(WITNESS_ROW_WIDTH / 2))),
-        )?;
-        region.assign_advice(
-            || "assign c_rlp2".to_string(),
-            mpt_config.c_main.rlp2,
-            offset,
-            || Value::known(F::from(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
-        )?;
-
         for (idx, _c) in mpt_config.c_main.bytes.iter().enumerate() {
-            let val = get_val(WITNESS_ROW_WIDTH / 2 + RLP_NUM + idx);
+            let val = get_val(WITNESS_ROW_WIDTH / 2 + idx);
             region.assign_advice(
                 || format!("assign c_advice {}", idx),
                 mpt_config.c_main.bytes[idx],

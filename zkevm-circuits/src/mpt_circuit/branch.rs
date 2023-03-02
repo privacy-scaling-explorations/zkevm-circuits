@@ -78,24 +78,22 @@ impl<F: Field> BranchConfig<F> {
         let mut config = BranchConfig::default();
 
         circuit!([meta, cb.base], {
-            let offset = -1;
-
             // Data
             let rlp_bytes = [
-                ctx.expr(meta, -1)[4..7].to_owned(),
-                ctx.expr(meta, -1)[7..10].to_owned(),
+                ctx.expr(meta, 0)[4..7].to_owned(),
+                ctx.expr(meta, 0)[7..10].to_owned(),
             ];
             let branch_bytes: [[Vec<Expression<F>>; ARITY]; 2] = [
-                array_init::array_init(|i| ctx.expr(meta, i as i32)[0..34].to_owned()),
-                array_init::array_init(|i| ctx.expr(meta, i as i32)[34..68].to_owned()),
+                array_init::array_init(|i| ctx.expr(meta, 1 + i as i32)[0..34].to_owned()),
+                array_init::array_init(|i| ctx.expr(meta, 1 + i as i32)[34..68].to_owned()),
             ];
             let ext_key_bytes: [Vec<Expression<F>>; 2] = [
-                ctx.expr(meta, offset + 17)[0..34].to_owned(),
-                ctx.expr(meta, offset + 18)[0..34].to_owned(),
+                ctx.expr(meta, 17)[0..34].to_owned(),
+                ctx.expr(meta, 18)[0..34].to_owned(),
             ];
             let ext_value_bytes: [Vec<Expression<F>>; 2] = [
-                ctx.expr(meta, offset + 17)[34..68].to_owned(),
-                ctx.expr(meta, offset + 18)[34..68].to_owned(),
+                ctx.expr(meta, 17)[34..68].to_owned(),
+                ctx.expr(meta, 18)[34..68].to_owned(),
             ];
 
             // General inputs
@@ -508,11 +506,9 @@ impl<F: Field> BranchConfig<F> {
         mpt_config: &MPTConfig<F>,
         pv: &mut ProofValues<F>,
         offset: usize,
+        idx: usize,
     ) -> Result<(), Error> {
-        let base_offset = offset;
-        let offset = offset - 1;
-
-        let row_init = witness[offset].to_owned();
+        let row_init = witness[idx].to_owned();
 
         let is_placeholder = [
             row_init.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1,
@@ -542,29 +538,29 @@ impl<F: Field> BranchConfig<F> {
             row_init.bytes[7..10].to_owned(),
         ];
         let branch_bytes: [[Vec<u8>; ARITY]; 2] = [
-            array_init::array_init(|i| witness[base_offset + i].bytes[0..34].to_owned()),
-            array_init::array_init(|i| witness[base_offset + i].bytes[34..68].to_owned()),
+            array_init::array_init(|i| witness[idx + 1 + i].bytes[0..34].to_owned()),
+            array_init::array_init(|i| witness[idx + 1 + i].bytes[34..68].to_owned()),
         ];
         let ext_key_bytes: [Vec<u8>; 2] = [
-            witness[offset + 17].bytes[0..34].to_owned(),
-            witness[offset + 18].bytes[0..34].to_owned(),
+            witness[idx + 17].bytes[0..34].to_owned(),
+            witness[idx + 18].bytes[0..34].to_owned(),
         ];
         let ext_value_bytes: [Vec<u8>; 2] = [
-            witness[offset + 17].bytes[34..68].to_owned(),
-            witness[offset + 18].bytes[34..68].to_owned(),
+            witness[idx + 17].bytes[34..68].to_owned(),
+            witness[idx + 18].bytes[34..68].to_owned(),
         ];
 
         self.is_extension
-            .assign(region, base_offset, is_extension_node.scalar())?;
+            .assign(region, offset, is_extension_node.scalar())?;
 
         let key_data =
             self.key_data
-                .witness_load(region, base_offset, &pv.memory[key_memory(true)], 0)?;
+                .witness_load(region, offset, &pv.memory[key_memory(true)], 0)?;
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[parent_memory(is_s)],
                 0,
             )?;
@@ -577,15 +573,13 @@ impl<F: Field> BranchConfig<F> {
 
         /* Extension */
 
-        let ext_rlp_key = self
-            .ext_rlp_key
-            .assign(region, base_offset, &ext_key_bytes[0])?;
+        let ext_rlp_key = self.ext_rlp_key.assign(region, offset, &ext_key_bytes[0])?;
         if is_extension_node {
             let mut ext_mult = F::one();
             for _ in 0..ext_rlp_key.num_bytes_on_key_row() {
                 ext_mult *= mpt_config.r;
             }
-            self.ext_mult.assign(region, base_offset, ext_mult)?;
+            self.ext_mult.assign(region, offset, ext_mult)?;
 
             let first_byte_index = ext_rlp_key.rlp_list.num_rlp_bytes()
                 + if ext_rlp_key.rlp_list.is_short() {
@@ -595,11 +589,11 @@ impl<F: Field> BranchConfig<F> {
                 };
             let ext_is_key_part_odd = ext_key_bytes[0][first_byte_index] >> 4 == 1;
             self.ext_is_key_part_odd
-                .assign(region, base_offset, ext_is_key_part_odd.scalar())?;
+                .assign(region, offset, ext_is_key_part_odd.scalar())?;
 
             self.ext_is_not_hashed.assign(
                 region,
-                base_offset,
+                offset,
                 ext_rlp_key.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
             )?;
@@ -634,32 +628,27 @@ impl<F: Field> BranchConfig<F> {
             for _ in 0..key_len_mult {
                 ext_mult_key = ext_mult_key * mpt_config.r;
             }
-            self.ext_mult_key
-                .assign(region, base_offset, ext_mult_key)?;
+            self.ext_mult_key.assign(region, offset, ext_mult_key)?;
             key_mult_post_ext = key_data.mult * ext_mult_key;
         }
         for is_s in [true, false] {
-            self.ext_rlp_value[is_s.idx()].assign(
-                region,
-                base_offset,
-                &ext_value_bytes[is_s.idx()],
-            )?;
+            self.ext_rlp_value[is_s.idx()].assign(region, offset, &ext_value_bytes[is_s.idx()])?;
         }
 
         /* Branch */
 
         for is_s in [true, false] {
             let rlp_list_witness =
-                self.rlp_list[is_s.idx()].assign(region, base_offset, &rlp_bytes[is_s.idx()])?;
+                self.rlp_list[is_s.idx()].assign(region, offset, &rlp_bytes[is_s.idx()])?;
 
             self.is_placeholder[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 is_placeholder[is_s.idx()].scalar(),
             )?;
             self.is_not_hashed[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 rlp_list_witness.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
             )?;
@@ -671,7 +660,7 @@ impl<F: Field> BranchConfig<F> {
             for is_s in [true, false] {
                 let child_witness = self.branches[is_s.idx()][node_index].rlp.assign(
                     region,
-                    base_offset,
+                    offset,
                     &branch_bytes[is_s.idx()][node_index],
                 )?;
                 branch_witnesses[is_s.idx()][node_index] = child_witness.clone();
@@ -683,17 +672,17 @@ impl<F: Field> BranchConfig<F> {
 
                 self.branches[is_s.idx()][node_index].mult.assign(
                     region,
-                    base_offset,
+                    offset,
                     node_mult_diff,
                 )?;
                 self.branches[is_s.idx()][node_index].rlc_branch.assign(
                     region,
-                    base_offset,
+                    offset,
                     child_witness.rlc_branch(mpt_config.r),
                 )?;
                 let is_hashed = self.branches[is_s.idx()][node_index].is_hashed.assign(
                     region,
-                    base_offset,
+                    offset,
                     child_witness.len().scalar(),
                     32.scalar(),
                 )?;
@@ -707,20 +696,20 @@ impl<F: Field> BranchConfig<F> {
                     mod_node_hash_rlc[is_s.idx()] = child_witness.rlc_branch(mpt_config.r);
                     self.mod_branch_rlc[is_s.idx()].assign(
                         region,
-                        base_offset,
+                        offset,
                         mod_node_hash_rlc[is_s.idx()],
                     )?;
-                    self.mod_branch_is_hashed[is_s.idx()].assign(region, base_offset, is_hashed)?;
+                    self.mod_branch_is_hashed[is_s.idx()].assign(region, offset, is_hashed)?;
                 }
             }
             self.is_modified[node_index].assign(
                 region,
-                base_offset,
+                offset,
                 (node_index == modified_index).scalar(),
             )?;
             self.is_drifted[node_index].assign(
                 region,
-                base_offset,
+                offset,
                 (node_index == drifted_index).scalar(),
             )?;
         }
@@ -729,7 +718,7 @@ impl<F: Field> BranchConfig<F> {
         for is_s in [true, false] {
             is_placeholder_leaf[is_s.idx()] = self.mod_branch_is_empty[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 branch_witnesses[is_s.idx()][modified_index].len().scalar(),
             )?;
         }
@@ -759,7 +748,7 @@ impl<F: Field> BranchConfig<F> {
             if !is_placeholder[is_s.idx()] {
                 self.key_data.witness_store(
                     region,
-                    base_offset,
+                    offset,
                     &mut pv.memory[key_memory(is_s)],
                     key_rlc_post_branch,
                     key_mult_post_branch,
@@ -774,7 +763,7 @@ impl<F: Field> BranchConfig<F> {
             } else {
                 self.key_data.witness_store(
                     region,
-                    base_offset,
+                    offset,
                     &mut pv.memory[key_memory(is_s)],
                     key_data.rlc,
                     key_data.mult,
@@ -793,7 +782,7 @@ impl<F: Field> BranchConfig<F> {
             if !is_placeholder[is_s.idx()] {
                 self.parent_data[is_s.idx()].witness_store(
                     region,
-                    base_offset,
+                    offset,
                     &mut pv.memory[parent_memory(is_s)],
                     mod_node_hash_rlc[is_s.idx()],
                     false,
@@ -803,7 +792,7 @@ impl<F: Field> BranchConfig<F> {
             } else {
                 self.parent_data[is_s.idx()].witness_store(
                     region,
-                    base_offset,
+                    offset,
                     &mut pv.memory[parent_memory(is_s)],
                     parent_data[is_s.idx()].rlc,
                     parent_data[is_s.idx()].is_root,

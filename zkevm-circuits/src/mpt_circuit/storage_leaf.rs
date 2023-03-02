@@ -146,7 +146,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 KeyData::store(
                     &mut cb.base,
                     &ctx.memory[key_memory(is_s)],
-                    KeyData::default_values(),
+                    KeyData::default_values_expr(),
                 );
                 // Store the new parent
                 ParentData::store(
@@ -198,13 +198,12 @@ impl<F: Field> StorageLeafConfig<F> {
         witness: &[MptWitnessRow<F>],
         pv: &mut ProofValues<F>,
         offset: usize,
+        idx: usize,
     ) -> Result<(), Error> {
-        let base_offset = offset;
-
-        let row_key = [&witness[offset + 0], &witness[offset + 2]];
-        let value_bytes = [&witness[offset + 1], &witness[offset + 3]];
-        let row_drifted = &witness[offset + 4];
-        let row_wrong = &witness[offset + 5];
+        let row_key = [&witness[idx + 0], &witness[idx + 2]];
+        let value_bytes = [&witness[idx + 1], &witness[idx + 3]];
+        let row_drifted = &witness[idx + 4];
+        let row_wrong = &witness[idx + 5];
         let lookup_offset = offset + 3;
         let wrong_offset = offset + 5;
 
@@ -217,33 +216,33 @@ impl<F: Field> StorageLeafConfig<F> {
 
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[parent_memory(is_s)],
                 0,
             )?;
 
             let rlp_key_witness =
-                self.rlp_key[is_s.idx()].assign(region, base_offset, &key_row.bytes)?;
+                self.rlp_key[is_s.idx()].assign(region, offset, &key_row.bytes)?;
 
             let (_, leaf_mult) = rlp_key_witness.rlc_leaf(ctx.r);
-            self.key_mult[is_s.idx()].assign(region, base_offset, leaf_mult)?;
+            self.key_mult[is_s.idx()].assign(region, offset, leaf_mult)?;
 
             self.is_not_hashed[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 rlp_key_witness.num_bytes().scalar(),
                 32.scalar(),
             )?;
 
             let key_data = self.key_data[is_s.idx()].witness_load(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[key_memory(is_s)],
                 0,
             )?;
             self.key_data[is_s.idx()].witness_store(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[key_memory(is_s)],
                 F::zero(),
                 F::one(),
@@ -264,7 +263,7 @@ impl<F: Field> StorageLeafConfig<F> {
             let value_row = &value_bytes[is_s.idx()];
 
             let value_witness =
-                self.rlp_value[is_s.idx()].assign(region, base_offset, &value_row.bytes)?;
+                self.rlp_value[is_s.idx()].assign(region, offset, &value_row.bytes)?;
 
             value_rlc[is_s.idx()] = value_row.bytes
                 [value_witness.num_rlp_bytes() as usize..HASH_WIDTH + 2]
@@ -272,7 +271,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
             self.parent_data[is_s.idx()].witness_store(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[parent_memory(is_s)],
                 F::zero(),
                 true,
@@ -282,7 +281,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
             self.is_empty_trie[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 parent_data[is_s.idx()].rlc,
                 ctx.r,
             )?;
@@ -290,13 +289,13 @@ impl<F: Field> StorageLeafConfig<F> {
 
         // Drifted leaf handling
         self.drifted
-            .assign(region, base_offset, &parent_data, &row_drifted.bytes, ctx.r)?;
+            .assign(region, offset, &parent_data, &row_drifted.bytes, ctx.r)?;
 
         // Wrong leaf handling
         let is_non_existing = row_wrong.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1;
         self.wrong.assign(
             region,
-            base_offset,
+            offset,
             ctx,
             is_non_existing,
             &mut pv.memory,

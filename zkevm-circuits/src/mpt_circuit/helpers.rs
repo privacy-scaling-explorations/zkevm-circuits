@@ -551,11 +551,23 @@ impl<F: Field> KeyData<F> {
         memory.store(cb, &values);
     }
 
-    pub(crate) fn store_initial_values(cb: &mut ConstraintBuilder<F>, memory: &MemoryBank<F>) {
-        memory.store_with_key(cb, 0.expr(), &Self::default_values());
+    pub(crate) fn default_values() -> [F; 10] {
+        [
+            0.scalar(),
+            1.scalar(),
+            0.scalar(),
+            false.scalar(),
+            false.scalar(),
+            false.scalar(),
+            0.scalar(),
+            false.scalar(),
+            0.scalar(),
+            1.scalar(),
+        ]
     }
 
-    pub(crate) fn default_values() -> [Expression<F>; 10] {
+    // TODO(Brecht): fix
+    pub(crate) fn default_values_expr() -> [Expression<F>; 10] {
         [
             0.expr(),
             1.expr(),

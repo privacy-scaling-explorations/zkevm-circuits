@@ -17,6 +17,7 @@ mod param;
 mod proof_chain;
 mod rlp_gadgets;
 mod selectors;
+mod start;
 mod storage_leaf;
 mod witness_row;
 
@@ -33,6 +34,7 @@ use crate::{
     circuit_tools::{cell_manager::CellManager, constraint_builder::merge_lookups, memory::Memory},
     mpt_circuit::{
         helpers::{extend_rand, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
+        start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
     table::{DynamicTableColumns, KeccakTable},
@@ -43,6 +45,7 @@ use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memo
 
 /// Merkle Patricia Trie config.
 pub struct RowConfig<F> {
+    start_config: StartConfig<F>,
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
@@ -72,14 +75,12 @@ impl<F: Field> MPTContext<F> {
         }
     }
 
-    pub(crate) fn rlp_bytes(&self) -> Vec<Column<Advice>> {
-        [self.s_main.rlp_bytes(), self.c_main.rlp_bytes()]
-            .concat()
-            .to_vec()
+    pub(crate) fn bytes(&self) -> Vec<Column<Advice>> {
+        [self.s_main.bytes, self.c_main.bytes].concat().to_vec()
     }
 
     pub(crate) fn expr(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.rlp_bytes()
+        self.bytes()
             .iter()
             .map(|&byte| meta.query_advice(byte, Rotation(rot)))
             .collect::<Vec<_>>()
@@ -100,9 +101,11 @@ pub struct MPTConfig<F> {
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
     pub(crate) address_rlc: Column<Advice>,
+    start_config: StartConfig<F>,
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
+    pub(crate) is_start: Column<Advice>,
     pub(crate) is_branch: Column<Advice>,
     pub(crate) is_account: Column<Advice>,
     pub(crate) is_storage: Column<Advice>,
@@ -162,6 +165,7 @@ impl<F: Field> MPTConfig<F> {
         let value_prev = meta.advice_column();
         let value = meta.advice_column();
 
+        let is_start = meta.advice_column();
         let is_branch = meta.advice_column();
         let is_account = meta.advice_column();
         let is_storage = meta.advice_column();
@@ -227,26 +231,16 @@ impl<F: Field> MPTConfig<F> {
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
                 ProofChainConfig::configure(meta, &mut cb, ctx.clone());
 
-                /* Initial values */
-                // Initial key values
-                ifx!{not!(f!(position_cols.q_enable)) => {
-                    KeyData::store_initial_values(&mut cb.base, &ctx.memory[key_memory(true)]);
-                    KeyData::store_initial_values(&mut cb.base, &ctx.memory[key_memory(false)]);
-                }}
-                // Initial parent values
-                ifx!{f!(position_cols.q_enable), not!(a!(ctx.position_cols.not_first_level)), a!(is_branch, 1) + a!(is_storage) + a!(is_account, 1) => {
-                    for is_s in [true, false] {
-                        let root = a!(ctx.inter_root(is_s));
-                        ParentData::store(&mut cb.base, &ctx.memory[parent_memory(is_s)], [root.expr(), true.expr(), false.expr(), root.expr()]);
-                    }
-                }}
-
                 //let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+                let start_config;
                 let branch_config;
                 let storage_config;
                 let account_config;
                 ifx!{f!(position_cols.q_enable) => {
                     matchx! {
+                        a!(is_start) => {
+                            start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
+                        },
                         a!(is_branch) => {
                             branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
@@ -269,18 +263,18 @@ impl<F: Field> MPTConfig<F> {
                     require!(cb.length_s.sum_conditions() => bool);
                     require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
-                    for &byte in ctx.rlp_bytes()[0..2].into_iter() {
+                    for &byte in ctx.bytes()[0..2].into_iter() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
                     }
-                    for (idx, &byte) in ctx.rlp_bytes()[2..34].into_iter().enumerate() {
+                    for (idx, &byte) in ctx.bytes()[2..34].into_iter().enumerate() {
                         require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
                     ifx!{cb.length_sc => {
-                        for (idx, &byte) in ctx.rlp_bytes()[34..36].into_iter().enumerate() {
+                        for (idx, &byte) in ctx.bytes()[34..36].into_iter().enumerate() {
                             require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
                         }
                     }}
-                    for (idx, &byte) in ctx.rlp_bytes()[36..68].into_iter().enumerate() {
+                    for (idx, &byte) in ctx.bytes()[36..68].into_iter().enumerate() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
                     }
                 }}*/
@@ -308,12 +302,12 @@ impl<F: Field> MPTConfig<F> {
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 /* Memory banks */
-                //TODO(Brecht): change back to q_enable
-                ifx!{f!(position_cols.q_not_first) => {
+                ifx!{f!(position_cols.q_enable) => {
                     ctx.memory.generate_constraints(&mut cb.base);
                 }}
 
                 row_config = Some(RowConfig {
+                    start_config,
                     branch_config,
                     storage_config,
                     account_config,
@@ -357,6 +351,7 @@ impl<F: Field> MPTConfig<F> {
         let row_config = row_config.unwrap();
         let randomness = F::zero();
         MPTConfig {
+            is_start,
             is_branch,
             is_account,
             is_storage,
@@ -371,6 +366,7 @@ impl<F: Field> MPTConfig<F> {
             keccak_table,
             fixed_table,
             address_rlc,
+            start_config: row_config.start_config,
             branch_config: row_config.branch_config,
             storage_config: row_config.storage_config,
             account_config: row_config.account_config,
@@ -386,7 +382,7 @@ impl<F: Field> MPTConfig<F> {
         layouter: &mut impl Layouter<F>,
         witness: &mut [MptWitnessRow<F>],
         r: F,
-    ) {
+    ) -> Result<(), Error> {
         self.r = r;
         let mut height = 0;
 
@@ -460,21 +456,6 @@ impl<F: Field> MPTConfig<F> {
 
                     memory.clear_witness_data();
 
-                    for is_s in [true, false] {
-                        pv.memory[key_memory(is_s)].witness_store_init(&[
-                            F::zero(),
-                            F::one(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            F::one(),
-                        ]);
-                    }
-
                     let working_witness = witness.to_owned().clone();
                     for (idx, row) in working_witness
                         .iter()
@@ -482,9 +463,9 @@ impl<F: Field> MPTConfig<F> {
                         .enumerate()
                     {
                         //println!("offset: {}", offset);
-                        let mut new_proof = offset == 0;
-                        if offset > 0 {
-                            let row_prev = working_witness[offset - 1].clone();
+                        let mut new_proof = idx == 0;
+                        if idx > 0 {
+                            let row_prev = working_witness[idx - 1].clone();
                             let not_first_level_prev = row_prev.not_first_level();
                             let not_first_level_cur = row.not_first_level();
                             if not_first_level_cur == 0 && not_first_level_prev == 1 {
@@ -493,59 +474,52 @@ impl<F: Field> MPTConfig<F> {
                             }
                         }
 
-                        //println!("not_first_level: {}", row.not_first_level());
-                        if new_proof {
-                            pv.memory[parent_memory(true)].witness_store(
-                                offset,
-                                &[
-                                    row.s_root_bytes_rlc(self.r),
-                                    true.scalar(),
-                                    false.scalar(),
-                                    row.s_root_bytes_rlc(self.r),
-                                ],
-                            );
-                            pv.memory[parent_memory(false)].witness_store(
-                                offset,
-                                &[
-                                    row.c_root_bytes_rlc(self.r),
-                                    true.scalar(),
-                                    false.scalar(),
-                                    row.c_root_bytes_rlc(self.r),
-                                ],
-                            );
-                            //println!("set root: {} -> {:?}", offset,
-                            // row.get_type());
-                        }
-                        //println!("{} -> {:?}", offset, row.get_type());
-
-                        assignf!(region, (self.position_cols.q_enable, offset) => 1.scalar())?;
-                        height += 1;
-
                         if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                             // account leaf key
                             pv.before_account_leaf = false;
                         }
 
-                        let q_not_first = if idx == 0 { F::zero() } else { F::one() };
+                        //println!("not_first_level: {}", row.not_first_level());
+                        if new_proof {
+                            //println!("{}: branch", offset);
+                            assign!(region, (self.is_start, offset) => 1.scalar())?;
+                            self.start_config.assign(
+                                &mut region,
+                                self,
+                                witness,
+                                &mut pv,
+                                offset,
+                                idx,
+                            )?;
+
+                            // TODO(Brecht): copied
+                            assignf!(region, (self.position_cols.q_enable, offset) => 1.scalar())?;
+                            let q_not_first = if offset == 0 { F::zero() } else { F::one() };
+                            assignf!(region, (self.position_cols.q_not_first, offset) => q_not_first)?;
+                            assign!(region, (self.position_cols.not_first_level, offset) => row.not_first_level().scalar())?;
+
+                            row.assign_lookup_columns(&mut region, self, &pv, offset)?;
+
+                            //println!("set root: {} -> {:?}", offset,
+                            // row.get_type());
+                            offset += 1;
+                        }
+                        //println!("{} -> {:?}", offset, row.get_type());
+
+                        assignf!(region, (self.position_cols.q_enable, offset) => 1.scalar())?;
+                        let q_not_first = if offset == 0 { F::zero() } else { F::one() };
                         assignf!(region, (self.position_cols.q_not_first, offset) => q_not_first)?;
                         assign!(region, (self.position_cols.not_first_level, offset) => row.not_first_level().scalar())?;
 
                         row.assign_lookup_columns(&mut region, self, &pv, offset)?;
 
-                        let prev_row = if offset > 0 {
-                            working_witness[offset - 1].clone()
-                        } else {
-                            row.clone()
-                        };
-
-                        if offset > 0 && prev_row.get_type() == MptWitnessRowType::InitBranch {
+                        if row.get_type() == MptWitnessRowType::InitBranch {
                             //println!("{}: branch", offset);
-                            assign!(region, (self.is_branch, offset) => 1.scalar()).ok();
+                            assign!(region, (self.is_branch, offset) => 1.scalar())?;
                             self.branch_config
-                                .assign(&mut region, witness, self, &mut pv, offset)
-                                .ok();
+                                .assign(&mut region, witness, self, &mut pv, offset, idx)?;
                         } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                            assign!(region, (self.is_storage, offset) => 1.scalar()).ok();
+                            assign!(region, (self.is_storage, offset) => 1.scalar())?;
                             //println!("{}: storage", offset);
                             self.storage_config.assign(
                                 &mut region,
@@ -553,9 +527,10 @@ impl<F: Field> MPTConfig<F> {
                                 witness,
                                 &mut pv,
                                 offset,
+                                idx,
                             )?;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyC {
-                            assign!(region, (self.is_account, offset) => 1.scalar()).ok();
+                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
+                            assign!(region, (self.is_account, offset) => 1.scalar())?;
                             //println!("{}: account", offset);
                             self.account_config.assign(
                                 &mut region,
@@ -563,6 +538,7 @@ impl<F: Field> MPTConfig<F> {
                                 witness,
                                 &mut pv,
                                 offset,
+                                idx,
                             )?;
                         }
 
@@ -577,13 +553,15 @@ impl<F: Field> MPTConfig<F> {
                     }
 
                     memory = pv.memory;
+                    height = offset;
 
                     Ok(())
                 },
-            )
-            .ok();
+            )?;
 
-        memory.assign(layouter, height).ok();
+        memory.assign(layouter, height)?;
+
+        Ok(())
     }
 
     fn load_fixed_table(
@@ -693,14 +671,13 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
             }
         }
 
-        config.load_fixed_table(&mut layouter, self.randomness).ok();
-        config.assign(&mut layouter, &mut witness_rows, self.randomness);
+        config.load_fixed_table(&mut layouter, self.randomness)?;
+        config.assign(&mut layouter, &mut witness_rows, self.randomness)?;
 
         let challenges = Challenges::mock(Value::known(self.randomness));
         config
             .keccak_table
-            .dev_load(&mut layouter, &to_be_hashed, &challenges, false)
-            .ok();
+            .dev_load(&mut layouter, &to_be_hashed, &challenges, false)?;
 
         Ok(())
     }

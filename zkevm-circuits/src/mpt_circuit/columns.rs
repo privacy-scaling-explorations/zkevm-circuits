@@ -26,6 +26,8 @@ NonExistingStorageProof = 7
 pub(crate) struct ProofTypeCols<F> {
     pub(crate) proof_type: Column<Advice>, /* between 1 and 6, should correspond to the columns
                                             * below (it enables lookups with less columns) */
+    // TODO(Brecht): don't use dedicated columns for these, just put the single proof_type in
+    // memory
     pub(crate) is_storage_mod: Column<Advice>,
     pub(crate) is_nonce_mod: Column<Advice>,
     pub(crate) is_balance_mod: Column<Advice>,
@@ -56,31 +58,20 @@ impl<F: Field> ProofTypeCols<F> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct MainCols<F> {
-    // Main as opposed to other columns which are selectors and RLC accumulators.
-    pub(crate) rlp1: Column<Advice>,
-    pub(crate) rlp2: Column<Advice>,
-    pub(crate) bytes: [Column<Advice>; HASH_WIDTH],
+    pub(crate) bytes: [Column<Advice>; HASH_WIDTH + 2],
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> MainCols<F> {
     pub(crate) fn new(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            rlp1: meta.advice_column(),
-            rlp2: meta.advice_column(),
-            bytes: (0..HASH_WIDTH)
+            bytes: (0..HASH_WIDTH + 2)
                 .map(|_| meta.advice_column())
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
             _marker: PhantomData,
         }
-    }
-
-    pub(crate) fn rlp_bytes(&self) -> Vec<Column<Advice>> {
-        [[self.rlp1, self.rlp2].to_vec(), self.bytes.to_vec()]
-            .concat()
-            .to_vec()
     }
 
     pub(crate) fn rlc(
@@ -92,15 +83,8 @@ impl<F: Field> MainCols<F> {
         self.expr(meta, rot).rlc(r)
     }
 
-    pub(crate) fn bytes(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.bytes
-            .iter()
-            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
-            .collect::<Vec<_>>()
-    }
-
     pub(crate) fn expr(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.rlp_bytes()
+        self.bytes
             .iter()
             .map(|&byte| meta.query_advice(byte, Rotation(rot)))
             .collect::<Vec<_>>()

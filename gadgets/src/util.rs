@@ -231,13 +231,6 @@ impl<F: FieldExt> Expr<F> for &Expression<F> {
     }
 }
 
-/*impl Scalar<dyn FieldExt> for FieldExt {
-    #[inline]
-    fn scalar(&self) -> FieldExt {
-        self.clone()
-    }
-}*/
-
 /// Given a bytes-representation of an expression, it computes and returns the
 /// single expression.
 pub fn expr_from_bytes<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {

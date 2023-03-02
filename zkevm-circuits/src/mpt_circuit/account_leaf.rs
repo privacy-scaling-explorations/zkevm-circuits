@@ -63,45 +63,45 @@ impl<F: Field> AccountLeafConfig<F> {
 
         circuit!([meta, cb.base], {
             let key_bytes = [
-                ctx.expr(meta, -1)[..36].to_owned(),
                 ctx.expr(meta, 0)[..36].to_owned(),
+                ctx.expr(meta, 1)[..36].to_owned(),
             ];
-            let wrong_bytes = ctx.expr(meta, 1)[..36].to_owned();
+            let wrong_bytes = ctx.expr(meta, 2)[..36].to_owned();
             let value_rlp_bytes = [
-                [
-                    ctx.expr(meta, 2)[..2].to_owned(),
-                    ctx.expr(meta, 2)[34..36].to_owned(),
-                ]
-                .concat(),
                 [
                     ctx.expr(meta, 3)[..2].to_owned(),
                     ctx.expr(meta, 3)[34..36].to_owned(),
                 ]
                 .concat(),
+                [
+                    ctx.expr(meta, 4)[..2].to_owned(),
+                    ctx.expr(meta, 4)[34..36].to_owned(),
+                ]
+                .concat(),
             ];
             let nonce_bytes = [
-                ctx.expr(meta, 2)[..34].to_owned(),
                 ctx.expr(meta, 3)[..34].to_owned(),
+                ctx.expr(meta, 4)[..34].to_owned(),
             ];
             let balance_bytes = [
-                ctx.expr(meta, 2)[34..].to_owned(),
                 ctx.expr(meta, 3)[34..].to_owned(),
+                ctx.expr(meta, 4)[34..].to_owned(),
             ];
             let storage_bytes = [
-                ctx.expr(meta, 4)[..34].to_owned(),
                 ctx.expr(meta, 5)[..34].to_owned(),
+                ctx.expr(meta, 6)[..34].to_owned(),
             ];
             let codehash_bytes = [
-                ctx.expr(meta, 4)[34..].to_owned(),
                 ctx.expr(meta, 5)[34..].to_owned(),
+                ctx.expr(meta, 6)[34..].to_owned(),
             ];
-            let drifted_bytes = ctx.expr(meta, 6)[..36].to_owned();
+            let drifted_bytes = ctx.expr(meta, 7)[..36].to_owned();
 
-            let nonce_lookup_offset = 2;
-            let balance_lookup_offset = 3;
-            let storage_lookup_offset = 4;
-            let codehash_lookup_offset = 5;
-            let wrong_offset = 1;
+            let nonce_lookup_offset = 3;
+            let balance_lookup_offset = 4;
+            let storage_lookup_offset = 5;
+            let codehash_lookup_offset = 6;
+            let wrong_offset = 2;
 
             // The two string RLP bytes stored in the s RLP bytes.
             // The two list RLP bytes are stored in the c RLP bytes.
@@ -211,8 +211,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 require!(value_rlp_bytes[is_s.idx()][1] => value_rlp_bytes[is_s.idx()][3].expr() + 2.expr());
                 // `c_main.rlp1` always needs to be RLP_LIST_LONG + 1.
                 require!(value_rlp_bytes[is_s.idx()][2] => RLP_LIST_LONG + 1);
-                // The length of the list is `#(nonce bytes) + #(balance bytes) + 2 * (1 +
-                // #(hash))`.
+                // The length of the list is `#(nonce) + #(balance) + 2 * (1 + #(hash))`.
                 require!(value_rlp_bytes[is_s.idx()][3] => config.rlp_nonce[is_s.idx()].num_bytes() + config.rlp_balance[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
                 // Now check that the the key and value list length matches the account length.
                 // The RLP encoded string always has 2 RLP bytes (the s RLP bytes).
@@ -224,7 +223,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 KeyData::store(
                     &mut cb.base,
                     &ctx.memory[key_memory(is_s)],
-                    KeyData::default_values(),
+                    KeyData::default_values_expr(),
                 );
                 // Store the new parent
                 ParentData::store(
@@ -342,19 +341,18 @@ impl<F: Field> AccountLeafConfig<F> {
         witness: &mut [MptWitnessRow<F>],
         pv: &mut ProofValues<F>,
         offset: usize,
+        idx: usize,
     ) -> Result<(), Error> {
-        let base_offset = offset;
-
-        let key_s = witness[base_offset - 1].to_owned();
-        let key_c = witness[base_offset].to_owned();
-        let nonce_balance_s = witness[base_offset + 2].to_owned();
-        let nonce_balance_c = witness[base_offset + 3].to_owned();
-        let storage_codehash_s = witness[base_offset + 4].to_owned();
-        let storage_codehash_c = witness[base_offset + 5].to_owned();
-        let row_drifted = witness[base_offset + 6].to_owned();
+        let key_s = witness[idx].to_owned();
+        let key_c = witness[idx + 1].to_owned();
+        let nonce_balance_s = witness[idx + 3].to_owned();
+        let nonce_balance_c = witness[idx + 4].to_owned();
+        let storage_codehash_s = witness[idx + 5].to_owned();
+        let storage_codehash_c = witness[idx + 6].to_owned();
+        let row_drifted = witness[idx + 7].to_owned();
 
         let row_key = [&key_s, &key_c];
-        let row_wrong = witness[base_offset + 1].to_owned();
+        let row_wrong = witness[idx + 2].to_owned();
         let nonce_bytes = [
             nonce_balance_s.bytes[..34].to_owned(),
             nonce_balance_c.bytes[..34].to_owned(),
@@ -372,12 +370,12 @@ impl<F: Field> AccountLeafConfig<F> {
             storage_codehash_c.bytes[34..68].to_owned(),
         ];
 
-        let key_s_lookup_offset = base_offset - 1;
-        let nonce_lookup_offset = base_offset + 2;
-        let balance_lookup_offset = base_offset + 3;
-        let storage_lookup_offset = base_offset + 4;
-        let codehash_lookup_offset = base_offset + 5;
-        let wrong_offset = base_offset + 1;
+        let key_s_lookup_offset = offset;
+        let nonce_lookup_offset = offset + 3;
+        let balance_lookup_offset = offset + 4;
+        let storage_lookup_offset = offset + 5;
+        let codehash_lookup_offset = offset + 6;
+        let wrong_offset = offset + 2;
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
@@ -391,45 +389,42 @@ impl<F: Field> AccountLeafConfig<F> {
 
             let key_data = self.key_data[is_s.idx()].witness_load(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[key_memory(is_s)],
                 0,
             )?;
 
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[parent_memory(is_s)],
                 0,
             )?;
 
             self.is_empty_trie[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 parent_data[is_s.idx()].rlc,
                 ctx.r,
             )?;
 
             let rlp_key_witness =
-                self.rlp_key[is_s.idx()].assign(region, base_offset, &key_row.bytes)?;
-            let nonce_witness = self.rlp_nonce[is_s.idx()].assign(
-                region,
-                base_offset,
-                &nonce_bytes[is_s.idx()][2..],
-            )?;
+                self.rlp_key[is_s.idx()].assign(region, offset, &key_row.bytes)?;
+            let nonce_witness =
+                self.rlp_nonce[is_s.idx()].assign(region, offset, &nonce_bytes[is_s.idx()][2..])?;
             let balance_witness = self.rlp_balance[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 &balance_bytes[is_s.idx()][2..],
             )?;
             let storage_witness = self.rlp_storage[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 &storage_bytes[is_s.idx()][1..],
             )?;
             let codehash_witness = self.rlp_codehash[is_s.idx()].assign(
                 region,
-                base_offset,
+                offset,
                 &codehash_bytes[is_s.idx()][1..],
             )?;
 
@@ -447,8 +442,8 @@ impl<F: Field> AccountLeafConfig<F> {
             for _ in 0..balance_witness.num_bytes() {
                 mult_balance *= ctx.r;
             }
-            self.nonce_mult[is_s.idx()].assign(region, base_offset, mult_nonce)?;
-            self.balance_mult[is_s.idx()].assign(region, base_offset, mult_balance)?;
+            self.nonce_mult[is_s.idx()].assign(region, offset, mult_nonce)?;
+            self.balance_mult[is_s.idx()].assign(region, offset, mult_balance)?;
 
             // Key
             (key_rlc[is_s.idx()], _) =
@@ -458,12 +453,12 @@ impl<F: Field> AccountLeafConfig<F> {
             for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
                 key_mult *= ctx.r;
             }
-            self.key_mult[is_s.idx()].assign(region, base_offset, key_mult)?;
+            self.key_mult[is_s.idx()].assign(region, offset, key_mult)?;
 
             // Update key and parent state
             self.key_data[is_s.idx()].witness_store(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[key_memory(is_s)],
                 F::zero(),
                 F::one(),
@@ -477,7 +472,7 @@ impl<F: Field> AccountLeafConfig<F> {
             )?;
             self.parent_data[is_s.idx()].witness_store(
                 region,
-                base_offset,
+                offset,
                 &mut pv.memory[parent_memory(is_s)],
                 storage_value_rlc[is_s.idx()],
                 true,
@@ -488,13 +483,13 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Drifted leaf handling
         self.drifted
-            .assign(region, base_offset, &parent_data, &row_drifted.bytes, ctx.r)?;
+            .assign(region, offset, &parent_data, &row_drifted.bytes, ctx.r)?;
 
         // Wrong leaf handling
         let is_non_existing = row_wrong.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1;
         self.wrong.assign(
             region,
-            base_offset,
+            offset,
             ctx,
             is_non_existing,
             &mut pv.memory,
