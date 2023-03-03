@@ -61,6 +61,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::SecondPhase;
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of rows of one tx occupies in the fixed part of tx table
@@ -1982,5 +1983,6 @@ mod tx_circuit_tests {
             run::<Fr>(vec![tx.into()], chain_id, MAX_TXS, MAX_CALLDATA),
             Ok(())
         );
+
     }
 }
