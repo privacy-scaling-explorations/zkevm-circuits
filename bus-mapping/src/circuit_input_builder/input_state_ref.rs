@@ -1082,9 +1082,12 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(None);
             }
             // case 2: call is NOT Create (Create represented by empty tx.to) and halt by
-            // opcode::Return, Create with successful RETURN handle in later
-            // code
+            // opcode::Return
             if !call.is_create() && step.op == OpcodeId::RETURN {
+                return Ok(None);
+            }
+            // case 3 Create with successful RETURN
+            if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
                 return Ok(None);
             }
             // more other case...
@@ -1151,7 +1154,10 @@ impl<'a> CircuitInputStateRef<'a> {
                     } else if Word::from(200u64) * length > Word::from(step.gas.0) {
                         return Ok(Some(ExecError::CodeStoreOutOfGas));
                     } else {
-                        return Ok(None);
+                        return Err(Error::UnexpectedExecStepError(
+                            "failure in RETURN from {CREATE, CREATE2}",
+                            step.clone(),
+                        ));
                     }
                 } else {
                     return Err(Error::UnexpectedExecStepError(
