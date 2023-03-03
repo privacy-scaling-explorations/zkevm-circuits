@@ -574,6 +574,7 @@ impl<F: Field> ExecutionConfig<F> {
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
+            error_nonce_overflow: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,

@@ -9,7 +9,7 @@ use crate::evm_circuit::{
 };
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::not;
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -17,6 +17,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorNonceOverflowGadget<F> {
     opcode: Cell<F>,
+    callee_address: Cell<F>,
     nonce_word_rlc: Word<F>,
     common_error_gadget: CommonErrorGadget<F>,
 }
@@ -33,17 +34,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorNonceOverflowGadget<F> {
         // callee address from call context
         let callee_address = cb.call_context(None, CallContextFieldTag::CalleeAddress);
 
-        // TODO: check nonce_word value equivalent to existing account value
         cb.account_read(
             callee_address.expr(),
             AccountFieldTag::Nonce,
-            callee_address.expr(),
+            nonce_word_rlc.expr(),
         );
-        // TODO: find way for how to change u64::MAX to rlc
-        let less_than_u64 = LtWordGadget::construct(cb, &nonce_word_rlc, &nonce_word_rlc);
+        // let is_lhs_less_than_u64 =
+        //     LtWordGadget::construct(cb, &nonce_word_rlc,
+        // &Word::from(u64::MAX).expr());
+        let is_lhs_less_than_u64 = LtWordGadget::construct(cb, &nonce_word_rlc, &nonce_word_rlc);
 
-        // TODO: give better name
-        cb.require_zero("nonce < u64", not::expr(less_than_u64));
+        cb.require_zero("nonce < u64::MAX", not::expr(is_lhs_less_than_u64.expr()));
 
         cb.require_in_set(
             "ErrorNonceOverflow only happens in [CREATE, CREATE2]",
@@ -55,6 +56,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorNonceOverflowGadget<F> {
 
         Self {
             opcode,
+            callee_address,
             nonce_word_rlc,
             common_error_gadget,
         }
@@ -73,10 +75,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorNonceOverflowGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
+        self.callee_address.assign(
+            region,
+            offset,
+            Value::known(
+                call.callee_address
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
+
         // TODO: find way to retrieve callee account, and get nonce from account
         // maybe refer way for how to get balance
         self.nonce_word_rlc
-            .assign(region, offset, Value::known(F::from(_tx..as_u64())))?;
+            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;
@@ -99,7 +111,69 @@ mod test {
 
     // we never test
     #[test]
-    fn test_create_nonce_overflow() {}
+    fn test_create_nonce_overflow() {
+        let code_creator = bytecode! {
+            PUSH1(0x00) // value
+            PUSH1(0x00) // offset
+            MSTORE
+            PUSH1(0x01) // length
+            PUSH1(0x00) // offset
+            RETURN
+        };
+
+        let mut code4create = Bytecode::default();
+        // pad code_creator to multiple of 32 bytes
+        let len = code_creator.to_vec().len();
+        let code_creator: Vec<u8> = code_creator
+            .to_vec()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - len % 32) as u8))
+            .collect();
+        for (index, word) in code_creator.chunks(32).enumerate() {
+            code4create.push(32, Word::from_big_endian(word));
+            code4create.push(32, Word::from(index * 32));
+            code4create.write_op(OpcodeId::MSTORE);
+        }
+
+        let mut code_a = code4create.clone();
+
+        code_a.append(&bytecode! {
+            PUSH3(0x0) // salt
+            PUSH1(len) // length
+            PUSH1(0x00) // offset
+            PUSH1(0x00) // value
+            CREATE2
+
+            PUSH3(0x1) // salt
+            PUSH1(len) // length
+            PUSH1(0x00) // offset
+            PUSH1(0x00) // value
+            CREATE2
+        });
+        let mut callee = callee(code_a);
+        callee.nonce = Word::from(u64::MAX - 1);
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            |accs| {
+                accs[0]
+                    .address(address!("0x000000000000000000000000000000000000cafe"))
+                    .balance(Word::from(10u64.pow(19)));
+                accs[1]
+                    .address(callee.address)
+                    .code(callee.code)
+                    .nonce(callee.nonce)
+                    .balance(callee.balance);
+            },
+            |mut txs, accs| {
+                txs[0].from(accs[0].address).to(accs[1].address);
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
 
     #[test]
     fn test_create2_nonce_overflow() {}
