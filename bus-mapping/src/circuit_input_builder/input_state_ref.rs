@@ -1071,20 +1071,23 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         let call = self.call()?;
-        // When last step has opcodes that halt, there's no error.
-        if matches!(next_step, None)
-            && (matches!(
+
+        if matches!(next_step, None) {
+            // enumerating call scope successful cases
+            // case 1: call with normal halt opcode termination
+            if matches!(
                 step.op,
                 OpcodeId::STOP | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
-            ))
-        {
-            return Ok(None);
-        }
-
-        if matches!(next_step, None) && (step.op == OpcodeId::RETURN && !call.is_create())
-        // if it is tx deploy create, return also can cause err
-        {
-            return Ok(None);
+            ) {
+                return Ok(None);
+            }
+            // case 2: call is NOT Create (Create represented by empty tx.to) and halt by
+            // opcode::Return, Create with successful RETURN handle in later
+            // code
+            if !call.is_create() && step.op == OpcodeId::RETURN {
+                return Ok(None);
+            }
+            // more other case...
         }
 
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
