@@ -1465,14 +1465,14 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> SubCircuit<F>
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
 
-        Self(PiCircuit::new_from_block(&block))
+        Self(PiCircuit::new_from_block(block))
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
 
-        PiCircuit::min_num_rows_block(&block)
+        PiCircuit::min_num_rows_block(block)
     }
 
     /// Compute the public inputs for this circuit.
