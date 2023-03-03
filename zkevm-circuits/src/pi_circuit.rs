@@ -1469,9 +1469,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> SubCircuit<F>
     }
 
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let mut block = block.clone();
-        block.circuits_params.max_txs = MAX_TXS;
-        block.circuits_params.max_calldata = MAX_CALLDATA;
+        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
+        assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
 
         PiCircuit::min_num_rows_block(&block)
     }
