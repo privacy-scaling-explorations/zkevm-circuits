@@ -177,6 +177,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Increase reversible_write_counter
         self.call_ctx_mut()?.reversible_write_counter += 1;
+        step.reversible_write_counter_delta += 1;
 
         // Add the operation into reversible_ops if this call is not persistent
         if !self.call()?.is_persistent {
@@ -272,27 +273,35 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.block_ctx.rwc.0, op
             )
         }
+        // NOTE: In the State Circuit we use code_hash=0 to encode non-existing
+        // accounts, but the corresponding account in the state DB is empty
+        // (which means code_hash=EMPTY_HASH).
         let account_value_prev = match op.field {
             AccountField::Nonce => account.nonce,
             AccountField::Balance => account.balance,
             AccountField::CodeHash => {
                 if account.is_empty() {
+                    if op.value.is_zero() {
+                        // Writing code_hash=0 to empty account is a noop to the StateDB.
+                        return;
+                    }
+                    // Reading a code_hash=EMPTY_HASH of an empty account in the StateDB is encoded
+                    // as code_hash=0 (non-existing account encoding) in the State Circuit.
                     Word::zero()
                 } else {
                     account.code_hash.to_word()
                 }
             }
         };
-        // TODO: Uncomment after the fix
+
         // Verify that the previous value matches the account field value in the StateDB
-        // if op.value_prev != account_value_prev {
-        //     panic!("RWTable Account field {:?} lookup doesn't match account value
-        // account: {:?}, rwc: {}, op: {:?}",         rw,
-        //         account,
-        //         self.block_ctx.rwc.0,
-        //         op
-        //     );
-        // }
+        if op.value_prev != account_value_prev {
+            panic!(
+                "RWTable Account field {:?} lookup doesn't match account value
+        account: {:?}, rwc: {}, op: {:?}",
+                rw, account, self.block_ctx.rwc.0, op
+            );
+        }
         // Verify that no read is done to a field other than CodeHash to a non-existing
         // account (only CodeHash reads with value=0 can be done to non-existing
         // accounts, which the State Circuit translates to MPT

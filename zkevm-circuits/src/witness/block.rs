@@ -62,7 +62,6 @@ impl<F: Field> Block<F> {
                 for rw_ref in &step.rw_indices {
                     println!("  - {:?}", self.rws[*rw_ref]);
                 }
-                // TODO: Print reversions
             }
         }
     }

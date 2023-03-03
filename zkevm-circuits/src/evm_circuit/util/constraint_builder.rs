@@ -113,11 +113,13 @@ impl<F: Field> ReversionInfo<F> {
     }
 
     /// Returns `rw_counter_end_of_reversion - reversible_write_counter` and
-    /// increases `reversible_write_counter` by `1`.
-    pub(crate) fn rw_counter_of_reversion(&mut self) -> Expression<F> {
+    /// increases `reversible_write_counter` by `1` when `inc_selector` is
+    /// enabled.
+    pub(crate) fn rw_counter_of_reversion(&mut self, inc_selector: Expression<F>) -> Expression<F> {
         let rw_counter_of_reversion =
-            self.rw_counter_end_of_reversion.expr() - self.reversible_write_counter.expr();
-        self.reversible_write_counter = self.reversible_write_counter.clone() + 1.expr();
+            self.rw_counter_end_of_reversion.expr() - self.reversible_write_counter.clone();
+        self.reversible_write_counter =
+            self.reversible_write_counter.clone() + inc_selector * 1.expr();
         rw_counter_of_reversion
     }
 
@@ -696,6 +698,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         tag: RwTableTag,
         values: RwValues<F>,
     ) {
+        // println!("DBG {}", std::backtrace::Backtrace::capture());
         let name = format!("rw lookup {}", name);
         self.add_lookup(
             &name,
@@ -755,11 +758,12 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         // Revert if is_persistent is 0
         if let Some(reversion_info) = reversion_info {
+            let reversible_write_counter_inc_selector = self.condition_expr();
             self.condition(not::expr(reversion_info.is_persistent()), |cb| {
                 let name = format!("{} with reversion", name);
                 cb.rw_lookup_with_counter(
                     &name,
-                    reversion_info.rw_counter_of_reversion(),
+                    reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
                     true.expr(),
                     tag,
                     RwValues {

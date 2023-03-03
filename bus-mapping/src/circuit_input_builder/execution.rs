@@ -36,8 +36,11 @@ pub struct ExecStep {
     /// The global counter when this step was executed.
     pub rwc: RWCounter,
     /// Reversible Write Counter.  Counter of write operations in the call that
-    /// will need to be undone in case of a revert.
+    /// will need to be undone in case of a revert.  Value at the beginning of
+    /// the step.
     pub reversible_write_counter: usize,
+    /// Number of reversible write operations done by this step.
+    pub reversible_write_counter_delta: usize,
     /// Log index when this step was executed.
     pub log_id: usize,
     /// The list of references to Operations in the container
@@ -66,6 +69,7 @@ impl ExecStep {
             call_index: call_ctx.index,
             rwc,
             reversible_write_counter,
+            reversible_write_counter_delta: 0,
             log_id,
             bus_mapping_instance: Vec::new(),
             error: None,
@@ -94,6 +98,7 @@ impl Default for ExecStep {
             call_index: 0,
             rwc: RWCounter(0),
             reversible_write_counter: 0,
+            reversible_write_counter_delta: 0,
             log_id: 0,
             bus_mapping_instance: Vec::new(),
             error: None,

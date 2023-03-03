@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
-                reversion_info.rw_counter_of_reversion(),
+                reversion_info.rw_counter_of_reversion(1.expr()),
             );
         });
 

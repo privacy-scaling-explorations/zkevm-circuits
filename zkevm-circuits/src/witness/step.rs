@@ -35,8 +35,10 @@ pub struct ExecStep {
     pub gas_cost: u64,
     /// The memory size in bytes
     pub memory_size: u64,
-    /// The counter for reversible writes
+    /// The counter for reversible writes at the beginning of the step
     pub reversible_write_counter: usize,
+    /// The number of reversible writes from this step
+    pub reversible_write_counter_delta: usize,
     /// The counter for log index within tx
     pub log_id: usize,
     /// The opcode corresponds to the step
@@ -232,6 +234,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
     }
 }
