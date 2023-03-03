@@ -1,10 +1,16 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
-use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
-use eth_types::evm_types::GasCost;
-use eth_types::{evm_unimplemented, GethExecStep, ToWord, Word};
+use crate::{
+    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    Error,
+};
+use eth_types::{
+    evm_types::{
+        gas_utils::{eip150_gas, memory_expansion_gas_cost},
+        GasCost,
+    },
+    evm_unimplemented, GethExecStep, ToWord, Word,
+};
 use keccak256::EMPTY_HASH;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it

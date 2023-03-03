@@ -79,9 +79,11 @@ impl Opcode for Extcodehash {
 #[cfg(test)]
 mod extcodehash_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp},
+    };
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},

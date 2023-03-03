@@ -1,19 +1,25 @@
 use super::*;
-use crate::circuit_input_builder::access::gen_state_access_trace;
-use crate::error::{ExecError, OogError};
-use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
-    GETH_ERR_STACK_UNDERFLOW,
+use crate::{
+    circuit_input_builder::access::gen_state_access_trace,
+    error::{ExecError, OogError},
+    geth_errors::{
+        GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
+        GETH_ERR_STACK_UNDERFLOW,
+    },
+    operation::RWCounter,
+    state_db::Account,
 };
-use crate::operation::RWCounter;
-use crate::state_db::Account;
-use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 use eth_types::{
-    address, bytecode, geth_types::GethData, word, Bytecode, Hash, ToAddress, ToWord, Word,
+    address, bytecode,
+    evm_types::{stack::Stack, Gas, OpcodeId},
+    geth_types::GethData,
+    word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
 use lazy_static::lazy_static;
-use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
-use mock::MOCK_COINBASE;
+use mock::{
+    test_ctx::{helpers::*, LoggerConfig, TestContext},
+    MOCK_COINBASE,
+};
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
@@ -101,7 +107,6 @@ fn mock_internal_create() -> Call {
     }
 }
 
-//
 // Geth Errors ignored
 //
 // These errors happen in a CALL, CALLCODE, DELEGATECALL or STATICCALL, and
@@ -871,7 +876,6 @@ fn tracer_create_stop() {
     );
 }
 
-//
 // Geth Errors not reported
 //
 // These errors are specific to some opcodes and due to the way the tracing
@@ -1232,7 +1236,6 @@ fn tracer_err_return_data_out_of_bounds() {
     );
 }
 
-//
 // Geth Errors Reported
 //
 // These errors can be found in the trace step error field.
@@ -1348,7 +1351,7 @@ fn tracer_err_write_protection(is_call: bool) {
         code_b.push(1, Word::zero());
         code_b.push(1, Word::from(0x20));
         code_b.push(1, Word::from(0x10)); // value
-        code_b.push(32, *WORD_ADDR_B); //addr
+        code_b.push(32, *WORD_ADDR_B); // addr
         code_b.push(32, Word::from(0x1000)); // gas
         code_b.write_op(OpcodeId::CALL);
     } else {
@@ -1514,7 +1517,6 @@ fn tracer_err_stack_underflow() {
     );
 }
 
-//
 // Circuit Input Builder tests
 //
 

@@ -1,9 +1,8 @@
 use super::{cell_manager::*, param::*, util::*};
-use crate::evm_circuit::util::rlc;
-use crate::util::Challenges;
+use crate::{evm_circuit::util::rlc, util::Challenges};
 use eth_types::Field;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -105,8 +104,7 @@ impl<F: FieldExt> KeccakRegion<F> {
 /// Recombines parts back together
 pub(crate) mod decode {
     use super::{Part, PartValue};
-    use crate::keccak_circuit::param::BIT_COUNT;
-    use crate::util::Expr;
+    use crate::{keccak_circuit::param::BIT_COUNT, util::Expr};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
@@ -126,8 +124,11 @@ pub(crate) mod decode {
 /// Splits a word into parts
 pub(crate) mod split {
     use super::{decode, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, pack_part, unpack, WordParts};
-    use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
+    use crate::{
+        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        keccak_circuit::util::{pack, pack_part, unpack, WordParts},
+        util::Expr,
+    };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
@@ -188,9 +189,14 @@ pub(crate) mod split {
 // table layout in `output_cells` regardless of rotation.
 pub(crate) mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::param::BIT_COUNT;
-    use crate::keccak_circuit::util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts};
-    use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
+    use crate::{
+        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        keccak_circuit::{
+            param::BIT_COUNT,
+            util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts},
+        },
+        util::Expr,
+    };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
@@ -356,8 +362,7 @@ pub(crate) mod split_uniform {
 pub(crate) mod transform {
     use super::{transform_to, CellManager, KeccakRegion, Part, PartValue};
     use eth_types::Field;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::plonk::TableColumn;
+    use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(
@@ -411,11 +416,12 @@ pub(crate) mod transform {
 // Transfroms values to cells
 pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, to_bytes, unpack};
-    use crate::util::Expr;
+    use crate::{
+        keccak_circuit::util::{pack, to_bytes, unpack},
+        util::Expr,
+    };
     use eth_types::Field;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::plonk::TableColumn;
+    use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(

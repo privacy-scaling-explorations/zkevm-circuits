@@ -1,19 +1,20 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
+};
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_core::types::TransactionRequest;
+use ethers_core::{
+    k256::ecdsa::SigningKey,
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+};
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::test_util::CircuitTestBuilder;
-use zkevm_circuits::witness::Block;
+use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
 
 const MAX_TXS: usize = 1;
 const MAX_CALLDATA: usize = 32;

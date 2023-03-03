@@ -1,8 +1,10 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::error::ExecError;
-use crate::evm::Opcode;
-use crate::operation::CallContextField;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::ExecError,
+    evm::Opcode,
+    operation::CallContextField,
+    Error,
+};
 use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]
@@ -76,14 +78,12 @@ impl Opcode for ErrorReturnDataOutOfBound {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::RW;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::RW};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     #[test]
     fn test_returndata_error() {
