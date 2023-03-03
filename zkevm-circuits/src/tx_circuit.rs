@@ -1983,6 +1983,5 @@ mod tx_circuit_tests {
             run::<Fr>(vec![tx.into()], chain_id, MAX_TXS, MAX_CALLDATA),
             Ok(())
         );
-
     }
 }

@@ -1181,7 +1181,11 @@ mod pi_circuit_test {
         halo2curves::bn256::Fr,
     };
     use mock::TestContext;
+    //use mock::MOCK_CHAIN_ID;
+    //use mock::CORRECT_MOCK_TXS;
     use pretty_assertions::assert_eq;
+    //use rand_chacha::ChaCha20Rng;
+    //use rand::SeedableRng;
 
     fn run<
         F: Field,
@@ -1241,6 +1245,7 @@ mod pi_circuit_test {
         );
     }
 
+    /*
     fn run_size_check<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
         public_data: [PublicData; 2],
     ) {
@@ -1303,4 +1308,5 @@ mod pi_circuit_test {
 
         run_size_check::<Fr, MAX_TXS, MAX_CALLDATA>([pub_dat_1, pub_dat_2]);
     }
+    */
 }

@@ -71,7 +71,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         );
 
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 4.expr());
-                0.expr(),
         Self {
             opcode,
             base,

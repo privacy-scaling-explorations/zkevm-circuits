@@ -831,8 +831,8 @@ pub(crate) fn keccak<F: Field>(
                     .to_vec()
             })
             .collect::<Vec<_>>();
-    trace!("hash: {:x?}", &(hash_bytes[0..4].concat()));
-    trace!("data rlc: {:x?}", data_rlc);
+        trace!("hash: {:x?}", &(hash_bytes[0..4].concat()));
+        trace!("data rlc: {:x?}", data_rlc);
     }
 }
 

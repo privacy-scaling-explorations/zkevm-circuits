@@ -816,7 +816,7 @@ impl<F: Field> ExecutionConfig<F> {
                             step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
                         ),
                     ])
-                    .filter(move |(_, from, _, _)| *from == G::EXECUTION_STATE)
+                    .filter(move |(_, from, _, _)| *from == execution_state)
                     .map(|(_, _, to, expr)| step_next.execution_state_selector(to) * expr)
                 )
                 .chain(
@@ -827,7 +827,7 @@ impl<F: Field> ExecutionConfig<F> {
                             step_next.state.block_number.expr() - step_curr.state.block_number.expr(),
                         ),
                     ])
-                    .filter(move |(_, from, _)| *from != G::EXECUTION_STATE)
+                    .filter(move |(_, from, _)| *from != execution_state)
                     .map(|(_, _, expr)| expr)
                 )
                 // Accumulate all state transition checks.

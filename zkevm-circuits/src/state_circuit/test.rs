@@ -1010,12 +1010,14 @@ fn variadic_size_check() {
         },
     ];
 
-    let updates = MptUpdates::mock_from(&rows);
+    let updates =
+        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
     let circuit = StateCircuit::<Fr> {
         rows: rows.clone(),
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
+        exports: Default::default(),
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();
@@ -1038,12 +1040,14 @@ fn variadic_size_check() {
         },
     ]);
 
-    let updates = MptUpdates::mock_from(&rows);
+    let updates =
+        MptUpdates::from_rws_with_mock_state_roots(&rows, 0xcafeu64.into(), 0xdeadbeefu64.into());
     let circuit = StateCircuit::<Fr> {
         rows,
         updates,
         overrides: HashMap::default(),
         n_rows: N_ROWS,
+        exports: Default::default(),
         _marker: std::marker::PhantomData::default(),
     };
     let power_of_randomness = circuit.instance();

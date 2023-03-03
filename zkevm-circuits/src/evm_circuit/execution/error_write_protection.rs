@@ -77,7 +77,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         );
 
         let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 0.expr());
-            0.expr(),
 
         Self {
             opcode,
