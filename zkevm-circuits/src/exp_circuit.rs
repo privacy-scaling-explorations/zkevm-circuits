@@ -494,6 +494,10 @@ impl<F: Field> ExpCircuit<F> {
 impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     type Config = ExpCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        11
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         // Hardcoded to pass unit tests for now. In the future, insert:
         // "block.circuits_params.max_exp_rows"

@@ -971,6 +971,10 @@ pub struct KeccakCircuit<F: Field> {
 impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     type Config = KeccakCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        keccak_unusable_rows()
+    }
+
     /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
     /// independently of the permutations required by `inputs`.

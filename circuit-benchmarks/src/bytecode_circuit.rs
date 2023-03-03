@@ -45,8 +45,7 @@ mod tests {
         const MAX_BYTECODE_LEN: usize = 24576;
 
         let num_rows = 1 << degree;
-        const NUM_BLINDING_ROWS: usize = 7 - 1;
-        let max_bytecode_row_num = num_rows - NUM_BLINDING_ROWS;
+        let max_bytecode_row_num = num_rows - BytecodeCircuit::<Fr>::unusable_rows();
         let bytecode_len = std::cmp::min(MAX_BYTECODE_LEN, max_bytecode_row_num);
         let bytecodes_num: usize = max_bytecode_row_num / bytecode_len;
 

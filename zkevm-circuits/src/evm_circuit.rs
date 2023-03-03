@@ -233,6 +233,10 @@ impl<F: Field> EvmCircuit<F> {
 impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        25
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new(block.clone())
     }
@@ -439,6 +443,7 @@ mod evm_circuit_stats {
         },
         stats::print_circuit_stats_by_states,
         test_util::CircuitTestBuilder,
+        util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
@@ -457,6 +462,14 @@ mod evm_circuit_stats {
         },
         MOCK_ACCOUNTS,
     };
+
+    #[test]
+    fn evm_circuit_unusable_rows() {
+        assert_eq!(
+            EvmCircuit::<Fr>::unusable_rows(),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(),
+        )
+    }
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {

@@ -1141,6 +1141,10 @@ impl<F: Field> PiCircuit<F> {
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        7
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let public_data = PublicData {
             chain_id: block.context.chain_id,

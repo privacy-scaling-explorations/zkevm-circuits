@@ -4,7 +4,8 @@ use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
     plonk::{
-        Challenge, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, VirtualCells,
+        Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
+        VirtualCells,
     },
 };
 use keccak256::plain::Keccak;
@@ -158,6 +159,10 @@ pub trait SubCircuit<F: Field> {
     /// Configuration of the SubCircuit.
     type Config: SubCircuitConfig<F>;
 
+    /// Returns number of unusable rows of the SubCircuit, which should be
+    /// `meta.blinding_factors() + 1`.
+    fn unusable_rows() -> usize;
+
     /// Create a new SubCircuit from a witness Block
     fn new_from_block(block: &witness::Block<F>) -> Self;
 
@@ -211,4 +216,11 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     } else {
         0u64
     }
+}
+
+/// Returns number of unusable rows of the Circuit
+pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
+    let mut cs = ConstraintSystem::default();
+    C::configure(&mut cs);
+    cs.blinding_factors() + 1 // +1 for l_last
 }

@@ -16,6 +16,14 @@ pub(crate) fn get_num_rows_per_round() -> usize {
         .expect("Cannot parse KECCAK_ROWS env var as usize")
 }
 
+pub(crate) fn keccak_unusable_rows() -> usize {
+    const UNUSABLE_ROWS_BY_KECCAK_ROWS: [usize; 24] = [
+        53, 67, 63, 59, 45, 79, 77, 75, 73, 71, 69, 67, 65, 63, 61, 59, 57, 71, 89, 107, 107, 107,
+        107, 107,
+    ];
+    UNUSABLE_ROWS_BY_KECCAK_ROWS[get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1]
+}
+
 pub(crate) fn get_num_bits_per_absorb_lookup() -> usize {
     get_num_bits_per_lookup(ABSORB_LOOKUP_RANGE)
 }

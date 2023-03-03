@@ -41,7 +41,10 @@ mod tests {
         let inputs = vec![(0u8..135).collect::<Vec<_>>(); 3];
 
         // Create the circuit. Leave last dozens of rows for blinding.
-        let circuit = TestKeccakCircuit::new(2usize.pow(degree) - 64, inputs);
+        let circuit = TestKeccakCircuit::new(
+            2usize.pow(degree) - KeccakCircuit::<Fr>::unusable_rows(),
+            inputs,
+        );
 
         // Initialize the polynomial commitment parameters
         let mut rng = XorShiftRng::from_seed([

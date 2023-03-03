@@ -318,6 +318,10 @@ impl<F: Field> TxCircuit<F> {
 impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        6
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new(
             block.circuits_params.max_txs,
