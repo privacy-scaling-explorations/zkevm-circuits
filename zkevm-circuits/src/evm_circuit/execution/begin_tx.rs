@@ -14,7 +14,7 @@ use crate::{
                 ContractCreateGadget, IsEqualGadget, IsZeroGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
             },
-            not, select, CachedRegion, Cell, Word,
+            not, or, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -67,14 +67,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
             tx_id.expr(),
-        );
-        let mut reversion_info = cb.reversion_info_write(None);
+        ); // rwc_delta += 1
+        let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
             reversion_info.is_persistent(),
-        );
+        ); // rwc_delta += 1
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
@@ -118,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce.expr() + 1.expr(),
             tx_nonce.expr(),
             None,
-        );
+        ); // rwc_delta += 1
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -145,14 +145,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             0.expr(),
             None,
-        );
+        ); // rwc_delta += 1
         cb.account_access_list_write(
             tx_id.expr(),
             tx_callee_address.expr(),
             1.expr(),
             0.expr(),
             None,
-        );
+        ); // rwc_delta += 1
 
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
@@ -170,7 +170,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 tx_callee_address.expr(),
                 AccountFieldTag::CodeHash,
                 phase2_code_hash.expr(),
-            );
+            ); // rwc_delta += 1
         });
 
         // Transfer value from caller to callee, creating account if necessary.
@@ -179,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_caller_address.expr(),
             tx_callee_address.expr(),
             not::expr(callee_not_exists.expr()),
-            tx_is_create.expr(),
+            or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
             tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
@@ -308,7 +308,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 );
 
                 cb.require_step_state_transition(StepStateTransition {
-                    // 11 reads and writes:
+                    // 8 reads and writes:
                     //   - Write CallContext TxId
                     //   - Write CallContext RwCounterEndOfReversion
                     //   - Write CallContext IsPersistent
@@ -316,11 +316,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount
                     //   - Write TxAccessListAccount
-                    //   - Write Account Balance (Not Reversible)
-                    //   - Write Account Balance (Reversible)
-                    //   - Write Account Balance (Reversible)
+                    //   - a TransferWithGasFeeGadget
                     //   - Read Account CodeHash
-                    rw_counter: Delta(11.expr()),
+                    rw_counter: Delta(8.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
                 });
@@ -354,7 +352,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 }
 
                 cb.require_step_state_transition(StepStateTransition {
-                    // 23-24 reads and writes:
+                    // 20 reads and writes:
                     //   - Write CallContext TxId
                     //   - Write CallContext RwCounterEndOfReversion
                     //   - Write CallContext IsPersistent
@@ -362,10 +360,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount
                     //   - Write TxAccessListAccount
-                    //   - Write Account Balance (Not Reversible)
-                    //   - Write Account Balance
-                    //   - Write Account Balance
-                    //   - Read Account CodeHash (only if tx is not create)
+                    //   - a TransferWithGasFeeGadget
                     //   - Write CallContext Depth
                     //   - Write CallContext CallerAddress
                     //   - Write CallContext CalleeAddress
@@ -379,7 +374,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(23.expr() + (1.expr() - tx_is_create.expr())),
+                    rw_counter: Delta(20.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
@@ -427,25 +422,31 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
-
-        let mut rw_offset = 7;
-        let caller_balance_sub_fee_pair =
-            block.rws[step.rw_indices[rw_offset]].account_value_pair();
         let zero = eth_types::Word::zero();
-        let [caller_balance_sub_value_pair, callee_balance_pair] = if tx.value.is_zero() {
-            rw_offset += 1;
-            [(zero, zero), (zero, zero)]
-        } else {
-            let pairs =
-                [0, 1].map(|idx| block.rws[step.rw_indices[rw_offset + idx]].account_value_pair());
-            rw_offset += 3;
-            pairs
+
+        let mut rws = Rws::new(block, step);
+        rws.offset_add(7);
+        let mut callee_code_hash = zero;
+        if !is_precompiled(&tx.callee_address) && !tx.is_create {
+            callee_code_hash = rws.next().account_value_pair().1;
+        }
+        let callee_exists =
+            is_precompiled(&tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
+        let caller_balance_sub_fee_pair = rws.next().account_value_pair();
+        let must_create = tx.is_create;
+        if (!callee_exists && !tx.value.is_zero()) || must_create {
+            callee_code_hash = rws.next().account_value_pair().1;
+        }
+        let mut caller_balance_sub_value_pair = (zero, zero);
+        let mut callee_balance_pair = (zero, zero);
+        if !tx.value.is_zero() {
+            caller_balance_sub_value_pair = rws.next().account_value_pair();
+            callee_balance_pair = rws.next().account_value_pair();
         };
-        let callee_code_hash = if tx.is_create {
-            call.code_hash
-        } else {
-            block.rws[step.rw_indices[rw_offset]].account_value_pair().0
-        };
+        dbg!(&caller_balance_sub_fee_pair);
+        dbg!(&caller_balance_sub_value_pair);
+        dbg!(&callee_balance_pair);
+        dbg!(&callee_code_hash);
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -553,6 +554,39 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
 
         Ok(())
+    }
+}
+
+use eth_types::Address;
+
+fn is_precompiled(address: &Address) -> bool {
+    address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
+}
+
+use crate::table::RwTableTag;
+use crate::witness::{Rw, RwMap};
+
+struct Rws<'a> {
+    rws: &'a RwMap,
+    rw_indices: &'a Vec<(RwTableTag, usize)>,
+    offset: usize,
+}
+
+impl<'a> Rws<'a> {
+    fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
+        Self {
+            rws: &block.rws,
+            rw_indices: &step.rw_indices,
+            offset: 0,
+        }
+    }
+    fn offset_add(&mut self, offset: usize) {
+        self.offset = offset
+    }
+    fn next(&mut self) -> Rw {
+        let rw = self.rws[self.rw_indices[self.offset]];
+        self.offset += 1;
+        rw
     }
 }
 

@@ -1348,7 +1348,12 @@ impl<F: Field> ExecutionConfig<F> {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
-        dbg!(step.execution_state, step.reversible_write_counter_delta);
+        assert_eq!(
+            step.rw_indices.len(),
+            assigned_rw_values.len(),
+            "step: {:?}",
+            step
+        );
         let mut rev_count = 0;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
