@@ -49,6 +49,7 @@ mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_account_access;
 mod error_oog_call;
+mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
@@ -79,6 +80,7 @@ use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_account_access::ErrorOOGAccountAccess;
 use error_oog_call::OOGCall;
+use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_memory_copy::OOGMemoryCopy;
@@ -278,6 +280,9 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
+        ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
+            Some(OOGDynamicMemory::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::OutOfGas(OogError::AccountAccess) => {
             Some(ErrorOOGAccountAccess::gen_associated_ops)
