@@ -1462,9 +1462,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> SubCircuit<F>
     type Config = PiCircuitConfig<F>;
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let mut block = block.clone();
-        block.circuits_params.max_txs = MAX_TXS;
-        block.circuits_params.max_calldata = MAX_CALLDATA;
+        assert_eq!(block.circuits_params.max_txs, MAX_TXS);
+        assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
 
         Self(PiCircuit::new_from_block(&block))
     }
