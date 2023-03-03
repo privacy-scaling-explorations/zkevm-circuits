@@ -1,5 +1,12 @@
 use super::helpers::Indexable;
+use super::param::{
+    IS_ACCOUNT_DELETE_MOD_POS, IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS,
+    IS_NON_EXISTING_ACCOUNT_POS, IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS,
+};
+use crate::circuit_tools::cell_manager::Cell;
 use crate::circuit_tools::constraint_builder::{RLCable, RLCableValue};
+use crate::mpt_circuit::helpers::{main_memory, MainData};
+use crate::table::ProofType;
 use crate::{
     assign, circuit,
     mpt_circuit::helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
@@ -11,13 +18,11 @@ use gadgets::util::Scalar;
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
-    poly::Rotation,
 };
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StartConfig<F> {
-    key_data: [KeyData<F>; 2],
-    parent_data: [ParentData<F>; 2],
+    proof_type: Cell<F>,
 }
 
 impl<F: Field> StartConfig<F> {
@@ -37,10 +42,16 @@ impl<F: Field> StartConfig<F> {
                 ctx.expr(meta, 0)[34..66].to_owned(),
             ];
 
+            config.proof_type = cb.base.query_cell();
+
+            MainData::store(
+                &mut cb.base,
+                &ctx.memory[main_memory()],
+                [config.proof_type.expr(), false.expr(), 0.expr()],
+            );
+
             for is_s in [true, false] {
-                let root_test = a!(ctx.inter_root(is_s));
                 let root = root_bytes[is_s.idx()].rlc(&r);
-                require!(root => root_test);
                 ParentData::store(
                     &mut cb.base,
                     &ctx.memory[parent_memory(is_s)],
@@ -69,8 +80,43 @@ impl<F: Field> StartConfig<F> {
         let row = &witness[idx];
 
         let root_bytes = [row.s_root_bytes().to_owned(), row.c_root_bytes().to_owned()];
-
         let columns = [ctx.s_main.bytes.to_owned(), ctx.c_main.bytes.to_owned()];
+
+        // TODO(Brecht): change witness and just get the proof type directly
+        let mut i = 0;
+        let mut proof_type = None;
+        while proof_type.is_none() {
+            let row = &witness[idx + i];
+            if row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
+                proof_type = Some(ProofType::StorageChanged);
+            }
+            if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
+                proof_type = Some(ProofType::NonceChanged);
+            }
+            if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
+                proof_type = Some(ProofType::BalanceChanged);
+            }
+            if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
+                proof_type = Some(ProofType::CodeHashExists);
+            }
+            if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
+                proof_type = Some(ProofType::AccountDestructed);
+            }
+            if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
+                proof_type = Some(ProofType::AccountDoesNotExist);
+            }
+            if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
+                proof_type = Some(ProofType::StorageDoesNotExist);
+            }
+            i += 1;
+        }
+        self.proof_type
+            .assign(region, offset, proof_type.unwrap().scalar())?;
+
+        pv.memory[main_memory()].witness_store(
+            offset,
+            &[proof_type.unwrap().scalar(), false.scalar(), 0.scalar()],
+        );
 
         for is_s in [true, false] {
             for (byte, column) in root_bytes[is_s.idx()].iter().zip(columns[is_s.idx()]) {
@@ -80,7 +126,6 @@ impl<F: Field> StartConfig<F> {
             let root = root_bytes[is_s.idx()].rlc_value(ctx.r);
             pv.memory[parent_memory(is_s)]
                 .witness_store(offset, &[root, true.scalar(), false.scalar(), root]);
-
             pv.memory[key_memory(is_s)].witness_store(offset, &KeyData::default_values());
         }
 

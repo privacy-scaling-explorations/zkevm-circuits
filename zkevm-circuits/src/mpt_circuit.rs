@@ -14,7 +14,6 @@ mod branch;
 mod columns;
 mod helpers;
 mod param;
-mod proof_chain;
 mod rlp_gadgets;
 mod selectors;
 mod start;
@@ -22,8 +21,7 @@ mod storage_leaf;
 mod witness_row;
 
 use branch::BranchConfig;
-use columns::{MainCols, PositionCols, ProofTypeCols};
-use proof_chain::ProofChainConfig;
+use columns::MainCols;
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::HASH_WIDTH;
@@ -33,15 +31,15 @@ use crate::{
     assign, assignf, circuit,
     circuit_tools::{cell_manager::CellManager, constraint_builder::merge_lookups, memory::Memory},
     mpt_circuit::{
-        helpers::{extend_rand, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
+        helpers::{extend_rand, main_memory, parent_memory, MPTConstraintBuilder},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    table::{DynamicTableColumns, KeccakTable},
+    table::{DynamicTableColumns, KeccakTable, MptTable},
     util::{power_of_randomness_from_instance, Challenges},
 };
 
-use self::{account_leaf::AccountLeafConfig, columns::MPTTable, helpers::key_memory};
+use self::{account_leaf::AccountLeafConfig, helpers::key_memory};
 
 /// Merkle Patricia Trie config.
 pub struct RowConfig<F> {
@@ -54,11 +52,9 @@ pub struct RowConfig<F> {
 /// Merkle Patricia Trie context
 #[derive(Clone, Debug)]
 pub struct MPTContext<F> {
-    pub(crate) mpt_table: MPTTable,
-    pub(crate) proof_type: ProofTypeCols<F>,
-    pub(crate) position_cols: PositionCols<F>,
-    pub(crate) inter_start_root: Column<Advice>,
-    pub(crate) inter_final_root: Column<Advice>,
+    pub(crate) q_enable: Column<Fixed>,
+    pub(crate) q_not_first: Column<Fixed>,
+    pub(crate) mpt_table: MptTable,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
@@ -67,14 +63,6 @@ pub struct MPTContext<F> {
 }
 
 impl<F: Field> MPTContext<F> {
-    pub(crate) fn inter_root(&self, is_s: bool) -> Column<Advice> {
-        if is_s {
-            self.inter_start_root
-        } else {
-            self.inter_final_root
-        }
-    }
-
     pub(crate) fn bytes(&self) -> Vec<Column<Advice>> {
         [self.s_main.bytes, self.c_main.bytes].concat().to_vec()
     }
@@ -90,17 +78,14 @@ impl<F: Field> MPTContext<F> {
 /// Merkle Patricia Trie config.
 #[derive(Clone)]
 pub struct MPTConfig<F> {
-    pub(crate) proof_type: ProofTypeCols<F>,
-    pub(crate) position_cols: PositionCols<F>,
-    pub(crate) inter_start_root: Column<Advice>,
-    pub(crate) inter_final_root: Column<Advice>,
+    pub(crate) q_enable: Column<Fixed>,
+    pub(crate) q_not_first: Column<Fixed>,
     pub(crate) s_main: MainCols<F>,
     pub(crate) c_main: MainCols<F>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
-    pub(crate) address_rlc: Column<Advice>,
     start_config: StartConfig<F>,
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
@@ -110,7 +95,7 @@ pub struct MPTConfig<F> {
     pub(crate) is_account: Column<Advice>,
     pub(crate) is_storage: Column<Advice>,
     pub(crate) r: F,
-    pub(crate) mpt_table: MPTTable,
+    pub(crate) mpt_table: MptTable,
     cb: MPTConstraintBuilder<F>,
 }
 
@@ -136,7 +121,6 @@ impl_expr!(FixedTableTag);
 // TODO(Brecht): remove by refactoring to use memory values instead
 #[derive(Default)]
 pub(crate) struct ProofValues<F> {
-    pub(crate) before_account_leaf: bool,
     pub(crate) memory: Memory<F>,
 }
 
@@ -144,7 +128,6 @@ impl<F: Field> ProofValues<F> {
     fn new(memory: &Memory<F>) -> Self {
         Self {
             memory: memory.clone(),
-            before_account_leaf: true,
             ..Default::default()
         }
     }
@@ -157,22 +140,15 @@ impl<F: Field> MPTConfig<F> {
         power_of_randomness: [Expression<F>; HASH_WIDTH],
         keccak_table: KeccakTable,
     ) -> Self {
-        // state root before modification
-        let inter_start_root = meta.advice_column();
-        // state root after modification
-        let inter_final_root = meta.advice_column();
+        let q_enable = meta.fixed_column();
+        let q_not_first = meta.fixed_column();
 
-        let value_prev = meta.advice_column();
-        let value = meta.advice_column();
+        let mpt_table = MptTable::construct(meta);
 
         let is_start = meta.advice_column();
         let is_branch = meta.advice_column();
         let is_account = meta.advice_column();
         let is_storage = meta.advice_column();
-
-        let position_cols = PositionCols::new(meta);
-
-        let proof_type = ProofTypeCols::new(meta);
 
         let s_main = MainCols::new(meta);
         let c_main = MainCols::new(meta);
@@ -184,34 +160,19 @@ impl<F: Field> MPTConfig<F> {
             .unwrap();
 
         let managed_columns = (0..40).map(|_| meta.advice_column()).collect::<Vec<_>>();
-
-        let memory_columns = (0..4).map(|_| meta.advice_column()).collect::<Vec<_>>();
+        let memory_columns = (0..5).map(|_| meta.advice_column()).collect::<Vec<_>>();
 
         let mut memory = Memory::new(memory_columns);
         memory.allocate(meta, key_memory(false));
         memory.allocate(meta, key_memory(true));
         memory.allocate(meta, parent_memory(false));
         memory.allocate(meta, parent_memory(true));
-
-        let address_rlc = meta.advice_column();
-        let key_rlc = meta.advice_column();
-
-        let mpt_table = MPTTable {
-            address_rlc,
-            proof_type: proof_type.proof_type,
-            key_rlc,
-            value_prev,
-            value,
-            root_prev: inter_start_root,
-            root: inter_final_root,
-        };
+        memory.allocate(meta, main_memory());
 
         let ctx = MPTContext {
+            q_enable: q_enable.clone(),
+            q_not_first: q_not_first.clone(),
             mpt_table: mpt_table.clone(),
-            proof_type: proof_type.clone(),
-            position_cols: position_cols.clone(),
-            inter_start_root: inter_start_root.clone(),
-            inter_final_root: inter_final_root.clone(),
             s_main: s_main.clone(),
             c_main: c_main.clone(),
             managed_columns: managed_columns.clone(),
@@ -229,14 +190,13 @@ impl<F: Field> MPTConfig<F> {
             circuit!([meta, cb.base], {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
-                ProofChainConfig::configure(meta, &mut cb, ctx.clone());
 
                 //let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
                 let start_config;
                 let branch_config;
                 let storage_config;
                 let account_config;
-                ifx!{f!(position_cols.q_enable) => {
+                ifx!{f!(q_enable) => {
                     matchx! {
                         a!(is_start) => {
                             start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
@@ -302,7 +262,7 @@ impl<F: Field> MPTConfig<F> {
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 /* Memory banks */
-                ifx!{f!(position_cols.q_enable) => {
+                ifx!{f!(q_enable) => {
                     ctx.memory.generate_constraints(&mut cb.base);
                 }}
 
@@ -351,21 +311,18 @@ impl<F: Field> MPTConfig<F> {
         let row_config = row_config.unwrap();
         let randomness = F::zero();
         MPTConfig {
+            q_enable,
+            q_not_first,
             is_start,
             is_branch,
             is_account,
             is_storage,
-            proof_type,
-            position_cols,
-            inter_start_root,
-            inter_final_root,
             s_main,
             c_main,
             managed_columns,
             memory,
             keccak_table,
             fixed_table,
-            address_rlc,
             start_config: row_config.start_config,
             branch_config: row_config.branch_config,
             storage_config: row_config.storage_config,
@@ -447,117 +404,104 @@ impl<F: Field> MPTConfig<F> {
             }
         }
 
-        layouter
-            .assign_region(
-                || "MPT",
-                |mut region| {
-                    let mut offset = 0;
-                    let mut pv = ProofValues::new(&self.memory);
+        layouter.assign_region(
+            || "MPT",
+            |mut region| {
+                let mut offset = 0;
+                let mut pv = ProofValues::new(&self.memory);
 
-                    memory.clear_witness_data();
+                memory.clear_witness_data();
 
-                    let working_witness = witness.to_owned().clone();
-                    for (idx, row) in working_witness
-                        .iter()
-                        .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
-                        .enumerate()
-                    {
-                        //println!("offset: {}", offset);
-                        let mut new_proof = idx == 0;
-                        if idx > 0 {
-                            let row_prev = working_witness[idx - 1].clone();
-                            let not_first_level_prev = row_prev.not_first_level();
-                            let not_first_level_cur = row.not_first_level();
-                            if not_first_level_cur == 0 && not_first_level_prev == 1 {
-                                pv = ProofValues::new(&pv.memory);
-                                new_proof = true;
-                            }
+                let working_witness = witness.to_owned().clone();
+                for (idx, row) in working_witness
+                    .iter()
+                    .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+                    .enumerate()
+                {
+                    //println!("offset: {}", offset);
+                    let mut new_proof = idx == 0;
+                    if idx > 0 {
+                        let row_prev = working_witness[idx - 1].clone();
+                        let not_first_level_prev = row_prev.not_first_level();
+                        let not_first_level_cur = row.not_first_level();
+                        if not_first_level_cur == 0 && not_first_level_prev == 1 {
+                            new_proof = true;
                         }
+                    }
 
-                        if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                            // account leaf key
-                            pv.before_account_leaf = false;
-                        }
+                    if new_proof {
+                        pv = ProofValues::new(&pv.memory);
 
-                        //println!("not_first_level: {}", row.not_first_level());
-                        if new_proof {
-                            //println!("{}: branch", offset);
-                            assign!(region, (self.is_start, offset) => 1.scalar())?;
-                            self.start_config.assign(
-                                &mut region,
-                                self,
-                                witness,
-                                &mut pv,
-                                offset,
-                                idx,
-                            )?;
-
-                            // TODO(Brecht): copied
-                            assignf!(region, (self.position_cols.q_enable, offset) => 1.scalar())?;
-                            let q_not_first = if offset == 0 { F::zero() } else { F::one() };
-                            assignf!(region, (self.position_cols.q_not_first, offset) => q_not_first)?;
-                            assign!(region, (self.position_cols.not_first_level, offset) => row.not_first_level().scalar())?;
-
-                            row.assign_lookup_columns(&mut region, self, &pv, offset)?;
-
-                            //println!("set root: {} -> {:?}", offset,
-                            // row.get_type());
-                            offset += 1;
-                        }
-                        //println!("{} -> {:?}", offset, row.get_type());
-
-                        assignf!(region, (self.position_cols.q_enable, offset) => 1.scalar())?;
-                        let q_not_first = if offset == 0 { F::zero() } else { F::one() };
-                        assignf!(region, (self.position_cols.q_not_first, offset) => q_not_first)?;
-                        assign!(region, (self.position_cols.not_first_level, offset) => row.not_first_level().scalar())?;
-
-                        row.assign_lookup_columns(&mut region, self, &pv, offset)?;
-
-                        if row.get_type() == MptWitnessRowType::InitBranch {
-                            //println!("{}: branch", offset);
-                            assign!(region, (self.is_branch, offset) => 1.scalar())?;
-                            self.branch_config
-                                .assign(&mut region, witness, self, &mut pv, offset, idx)?;
-                        } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
-                            assign!(region, (self.is_storage, offset) => 1.scalar())?;
-                            //println!("{}: storage", offset);
-                            self.storage_config.assign(
-                                &mut region,
-                                self,
-                                witness,
-                                &mut pv,
-                                offset,
-                                idx,
-                            )?;
-                        } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
-                            assign!(region, (self.is_account, offset) => 1.scalar())?;
-                            //println!("{}: account", offset);
-                            self.account_config.assign(
-                                &mut region,
-                                self,
-                                witness,
-                                &mut pv,
-                                offset,
-                                idx,
-                            )?;
-                        }
-
-                        // assign bytes
-                        witness[idx].assign(
+                        assign!(region, (self.is_start, offset) => 1.scalar())?;
+                        self.start_config.assign(
                             &mut region,
                             self,
+                            witness,
+                            &mut pv,
                             offset,
+                            idx,
                         )?;
+
+                        // TODO(Brecht): copied
+                        assignf!(region, (self.q_enable, offset) => 1.scalar())?;
+                        let q_not_first = if offset == 0 { F::zero() } else { F::one() };
+                        assignf!(region, (self.q_not_first, offset) => q_not_first)?;
 
                         offset += 1;
                     }
+                    //println!("{} -> {:?}", offset, row.get_type());
 
-                    memory = pv.memory;
-                    height = offset;
+                    assignf!(region, (self.q_enable, offset) => 1.scalar())?;
+                    let q_not_first = if offset == 0 { F::zero() } else { F::one() };
+                    assignf!(region, (self.q_not_first, offset) => q_not_first)?;
 
-                    Ok(())
-                },
-            )?;
+                    if row.get_type() == MptWitnessRowType::InitBranch {
+                        //println!("{}: branch", offset);
+                        assign!(region, (self.is_branch, offset) => 1.scalar())?;
+                        self.branch_config.assign(
+                            &mut region,
+                            witness,
+                            self,
+                            &mut pv,
+                            offset,
+                            idx,
+                        )?;
+                    } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                        assign!(region, (self.is_storage, offset) => 1.scalar())?;
+                        //println!("{}: storage", offset);
+                        self.storage_config.assign(
+                            &mut region,
+                            self,
+                            witness,
+                            &mut pv,
+                            offset,
+                            idx,
+                        )?;
+                    } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
+                        assign!(region, (self.is_account, offset) => 1.scalar())?;
+                        //println!("{}: account", offset);
+                        self.account_config.assign(
+                            &mut region,
+                            self,
+                            witness,
+                            &mut pv,
+                            offset,
+                            idx,
+                        )?;
+                    }
+
+                    // assign bytes
+                    witness[idx].assign(&mut region, self, offset)?;
+
+                    offset += 1;
+                }
+
+                memory = pv.memory;
+                height = offset;
+
+                Ok(())
+            },
+        )?;
 
         memory.assign(layouter, height)?;
 
@@ -687,7 +631,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 mod tests {
     use param::IS_NON_EXISTING_STORAGE_POS;
 
-    use crate::mpt_circuit::helpers::bytes_into_rlc;
+    use crate::circuit_tools::constraint_builder::RLCableValue;
 
     use super::*;
 
@@ -727,11 +671,9 @@ mod tests {
                 let mut count = 0;
                 for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
                     let l = row.len();
-                    let pub_root_rlc = bytes_into_rlc(
-                        &row[l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS
-                            ..l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS + HASH_WIDTH],
-                        acc_r,
-                    );
+                    let pub_root_rlc = row[l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS
+                        ..l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS + HASH_WIDTH]
+                        .rlc_value(acc_r);
 
                     pub_root.push(pub_root_rlc);
                     count += 1;

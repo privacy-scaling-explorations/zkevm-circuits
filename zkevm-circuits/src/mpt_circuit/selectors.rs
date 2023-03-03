@@ -1,5 +1,5 @@
 use super::{helpers::MPTConstraintBuilder, MPTContext};
-use crate::{circuit, circuit_tools::cell_manager::DataTransition};
+use crate::circuit;
 use eth_types::Field;
 use halo2_proofs::{plonk::VirtualCells, poly::Rotation};
 use std::marker::PhantomData;
@@ -15,31 +15,18 @@ impl<F: Field> SelectorsConfig<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        let proof_type = ctx.proof_type;
-        let position_cols = ctx.position_cols;
         // It needs to be ensured that:
         // - The selectors denoting the row type are boolean values.
         // - For sets of selectors that are mutually exclusive, it needs to be ensured
         //   that their sum is 1 (for example the selector for the proof type).
         // - The proper order of rows.
         circuit!([meta, cb.base], {
-            let q_enable = f!(position_cols.q_enable);
-            let q_not_first = f!(position_cols.q_not_first);
-            let not_first_level = a!(position_cols.not_first_level);
-
-            let proof_type_id = DataTransition::new(meta, proof_type.proof_type);
-            let is_storage_mod = DataTransition::new(meta, proof_type.is_storage_mod);
-            let is_nonce_mod = DataTransition::new(meta, proof_type.is_nonce_mod);
-            let is_balance_mod = DataTransition::new(meta, proof_type.is_balance_mod);
-            let is_codehash_mod = DataTransition::new(meta, proof_type.is_codehash_mod);
-            let is_account_delete_mod = DataTransition::new(meta, proof_type.is_account_delete_mod);
-            let is_non_existing_account_proof =
-                DataTransition::new(meta, proof_type.is_non_existing_account_proof);
-            let is_non_existing_storage_proof =
-                DataTransition::new(meta, proof_type.is_non_existing_storage_proof);
+            let q_enable = f!(ctx.q_enable);
+            let q_not_first = f!(ctx.q_not_first);
 
             // Row type selectors
             let row_type_selectors = [
+                0.expr(),
                 /*is_branch_init.expr(),
                 is_branch_child.expr(),
                 is_extension_node_s.expr(),
@@ -59,27 +46,10 @@ impl<F: Field> SelectorsConfig<F> {
                 is_account_leaf_storage_codehash_c.expr(),
                 is_account_leaf_in_added_branch.expr(),*/
             ];
-
-            // Proof type selectors
-            let proof_type_selectors = [
-                is_nonce_mod.expr(),
-                is_balance_mod.expr(),
-                is_codehash_mod.expr(),
-                is_non_existing_account_proof.expr(),
-                is_account_delete_mod.expr(),
-                is_storage_mod.expr(),
-                is_non_existing_storage_proof.expr(),
-            ];
-
             // Sanity checks on all rows
             ifx! {q_enable => {
                 // It needs to be ensured that all selectors are boolean.
-                let misc_selectors = vec![
-                    not_first_level.expr(),
-                ];
-                for selector in misc_selectors
-                    .iter()
-                    .chain(row_type_selectors.iter().chain(proof_type_selectors.iter()))
+                for selector in row_type_selectors.iter()
                 {
                     require!(selector => bool);
                 }
@@ -87,9 +57,6 @@ impl<F: Field> SelectorsConfig<F> {
                 // The type of the row needs to be set (if all selectors would be 0 for a row,
                 // then all constraints would be switched off).
                 //require!(sum::expr(row_type_selectors.iter()) => 1);
-
-                // The type of the proof needs to be set.
-                require!(sum::expr(proof_type_selectors.iter()) => 1);
 
                 // We need to prevent lookups into non-lookup rows and we need to prevent for
                 // example nonce lookup into balance lookup row.
@@ -264,7 +231,7 @@ impl<F: Field> SelectorsConfig<F> {
                 // Also, these constraints do not guarantee there is an account proof before
                 // storage proof - constraints for this are implemented using address_rlc column
                 // to be changed to the proper value only in the account leaf key row.
-                let modifications = [
+                /*let modifications = [
                     is_nonce_mod,
                     is_balance_mod,
                     is_codehash_mod,
@@ -283,12 +250,9 @@ impl<F: Field> SelectorsConfig<F> {
                             require!(is_mod => is_mod.prev());
                         }}*/
                     }};
-                }
+                }*/
             }}
         });
-
-        // Internal branch selectors (`is_init`, `is_last_child`) are checked in
-        // `branch.rs`.
 
         SelectorsConfig {
             _marker: PhantomData,

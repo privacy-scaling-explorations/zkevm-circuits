@@ -7,17 +7,12 @@ use num_enum::TryFromPrimitive;
 use std::{convert::TryFrom, marker::PhantomData};
 
 use crate::{
-    mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::param::{
-        COUNTER_WITNESS_LEN, C_RLP_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
-        IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
-        IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START,
+        COUNTER_WITNESS_LEN, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, NOT_FIRST_LEVEL_POS,
         WITNESS_ROW_WIDTH,
     },
-    mpt_circuit::{MPTConfig, ProofValues},
+    mpt_circuit::MPTConfig,
 };
-
-use super::param::RLP_LIST_SHORT;
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -95,14 +90,6 @@ impl<F: Field> MptWitnessRow<F> {
                 + HASH_WIDTH]
     }
 
-    pub(crate) fn s_root_bytes_rlc(&self, r: F) -> F {
-        bytes_into_rlc(self.s_root_bytes(), r)
-    }
-
-    pub(crate) fn c_root_bytes_rlc(&self, r: F) -> F {
-        bytes_into_rlc(self.c_root_bytes(), r)
-    }
-
     pub(crate) fn address_bytes(&self) -> &[u8] {
         &self.bytes[self.bytes.len()
             - 2 * HASH_WIDTH
@@ -110,24 +97,6 @@ impl<F: Field> MptWitnessRow<F> {
             - IS_NON_EXISTING_STORAGE_POS
             ..self.bytes.len() - 2 * HASH_WIDTH - COUNTER_WITNESS_LEN - IS_NON_EXISTING_STORAGE_POS
                 + HASH_WIDTH]
-    }
-
-    pub(crate) fn s_hash_bytes(&self) -> &[u8] {
-        let offset = if self.bytes[S_RLP_START] < RLP_LIST_SHORT {
-            1
-        } else {
-            0
-        };
-        &self.bytes[S_RLP_START + offset..34]
-    }
-
-    pub(crate) fn c_hash_bytes(&self) -> &[u8] {
-        let offset = if self.bytes[C_RLP_START] < RLP_LIST_SHORT {
-            1
-        } else {
-            0
-        };
-        &self.bytes[C_RLP_START + offset..68]
     }
 
     pub(crate) fn main(&self) -> &[u8] {
@@ -171,110 +140,6 @@ impl<F: Field> MptWitnessRow<F> {
                 || Value::known(F::from(val)),
             )?;
         }
-        Ok(())
-    }
-
-    /*
-    Assignment of the columns that are used for all lookups. There are other columns used for
-    lookups which are lookup-specific (for example requiring old and new nonce value).
-    */
-    pub(crate) fn assign_lookup_columns(
-        &self,
-        region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        pv: &ProofValues<F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let s_root_rlc = self.s_root_bytes_rlc(mpt_config.r);
-        let c_root_rlc = self.c_root_bytes_rlc(mpt_config.r);
-
-        region.assign_advice(
-            || "inter start root",
-            mpt_config.inter_start_root,
-            offset,
-            || Value::known(s_root_rlc),
-        )?;
-        region.assign_advice(
-            || "inter final root",
-            mpt_config.inter_final_root,
-            offset,
-            || Value::known(c_root_rlc),
-        )?;
-
-        if pv.before_account_leaf {
-            region.assign_advice(
-                || "address RLC",
-                mpt_config.address_rlc,
-                offset,
-                || Value::known(F::zero()),
-            )?;
-        } else {
-            /*
-            `address_rlc` can be set only in the account leaf row - this is to
-            prevent omitting account proof (and having only storage proof
-            with the appropriate address RLC)
-            */
-            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.r);
-
-            region.assign_advice(
-                || "address RLC",
-                mpt_config.address_rlc,
-                offset,
-                || Value::known(address_rlc),
-            )?;
-        }
-
-        region.assign_advice(
-            || "is_storage_mod",
-            mpt_config.proof_type.is_storage_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_STORAGE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_nonce_mod",
-            mpt_config.proof_type.is_nonce_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_NONCE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_balance_mod",
-            mpt_config.proof_type.is_balance_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_BALANCE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_codehash_mod",
-            mpt_config.proof_type.is_codehash_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_CODEHASH_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_account_delete_mod",
-            mpt_config.proof_type.is_account_delete_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_non_existing_account",
-            mpt_config.proof_type.is_non_existing_account_proof,
-            offset,
-            || {
-                Value::known(F::from(
-                    self.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64
-                ))
-            },
-        )?;
-        region.assign_advice(
-            || "is_non_existing_storage",
-            mpt_config.proof_type.is_non_existing_storage_proof,
-            offset,
-            || {
-                Value::known(F::from(
-                    self.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) as u64
-                ))
-            },
-        )?;
-
         Ok(())
     }
 }

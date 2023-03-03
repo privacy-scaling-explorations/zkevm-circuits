@@ -1028,7 +1028,7 @@ macro_rules! _ifx {
         let condition = and::expr([$($condition.expr()),*]);
 
         $cb.push_condition(condition.expr());
-        let ret_true = $when_true.clone();
+        let ret_true = $when_true;
         $cb.pop_condition();
 
         #[allow(unused_assignments, unused_mut)]

@@ -460,18 +460,49 @@ impl From<AccountFieldTag> for ProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 7]);
+pub struct MptTable {
+    /// Account address
+    pub address_rlc: Column<Advice>,
+    /// Proof type
+    pub proof_type: Column<Advice>,
+    /// Storage address
+    pub key_rlc: Column<Advice>,
+    /// Old value
+    pub value_prev: Column<Advice>,
+    /// New value
+    pub value: Column<Advice>,
+    /// Previous MPT root
+    pub root_prev: Column<Advice>,
+    /// New MPT root
+    pub root: Column<Advice>,
+}
 
 impl DynamicTableColumns for MptTable {
     fn columns(&self) -> Vec<Column<Advice>> {
-        self.0.to_vec()
+        vec![
+            self.address_rlc,
+            self.proof_type,
+            self.key_rlc,
+            self.value_prev,
+            self.value,
+            self.root_prev,
+            self.root,
+        ]
     }
 }
 
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([0; 7].map(|_| meta.advice_column()))
+        Self {
+            address_rlc: meta.advice_column(),
+            proof_type: meta.advice_column(),
+            key_rlc: meta.advice_column(),
+            value_prev: meta.advice_column(),
+            value: meta.advice_column(),
+            root_prev: meta.advice_column(),
+            root: meta.advice_column(),
+        }
     }
 
     pub(crate) fn assign<F: Field>(
@@ -480,7 +511,7 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<F>,
     ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row.values()) {
+        for (column, value) in self.columns().iter().zip_eq(row.values()) {
             region.assign_advice(
                 || "assign mpt table row value",
                 *column,

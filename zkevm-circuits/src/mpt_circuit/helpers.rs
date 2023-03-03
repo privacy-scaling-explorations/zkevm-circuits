@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, marker::PhantomData};
 
 use crate::{
     _cb, assign, circuit,
@@ -6,6 +6,7 @@ use crate::{
         cell_manager::{Cell, CellManager, Trackable},
         constraint_builder::{
             Conditionable, ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable,
+            RLCableValue,
         },
         gadgets::{IsEqualGadget, RequireNotZeroGadget},
         memory::{Memory, MemoryBank},
@@ -22,7 +23,7 @@ use eth_types::Field;
 use gadgets::util::{or, Scalar};
 use halo2_proofs::{
     circuit::{Region, Value},
-    plonk::{Error, Expression, VirtualCells},
+    plonk::{Advice, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
@@ -748,6 +749,91 @@ impl<F: Field> ParentData<F> {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct MainData<F> {
+    pub(crate) proof_type: Cell<F>,
+    pub(crate) is_below_account: Cell<F>,
+    pub(crate) address_rlc: Cell<F>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct MainDataWitness<F> {
+    pub(crate) proof_type: usize,
+    pub(crate) is_below_account: bool,
+    pub(crate) address_rlc: F,
+}
+
+impl<F: Field> MainData<F> {
+    pub(crate) fn load(
+        description: &'static str,
+        cb: &mut ConstraintBuilder<F>,
+        memory: &MemoryBank<F>,
+        offset: Expression<F>,
+    ) -> Self {
+        let main_data = MainData {
+            proof_type: cb.query_cell(),
+            is_below_account: cb.query_cell(),
+            address_rlc: cb.query_cell(),
+        };
+        circuit!([meta, cb], {
+            memory.load(
+                description,
+                cb,
+                offset,
+                &[
+                    main_data.proof_type.expr(),
+                    main_data.is_below_account.expr(),
+                    main_data.address_rlc.expr(),
+                ],
+            );
+        });
+        main_data
+    }
+
+    pub(crate) fn store(
+        cb: &mut ConstraintBuilder<F>,
+        memory: &MemoryBank<F>,
+        values: [Expression<F>; 3],
+    ) {
+        memory.store(cb, &values);
+    }
+
+    pub(crate) fn witness_store(
+        &self,
+        _region: &mut Region<'_, F>,
+        offset: usize,
+        memory: &mut MemoryBank<F>,
+        proof_type: usize,
+        is_below_account: bool,
+        address_rlc: F,
+    ) -> Result<(), Error> {
+        let values = [proof_type.scalar(), is_below_account.scalar(), address_rlc];
+        memory.witness_store(offset, &values);
+
+        Ok(())
+    }
+
+    pub(crate) fn witness_load(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        memory: &MemoryBank<F>,
+        load_offset: usize,
+    ) -> Result<MainDataWitness<F>, Error> {
+        let values = memory.witness_load(load_offset);
+
+        self.proof_type.assign(region, offset, values[0])?;
+        self.is_below_account.assign(region, offset, values[1])?;
+        self.address_rlc.assign(region, offset, values[2])?;
+
+        Ok(MainDataWitness {
+            proof_type: values[0].get_lower_32() as usize,
+            is_below_account: values[1] == 1.scalar(),
+            address_rlc: values[2],
+        })
+    }
+}
+
 /// Add the nibble from the drifted branch
 pub(crate) fn drifted_nibble_rlc<F: Field>(
     cb: &mut ConstraintBuilder<F>,
@@ -864,22 +950,16 @@ pub(crate) fn extend_rand<F: Field>(r: &[Expression<F>]) -> Vec<Expression<F>> {
     .concat()
 }
 
-pub(crate) fn bytes_into_rlc<F: Field>(expressions: &[u8], r: F) -> F {
-    let mut rlc = F::zero();
-    let mut mult = F::one();
-    for expr in expressions.iter() {
-        rlc += F::from(*expr as u64) * mult;
-        mult *= r;
-    }
-    rlc
-}
-
 pub(crate) fn parent_memory(is_s: bool) -> String {
     (if is_s { "parent_s" } else { "parent_c" }).to_string()
 }
 
 pub(crate) fn key_memory(is_s: bool) -> String {
     (if is_s { "key_s" } else { "key_c" }).to_string()
+}
+
+pub(crate) fn main_memory() -> String {
+    "main".to_string()
 }
 
 /// MPTConstraintBuilder
@@ -1005,12 +1085,8 @@ impl<F: Field> IsEmptyTreeGadget<F> {
         parent_rlc: F,
         r: F,
     ) -> Result<(), Error> {
-        self.is_in_empty_trie.assign(
-            region,
-            offset,
-            parent_rlc,
-            bytes_into_rlc(&EMPTY_TRIE_HASH, r),
-        )?;
+        self.is_in_empty_trie
+            .assign(region, offset, parent_rlc, EMPTY_TRIE_HASH.rlc_value(r))?;
         self.is_in_empty_branch
             .assign(region, offset, parent_rlc, 0.scalar())?;
         Ok(())
@@ -1099,7 +1175,6 @@ pub struct WrongGadget<F> {
     key_data_w: KeyData<F>,
     wrong_rlp_key: LeafKeyGadget<F>,
     wrong_mult: Cell<F>,
-    is_wrong_leaf: Cell<F>,
     check_is_wrong_leaf: RequireNotZeroGadget<F>,
 }
 
@@ -1108,6 +1183,7 @@ impl<F: Field> WrongGadget<F> {
         meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
+        lookup_address: Column<Advice>,
         is_non_existing: Expression<F>,
         rlp_key: &[LeafKeyGadget<F>],
         key_rlc: &[Expression<F>],
@@ -1121,45 +1197,40 @@ impl<F: Field> WrongGadget<F> {
         // works (s and c cases separately makes more sense to me).
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
-            config.is_wrong_leaf = cb.base.query_cell();
-            // Make sure is_wrong_leaf is boolean
-            require!(config.is_wrong_leaf => bool);
-            ifx! {is_non_existing => {
-                // Get the previous key data
-                // TODO(Brecht): This always loads the keys from s? But some other data comes from c...
-                config.key_data_w = KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 1.expr());
-                ifx! {config.is_wrong_leaf => {
-                    // Calculate the key
-                    config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
-                    let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
-                        &mut cb.base,
-                        config.key_data_w.mult.expr(),
-                        config.key_data_w.is_odd.expr(),
-                        1.expr(),
-                        r,
-                    );
+            // Get the previous key data
+            // TODO(Brecht): This always loads the keys from s? But some other data comes
+            // from c...
+            config.key_data_w =
+                KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 1.expr());
 
-                    // Check that it's the key as requested in the lookup
-                    let key_rlc_lookup = a!(ctx.mpt_table.key_rlc, wrong_offset);
-                    require!(key_rlc_lookup => key_rlc_wrong);
+            let is_placeholder_leaf = if for_placeholder_s {
+                config.key_data_w.is_placeholder_leaf_s.expr()
+            } else {
+                config.key_data_w.is_placeholder_leaf_c.expr()
+            };
+            ifx! {is_non_existing, not!(is_placeholder_leaf) => {
+                // Calculate the key
+                config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
+                let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
+                    &mut cb.base,
+                    config.key_data_w.mult.expr(),
+                    config.key_data_w.is_odd.expr(),
+                    1.expr(),
+                    r,
+                );
 
-                    // Now make sure this address is different than the one of the leaf
-                    config.check_is_wrong_leaf = RequireNotZeroGadget::construct(&mut cb.base, key_rlc_lookup - key_rlc[for_placeholder_s.idx()].expr());
-                    // Make sure the lengths of the keys are the same
-                    require!(config.wrong_rlp_key.key_len() => rlp_key[for_placeholder_s.idx()].key_len());
-                    // RLC bytes zero check
-                    cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
-                } elsex {
-                    // In case when there is no wrong leaf, we need to check there is a nil object in the parent branch.
-                    if for_placeholder_s {
-                        require!(config.key_data_w.is_placeholder_leaf_s => true);
-                    } else {
-                        require!(config.key_data_w.is_placeholder_leaf_c => true);
-                    }
-                }}
-            } elsex {
-                // is_wrong_leaf needs to be false when not in non_existing_account proof
-                require!(config.is_wrong_leaf => false);
+                // Check that it's the key as requested in the lookup
+                require!(a!(lookup_address, wrong_offset) => key_rlc_wrong);
+
+                // Now make sure this address is different than the one of the leaf
+                config.check_is_wrong_leaf = RequireNotZeroGadget::construct(
+                    &mut cb.base,
+                    a!(lookup_address, wrong_offset) - key_rlc[for_placeholder_s.idx()].expr()
+                );
+                // Make sure the lengths of the keys are the same
+                require!(config.wrong_rlp_key.key_len() => rlp_key[for_placeholder_s.idx()].key_len());
+                // RLC bytes zero check
+                cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
             }}
             config
         })
@@ -1170,6 +1241,7 @@ impl<F: Field> WrongGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         ctx: &MPTConfig<F>,
+        lookup_column: Column<Advice>,
         is_non_existing: bool,
         memory: &mut Memory<F>,
         key_rlc: &[F],
@@ -1180,33 +1252,25 @@ impl<F: Field> WrongGadget<F> {
         proof_type: ProofType,
         r: F,
     ) -> Result<(), Error> {
+        let key_data_w =
+            self.key_data_w
+                .witness_load(region, offset, &mut memory[key_memory(true)], 1)?;
         if is_non_existing {
-            let key_data_w =
-                self.key_data_w
-                    .witness_load(region, offset, &mut memory[key_memory(true)], 1)?;
+            let mut bytes = wrong_bytes.to_vec();
+            bytes[0] = row_key[for_placeholder_s.idx()].bytes[0];
 
-            // TODO(Brecht): Change how the witness is generated
-            let is_wrong_leaf = wrong_bytes[0] != 0;
-            self.is_wrong_leaf
-                .assign(region, offset, F::from(is_wrong_leaf))?;
+            let wrong_witness = self.wrong_rlp_key.assign(region, offset, &bytes)?;
+            let (key_rlc_wrong, _) = wrong_witness.leaf_key_rlc(key_data_w.rlc, key_data_w.mult, r);
 
-            if is_wrong_leaf {
-                let mut bytes = wrong_bytes.to_vec();
-                bytes[0] = row_key[for_placeholder_s.idx()].bytes[0];
+            self.check_is_wrong_leaf.assign(
+                region,
+                offset,
+                key_rlc_wrong - key_rlc[for_placeholder_s.idx()],
+            )?;
 
-                let wrong_witness = self.wrong_rlp_key.assign(region, offset, &bytes)?;
-                let (key_rlc_wrong, _) =
-                    wrong_witness.leaf_key_rlc(key_data_w.rlc, key_data_w.mult, r);
-
-                self.check_is_wrong_leaf.assign(
-                    region,
-                    offset,
-                    key_rlc_wrong - key_rlc[for_placeholder_s.idx()],
-                )?;
-
-                assign!(region, (ctx.mpt_table.key_rlc, wrong_offset) => key_rlc_wrong)?;
-            }
-            assign!(region, (ctx.proof_type.proof_type, wrong_offset) => proof_type.scalar())?;
+            assign!(region, (lookup_column, wrong_offset) => key_rlc_wrong)?;
+            // TODO(Brecht): constraint for this seems to be missing
+            assign!(region, (ctx.mpt_table.proof_type, wrong_offset) => proof_type.scalar())?;
         }
         Ok(())
     }

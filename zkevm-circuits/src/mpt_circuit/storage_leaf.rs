@@ -6,7 +6,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::circuit_tools::constraint_builder::{RLCChainable, RLCableValue};
 use crate::circuit_tools::gadgets::LtGadget;
 use crate::mpt_circuit::helpers::IsEmptyTreeGadget;
 use crate::table::ProofType;
@@ -24,15 +23,22 @@ use crate::{
     circuit_tools::cell_manager::Cell,
     mpt_circuit::helpers::{DriftedGadget, ParentDataWitness},
 };
+use crate::{
+    circuit_tools::{
+        constraint_builder::{RLCChainable, RLCableValue},
+        gadgets::IsEqualGadget,
+    },
+    mpt_circuit::helpers::{main_memory, MainData},
+};
 
 use super::{
     helpers::{Indexable, LeafKeyGadget, WrongGadget},
-    param::IS_NON_EXISTING_STORAGE_POS,
     rlp_gadgets::RLPValueGadget,
 };
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StorageLeafConfig<F> {
+    main_data: MainData<F>,
     key_data: [KeyData<F>; 2],
     parent_data: [ParentData<F>; 2],
     key_mult: [Cell<F>; 2],
@@ -44,6 +50,8 @@ pub(crate) struct StorageLeafConfig<F> {
     is_empty_trie: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
+    is_storage_mod_proof: IsEqualGadget<F>,
+    is_non_existing_proof: IsEqualGadget<F>,
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -67,6 +75,16 @@ impl<F: Field> StorageLeafConfig<F> {
             let wrong_bytes = ctx.expr(meta, 5)[..36].to_owned();
             let lookup_offset = 3;
             let wrong_offset = 5;
+
+            config.main_data = MainData::load(
+                "main storage",
+                &mut cb.base,
+                &ctx.memory[main_memory()],
+                0.expr(),
+            );
+
+            // Storage leafs always need to be below accounts
+            require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
             let mut value_rlc = vec![0.expr(); 2];
@@ -156,6 +174,18 @@ impl<F: Field> StorageLeafConfig<F> {
                 );
             }
 
+            // Proof types
+            config.is_storage_mod_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                ProofType::StorageChanged.expr(),
+            );
+            config.is_non_existing_proof = IsEqualGadget::construct(
+                &mut cb.base,
+                config.main_data.proof_type.expr(),
+                ProofType::StorageDoesNotExist.expr(),
+            );
+
             // Drifted leaf handling
             config.drifted = DriftedGadget::construct(
                 cb,
@@ -168,12 +198,12 @@ impl<F: Field> StorageLeafConfig<F> {
             );
 
             // Wrong leaf handling
-            let is_non_existing = a!(ctx.proof_type.is_non_existing_storage_proof, wrong_offset);
             config.wrong = WrongGadget::construct(
                 meta,
                 cb,
                 ctx.clone(),
-                is_non_existing,
+                ctx.mpt_table.key_rlc,
+                config.is_non_existing_proof.expr(),
                 &config.rlp_key,
                 &key_rlc,
                 &wrong_bytes,
@@ -183,6 +213,7 @@ impl<F: Field> StorageLeafConfig<F> {
             );
 
             // Put the data in the lookup table
+            require!(a!(ctx.mpt_table.address_rlc, lookup_offset) => config.main_data.address_rlc);
             require!(a!(ctx.mpt_table.key_rlc, lookup_offset) => key_rlc[false.idx()]);
             require!(a!(ctx.mpt_table.value_prev, lookup_offset) => value_rlc[true.idx()]);
             require!(a!(ctx.mpt_table.value, lookup_offset) => value_rlc[false.idx()]);
@@ -206,6 +237,10 @@ impl<F: Field> StorageLeafConfig<F> {
         let row_wrong = &witness[idx + 5];
         let lookup_offset = offset + 3;
         let wrong_offset = offset + 5;
+
+        let main_data =
+            self.main_data
+                .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
 
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
@@ -287,17 +322,30 @@ impl<F: Field> StorageLeafConfig<F> {
             )?;
         }
 
+        let _is_storage_mod_proof = self.is_storage_mod_proof.assign(
+            region,
+            offset,
+            main_data.proof_type.scalar(),
+            ProofType::StorageChanged.scalar(),
+        )? == true.scalar();
+        let is_non_existing_proof = self.is_non_existing_proof.assign(
+            region,
+            offset,
+            main_data.proof_type.scalar(),
+            ProofType::StorageDoesNotExist.scalar(),
+        )? == true.scalar();
+
         // Drifted leaf handling
         self.drifted
             .assign(region, offset, &parent_data, &row_drifted.bytes, ctx.r)?;
 
         // Wrong leaf handling
-        let is_non_existing = row_wrong.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1;
         self.wrong.assign(
             region,
             offset,
             ctx,
-            is_non_existing,
+            ctx.mpt_table.key_rlc,
+            is_non_existing_proof,
             &mut pv.memory,
             &key_rlc,
             &row_wrong.bytes,
@@ -310,8 +358,9 @@ impl<F: Field> StorageLeafConfig<F> {
 
         // Put the data in the lookup table
         if value_bytes[false.idx()].get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-            assign!(region, (ctx.proof_type.proof_type, lookup_offset) => ProofType::StorageChanged.scalar())?;
+            assign!(region, (ctx.mpt_table.proof_type, lookup_offset) => ProofType::StorageChanged.scalar())?;
         }
+        assign!(region, (ctx.mpt_table.address_rlc, lookup_offset) => main_data.address_rlc)?;
         assign!(region, (ctx.mpt_table.key_rlc, lookup_offset) => key_rlc[false.idx()])?;
         assign!(region, (ctx.mpt_table.value_prev, lookup_offset) => value_rlc[true.idx()])?;
         assign!(region, (ctx.mpt_table.value, lookup_offset) => value_rlc[false.idx()])?;
