@@ -1,17 +1,18 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
+    param::N_BYTES_U64,
     step::ExecutionState,
     util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, from_bytes,
-        math_gadget::LtWordGadget, CachedRegion, Cell, Word,
+        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
+        math_gadget::IsZeroGadget, CachedRegion, Cell, Word,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };
 use crate::table::{AccountFieldTag, CallContextFieldTag};
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::not;
 use gadgets::util::Expr;
+use gadgets::util::{not, sum};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -39,15 +40,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorNonceOverflowGadget<F> {
             AccountFieldTag::Nonce,
             nonce_word_rlc.expr(),
         );
-        // let is_lhs_less_than_u64 =
-        //     LtWordGadget::construct(cb, &nonce_word_rlc,
-        // &Word::from(u64::MAX).expr());
-        let is_lhs_less_than_u64 = LtWordGadget::construct(cb, &nonce_word_rlc, &nonce_word_rlc);
 
-        cb.require_zero("nonce < u64::MAX", not::expr(is_lhs_less_than_u64.expr()));
+        let nonce_not_overflow =
+            IsZeroGadget::construct(cb, sum::expr(&nonce_word_rlc.cells[N_BYTES_U64..]));
+
+        cb.require_zero("nonce < u64::MAX", not::expr(nonce_not_overflow.expr()));
 
         cb.require_in_set(
-            "ErrorNonceOverflow only happens in [CREATE, CREATE2]",
+            "ErrorNonceOverflow only prompt in [CREATE, CREATE2]",
             opcode.expr(),
             vec![OpcodeId::CREATE.expr(), OpcodeId::CREATE2.expr()],
         );
@@ -72,6 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorNonceOverflowGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
+        println!("!!!opcode: {:?}", opcode);
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
@@ -88,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorNonceOverflowGadget<F> {
         // TODO: find way to retrieve callee account, and get nonce from account
         // maybe refer way for how to get balance
         self.nonce_word_rlc
-            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
+            .assign(region, offset, Some(U256::from(u64::MAX).to_le_bytes()))?;
 
         self.common_error_gadget
             .assign(region, offset, block, call, step, 2)?;

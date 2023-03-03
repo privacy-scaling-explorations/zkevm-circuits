@@ -61,6 +61,7 @@ mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_simple;
+mod error_nonce_overflow;
 mod error_write_protection;
 
 #[cfg(test)]
@@ -80,6 +81,7 @@ use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
 use error_invalid_jump::InvalidJump;
+use error_nonce_overflow::ErrorNonceOverflow;
 use error_oog_call::OOGCall;
 use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
@@ -257,7 +259,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             DummyCreate::<false>::gen_associated_ops
         }
         OpcodeId::CREATE2 => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            // evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<true>::gen_associated_ops
         }
         _ => {
@@ -282,7 +284,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
-        ExecError::NonceOverflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::NonceOverflow => Some(ErrorNonceOverflow::gen_associated_ops),
 
         // more future errors place here
         _ => {

@@ -1307,6 +1307,9 @@ impl<F: Field> ExecutionConfig<F> {
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
+            ExecutionState::ErrorNonceOverflow => {
+                assign_exec_step!(self.error_nonce_overflow)
+            }
 
             _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),
         }

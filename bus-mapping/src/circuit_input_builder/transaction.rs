@@ -117,19 +117,20 @@ impl TransactionContext {
             .checked_sub(2)
             .map(|idx| &self.calls[idx])
             .ok_or(Error::InvalidGethExecTrace(
-                "Call stack is empty but call is used",
+                "1 Call stack is empty but call is used",
             ))
     }
 
     pub(crate) fn call_ctx(&self) -> Result<&CallContext, Error> {
-        self.calls.last().ok_or(Error::InvalidGethExecTrace(
-            "Call stack is empty but call is used",
-        ))
+        self.calls.last().ok_or_else(|| {
+            // panic!("2 Call stack is empty but call is used");
+            Error::InvalidGethExecTrace("2 Call stack is empty but call is used")
+        })
     }
 
     pub(crate) fn call_ctx_mut(&mut self) -> Result<&mut CallContext, Error> {
         self.calls.last_mut().ok_or(Error::InvalidGethExecTrace(
-            "Call stack is empty but call is used",
+            "3 Call stack is empty but call is used",
         ))
     }
 

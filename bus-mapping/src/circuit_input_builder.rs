@@ -273,6 +273,8 @@ impl<'a> CircuitInputBuilder {
         let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
         tx.steps_mut().push(begin_tx_step);
 
+        println!("geth_trace.struct_logs {:#?}", geth_trace.struct_logs);
+        println!("geth_trace.failed {:#?}", geth_trace.failed);
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
             let mut state_ref = self.state_ref(&mut tx, &mut tx_ctx);
             log::trace!("handle {}th opcode {:?} ", index, geth_step.op);

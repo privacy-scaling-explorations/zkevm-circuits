@@ -18,6 +18,9 @@ impl Opcode for InvalidJump {
         } else {
             None
         };
+        println!("geth_step {:#?}", geth_step);
+        println!("next_step {:#?}", next_step);
+        println!("exec_step.error {:#?}", exec_step.error);
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
         // assert op code can only be JUMP or JUMPI
         assert!(geth_step.op == OpcodeId::JUMP || geth_step.op == OpcodeId::JUMPI);
@@ -39,8 +42,10 @@ impl Opcode for InvalidJump {
             )?;
         }
         // `IsSuccess` call context operation is added in gen_restore_context_ops
-
+        // println!("call {:#?}", state.call()?.clone());
+        // println!("caller {:#?}", state.caller()?.clone());
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        println!("reach here");
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }
