@@ -16,7 +16,7 @@ use crate::{
         param::{EMPTY_TRIE_HASH, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
-    table::ProofType,
+    table::{MptTable, ProofType},
     util::Expr,
 };
 use eth_types::Field;
@@ -754,6 +754,8 @@ pub(crate) struct MainData<F> {
     pub(crate) proof_type: Cell<F>,
     pub(crate) is_below_account: Cell<F>,
     pub(crate) address_rlc: Cell<F>,
+    pub(crate) root_prev: Cell<F>,
+    pub(crate) root: Cell<F>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -761,6 +763,8 @@ pub(crate) struct MainDataWitness<F> {
     pub(crate) proof_type: usize,
     pub(crate) is_below_account: bool,
     pub(crate) address_rlc: F,
+    pub(crate) root_prev: F,
+    pub(crate) root: F,
 }
 
 impl<F: Field> MainData<F> {
@@ -774,6 +778,8 @@ impl<F: Field> MainData<F> {
             proof_type: cb.query_cell(),
             is_below_account: cb.query_cell(),
             address_rlc: cb.query_cell(),
+            root_prev: cb.query_cell(),
+            root: cb.query_cell(),
         };
         circuit!([meta, cb], {
             memory.load(
@@ -784,6 +790,8 @@ impl<F: Field> MainData<F> {
                     main_data.proof_type.expr(),
                     main_data.is_below_account.expr(),
                     main_data.address_rlc.expr(),
+                    main_data.root_prev.expr(),
+                    main_data.root.expr(),
                 ],
             );
         });
@@ -793,7 +801,7 @@ impl<F: Field> MainData<F> {
     pub(crate) fn store(
         cb: &mut ConstraintBuilder<F>,
         memory: &MemoryBank<F>,
-        values: [Expression<F>; 3],
+        values: [Expression<F>; 5],
     ) {
         memory.store(cb, &values);
     }
@@ -806,8 +814,16 @@ impl<F: Field> MainData<F> {
         proof_type: usize,
         is_below_account: bool,
         address_rlc: F,
+        root_prev: F,
+        root: F,
     ) -> Result<(), Error> {
-        let values = [proof_type.scalar(), is_below_account.scalar(), address_rlc];
+        let values = [
+            proof_type.scalar(),
+            is_below_account.scalar(),
+            address_rlc,
+            root_prev,
+            root,
+        ];
         memory.witness_store(offset, &values);
 
         Ok(())
@@ -825,11 +841,15 @@ impl<F: Field> MainData<F> {
         self.proof_type.assign(region, offset, values[0])?;
         self.is_below_account.assign(region, offset, values[1])?;
         self.address_rlc.assign(region, offset, values[2])?;
+        self.root_prev.assign(region, offset, values[3])?;
+        self.root.assign(region, offset, values[4])?;
 
         Ok(MainDataWitness {
             proof_type: values[0].get_lower_32() as usize,
             is_below_account: values[1] == 1.scalar(),
             address_rlc: values[2],
+            root_prev: values[3],
+            root: values[4],
         })
     }
 }
@@ -1176,19 +1196,18 @@ pub struct WrongGadget<F> {
     wrong_rlp_key: LeafKeyGadget<F>,
     wrong_mult: Cell<F>,
     check_is_wrong_leaf: RequireNotZeroGadget<F>,
+    wrong_key: Option<Expression<F>>,
 }
 
 impl<F: Field> WrongGadget<F> {
     pub(crate) fn construct(
-        meta: &mut VirtualCells<'_, F>,
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
-        lookup_address: Column<Advice>,
+        expected_address: Expression<F>,
         is_non_existing: Expression<F>,
         rlp_key: &[LeafKeyGadget<F>],
         key_rlc: &[Expression<F>],
         wrong_bytes: &[Expression<F>],
-        wrong_offset: usize,
         for_placeholder_s: bool,
         r: &[Expression<F>],
     ) -> Self {
@@ -1219,13 +1238,13 @@ impl<F: Field> WrongGadget<F> {
                     r,
                 );
 
-                // Check that it's the key as requested in the lookup
-                require!(a!(lookup_address, wrong_offset) => key_rlc_wrong);
+                // Check that it's the key as expected
+                require!(key_rlc_wrong => expected_address);
 
                 // Now make sure this address is different than the one of the leaf
                 config.check_is_wrong_leaf = RequireNotZeroGadget::construct(
                     &mut cb.base,
-                    a!(lookup_address, wrong_offset) - key_rlc[for_placeholder_s.idx()].expr()
+                    expected_address - key_rlc[for_placeholder_s.idx()].expr()
                 );
                 // Make sure the lengths of the keys are the same
                 require!(config.wrong_rlp_key.key_len() => rlp_key[for_placeholder_s.idx()].key_len());
@@ -1240,18 +1259,14 @@ impl<F: Field> WrongGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        ctx: &MPTConfig<F>,
-        lookup_column: Column<Advice>,
         is_non_existing: bool,
         memory: &mut Memory<F>,
         key_rlc: &[F],
         wrong_bytes: &[u8],
-        wrong_offset: usize,
         row_key: [&MptWitnessRow<F>; 2],
         for_placeholder_s: bool,
-        proof_type: ProofType,
         r: F,
-    ) -> Result<(), Error> {
+    ) -> Result<F, Error> {
         let key_data_w =
             self.key_data_w
                 .witness_load(region, offset, &mut memory[key_memory(true)], 1)?;
@@ -1267,11 +1282,9 @@ impl<F: Field> WrongGadget<F> {
                 offset,
                 key_rlc_wrong - key_rlc[for_placeholder_s.idx()],
             )?;
-
-            assign!(region, (lookup_column, wrong_offset) => key_rlc_wrong)?;
-            // TODO(Brecht): constraint for this seems to be missing
-            assign!(region, (ctx.mpt_table.proof_type, wrong_offset) => proof_type.scalar())?;
+            Ok(key_rlc_wrong)
+        } else {
+            Ok(key_rlc[for_placeholder_s.idx()])
         }
-        Ok(())
     }
 }

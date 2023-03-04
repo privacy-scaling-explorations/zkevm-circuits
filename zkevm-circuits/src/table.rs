@@ -1,13 +1,14 @@
 //! Table definitions used cross-circuits
 
+use crate::circuit_tools::constraint_builder::ConstraintBuilder;
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
-use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
+use crate::{circuit, impl_expr};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
@@ -431,6 +432,8 @@ impl RwTable {
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
 pub enum ProofType {
+    /// Disabled
+    Disabled,
     /// Nonce updated
     NonceChanged = AccountFieldTag::Nonce as isize,
     /// Balance updated
@@ -505,6 +508,29 @@ impl MptTable {
         }
     }
 
+    pub(crate) fn constrain<F: Field>(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut ConstraintBuilder<F>,
+        address_rlc: Expression<F>,
+        proof_type: Expression<F>,
+        key_rlc: Expression<F>,
+        value_prev: Expression<F>,
+        value: Expression<F>,
+        root_prev: Expression<F>,
+        root: Expression<F>,
+    ) {
+        circuit!([meta, cb], {
+            require!(a!(self.proof_type) => proof_type);
+            require!(a!(self.address_rlc) => address_rlc);
+            require!(a!(self.key_rlc) => key_rlc);
+            require!(a!(self.value_prev) => value_prev);
+            require!(a!(self.value) => value);
+            require!(a!(self.root_prev) => root_prev);
+            require!(a!(self.root) => root);
+        })
+    }
+
     pub(crate) fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
@@ -516,7 +542,7 @@ impl MptTable {
                 || "assign mpt table row value",
                 *column,
                 offset,
-                || Value::known(*value),
+                || Value::known(value),
             )?;
         }
         Ok(())

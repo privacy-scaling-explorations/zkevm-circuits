@@ -35,7 +35,7 @@ use crate::{
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    table::{DynamicTableColumns, KeccakTable, MptTable},
+    table::{DynamicTableColumns, KeccakTable, MptTable, ProofType},
     util::{power_of_randomness_from_instance, Challenges},
 };
 
@@ -191,7 +191,7 @@ impl<F: Field> MPTConfig<F> {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
 
-                //let mut cm = CellManager::new(meta, 1, &ctx.managed_columns, 0);
+                // Main state machine
                 let start_config;
                 let branch_config;
                 let storage_config;
@@ -211,6 +211,15 @@ impl<F: Field> MPTConfig<F> {
                             storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         _ => (),
+                    }
+                }}
+
+                // Only account and storage rows can have lookups, disable lookups on all other rows
+                ifx!{f!(q_enable) => {
+                    matchx! {
+                        a!(is_account) => (),
+                        a!(is_storage) => (),
+                        _ => require!(a!(ctx.mpt_table.proof_type) => ProofType::Disabled.expr()),
                     }
                 }}
 

@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Region, Value},
+    circuit::Region,
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -11,7 +11,6 @@ use super::{
     helpers::{LeafKeyGadget, ParentDataWitness},
     rlp_gadgets::RLPValueGadget,
 };
-use crate::table::ProofType;
 use crate::{
     assign, circuit,
     circuit_tools::cell_manager::Cell,
@@ -32,6 +31,7 @@ use crate::{
     circuit_tools::{constraint_builder::RLCableValue, gadgets::IsEqualGadget},
     mpt_circuit::helpers::{main_memory, Indexable, IsEmptyTreeGadget},
 };
+use crate::{table::ProofType, witness::MptUpdateRow};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafConfig<F> {
@@ -103,12 +103,6 @@ impl<F: Field> AccountLeafConfig<F> {
                 ctx.expr(meta, 6)[34..].to_owned(),
             ];
             let drifted_bytes = ctx.expr(meta, 7)[..36].to_owned();
-
-            let nonce_lookup_offset = 3;
-            let balance_lookup_offset = 4;
-            let storage_lookup_offset = 5;
-            let codehash_lookup_offset = 6;
-            let wrong_offset = 2;
 
             // The two string RLP bytes stored in the s RLP bytes.
             // The two list RLP bytes are stored in the c RLP bytes.
@@ -264,7 +258,9 @@ impl<F: Field> AccountLeafConfig<F> {
                 [
                     config.main_data.proof_type.expr(),
                     true.expr(),
-                    a!(ctx.mpt_table.address_rlc, nonce_lookup_offset),
+                    key_rlc[true.idx()].expr(),
+                    config.main_data.root_prev.expr(),
+                    config.main_data.root.expr(),
                 ],
             );
 
@@ -313,37 +309,32 @@ impl<F: Field> AccountLeafConfig<F> {
 
             // Wrong leaf handling
             config.wrong = WrongGadget::construct(
-                meta,
                 cb,
                 ctx.clone(),
-                ctx.mpt_table.address_rlc,
+                a!(ctx.mpt_table.address_rlc),
                 config.is_non_existing_account_proof.expr(),
                 &config.rlp_key,
                 &key_rlc,
                 &wrong_bytes,
-                wrong_offset,
                 true,
                 &ctx.r,
             );
 
-            // Account delete
-            // We need to make sure there is no leaf when account is deleted. Two possible
-            // cases:
-            // - 1. Account leaf is deleted and there is a nil object in
-            // branch. In this case we have a placeholder leaf.
-            // - 2. Account leaf is deleted from a branch with two leaves, the remaining
-            // leaf moves one level up and replaces the branch. In this case we
-            // have a branch placeholder.
             ifx! {config.is_account_delete_mod => {
+                // Account delete
+                // We need to make sure there is no leaf when account is deleted. Two possible
+                // cases:
+                // - 1. Account leaf is deleted and there is a nil object in
+                // branch. In this case we have a placeholder leaf.
+                // - 2. Account leaf is deleted from a branch with two leaves, the remaining
+                // leaf moves one level up and replaces the branch. In this case we
+                // have a branch placeholder.
                 require!(or::expr([
                     config.key_data[false.idx()].is_placeholder_leaf_c.expr(),
                     config.parent_data[false.idx()].is_placeholder.expr()
                 ]) => true);
-            }}
-
-            // Check that there is only one modification (except when the account is being
-            // deleted).
-            ifx! {not!(config.is_account_delete_mod) => {
+            } elsex {
+                // Check that there is only one modification (except when the account is being deleted).
                 // Nonce needs to remain the same when not modifying the nonce
                 ifx!{not!(config.is_nonce_mod) => {
                     require!(nonce_rlc[false.idx()] => nonce_rlc[true.idx()]);
@@ -362,35 +353,36 @@ impl<F: Field> AccountLeafConfig<F> {
                 }}
             }}
 
-            // Lookup data
-            // Set the address
-            for is_s in [true, false] {
-                // The computed key RLC needs to be the same as the value in `address_rlc`
-                // column, except when below a placeholder branch because then `key_rlc` is
-                // computed for the branch that is parallel to the placeholder branch.
-                for lookup_offset in [
-                    nonce_lookup_offset,
-                    balance_lookup_offset,
-                    storage_lookup_offset,
-                    codehash_lookup_offset,
-                ] {
-                    ifx! {not!(config.parent_data[is_s.idx()].is_placeholder), not!(config.is_non_existing_account_proof) => {
-                        require!(a!(ctx.mpt_table.address_rlc, lookup_offset) => key_rlc[is_s.idx()]);
-                    }}
-                }
-            }
-            // Nonce
-            require!(a!(ctx.mpt_table.value_prev, nonce_lookup_offset) => nonce_rlc[true.idx()]);
-            require!(a!(ctx.mpt_table.value, nonce_lookup_offset) => nonce_rlc[false.idx()]);
-            // Balance
-            require!(a!(ctx.mpt_table.value_prev, balance_lookup_offset) => balance_rlc[true.idx()]);
-            require!(a!(ctx.mpt_table.value, balance_lookup_offset) => balance_rlc[false.idx()]);
-            // Storage root
-            require!(a!(ctx.mpt_table.value_prev, storage_lookup_offset) => storage_rlc[true.idx()]);
-            require!(a!(ctx.mpt_table.value, storage_lookup_offset) => storage_rlc[false.idx()]);
-            // Codehash
-            require!(a!(ctx.mpt_table.value_prev, codehash_lookup_offset) => codehash_rlc[true.idx()]);
-            require!(a!(ctx.mpt_table.value, codehash_lookup_offset) => codehash_rlc[false.idx()]);
+            // Put the data in the lookup table
+            let (proof_type, value_prev, value) = _matchx! {cb.base,
+                config.is_nonce_mod => (ProofType::NonceChanged.expr(), nonce_rlc[true.idx()].expr(), nonce_rlc[false.idx()].expr()),
+                config.is_balance_mod => (ProofType::BalanceChanged.expr(), balance_rlc[true.idx()].expr(), balance_rlc[false.idx()].expr()),
+                config.is_storage_mod => (ProofType::StorageChanged.expr(), storage_rlc[true.idx()].expr(), storage_rlc[false.idx()].expr()),
+                config.is_codehash_mod => (ProofType::CodeHashExists.expr(), codehash_rlc[true.idx()].expr(), codehash_rlc[false.idx()].expr()),
+                config.is_account_delete_mod => (ProofType::AccountDestructed.expr(), 0.expr(), 0.expr()),
+                config.is_non_existing_account_proof => (ProofType::AccountDoesNotExist.expr(), 0.expr(), 0.expr()),
+                _ => (ProofType::Disabled.expr(), 0.expr(), 0.expr()),
+            };
+            let address_rlc = ifx! {config.is_non_existing_account_proof => {
+                a!(ctx.mpt_table.address_rlc)
+            } elsex {
+                ifx!{not!(config.parent_data[true.idx()].is_placeholder) => {
+                    key_rlc[true.idx()].expr()
+                } elsex {
+                    key_rlc[false.idx()].expr()
+                }}
+            }};
+            ctx.mpt_table.constrain(
+                meta,
+                &mut cb.base,
+                address_rlc,
+                proof_type,
+                0.expr(),
+                value_prev,
+                value,
+                config.main_data.root_prev.expr(),
+                config.main_data.root.expr(),
+            );
         });
 
         config
@@ -432,23 +424,16 @@ impl<F: Field> AccountLeafConfig<F> {
             storage_codehash_c.bytes[34..68].to_owned(),
         ];
 
-        let key_s_lookup_offset = offset;
-        let nonce_lookup_offset = offset + 3;
-        let balance_lookup_offset = offset + 4;
-        let storage_lookup_offset = offset + 5;
-        let codehash_lookup_offset = offset + 6;
-        let wrong_offset = offset + 2;
-
         let main_data =
             self.main_data
                 .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
 
         // Key
         let mut key_rlc = vec![0.scalar(); 2];
-        let mut nonce_value_rlc = vec![0.scalar(); 2];
-        let mut balance_value_rlc = vec![0.scalar(); 2];
-        let mut storage_value_rlc = vec![0.scalar(); 2];
-        let mut codehash_value_rlc = vec![0.scalar(); 2];
+        let mut nonce_rlc = vec![0.scalar(); 2];
+        let mut balance_rlc = vec![0.scalar(); 2];
+        let mut storage_rlc = vec![0.scalar(); 2];
+        let mut codehash_rlc = vec![0.scalar(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             let key_row = &row_key[is_s.idx()];
@@ -494,10 +479,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 &codehash_bytes[is_s.idx()][1..],
             )?;
 
-            nonce_value_rlc[is_s.idx()] = nonce_witness.rlc_value(ctx.r);
-            balance_value_rlc[is_s.idx()] = balance_witness.rlc_value(ctx.r);
-            storage_value_rlc[is_s.idx()] = storage_witness.rlc_value(ctx.r);
-            codehash_value_rlc[is_s.idx()] = codehash_witness.rlc_value(ctx.r);
+            nonce_rlc[is_s.idx()] = nonce_witness.rlc_value(ctx.r);
+            balance_rlc[is_s.idx()] = balance_witness.rlc_value(ctx.r);
+            storage_rlc[is_s.idx()] = storage_witness.rlc_value(ctx.r);
+            codehash_rlc[is_s.idx()] = codehash_witness.rlc_value(ctx.r);
 
             // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
             let mut mult_nonce = F::one();
@@ -540,20 +525,24 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
-                storage_value_rlc[is_s.idx()],
+                storage_rlc[is_s.idx()],
                 true,
                 false,
-                storage_value_rlc[is_s.idx()],
+                storage_rlc[is_s.idx()],
             )?;
         }
 
         // Anything following this node is below the account
-        let address_rlc = witness[idx + (nonce_lookup_offset - offset)]
-            .address_bytes()
-            .rlc_value(ctx.r);
+        let address_rlc = witness[idx].address_bytes().rlc_value(ctx.r);
         pv.memory[main_memory()].witness_store(
             offset,
-            &[main_data.proof_type.scalar(), true.scalar(), address_rlc],
+            &[
+                main_data.proof_type.scalar(),
+                true.scalar(),
+                address_rlc,
+                main_data.root_prev,
+                main_data.root,
+            ],
         );
 
         // Proof types
@@ -581,7 +570,7 @@ impl<F: Field> AccountLeafConfig<F> {
             main_data.proof_type.scalar(),
             ProofType::BalanceChanged.scalar(),
         )? == true.scalar();
-        let _is_storage_mod = self.is_storage_mod.assign(
+        let is_storage_mod = self.is_storage_mod.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
@@ -602,53 +591,44 @@ impl<F: Field> AccountLeafConfig<F> {
         self.wrong.assign(
             region,
             offset,
-            ctx,
-            ctx.mpt_table.address_rlc,
             is_non_existing_proof,
             &mut pv.memory,
             &key_rlc,
             &row_wrong.bytes,
-            wrong_offset,
             row_key,
             true,
-            ProofType::AccountDoesNotExist,
             ctx.r,
         )?;
 
-        // Lookup data
-        // Set the address
-        for lookup_offset in [
-            nonce_lookup_offset,
-            balance_lookup_offset,
-            storage_lookup_offset,
-            codehash_lookup_offset,
-        ] {
-            assign!(region, (ctx.mpt_table.address_rlc, lookup_offset) => address_rlc)?;
-        }
-        if is_account_delete_mod {
-            assign!(region, (ctx.mpt_table.proof_type, key_s_lookup_offset) => ProofType::AccountDoesNotExist.scalar())?;
-        }
-        // Nonce
-        if is_nonce_mod {
-            assign!(region, (ctx.mpt_table.proof_type, nonce_lookup_offset) => ProofType::NonceChanged.scalar())?;
-        }
-        assign!(region, (ctx.mpt_table.value_prev, nonce_lookup_offset) => nonce_value_rlc[true.idx()])?;
-        assign!(region, (ctx.mpt_table.value, nonce_lookup_offset) => nonce_value_rlc[false.idx()])?;
-        // Balance
-        if is_balance_mod {
-            assign!(region, (ctx.mpt_table.proof_type, balance_lookup_offset) => ProofType::BalanceChanged.scalar())?;
-        }
-        assign!(region, (ctx.mpt_table.value_prev, balance_lookup_offset) => balance_value_rlc[true.idx()])?;
-        assign!(region, (ctx.mpt_table.value, balance_lookup_offset) => balance_value_rlc[false.idx()])?;
-        // Storage root
-        assign!(region, (ctx.mpt_table.value_prev, storage_lookup_offset) => storage_value_rlc[true.idx()])?;
-        assign!(region, (ctx.mpt_table.value, storage_lookup_offset) => storage_value_rlc[false.idx()])?;
-        // Codehash
-        if is_codehash_mod {
-            assign!(region, (ctx.mpt_table.proof_type, codehash_lookup_offset) => ProofType::CodeHashExists.scalar())?;
-        }
-        assign!(region, (ctx.mpt_table.value_prev, codehash_lookup_offset) => codehash_value_rlc[true.idx()])?;
-        assign!(region, (ctx.mpt_table.value, codehash_lookup_offset) => codehash_value_rlc[false.idx()])?;
+        // Put the data in the lookup table
+        let (proof_type, value) = if is_nonce_mod {
+            (ProofType::NonceChanged, nonce_rlc)
+        } else if is_balance_mod {
+            (ProofType::BalanceChanged, balance_rlc)
+        } else if is_storage_mod {
+            (ProofType::StorageChanged, storage_rlc)
+        } else if is_codehash_mod {
+            (ProofType::CodeHashExists, codehash_rlc)
+        } else if is_account_delete_mod {
+            (ProofType::AccountDestructed, vec![0.scalar(); 2])
+        } else if is_non_existing_proof {
+            (ProofType::AccountDoesNotExist, vec![0.scalar(); 2])
+        } else {
+            (ProofType::Disabled, vec![0.scalar(); 2])
+        };
+        ctx.mpt_table.assign(
+            region,
+            offset,
+            &MptUpdateRow {
+                address_rlc,
+                proof_type: proof_type.scalar(),
+                key_rlc: 0.scalar(),
+                value_prev: value[true.idx()],
+                value: value[false.idx()],
+                root_prev: main_data.root_prev,
+                root: main_data.root,
+            },
+        )?;
 
         Ok(())
     }

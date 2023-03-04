@@ -44,18 +44,33 @@ impl<F: Field> StartConfig<F> {
 
             config.proof_type = cb.base.query_cell();
 
+            let mut root = vec![0.expr(); 2];
+            for is_s in [true, false] {
+                root[is_s.idx()] = root_bytes[is_s.idx()].rlc(&r);
+            }
+
             MainData::store(
                 &mut cb.base,
                 &ctx.memory[main_memory()],
-                [config.proof_type.expr(), false.expr(), 0.expr()],
+                [
+                    config.proof_type.expr(),
+                    false.expr(),
+                    0.expr(),
+                    root[true.idx()].expr(),
+                    root[false.idx()].expr(),
+                ],
             );
 
             for is_s in [true, false] {
-                let root = root_bytes[is_s.idx()].rlc(&r);
                 ParentData::store(
                     &mut cb.base,
                     &ctx.memory[parent_memory(is_s)],
-                    [root.expr(), true.expr(), false.expr(), root.expr()],
+                    [
+                        root[is_s.idx()].expr(),
+                        true.expr(),
+                        false.expr(),
+                        root[is_s.idx()].expr(),
+                    ],
                 );
                 KeyData::store(
                     &mut cb.base,
@@ -113,9 +128,20 @@ impl<F: Field> StartConfig<F> {
         self.proof_type
             .assign(region, offset, proof_type.unwrap().scalar())?;
 
+        let mut root = vec![0.scalar(); 2];
+        for is_s in [true, false] {
+            root[is_s.idx()] = root_bytes[is_s.idx()].rlc_value(ctx.r);
+        }
+
         pv.memory[main_memory()].witness_store(
             offset,
-            &[proof_type.unwrap().scalar(), false.scalar(), 0.scalar()],
+            &[
+                proof_type.unwrap().scalar(),
+                false.scalar(),
+                0.scalar(),
+                root[true.idx()],
+                root[false.idx()],
+            ],
         );
 
         for is_s in [true, false] {
@@ -123,9 +149,15 @@ impl<F: Field> StartConfig<F> {
                 assign!(region, (column, offset) => byte.scalar())?;
             }
 
-            let root = root_bytes[is_s.idx()].rlc_value(ctx.r);
-            pv.memory[parent_memory(is_s)]
-                .witness_store(offset, &[root, true.scalar(), false.scalar(), root]);
+            pv.memory[parent_memory(is_s)].witness_store(
+                offset,
+                &[
+                    root[is_s.idx()],
+                    true.scalar(),
+                    false.scalar(),
+                    root[is_s.idx()],
+                ],
+            );
             pv.memory[key_memory(is_s)].witness_store(offset, &KeyData::default_values());
         }
 

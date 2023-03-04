@@ -6,14 +6,13 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::circuit_tools::gadgets::LtGadget;
 use crate::mpt_circuit::helpers::IsEmptyTreeGadget;
 use crate::table::ProofType;
 use crate::{
     assign, circuit,
     mpt_circuit::{
         helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
-        param::{HASH_WIDTH, IS_STORAGE_MOD_POS, KEY_LEN_IN_NIBBLES},
+        param::{HASH_WIDTH, KEY_LEN_IN_NIBBLES},
         FixedTableTag,
     },
     mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
@@ -23,6 +22,7 @@ use crate::{
     circuit_tools::cell_manager::Cell,
     mpt_circuit::helpers::{DriftedGadget, ParentDataWitness},
 };
+use crate::{circuit_tools::gadgets::LtGadget, witness::MptUpdateRow};
 use crate::{
     circuit_tools::{
         constraint_builder::{RLCChainable, RLCableValue},
@@ -73,8 +73,6 @@ impl<F: Field> StorageLeafConfig<F> {
             let value_bytes = [ctx.expr(meta, 1), ctx.expr(meta, 3)];
             let drifted_bytes = ctx.expr(meta, 4)[..36].to_owned();
             let wrong_bytes = ctx.expr(meta, 5)[..36].to_owned();
-            let lookup_offset = 3;
-            let wrong_offset = 5;
 
             config.main_data = MainData::load(
                 "main storage",
@@ -199,24 +197,39 @@ impl<F: Field> StorageLeafConfig<F> {
 
             // Wrong leaf handling
             config.wrong = WrongGadget::construct(
-                meta,
                 cb,
                 ctx.clone(),
-                ctx.mpt_table.key_rlc,
+                a!(ctx.mpt_table.key_rlc),
                 config.is_non_existing_proof.expr(),
                 &config.rlp_key,
                 &key_rlc,
                 &wrong_bytes,
-                wrong_offset,
                 false,
                 &ctx.r,
             );
 
             // Put the data in the lookup table
-            require!(a!(ctx.mpt_table.address_rlc, lookup_offset) => config.main_data.address_rlc);
-            require!(a!(ctx.mpt_table.key_rlc, lookup_offset) => key_rlc[false.idx()]);
-            require!(a!(ctx.mpt_table.value_prev, lookup_offset) => value_rlc[true.idx()]);
-            require!(a!(ctx.mpt_table.value, lookup_offset) => value_rlc[false.idx()]);
+            let proof_type = matchx! {
+                config.is_storage_mod_proof => ProofType::StorageChanged.expr(),
+                config.is_non_existing_proof => ProofType::StorageDoesNotExist.expr(),
+                _ => ProofType::Disabled.expr(),
+            };
+            let key_rlc = ifx! {config.is_non_existing_proof => {
+                a!(ctx.mpt_table.key_rlc)
+            } elsex {
+                key_rlc[false.idx()].expr()
+            }};
+            ctx.mpt_table.constrain(
+                meta,
+                &mut cb.base,
+                config.main_data.address_rlc.expr(),
+                proof_type,
+                key_rlc,
+                value_rlc[true.idx()].expr(),
+                value_rlc[false.idx()].expr(),
+                config.main_data.root_prev.expr(),
+                config.main_data.root.expr(),
+            );
         });
 
         config
@@ -235,8 +248,6 @@ impl<F: Field> StorageLeafConfig<F> {
         let value_bytes = [&witness[idx + 1], &witness[idx + 3]];
         let row_drifted = &witness[idx + 4];
         let row_wrong = &witness[idx + 5];
-        let lookup_offset = offset + 3;
-        let wrong_offset = offset + 5;
 
         let main_data =
             self.main_data
@@ -322,7 +333,7 @@ impl<F: Field> StorageLeafConfig<F> {
             )?;
         }
 
-        let _is_storage_mod_proof = self.is_storage_mod_proof.assign(
+        let is_storage_mod_proof = self.is_storage_mod_proof.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
@@ -340,30 +351,39 @@ impl<F: Field> StorageLeafConfig<F> {
             .assign(region, offset, &parent_data, &row_drifted.bytes, ctx.r)?;
 
         // Wrong leaf handling
-        self.wrong.assign(
+        let key_rlc = self.wrong.assign(
             region,
             offset,
-            ctx,
-            ctx.mpt_table.key_rlc,
             is_non_existing_proof,
             &mut pv.memory,
             &key_rlc,
             &row_wrong.bytes,
-            wrong_offset,
             row_key,
             false,
-            ProofType::StorageDoesNotExist,
             ctx.r,
         )?;
 
         // Put the data in the lookup table
-        if value_bytes[false.idx()].get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-            assign!(region, (ctx.mpt_table.proof_type, lookup_offset) => ProofType::StorageChanged.scalar())?;
-        }
-        assign!(region, (ctx.mpt_table.address_rlc, lookup_offset) => main_data.address_rlc)?;
-        assign!(region, (ctx.mpt_table.key_rlc, lookup_offset) => key_rlc[false.idx()])?;
-        assign!(region, (ctx.mpt_table.value_prev, lookup_offset) => value_rlc[true.idx()])?;
-        assign!(region, (ctx.mpt_table.value, lookup_offset) => value_rlc[false.idx()])?;
+        let proof_type = if is_storage_mod_proof {
+            ProofType::StorageChanged
+        } else if is_non_existing_proof {
+            ProofType::StorageDoesNotExist
+        } else {
+            ProofType::Disabled
+        };
+        ctx.mpt_table.assign(
+            region,
+            offset,
+            &MptUpdateRow {
+                address_rlc: main_data.address_rlc,
+                proof_type: proof_type.scalar(),
+                key_rlc: key_rlc,
+                value_prev: value_rlc[true.idx()],
+                value: value_rlc[false.idx()],
+                root_prev: main_data.root_prev,
+                root: main_data.root,
+            },
+        )?;
 
         Ok(())
     }
