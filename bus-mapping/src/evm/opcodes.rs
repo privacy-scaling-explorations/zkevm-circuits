@@ -56,13 +56,12 @@ mod swap;
 
 mod error_code_store;
 mod error_invalid_jump;
-mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
-mod error_stack_oog_constant;
+mod error_simple;
 mod error_write_protection;
 
 #[cfg(test)]
@@ -83,13 +82,12 @@ use create::DummyCreate;
 use dup::Dup;
 use error_code_store::ErrorCodeStore;
 use error_invalid_jump::InvalidJump;
-use error_invalid_opcode::InvalidOpcode;
 use error_oog_call::OOGCall;
 use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
-use error_stack_oog_constant::ErrorStackOogConstant;
+use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
 
 use exp::Exponentiation;
@@ -275,14 +273,14 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
 fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociatedOps> {
     match error {
         ExecError::InvalidJump => Some(InvalidJump::gen_associated_ops),
-        ExecError::InvalidOpcode => Some(InvalidOpcode::gen_associated_ops),
+        ExecError::InvalidOpcode => Some(ErrorSimple::gen_associated_ops),
         ExecError::OutOfGas(OogError::Call) => Some(OOGCall::gen_associated_ops),
-        ExecError::OutOfGas(OogError::Constant) => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
-        ExecError::StackOverflow => Some(ErrorStackOogConstant::gen_associated_ops),
-        ExecError::StackUnderflow => Some(ErrorStackOogConstant::gen_associated_ops),
+        ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
+        ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
@@ -325,9 +323,10 @@ pub fn gen_associated_ops(
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
         log::warn!(
-            "geth error {:?} occurred in  {:?}",
+            "geth error {:?} occurred in  {:?} at pc {:?}",
             exec_error,
-            geth_step.op
+            geth_step.op,
+            geth_step.pc,
         );
 
         exec_step.error = Some(exec_error.clone());
@@ -339,7 +338,7 @@ pub fn gen_associated_ops(
         } else {
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
-            if geth_step.op.is_call_or_create() && !exec_step.oog_or_stack_error() {
+            if geth_step.op.is_call_or_create() {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
             // For exceptions that fail to enter next call context, we need
@@ -388,13 +387,13 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // Add caller and callee into access list
     for address in [call.caller_address, call.address] {
-        state.sdb.add_account_to_access_list(address);
+        let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
             state.tx_ctx.id(),
             address,
             true,
-            false,
+            is_warm_prev,
         )?;
     }
 
