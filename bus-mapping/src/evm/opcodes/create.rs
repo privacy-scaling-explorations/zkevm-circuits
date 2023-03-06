@@ -103,6 +103,15 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         state.push_call(call.clone());
 
+        state.transfer(
+            &mut exec_step,
+            call.caller_address,
+            call.address,
+            true,
+            true,
+            call.value,
+        )?;
+
         // Increase callee's nonce
         let nonce_prev = state.sdb.get_nonce(&call.address);
         debug_assert!(nonce_prev == 0);
@@ -114,17 +123,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 value: 1.into(),
                 value_prev: 0.into(),
             },
-        )?;
-
-        // TODO: Make sure we perform the transfer only after the account has been
-        // created by setting its code_hash to != 0.
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            true,
-            true,
-            call.value,
         )?;
 
         let memory_expansion_gas_cost =

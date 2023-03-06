@@ -160,7 +160,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                not::expr(is_create.clone()) * (5.expr() + copy_rw_increase.expr()),
+                not::expr(is_create.clone()) * (2.expr() + copy_rw_increase.expr()),
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
@@ -413,6 +413,13 @@ mod test {
         for (((callee_offset, callee_length), (caller_offset, caller_length)), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
+            // dbg!(
+            //     callee_offset,
+            //     callee_length,
+            //     caller_offset,
+            //     caller_length,
+            //     is_return
+            // );
             let callee = Account {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),

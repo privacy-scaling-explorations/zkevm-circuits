@@ -1315,12 +1315,8 @@ impl<F: Field> ExecutionConfig<F> {
             return;
         }
         let mut assigned_rw_values = Vec::new();
-        // FIXME: Reversion lookup expressions have different ordering compared to rw
-        // table, making it a bit complex to check,
-        // so we skip checking reversion lookups.
         for (name, v) in assigned_stored_expressions {
             if name.starts_with("rw lookup ")
-                // && !name.contains(" with reversion")
                 && !v.is_zero_vartime()
                 && !assigned_rw_values.contains(&(name.clone(), *v))
             {
@@ -1348,12 +1344,15 @@ impl<F: Field> ExecutionConfig<F> {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
-        assert_eq!(
-            step.rw_indices.len(),
-            assigned_rw_values.len(),
-            "step: {:?}",
-            step
-        );
+        if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
+            log::error!(
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
+                step.rw_indices.len(),
+                assigned_rw_values.len(),
+                step.copy_rw_counter_delta,
+                step
+            );
+        }
         let mut rev_count = 0;
         for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {

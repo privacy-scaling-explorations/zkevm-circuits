@@ -18,7 +18,7 @@ impl Opcode for Extcodecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
@@ -36,7 +36,7 @@ impl Opcode for Extcodecopy {
         memory.copy_from(dest_offset, &code, code_offset, length as usize);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }

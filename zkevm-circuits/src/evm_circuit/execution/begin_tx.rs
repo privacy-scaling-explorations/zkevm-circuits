@@ -316,8 +316,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount
                     //   - Write TxAccessListAccount
-                    //   - a TransferWithGasFeeGadget
                     //   - Read Account CodeHash
+                    //   - a TransferWithGasFeeGadget
                     rw_counter: Delta(8.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
@@ -352,7 +352,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 }
 
                 cb.require_step_state_transition(StepStateTransition {
-                    // 20 reads and writes:
+                    // 21 reads and writes:
                     //   - Write CallContext TxId
                     //   - Write CallContext RwCounterEndOfReversion
                     //   - Write CallContext IsPersistent
@@ -360,6 +360,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount
                     //   - Write TxAccessListAccount
+                    //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
                     //   - Write CallContext Depth
                     //   - Write CallContext CallerAddress
@@ -374,7 +375,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(20.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
@@ -443,10 +444,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             caller_balance_sub_value_pair = rws.next().account_value_pair();
             callee_balance_pair = rws.next().account_value_pair();
         };
-        dbg!(&caller_balance_sub_fee_pair);
-        dbg!(&caller_balance_sub_value_pair);
-        dbg!(&callee_balance_pair);
-        dbg!(&callee_code_hash);
+        // dbg!(&caller_balance_sub_fee_pair);
+        // dbg!(&caller_balance_sub_value_pair);
+        // dbg!(&callee_balance_pair);
+        // dbg!(&callee_code_hash);
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;

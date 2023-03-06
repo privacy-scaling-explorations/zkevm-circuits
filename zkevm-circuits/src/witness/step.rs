@@ -21,6 +21,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<(RwTableTag, usize)>,
+    /// Number of rw operations performed via a copy event in this step.
+    pub copy_rw_counter_delta: u64,
     /// The execution state for the step
     pub execution_state: ExecutionState,
     /// The Read/Write counter before the step
@@ -222,6 +224,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                 (tag, x.as_usize())
             })
             .collect(),
+        copy_rw_counter_delta: step.copy_rw_counter_delta,
         execution_state: ExecutionState::from(step),
         rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
