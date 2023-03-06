@@ -13,7 +13,7 @@ use crate::{
     },
     matchr, matchw,
     mpt_circuit::{
-        param::{EMPTY_TRIE_HASH, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
+        param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
     table::{MptTable, ProofType},
@@ -148,21 +148,13 @@ impl<F: Field> LeafKeyGadget<F> {
         cb: &mut ConstraintBuilder<F>,
         key_mult_prev: Expression<F>,
         is_key_odd: Expression<F>,
-        key_mult_first_even: Expression<F>,
         r: &[Expression<F>],
     ) -> Expression<F> {
         circuit!([meta, cb], {
             let calc_rlc = |cb: &mut ConstraintBuilder<F>,
                             bytes: &[Expression<F>],
                             is_key_odd: Expression<F>| {
-                leaf_key_rlc(
-                    cb,
-                    bytes,
-                    key_mult_prev.expr(),
-                    is_key_odd.expr(),
-                    key_mult_first_even.expr(),
-                    r,
-                )
+                leaf_key_rlc(cb, bytes, key_mult_prev.expr(), is_key_odd.expr(), r)
             };
             matchx! {
                 self.rlp_list.is_short() => {
@@ -473,12 +465,9 @@ pub(crate) struct KeyData<F> {
     pub(crate) mult: Cell<F>,
     pub(crate) num_nibbles: Cell<F>,
     pub(crate) is_odd: Cell<F>,
-    pub(crate) is_placeholder_leaf_s: Cell<F>,
-    pub(crate) is_placeholder_leaf_c: Cell<F>,
-    pub(crate) placeholder_nibble: Cell<F>,
-    pub(crate) placeholder_is_odd: Cell<F>,
-    pub(crate) parent_rlc: Cell<F>,
-    pub(crate) parent_mult: Cell<F>,
+    pub(crate) drifted_is_odd: Cell<F>,
+    pub(crate) drifted_rlc: Cell<F>,
+    pub(crate) drifted_mult: Cell<F>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -487,12 +476,9 @@ pub(crate) struct KeyDataWitness<F> {
     pub(crate) mult: F,
     pub(crate) num_nibbles: usize,
     pub(crate) is_odd: bool,
-    pub(crate) is_placeholder_leaf_s: bool,
-    pub(crate) is_placeholder_leaf_c: bool,
-    pub(crate) placeholder_nibble: usize,
-    pub(crate) placeholder_is_odd: bool,
-    pub(crate) parent_rlc: F,
-    pub(crate) parent_mult: F,
+    pub(crate) drifted_is_odd: bool,
+    pub(crate) drifted_rlc: F,
+    pub(crate) drifted_mult: F,
 }
 
 impl<F: Field> Trackable for KeyData<F> {
@@ -515,12 +501,9 @@ impl<F: Field> KeyData<F> {
             mult: cb.query_cell(),
             num_nibbles: cb.query_cell(),
             is_odd: cb.query_cell(),
-            is_placeholder_leaf_s: cb.query_cell(),
-            is_placeholder_leaf_c: cb.query_cell(),
-            placeholder_nibble: cb.query_cell(),
-            placeholder_is_odd: cb.query_cell(),
-            parent_rlc: cb.query_cell(),
-            parent_mult: cb.query_cell(),
+            drifted_is_odd: cb.query_cell(),
+            drifted_rlc: cb.query_cell(),
+            drifted_mult: cb.query_cell(),
         };
         circuit!([meta, cb], {
             memory.load(
@@ -532,12 +515,9 @@ impl<F: Field> KeyData<F> {
                     key_data.mult.expr(),
                     key_data.num_nibbles.expr(),
                     key_data.is_odd.expr(),
-                    key_data.is_placeholder_leaf_s.expr(),
-                    key_data.is_placeholder_leaf_c.expr(),
-                    key_data.placeholder_nibble.expr(),
-                    key_data.placeholder_is_odd.expr(),
-                    key_data.parent_rlc.expr(),
-                    key_data.parent_mult.expr(),
+                    key_data.drifted_is_odd.expr(),
+                    key_data.drifted_rlc.expr(),
+                    key_data.drifted_mult.expr(),
                 ],
             );
         });
@@ -547,20 +527,17 @@ impl<F: Field> KeyData<F> {
     pub(crate) fn store(
         cb: &mut ConstraintBuilder<F>,
         memory: &MemoryBank<F>,
-        values: [Expression<F>; 10],
+        values: [Expression<F>; 7],
     ) {
         memory.store(cb, &values);
     }
 
-    pub(crate) fn default_values() -> [F; 10] {
+    pub(crate) fn default_values() -> [F; 7] {
         [
             0.scalar(),
             1.scalar(),
             0.scalar(),
             false.scalar(),
-            false.scalar(),
-            false.scalar(),
-            0.scalar(),
             false.scalar(),
             0.scalar(),
             1.scalar(),
@@ -568,15 +545,12 @@ impl<F: Field> KeyData<F> {
     }
 
     // TODO(Brecht): fix
-    pub(crate) fn default_values_expr() -> [Expression<F>; 10] {
+    pub(crate) fn default_values_expr() -> [Expression<F>; 7] {
         [
             0.expr(),
             1.expr(),
             0.expr(),
             false.expr(),
-            false.expr(),
-            false.expr(),
-            0.expr(),
             false.expr(),
             0.expr(),
             1.expr(),
@@ -584,16 +558,12 @@ impl<F: Field> KeyData<F> {
     }
 
     pub(crate) fn witness_store(
-        &self,
         _region: &mut Region<'_, F>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         rlc: F,
         mult: F,
         num_nibbles: usize,
-        is_placeholder_leaf_s: bool,
-        is_placeholder_leaf_c: bool,
-        placeholder_nibble: usize,
         placeholder_is_odd: bool,
         parent_rlc: F,
         parent_mult: F,
@@ -603,9 +573,6 @@ impl<F: Field> KeyData<F> {
             mult,
             num_nibbles.scalar(),
             (num_nibbles % 2 == 1).scalar(),
-            is_placeholder_leaf_s.scalar(),
-            is_placeholder_leaf_c.scalar(),
-            placeholder_nibble.scalar(),
             placeholder_is_odd.scalar(),
             parent_rlc,
             parent_mult,
@@ -628,26 +595,18 @@ impl<F: Field> KeyData<F> {
         self.mult.assign(region, offset, values[1])?;
         self.num_nibbles.assign(region, offset, values[2])?;
         self.is_odd.assign(region, offset, values[3])?;
-        self.is_placeholder_leaf_s
-            .assign(region, offset, values[4])?;
-        self.is_placeholder_leaf_c
-            .assign(region, offset, values[5])?;
-        self.placeholder_nibble.assign(region, offset, values[6])?;
-        self.placeholder_is_odd.assign(region, offset, values[7])?;
-        self.parent_rlc.assign(region, offset, values[8])?;
-        self.parent_mult.assign(region, offset, values[9])?;
+        self.drifted_is_odd.assign(region, offset, values[4])?;
+        self.drifted_rlc.assign(region, offset, values[5])?;
+        self.drifted_mult.assign(region, offset, values[6])?;
 
         Ok(KeyDataWitness {
             rlc: values[0],
             mult: values[1],
             num_nibbles: values[2].get_lower_32() as usize,
             is_odd: values[3] != F::zero(),
-            is_placeholder_leaf_s: values[4] != F::zero(),
-            is_placeholder_leaf_c: values[5] != F::zero(),
-            placeholder_nibble: values[6].get_lower_32() as usize,
-            placeholder_is_odd: values[7] != F::zero(),
-            parent_rlc: values[8],
-            parent_mult: values[9],
+            drifted_is_odd: values[4] != F::zero(),
+            drifted_rlc: values[5],
+            drifted_mult: values[6],
         })
     }
 }
@@ -706,7 +665,6 @@ impl<F: Field> ParentData<F> {
     }
 
     pub(crate) fn witness_store(
-        &self,
         _region: &mut Region<'_, F>,
         offset: usize,
         memory: &mut MemoryBank<F>,
@@ -807,7 +765,6 @@ impl<F: Field> MainData<F> {
     }
 
     pub(crate) fn witness_store(
-        &self,
         _region: &mut Region<'_, F>,
         offset: usize,
         memory: &mut MemoryBank<F>,
@@ -855,18 +812,26 @@ impl<F: Field> MainData<F> {
 }
 
 /// Add the nibble from the drifted branch
-pub(crate) fn drifted_nibble_rlc<F: Field>(
+pub(crate) fn nibble_rlc<F: Field>(
     cb: &mut ConstraintBuilder<F>,
-    difted_index: Expression<F>,
+    key_rlc: Expression<F>,
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
-) -> Expression<F> {
+    nibble: Expression<F>,
+    r: &[Expression<F>],
+) -> (Expression<F>, Expression<F>) {
     circuit!([meta, cb], {
-        // Add the nibble from the branch (drifted_index is set to the same value for
-        // all children)
-        let drifted_mult =
-            key_mult_prev.expr() * ifx! {is_key_odd => { 16.expr() } elsex { 1.expr() }};
-        difted_index * drifted_mult
+        let (nibble_mult, mult) = ifx! {is_key_odd => {
+            // The nibble will be added as the least significant nibble, the multiplier needs to advance
+            (1.expr(), r[0].expr())
+        } elsex {
+            // The nibble will be added as the most significant nibble, the multiplier needs to stay the same
+            (16.expr(), 1.expr())
+        }};
+        (
+            key_rlc + nibble * nibble_mult * key_mult_prev.expr(),
+            key_mult_prev * mult,
+        )
     })
 }
 
@@ -875,7 +840,6 @@ pub(crate) fn leaf_key_rlc<F: Field>(
     bytes: &[Expression<F>],
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
-    key_mult_first_even: Expression<F>,
     r: &[Expression<F>],
 ) -> Expression<F> {
     circuit!([meta, cb], {
@@ -884,7 +848,7 @@ pub(crate) fn leaf_key_rlc<F: Field>(
             (get_terminal_odd_nibble(bytes[0].expr()) * key_mult_prev.expr(), r[0].expr())
         } elsex {
             require!(bytes[0] => KEY_TERMINAL_PREFIX_EVEN);
-            (0.expr(), key_mult_first_even.expr())
+            (0.expr(), 1.expr())
         }};
         (rlc, key_mult_prev * mult).rlc_chain(bytes[1..].rlc(r))
     })
@@ -1125,7 +1089,7 @@ impl<F: Field> DriftedGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         parent_data: &[ParentData<F>],
         key_data: &[KeyData<F>],
-        key_rlc: &[Expression<F>],
+        expected_key_rlc: &[Expression<F>],
         leaf_no_key_rlc: &[Expression<F>],
         drifted_bytes: &[Expression<F>],
         r: &[Expression<F>],
@@ -1137,32 +1101,28 @@ impl<F: Field> DriftedGadget<F> {
                 config.drifted_mult = cb.base.query_cell();
                 for is_s in [true, false] {
                     ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
-                        // We need the intermediate key RLC right before `drifted_index` is added to it.
-                        let (key_rlc_prev, key_mult_prev, placeholder_nibble, placeholder_is_odd) = (
-                            key_data[is_s.idx()].parent_rlc.expr(),
-                            key_data[is_s.idx()].parent_mult.expr(),
-                            key_data[is_s.idx()].placeholder_nibble.expr(),
-                            key_data[is_s.idx()].placeholder_is_odd.expr(),
-                        );
-
-                        // TODO(Brecht): Length can change it seems so need to add RLP consistency checks?
+                        // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
+                        // TODO(Brecht): Length can change so need to add RLP consistency checks?
 
                         // Calculate the drifted key RLC
-                        let drifted_key_rlc = key_rlc_prev.expr() +
-                            drifted_nibble_rlc(&mut cb.base, placeholder_nibble.expr(), key_mult_prev.expr(), placeholder_is_odd.expr()) +
-                            config.drifted_rlp_key.leaf_key_rlc(&mut cb.base, key_mult_prev.expr(), placeholder_is_odd.expr(), r[0].expr(), &r);
+                        // Get the key RLC for the drifted branch
+                        let (key_rlc, key_mult, is_key_odd) = (
+                            key_data[is_s.idx()].drifted_rlc.expr(),
+                            key_data[is_s.idx()].drifted_mult.expr(),
+                            key_data[is_s.idx()].drifted_is_odd.expr(),
+                        );
+                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.leaf_key_rlc(&mut cb.base, key_mult.expr(), is_key_odd, &r);
+                        // The key of the drifted leaf needs to match the key of the leaf
+                        require!(key_rlc => expected_key_rlc[is_s.idx()]);
+
+                        // Complete the drifted leaf rlc by adding the bytes on the value row
+                        let leaf_rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                        // The drifted leaf needs to be stored in the branch at `drifted_index`.
+                        require!((1, leaf_rlc, config.drifted_rlp_key.num_bytes(), parent_data[is_s.idx()].placeholder_rlc.expr()) => @"keccak");
 
                         // Check zero bytes and mult_diff
                         require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"fixed");
                         cb.set_length(config.drifted_rlp_key.num_bytes_on_key_row());
-
-                        // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
-                        // Complete the drifted leaf rlc by adding the bytes on the value row
-                        let drifted_rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
-                        // The key of the drifted leaf needs to match the key of the leaf
-                        require!(key_rlc[is_s.idx()].expr() => drifted_key_rlc);
-                        // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                        require!((1, drifted_rlc, config.drifted_rlp_key.num_bytes(), parent_data[is_s.idx()].placeholder_rlc.expr()) => @"keccak");
                     }
                 }}
             }}
@@ -1180,9 +1140,7 @@ impl<F: Field> DriftedGadget<F> {
     ) -> Result<(), Error> {
         if parent_data[true.idx()].is_placeholder || parent_data[false.idx()].is_placeholder {
             let drifted_key_witness = self.drifted_rlp_key.assign(region, offset, drifted_bytes)?;
-
             let (_, leaf_mult) = drifted_key_witness.rlc_leaf(r);
-
             self.drifted_mult.assign(region, offset, leaf_mult)?;
         }
         Ok(())
@@ -1192,7 +1150,6 @@ impl<F: Field> DriftedGadget<F> {
 /// Handles wrong leaves
 #[derive(Clone, Debug, Default)]
 pub struct WrongGadget<F> {
-    key_data_w: KeyData<F>,
     wrong_rlp_key: LeafKeyGadget<F>,
     wrong_mult: Cell<F>,
     check_is_wrong_leaf: RequireNotZeroGadget<F>,
@@ -1202,52 +1159,41 @@ pub struct WrongGadget<F> {
 impl<F: Field> WrongGadget<F> {
     pub(crate) fn construct(
         cb: &mut MPTConstraintBuilder<F>,
-        ctx: MPTContext<F>,
         expected_address: Expression<F>,
         is_non_existing: Expression<F>,
         rlp_key: &[LeafKeyGadget<F>],
         key_rlc: &[Expression<F>],
         wrong_bytes: &[Expression<F>],
-        for_placeholder_s: bool,
+        is_in_empty_tree: Expression<F>,
+        key_data: KeyData<F>,
         r: &[Expression<F>],
     ) -> Self {
-        // TODO(Brecht): strangely inconsistent between storage/account (see the need of
-        // for_placeholder_s). Something more similar to how the drifted key
-        // works (s and c cases separately makes more sense to me).
         let mut config = WrongGadget::default();
         circuit!([meta, cb.base], {
             // Get the previous key data
-            // TODO(Brecht): This always loads the keys from s? But some other data comes
-            // from c...
-            config.key_data_w =
-                KeyData::load(&mut cb.base, &ctx.memory[key_memory(true)], 1.expr());
-
-            let is_placeholder_leaf = if for_placeholder_s {
-                config.key_data_w.is_placeholder_leaf_s.expr()
-            } else {
-                config.key_data_w.is_placeholder_leaf_c.expr()
-            };
-            ifx! {is_non_existing, not!(is_placeholder_leaf) => {
+            ifx! {is_non_existing, not!(is_in_empty_tree) => {
                 // Calculate the key
                 config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
-                let key_rlc_wrong = config.key_data_w.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
+                let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
                     &mut cb.base,
-                    config.key_data_w.mult.expr(),
-                    config.key_data_w.is_odd.expr(),
-                    1.expr(),
+                    key_data.mult.expr(),
+                    key_data.is_odd.expr(),
                     r,
                 );
-
                 // Check that it's the key as expected
                 require!(key_rlc_wrong => expected_address);
+
+                // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
+                let num_nibbles = config.wrong_rlp_key.num_key_nibbles(key_data.is_odd.expr());
+                require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                 // Now make sure this address is different than the one of the leaf
                 config.check_is_wrong_leaf = RequireNotZeroGadget::construct(
                     &mut cb.base,
-                    expected_address - key_rlc[for_placeholder_s.idx()].expr()
+                    expected_address - key_rlc[true.idx()].expr()
                 );
                 // Make sure the lengths of the keys are the same
-                require!(config.wrong_rlp_key.key_len() => rlp_key[for_placeholder_s.idx()].key_len());
+                require!(config.wrong_rlp_key.key_len() => rlp_key[true.idx()].key_len());
                 // RLC bytes zero check
                 cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
             }}
@@ -1260,22 +1206,19 @@ impl<F: Field> WrongGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         is_non_existing: bool,
-        memory: &mut Memory<F>,
         key_rlc: &[F],
         wrong_bytes: &[u8],
         row_key: [&MptWitnessRow<F>; 2],
         for_placeholder_s: bool,
+        key_data: KeyDataWitness<F>,
         r: F,
     ) -> Result<F, Error> {
-        let key_data_w =
-            self.key_data_w
-                .witness_load(region, offset, &mut memory[key_memory(true)], 1)?;
         if is_non_existing {
             let mut bytes = wrong_bytes.to_vec();
             bytes[0] = row_key[for_placeholder_s.idx()].bytes[0];
 
             let wrong_witness = self.wrong_rlp_key.assign(region, offset, &bytes)?;
-            let (key_rlc_wrong, _) = wrong_witness.leaf_key_rlc(key_data_w.rlc, key_data_w.mult, r);
+            let (key_rlc_wrong, _) = wrong_witness.leaf_key_rlc(key_data.rlc, key_data.mult, r);
 
             self.check_is_wrong_leaf.assign(
                 region,

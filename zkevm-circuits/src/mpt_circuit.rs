@@ -7,7 +7,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use std::{convert::TryInto, env::var, ops::Range};
+use std::{convert::TryInto, env::var};
 
 mod account_leaf;
 mod branch;
@@ -41,8 +41,9 @@ use crate::{
 
 use self::{account_leaf::AccountLeafConfig, helpers::key_memory};
 
-/// Merkle Patricia Trie config.
-pub struct RowConfig<F> {
+/// State machine config.
+#[derive(Clone, Debug, Default)]
+pub struct StateMachineConfig<F> {
     start_config: StartConfig<F>,
     branch_config: BranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
@@ -86,10 +87,7 @@ pub struct MPTConfig<F> {
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
     fixed_table: [Column<Fixed>; 3],
-    start_config: StartConfig<F>,
-    branch_config: BranchConfig<F>,
-    storage_config: StorageLeafConfig<F>,
-    account_config: AccountLeafConfig<F>,
+    state_machine: StateMachineConfig<F>,
     pub(crate) is_start: Column<Advice>,
     pub(crate) is_branch: Column<Advice>,
     pub(crate) is_account: Column<Advice>,
@@ -180,7 +178,7 @@ impl<F: Field> MPTConfig<F> {
             memory: memory.clone(),
         };
 
-        let mut row_config: Option<RowConfig<F>> = None;
+        let mut state_machine = StateMachineConfig::default();
 
         let mut cb = MPTConstraintBuilder::new(33, None);
         meta.create_gate("MPT", |meta| {
@@ -191,31 +189,29 @@ impl<F: Field> MPTConfig<F> {
                 /* General */
                 SelectorsConfig::configure(meta, &mut cb, ctx.clone());
 
-                // Main state machine
-                let start_config;
-                let branch_config;
-                let storage_config;
-                let account_config;
+                // State machine
                 ifx!{f!(q_enable) => {
+                    // Always start with the start state
+                    ifx! {not!(f!(q_not_first)) => {
+                        require!(a!(is_start) => true);
+                    }};
+                    // Main state machine
                     matchx! {
                         a!(is_start) => {
-                            start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
+                            state_machine.start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(is_branch) => {
-                            branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
+                            state_machine.branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(is_account) => {
-                            account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
+                            state_machine.account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(is_storage) => {
-                            storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
+                            state_machine.storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         _ => (),
-                    }
-                }}
-
-                // Only account and storage rows can have lookups, disable lookups on all other rows
-                ifx!{f!(q_enable) => {
+                    };
+                    // Only account and storage rows can have lookups, disable lookups on all other rows
                     matchx! {
                         a!(is_account) => (),
                         a!(is_storage) => (),
@@ -272,15 +268,8 @@ impl<F: Field> MPTConfig<F> {
 
                 /* Memory banks */
                 ifx!{f!(q_enable) => {
-                    ctx.memory.generate_constraints(&mut cb.base);
+                    ctx.memory.generate_constraints(&mut cb.base, not!(f!(q_not_first)));
                 }}
-
-                row_config = Some(RowConfig {
-                    start_config,
-                    branch_config,
-                    storage_config,
-                    account_config,
-                });
             });
 
             cb.base.generate_constraints()
@@ -317,8 +306,6 @@ impl<F: Field> MPTConfig<F> {
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
 
-        let row_config = row_config.unwrap();
-        let randomness = F::zero();
         MPTConfig {
             q_enable,
             q_not_first,
@@ -332,11 +319,8 @@ impl<F: Field> MPTConfig<F> {
             memory,
             keccak_table,
             fixed_table,
-            start_config: row_config.start_config,
-            branch_config: row_config.branch_config,
-            storage_config: row_config.storage_config,
-            account_config: row_config.account_config,
-            r: randomness,
+            state_machine,
+            r: 123456.scalar(),
             mpt_table,
             cb,
         }
@@ -442,7 +426,7 @@ impl<F: Field> MPTConfig<F> {
                         pv = ProofValues::new(&pv.memory);
 
                         assign!(region, (self.is_start, offset) => 1.scalar())?;
-                        self.start_config.assign(
+                        self.state_machine.start_config.assign(
                             &mut region,
                             self,
                             witness,
@@ -451,23 +435,20 @@ impl<F: Field> MPTConfig<F> {
                             idx,
                         )?;
 
-                        // TODO(Brecht): copied
-                        assignf!(region, (self.q_enable, offset) => 1.scalar())?;
-                        let q_not_first = if offset == 0 { F::zero() } else { F::one() };
-                        assignf!(region, (self.q_not_first, offset) => q_not_first)?;
+                        assignf!(region, (self.q_enable, offset) => true.scalar())?;
+                        assignf!(region, (self.q_not_first, offset) => (offset != 0).scalar())?;
 
                         offset += 1;
                     }
                     //println!("{} -> {:?}", offset, row.get_type());
 
-                    assignf!(region, (self.q_enable, offset) => 1.scalar())?;
-                    let q_not_first = if offset == 0 { F::zero() } else { F::one() };
-                    assignf!(region, (self.q_not_first, offset) => q_not_first)?;
+                    assignf!(region, (self.q_enable, offset) => true.scalar())?;
+                    assignf!(region, (self.q_not_first, offset) => (offset != 0).scalar())?;
 
                     if row.get_type() == MptWitnessRowType::InitBranch {
                         //println!("{}: branch", offset);
                         assign!(region, (self.is_branch, offset) => 1.scalar())?;
-                        self.branch_config.assign(
+                        self.state_machine.branch_config.assign(
                             &mut region,
                             witness,
                             self,
@@ -478,7 +459,7 @@ impl<F: Field> MPTConfig<F> {
                     } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
                         assign!(region, (self.is_storage, offset) => 1.scalar())?;
                         //println!("{}: storage", offset);
-                        self.storage_config.assign(
+                        self.state_machine.storage_config.assign(
                             &mut region,
                             self,
                             witness,
@@ -489,7 +470,7 @@ impl<F: Field> MPTConfig<F> {
                     } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
                         assign!(region, (self.is_account, offset) => 1.scalar())?;
                         //println!("{}: account", offset);
-                        self.account_config.assign(
+                        self.state_machine.account_config.assign(
                             &mut region,
                             self,
                             witness,

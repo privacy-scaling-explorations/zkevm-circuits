@@ -133,32 +133,41 @@ impl<F: Field> StartConfig<F> {
             root[is_s.idx()] = root_bytes[is_s.idx()].rlc_value(ctx.r);
         }
 
-        pv.memory[main_memory()].witness_store(
+        MainData::witness_store(
+            region,
             offset,
-            &[
-                proof_type.unwrap().scalar(),
-                false.scalar(),
-                0.scalar(),
-                root[true.idx()],
-                root[false.idx()],
-            ],
-        );
+            &mut pv.memory[main_memory()],
+            proof_type.unwrap() as usize,
+            false,
+            0.scalar(),
+            root[true.idx()],
+            root[false.idx()],
+        )?;
 
         for is_s in [true, false] {
             for (byte, column) in root_bytes[is_s.idx()].iter().zip(columns[is_s.idx()]) {
                 assign!(region, (column, offset) => byte.scalar())?;
             }
-
-            pv.memory[parent_memory(is_s)].witness_store(
+            ParentData::witness_store(
+                region,
                 offset,
-                &[
-                    root[is_s.idx()],
-                    true.scalar(),
-                    false.scalar(),
-                    root[is_s.idx()],
-                ],
-            );
-            pv.memory[key_memory(is_s)].witness_store(offset, &KeyData::default_values());
+                &mut pv.memory[parent_memory(is_s)],
+                root[is_s.idx()],
+                true,
+                false,
+                root[is_s.idx()],
+            )?;
+            KeyData::witness_store(
+                region,
+                offset,
+                &mut pv.memory[key_memory(is_s)],
+                F::zero(),
+                F::one(),
+                0,
+                false,
+                F::zero(),
+                F::one(),
+            )?;
         }
 
         Ok(())

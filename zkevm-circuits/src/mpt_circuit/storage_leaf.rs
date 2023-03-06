@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Region, Value},
+    circuit::Region,
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
@@ -9,7 +9,7 @@ use halo2_proofs::{
 use crate::mpt_circuit::helpers::IsEmptyTreeGadget;
 use crate::table::ProofType;
 use crate::{
-    assign, circuit,
+    circuit,
     mpt_circuit::{
         helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
         param::{HASH_WIDTH, KEY_LEN_IN_NIBBLES},
@@ -32,7 +32,7 @@ use crate::{
 };
 
 use super::{
-    helpers::{Indexable, LeafKeyGadget, WrongGadget},
+    helpers::{Indexable, KeyDataWitness, LeafKeyGadget, WrongGadget},
     rlp_gadgets::RLPValueGadget,
 };
 
@@ -47,7 +47,7 @@ pub(crate) struct StorageLeafConfig<F> {
     wrong_rlp_key: LeafKeyGadget<F>,
     is_wrong_leaf: Cell<F>,
     is_not_hashed: [LtGadget<F, 1>; 2],
-    is_empty_trie: [IsEmptyTreeGadget<F>; 2],
+    is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
@@ -101,9 +101,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 *key_data = KeyData::load(&mut cb.base, &ctx.memory[key_memory(is_s)], 0.expr());
 
                 // Placeholder leaf checks
-                config.is_empty_trie[is_s.idx()] =
+                config.is_in_empty_trie[is_s.idx()] =
                     IsEmptyTreeGadget::construct(&mut cb.base, parent_data.rlc.expr(), &r);
-                let is_placeholder_leaf = config.is_empty_trie[is_s.idx()].expr();
+                let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
                 *rlp_key = LeafKeyGadget::construct(&mut cb.base, &key_bytes[is_s.idx()]);
@@ -129,7 +129,6 @@ impl<F: Field> StorageLeafConfig<F> {
                         &mut cb.base,
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
-                        1.expr(),
                         &r,
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
@@ -198,13 +197,13 @@ impl<F: Field> StorageLeafConfig<F> {
             // Wrong leaf handling
             config.wrong = WrongGadget::construct(
                 cb,
-                ctx.clone(),
                 a!(ctx.mpt_table.key_rlc),
                 config.is_non_existing_proof.expr(),
                 &config.rlp_key,
                 &key_rlc,
                 &wrong_bytes,
-                false,
+                config.is_in_empty_trie[true.idx()].expr(),
+                config.key_data[true.idx()].clone(),
                 &ctx.r,
             );
 
@@ -215,6 +214,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 _ => ProofType::Disabled.expr(),
             };
             let key_rlc = ifx! {config.is_non_existing_proof => {
+                require!(key_rlc[true.idx()] => key_rlc[false.idx()]);
                 a!(ctx.mpt_table.key_rlc)
             } elsex {
                 key_rlc[false.idx()].expr()
@@ -253,6 +253,7 @@ impl<F: Field> StorageLeafConfig<F> {
             self.main_data
                 .witness_load(region, offset, &pv.memory[main_memory()], 0)?;
 
+        let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         let mut key_rlc = vec![0.scalar(); 2];
         let mut value_rlc = vec![0.scalar(); 2];
@@ -280,21 +281,18 @@ impl<F: Field> StorageLeafConfig<F> {
                 32.scalar(),
             )?;
 
-            let key_data = self.key_data[is_s.idx()].witness_load(
+            key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 0,
             )?;
-            self.key_data[is_s.idx()].witness_store(
+            KeyData::witness_store(
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
                 F::zero(),
                 F::one(),
-                0,
-                false,
-                false,
                 0,
                 false,
                 F::zero(),
@@ -302,8 +300,11 @@ impl<F: Field> StorageLeafConfig<F> {
             )?;
 
             // Key
-            (key_rlc[is_s.idx()], _) =
-                rlp_key_witness.leaf_key_rlc(key_data.rlc, key_data.mult, ctx.r);
+            (key_rlc[is_s.idx()], _) = rlp_key_witness.leaf_key_rlc(
+                key_data[is_s.idx()].rlc,
+                key_data[is_s.idx()].mult,
+                ctx.r,
+            );
 
             // Value
             let value_row = &value_bytes[is_s.idx()];
@@ -315,7 +316,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 [value_witness.num_rlp_bytes() as usize..HASH_WIDTH + 2]
                 .rlc_value(ctx.r);
 
-            self.parent_data[is_s.idx()].witness_store(
+            ParentData::witness_store(
                 region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
@@ -325,7 +326,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 F::zero(),
             )?;
 
-            self.is_empty_trie[is_s.idx()].assign(
+            self.is_in_empty_trie[is_s.idx()].assign(
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
@@ -355,11 +356,11 @@ impl<F: Field> StorageLeafConfig<F> {
             region,
             offset,
             is_non_existing_proof,
-            &mut pv.memory,
             &key_rlc,
             &row_wrong.bytes,
             row_key,
             false,
+            key_data[true.idx()].clone(),
             ctx.r,
         )?;
 

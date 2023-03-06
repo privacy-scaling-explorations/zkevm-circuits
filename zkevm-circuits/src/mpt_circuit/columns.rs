@@ -1,6 +1,6 @@
 use eth_types::Field;
 use halo2_proofs::{
-    plonk::{Advice, Column, ConstraintSystem, Expression, Fixed, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
 use std::{convert::TryInto, marker::PhantomData};

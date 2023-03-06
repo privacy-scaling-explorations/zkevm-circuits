@@ -55,14 +55,18 @@ impl<F: Field> Memory<F> {
         unreachable!()
     }
 
-    pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
+    pub(crate) fn generate_constraints(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        is_first_row: Expression<F>,
+    ) {
         for bank in self.banks.iter() {
-            bank.generate_constraints(cb);
+            bank.generate_constraints(cb, is_first_row.expr());
             cb.generate_lookup_table_checks(bank.tag());
 
             /*let lookups = cb.consume_lookups(&[bank.tag()]);
             if !lookups.is_empty() {
-                //println!("{}: {}", tag, lookups.len());
+                println!("{}: {}", bank.tag, lookups.len());
                 let (_, values) = merge_lookups(cb, lookups);
                 crate::circuit!([meta, cb], {
                     require!(values => @bank.tag());
@@ -209,9 +213,16 @@ impl<F: Field> MemoryBank<F> {
         self.store_offsets.clear();
     }
 
-    pub(crate) fn generate_constraints(&self, cb: &mut ConstraintBuilder<F>) {
+    pub(crate) fn generate_constraints(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        is_first_row: Expression<F>,
+    ) {
         let lookup_table = cb.get_lookup_table(self.tag());
         crate::circuit!([meta, cb], {
+            ifx! {is_first_row => {
+                require!(self.cur.expr() => 0);
+            }}
             require!(self.tag(), self.next => self.cur.expr() + lookup_table.0);
         });
     }

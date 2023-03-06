@@ -57,33 +57,6 @@ impl<F: Field> SelectorsConfig<F> {
                 // The type of the row needs to be set (if all selectors would be 0 for a row,
                 // then all constraints would be switched off).
                 //require!(sum::expr(row_type_selectors.iter()) => 1);
-
-                // We need to prevent lookups into non-lookup rows and we need to prevent for
-                // example nonce lookup into balance lookup row.
-                /*let proof_type_lookup_row_types = [
-                    is_account_leaf_nonce_balance_s.expr(),
-                    is_account_leaf_nonce_balance_c.expr(),
-                    is_account_leaf_storage_codehash_c.expr(),
-                    is_non_existing_account_row.expr(),
-                    is_account_leaf_key_s.expr(),
-                    is_leaf_c_value.expr(),
-                    is_non_existing_storage_row.expr(),
-                ];
-                for (idx, (proof_type, row_type)) in proof_type_selectors
-                    .iter()
-                    .zip(proof_type_lookup_row_types.iter())
-                    .enumerate()
-                {
-                    // Proof type is the expected value on the specified lookup row type,
-                    // 0 everywhere else
-                    ifx!{proof_type => {
-                        ifx!{row_type => {
-                            require!(proof_type_id => idx + 1);
-                        } elsex {
-                            require!(proof_type_id => 0);
-                        }}
-                    }}
-                }*/
             }};
 
             // First row
@@ -222,34 +195,6 @@ impl<F: Field> SelectorsConfig<F> {
                     ifx!{condition => {
                         require!(name, to => from);
                     }}
-                }*/
-
-                // Data transitions
-                // Note that these constraints do not prevent attacks like putting account leaf
-                // rows more than once - however, doing this would lead into failure
-                // of the constraints responsible for address RLC (or key RLC if storage rows).
-                // Also, these constraints do not guarantee there is an account proof before
-                // storage proof - constraints for this are implemented using address_rlc column
-                // to be changed to the proper value only in the account leaf key row.
-                /*let modifications = [
-                    is_nonce_mod,
-                    is_balance_mod,
-                    is_codehash_mod,
-                    is_non_existing_account_proof,
-                    is_account_delete_mod,
-                    is_storage_mod,
-                    is_non_existing_storage_proof,
-                ];
-                for is_mod in modifications {
-                    // Does not change outside first level
-                    ifx!{not_first_level => {
-                        require!(is_mod => is_mod.prev());
-                    } elsex {
-                        // Does not change inside first level except in the first row
-                        /*ifx!{not!(is_branch_init), not!(is_account_leaf_key_s) => {
-                            require!(is_mod => is_mod.prev());
-                        }}*/
-                    }};
                 }*/
             }}
         });

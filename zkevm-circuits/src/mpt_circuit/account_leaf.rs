@@ -6,13 +6,16 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use super::{helpers::MainData, param::HASH_WIDTH};
+use super::{
+    helpers::{KeyDataWitness, MainData},
+    param::HASH_WIDTH,
+};
 use super::{
     helpers::{LeafKeyGadget, ParentDataWitness},
     rlp_gadgets::RLPValueGadget,
 };
 use crate::{
-    assign, circuit,
+    circuit,
     circuit_tools::cell_manager::Cell,
     circuit_tools::constraint_builder::RLCable,
     mpt_circuit::{
@@ -46,7 +49,7 @@ pub(crate) struct AccountLeafConfig<F> {
     rlp_codehash: [RLPValueGadget<F>; 2],
     nonce_mult: [Cell<F>; 2],
     balance_mult: [Cell<F>; 2],
-    is_empty_trie: [IsEmptyTreeGadget<F>; 2],
+    is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_non_existing_account_proof: IsEqualGadget<F>,
@@ -139,7 +142,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 );
 
                 // Placeholder leaf checks
-                config.is_empty_trie[is_s.idx()] =
+                config.is_in_empty_trie[is_s.idx()] =
                     IsEmptyTreeGadget::construct(&mut cb.base, parent_data.rlc.expr(), &r);
 
                 // Calculate the key RLC
@@ -201,7 +204,6 @@ impl<F: Field> AccountLeafConfig<F> {
                         &mut cb.base,
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
-                        1.expr(),
                         &r,
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES.
@@ -210,7 +212,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Check if the account is in its parent.
                 // Check is skipped for placeholder leafs which are dummy leafs
-                ifx! {not!(and::expr(&[not!(config.parent_data[is_s.idx()].is_placeholder), config.is_empty_trie[is_s.idx()].expr()])) => {
+                ifx! {not!(and::expr(&[not!(config.parent_data[is_s.idx()].is_placeholder), config.is_in_empty_trie[is_s.idx()].expr()])) => {
                     require!((1, leaf_rlc, config.rlp_key[is_s.idx()].num_bytes(), config.parent_data[is_s.idx()].rlc) => @"keccak");
                 }}
 
@@ -310,13 +312,13 @@ impl<F: Field> AccountLeafConfig<F> {
             // Wrong leaf handling
             config.wrong = WrongGadget::construct(
                 cb,
-                ctx.clone(),
                 a!(ctx.mpt_table.address_rlc),
                 config.is_non_existing_account_proof.expr(),
                 &config.rlp_key,
                 &key_rlc,
                 &wrong_bytes,
-                true,
+                config.is_in_empty_trie[true.idx()].expr(),
+                config.key_data[true.idx()].clone(),
                 &ctx.r,
             );
 
@@ -329,8 +331,9 @@ impl<F: Field> AccountLeafConfig<F> {
                 // - 2. Account leaf is deleted from a branch with two leaves, the remaining
                 // leaf moves one level up and replaces the branch. In this case we
                 // have a branch placeholder.
+                // TODO(Brecht): For case 2: just having the parent branch be the placeholder seems not enough
                 require!(or::expr([
-                    config.key_data[false.idx()].is_placeholder_leaf_c.expr(),
+                    config.is_in_empty_trie[false.idx()].expr(),
                     config.parent_data[false.idx()].is_placeholder.expr()
                 ]) => true);
             } elsex {
@@ -434,11 +437,12 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut balance_rlc = vec![0.scalar(); 2];
         let mut storage_rlc = vec![0.scalar(); 2];
         let mut codehash_rlc = vec![0.scalar(); 2];
+        let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
             let key_row = &row_key[is_s.idx()];
 
-            let key_data = self.key_data[is_s.idx()].witness_load(
+            key_data[is_s.idx()] = self.key_data[is_s.idx()].witness_load(
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
@@ -452,7 +456,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 0,
             )?;
 
-            self.is_empty_trie[is_s.idx()].assign(
+            self.is_in_empty_trie[is_s.idx()].assign(
                 region,
                 offset,
                 parent_data[is_s.idx()].rlc,
@@ -497,8 +501,11 @@ impl<F: Field> AccountLeafConfig<F> {
             self.balance_mult[is_s.idx()].assign(region, offset, mult_balance)?;
 
             // Key
-            (key_rlc[is_s.idx()], _) =
-                rlp_key_witness.leaf_key_rlc(key_data.rlc, key_data.mult, ctx.r);
+            (key_rlc[is_s.idx()], _) = rlp_key_witness.leaf_key_rlc(
+                key_data[is_s.idx()].rlc,
+                key_data[is_s.idx()].mult,
+                ctx.r,
+            );
 
             let mut key_mult = F::one();
             for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
@@ -507,7 +514,7 @@ impl<F: Field> AccountLeafConfig<F> {
             self.key_mult[is_s.idx()].assign(region, offset, key_mult)?;
 
             // Update key and parent state
-            self.key_data[is_s.idx()].witness_store(
+            KeyData::witness_store(
                 region,
                 offset,
                 &mut pv.memory[key_memory(is_s)],
@@ -515,13 +522,10 @@ impl<F: Field> AccountLeafConfig<F> {
                 F::one(),
                 0,
                 false,
-                false,
-                0,
-                false,
                 F::zero(),
                 F::one(),
             )?;
-            self.parent_data[is_s.idx()].witness_store(
+            ParentData::witness_store(
                 region,
                 offset,
                 &mut pv.memory[parent_memory(is_s)],
@@ -534,16 +538,16 @@ impl<F: Field> AccountLeafConfig<F> {
 
         // Anything following this node is below the account
         let address_rlc = witness[idx].address_bytes().rlc_value(ctx.r);
-        pv.memory[main_memory()].witness_store(
+        MainData::witness_store(
+            region,
             offset,
-            &[
-                main_data.proof_type.scalar(),
-                true.scalar(),
-                address_rlc,
-                main_data.root_prev,
-                main_data.root,
-            ],
-        );
+            &mut pv.memory[main_memory()],
+            main_data.proof_type,
+            true,
+            address_rlc,
+            main_data.root_prev,
+            main_data.root,
+        )?;
 
         // Proof types
         let is_non_existing_proof = self.is_non_existing_account_proof.assign(
@@ -592,11 +596,11 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             is_non_existing_proof,
-            &mut pv.memory,
             &key_rlc,
             &row_wrong.bytes,
             row_key,
             true,
+            key_data[true.idx()].clone(),
             ctx.r,
         )?;
 
