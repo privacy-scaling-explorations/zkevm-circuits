@@ -351,6 +351,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         sender_address: Expression<F>,

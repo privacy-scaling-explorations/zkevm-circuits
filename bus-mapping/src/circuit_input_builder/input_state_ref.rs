@@ -465,6 +465,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
     /// balance by `value`. If `fee` is existing (not None), also need to push 1
     /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
+    #[allow(clippy::too_many_arguments)]
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
@@ -861,7 +862,7 @@ impl<'a> CircuitInputStateRef<'a> {
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
             }
-            OpEnum::Account(op) => self.check_update_sdb_account(RW::WRITE, &op),
+            OpEnum::Account(op) => self.check_update_sdb_account(RW::WRITE, op),
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }

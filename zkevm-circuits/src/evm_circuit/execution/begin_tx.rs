@@ -10,11 +10,12 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
+            is_precompiled,
             math_gadget::{
                 ContractCreateGadget, IsEqualGadget, IsZeroGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
             },
-            not, or, select, CachedRegion, Cell, Word,
+            not, or, select, CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -425,7 +426,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let gas_fee = tx.gas_price * tx.gas;
         let zero = eth_types::Word::zero();
 
-        let mut rws = Rws::new(block, step);
+        let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
         let mut callee_code_hash = zero;
         if !is_precompiled(&tx.callee_address) && !tx.is_create {
@@ -444,10 +445,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             caller_balance_sub_value_pair = rws.next().account_value_pair();
             callee_balance_pair = rws.next().account_value_pair();
         };
-        // dbg!(&caller_balance_sub_fee_pair);
-        // dbg!(&caller_balance_sub_value_pair);
-        // dbg!(&callee_balance_pair);
-        // dbg!(&callee_code_hash);
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -555,39 +552,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         )?;
 
         Ok(())
-    }
-}
-
-use eth_types::Address;
-
-fn is_precompiled(address: &Address) -> bool {
-    address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
-}
-
-use crate::table::RwTableTag;
-use crate::witness::{Rw, RwMap};
-
-struct Rws<'a> {
-    rws: &'a RwMap,
-    rw_indices: &'a Vec<(RwTableTag, usize)>,
-    offset: usize,
-}
-
-impl<'a> Rws<'a> {
-    fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
-        Self {
-            rws: &block.rws,
-            rw_indices: &step.rw_indices,
-            offset: 0,
-        }
-    }
-    fn offset_add(&mut self, offset: usize) {
-        self.offset = offset
-    }
-    fn next(&mut self) -> Rw {
-        let rw = self.rws[self.rw_indices[self.offset]];
-        self.offset += 1;
-        rw
     }
 }
 

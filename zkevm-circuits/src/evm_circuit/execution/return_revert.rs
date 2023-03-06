@@ -413,13 +413,6 @@ mod test {
         for (((callee_offset, callee_length), (caller_offset, caller_length)), is_return) in
             test_parameters.iter().cartesian_product(&[true, false])
         {
-            // dbg!(
-            //     callee_offset,
-            //     callee_length,
-            //     caller_offset,
-            //     caller_length,
-            //     is_return
-            // );
             let callee = Account {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),

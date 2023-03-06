@@ -698,7 +698,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         tag: RwTableTag,
         values: RwValues<F>,
     ) {
-        // println!("DBG {}", std::backtrace::Backtrace::capture());
         let name = format!("rw lookup {}", name);
         self.add_lookup(
             &name,
@@ -1439,7 +1438,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
         let lookup = match self.condition_expr_opt() {
-            Some(condition) => lookup.conditional(condition.clone()),
+            Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
         let compressed_expr = self.split_expression(
