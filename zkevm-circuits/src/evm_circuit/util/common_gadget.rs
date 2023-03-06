@@ -130,6 +130,8 @@ impl<F: Field> RestoreContextGadget<F> {
             .map(|field_tag| cb.call_context(Some(caller_id.expr()), field_tag));
 
         // Update caller's last callee information
+        // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+        let is_call_create_and_success_expr = cb.curr.state.is_create.expr() * is_success.clone();
         for (field_tag, value) in [
             (
                 CallContextFieldTag::LastCalleeId,
@@ -137,11 +139,19 @@ impl<F: Field> RestoreContextGadget<F> {
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataOffset,
-                return_data_offset,
+                select::expr(
+                    is_call_create_and_success_expr.clone(),
+                    0.expr(),
+                    return_data_offset.clone(),
+                ),
             ),
             (
                 CallContextFieldTag::LastCalleeReturnDataLength,
-                return_data_length.clone(),
+                select::expr(
+                    is_call_create_and_success_expr,
+                    0.expr(),
+                    return_data_length.clone(),
+                ),
             ),
         ] {
             cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);

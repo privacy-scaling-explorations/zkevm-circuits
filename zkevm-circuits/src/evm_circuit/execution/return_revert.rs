@@ -97,14 +97,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             is_create.clone() * is_success.expr() * not::expr(copy_rw_increase_is_zero.expr());
         let (caller_id, address, reversion_info, code_hash) =
             cb.condition(is_contract_deployment.clone(), |cb| {
-                // EIP-211 RETURNDATASIZE should be 0 for CREATE/CREATE(2)
-                for (field_tag, value) in [
-                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
-                    (CallContextFieldTag::LastCalleeReturnDataLength, 0.expr()),
-                ] {
-                    cb.call_context_lookup(true.expr(), None, field_tag, value);
-                }
-
                 // We don't need to place any additional constraints on code_hash because the
                 // copy circuit enforces that it is the hash of the bytes in the copy lookup.
                 let code_hash = cb.query_cell_phase2();
@@ -286,7 +278,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         }
 
         if call.is_create && call.is_success {
-            let values: Vec<_> = (5..5 + length.as_usize())
+            let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
             let mut code_hash = keccak256(&values);
@@ -313,7 +305,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
         if !call.is_root {
             let rw_counter_offset = 3 + if is_contract_deployment {
-                7 + length.as_u64()
+                5 + length.as_u64()
             } else {
                 0
             };
@@ -582,5 +574,37 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
+    // test create/create2 returndatasize both 0 for successful case
+    fn test_return_nonroot_create_returndatasize() {
+        let initializer = callee_bytecode(true, 0, 10).code();
+
+        let bytecode = bytecode! {
+            PUSH32(Word::from_big_endian(&initializer))
+            PUSH1(0)
+            MSTORE
+
+            // create1 logic
+            PUSH1(initializer.len())        // size
+            PUSH1(32 - initializer.len())   // offset
+            PUSH1(0)                        // value
+            CREATE
+            RETURNDATASIZE
+
+            // create2 logic
+            PUSH3(0x123456) // salt
+            PUSH1(initializer.len()) // length
+            PUSH1(0) // offset
+            PUSH1(0) // value
+            CREATE2
+            RETURNDATASIZE
+        };
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

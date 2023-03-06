@@ -49,21 +49,6 @@ impl Opcode for ReturnRevert {
 
         // Case A in the spec.
         if call.is_create() && call.is_success && length > 0 {
-            // EIP-211 RETURNDATASIZE should be 0 for CREATE/CREATE(2)
-            state.call_context_write(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::LastCalleeReturnDataOffset,
-                0.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.call()?.call_id,
-                CallContextField::LastCalleeReturnDataLength,
-                0.into(),
-            );
-
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
             let code_hash = handle_create(

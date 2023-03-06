@@ -20,7 +20,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -969,6 +969,8 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
             OpcodeId::STOP => [Word::zero(); 2],
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            OpcodeId::RETURN if call.is_create() && call.is_success => [Word::zero(); 2],
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;
                 let length = geth_step.stack.nth_last(1)?;
@@ -997,7 +999,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let code_deposit_cost = if call.is_create() && call.is_success {
-            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
+            let length = geth_step.stack.nth_last(1)?;
+            debug_assert!(length > U256::zero(), "invalid code length {:?}", length,);
+            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * length.as_u64()
         } else {
             0
         };
