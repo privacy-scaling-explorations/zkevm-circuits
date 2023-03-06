@@ -13,6 +13,7 @@ use crate::{
 };
 
 use eth_types::{evm_types::GasCost, Field};
+
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 const MAXCODESIZE: u64 = 0x6000u64;
@@ -36,11 +37,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        //cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
-        //let rw_counter_end_of_reversion = cb.query_cell();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
@@ -67,7 +66,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             vec![1.expr(), 2.expr()],
         );
 
-        // Case C in the return specs.
         let common_error_gadget = CommonErrorGadget::construct_with_lastcallee_return_data(
             cb,
             opcode.expr(),
@@ -117,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         )?;
 
         self.common_error_gadget
-            .assign(region, offset, block, call, step, 4 as usize)?;
+            .assign(region, offset, block, call, step, 4)?;
         Ok(())
     }
 }
