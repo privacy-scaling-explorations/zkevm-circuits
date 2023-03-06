@@ -883,8 +883,11 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
         // handle return_data
         let (return_data_offset, return_data_length) = {
-            if !self.call()?.is_root {
+            let call = self.call()?;
+            if !call.is_root {
                 let (offset, length) = match step.op {
+                    // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+                    OpcodeId::RETURN if call.is_create() && call.is_success => (0, 0),
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();

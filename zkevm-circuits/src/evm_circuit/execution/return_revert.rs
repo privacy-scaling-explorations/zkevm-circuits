@@ -345,9 +345,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
+    use eth_types::geth_types::GethData;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
-        Word,
+        Word, U256,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
@@ -577,34 +578,70 @@ mod test {
     }
 
     #[test]
-    // test create/create2 returndatasize both 0 for successful case
+    // test CREATE/CREATE2 returndatasize both 0 for successful case
     fn test_return_nonroot_create_returndatasize() {
         let initializer = callee_bytecode(true, 0, 10).code();
 
-        let bytecode = bytecode! {
+        let mut bytecode = bytecode! {
+             // CREATE + RETURNDATASIZE + RETURNDATACOPY logic
             PUSH32(Word::from_big_endian(&initializer))
             PUSH1(0)
             MSTORE
 
-            // create1 logic
             PUSH1(initializer.len())        // size
             PUSH1(32 - initializer.len())   // offset
             PUSH1(0)                        // value
             CREATE
             RETURNDATASIZE
+            PUSH1(0) // offset
+            PUSH1(0) // dest offset
+            RETURNDATACOPY // test return data copy
+        };
 
-            // create2 logic
+        // CREATE2 logic
+        let code_creator: Vec<u8> = initializer
+            .to_vec()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - initializer.len() % 32) as u8))
+            .collect();
+        for (index, word) in code_creator.chunks(32).enumerate() {
+            bytecode.push(32, Word::from_big_endian(word));
+            bytecode.push(32, Word::from(index * 32));
+            bytecode.write_op(OpcodeId::MSTORE);
+        }
+        bytecode.append(&bytecode! {
             PUSH3(0x123456) // salt
             PUSH1(initializer.len()) // length
             PUSH1(0) // offset
             PUSH1(0) // value
             CREATE2
             RETURNDATASIZE
-        };
+            PUSH1(0) // offset
+            PUSH1(0) // dest offset
+            RETURNDATACOPY
+        });
 
-        CircuitTestBuilder::new_from_test_ctx(
-            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-        )
-        .run();
+        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
+            .unwrap()
+            .into();
+
+        // collect return opcode, retrieve next step, assure both contract create
+        // successfully
+        let created_contract_addr = block.geth_traces[0]
+            .struct_logs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.op == OpcodeId::RETURN)
+            .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
+            .flat_map(|s| s.stack.nth_last(0)) // contract addr on stack top
+            .collect_vec();
+        assert!(created_contract_addr.len() == 2); // both contract addr exist
+        created_contract_addr
+            .iter()
+            .for_each(|addr| assert!(addr > &U256::zero()));
+
+        let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
     }
 }

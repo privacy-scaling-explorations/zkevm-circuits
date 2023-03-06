@@ -142,7 +142,7 @@ impl<F: Field> RestoreContextGadget<F> {
                 select::expr(
                     is_call_create_and_success_expr.clone(),
                     0.expr(),
-                    return_data_offset.clone(),
+                    return_data_offset,
                 ),
             ),
             (
