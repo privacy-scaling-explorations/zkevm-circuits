@@ -37,7 +37,7 @@ impl Opcode for ErrorCodeStore {
         let is_success = call.is_success;
 
         // create context check
-        assert!(call.is_create() && !call.is_root);
+        assert!(call.is_create());
 
         state.call_context_read(
             &mut exec_step,

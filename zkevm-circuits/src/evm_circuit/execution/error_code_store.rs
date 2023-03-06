@@ -4,12 +4,11 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
             math_gadget::LtGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::CallContextFieldTag,
     util::Expr,
 };
 
@@ -27,8 +26,7 @@ pub(crate) struct ErrorCodeStoreGadget<F> {
     code_store_gas_insufficient: LtGadget<F, N_BYTES_GAS>,
     // check for MaxCodeSizeExceeded error
     max_code_size_exceed: LtGadget<F, N_BYTES_U64>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
@@ -38,11 +36,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
+        //cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
-        let rw_counter_end_of_reversion = cb.query_cell();
+        //let rw_counter_end_of_reversion = cb.query_cell();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
@@ -69,35 +67,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             vec![1.expr(), 2.expr()],
         );
 
-        // restore context as in internal call
-        cb.require_zero("in internal call", cb.curr.state.is_root.expr());
-
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-
         // Case C in the return specs.
-        let restore_context = RestoreContextGadget::construct(
+        let common_error_gadget = CommonErrorGadget::construct_with_lastcallee_return_data(
             cb,
-            0.expr(),
-            0.expr(),
+            opcode.expr(),
+            4.expr(),
             memory_address.offset(),
             memory_address.length(),
-            0.expr(),
-            0.expr(),
-        );
-
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
         );
 
         Self {
@@ -105,8 +81,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             memory_address,
             code_store_gas_insufficient,
             max_code_size_exceed,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -141,13 +116,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
             F::from(length.as_u64()),
         )?;
 
-        self.rw_counter_end_of_reversion.assign(
-            region,
-            offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
-        )?;
-        self.restore_context
-            .assign(region, offset, block, call, step, 4)?;
+        self.common_error_gadget
+            .assign(region, offset, block, call, step, 4 as usize)?;
         Ok(())
     }
 }
@@ -156,12 +126,18 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word,
-        word,
+        address,
+        bytecode,
+        evm_types::OpcodeId,
+        geth_types::Account,
+        Address,
+        Bytecode,
+        Word,
+        //word,
     };
 
     use lazy_static::lazy_static;
-    use mock::{eth, TestContext, gwei, MOCK_ACCOUNTS};
+    use mock::{eth, TestContext, MOCK_ACCOUNTS};
 
     use crate::test_util::CircuitTestBuilder;
 
@@ -297,15 +273,12 @@ mod test {
 
     #[test]
     fn tx_deploy_code_store_oog() {
-
         let code = initialization_bytecode(true);
-        
+
         let ctx = TestContext::<1, 1>::new(
             None,
             |accs| {
-                accs[0]
-                    .address(MOCK_ACCOUNTS[0])
-                    .balance(eth(20));
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
             },
             |mut txs, _accs| {
                 txs[0]
@@ -322,4 +295,26 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
+    #[test]
+    fn tx_deploy_max_code_size_exceed() {
+        let code = initialization_bytecode(false);
+
+        let ctx = TestContext::<1, 1>::new(
+            None,
+            |accs| {
+                accs[0].address(MOCK_ACCOUNTS[0]).balance(eth(20));
+            },
+            |mut txs, _accs| {
+                txs[0]
+                    .from(MOCK_ACCOUNTS[0])
+                    .gas(58000u64.into())
+                    .value(eth(2))
+                    .input(code.into());
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
 }
