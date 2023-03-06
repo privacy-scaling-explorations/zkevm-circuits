@@ -51,6 +51,7 @@ pub(crate) struct BeginTxGadget<F> {
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroGadget<F>,
+    is_caller_callee_equal: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -147,11 +148,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             0.expr(),
             None,
         ); // rwc_delta += 1
+        let is_caller_callee_equal = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
             tx_callee_address.expr(),
             1.expr(),
-            0.expr(),
+            // No extra constraint being used here.
+            // Correctness will be enforced in build_tx_access_list_account_constraints
+            is_caller_callee_equal.expr(),
             None,
         ); // rwc_delta += 1
 
@@ -411,6 +415,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             caller_nonce_hash_bytes,
             create,
             callee_not_exists,
+            is_caller_callee_equal,
         }
     }
 
@@ -460,19 +465,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             .caller_address
             .to_scalar()
             .expect("unexpected Address -> Scalar conversion failure");
+        let callee_address = tx
+            .callee_address
+            .to_scalar()
+            .expect("unexpected Address -> Scalar conversion failure");
         self.tx_caller_address
             .assign(region, offset, Value::known(caller_address))?;
         self.tx_caller_address_is_zero
             .assign(region, offset, caller_address)?;
-        self.tx_callee_address.assign(
-            region,
-            offset,
-            Value::known(
-                tx.callee_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
+        self.tx_callee_address
+            .assign(region, offset, Value::known(callee_address))?;
         self.call_callee_address.assign(
             region,
             offset,
@@ -485,6 +487,11 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 .to_scalar()
                 .expect("unexpected Address -> Scalar conversion failure"),
             ),
+        )?;
+        self.is_caller_callee_equal.assign(
+            region,
+            offset,
+            Value::known(F::from(caller_address == callee_address)),
         )?;
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;

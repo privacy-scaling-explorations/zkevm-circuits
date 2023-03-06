@@ -1094,14 +1094,27 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(Some(ExecError::InvalidOpcode));
         }
 
-        // When last step has opcodes that halt, there's no error.
-        if matches!(next_step, None)
-            && matches!(
+        let call = self.call()?;
+
+        if matches!(next_step, None) {
+            // enumerating call scope successful cases
+            // case 1: call with normal halt opcode termination
+            if matches!(
                 step.op,
-                OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
-            )
-        {
-            return Ok(None);
+                OpcodeId::STOP | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
+            ) {
+                return Ok(None);
+            }
+            // case 2: call is NOT Create (Create represented by empty tx.to) and halt by
+            // opcode::Return
+            if !call.is_create() && step.op == OpcodeId::RETURN {
+                return Ok(None);
+            }
+            // case 3 Create with successful RETURN
+            if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+                return Ok(None);
+            }
+            // more other case...
         }
 
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
@@ -1109,7 +1122,6 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
             .unwrap_or_else(Word::zero);
 
-        let call = self.call()?;
         let call_ctx = self.call_ctx()?;
         // get value first if call/create
         let value = match step.op {
@@ -1153,7 +1165,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 });
             } else {
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
-                if !call.is_root && call.is_create() {
+                if call.is_create() {
                     let offset = step.stack.nth_last(0)?;
                     let length = step.stack.nth_last(1)?;
                     if length > Word::from(0x6000u64) {
