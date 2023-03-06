@@ -453,9 +453,7 @@ mod test {
     fn test_return_root_create() {
         let test_parameters = [(0, 0), (0, 10), (300, 20), (1000, 0)];
         for ((offset, length), is_return) in
-            // TODO: Uncomment
-            // test_parameters.iter().cartesian_product(&[true, false])
-            test_parameters.iter().cartesian_product(&[false])
+            test_parameters.iter().cartesian_product(&[true, false])
         {
             let tx_input = callee_bytecode(*is_return, *offset, *length).code();
             let ctx = TestContext::<1, 1>::new(

@@ -1381,6 +1381,9 @@ impl<F: Field> ExecutionConfig<F> {
                 log::error!("rw lookup error: name: {}, step: {:?}", *name, step);
             }
         }
+        // Check that the number of rw operations generated from the bus-mapping
+        // correspond to the number of assigned rw lookups by the EVM Circuit
+        // plus the number of rw lookups done by the copy circuit.
         if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
             log::error!(
                 "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
@@ -1404,6 +1407,9 @@ impl<F: Field> ExecutionConfig<F> {
                 rev_count,
                 step.reversible_write_counter_delta
             );
+            // In the EVM Circuit, reversion rw lookups are assigned after their
+            // corresponding rw lookup, but in the bus-mapping they are
+            // generated at the end of the step.
             let idx = if is_rev {
                 step.rw_indices.len() - rev_count
             } else {
