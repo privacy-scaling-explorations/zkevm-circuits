@@ -53,7 +53,6 @@ pub(crate) struct BeginTxGadget<F> {
     transfer_with_gas_fee: TransferWithGasFeeGadget<F>,
     phase2_code_hash: Cell<F>,
     is_empty_code_hash: IsEqualGadget<F>,
-    is_zero_code_hash: IsZeroGadget<F>,
     is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
     /// Keccak256(RLP([tx_caller_address, tx_nonce]))
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
@@ -187,8 +186,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: guard against call to precompiled contracts.
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
-        let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
-        let is_empty_code = or::expr([is_empty_code_hash.expr(), is_zero_code_hash.expr()]);
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
@@ -330,7 +327,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_precompile_lt.expr(),
         ]);
 
-        cb.condition(not::expr(is_empty_code.expr()), |cb| {
+        cb.condition(not::expr(no_callee_code.expr()), |cb| {
             cb.require_equal(
                 "code hash equivalence",
                 cb.curr.state.code_hash.expr(),
@@ -342,7 +339,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             cb.require_equal(
                 "precompile should be zero code hash",
                 // FIXME: see in opcodes.rs gen_begin_tx_ops
-                is_empty_code.expr(),
+                no_callee_code.expr(),
                 true.expr(),
             );
             cb.require_equal(
@@ -379,7 +376,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // 3. Handle call to account with empty code.
         let native_transfer = and::expr([
             not::expr(tx_is_create.expr()),
-            is_empty_code.expr(),
+            no_callee_code.expr(),
             not::expr(is_precompile.expr()),
         ]);
         cb.condition(
@@ -511,7 +508,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             phase2_code_hash,
             intrinsic_gas_cost,
             is_empty_code_hash,
-            is_zero_code_hash,
             is_precompile_lt,
             caller_nonce_hash_bytes,
             create,
