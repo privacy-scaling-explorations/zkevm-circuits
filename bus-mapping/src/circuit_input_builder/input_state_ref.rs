@@ -448,7 +448,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let is_warm = self.sdb.check_account_in_access_list(&address);
         self.push_op_reversible(
             step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: self.tx_ctx.id(),
                 address,
@@ -1045,12 +1044,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // If current call has caller_ctx (has caller)
         // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-        if let Ok(caller_ctx) = self.caller_ctx_mut() && (
-           step.op == OpcodeId::RETURN &&
-           call.is_create() &&
-           call.is_success
-        ) {
-            caller_ctx.return_data.truncate(0);
+        if let Ok(caller_ctx) = self.caller_ctx_mut() {
+            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+                caller_ctx.return_data.truncate(0);
+            }
         }
 
         self.tx_ctx.pop_call_ctx();

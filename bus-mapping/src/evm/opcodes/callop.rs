@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
-use crate::operation::MemoryOp;
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
+use crate::operation::{MemoryOp, RW};
 use crate::precompile::{execute_precompiled, is_precompiled};
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};

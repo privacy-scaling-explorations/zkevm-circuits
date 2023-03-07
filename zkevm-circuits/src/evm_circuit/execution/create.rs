@@ -173,7 +173,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
-                reversion_info.rw_counter_of_reversion(),
+                reversion_info.rw_counter_of_reversion(1.expr()),
             );
         });
 
@@ -189,6 +189,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             cb,
             from_bytes::expr(&caller_address.cells),
             new_address.clone(),
+            0.expr(),
             value.clone(),
             &mut callee_reversion_info,
         );

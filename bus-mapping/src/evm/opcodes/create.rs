@@ -117,11 +117,11 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         debug_assert!(state.sdb.get_nonce(&callee.address) == 0);
         state.transfer(
             &mut exec_step,
-            call.caller_address,
-            call.address,
+            callee.caller_address,
+            callee.address,
             true,
             true,
-            call.value,
+            callee.value,
         )?;
 
         state.push_op_reversible(
@@ -258,18 +258,21 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(callee_id),
-        src_addr: offset.try_into().unwrap(),
-        src_addr_end: (offset + length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id,
-        dst_addr: 0,
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(callee_id),
+            src_addr: offset.try_into().unwrap(),
+            src_addr_end: (offset + length).try_into().unwrap(),
+            dst_type: CopyDataType::Bytecode,
+            dst_id,
+            dst_addr: 0,
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(initialization_bytes)
 }

@@ -12,7 +12,7 @@ use crate::{
     util::{build_tx_log_expression, Challenges, Expr},
 };
 use eth_types::Field;
-use gadgets::util::not;
+use gadgets::util::{and, not};
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -121,7 +121,7 @@ impl<F: Field> ReversionInfo<F> {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee.rw_counter_end_of_reversion(),
-                caller.rw_counter_of_reversion(),
+                caller.rw_counter_of_reversion(1.expr()),
             );
         });
         callee

@@ -1091,7 +1091,7 @@ pub struct PiTestCircuit<
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MAX_INNER_BLOCKS: usize>
-    PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
+    SubCircuit<F> for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS>
 {
     type Config = PiCircuitConfig<F>;
 

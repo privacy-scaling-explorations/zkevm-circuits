@@ -1547,7 +1547,8 @@ impl<F: Field> ExecutionConfig<F> {
                 tx
             );
         };
-        for (idx, (_name, value)) in assigned_rw_values.iter().enumerate() {
+        for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate() {
+            let (_name, value) = assigned_rw_value;
             if idx >= step.rw_indices.len() {
                 log_ctx(&assigned_rw_values);
                 panic!(
@@ -1556,19 +1557,21 @@ impl<F: Field> ExecutionConfig<F> {
                     step.rw_indices.len()
                 );
             }
-        // Check that the number of rw operations generated from the bus-mapping
-        // correspond to the number of assigned rw lookups by the EVM Circuit
-        // plus the number of rw lookups done by the copy circuit.
-        if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
-            log::error!(
+            // Check that the number of rw operations generated from the bus-mapping
+            // correspond to the number of assigned rw lookups by the EVM Circuit
+            // plus the number of rw lookups done by the copy circuit.
+            if step.rw_indices.len()
+                != assigned_rw_values.len() + step.copy_rw_counter_delta as usize
+            {
+                log::error!(
                 "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
                 step.rw_indices.len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,
                 step
             );
-        }
-        let mut rev_count = 0;
+            }
+            let mut rev_count = 0;
             let is_rev = if assigned_rw_value.0.contains(" with reversion") {
                 rev_count += 1;
                 true
@@ -1602,6 +1605,7 @@ impl<F: Field> ExecutionConfig<F> {
                     assigned_rw_values[idx].0,
                     rlc,
                     table_assignments,
+                    rw,
                     rw_idx, idx);
 
                 //debug_assert_eq!(

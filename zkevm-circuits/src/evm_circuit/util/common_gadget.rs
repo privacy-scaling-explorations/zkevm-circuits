@@ -107,7 +107,6 @@ impl<F: Field> RestoreContextGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
-        is_create: Expression<F>,
         is_success: Expression<F>,
         // Expression for the number of rw lookups that occur after this gadget is constructed.
         subsequent_rw_lookups: Expression<F>,
@@ -996,7 +995,6 @@ impl<F: Field> CommonErrorGadget<F> {
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
             RestoreContextGadget::construct(
                 cb,
-                0.expr(),
                 0.expr(),
                 0.expr(),
                 0.expr(),
