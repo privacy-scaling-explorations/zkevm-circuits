@@ -14,7 +14,7 @@ impl Opcode for Calldatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_calldatacopy_step(state, geth_step)?];
 
         // reconstruction
         let memory_offset = geth_step.stack.nth_last(0)?.as_u64();
@@ -26,7 +26,7 @@ impl Opcode for Calldatacopy {
         memory.copy_from(memory_offset, &call_ctx.call_data, data_offset, length);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
