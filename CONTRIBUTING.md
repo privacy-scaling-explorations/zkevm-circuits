@@ -27,9 +27,11 @@ First take a look at our [specs](https://github.com/privacy-scaling-explorations
 7. Send the circuit PR to the `zkevm-circuits` repo. Make sure you give a clear title and succinct description of the PR and the area you are changing. 
     - ******************NOTE:****************** Make atomic PRs. Focused on a single feature or topic. Don't mix different topics or issues in the same PR if it can be avoided.
 
+
 [SUGGESTION] You may run into unnecessary commits, such as merge conflicts or minor refactorings. In that case, `git rebase -i`  and [squash](https://www.git-tower.com/learn/git/faq/git-squash) all your commits to one commit. 
+
 [SUGGESTION] Rebase your branch on top of the latest main if your pull request branch is long-lived.
-    1. How to regularly update your PR with main:
+
         
         ```
         git checkout main
