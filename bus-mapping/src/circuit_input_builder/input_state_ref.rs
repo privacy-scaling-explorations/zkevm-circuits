@@ -20,7 +20,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -938,8 +938,24 @@ impl<'a> CircuitInputStateRef<'a> {
         // If current call has caller.
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
-            caller.last_callee_return_data_length = return_data_length;
-            caller.last_callee_return_data_offset = return_data_offset;
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+                caller.last_callee_return_data_length = 0u64;
+                caller.last_callee_return_data_offset = 0u64;
+            } else {
+                caller.last_callee_return_data_length = return_data_length;
+                caller.last_callee_return_data_offset = return_data_offset;
+            }
+        }
+
+        // If current call has caller_ctx (has caller)
+        // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+        if let Ok(caller_ctx) = self.caller_ctx_mut() && (
+           step.op == OpcodeId::RETURN &&
+           call.is_create() &&
+           call.is_success
+        ) {
+            caller_ctx.return_data.truncate(0);
         }
 
         self.tx_ctx.pop_call_ctx();
@@ -1030,15 +1046,24 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(exec_step, caller.call_id, field, value);
         }
 
+        // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                last_callee_return_data_offset,
+                if call.is_create() && call.is_success {
+                    U256::zero()
+                } else {
+                    last_callee_return_data_offset
+                },
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                last_callee_return_data_length,
+                if call.is_create() && call.is_success {
+                    U256::zero()
+                } else {
+                    last_callee_return_data_length
+                },
             ),
         ] {
             self.call_context_write(exec_step, caller.call_id, field, value);
