@@ -90,7 +90,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let caller_nonce = state.sdb.get_nonce(&caller.address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             AccountOp {
                 address: caller.address,
                 field: AccountField::Nonce,
@@ -116,22 +115,23 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         }
 
         debug_assert!(state.sdb.get_nonce(&callee.address) == 0);
+        state.transfer(
+            &mut exec_step,
+            call.caller_address,
+            call.address,
+            true,
+            true,
+            call.value,
+        )?;
+
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             AccountOp {
                 address: callee.address,
                 field: AccountField::Nonce,
                 value: 1.into(),
                 value_prev: 0.into(),
             },
-        )?;
-
-        state.transfer(
-            &mut exec_step,
-            callee.caller_address,
-            callee.address,
-            callee.value,
         )?;
 
         let memory_expansion_gas_cost =

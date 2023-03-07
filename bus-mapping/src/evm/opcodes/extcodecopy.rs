@@ -2,7 +2,7 @@ use super::Opcode;
 use crate::circuit_input_builder::{
     CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
 use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
@@ -18,7 +18,7 @@ impl Opcode for Extcodecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
@@ -37,7 +37,7 @@ impl Opcode for Extcodecopy {
         memory.copy_from(dest_offset, &code, code_offset, length as usize);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -85,7 +85,6 @@ fn gen_extcodecopy_step(
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: external_address,
@@ -106,7 +105,6 @@ fn gen_extcodecopy_step(
         &mut exec_step,
         external_address,
         AccountField::CodeHash,
-        code_hash.to_word(),
         code_hash.to_word(),
     );
     Ok(exec_step)
