@@ -63,6 +63,7 @@ mod error_oog_call;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
+mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
@@ -93,6 +94,7 @@ use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
+use error_oog_memory_copy::OOGMemoryCopy;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_oog_static_memory::OOGStaticMemory;
 use error_precompile_failed::PrecompileFailed;
@@ -288,6 +290,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
             Some(OOGStaticMemory::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
+        ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
