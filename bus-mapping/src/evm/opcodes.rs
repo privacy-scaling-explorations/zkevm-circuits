@@ -564,7 +564,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, callee_code_hash),
+                (CallContextField::CodeHash, call.code_hash.to_word()),
             ] {
                 state.call_context_write(&mut exec_step, call.call_id, field, value);
             }
@@ -584,17 +584,6 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code.
             if is_empty_code_hash {
-                // if the transfer values make an account from non-exist to exist
-                // we need to handle to codehash change
-                if !call.value.is_zero() {
-                    state.account_write(
-                        &mut exec_step,
-                        call.address,
-                        AccountField::CodeHash,
-                        CodeDB::empty_code_hash().to_word(),
-                        CodeDB::empty_code_hash().to_word(), // or Word::zero()?
-                    )?;
-                }
                 return Ok(exec_step);
             }
 
