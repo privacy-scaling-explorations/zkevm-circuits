@@ -883,11 +883,8 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
         // handle return_data
         let (return_data_offset, return_data_length) = {
-            let call = self.call()?;
-            if !call.is_root {
+            if !self.call()?.is_root {
                 let (offset, length) = match step.op {
-                    // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-                    OpcodeId::RETURN if call.is_create() && call.is_success => (0, 0),
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
                         let length = step.stack.nth_last(1)?.as_usize();
@@ -941,8 +938,24 @@ impl<'a> CircuitInputStateRef<'a> {
         // If current call has caller.
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
-            caller.last_callee_return_data_length = return_data_length;
-            caller.last_callee_return_data_offset = return_data_offset;
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+                caller.last_callee_return_data_length = 0u64;
+                caller.last_callee_return_data_offset = 0u64;
+            } else {
+                caller.last_callee_return_data_length = return_data_length;
+                caller.last_callee_return_data_offset = return_data_offset;
+            }
+        }
+
+        // If current call has caller_ctx (has caller)
+        // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+        if let Ok(caller_ctx) = self.caller_ctx_mut() && (
+           step.op == OpcodeId::RETURN &&
+           call.is_create() &&
+           call.is_success
+        ) {
+            caller_ctx.return_data.truncate(0);
         }
 
         self.tx_ctx.pop_call_ctx();
@@ -972,8 +985,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let [last_callee_return_data_offset, last_callee_return_data_length] = match geth_step.op {
             OpcodeId::STOP => [Word::zero(); 2],
-            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-            OpcodeId::RETURN if call.is_create() && call.is_success => [Word::zero(); 2],
             OpcodeId::REVERT | OpcodeId::RETURN => {
                 let offset = geth_step.stack.nth_last(0)?;
                 let length = geth_step.stack.nth_last(1)?;
@@ -1002,9 +1013,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
         let code_deposit_cost = if call.is_create() && call.is_success {
-            let length = geth_step.stack.nth_last(1)?;
-            debug_assert!(length > U256::zero(), "invalid code length {:?}", length,);
-            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * length.as_u64()
+            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
         } else {
             0
         };
@@ -1037,15 +1046,24 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(exec_step, caller.call_id, field, value);
         }
 
+        // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                last_callee_return_data_offset,
+                if call.is_create() && call.is_success {
+                    U256::zero()
+                } else {
+                    last_callee_return_data_offset
+                },
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                last_callee_return_data_length,
+                if call.is_create() && call.is_success {
+                    U256::zero()
+                } else {
+                    last_callee_return_data_length
+                },
             ),
         ] {
             self.call_context_write(exec_step, caller.call_id, field, value);

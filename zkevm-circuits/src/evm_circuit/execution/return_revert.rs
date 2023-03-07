@@ -243,10 +243,6 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        // XXX: please pay attention to few hardcode number below for index to accessing
-        // `block.rws` Magic number follows rw_context lookup order in
-        // `configure` function
-
         self.opcode.assign(
             region,
             offset,
@@ -640,6 +636,20 @@ mod test {
         created_contract_addr
             .iter()
             .for_each(|addr| assert!(addr > &U256::zero()));
+
+        // collect return opcode, retrieve next step, assure both returndata size is 0
+        let return_data_size = block.geth_traces[0]
+            .struct_logs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.op == OpcodeId::RETURNDATASIZE)
+            .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
+            .flat_map(|s| s.stack.nth_last(0)) // returndata size on stack top
+            .collect_vec();
+        assert!(return_data_size.len() == 2);
+        return_data_size
+            .iter()
+            .for_each(|size| assert_eq!(size, &Word::zero()));
 
         let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
