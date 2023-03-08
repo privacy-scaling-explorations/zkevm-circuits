@@ -1,22 +1,18 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::{N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            from_bytes,
-            common_gadget::RestoreContextGadget, constraint_builder::ConstraintBuilder,
+            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
             math_gadget::IsEqualGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::CallContextFieldTag,
     util::Expr,
 };
 
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
-
 
 /// Gadget for code store oog and max code size exceed
 #[derive(Clone, Debug)]
@@ -25,12 +21,11 @@ pub(crate) struct ErrorInvalidCreationCodeGadget<F> {
     memory_address: MemoryAddressGadget<F>,
     first_byte: Cell<F>,
     is_first_byte_invalid: IsEqualGadget<F>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
-    const NAME: &'static str = "ErrorCodeStore";
+    const NAME: &'static str = "ErrorInvalidCreationCode";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidCreationCode;
 
@@ -38,11 +33,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         let opcode = cb.query_cell();
         let first_byte = cb.query_cell();
 
-        cb.opcode_lookup(opcode.expr(), 1.expr());
-
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
-        let rw_counter_end_of_reversion = cb.query_cell();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(length.expr());
@@ -53,37 +45,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.memory_lookup(0.expr(), memory_address.offset(), first_byte.expr(), None);
 
         // constrain first byte is 0xef
-        let is_first_byte_invalid = IsEqualGadget::construct(cb, first_byte.expr(), 
-        0xef.expr());
+        let is_first_byte_invalid = IsEqualGadget::construct(cb, first_byte.expr(), 0xef.expr());
 
-        cb.require_true("is_first_byte_invalid is true", is_first_byte_invalid.expr());
-
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
+        cb.require_true(
+            "is_first_byte_invalid is true",
+            is_first_byte_invalid.expr(),
         );
 
-        // Case C in the return specs.
-        let restore_context = RestoreContextGadget::construct(
+        let common_error_gadget = CommonErrorGadget::construct_with_lastcallee_return_data(
             cb,
-            0.expr(),
-            0.expr(),
+            opcode.expr(),
+            5.expr(),
             memory_address.offset(),
             memory_address.length(),
-            0.expr(),
-            0.expr(),
-        );
-
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
         );
 
         Self {
@@ -91,8 +65,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
             first_byte,
             is_first_byte_invalid,
             memory_address,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -117,14 +90,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
 
         self.first_byte
             .assign(region, offset, Value::known(F::from(byte as u64)))?;
-        self.is_first_byte_invalid.assign(region, offset, F::from(byte as u64), F::from(0xef as u64))?;
-
-        self.rw_counter_end_of_reversion.assign(
+        self.is_first_byte_invalid.assign(
             region,
             offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+            F::from(byte as u64),
+            F::from(0xef_u64),
         )?;
-        self.restore_context
+
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;
         Ok(())
     }
@@ -237,8 +210,7 @@ mod test {
 
     #[test]
     fn test_invalid_creation_code() {
-        //for is_create2 in [false, true] {
-        for is_create2 in [false] {
+        for is_create2 in [false, true] {
             let initialization_code = initialization_bytecode();
             let root_code = creator_bytecode(initialization_code, is_create2);
             let caller = Account {
@@ -275,5 +247,4 @@ mod test {
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
-
 }

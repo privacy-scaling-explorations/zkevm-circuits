@@ -54,6 +54,7 @@ mod stackonlyop;
 mod stop;
 mod swap;
 
+mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_exp;
@@ -62,7 +63,6 @@ mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
-mod error_invalid_creation_code;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -80,6 +80,7 @@ use codecopy::Codecopy;
 use codesize::Codesize;
 use create::DummyCreate;
 use dup::Dup;
+use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_exp::OOGExp;
@@ -88,7 +89,6 @@ use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
-use error_invalid_creation_code::ErrorCreationCode;
 
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
@@ -256,7 +256,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
             DummySelfDestruct::gen_associated_ops
         }
         OpcodeId::CREATE => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
+            //evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
             DummyCreate::<false>::gen_associated_ops
         }
         OpcodeId::CREATE2 => {
@@ -321,7 +321,7 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        println!(
+        log::warn!(
             "geth error {:?} occurred in  {:?} at pc {:?}",
             exec_error,
             geth_step.op,

@@ -2,7 +2,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     error::ExecError,
     evm::Opcode,
-    operation::{CallContextField, RW},
+    operation::CallContextField,
     Error,
 };
 use eth_types::{GethExecStep, U256};
@@ -17,7 +17,6 @@ impl Opcode for ErrorCreationCode {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
-        let next_step = geth_steps.get(1);
 
         exec_step.error = Some(ExecError::InvalidCreationCode);
 
@@ -37,7 +36,7 @@ impl Opcode for ErrorCreationCode {
         assert!(length > U256::zero());
 
         // read first byte and assert it is 0xef
-        let byte = state.call_ctx()?.memory.0[offset.as_usize()].into();
+        let byte = state.call_ctx()?.memory.0[offset.as_usize()];
         assert!(byte == 0xef);
 
         state.memory_read(&mut exec_step, offset.try_into()?, byte)?;

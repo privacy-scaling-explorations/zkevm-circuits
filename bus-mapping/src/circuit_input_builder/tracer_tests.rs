@@ -752,6 +752,62 @@ fn tracer_err_invalid_code() {
     );
 }
 
+// test tx deploy transaction (tx.to == null)
+#[test]
+fn tracer_err_invalid_code_tx_deploy() {
+    // code_creator outputs byte array that starts with 0xef, which is
+    // invalid code.
+    let code_creator = bytecode! {
+        PUSH32(word!("0xef00000000000000000000000000000000000000000000000000000000000000")) // value
+        PUSH1(0x00) // offset
+        MSTORE
+        PUSH1(0x01) // length
+        PUSH1(0x00) // offset
+        RETURN
+    };
+
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<2, 1>::new_with_logger_config(
+        None,
+        |accs| {
+            accs[0].address(address!("0x0000000000000000000000000000000000000000"));
+            accs[1].address(*ADDR_B).balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0]
+                .from(accs[1].address)
+                .gas(60000u64.into())
+                .nonce(Word::zero())
+                .input(code_creator.into());
+        },
+        |block, _tx| block.number(0x0264),
+        LoggerConfig::enable_memory(),
+    )
+    .unwrap()
+    .into();
+
+    // get last RETURN
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::RETURN)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    assert!(check_err_invalid_code(step, next_step));
+
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    // Set up call context at RETURN
+    builder.tx_ctx.call_is_success.push(false);
+    builder.state_ref().push_call(mock_root_create());
+    builder.state_ref().call_ctx_mut().unwrap().memory = step.memory.clone();
+    assert_eq!(
+        builder.state_ref().get_step_err(step, next_step).unwrap(),
+        Some(ExecError::InvalidCreationCode)
+    );
+}
+
 fn check_err_max_code_size_exceeded(step: &GethExecStep, next_step: Option<&GethExecStep>) -> bool {
     let length = step.stack.nth_last(1).unwrap();
     step.op == OpcodeId::RETURN

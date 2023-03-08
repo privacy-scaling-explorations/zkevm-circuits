@@ -956,20 +956,33 @@ impl<F: Field> CommonErrorGadget<F> {
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
+        Self::construct_with_lastcallee_return_data(
+            cb,
+            opcode,
+            rw_counter_delta,
+            0.expr(),
+            0.expr(),
+        )
+    }
+
+    pub(crate) fn construct_with_lastcallee_return_data(
+        cb: &mut ConstraintBuilder<F>,
+        opcode: Expression<F>,
+        rw_counter_delta: Expression<F>,
+        return_data_offset: Expression<F>,
+        return_data_length: Expression<F>,
+    ) -> Self {
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
         let rw_counter_end_of_reversion = cb.query_cell();
-
         // current call must be failed.
         cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
-
         cb.call_context_lookup(
             false.expr(),
             None,
             CallContextFieldTag::RwCounterEndOfReversion,
             rw_counter_end_of_reversion.expr(),
         );
-
         // Go to EndTx only when is_root
         let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
         cb.require_equal(
@@ -977,7 +990,6 @@ impl<F: Field> CommonErrorGadget<F> {
             cb.curr.state.is_root.expr(),
             is_to_end_tx,
         );
-
         // When it's a root call
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             // Do step state transition
@@ -995,13 +1007,12 @@ impl<F: Field> CommonErrorGadget<F> {
                 cb,
                 0.expr(),
                 0.expr(),
-                0.expr(),
-                0.expr(),
+                return_data_offset,
+                return_data_length,
                 0.expr(),
                 0.expr(),
             )
         });
-
         // constrain RwCounterEndOfReversion
         let rw_counter_end_of_step =
             cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
@@ -1010,7 +1021,6 @@ impl<F: Field> CommonErrorGadget<F> {
             rw_counter_end_of_reversion.expr(),
             rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
         );
-
         Self {
             rw_counter_end_of_reversion,
             restore_context,
