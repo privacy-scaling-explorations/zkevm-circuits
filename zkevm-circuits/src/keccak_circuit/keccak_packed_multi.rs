@@ -139,16 +139,11 @@ pub(crate) mod split {
         input: Expression<F>,
         rot: usize,
         target_part_size: usize,
-        row: Option<usize>,
     ) -> Vec<Part<F>> {
         let mut parts = Vec::new();
         let word = WordParts::new(target_part_size, rot, false);
         for word_part in word.parts {
-            let cell = if let Some(row) = row {
-                cell_manager.query_cell_at_row(meta, row as i32)
-            } else {
-                cell_manager.query_cell(meta)
-            };
+            let cell = cell_manager.query_cell(meta);
             parts.push(Part {
                 num_bits: word_part.bits.len(),
                 cell: cell.clone(),
@@ -166,7 +161,6 @@ pub(crate) mod split {
         input: F,
         rot: usize,
         target_part_size: usize,
-        row: Option<usize>,
     ) -> Vec<PartValue<F>> {
         let input_bits = unpack(input);
         debug_assert_eq!(pack::<F>(&input_bits), input);
@@ -174,11 +168,8 @@ pub(crate) mod split {
         let word = WordParts::new(target_part_size, rot, false);
         for word_part in word.parts {
             let value = pack_part(&input_bits, &word_part);
-            let cell = if let Some(row) = row {
-                cell_manager.query_cell_value_at_row(row as i32)
-            } else {
-                cell_manager.query_cell_value()
-            };
+            let cell = cell_manager.query_cell_value();
+
             cell.assign(region, 0, F::from(value));
             parts.push(PartValue {
                 num_bits: word_part.bits.len(),
@@ -556,8 +547,7 @@ pub(crate) fn keccak<F: Field>(
             cell_manager.start_region();
             let part_size = get_num_bits_per_absorb_lookup();
             let input = absorb_row.from + absorb_row.absorb;
-            let absorb_fat =
-                split::value(&mut cell_manager, &mut region, input, 0, part_size, None);
+            let absorb_fat = split::value(&mut cell_manager, &mut region, input, 0, part_size);
             cell_manager.start_region();
             let _absorb_result = transform::value(
                 &mut cell_manager,
@@ -572,14 +562,7 @@ pub(crate) fn keccak<F: Field>(
             cell_manager.start_region();
             // Unpack a single word into bytes (for the absorption)
             // Potential optimization: could do multiple bytes per lookup
-            let packed = split::value(
-                &mut cell_manager,
-                &mut region,
-                absorb_row.absorb,
-                0,
-                8,
-                None,
-            );
+            let packed = split::value(&mut cell_manager, &mut region, absorb_row.absorb, 0, 8);
             cell_manager.start_region();
             let input_bytes =
                 transform::value(&mut cell_manager, &mut region, packed, false, |v| *v, true);
@@ -623,8 +606,7 @@ pub(crate) fn keccak<F: Field>(
                 let mut bcf = Vec::new();
                 for s in &s {
                     let c = s[0] + s[1] + s[2] + s[3] + s[4];
-                    let bc_fat =
-                        split::value(&mut cell_manager, &mut region, c, 1, part_size, None);
+                    let bc_fat = split::value(&mut cell_manager, &mut region, c, 1, part_size);
                     bcf.push(bc_fat);
                 }
                 cell_manager.start_region();
@@ -736,7 +718,7 @@ pub(crate) fn keccak<F: Field>(
                 let part_size = get_num_bits_per_absorb_lookup();
                 let input = s[0][0] + pack_u64::<F>(ROUND_CST[round]);
                 let iota_parts =
-                    split::value::<F>(&mut cell_manager, &mut region, input, 0, part_size, None);
+                    split::value::<F>(&mut cell_manager, &mut region, input, 0, part_size);
                 cell_manager.start_region();
                 s[0][0] = decode::value(transform::value(
                     &mut cell_manager,
@@ -784,7 +766,7 @@ pub(crate) fn keccak<F: Field>(
             squeeze_packed.assign(region, 0, *word);
 
             cell_manager.start_region();
-            let packed = split::value(cell_manager, region, *word, 0, 8, None);
+            let packed = split::value(cell_manager, region, *word, 0, 8);
             cell_manager.start_region();
             transform::value(cell_manager, region, packed, false, |v| *v, true);
         }
