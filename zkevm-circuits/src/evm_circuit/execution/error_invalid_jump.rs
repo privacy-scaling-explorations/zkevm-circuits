@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             and,
-            common_gadget::{CommonErrorGadget, WordRangeGadget},
+            common_gadget::{CommonErrorGadget, WordByteRangeGadget},
             constraint_builder::ConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             select, CachedRegion, Cell,
@@ -21,7 +21,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorInvalidJumpGadget<F> {
     opcode: Cell<F>,
-    dest_word: WordRangeGadget<F>,
+    dest_word: WordByteRangeGadget<F, N_BYTES_PROGRAM_COUNTER>,
     code_len: Cell<F>,
     value: Cell<F>,
     is_code: Cell<F>,
@@ -39,10 +39,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorInvalidJump;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let dest_word = WordRangeGadget::construct(cb, N_BYTES_PROGRAM_COUNTER);
+        let dest_word = WordByteRangeGadget::construct(cb);
         let dest = select::expr(
-            dest_word.within_range_expr(),
-            dest_word.valid_value_expr(N_BYTES_PROGRAM_COUNTER),
+            dest_word.within_range(),
+            dest_word.valid_value(),
             u64::MAX.expr(),
         );
 
@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         let is_condition_zero = IsZeroGadget::construct(cb, phase2_condition.expr());
 
         // Pop the value from the stack
-        cb.stack_pop(dest_word.original_word_expr());
+        cb.stack_pop(dest_word.original_word());
 
         cb.condition(is_jumpi.expr(), |cb| {
             cb.stack_pop(phase2_condition.expr());
@@ -83,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         // If destination is in valid range, lookup for the value.
         cb.condition(
-            and::expr([dest_word.within_range_expr(), dest_lt_code_len.expr()]),
+            and::expr([dest_word.within_range(), dest_lt_code_len.expr()]),
             |cb| {
                 cb.bytecode_lookup(
                     cb.curr.state.code_hash.expr(),
@@ -131,9 +131,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let dest = block.rws[step.rw_indices[0]].stack_value();
-        let dest_within_range =
-            self.dest_word
-                .assign(region, offset, N_BYTES_PROGRAM_COUNTER, dest)?;
+        let dest_within_range = self.dest_word.assign(region, offset, dest)?;
 
         let condition = if is_jumpi {
             block.rws[step.rw_indices[1]].stack_value()

@@ -518,41 +518,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         rws.offset_add(7);
         let mut callee_code_hash = zero;
         if !tx.is_create && !is_precompiled(&tx.callee_address.unwrap_or_default()) {
-            callee_code_hash = rws.next().account_value_pair().1;
+            callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let callee_exists = is_precompiled(&tx.callee_address.unwrap_or_default())
             || (!tx.is_create && !callee_code_hash.is_zero());
-        let caller_balance_sub_fee_pair = {
-            let rw = rws.next();
-            debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Balance as u64));
-            rw.account_value_pair()
-        };
+        let caller_balance_sub_fee_pair = rws.next().account_balance_pair();
         let must_create = tx.is_create;
         if (!callee_exists && !tx.value.is_zero()) || must_create {
-            callee_code_hash = {
-                let rw = rws.next();
-                debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::CodeHash as u64));
-                rw.account_value_pair().1
-            }
+            callee_code_hash = rws.next().account_codehash_pair().1;
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
         if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = {
-                let rw = rws.next();
-                debug_assert_eq!(
-                    rw.field_tag(),
-                    Some(AccountFieldTag::Balance as u64),
-                    "invalid rw {:?}",
-                    rw
-                );
-                rw.account_value_pair()
-            };
-            callee_balance_pair = {
-                let rw = rws.next();
-                debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Balance as u64));
-                rw.account_value_pair()
-            };
+            caller_balance_sub_value_pair = rws.next().account_balance_pair();
+            callee_balance_pair = rws.next().account_balance_pair();
         };
 
         self.tx_id

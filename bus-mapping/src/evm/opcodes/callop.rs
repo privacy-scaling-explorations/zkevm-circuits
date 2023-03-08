@@ -160,6 +160,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             caller_balance,
         );
 
+        let code_address = call.code_address();
+        let is_precompile = code_address
+            .map(|ref addr| is_precompiled(addr))
+            .unwrap_or(false);
         // TODO: What about transfer for CALLCODE?
         // Transfer value only for CALL opcode, insufficient_balance = false.
         if call.kind == CallKind::Call && !insufficient_balance {
@@ -167,7 +171,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 &mut exec_step,
                 call.caller_address,
                 call.address,
-                callee_exists,
+                callee_exists || is_precompile,
                 false,
                 call.value,
             )?;
@@ -243,14 +247,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             );
         }
 
-        let code_address = call.code_address();
-        match (
-            insufficient_balance,
-            code_address
-                .map(|ref addr| is_precompiled(addr))
-                .unwrap_or(false),
-            is_empty_code_hash,
-        ) {
+        match (insufficient_balance, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");

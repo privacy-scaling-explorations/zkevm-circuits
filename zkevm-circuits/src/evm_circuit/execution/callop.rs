@@ -169,6 +169,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
+        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_precompile_lt =
+            LtGadget::construct(cb, call_gadget.callee_address_expr(), 0xA.expr());
+        let is_precompile = and::expr(&[
+            not::expr(is_code_address_zero.expr()),
+            is_precompile_lt.expr(),
+        ]);
+
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
@@ -180,7 +188,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     cb,
                     caller_address.expr(),
                     callee_address.expr(),
-                    not::expr(call_gadget.callee_not_exists.expr()),
+                    or::expr([
+                        not::expr(call_gadget.callee_not_exists.expr()),
+                        is_precompile.expr(),
+                    ]),
                     0.expr(),
                     call_gadget.value.clone(),
                     &mut callee_reversion_info,
@@ -219,13 +230,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             all_but_one_64th_gas,
         );
 
-        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
-        let is_precompile_lt =
-            LtGadget::construct(cb, call_gadget.callee_address_expr(), 0xA.expr());
-        let is_precompile = and::expr(&[
-            not::expr(is_code_address_zero.expr()),
-            is_precompile_lt.expr(),
-        ]);
         let return_data_len = cb.query_cell();
         let return_data_copy_size = MinMaxGadget::<F, N_BYTES_GAS>::construct(
             cb,
@@ -493,6 +497,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
+        for (_i, _rw) in step.rw_indices.iter().enumerate() {
+            //log::trace!("rw {}th, {:?}", i, block.rws[*rw]);
+        }
         let opcode = step.opcode.unwrap();
         let is_call = opcode == OpcodeId::CALL;
         let is_callcode = opcode == OpcodeId::CALLCODE;
@@ -537,8 +544,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[stack_index + 6 + rw_offset],
         ]
         .map(|idx| block.rws[idx].stack_value());
+        //log::trace!("rw_offset {:?}", rw_offset);
         let callee_code_hash = block.rws[step.rw_indices[13 + rw_offset]]
-            .account_value_pair()
+            .account_codehash_pair()
             .0;
         let callee_exists = !callee_code_hash.is_zero();
 
@@ -553,7 +561,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // check if it is insufficient balance case.
         // get caller balance
-        let (caller_balance, _) = block.rws[step.rw_indices[17 + rw_offset]].account_value_pair();
+        let (caller_balance, _) = block.rws[step.rw_indices[17 + rw_offset]].account_balance_pair();
         self.caller_balance_word
             .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
         self.is_insufficient_balance
@@ -565,8 +573,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             if is_call && !is_insufficient && !value.is_zero() {
                 rw_offset += 2;
                 (
-                    block.rws[step.rw_indices[16 + rw_offset]].account_value_pair(),
-                    block.rws[step.rw_indices[17 + rw_offset]].account_value_pair(),
+                    block.rws[step.rw_indices[16 + rw_offset]].account_balance_pair(),
+                    block.rws[step.rw_indices[17 + rw_offset]].account_balance_pair(),
                 )
             } else {
                 ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
