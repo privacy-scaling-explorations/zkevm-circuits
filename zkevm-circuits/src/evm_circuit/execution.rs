@@ -313,6 +313,7 @@ pub(crate) struct ExecutionConfig<F> {
 
 impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::redundant_closure_call)]
     pub(crate) fn configure(
         meta: &mut ConstraintSystem<F>,
         challenges: Challenges<Expression<F>>,
