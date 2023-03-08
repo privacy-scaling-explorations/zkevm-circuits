@@ -79,7 +79,15 @@ impl<'a> CircuitInputStateRef<'a> {
         ExecStep {
             exec_state: ExecState::EndTx,
             gas_left: if prev_step.error.is_none() {
-                Gas(prev_step.gas_left.0 - prev_step.gas_cost.0)
+                let mut gas_left = prev_step.gas_left.0 - prev_step.gas_cost.0;
+                if let Ok(call) = self.call() {
+                    if call.is_create() {
+                        let code_hash = self.sdb.get_account(&call.address).1.code_hash;
+                        let bytecode_len = self.code(code_hash).unwrap().len() as u64;
+                        gas_left += bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST.as_u64();
+                    }
+                }
+                Gas(gas_left)
             } else {
                 // consume all remaining gas when non revert err happens
                 Gas(0)
