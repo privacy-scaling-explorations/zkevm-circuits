@@ -203,7 +203,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
-            tx_callee_address.expr(),
+            call_callee_address.expr(),
             not::expr(callee_not_exists.expr()),
             or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
             tx_value.clone(),
