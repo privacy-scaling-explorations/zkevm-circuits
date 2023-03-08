@@ -13,7 +13,7 @@ pub(crate) mod util;
 
 pub mod table;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-mod test;
+pub(crate) mod test;
 
 use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
