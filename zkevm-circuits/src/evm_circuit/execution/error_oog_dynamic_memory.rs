@@ -93,7 +93,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGDynamicMemoryGadget<F> {
         );
 
         let memory_expansion =
-            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size.expr()]);
+            MemoryExpansionGadget::construct(cb, [address_low::expr(&address) + size_low.expr()]);
 
         let insufficient_gas = LtGadget::construct(
             cb,
