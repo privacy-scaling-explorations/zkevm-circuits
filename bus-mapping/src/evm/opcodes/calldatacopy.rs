@@ -22,24 +22,8 @@ impl Opcode for Calldatacopy {
         let length = geth_step.stack.nth_last(2)?.as_usize();
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        if length != 0 {
-            let minimal_length = memory_offset as usize + length;
-            memory.extend_at_least(minimal_length);
 
-            let mem_starts = memory_offset as usize;
-            let mem_ends = mem_starts + length as usize;
-            let data_starts = data_offset as usize;
-            let data_ends = data_starts + length as usize;
-            let call_data = &call_ctx.call_data;
-            if data_ends <= call_data.len() {
-                memory.0[mem_starts..mem_ends].copy_from_slice(&call_data[data_starts..data_ends]);
-            } else if let Some(actual_length) = call_data.len().checked_sub(data_starts) {
-                let mem_code_ends = mem_starts + actual_length;
-                memory.0[mem_starts..mem_code_ends].copy_from_slice(&call_data[data_starts..]);
-                // since we already resize the memory, no need to copy 0s for
-                // out of bound bytes
-            }
-        }
+        memory.copy_from(memory_offset, &call_ctx.call_data, data_offset, length);
 
         let copy_event = gen_copy_event(state, geth_step)?;
         state.push_copy(copy_event);
