@@ -21,7 +21,8 @@ on:
 
 jobs:
   consecutiveness:
-    if: github.event_name == 'push' ||
+    if: github.event_name == 'schedule' ||
+        github.event_name == 'push' ||
         github.event_name == 'workflow_dispatch' ||
         contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
 
