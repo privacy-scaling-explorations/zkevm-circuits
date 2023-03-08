@@ -9,7 +9,7 @@ use crate::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
-    table::{AccountFieldTag, ProofType, RwTableTag},
+    table::{AccountFieldTag, MPTProofType, RwTableTag},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -268,10 +268,10 @@ impl<F: Field> ConstraintBuilder<F> {
         // non-existing proof.
         let is_non_exist = q.is_non_exist();
         self.require_equal(
-            "mpt_proof_type is field_tag or StorageDoesNotExist",
+            "mpt_proof_type is field_tag or NonExistingStorageProof",
             q.mpt_proof_type(),
-            is_non_exist.expr() * ProofType::StorageDoesNotExist.expr()
-                + (1.expr() - is_non_exist) * ProofType::StorageChanged.expr(),
+            is_non_exist.expr() * MPTProofType::NonExistingStorageProof.expr()
+                + (1.expr() - is_non_exist) * MPTProofType::StorageMod.expr(),
         );
 
         // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
@@ -420,10 +420,10 @@ impl<F: Field> ConstraintBuilder<F> {
                 .map(|t| *t as usize),
             );
         self.require_equal(
-            "mpt_proof_type is field_tag or AccountDoesNotExists",
+            "mpt_proof_type is field_tag or NonExistingAccountProofs",
             q.mpt_proof_type(),
             // degree = max(4, 4 + 1) = 5
-            is_non_exist.expr() * ProofType::AccountDoesNotExist.expr()
+            is_non_exist.expr() * MPTProofType::NonExistingAccountProof.expr()
                 + (1.expr() - is_non_exist) * q.field_tag(),
         );
 
