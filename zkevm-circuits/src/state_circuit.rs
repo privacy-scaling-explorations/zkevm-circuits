@@ -9,7 +9,7 @@ mod test;
 
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MptTable, MPTProofType, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
