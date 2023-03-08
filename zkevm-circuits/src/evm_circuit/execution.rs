@@ -71,6 +71,7 @@ mod error_oog_static_memory;
 mod error_return_data_oo_bound;
 mod error_stack;
 mod error_write_protection;
+mod error_invalid_creation_code;
 mod exp;
 mod extcodecopy;
 mod extcodehash;
@@ -141,6 +142,8 @@ use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_return_data_oo_bound::ErrorReturnDataOutOfBoundGadget;
 use error_stack::ErrorStackGadget;
 use error_write_protection::ErrorWriteProtectionGadget;
+use error_invalid_creation_code::ErrorInvalidCreationCodeGadget;
+
 use exp::ExponentiationGadget;
 use extcodecopy::ExtcodecopyGadget;
 use extcodehash::ExtcodehashGadget;
@@ -303,7 +306,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_depth: DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>,
     error_contract_address_collision:
         DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>,
-    error_invalid_creation_code: DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>,
+    error_invalid_creation_code: ErrorInvalidCreationCodeGadget<F>,
     error_return_data_out_of_bound: ErrorReturnDataOutOfBoundGadget<F>,
 }
 

@@ -62,6 +62,7 @@ mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
+mod error_invalid_creation_code;
 
 #[cfg(test)]
 mod memory_expansion_test;
@@ -87,6 +88,8 @@ use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_simple::ErrorSimple;
 use error_write_protection::ErrorWriteProtection;
+use error_invalid_creation_code::ErrorCreationCode;
+
 use exp::Exponentiation;
 use extcodecopy::Extcodecopy;
 use extcodehash::Extcodehash;
@@ -282,6 +285,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
+        ExecError::InvalidCreationCode => Some(ErrorCreationCode::gen_associated_ops),
 
         // more future errors place here
         _ => {
@@ -317,7 +321,7 @@ pub fn gen_associated_ops(
         None
     };
     if let Some(exec_error) = state.get_step_err(geth_step, next_step).unwrap() {
-        log::warn!(
+        println!(
             "geth error {:?} occurred in  {:?} at pc {:?}",
             exec_error,
             geth_step.op,
