@@ -6,7 +6,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::mpt_circuit::helpers::IsEmptyTreeGadget;
+use crate::mpt_circuit::helpers::{num_nibbles, IsEmptyTreeGadget};
 use crate::table::ProofType;
 use crate::{
     circuit,
@@ -32,7 +32,7 @@ use crate::{
 };
 
 use super::{
-    helpers::{Indexable, KeyDataWitness, LeafKeyGadget, WrongGadget},
+    helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
     rlp_gadgets::RLPValueGadget,
 };
 
@@ -42,16 +42,15 @@ pub(crate) struct StorageLeafConfig<F> {
     key_data: [KeyData<F>; 2],
     parent_data: [ParentData<F>; 2],
     key_mult: [Cell<F>; 2],
-    rlp_key: [LeafKeyGadget<F>; 2],
+    rlp_key: [ListKeyGadget<F>; 2],
     rlp_value: [RLPValueGadget<F>; 2],
-    wrong_rlp_key: LeafKeyGadget<F>,
     is_wrong_leaf: Cell<F>,
     is_not_hashed: [LtGadget<F, 1>; 2],
     is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
     is_storage_mod_proof: IsEqualGadget<F>,
-    is_non_existing_proof: IsEqualGadget<F>,
+    is_non_existing_storage_proof: IsEqualGadget<F>,
 }
 
 impl<F: Field> StorageLeafConfig<F> {
@@ -67,12 +66,12 @@ impl<F: Field> StorageLeafConfig<F> {
 
         circuit!([meta, cb.base], {
             let key_bytes = [
-                ctx.expr(meta, 0)[..36].to_owned(),
-                ctx.expr(meta, 2)[..36].to_owned(),
+                ctx.expr(meta, 0)[..34].to_owned(),
+                ctx.expr(meta, 2)[..34].to_owned(),
             ];
             let value_bytes = [ctx.expr(meta, 1), ctx.expr(meta, 3)];
-            let drifted_bytes = ctx.expr(meta, 4)[..36].to_owned();
-            let wrong_bytes = ctx.expr(meta, 5)[..36].to_owned();
+            let drifted_bytes = ctx.expr(meta, 4)[..34].to_owned();
+            let wrong_bytes = ctx.expr(meta, 5)[..34].to_owned();
 
             config.main_data = MainData::load(
                 "main storage",
@@ -106,9 +105,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 let is_placeholder_leaf = config.is_in_empty_trie[is_s.idx()].expr();
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
-                *rlp_key = LeafKeyGadget::construct(&mut cb.base, &key_bytes[is_s.idx()]);
+                *rlp_key = ListKeyGadget::construct(&mut cb.base, &key_bytes[is_s.idx()]);
                 config.rlp_value[is_s.idx()] =
-                    RLPValueGadget::construct(&mut cb.base, &value_bytes[is_s.idx()][0..36]);
+                    RLPValueGadget::construct(&mut cb.base, &value_bytes[is_s.idx()][0..34]);
 
                 config.key_mult[is_s.idx()] = cb.base.query_cell();
                 require!((FixedTableTag::RMult, rlp_key.num_bytes_on_key_row(), config.key_mult[is_s.idx()].expr()) => @"fixed");
@@ -125,14 +124,16 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
-                    + rlp_key.leaf_key_rlc(
+                    + rlp_key.key.expr(
                         &mut cb.base,
+                        rlp_key.key_value.clone(),
                         key_data.mult.expr(),
                         key_data.is_odd.expr(),
                         &r,
                     );
                 // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
-                let num_nibbles = rlp_key.num_key_nibbles(key_data.is_odd.expr());
+                let num_nibbles =
+                    num_nibbles::expr(rlp_key.key_value.len(), key_data.is_odd.expr());
                 require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                 // Placeholder leaves default to value `0`.
@@ -142,15 +143,15 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Make sure the RLP encoding is correct.
                 // storage = [key, value]
-                require!(rlp_key.num_bytes() => rlp_key.num_bytes_on_key_row() + config.rlp_value[is_s.idx()].num_bytes());
+                require!(rlp_key.rlp_list.num_bytes() => rlp_key.num_bytes_on_key_row() + config.rlp_value[is_s.idx()].num_bytes());
 
                 // Check if the account is in its parent.
                 // Check is skipped for placeholder leafs which are dummy leafs
                 ifx! {not!(is_placeholder_leaf) => {
-                    config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.num_bytes(), 32.expr());
+                    config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {
                         // Hashed branch hash in parent branch
-                        require!((1, leaf_rlc, rlp_key.num_bytes(), parent_data.rlc) => @"keccak");
+                        require!((1, leaf_rlc, rlp_key.rlp_list.num_bytes(), parent_data.rlc) => @"keccak");
                     } elsex {
                         // Non-hashed branch hash in parent branch
                         require!(leaf_rlc => parent_data.rlc);
@@ -177,7 +178,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 config.main_data.proof_type.expr(),
                 ProofType::StorageChanged.expr(),
             );
-            config.is_non_existing_proof = IsEqualGadget::construct(
+            config.is_non_existing_storage_proof = IsEqualGadget::construct(
                 &mut cb.base,
                 config.main_data.proof_type.expr(),
                 ProofType::StorageDoesNotExist.expr(),
@@ -198,23 +199,28 @@ impl<F: Field> StorageLeafConfig<F> {
             config.wrong = WrongGadget::construct(
                 cb,
                 a!(ctx.mpt_table.key_rlc),
-                config.is_non_existing_proof.expr(),
-                &config.rlp_key,
-                &key_rlc,
+                config.is_non_existing_storage_proof.expr(),
+                &config.rlp_key[true.idx()].key_value,
+                &key_rlc[true.idx()],
                 &wrong_bytes,
                 config.is_in_empty_trie[true.idx()].expr(),
                 config.key_data[true.idx()].clone(),
                 &ctx.r,
             );
 
+            // For non-existing proofs the tree needs to remain the same
+            ifx! {config.is_non_existing_storage_proof => {
+                require!(config.main_data.root => config.main_data.root_prev);
+                require!(key_rlc[true.idx()] => key_rlc[false.idx()]);
+            }}
+
             // Put the data in the lookup table
             let proof_type = matchx! {
                 config.is_storage_mod_proof => ProofType::StorageChanged.expr(),
-                config.is_non_existing_proof => ProofType::StorageDoesNotExist.expr(),
+                config.is_non_existing_storage_proof => ProofType::StorageDoesNotExist.expr(),
                 _ => ProofType::Disabled.expr(),
             };
-            let key_rlc = ifx! {config.is_non_existing_proof => {
-                require!(key_rlc[true.idx()] => key_rlc[false.idx()]);
+            let key_rlc = ifx! {config.is_non_existing_storage_proof => {
                 a!(ctx.mpt_table.key_rlc)
             } elsex {
                 key_rlc[false.idx()].expr()
@@ -268,8 +274,12 @@ impl<F: Field> StorageLeafConfig<F> {
                 0,
             )?;
 
-            let rlp_key_witness =
-                self.rlp_key[is_s.idx()].assign(region, offset, &key_row.bytes)?;
+            let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
+                region,
+                offset,
+                &key_row.rlp_bytes,
+                &key_row.bytes[0..34],
+            )?;
 
             let (_, leaf_mult) = rlp_key_witness.rlc_leaf(ctx.r);
             self.key_mult[is_s.idx()].assign(region, offset, leaf_mult)?;
@@ -277,7 +287,7 @@ impl<F: Field> StorageLeafConfig<F> {
             self.is_not_hashed[is_s.idx()].assign(
                 region,
                 offset,
-                rlp_key_witness.num_bytes().scalar(),
+                rlp_key_witness.rlp_list.num_bytes().scalar(),
                 32.scalar(),
             )?;
 
@@ -300,7 +310,8 @@ impl<F: Field> StorageLeafConfig<F> {
             )?;
 
             // Key
-            (key_rlc[is_s.idx()], _) = rlp_key_witness.leaf_key_rlc(
+            (key_rlc[is_s.idx()], _) = rlp_key_witness.key.key(
+                rlp_key_witness.key_value.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
                 ctx.r,
@@ -340,7 +351,7 @@ impl<F: Field> StorageLeafConfig<F> {
             main_data.proof_type.scalar(),
             ProofType::StorageChanged.scalar(),
         )? == true.scalar();
-        let is_non_existing_proof = self.is_non_existing_proof.assign(
+        let is_non_existing_proof = self.is_non_existing_storage_proof.assign(
             region,
             offset,
             main_data.proof_type.scalar(),
@@ -348,8 +359,14 @@ impl<F: Field> StorageLeafConfig<F> {
         )? == true.scalar();
 
         // Drifted leaf handling
-        self.drifted
-            .assign(region, offset, &parent_data, &row_drifted.bytes, ctx.r)?;
+        self.drifted.assign(
+            region,
+            offset,
+            &parent_data,
+            &row_drifted.rlp_bytes,
+            &row_drifted.bytes,
+            ctx.r,
+        )?;
 
         // Wrong leaf handling
         let key_rlc = self.wrong.assign(
@@ -357,8 +374,8 @@ impl<F: Field> StorageLeafConfig<F> {
             offset,
             is_non_existing_proof,
             &key_rlc,
+            &row_wrong.rlp_bytes,
             &row_wrong.bytes,
-            row_key,
             false,
             key_data[true.idx()].clone(),
             ctx.r,

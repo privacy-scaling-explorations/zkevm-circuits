@@ -55,33 +55,6 @@ impl<F: Field> IsZeroGadget<F> {
     }
 }
 
-/// Verifies that the value is non-zero.
-#[derive(Clone, Debug, Default)]
-pub struct RequireNotZeroGadget<F> {
-    inverse: Cell<F>,
-}
-
-impl<F: Field> RequireNotZeroGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
-        circuit!([meta, cb], {
-            let inverse = cb.query_cell();
-            require!(value.expr() * inverse.expr() => 1);
-            Self { inverse }
-        })
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        value: F,
-    ) -> Result<(), Error> {
-        let inverse = value.invert().unwrap_or(F::zero());
-        self.inverse.assign(region, offset, inverse)?;
-        Ok(())
-    }
-}
-
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
 pub struct IsEqualGadget<F> {

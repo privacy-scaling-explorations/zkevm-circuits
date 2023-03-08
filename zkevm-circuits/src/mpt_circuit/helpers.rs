@@ -1,38 +1,35 @@
-use std::{any::Any, marker::PhantomData};
+use std::any::Any;
 
 use crate::{
-    _cb, assign, circuit,
+    _cb, circuit,
     circuit_tools::{
         cell_manager::{Cell, CellManager, Trackable},
         constraint_builder::{
             Conditionable, ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable,
             RLCableValue,
         },
-        gadgets::{IsEqualGadget, RequireNotZeroGadget},
-        memory::{Memory, MemoryBank},
+        gadgets::IsEqualGadget,
+        memory::MemoryBank,
     },
     matchr, matchw,
     mpt_circuit::{
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
     },
-    table::{MptTable, ProofType},
     util::Expr,
 };
 use eth_types::Field;
 use gadgets::util::{or, Scalar};
 use halo2_proofs::{
-    circuit::{Region, Value},
-    plonk::{Advice, Column, Error, Expression, VirtualCells},
-    poly::Rotation,
+    circuit::Region,
+    plonk::{Error, Expression},
 };
 
 use super::{
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPListGadget, RLPListWitness, RLPValueGadget, RLPValueWitness,
     },
-    witness_row::MptWitnessRow,
-    FixedTableTag, MPTConfig, MPTContext, ProofValues,
+    FixedTableTag,
 };
 
 /// Indexable object
@@ -51,101 +48,32 @@ impl Indexable for bool {
     }
 }
 
-pub(crate) trait Gadget<F: Field> {
-    /// Constraints
-    fn configure(
-        meta: &mut VirtualCells<'_, F>,
-        cb: &mut MPTConstraintBuilder<F>,
-        ctx: MPTContext<F>,
-    ) -> Self;
-
-    /// Witness
-    fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        witness: &[MptWitnessRow<F>],
-        mpt_config: &MPTConfig<F>,
-        pv: &mut ProofValues<F>,
-        offset: usize,
-    ) -> Result<(), Error>;
-}
-
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LeafKeyGadget<F> {
-    pub(crate) rlp_list: RLPListGadget<F>,
-    pub(crate) short_list_value: RLPValueGadget<F>,
-    pub(crate) long_list_value: RLPValueGadget<F>,
-    short_list_has_no_nibbles: IsEqualGadget<F>,
-    long_list_has_no_nibbles: IsEqualGadget<F>,
-    bytes: Vec<Expression<F>>,
+    has_no_nibbles: IsEqualGadget<F>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LeafKeyWitness {
-    pub(crate) rlp_list: RLPListWitness,
-    pub(crate) short_list_value: RLPValueWitness,
-    pub(crate) long_list_value: RLPValueWitness,
-    bytes: Vec<u8>,
+    has_no_nibble: bool,
 }
 
 impl<F: Field> LeafKeyGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
-        // TODO(Brecht): move list RLP bytes out so the key always starts at the same
-        // position
-        LeafKeyGadget {
-            rlp_list: RLPListGadget::construct(cb, bytes),
-            short_list_value: RLPValueGadget::construct(cb, &bytes[1..]),
-            long_list_value: RLPValueGadget::construct(cb, &bytes[2..]),
-            short_list_has_no_nibbles: IsEqualGadget::<F>::construct(
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, rlp_key: RLPValueGadget<F>) -> Self {
+        circuit!([meta, cb], {
+            let has_no_nibbles = IsEqualGadget::<F>::construct(
                 cb,
-                bytes[1].expr(),
+                rlp_key.bytes[0].expr(),
                 KEY_TERMINAL_PREFIX_EVEN.expr(),
-            ),
-            long_list_has_no_nibbles: IsEqualGadget::<F>::construct(
-                cb,
-                bytes[2].expr(),
-                KEY_TERMINAL_PREFIX_EVEN.expr(),
-            ),
-            bytes: bytes.to_vec(),
-        }
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
-        bytes: &[u8],
-    ) -> Result<LeafKeyWitness, Error> {
-        let rlp_list = self.rlp_list.assign(region, offset, bytes)?;
-        let short_list_value = self.short_list_value.assign(region, offset, &bytes[1..])?;
-        let long_list_value = self.long_list_value.assign(region, offset, &bytes[2..])?;
-        self.short_list_has_no_nibbles.assign(
-            region,
-            offset,
-            F::from(bytes[1] as u64),
-            F::from(KEY_TERMINAL_PREFIX_EVEN as u64),
-        )?;
-        self.long_list_has_no_nibbles.assign(
-            region,
-            offset,
-            F::from(bytes[2] as u64),
-            F::from(KEY_TERMINAL_PREFIX_EVEN as u64),
-        )?;
-        Ok(LeafKeyWitness {
-            rlp_list,
-            short_list_value,
-            long_list_value,
-            bytes: bytes.to_vec(),
+            );
+            LeafKeyGadget { has_no_nibbles }
         })
     }
 
-    pub(crate) fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
-        self.bytes.rlc(r)
-    }
-
-    pub(crate) fn leaf_key_rlc(
+    pub(crate) fn expr(
         &self,
         cb: &mut ConstraintBuilder<F>,
+        rlp_key: RLPValueGadget<F>,
         key_mult_prev: Expression<F>,
         is_key_odd: Expression<F>,
         r: &[Expression<F>],
@@ -157,305 +85,240 @@ impl<F: Field> LeafKeyGadget<F> {
                 leaf_key_rlc(cb, bytes, key_mult_prev.expr(), is_key_odd.expr(), r)
             };
             matchx! {
-                self.rlp_list.is_short() => {
-                    matchx! {
-                        self.short_list_value.is_short() => {
-                            // When no nibbles: only terminal prefix at `bytes[1]`.
-                            // Else: Terminal prefix + single nibble  at `bytes[1]`
-                            let is_odd = not!(self.short_list_has_no_nibbles);
-                            calc_rlc(cb, &self.bytes[1..2], is_odd)
-                        },
-                        self.short_list_value.is_long() => {
-                            // First key byte is at `bytes[2]`.
-                            calc_rlc(cb, &self.bytes[2..35], is_key_odd.expr())
-                        },
-                    }
+                rlp_key.is_short() => {
+                    // When no nibbles: only terminal prefix at `bytes[1]`.
+                    // Else: Terminal prefix + single nibble  at `bytes[1]`
+                    let is_odd = not!(self.has_no_nibbles);
+                    calc_rlc(cb, &rlp_key.bytes[0..1], is_odd)
                 },
-                self.rlp_list.is_long() => {
-                    matchx! {
-                        self.long_list_value.is_short() => {
-                            // When no nibbles: only terminal prefix at `bytes[2]`.
-                            // Else: Terminal prefix + single nibble  at `bytes[2]`
-                            let is_odd = not!(self.long_list_has_no_nibbles);
-                            calc_rlc(cb, &self.bytes[2..3], is_odd)
-                        },
-                        self.long_list_value.is_long() => {
-                            // First key byte is at `bytes[3]`.
-                            calc_rlc(cb, &self.bytes[3..36], is_key_odd.expr())
-                        },
-                    }
+                rlp_key.is_long() => {
+                    // First key byte is at `bytes[2]`.
+                    calc_rlc(cb, &rlp_key.bytes[1..34], is_key_odd.expr())
                 },
             }
         })
     }
 
-    pub(crate) fn ext_key_rlc(
+    pub(crate) fn assign(
         &self,
-        cb: &mut ConstraintBuilder<F>,
-        key_mult_prev: Expression<F>,
-        is_key_part_odd: Expression<F>,
-        is_key_odd: Expression<F>,
-        data: [Vec<Expression<F>>; 2],
-        r: &[Expression<F>],
-    ) -> Expression<F> {
-        circuit!([meta, cb], {
-            let (is_short, is_long) = ifx! {self.rlp_list.is_short() => {
-                (
-                    self.short_list_value.is_short(),
-                    self.short_list_value.is_long(),
-                )
-            } elsex {
-                (
-                    self.long_list_value.is_short(),
-                    self.long_list_value.is_long(),
-                )
-            }};
-            let mult_first_odd = ifx! {is_key_odd => { 1.expr() } elsex { 16.expr() }};
-            let calc_rlc = |cb: &mut ConstraintBuilder<F>,
-                            bytes: &[Expression<F>],
-                            key_mult_first_even: Expression<F>| {
-                ext_key_rlc(
-                    cb,
-                    bytes,
-                    key_mult_prev.expr(),
-                    is_key_part_odd.expr(),
-                    mult_first_odd.expr(),
-                    key_mult_first_even,
-                    r,
-                )
-            };
-            // TODO(Brecht): somehow the start index doesn't dependend on the list
-            // is_short/is_long?
-            matchx! {
-                and::expr(&[is_long.expr(), not!(is_key_odd)]) => {
-                    // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
-                    // Note that there can be at max 31 key bytes because 32 same bytes would mean
-                    // the two keys being the same - update operation, not splitting into extension node.
-                    // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
-                    // is not used (when even number of nibbles).
-                    let mut key_bytes = vec![data[0][2].expr()];
-                    key_bytes.append(&mut data[0][2..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
-                        let nibble_lo = (byte.expr() - nibble_hi.expr()) * invert!(16);
-                        // Check that `nibble_hi` is correct.
-                        require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
-                        // Collect bytes
-                        (nibble_hi.expr() * 16.expr() * r[0].expr()) + nibble_lo.expr()
-                    }).collect::<Vec<_>>());
-                    calc_rlc(cb, &key_bytes, 1.expr())
-                },
-                and::expr(&[is_long.expr(), is_key_odd.expr()]) => {
-                    let additional_mult = ifx! {is_key_part_odd => { r[0].expr() } elsex { 1.expr() }};
-                    calc_rlc(cb, &data[0][2..], additional_mult)
-                },
-                is_short => {
-                    calc_rlc(cb, &data[0][1..2], 1.expr())
-                },
-            }
+        region: &mut Region<'_, F>,
+        offset: usize,
+        rlp_key: RLPValueWitness,
+    ) -> Result<LeafKeyWitness, Error> {
+        let has_no_nibble = self.has_no_nibbles.assign(
+            region,
+            offset,
+            F::from(rlp_key.bytes[0] as u64),
+            F::from(KEY_TERMINAL_PREFIX_EVEN as u64),
+        )?;
+        Ok(LeafKeyWitness {
+            has_no_nibble: has_no_nibble != 0.scalar(),
         })
-    }
-
-    /// Returns the number of bytes used by the list (including RLP bytes)
-    pub(crate) fn num_bytes(&self) -> Expression<F> {
-        self.rlp_list.num_bytes()
-    }
-
-    /// Returns the total length of the list (excluding RLP bytes)
-    pub(crate) fn len(&self) -> Expression<F> {
-        self.rlp_list.len()
-    }
-
-    /// Number of RLP bytes for leaf and key
-    pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
-            self.rlp_list.num_rlp_bytes()
-                + matchx! {
-                    self.rlp_list.is_short() => {
-                        self.short_list_value.num_rlp_bytes()
-                    },
-                    self.rlp_list.is_long() => {
-                        self.long_list_value.num_rlp_bytes()
-                    },
-                }
-        })
-    }
-
-    /// Length of the key (excluding RLP bytes)
-    pub(crate) fn key_len(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
-            matchx! {
-                self.rlp_list.is_short() => {
-                    self.short_list_value.len()
-                },
-                self.rlp_list.is_long() => {
-                    self.long_list_value.len()
-                },
-            }
-        })
-    }
-
-    /// Number of bytes of the key (excluding RLP bytes)
-    pub(crate) fn key_num_bytes(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
-            matchx! {
-                self.rlp_list.is_short() => {
-                    self.short_list_value.num_bytes()
-                },
-                self.rlp_list.is_long() => {
-                    self.long_list_value.num_bytes()
-                },
-            }
-        })
-    }
-
-    /// Number of bytes of RLP (including list RLP bytes) and key
-    pub(crate) fn num_bytes_on_key_row(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
-            self.rlp_list.num_rlp_bytes()
-                + matchx! {
-                    self.rlp_list.is_short() => {
-                        self.short_list_value.num_bytes()
-                    },
-                    self.rlp_list.is_long() => {
-                        self.long_list_value.num_bytes()
-                    },
-                }
-        })
-    }
-
-    pub(crate) fn num_key_nibbles(&self, is_key_odd: Expression<F>) -> Expression<F> {
-        num_nibbles::expr(self.key_len(), is_key_odd)
     }
 }
 
 impl LeafKeyWitness {
-    /// Returns the number of bytes used by the list (including RLP bytes)
-    pub(crate) fn num_bytes(&self) -> usize {
-        self.rlp_list.num_bytes()
-    }
-
-    /// Number of RLP bytes for leaf and key
-    pub(crate) fn num_rlp_bytes_list(&self) -> usize {
-        self.rlp_list.num_rlp_bytes()
-    }
-
-    /// Number of RLP bytes for leaf and key
-    pub(crate) fn num_rlp_bytes(&self) -> usize {
-        self.rlp_list.num_rlp_bytes()
-            + if self.rlp_list.is_short() {
-                self.short_list_value.num_rlp_bytes()
-            } else if self.rlp_list.is_long() {
-                self.long_list_value.num_rlp_bytes()
-            } else {
-                unreachable!();
-            }
-    }
-
-    /// Length of the key (excluding RLP bytes)
-    pub(crate) fn key_len(&self) -> usize {
-        matchr! {
-            self.rlp_list.is_short() => {
-                self.short_list_value.len()
-            },
-            self.rlp_list.is_long() => {
-                self.long_list_value.len()
-            },
-        }
-    }
-
-    /// Number of bytes of RLP (including list RLP bytes) and key
-    pub(crate) fn num_bytes_on_key_row(&self) -> usize {
-        self.rlp_list.num_rlp_bytes()
-            + if self.rlp_list.is_short() {
-                self.short_list_value.num_bytes()
-            } else if self.rlp_list.is_long() {
-                self.long_list_value.num_bytes()
-            } else {
-                unreachable!();
-            }
-    }
-
-    /// Number of bytes of RLP (including list RLP bytes) and key
-    pub(crate) fn rlc_leaf<F: Field>(&self, r: F) -> (F, F) {
-        (0.scalar(), 1.scalar())
-            .rlc_chain_value(&self.bytes[0..(self.num_bytes_on_key_row() as usize)], r)
-    }
-
-    pub(crate) fn leaf_key_rlc<F: Field>(&self, key_rlc: F, key_mult: F, r: F) -> (F, F) {
-        if self.key_len() <= 1 {
+    pub(crate) fn key<F: Field>(
+        &self,
+        rlp_key: RLPValueWitness,
+        key_rlc: F,
+        key_mult: F,
+        r: F,
+    ) -> (F, F) {
+        if rlp_key.len() <= 1 {
             return (key_rlc, key_mult);
         }
 
-        let start = self.num_rlp_bytes_list() as usize;
-        let len = self.bytes[start] as usize - 128;
-        let even_num_of_nibbles = self.bytes[start + 1] == 32;
+        let start = 0;
+        let len = rlp_key.len();
+        let even_num_of_nibbles = rlp_key.bytes[start + 1] == 32;
 
         let mut key_rlc = key_rlc;
         let mut key_mult = key_mult;
         if !even_num_of_nibbles {
             // If odd number of nibbles, we have nibble+48 in s_advices[0].
-            key_rlc += F::from((self.bytes[start + 1] - 48) as u64) * key_mult;
+            key_rlc += F::from((rlp_key.bytes[start + 1] - 48) as u64) * key_mult;
             key_mult *= r;
         }
-        (key_rlc, key_mult).rlc_chain_value(&self.bytes[start + 2..start + 2 + len - 1], r)
+        (key_rlc, key_mult).rlc_chain_value(&rlp_key.bytes[start + 2..start + 2 + len - 1], r)
     }
+}
 
-    pub(crate) fn ext_key_rlc<F: Field>(
-        &self,
-        key_mult_prev: F,
-        is_key_part_odd: bool,
-        is_key_odd: bool,
-        data: [Vec<u8>; 2],
-        r: F,
-    ) -> (F, F) {
-        let (is_short, is_long) = if self.rlp_list.is_short() {
-            (
-                self.short_list_value.is_short(),
-                self.short_list_value.is_long(),
-            )
-        } else {
-            (
-                self.long_list_value.is_short(),
-                self.long_list_value.is_long(),
-            )
-        };
-        let mult_first_odd = if is_key_odd { 1.scalar() } else { 16.scalar() };
-        let calc_rlc = |bytes: &[F], key_mult_first_even: F| {
-            ext_key_rlc_value(
+pub(crate) fn ext_key_rlc_expr<F: Field>(
+    cb: &mut ConstraintBuilder<F>,
+    key_value: RLPValueGadget<F>,
+    key_mult_prev: Expression<F>,
+    is_key_part_odd: Expression<F>,
+    is_key_odd: Expression<F>,
+    data: [Vec<Expression<F>>; 2],
+    r: &[Expression<F>],
+) -> Expression<F> {
+    circuit!([meta, cb], {
+        let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
+        let mult_first_odd = ifx! {is_key_odd => { 1.expr() } elsex { 16.expr() }};
+        let calc_rlc = |cb: &mut ConstraintBuilder<F>,
+                        bytes: &[Expression<F>],
+                        key_mult_first_even: Expression<F>| {
+            ext_key_rlc(
+                cb,
                 bytes,
-                key_mult_prev,
-                is_key_part_odd,
-                mult_first_odd,
+                key_mult_prev.expr(),
+                is_key_part_odd.expr(),
+                mult_first_odd.expr(),
                 key_mult_first_even,
                 r,
             )
         };
-        // TODO(Brecht): somehow the start index doesn't dependend on the list
-        // is_short/is_long?
-        matchr! {
-            is_long && !is_key_odd => {
+        matchx! {
+            and::expr(&[is_long.expr(), not!(is_key_odd)]) => {
                 // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
                 // Note that there can be at max 31 key bytes because 32 same bytes would mean
                 // the two keys being the same - update operation, not splitting into extension node.
                 // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
                 // is not used (when even number of nibbles).
-                let mut key_bytes = vec![data[0][2].scalar()];
-                key_bytes.append(&mut data[0][2..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
-                    let nibble_lo = (byte - nibble_hi) >> 4;
+                let mut key_bytes = vec![data[0][1].expr()];
+                key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
+                    let nibble_lo = (byte.expr() - nibble_hi.expr()) * invert!(16);
                     // Check that `nibble_hi` is correct.
-                    assert!(*byte == nibble_lo * 16 + nibble_hi);
+                    require!(byte => nibble_lo.expr() * 16.expr() + nibble_hi.expr());
                     // Collect bytes
-                    (F::from(*nibble_hi as u64) * F::from(16 as u64) * r) + F::from(nibble_lo as u64)
+                    (nibble_hi.expr() * 16.expr() * r[0].expr()) + nibble_lo.expr()
                 }).collect::<Vec<_>>());
-                calc_rlc(&key_bytes, 1.scalar())
+                calc_rlc(cb, &key_bytes, 1.expr())
             },
-            is_long && is_key_odd => {
-                let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
-                calc_rlc(&data[0][2..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
+            and::expr(&[is_long.expr(), is_key_odd.expr()]) => {
+                let additional_mult = ifx! {is_key_part_odd => { r[0].expr() } elsex { 1.expr() }};
+                calc_rlc(cb, &data[0][1..], additional_mult)
             },
             is_short => {
-                calc_rlc(&data[0][1..2].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), 1.scalar())
+                calc_rlc(cb, &data[0][..1], 1.expr())
             },
         }
+    })
+}
+
+pub(crate) fn ext_key_rlc_calc_value<F: Field>(
+    key_value: RLPValueWitness,
+    key_mult_prev: F,
+    is_key_part_odd: bool,
+    is_key_odd: bool,
+    data: [Vec<u8>; 2],
+    r: F,
+) -> (F, F) {
+    let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
+    let mult_first_odd = if is_key_odd { 1.scalar() } else { 16.scalar() };
+    let calc_rlc = |bytes: &[F], key_mult_first_even: F| {
+        ext_key_rlc_value(
+            bytes,
+            key_mult_prev,
+            is_key_part_odd,
+            mult_first_odd,
+            key_mult_first_even,
+            r,
+        )
+    };
+    // TODO(Brecht): somehow the start index doesn't dependend on the list
+    // is_short/is_long?
+    matchr! {
+        is_long && !is_key_odd => {
+            // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
+            // Note that there can be at max 31 key bytes because 32 same bytes would mean
+            // the two keys being the same - update operation, not splitting into extension node.
+            // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
+            // is not used (when even number of nibbles).
+            let mut key_bytes = vec![data[0][1].scalar()];
+            key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
+                let nibble_lo = (byte - nibble_hi) >> 4;
+                // Check that `nibble_hi` is correct.
+                assert!(*byte == nibble_lo * 16 + nibble_hi);
+                // Collect bytes
+                (F::from(*nibble_hi as u64) * F::from(16 as u64) * r) + F::from(nibble_lo as u64)
+            }).collect::<Vec<_>>());
+            calc_rlc(&key_bytes, 1.scalar())
+        },
+        is_long && is_key_odd => {
+            let additional_mult = if is_key_part_odd { r } else { 1.scalar() };
+            calc_rlc(&data[0][1..].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), additional_mult)
+        },
+        is_short => {
+            calc_rlc(&data[0][..1].iter().map(|byte| byte.scalar()).collect::<Vec<_>>(), 1.scalar())
+        },
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ListKeyGadget<F> {
+    pub(crate) rlp_list_bytes: [Cell<F>; 3],
+    pub(crate) rlp_list: RLPListGadget<F>,
+    pub(crate) key_value: RLPValueGadget<F>,
+    pub(crate) key: LeafKeyGadget<F>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ListKeyWitness {
+    pub(crate) rlp_list: RLPListWitness,
+    pub(crate) key_value: RLPValueWitness,
+    pub(crate) key: LeafKeyWitness,
+}
+
+impl<F: Field> ListKeyGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
+        let rlp_list_bytes = cb.query_bytes();
+        let rlp_list_bytes_expr = rlp_list_bytes.iter().map(|c| c.expr()).collect::<Vec<_>>();
+        let key_value = RLPValueGadget::construct(cb, &bytes);
+        let key = LeafKeyGadget::construct(cb, key_value.clone());
+        ListKeyGadget {
+            rlp_list: RLPListGadget::construct(cb, &rlp_list_bytes_expr),
+            key_value,
+            rlp_list_bytes,
+            key,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        list_bytes: &[u8],
+        bytes: &[u8],
+    ) -> Result<ListKeyWitness, Error> {
+        for (cell, byte) in self.rlp_list_bytes.iter().zip(list_bytes.iter()) {
+            cell.assign(region, offset, byte.scalar())?;
+        }
+        let rlp_list = self.rlp_list.assign(region, offset, list_bytes)?;
+        let key_value = self.key_value.assign(region, offset, bytes)?;
+        let key = self.key.assign(region, offset, key_value.clone())?;
+
+        Ok(ListKeyWitness {
+            rlp_list,
+            key_value,
+            key,
+        })
+    }
+
+    pub(crate) fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
+        self.rlp_list
+            .rlc_rlp(&r)
+            .rlc_chain(self.key_value.rlc(&r).1)
+    }
+
+    /// Number of bytes of RLP (including list RLP bytes) and key
+    pub(crate) fn num_bytes_on_key_row(&self) -> Expression<F> {
+        self.rlp_list.num_rlp_bytes() + self.key_value.num_bytes()
+    }
+}
+
+impl ListKeyWitness {
+    /// Number of bytes of RLP (including list RLP bytes) and key
+    pub(crate) fn num_bytes_on_key_row(&self) -> usize {
+        self.rlp_list.num_rlp_bytes() + self.key_value.num_bytes()
+    }
+
+    /// Number of bytes of RLP (including list RLP bytes) and key
+    pub(crate) fn rlc_leaf<F: Field>(&self, r: F) -> (F, F) {
+        self.rlp_list
+            .rlc_rlp2(r)
+            .rlc_chain_value(&self.key_value.bytes[..self.key_value.num_bytes()], r)
     }
 }
 
@@ -1080,7 +943,7 @@ impl<F: Field> IsEmptyTreeGadget<F> {
 /// Handles drifted leaves
 #[derive(Clone, Debug, Default)]
 pub struct DriftedGadget<F> {
-    drifted_rlp_key: LeafKeyGadget<F>,
+    drifted_rlp_key: ListKeyGadget<F>,
     drifted_mult: Cell<F>,
 }
 
@@ -1097,7 +960,7 @@ impl<F: Field> DriftedGadget<F> {
         let mut config = DriftedGadget::default();
         circuit!([meta, cb.base], {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
-                config.drifted_rlp_key = LeafKeyGadget::construct(&mut cb.base, drifted_bytes);
+                config.drifted_rlp_key = ListKeyGadget::construct(&mut cb.base, drifted_bytes);
                 config.drifted_mult = cb.base.query_cell();
                 for is_s in [true, false] {
                     ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
@@ -1111,14 +974,19 @@ impl<F: Field> DriftedGadget<F> {
                             key_data[is_s.idx()].drifted_mult.expr(),
                             key_data[is_s.idx()].drifted_is_odd.expr(),
                         );
-                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.leaf_key_rlc(&mut cb.base, key_mult.expr(), is_key_odd, &r);
+                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(&mut cb.base, config.drifted_rlp_key.key_value.clone(), key_mult.expr(), is_key_odd, &r);
                         // The key of the drifted leaf needs to match the key of the leaf
                         require!(key_rlc => expected_key_rlc[is_s.idx()]);
+
+                        // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
+                        // TODO(Brecht): RLC encoding would be the same for some addresses without checking the length
+                        //let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
+                        //require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                         // Complete the drifted leaf rlc by adding the bytes on the value row
                         let leaf_rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
-                        require!((1, leaf_rlc, config.drifted_rlp_key.num_bytes(), parent_data[is_s.idx()].placeholder_rlc.expr()) => @"keccak");
+                        require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].placeholder_rlc.expr()) => @"keccak");
 
                         // Check zero bytes and mult_diff
                         require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"fixed");
@@ -1135,11 +1003,14 @@ impl<F: Field> DriftedGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         parent_data: &[ParentDataWitness<F>],
+        drifted_list_bytes: &[u8],
         drifted_bytes: &[u8],
         r: F,
     ) -> Result<(), Error> {
         if parent_data[true.idx()].is_placeholder || parent_data[false.idx()].is_placeholder {
-            let drifted_key_witness = self.drifted_rlp_key.assign(region, offset, drifted_bytes)?;
+            let drifted_key_witness =
+                self.drifted_rlp_key
+                    .assign(region, offset, drifted_list_bytes, drifted_bytes)?;
             let (_, leaf_mult) = drifted_key_witness.rlc_leaf(r);
             self.drifted_mult.assign(region, offset, leaf_mult)?;
         }
@@ -1150,9 +1021,9 @@ impl<F: Field> DriftedGadget<F> {
 /// Handles wrong leaves
 #[derive(Clone, Debug, Default)]
 pub struct WrongGadget<F> {
-    wrong_rlp_key: LeafKeyGadget<F>,
+    wrong_rlp_key: ListKeyGadget<F>,
     wrong_mult: Cell<F>,
-    check_is_wrong_leaf: RequireNotZeroGadget<F>,
+    is_key_equal: IsEqualGadget<F>,
     wrong_key: Option<Expression<F>>,
 }
 
@@ -1161,8 +1032,8 @@ impl<F: Field> WrongGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         expected_address: Expression<F>,
         is_non_existing: Expression<F>,
-        rlp_key: &[LeafKeyGadget<F>],
-        key_rlc: &[Expression<F>],
+        key_value: &RLPValueGadget<F>,
+        key_rlc: &Expression<F>,
         wrong_bytes: &[Expression<F>],
         is_in_empty_tree: Expression<F>,
         key_data: KeyData<F>,
@@ -1173,9 +1044,10 @@ impl<F: Field> WrongGadget<F> {
             // Get the previous key data
             ifx! {is_non_existing, not!(is_in_empty_tree) => {
                 // Calculate the key
-                config.wrong_rlp_key = LeafKeyGadget::construct(&mut cb.base, &wrong_bytes);
-                let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.leaf_key_rlc(
+                config.wrong_rlp_key = ListKeyGadget::construct(&mut cb.base, &wrong_bytes);
+                let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
                     &mut cb.base,
+                    config.wrong_rlp_key.key_value.clone(),
                     key_data.mult.expr(),
                     key_data.is_odd.expr(),
                     r,
@@ -1183,17 +1055,15 @@ impl<F: Field> WrongGadget<F> {
                 // Check that it's the key as expected
                 require!(key_rlc_wrong => expected_address);
 
-                // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
-                let num_nibbles = config.wrong_rlp_key.num_key_nibbles(key_data.is_odd.expr());
-                require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
-
                 // Now make sure this address is different than the one of the leaf
-                config.check_is_wrong_leaf = RequireNotZeroGadget::construct(
+                config.is_key_equal = IsEqualGadget::construct(
                     &mut cb.base,
-                    expected_address - key_rlc[true.idx()].expr()
+                    key_rlc.expr(),
+                    expected_address,
                 );
+                require!(config.is_key_equal => false);
                 // Make sure the lengths of the keys are the same
-                require!(config.wrong_rlp_key.key_len() => rlp_key[true.idx()].key_len());
+                require!(config.wrong_rlp_key.key_value.len() => key_value.len());
                 // RLC bytes zero check
                 cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
             }}
@@ -1207,23 +1077,28 @@ impl<F: Field> WrongGadget<F> {
         offset: usize,
         is_non_existing: bool,
         key_rlc: &[F],
+        list_bytes: &[u8],
         wrong_bytes: &[u8],
-        row_key: [&MptWitnessRow<F>; 2],
         for_placeholder_s: bool,
         key_data: KeyDataWitness<F>,
         r: F,
     ) -> Result<F, Error> {
         if is_non_existing {
-            let mut bytes = wrong_bytes.to_vec();
-            bytes[0] = row_key[for_placeholder_s.idx()].bytes[0];
+            let wrong_witness =
+                self.wrong_rlp_key
+                    .assign(region, offset, list_bytes, wrong_bytes)?;
+            let (key_rlc_wrong, _) = wrong_witness.key.key(
+                wrong_witness.key_value.clone(),
+                key_data.rlc,
+                key_data.mult,
+                r,
+            );
 
-            let wrong_witness = self.wrong_rlp_key.assign(region, offset, &bytes)?;
-            let (key_rlc_wrong, _) = wrong_witness.leaf_key_rlc(key_data.rlc, key_data.mult, r);
-
-            self.check_is_wrong_leaf.assign(
+            self.is_key_equal.assign(
                 region,
                 offset,
-                key_rlc_wrong - key_rlc[for_placeholder_s.idx()],
+                key_rlc[for_placeholder_s.idx()],
+                key_rlc_wrong,
             )?;
             Ok(key_rlc_wrong)
         } else {

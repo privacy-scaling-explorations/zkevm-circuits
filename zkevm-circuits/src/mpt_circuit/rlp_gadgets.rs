@@ -37,7 +37,7 @@ pub(crate) struct RLPListWitness {
 
 impl<F: Field> RLPListGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
-        // TODO(Brecht): add lookup
+        // TODO(Brecht): add lookup/LtGadget
         RLPListGadget {
             is_short: cb.query_cell(),
             is_long: cb.query_cell(),
@@ -213,12 +213,56 @@ impl RLPListWitness {
         }
     }
 
-    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
+    pub(crate) fn rlc_rlp_dummy<F: Field>(&self, r: F) -> F {
         self.rlc(r).1
     }
 
     pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
         self.rlc(r).0
+    }
+
+    /// Returns the rlc of the RLP bytes
+    pub(crate) fn rlc_rlp2<F: Field>(&self, r: F) -> (F, F) {
+        matchr! {
+            self.is_short() => (self.bytes[..1].rlc_value(r), r),
+            self.is_long() => (self.bytes[..2].rlc_value(r), r*r),
+            self.is_very_long() => (self.bytes[..3].rlc_value(r), r*r*r),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RLPListDataGadget<F> {
+    pub(crate) rlp_list_bytes: [Cell<F>; 3],
+    pub(crate) rlp_list: RLPListGadget<F>,
+}
+
+impl<F: Field> RLPListDataGadget<F> {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+        let rlp_list_bytes = cb.query_bytes();
+        let rlp_list_bytes_expr = rlp_list_bytes.iter().map(|c| c.expr()).collect::<Vec<_>>();
+        RLPListDataGadget {
+            rlp_list: RLPListGadget::construct(cb, &rlp_list_bytes_expr),
+            rlp_list_bytes,
+        }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        list_bytes: &[u8],
+    ) -> Result<RLPListWitness, Error> {
+        for (cell, byte) in self.rlp_list_bytes.iter().zip(list_bytes.iter()) {
+            cell.assign(region, offset, byte.scalar())?;
+        }
+        let rlp_list = self.rlp_list.assign(region, offset, list_bytes)?;
+
+        Ok(rlp_list)
+    }
+
+    pub(crate) fn rlc(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
+        self.rlp_list.rlc_rlp(&r)
     }
 }
 
@@ -522,34 +566,6 @@ pub(crate) mod get_num_bytes_list_short {
     }
     pub(crate) fn value(byte: u8) -> usize {
         1 + get_len_list_short::value(byte)
-    }
-}
-
-// Returns the number of nibbles stored in a key value
-pub(crate) mod num_nibbles {
-    use crate::circuit_tools::constraint_builder::ConstraintBuilder;
-    use crate::{_cb, circuit};
-    use eth_types::Field;
-    use halo2_proofs::plonk::Expression;
-
-    pub(crate) fn expr<F: Field>(
-        key_len: Expression<F>,
-        is_key_odd: Expression<F>,
-    ) -> Expression<F> {
-        circuit!([meta, _cb!()], {
-            ifx! {is_key_odd => {
-                key_len.expr() * 2.expr() - 1.expr()
-            } elsex {
-                (key_len.expr() - 1.expr()) * 2.expr()
-            }}
-        })
-    }
-    pub(crate) fn value(key_len: usize, is_key_odd: bool) -> usize {
-        if is_key_odd {
-            key_len * 2 - 1
-        } else {
-            (key_len - 1) * 2
-        }
     }
 }
 

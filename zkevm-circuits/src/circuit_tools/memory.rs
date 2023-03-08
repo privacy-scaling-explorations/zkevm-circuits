@@ -176,9 +176,10 @@ impl<F: Field> MemoryBank<F> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        let mut key_values = values.to_vec();
-        key_values.insert(0, key);
-        cb.lookup(description, self.tag(), values.to_vec());
+        // Insert the key in the front
+        let mut key_and_values = values.to_vec();
+        key_and_values.insert(0, key);
+        cb.lookup(description, self.tag(), key_and_values);
     }
 
     pub(crate) fn store(&self, cb: &mut ConstraintBuilder<F>, values: &[Expression<F>]) {
@@ -191,9 +192,10 @@ impl<F: Field> MemoryBank<F> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        let mut key_values = values.to_vec();
-        key_values.insert(0, key);
-        cb.lookup_table("memory store", self.tag(), values.to_vec());
+        // Insert the key in the front
+        let mut key_and_values = values.to_vec();
+        key_and_values.insert(0, key);
+        cb.lookup_table("memory store", self.tag(), key_and_values);
     }
 
     pub(crate) fn witness_store(&mut self, offset: usize, values: &[F]) {
@@ -239,11 +241,6 @@ impl<F: Field> MemoryBank<F> {
                 let mut store_offsets = self.store_offsets.clone();
                 store_offsets.push(height);
 
-                /*if self.tag().starts_with("parent") {
-                    println!("offsets: {:?}", self.store_offsets);
-                }*/
-
-                //println!("height: {}", height);
                 let mut store_index = 0;
                 let mut offset = 0;
                 for &stored_offset in store_offsets.iter() {
@@ -254,9 +251,6 @@ impl<F: Field> MemoryBank<F> {
                             offset,
                             || Value::known(F::from(store_index as u64)),
                         )?;
-                        /*if self.tag().starts_with("parent") {
-                            println!("[{}] {}: {}", self.tag(), offset, store_index);
-                        }*/
                         offset += 1;
                     }
                     store_index += 1;

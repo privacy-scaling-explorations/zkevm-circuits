@@ -25,11 +25,11 @@ use columns::MainCols;
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::HASH_WIDTH;
-use selectors::SelectorsConfig;
 
 use crate::{
     assign, assignf, circuit,
     circuit_tools::{cell_manager::CellManager, constraint_builder::merge_lookups, memory::Memory},
+    matchr, matchw,
     mpt_circuit::{
         helpers::{extend_rand, main_memory, parent_memory, MPTConstraintBuilder},
         start::StartConfig,
@@ -39,7 +39,11 @@ use crate::{
     util::{power_of_randomness_from_instance, Challenges},
 };
 
-use self::{account_leaf::AccountLeafConfig, helpers::key_memory};
+use self::{
+    account_leaf::AccountLeafConfig,
+    helpers::key_memory,
+    param::{RLP_LIST_LONG, RLP_LIST_SHORT},
+};
 
 /// State machine config.
 #[derive(Clone, Debug, Default)]
@@ -187,7 +191,7 @@ impl<F: Field> MPTConfig<F> {
 
             circuit!([meta, cb.base], {
                 /* General */
-                SelectorsConfig::configure(meta, &mut cb, ctx.clone());
+                //SelectorsConfig::configure(meta, &mut cb, ctx.clone());
 
                 // State machine
                 ifx!{f!(q_enable) => {
@@ -228,18 +232,10 @@ impl<F: Field> MPTConfig<F> {
                     require!(cb.length_s.sum_conditions() => bool);
                     require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
-                    for &byte in ctx.bytes()[0..2].into_iter() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), 0.expr()) => @"fixed");
-                    }
-                    for (idx, &byte) in ctx.bytes()[2..34].into_iter().enumerate() {
+                    for (idx, &byte) in ctx.bytes()[0..34].into_iter().enumerate() {
                         require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
-                    ifx!{cb.length_sc => {
-                        for (idx, &byte) in ctx.bytes()[34..36].into_iter().enumerate() {
-                            require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_s() - 32.expr() - (idx + 1).expr()) => @"fixed");
-                        }
-                    }}
-                    for (idx, &byte) in ctx.bytes()[36..68].into_iter().enumerate() {
+                    for (idx, &byte) in ctx.bytes()[34..68].into_iter().enumerate() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
                     }
                 }}*/
@@ -335,9 +331,10 @@ impl<F: Field> MPTConfig<F> {
     ) -> Result<(), Error> {
         self.r = r;
         let mut height = 0;
+        let mut memory = self.memory.clone();
 
         // TODO(Brecht): change this on the witness generation side
-        let mut memory = self.memory.clone();
+        let mut key_rlp_bytes = Vec::new();
         for (_, row) in witness
             .iter_mut()
             .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
@@ -394,6 +391,122 @@ impl<F: Field> MPTConfig<F> {
                 ]
                 .concat();
                 //println!("+ {:?}", row.bytes);
+            }
+
+            // Separate the list rlp bytes from the key bytes
+            if row.get_type() == MptWitnessRowType::StorageLeafSKey
+                || row.get_type() == MptWitnessRowType::StorageLeafCKey
+                || row.get_type() == MptWitnessRowType::StorageNonExisting
+                || row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf
+                || row.get_type() == MptWitnessRowType::AccountLeafKeyS
+                || row.get_type() == MptWitnessRowType::AccountLeafKeyC
+                || row.get_type() == MptWitnessRowType::AccountNonExisting
+                || row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf
+                || row.get_type() == MptWitnessRowType::ExtensionNodeS
+            {
+                let len = if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                    34
+                } else {
+                    36
+                };
+                let mut key_bytes = row.bytes[0..len].to_owned();
+
+                // Currently the list rlp bytes are dropped for non-key row, restore them here
+                if key_bytes[0] < RLP_LIST_SHORT
+                    && row.get_type() != MptWitnessRowType::ExtensionNodeS
+                {
+                    for idx in 0..key_rlp_bytes.len() {
+                        key_bytes[idx] = key_rlp_bytes[idx];
+                    }
+                }
+
+                const RLP_LIST_LONG_1: u8 = RLP_LIST_LONG + 1;
+                const RLP_LIST_LONG_2: u8 = RLP_LIST_LONG + 2;
+                let mut is_short = false;
+                let mut is_long = false;
+                let mut is_very_long = false;
+                let mut is_string = false;
+                match key_bytes[0] {
+                    RLP_LIST_SHORT..=RLP_LIST_LONG => is_short = true,
+                    RLP_LIST_LONG_1 => is_long = true,
+                    RLP_LIST_LONG_2 => is_very_long = true,
+                    _ => is_string = true,
+                }
+
+                //println!("bytes: {:?}", key_bytes);
+
+                let num_rlp_bytes = if is_short {
+                    1
+                } else if is_long {
+                    2
+                } else if is_very_long {
+                    3
+                } else {
+                    if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                        0
+                    } else {
+                        unreachable!()
+                    }
+                };
+
+                //println!("bytes: {:?}", key_bytes);
+                row.rlp_bytes = key_bytes[..num_rlp_bytes].to_vec();
+                for byte in key_bytes[..num_rlp_bytes].iter_mut() {
+                    *byte = 0;
+                }
+                key_bytes.rotate_left(num_rlp_bytes);
+                row.bytes = [key_bytes.clone(), row.bytes[len..].to_owned()].concat();
+
+                if row.get_type() == MptWitnessRowType::AccountLeafKeyS
+                    || row.get_type() == MptWitnessRowType::StorageLeafSKey
+                {
+                    key_rlp_bytes = row.rlp_bytes.clone();
+                }
+
+                //println!("list : {:?}", row.rlp_bytes);
+                //println!("key  : {:?}", row.bytes);
+            }
+
+            // Separate the RLP bytes and shift the value bytes to the start of the row
+            if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS
+                || row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC
+            {
+                row.rlp_bytes = [row.bytes[..2].to_owned(), row.bytes[34..36].to_owned()].concat();
+
+                let nonce = row.bytes[2..34].to_owned();
+                let balance = row.bytes[36..68].to_owned();
+
+                row.bytes = [
+                    nonce,
+                    vec![0; 2],
+                    balance,
+                    vec![0; 2],
+                    row.bytes[68..].to_owned(),
+                ]
+                .concat();
+            }
+
+            // Shift the value bytes to the start of the row
+            if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
+                || row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
+            {
+                let storage_root = row.bytes[1..34].to_owned();
+                let codehash = row.bytes[35..68].to_owned();
+
+                row.bytes = [
+                    storage_root,
+                    vec![0; 1],
+                    codehash,
+                    vec![0; 1],
+                    row.bytes[68..].to_owned(),
+                ]
+                .concat();
+            }
+
+            // Extract the RLP bytes
+            if row.get_type() == MptWitnessRowType::InitBranch {
+                row.rlp_bytes = [row.bytes[4..7].to_owned(), row.bytes[7..10].to_owned()].concat();
+                row.bytes = [vec![0; 10], row.bytes[10..].to_owned()].concat();
             }
         }
 

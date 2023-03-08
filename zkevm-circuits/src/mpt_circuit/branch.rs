@@ -6,9 +6,9 @@ use halo2_proofs::{
 };
 
 use super::{
-    helpers::{LeafKeyGadget, MPTConstraintBuilder, ParentDataWitness},
+    helpers::{ListKeyGadget, MPTConstraintBuilder, ParentDataWitness},
     param::{ARITY, IS_BRANCH_C_PLACEHOLDER_POS},
-    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListGadget},
+    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListDataGadget, RLPListGadget},
     MPTContext,
 };
 use crate::{
@@ -20,7 +20,10 @@ use crate::{
     },
     mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{
-        helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
+        helpers::{
+            ext_key_rlc_calc_value, ext_key_rlc_expr, key_memory, parent_memory, Indexable,
+            KeyData, ParentData,
+        },
         param::RLP_NIL,
         FixedTableTag,
     },
@@ -47,7 +50,7 @@ pub(crate) struct BranchChildConfig<F> {
 pub(crate) struct BranchConfig<F> {
     key_data: KeyData<F>,
     parent_data: [ParentData<F>; 2],
-    rlp_list: [RLPListGadget<F>; 2],
+    rlp_list: [RLPListDataGadget<F>; 2],
     branches: [[BranchChildConfig<F>; ARITY]; 2],
     is_modified: [Cell<F>; ARITY],
     is_drifted: [Cell<F>; ARITY],
@@ -58,7 +61,7 @@ pub(crate) struct BranchConfig<F> {
     is_placeholder: [Cell<F>; 2],
 
     is_extension: Cell<F>,
-    ext_rlp_key: LeafKeyGadget<F>,
+    ext_rlp_key: ListKeyGadget<F>,
     ext_rlp_value: [RLPItemGadget<F>; 2],
     ext_mult: Cell<F>,
     ext_is_not_hashed: LtGadget<F, 2>,
@@ -79,10 +82,6 @@ impl<F: Field> BranchConfig<F> {
 
         circuit!([meta, cb.base], {
             // Data
-            let rlp_bytes = [
-                ctx.expr(meta, 0)[4..7].to_owned(),
-                ctx.expr(meta, 0)[7..10].to_owned(),
-            ];
             let branch_bytes: [[Vec<Expression<F>>; ARITY]; 2] = [
                 array_init::array_init(|i| ctx.expr(meta, 1 + i as i32)[0..34].to_owned()),
                 array_init::array_init(|i| ctx.expr(meta, 1 + i as i32)[34..68].to_owned()),
@@ -131,7 +130,7 @@ impl<F: Field> BranchConfig<F> {
                 parent_rlc_s,
                 parent_rlc_c,
             ) = ifx! {config.is_extension => {
-                config.ext_rlp_key = LeafKeyGadget::construct(&mut cb.base, &ext_key_bytes[0]);
+                config.ext_rlp_key = ListKeyGadget::construct(&mut cb.base, &ext_key_bytes[0]);
                 // TODO(Brecht): add lookup constraint
                 config.ext_is_key_part_odd = cb.base.query_cell();
 
@@ -146,7 +145,7 @@ impl<F: Field> BranchConfig<F> {
                     if is_s {
                         // RLP encoding checks: [key, branch]
                         // Verify that the lenghts are consistent.
-                        require!(config.ext_rlp_key.len() => config.ext_rlp_key.key_num_bytes() + config.ext_rlp_value[is_s.idx()].num_bytes());
+                        require!(config.ext_rlp_key.rlp_list.len() => config.ext_rlp_key.key_value.num_bytes() + config.ext_rlp_value[is_s.idx()].num_bytes());
 
                         // Update the multiplier with the number of bytes on the first row
                         config.ext_mult = cb.base.query_cell();
@@ -166,9 +165,9 @@ impl<F: Field> BranchConfig<F> {
                     // Check if the extension node is in its parent.
                     let (rlc, num_bytes, is_not_hashed) = {
                         if is_s {
-                            config.ext_is_not_hashed = LtGadget::construct(&mut cb.base, config.ext_rlp_key.num_bytes(), HASH_WIDTH.expr());
+                            config.ext_is_not_hashed = LtGadget::construct(&mut cb.base, config.ext_rlp_key.rlp_list.num_bytes(), HASH_WIDTH.expr());
                         }
-                        (ext_node_rlc.expr(), config.ext_rlp_key.num_bytes(), config.ext_is_not_hashed.expr())
+                        (ext_node_rlc.expr(), config.ext_rlp_key.rlp_list.num_bytes(), config.ext_is_not_hashed.expr())
                     };
                     // TODO(Brecht): why not if it's a placeholder?
                     ifx! {not!(config.is_placeholder[is_s.idx()]) => {
@@ -186,7 +185,7 @@ impl<F: Field> BranchConfig<F> {
                 cb.set_length(config.ext_rlp_key.num_bytes_on_key_row());
 
                 // Calculate the number of bytes
-                let key_len = config.ext_rlp_key.key_len();
+                let key_len = config.ext_rlp_key.key_value.len();
                 // Calculate the number of nibbles
                 let num_nibbles = num_nibbles::expr(key_len.expr(), config.ext_is_key_part_odd.expr());
                 // Make sure the nibble counter is updated correctly
@@ -205,8 +204,9 @@ impl<F: Field> BranchConfig<F> {
                 // however, sometimes extension node can be replaced by a shorter extension node
                 // (in terms of nibbles), this is still to be implemented.
                 let key_rlc_post_ext = config.key_data.rlc.expr() +
-                    config.ext_rlp_key.ext_key_rlc(
+                    ext_key_rlc_expr(
                         &mut cb.base,
+                        config.ext_rlp_key.key_value.clone(),
                         config.key_data.mult.expr(),
                         config.ext_is_key_part_odd.expr(),
                         not!(is_key_odd),
@@ -216,7 +216,7 @@ impl<F: Field> BranchConfig<F> {
 
                 // Get the length of the key
                 // Unless both parts of the key are odd, subtract 1 from the key length.
-                let key_len = config.ext_rlp_key.key_len();
+                let key_len = config.ext_rlp_key.key_value.len();
                 let key_num_bytes_for_mult = key_len - ifx! {not!(config.key_data.is_odd.expr() * config.ext_is_key_part_odd.expr()) => { 1.expr() }};
                 // Get the multiplier for this key length
                 config.ext_mult_key = cb.base.query_cell();
@@ -254,14 +254,13 @@ impl<F: Field> BranchConfig<F> {
             let mut mult = vec![1.expr(); 2];
             for is_s in [true, false] {
                 // Read the list
-                config.rlp_list[is_s.idx()] =
-                    RLPListGadget::construct(&mut cb.base, &rlp_bytes[is_s.idx()]);
+                config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(&mut cb.base);
                 // Start the RLC encoding of the branch
                 (branch_node_rlc[is_s.idx()], mult[is_s.idx()]) =
-                    config.rlp_list[is_s.idx()].rlc_rlp(&r);
+                    config.rlp_list[is_s.idx()].rlp_list.rlc_rlp(&r);
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
-                num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].len();
+                num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
 
                 config.mod_branch_rlc[is_s.idx()] = cb.base.query_cell();
                 config.mod_branch_is_hashed[is_s.idx()] = cb.base.query_cell();
@@ -269,7 +268,7 @@ impl<F: Field> BranchConfig<F> {
                 // Check if the branch is hashed or not
                 config.is_not_hashed[is_s.idx()] = LtGadget::construct(
                     &mut cb.base,
-                    config.rlp_list[is_s.idx()].num_bytes(),
+                    config.rlp_list[is_s.idx()].rlp_list.num_bytes(),
                     HASH_WIDTH.expr(),
                 );
             }
@@ -393,7 +392,7 @@ impl<F: Field> BranchConfig<F> {
                 let (rlc, num_bytes, is_not_hashed) = {
                     (
                         branch_node_rlc[is_s.idx()].expr(),
-                        config.rlp_list[is_s.idx()].num_bytes(),
+                        config.rlp_list[is_s.idx()].rlp_list.num_bytes(),
                         config.is_not_hashed[is_s.idx()].expr(),
                     )
                 };
@@ -510,6 +509,7 @@ impl<F: Field> BranchConfig<F> {
         idx: usize,
     ) -> Result<(), Error> {
         let row_init = witness[idx].to_owned();
+        let row_key_s = witness[idx + 17].to_owned();
 
         let is_placeholder = [
             row_init.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1,
@@ -535,8 +535,8 @@ impl<F: Field> BranchConfig<F> {
 
         // Data
         let rlp_bytes = [
-            row_init.bytes[4..7].to_owned(),
-            row_init.bytes[7..10].to_owned(),
+            row_init.rlp_bytes[0..3].to_owned(),
+            row_init.rlp_bytes[3..6].to_owned(),
         ];
         let branch_bytes: [[Vec<u8>; ARITY]; 2] = [
             array_init::array_init(|i| witness[idx + 1 + i].bytes[0..34].to_owned()),
@@ -574,38 +574,39 @@ impl<F: Field> BranchConfig<F> {
 
         /* Extension */
 
-        let ext_rlp_key = self.ext_rlp_key.assign(region, offset, &ext_key_bytes[0])?;
         if is_extension_node {
+            let ext_rlp_key = self.ext_rlp_key.assign(
+                region,
+                offset,
+                &row_key_s.rlp_bytes,
+                &ext_key_bytes[true.idx()],
+            )?;
+
             let mut ext_mult = F::one();
             for _ in 0..ext_rlp_key.num_bytes_on_key_row() {
                 ext_mult *= mpt_config.r;
             }
             self.ext_mult.assign(region, offset, ext_mult)?;
 
-            let first_byte_index = ext_rlp_key.rlp_list.num_rlp_bytes()
-                + if ext_rlp_key.rlp_list.is_short() {
-                    ext_rlp_key.short_list_value.num_rlp_bytes()
-                } else {
-                    ext_rlp_key.long_list_value.num_rlp_bytes()
-                };
-            let ext_is_key_part_odd = ext_key_bytes[0][first_byte_index] >> 4 == 1;
+            let ext_is_key_part_odd =
+                ext_key_bytes[0][ext_rlp_key.key_value.num_rlp_bytes()] >> 4 == 1;
             self.ext_is_key_part_odd
                 .assign(region, offset, ext_is_key_part_odd.scalar())?;
 
             self.ext_is_not_hashed.assign(
                 region,
                 offset,
-                ext_rlp_key.num_bytes().scalar(),
+                ext_rlp_key.rlp_list.num_bytes().scalar(),
                 HASH_WIDTH.scalar(),
             )?;
 
-            let mut key_len_mult = ext_rlp_key.key_len();
+            let mut key_len_mult = ext_rlp_key.key_value.len();
             if !(is_key_odd && ext_is_key_part_odd) {
                 key_len_mult -= 1;
             }
 
             // Update number of nibbles
-            num_nibbles += num_nibbles::value(ext_rlp_key.key_len(), ext_is_key_part_odd);
+            num_nibbles += num_nibbles::value(ext_rlp_key.key_value.len(), ext_is_key_part_odd);
 
             // Update parity
             is_key_odd = if ext_is_key_part_odd {
@@ -615,7 +616,8 @@ impl<F: Field> BranchConfig<F> {
             };
 
             // Key RLC
-            let (key_rlc_ext, _) = ext_rlp_key.ext_key_rlc(
+            let (key_rlc_ext, _) = ext_key_rlc_calc_value(
+                ext_rlp_key.key_value.clone(),
                 key_data.mult,
                 ext_is_key_part_odd,
                 !is_key_odd,

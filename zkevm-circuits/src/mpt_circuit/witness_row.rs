@@ -41,6 +41,7 @@ pub(crate) enum MptWitnessRowType {
 #[derive(Clone, Debug)]
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
+    pub(crate) rlp_bytes: Vec<u8>,
     _marker: PhantomData<F>,
 }
 
@@ -48,6 +49,7 @@ impl<F: Field> MptWitnessRow<F> {
     pub fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes,
+            rlp_bytes: Vec::new(),
             _marker: PhantomData,
         }
     }
