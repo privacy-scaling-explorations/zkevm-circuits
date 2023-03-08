@@ -7,7 +7,6 @@ use crate::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
         TxRefundOp, RW,
     },
-    state_db::CodeDB,
     Error,
 };
 use core::fmt::Debug;
@@ -462,10 +461,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // FIXME: call with value to precompile will cause the codehash of precompile
     // address to `CodeDB::empty_code_hash()`. FIXME: we should have a
     // consistent codehash for precompile contract.
-    let (_, callee_account) = state.sdb.get_account(&call.address);
-    let callee_account = callee_account.clone();
-    let callee_account = &callee_account;
-    let callee_exists = !callee_account.is_empty();
+    let callee_account = &state.sdb.get_account(&call.address).1.clone();
+    let callee_exists = !callee_account.is_empty() || is_precompiled(&call.address);
     if !callee_exists {
         state.sdb.get_account_mut(&call.address).1.storage.clear();
     }
@@ -571,16 +568,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         // 2. Call to precompiled.
-        (_, true, _) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::CodeHash,
-                callee_code_hash,
-            );
-
-            Ok(exec_step)
-        }
+        (_, true, _) => Ok(exec_step),
         (_, _, is_empty_code_hash) => {
             // 3. Call to account with empty code.
             if is_empty_code_hash {

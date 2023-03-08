@@ -190,22 +190,33 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // code_hash = 0).
         let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
-        // TODO: And not precompile
-        cb.condition(not::expr(tx_is_create.expr()), |cb| {
-            cb.account_read(
-                call_callee_address.expr(),
-                AccountFieldTag::CodeHash,
-                phase2_code_hash.expr(),
-            ); // rwc_delta += 1
-        });
+        // a valid precompile address is: 1 <= addr <= 9 (addr != 0 && addr < 0xA)
+        let is_precompile_lt = LtGadget::construct(cb, tx_callee_address.expr(), 0xA.expr());
+        let is_precompile = and::expr([
+            not::expr(tx_callee_address_is_zero.expr()),
+            is_precompile_lt.expr(),
+        ]);
+        cb.condition(
+            and::expr([
+                not::expr(tx_is_create.expr()),
+                not::expr(is_precompile.expr()),
+            ]),
+            |cb| {
+                cb.account_read(
+                    call_callee_address.expr(),
+                    AccountFieldTag::CodeHash,
+                    phase2_code_hash.expr(),
+                ); // rwc_delta += 1
+            },
+        );
 
         // Transfer value from caller to callee, creating account if necessary.
         let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
             cb,
             tx_caller_address.expr(),
             call_callee_address.expr(),
-            not::expr(callee_not_exists.expr()),
-            or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
+            or::expr([not::expr(callee_not_exists.expr()), is_precompile.expr()]),
+            tx_is_create.expr(),
             tx_value.clone(),
             mul_gas_fee_by_gas.product().clone(),
             &mut reversion_info,
@@ -324,14 +335,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         });
 
         // 2. Handle call to precompiled contracts.
-
-        // a valid precompile address is: 1 <= addr <= 9 (addr != 0 && addr < 0xA)
-        let is_precompile_lt = LtGadget::construct(cb, tx_callee_address.expr(), 0xA.expr());
-        let is_precompile = and::expr([
-            not::expr(tx_callee_address_is_zero.expr()),
-            is_precompile_lt.expr(),
-        ]);
-
         cb.condition(is_precompile.expr(), |cb| {
             cb.require_equal(
                 "precompile should be zero code hash",
@@ -351,7 +354,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             );
 
             cb.require_step_state_transition(StepStateTransition {
-                // 11 reads and writes:
+                // 8 reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -359,11 +362,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
-                //   - Write Account Balance
-                //   - Write Account Balance
-                //   - Write Account Balance
-                //   - Read Account CodeHash
-                rw_counter: Delta(11.expr()),
+                //   - a TransferWithGasFeeGadget
+                rw_counter: Delta(7.expr() + transfer_with_gas_fee.rw_delta()),
                 call_id: To(call_id.expr()),
                 ..StepStateTransition::any()
             });
@@ -522,16 +522,37 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         }
         let callee_exists = is_precompiled(&tx.callee_address.unwrap_or_default())
             || (!tx.is_create && !callee_code_hash.is_zero());
-        let caller_balance_sub_fee_pair = rws.next().account_value_pair();
+        let caller_balance_sub_fee_pair = {
+            let rw = rws.next();
+            debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Balance as u64));
+            rw.account_value_pair()
+        };
         let must_create = tx.is_create;
         if (!callee_exists && !tx.value.is_zero()) || must_create {
-            callee_code_hash = rws.next().account_value_pair().1;
+            callee_code_hash = {
+                let rw = rws.next();
+                debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::CodeHash as u64));
+                rw.account_value_pair().1
+            }
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
         if !tx.value.is_zero() {
-            caller_balance_sub_value_pair = rws.next().account_value_pair();
-            callee_balance_pair = rws.next().account_value_pair();
+            caller_balance_sub_value_pair = {
+                let rw = rws.next();
+                debug_assert_eq!(
+                    rw.field_tag(),
+                    Some(AccountFieldTag::Balance as u64),
+                    "invalid rw {:?}",
+                    rw
+                );
+                rw.account_value_pair()
+            };
+            callee_balance_pair = {
+                let rw = rws.next();
+                debug_assert_eq!(rw.field_tag(), Some(AccountFieldTag::Balance as u64));
+                rw.account_value_pair()
+            };
         };
 
         self.tx_id
