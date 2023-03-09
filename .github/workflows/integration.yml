@@ -1,6 +1,7 @@
 name: Integration Tests
 
 on:
+  merge_group:
   schedule:
     - cron: '50 1 * * SUN'
   pull_request:
@@ -19,38 +20,16 @@ on:
         - real_prover
         - mock_prover  
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  consecutiveness:
-    if: github.event_name == 'schedule' ||
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
-
-
-    runs-on: ubuntu-latest
-    steps:
-      - uses: mktcode/consecutive-workflow-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  wakeuprunner:
-    if: github.event.pull_request.draft == false
-
-    needs: [consecutiveness]
-    name: Wake up self-hosted runner
-    runs-on: pse-runner
-
-    steps:
-      - uses: actions/checkout@v2
-      - run: |
-          .github/integrationTestsScripts/wakeUpRunner.sh
-
   integration-tests:
     if: github.event.pull_request.draft == false
 
-    needs: [wakeuprunner]
     name: Integration Tests
-    runs-on: integration-tests-runner
+    runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
     defaults:
       run:
