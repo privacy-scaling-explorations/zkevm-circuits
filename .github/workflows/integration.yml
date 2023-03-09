@@ -68,6 +68,8 @@ jobs:
             ${{ runner.os }}-go-
       - name: Cargo cache
         uses: actions/cache@v3
+        run:
+          working-directory: ./integration-tests        
         with:
           path: |
             ~/.cargo/bin/
