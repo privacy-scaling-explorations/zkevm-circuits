@@ -76,7 +76,6 @@ impl Opcode for Sstore {
 
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             StorageOp::new(
                 state.call()?.address,
                 key,
@@ -89,7 +88,6 @@ impl Opcode for Sstore {
 
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
                 address: state.call()?.address,
@@ -101,7 +99,6 @@ impl Opcode for Sstore {
 
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxRefundOp {
                 tx_id: state.tx_ctx.id(),
                 value_prev: state.sdb.refund(),

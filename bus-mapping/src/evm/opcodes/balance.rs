@@ -47,7 +47,6 @@ impl Opcode for Balance {
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
@@ -70,16 +69,9 @@ impl Opcode for Balance {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-            code_hash.to_word(),
         );
         if exists {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::Balance,
-                balance,
-                balance,
-            );
+            state.account_read(&mut exec_step, address, AccountField::Balance, balance);
         }
 
         // Write the BALANCE result to stack.

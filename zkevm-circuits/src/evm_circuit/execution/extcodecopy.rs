@@ -79,6 +79,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             code_hash.expr(),
         );
         let code_size = cb.query_cell();
+        // TODO: If external_address doesn't exist, we will get code_hash = 0.  With
+        // this value, the bytecode_length lookup will not work, and the copy
+        // from code_hash = 0 will not work. We should use EMPTY_HASH when
+        // code_hash = 0.
         cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);

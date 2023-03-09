@@ -42,7 +42,6 @@ impl Opcode for Extcodesize {
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
@@ -63,7 +62,6 @@ impl Opcode for Extcodesize {
             &mut exec_step,
             address,
             AccountField::CodeHash,
-            code_hash.to_word(),
             code_hash.to_word(),
         );
         let code_size = if exists {

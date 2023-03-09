@@ -40,7 +40,6 @@ pub(crate) struct CallOpGadget<F> {
     is_static: Cell<F>,
     depth: Cell<F>,
     call: CommonCallGadget<F, true>,
-    call_value_is_zero: IsZeroGadget<F>,
     current_value: Word<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
@@ -97,7 +96,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_delegatecall.expr(),
             is_staticcall.expr(),
         );
-        let call_value_is_zero = IsZeroGadget::construct(cb, call_gadget.value.expr());
         cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
             cb.require_zero(
                 "for non call/call code, value is zero",
@@ -138,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
-                reversion_info.rw_counter_of_reversion(),
+                reversion_info.rw_counter_of_reversion(1.expr()),
             );
         });
 
@@ -171,14 +169,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
         let transfer = cb.condition(
-            is_call.expr()
-                * not::expr(is_insufficient_balance.expr())
-                * not::expr(call_value_is_zero.expr()),
+            is_call.expr() * not::expr(is_insufficient_balance.expr()),
             |cb| {
                 TransferGadget::construct(
                     cb,
                     caller_address.expr(),
                     callee_address.expr(),
+                    not::expr(call_gadget.callee_not_exists.expr()),
                     call_gadget.value.clone(),
                     &mut callee_reversion_info,
                 )
@@ -244,7 +241,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 //
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(call_value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
@@ -383,7 +380,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 //
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(call_value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
                 let rw_counter_delta = 41.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
@@ -418,7 +415,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_static,
             depth,
             call: call_gadget,
-            call_value_is_zero,
             is_warm,
             is_warm_prev,
             callee_reversion_info,
@@ -586,8 +582,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.memory_word_size(),
             region.word_rlc(callee_code_hash),
         )?;
-        self.call_value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.is_warm_prev

@@ -5027,6 +5027,8 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rand_xorshift",
+ "serde",
+ "serde_json",
  "sha3 0.10.6",
  "snark-verifier",
  "strum",
