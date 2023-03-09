@@ -1,7 +1,7 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp, RW},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, TxRefundOp},
     Error,
 };
 
@@ -116,7 +116,7 @@ mod sstore_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{CallContextOp, StackOp},
+        operation::{CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,

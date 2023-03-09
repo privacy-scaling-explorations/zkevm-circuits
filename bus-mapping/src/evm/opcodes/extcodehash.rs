@@ -80,7 +80,7 @@ mod extcodehash_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{AccountOp, CallContextOp, StackOp},
+        operation::{AccountOp, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         address, bytecode,

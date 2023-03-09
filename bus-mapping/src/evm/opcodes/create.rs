@@ -1,7 +1,7 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::Opcode,
-    operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp, RW},
+    operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp},
     Error,
 };
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};

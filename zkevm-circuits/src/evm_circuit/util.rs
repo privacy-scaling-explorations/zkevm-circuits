@@ -1,4 +1,3 @@
-use crate::witness::{Block, ExecStep, Rw, RwMap};
 use crate::{
     evm_circuit::{
         param::{
@@ -8,8 +7,9 @@ use crate::{
     },
     table::RwTableTag,
     util::{query_expression, Challenges, Expr},
+    witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::{ToLittleEndian, U256};
+use eth_types::{Address, ToLittleEndian, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},

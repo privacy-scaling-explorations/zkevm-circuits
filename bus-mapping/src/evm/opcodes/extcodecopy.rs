@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
 };
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};

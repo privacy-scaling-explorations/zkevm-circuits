@@ -1,7 +1,7 @@
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     evm::Opcode,
-    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
     Error,
 };
 use eth_types::{GethExecStep, ToAddress, ToWord, H256};
@@ -88,7 +88,7 @@ mod extcodesize_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{AccountOp, CallContextOp, StackOp},
+        operation::{AccountOp, CallContextOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
