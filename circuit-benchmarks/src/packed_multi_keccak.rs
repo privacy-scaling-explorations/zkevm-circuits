@@ -21,7 +21,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::keccak_circuit::TestKeccakCircuit;
+    use zkevm_circuits::{keccak_circuit::TestKeccakCircuit, util::SubCircuit};
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -42,7 +42,7 @@ mod tests {
 
         // Create the circuit. Leave last dozens of rows for blinding.
         let circuit = TestKeccakCircuit::new(
-            2usize.pow(degree) - KeccakCircuit::<Fr>::unusable_rows(),
+            2usize.pow(degree) - TestKeccakCircuit::<Fr>::unusable_rows(),
             inputs,
         );
 

@@ -495,6 +495,25 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
     type Config = ExpCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
+        // Column base_limb of ExpTable is queried at 8 distinct rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(7)
+        // - Rotation(8)
+        // - Rotation(9)
+        // - Rotation(10)
+        // Also column col2 and col3 of are queried at 8 distince rotations at
+        // - Rotation(0)
+        // - Rotation(1)
+        // - Rotation(2)
+        // - Rotation(3)
+        // - Rotation(4)
+        // - Rotation(5)
+        // - Rotation(6)
+        // - Rotation(9)
+        // so returns 11 unsuable rows.
         11
     }
 

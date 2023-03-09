@@ -234,6 +234,8 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
+        // Most columns are queried at 22 (MAX_STEP_HEIGHT + STEP_STATE_HEIGHT)
+        // distinct rotations, so returns 25 unsuable rows.
         25
     }
 

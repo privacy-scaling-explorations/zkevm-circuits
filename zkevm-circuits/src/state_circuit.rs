@@ -456,6 +456,8 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     }
 
     fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
         6
     }
 

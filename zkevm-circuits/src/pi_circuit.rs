@@ -1142,6 +1142,12 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
+        // Column raw_public_inputs is queried at 4 distinct rotations at
+        // - Rotation::cur()
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + max_txs * TX_LEN + 1)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + 2 * (max_txs * TX_LEN + 1))
+        // so returns 7 unsuable rows.
         7
     }
 

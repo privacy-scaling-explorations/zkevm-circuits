@@ -876,6 +876,8 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     type Config = BytecodeCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
         6
     }
 

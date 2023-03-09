@@ -218,7 +218,16 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
     }
 }
 
-/// Returns number of unusable rows of the Circuit
+/// Returns number of unusable rows of the Circuit.
+/// The minimum unusable rows of a circuit is currently 6, where
+/// - 3 comes from minimum number of distinct queries to permutation argument witness column
+/// - 1 comes from queries at x_3 during multiopen
+/// - 1 comes as slight defense against off-by-one errors
+/// - 1 comes from reservation for last row of permutation argument witness column
+///
+/// For circuit with column queried at more than 3 distinct rotation, we can
+/// calculate the unusable rows as (x - 3) + 6 where x is the number of distinct
+/// qureies.
 pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
     let mut cs = ConstraintSystem::default();
     C::configure(&mut cs);
