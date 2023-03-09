@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
 use log::{error, info};
 use prettytable::Table;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
@@ -147,6 +147,28 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
 pub fn current_git_commit() -> Result<String> {
     let output = Command::new("git")
         .args(&["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let git_hash = String::from_utf8(output.stdout).unwrap();
+    let git_hash = git_hash[..7].to_string();
+    Ok(git_hash)
+}
+
+pub fn current_submodule_git_commit() -> Result<String> {
+    let git_cmd = Command::new("git")
+        .args(&["ls-tree", "HEAD"])
+        .stdout(Stdio::piped())
+        .spawn();
+
+    let grep_cmd = Command::new("grep")
+        .args(&["-m1", "commit"])
+        .stdin(Stdio::from(git_cmd.unwrap().stdout.unwrap()))
+        .stdout(Stdio::piped())
+        .spawn();
+
+    let output = Command::new("awk")
+        .args(&["-v", "N=3", "{print $N}"])
+        .stdin(Stdio::from(grep_cmd.unwrap().stdout.unwrap()))
         .output()
         .unwrap();
     let git_hash = String::from_utf8(output.stdout).unwrap();

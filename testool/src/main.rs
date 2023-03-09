@@ -15,7 +15,7 @@ use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
 };
-use std::{path::PathBuf, time::SystemTime};
+use std::{collections::HashSet, path::PathBuf, str::FromStr, time::SystemTime};
 use strum::EnumString;
 
 const REPORT_FOLDER: &str = "report";
@@ -50,6 +50,10 @@ struct Args {
     /// Cache execution results
     #[clap(long)]
     cache: Option<String>,
+
+    /// whitelist level from cache result
+    #[clap(short, long, value_parser, value_delimiter = ',')]
+    levels: Vec<String>,
 
     /// Generates log and and html file with info.
     #[clap(long)]
@@ -135,6 +139,7 @@ fn go() -> Result<()> {
 
     if args.report {
         let git_hash = utils::current_git_commit()?;
+        let git_submodule_tests_hash = utils::current_submodule_git_commit()?;
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
@@ -151,18 +156,34 @@ fn go() -> Result<()> {
         );
 
         // when running a report, the tests result of the containing cache file
-        // are used, but removing all Ignored tests
-        let mut results = if let Some(cache_filename) = args.cache {
-            let mut results = Results::from_file(PathBuf::from(cache_filename))?;
-            results
-                .tests
-                .retain(|_, test| test.level != ResultLevel::Ignored);
-            results
+        // are used, but by default removing all Ignored tests
+        // Another way is to skip the test which level not in whitelist_levels
+        let mut results_to_skip = if let Some(cache_filename) = args.cache {
+            let whitelist_levels = HashSet::<ResultLevel>::from_iter(
+                args.levels
+                    .iter()
+                    .flat_map(|s| ResultLevel::from_str(s).ok()),
+            );
+
+            let mut results_to_skip = Results::from_file(PathBuf::from(cache_filename))?;
+            if !whitelist_levels.is_empty() {
+                // if whitelist is provided, test not in whitelist will be skip
+                results_to_skip
+                    .tests
+                    .retain(|_, test| !whitelist_levels.contains(&test.level));
+            } else {
+                // by default only skip ignore
+                results_to_skip
+                    .tests
+                    .retain(|_, test| test.level != ResultLevel::Ignored);
+            }
+
+            results_to_skip
         } else {
             Results::default()
         };
-        results.set_cache(PathBuf::from(csv_filename));
-        run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
+        results_to_skip.set_cache(PathBuf::from(csv_filename));
+        run_statetests_suite(state_tests, &circuits_config, &suite, &mut results_to_skip)?;
 
         // filter non-csv files and files from the same commit
         let mut files: Vec<_> = std::fs::read_dir(REPORT_FOLDER)
@@ -185,8 +206,8 @@ fn go() -> Result<()> {
         } else {
             None
         };
-        let report = results.report(previous);
-        std::fs::write(&html_filename, report.gen_html()?)?;
+        let report = results_to_skip.report(previous);
+        std::fs::write(&html_filename, report.gen_html(git_submodule_tests_hash)?)?;
 
         report.print_tty()?;
         info!("{}", html_filename);
