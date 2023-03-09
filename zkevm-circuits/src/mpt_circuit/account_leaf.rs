@@ -23,7 +23,7 @@ use crate::{
         FixedTableTag,
     },
     mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
-    mpt_circuit::{MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, MPTState},
 };
 use crate::{
     circuit_tools::constraint_builder::RLCChainable,
@@ -72,33 +72,14 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb.base], {
-            let key_bytes = [
-                ctx.expr(meta, 0)[..34].to_owned(),
-                ctx.expr(meta, 1)[..34].to_owned(),
-            ];
-            let wrong_bytes = ctx.expr(meta, 2)[..34].to_owned();
+            let key_bytes = [ctx.s(meta, 0).to_owned(), ctx.s(meta, 1).to_owned()];
+            let wrong_bytes = ctx.s(meta, 2).to_owned();
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
-            let nonce_bytes = [
-                ctx.expr(meta, 3)[..34].to_owned(),
-                ctx.expr(meta, 4)[..34].to_owned(),
-            ];
-            let balance_bytes = [
-                ctx.expr(meta, 3)[34..].to_owned(),
-                ctx.expr(meta, 4)[34..].to_owned(),
-            ];
-            let storage_bytes = [
-                ctx.expr(meta, 5)[..34].to_owned(),
-                ctx.expr(meta, 6)[..34].to_owned(),
-            ];
-            let codehash_bytes = [
-                ctx.expr(meta, 5)[34..].to_owned(),
-                ctx.expr(meta, 6)[34..].to_owned(),
-            ];
-            let drifted_bytes = ctx.expr(meta, 7)[..34].to_owned();
-
-            // The two string RLP bytes stored in the s RLP bytes.
-            // The two list RLP bytes are stored in the c RLP bytes.
-            // The RLP bytes of nonce/balance are stored bytes[0].
+            let nonce_bytes = [ctx.s(meta, 3).to_owned(), ctx.s(meta, 4).to_owned()];
+            let balance_bytes = [ctx.c(meta, 3).to_owned(), ctx.c(meta, 4).to_owned()];
+            let storage_bytes = [ctx.s(meta, 5).to_owned(), ctx.s(meta, 6).to_owned()];
+            let codehash_bytes = [ctx.c(meta, 5).to_owned(), ctx.c(meta, 6).to_owned()];
+            let drifted_bytes = ctx.s(meta, 7).to_owned();
 
             config.main_data = MainData::load(
                 "main storage",
@@ -251,7 +232,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove
-            // storage leafs
+            // storage leafs unless it's also a non-existing proof?
             MainData::store(
                 &mut cb.base,
                 &ctx.memory[main_memory()],
@@ -399,7 +380,7 @@ impl<F: Field> AccountLeafConfig<F> {
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
         witness: &mut [MptWitnessRow<F>],
-        pv: &mut ProofValues<F>,
+        pv: &mut MPTState<F>,
         offset: usize,
         idx: usize,
     ) -> Result<(), Error> {
@@ -410,29 +391,22 @@ impl<F: Field> AccountLeafConfig<F> {
         let storage_codehash_s = witness[idx + 5].to_owned();
         let storage_codehash_c = witness[idx + 6].to_owned();
         let row_drifted = witness[idx + 7].to_owned();
-
-        let row_key = [&key_s, &key_c];
         let row_wrong = witness[idx + 2].to_owned();
+
+        let list_rlp_bytes = [key_s.rlp_bytes.to_owned(), key_c.rlp_bytes.to_owned()];
+        let key_bytes = [key_s.s(), key_c.s()];
         let value_rlp_bytes = [
             nonce_balance_s.rlp_bytes.clone(),
             nonce_balance_c.rlp_bytes.clone(),
         ];
-        let nonce_bytes = [
-            nonce_balance_s.bytes[..34].to_owned(),
-            nonce_balance_c.bytes[..34].to_owned(),
-        ];
-        let balance_bytes = [
-            nonce_balance_s.bytes[34..68].to_owned(),
-            nonce_balance_c.bytes[34..68].to_owned(),
-        ];
-        let storage_bytes = [
-            storage_codehash_s.bytes[..34].to_owned(),
-            storage_codehash_c.bytes[..34].to_owned(),
-        ];
-        let codehash_bytes = [
-            storage_codehash_s.bytes[34..68].to_owned(),
-            storage_codehash_c.bytes[34..68].to_owned(),
-        ];
+        let nonce_bytes = [nonce_balance_s.s(), nonce_balance_c.s()];
+        let balance_bytes = [nonce_balance_s.c(), nonce_balance_c.c()];
+        let storage_bytes = [storage_codehash_s.s(), storage_codehash_c.s()];
+        let codehash_bytes = [storage_codehash_s.c(), storage_codehash_c.c()];
+        let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
+        let drifted_bytes = row_drifted.s();
+        let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
+        let wrong_bytes = row_wrong.s();
 
         let main_data =
             self.main_data
@@ -447,8 +421,6 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut key_data = vec![KeyDataWitness::default(); 2];
         let mut parent_data = vec![ParentDataWitness::default(); 2];
         for is_s in [true, false] {
-            let key_row = &row_key[is_s.idx()];
-
             for (cell, byte) in self.value_rlp_bytes[is_s.idx()]
                 .iter()
                 .zip(value_rlp_bytes[is_s.idx()].iter())
@@ -480,8 +452,8 @@ impl<F: Field> AccountLeafConfig<F> {
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
                 region,
                 offset,
-                &key_row.rlp_bytes,
-                &key_row.bytes[0..34],
+                &list_rlp_bytes[is_s.idx()],
+                &key_bytes[is_s.idx()],
             )?;
             let nonce_witness =
                 self.rlp_nonce[is_s.idx()].assign(region, offset, &nonce_bytes[is_s.idx()])?;
@@ -605,8 +577,8 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             &parent_data,
-            &row_drifted.rlp_bytes,
-            &row_drifted.bytes,
+            &drifted_rlp_bytes,
+            &drifted_bytes,
             ctx.r,
         )?;
 
@@ -616,8 +588,8 @@ impl<F: Field> AccountLeafConfig<F> {
             offset,
             is_non_existing_proof,
             &key_rlc,
-            &row_wrong.rlp_bytes,
-            &row_wrong.bytes,
+            &wrong_rlp_bytes,
+            &wrong_bytes,
             true,
             key_data[true.idx()].clone(),
             ctx.r,

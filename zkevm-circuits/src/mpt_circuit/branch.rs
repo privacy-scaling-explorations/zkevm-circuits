@@ -8,7 +8,7 @@ use halo2_proofs::{
 use super::{
     helpers::{ListKeyGadget, MPTConstraintBuilder, ParentDataWitness},
     param::{ARITY, IS_BRANCH_C_PLACEHOLDER_POS},
-    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListDataGadget, RLPListGadget},
+    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListDataGadget},
     MPTContext,
 };
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
             IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS,
         },
     },
-    mpt_circuit::{MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, MPTState},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -83,17 +83,11 @@ impl<F: Field> BranchConfig<F> {
         circuit!([meta, cb.base], {
             // Data
             let branch_bytes: [[Vec<Expression<F>>; ARITY]; 2] = [
-                array_init::array_init(|i| ctx.expr(meta, 1 + i as i32)[0..34].to_owned()),
-                array_init::array_init(|i| ctx.expr(meta, 1 + i as i32)[34..68].to_owned()),
+                array_init::array_init(|i| ctx.s(meta, 1 + i as i32)),
+                array_init::array_init(|i| ctx.c(meta, 1 + i as i32)),
             ];
-            let ext_key_bytes: [Vec<Expression<F>>; 2] = [
-                ctx.expr(meta, 17)[0..34].to_owned(),
-                ctx.expr(meta, 18)[0..34].to_owned(),
-            ];
-            let ext_value_bytes: [Vec<Expression<F>>; 2] = [
-                ctx.expr(meta, 17)[34..68].to_owned(),
-                ctx.expr(meta, 18)[34..68].to_owned(),
-            ];
+            let ext_key_bytes: [Vec<Expression<F>>; 2] = [ctx.s(meta, 17), ctx.s(meta, 18)];
+            let ext_value_bytes: [Vec<Expression<F>>; 2] = [ctx.c(meta, 17), ctx.c(meta, 18)];
 
             // General inputs
             config.is_extension = cb.base.query_cell();
@@ -257,7 +251,7 @@ impl<F: Field> BranchConfig<F> {
                 config.rlp_list[is_s.idx()] = RLPListDataGadget::construct(&mut cb.base);
                 // Start the RLC encoding of the branch
                 (branch_node_rlc[is_s.idx()], mult[is_s.idx()]) =
-                    config.rlp_list[is_s.idx()].rlp_list.rlc_rlp(&r);
+                    config.rlp_list[is_s.idx()].rlp_list.rlc_rlp_only(&r);
 
                 // Keep track of how many bytes the branch contains to make sure it's correct.
                 num_bytes_left[is_s.idx()] = config.rlp_list[is_s.idx()].rlp_list.len();
@@ -504,12 +498,11 @@ impl<F: Field> BranchConfig<F> {
         region: &mut Region<'_, F>,
         witness: &mut [MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
-        pv: &mut ProofValues<F>,
+        pv: &mut MPTState<F>,
         offset: usize,
         idx: usize,
     ) -> Result<(), Error> {
         let row_init = witness[idx].to_owned();
-        let row_key_s = witness[idx + 17].to_owned();
 
         let is_placeholder = [
             row_init.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1,
@@ -534,22 +527,17 @@ impl<F: Field> BranchConfig<F> {
             == 1;
 
         // Data
-        let rlp_bytes = [
+        let branch_list_rlp_bytes = [
             row_init.rlp_bytes[0..3].to_owned(),
             row_init.rlp_bytes[3..6].to_owned(),
         ];
         let branch_bytes: [[Vec<u8>; ARITY]; 2] = [
-            array_init::array_init(|i| witness[idx + 1 + i].bytes[0..34].to_owned()),
-            array_init::array_init(|i| witness[idx + 1 + i].bytes[34..68].to_owned()),
+            array_init::array_init(|i| witness[idx + 1 + i].s()),
+            array_init::array_init(|i| witness[idx + 1 + i].c()),
         ];
-        let ext_key_bytes: [Vec<u8>; 2] = [
-            witness[idx + 17].bytes[0..34].to_owned(),
-            witness[idx + 18].bytes[0..34].to_owned(),
-        ];
-        let ext_value_bytes: [Vec<u8>; 2] = [
-            witness[idx + 17].bytes[34..68].to_owned(),
-            witness[idx + 18].bytes[34..68].to_owned(),
-        ];
+        let ext_list_rlp_bytes = witness[idx + 17].rlp_bytes.to_owned();
+        let ext_key_bytes: [Vec<u8>; 2] = [witness[idx + 17].s(), witness[idx + 18].s()];
+        let ext_value_bytes: [Vec<u8>; 2] = [witness[idx + 17].c(), witness[idx + 18].c()];
 
         self.is_extension
             .assign(region, offset, is_extension_node.scalar())?;
@@ -578,7 +566,7 @@ impl<F: Field> BranchConfig<F> {
             let ext_rlp_key = self.ext_rlp_key.assign(
                 region,
                 offset,
-                &row_key_s.rlp_bytes,
+                &ext_list_rlp_bytes,
                 &ext_key_bytes[true.idx()],
             )?;
 
@@ -641,8 +629,11 @@ impl<F: Field> BranchConfig<F> {
         /* Branch */
 
         for is_s in [true, false] {
-            let rlp_list_witness =
-                self.rlp_list[is_s.idx()].assign(region, offset, &rlp_bytes[is_s.idx()])?;
+            let rlp_list_witness = self.rlp_list[is_s.idx()].assign(
+                region,
+                offset,
+                &branch_list_rlp_bytes[is_s.idx()],
+            )?;
 
             self.is_placeholder[is_s.idx()].assign(
                 region,

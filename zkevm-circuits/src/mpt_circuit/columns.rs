@@ -24,11 +24,4 @@ impl<F: Field> MainCols<F> {
             _marker: PhantomData,
         }
     }
-
-    pub(crate) fn expr(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.bytes
-            .iter()
-            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
-            .collect::<Vec<_>>()
-    }
 }

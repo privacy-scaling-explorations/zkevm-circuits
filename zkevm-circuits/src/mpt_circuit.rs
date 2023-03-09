@@ -72,8 +72,15 @@ impl<F: Field> MPTContext<F> {
         [self.s_main.bytes, self.c_main.bytes].concat().to_vec()
     }
 
-    pub(crate) fn expr(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.bytes()
+    pub(crate) fn s(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
+        self.bytes()[0..34]
+            .iter()
+            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn c(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
+        self.bytes()[34..68]
             .iter()
             .map(|&byte| meta.query_advice(byte, Rotation(rot)))
             .collect::<Vec<_>>()
@@ -120,13 +127,12 @@ pub enum FixedTableTag {
 
 impl_expr!(FixedTableTag);
 
-// TODO(Brecht): remove by refactoring to use memory values instead
 #[derive(Default)]
-pub(crate) struct ProofValues<F> {
+pub(crate) struct MPTState<F> {
     pub(crate) memory: Memory<F>,
 }
 
-impl<F: Field> ProofValues<F> {
+impl<F: Field> MPTState<F> {
     fn new(memory: &Memory<F>) -> Self {
         Self {
             memory: memory.clone(),
@@ -232,10 +238,10 @@ impl<F: Field> MPTConfig<F> {
                     require!(cb.length_s.sum_conditions() => bool);
                     require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
-                    for (idx, &byte) in ctx.bytes()[0..34].into_iter().enumerate() {
+                    for (idx, &byte) in ctx.s().into_iter().enumerate() {
                         require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
-                    for (idx, &byte) in ctx.bytes()[34..68].into_iter().enumerate() {
+                    for (idx, &byte) in ctx.c().into_iter().enumerate() {
                         require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
                     }
                 }}*/
@@ -316,7 +322,7 @@ impl<F: Field> MPTConfig<F> {
             keccak_table,
             fixed_table,
             state_machine,
-            r: 123456.scalar(),
+            r: 0.scalar(),
             mpt_table,
             cb,
         }
@@ -508,13 +514,21 @@ impl<F: Field> MPTConfig<F> {
                 row.rlp_bytes = [row.bytes[4..7].to_owned(), row.bytes[7..10].to_owned()].concat();
                 row.bytes = [vec![0; 10], row.bytes[10..].to_owned()].concat();
             }
+
+            // Shift the value bytes to the start of the row
+            if row.get_type() == MptWitnessRowType::StorageLeafSValue
+                || row.get_type() == MptWitnessRowType::StorageLeafCValue
+            {
+                row.rlp_bytes = vec![row.bytes[0]];
+                row.bytes = [row.bytes[1..].to_owned()].concat();
+            }
         }
 
         layouter.assign_region(
             || "MPT",
             |mut region| {
                 let mut offset = 0;
-                let mut pv = ProofValues::new(&self.memory);
+                let mut pv = MPTState::new(&self.memory);
 
                 memory.clear_witness_data();
 
@@ -536,7 +550,7 @@ impl<F: Field> MPTConfig<F> {
                     }
 
                     if new_proof {
-                        pv = ProofValues::new(&pv.memory);
+                        pv = MPTState::new(&pv.memory);
 
                         assign!(region, (self.is_start, offset) => 1.scalar())?;
                         self.state_machine.start_config.assign(
@@ -732,10 +746,6 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
 #[cfg(test)]
 mod tests {
-    use param::IS_NON_EXISTING_STORAGE_POS;
-
-    use crate::circuit_tools::constraint_builder::RLCableValue;
-
     use super::*;
 
     use halo2_proofs::{
@@ -769,21 +779,8 @@ mod tests {
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
 
-                let mut pub_root = vec![];
-                let acc_r = Fr::one() + Fr::one();
-                let mut count = 0;
-                for row in w.iter().filter(|r| r[r.len() - 1] != 5) {
-                    let l = row.len();
-                    let pub_root_rlc = row[l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS
-                        ..l - HASH_WIDTH - IS_NON_EXISTING_STORAGE_POS + HASH_WIDTH]
-                        .rlc_value(acc_r);
-
-                    pub_root.push(pub_root_rlc);
-                    count += 1;
-                }
-                // TODO: add pub_root to instances
-
-                let randomness = Fr::one() + Fr::one();
+                let count = w.iter().filter(|r| r[r.len() - 1] != 5).count();
+                let randomness: Fr = 123456789.scalar();
                 let instance: Vec<Vec<Fr>> = (1..HASH_WIDTH + 1)
                     .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); count])
                     .collect();

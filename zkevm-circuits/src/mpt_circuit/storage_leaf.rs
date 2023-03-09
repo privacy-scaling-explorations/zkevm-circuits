@@ -12,11 +12,11 @@ use crate::{
     circuit,
     mpt_circuit::{
         helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
-        param::{HASH_WIDTH, KEY_LEN_IN_NIBBLES},
+        param::KEY_LEN_IN_NIBBLES,
         FixedTableTag,
     },
     mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
-    mpt_circuit::{MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, MPTState},
 };
 use crate::{
     circuit_tools::cell_manager::Cell,
@@ -24,10 +24,7 @@ use crate::{
 };
 use crate::{circuit_tools::gadgets::LtGadget, witness::MptUpdateRow};
 use crate::{
-    circuit_tools::{
-        constraint_builder::{RLCChainable, RLCableValue},
-        gadgets::IsEqualGadget,
-    },
+    circuit_tools::{constraint_builder::RLCChainable, gadgets::IsEqualGadget},
     mpt_circuit::helpers::{main_memory, MainData},
 };
 
@@ -43,7 +40,9 @@ pub(crate) struct StorageLeafConfig<F> {
     parent_data: [ParentData<F>; 2],
     key_mult: [Cell<F>; 2],
     rlp_key: [ListKeyGadget<F>; 2],
+    value_rlp_bytes: [[Cell<F>; 1]; 2],
     rlp_value: [RLPValueGadget<F>; 2],
+    rlp_value_long: [RLPValueGadget<F>; 2],
     is_wrong_leaf: Cell<F>,
     is_not_hashed: [LtGadget<F, 1>; 2],
     is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
@@ -65,13 +64,11 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb.base], {
-            let key_bytes = [
-                ctx.expr(meta, 0)[..34].to_owned(),
-                ctx.expr(meta, 2)[..34].to_owned(),
-            ];
-            let value_bytes = [ctx.expr(meta, 1), ctx.expr(meta, 3)];
-            let drifted_bytes = ctx.expr(meta, 4)[..34].to_owned();
-            let wrong_bytes = ctx.expr(meta, 5)[..34].to_owned();
+            let key_bytes = [ctx.s(meta, 0).to_owned(), ctx.s(meta, 2).to_owned()];
+            config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
+            let value_bytes = [ctx.s(meta, 1), ctx.s(meta, 3)];
+            let drifted_bytes = ctx.s(meta, 4).to_owned();
+            let wrong_bytes = ctx.s(meta, 5).to_owned();
 
             config.main_data = MainData::load(
                 "main storage",
@@ -106,18 +103,38 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
                 *rlp_key = ListKeyGadget::construct(&mut cb.base, &key_bytes[is_s.idx()]);
-                config.rlp_value[is_s.idx()] =
-                    RLPValueGadget::construct(&mut cb.base, &value_bytes[is_s.idx()][0..34]);
+                config.rlp_value[is_s.idx()] = RLPValueGadget::construct(
+                    &mut cb.base,
+                    &config.value_rlp_bytes[is_s.idx()]
+                        .iter()
+                        .map(|c| c.expr())
+                        .collect::<Vec<_>>(),
+                );
+                config.rlp_value_long[is_s.idx()] =
+                    RLPValueGadget::construct(&mut cb.base, &value_bytes[is_s.idx()]);
 
                 config.key_mult[is_s.idx()] = cb.base.query_cell();
                 require!((FixedTableTag::RMult, rlp_key.num_bytes_on_key_row(), config.key_mult[is_s.idx()].expr()) => @"fixed");
 
                 // RLC bytes zero check
                 cb.set_length(rlp_key.num_bytes_on_key_row());
-                cb.set_length_s(config.rlp_value[is_s.idx()].num_bytes());
+                cb.set_length_s(config.rlp_value_long[is_s.idx()].num_bytes());
 
-                (value_rlc[is_s.idx()], value_rlp_rlc[is_s.idx()]) =
-                    config.rlp_value[is_s.idx()].rlc(&r);
+                // Because the storage value is an rlp encoded string inside another rlp encoded
+                // string (leaves are always encoded as [key, value], with
+                // `value` here containing a single stored value) the stored
+                // value is either stored directly in the RLP encoded string if short, or stored
+                // wrapped inside another RLP encoded string if long.
+                (value_rlc[is_s.idx()], value_rlp_rlc[is_s.idx()]) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
+                    config.rlp_value[is_s.idx()].rlc(&r)
+                } elsex {
+                    let value_rlc = config.rlp_value_long[is_s.idx()].rlc_value(&r);
+                    let value_rlp_rlc = (config.rlp_value[is_s.idx()].rlc_rlp(&r), r[0].clone()).rlc_chain(
+                        config.rlp_value_long[is_s.idx()].rlc_rlp(&r)
+                    );
+                    require!(config.rlp_value[is_s.idx()].num_bytes() => config.rlp_value_long[is_s.idx()].num_bytes() + 1.expr());
+                    (value_rlc, value_rlp_rlc)
+                }};
 
                 let leaf_rlc = (rlp_key.rlc(&r), config.key_mult[is_s.idx()].expr())
                     .rlc_chain(value_rlp_rlc[is_s.idx()].expr());
@@ -142,7 +159,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 }}
 
                 // Make sure the RLP encoding is correct.
-                // storage = [key, value]
+                // storage = [key, "value"]
                 require!(rlp_key.rlp_list.num_bytes() => rlp_key.num_bytes_on_key_row() + config.rlp_value[is_s.idx()].num_bytes());
 
                 // Check if the account is in its parent.
@@ -246,14 +263,29 @@ impl<F: Field> StorageLeafConfig<F> {
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
         witness: &[MptWitnessRow<F>],
-        pv: &mut ProofValues<F>,
+        pv: &mut MPTState<F>,
         offset: usize,
         idx: usize,
     ) -> Result<(), Error> {
         let row_key = [&witness[idx + 0], &witness[idx + 2]];
-        let value_bytes = [&witness[idx + 1], &witness[idx + 3]];
+        let row_value = [&witness[idx + 1], &witness[idx + 3]];
         let row_drifted = &witness[idx + 4];
         let row_wrong = &witness[idx + 5];
+
+        let list_rlp_bytes = [
+            row_key[true.idx()].rlp_bytes.to_owned(),
+            row_key[false.idx()].rlp_bytes.to_owned(),
+        ];
+        let key_bytes = [row_key[true.idx()].s(), row_key[false.idx()].s()];
+        let value_rlp_bytes = [
+            row_value[true.idx()].rlp_bytes.to_owned(),
+            row_value[false.idx()].rlp_bytes.to_owned(),
+        ];
+        let value_bytes = [row_value[true.idx()].s(), row_value[false.idx()].s()];
+        let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
+        let drifted_bytes = row_drifted.s();
+        let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
+        let wrong_bytes = row_wrong.s();
 
         let main_data =
             self.main_data
@@ -264,9 +296,6 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut key_rlc = vec![0.scalar(); 2];
         let mut value_rlc = vec![0.scalar(); 2];
         for is_s in [true, false] {
-            // Key
-            let key_row = &row_key[is_s.idx()];
-
             parent_data[is_s.idx()] = self.parent_data[is_s.idx()].witness_load(
                 region,
                 offset,
@@ -277,8 +306,8 @@ impl<F: Field> StorageLeafConfig<F> {
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
                 region,
                 offset,
-                &key_row.rlp_bytes,
-                &key_row.bytes[0..34],
+                &list_rlp_bytes[is_s.idx()],
+                &key_bytes[is_s.idx()],
             )?;
 
             let (_, leaf_mult) = rlp_key_witness.rlc_leaf(ctx.r);
@@ -318,14 +347,21 @@ impl<F: Field> StorageLeafConfig<F> {
             );
 
             // Value
-            let value_row = &value_bytes[is_s.idx()];
-
+            for (cell, byte) in self.value_rlp_bytes[is_s.idx()]
+                .iter()
+                .zip(value_rlp_bytes[is_s.idx()].iter())
+            {
+                cell.assign(region, offset, byte.scalar())?;
+            }
             let value_witness =
-                self.rlp_value[is_s.idx()].assign(region, offset, &value_row.bytes)?;
-
-            value_rlc[is_s.idx()] = value_row.bytes
-                [value_witness.num_rlp_bytes() as usize..HASH_WIDTH + 2]
-                .rlc_value(ctx.r);
+                self.rlp_value[is_s.idx()].assign(region, offset, &value_rlp_bytes[is_s.idx()])?;
+            let value_long_witness =
+                self.rlp_value_long[is_s.idx()].assign(region, offset, &value_bytes[is_s.idx()])?;
+            value_rlc[is_s.idx()] = if value_witness.is_short() {
+                value_witness.rlc_value(ctx.r)
+            } else {
+                value_long_witness.rlc_value(ctx.r)
+            };
 
             ParentData::witness_store(
                 region,
@@ -363,8 +399,8 @@ impl<F: Field> StorageLeafConfig<F> {
             region,
             offset,
             &parent_data,
-            &row_drifted.rlp_bytes,
-            &row_drifted.bytes,
+            &drifted_rlp_bytes,
+            &drifted_bytes,
             ctx.r,
         )?;
 
@@ -374,8 +410,8 @@ impl<F: Field> StorageLeafConfig<F> {
             offset,
             is_non_existing_proof,
             &key_rlc,
-            &row_wrong.rlp_bytes,
-            &row_wrong.bytes,
+            &wrong_rlp_bytes,
+            &wrong_bytes,
             false,
             key_data[true.idx()].clone(),
             ctx.r,

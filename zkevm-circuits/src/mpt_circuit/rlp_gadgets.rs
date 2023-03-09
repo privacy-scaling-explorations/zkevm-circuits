@@ -129,19 +129,13 @@ impl<F: Field> RLPListGadget<F> {
         })
     }
 
-    pub(crate) fn rlc(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
-        circuit!([meta, _cb!()], {
-            let value_rlc = matchx! {
-                self.is_short() => self.bytes[1..].rlc(&r),
-                self.is_long() => self.bytes[2..].rlc(&r),
-                self.is_very_long() => self.bytes[3..].rlc(&r),
-            };
-            (value_rlc, self.bytes.rlc(&r))
-        })
+    /// Returns the rlc of all the list data provided
+    pub(crate) fn rlc_rlp(&self, r: &[Expression<F>]) -> Expression<F> {
+        self.bytes.rlc(&r)
     }
 
-    /// Returns the rlc of the RLP bytes
-    pub(crate) fn rlc_rlp(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
+    /// Returns the rlc of only the RLP bytes
+    pub(crate) fn rlc_rlp_only(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
         circuit!([meta, _cb!()], {
             matchx! {
                 self.is_short() => (self.bytes[..1].rlc(&r), r[0].expr()),
@@ -198,31 +192,14 @@ impl RLPListWitness {
         }
     }
 
-    /// RLC data
-    pub(crate) fn rlc<F: Field>(&self, r: F) -> (F, F) {
-        matchr! {
-            self.is_short() => {
-                (self.bytes.rlc_value(r), self.bytes.rlc_value(r))
-            },
-            self.is_long() => {
-                (self.bytes[1..].rlc_value(r), self.bytes.rlc_value(r))
-            },
-            _ => {
-                unreachable!();
-            },
-        }
-    }
-
-    pub(crate) fn rlc_rlp_dummy<F: Field>(&self, r: F) -> F {
-        self.rlc(r).1
-    }
-
-    pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
-        self.rlc(r).0
+    /// Returns the rlc of the complete list value and the complete list
+    /// (including RLP bytes)
+    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
+        self.bytes.rlc_value(r)
     }
 
     /// Returns the rlc of the RLP bytes
-    pub(crate) fn rlc_rlp2<F: Field>(&self, r: F) -> (F, F) {
+    pub(crate) fn rlc_rlp_only<F: Field>(&self, r: F) -> (F, F) {
         matchr! {
             self.is_short() => (self.bytes[..1].rlc_value(r), r),
             self.is_long() => (self.bytes[..2].rlc_value(r), r*r),
@@ -256,13 +233,11 @@ impl<F: Field> RLPListDataGadget<F> {
         for (cell, byte) in self.rlp_list_bytes.iter().zip(list_bytes.iter()) {
             cell.assign(region, offset, byte.scalar())?;
         }
-        let rlp_list = self.rlp_list.assign(region, offset, list_bytes)?;
-
-        Ok(rlp_list)
+        self.rlp_list.assign(region, offset, list_bytes)
     }
 
-    pub(crate) fn rlc(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
-        self.rlp_list.rlc_rlp(&r)
+    pub(crate) fn rlc_rlp(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
+        self.rlp_list.rlc_rlp_only(&r)
     }
 }
 
@@ -394,30 +369,28 @@ impl<F: Field> RLPValueGadget<F> {
 
     /// RLC data
     pub(crate) fn rlc(&self, r: &[Expression<F>]) -> (Expression<F>, Expression<F>) {
-        circuit!([meta, _cb!()], {
-            matchx! {
-                self.is_short() => {
-                    let value_rlc = self.bytes[0].expr();
-                    (value_rlc.expr(), value_rlc.expr())
-                },
-                self.is_long() => {
-                    let value_rlc = self.bytes[1..].rlc(&r);
-                    (value_rlc, self.bytes.rlc(&r))
-                },
-                self.is_very_long() => {
-                    unreachablex!();
-                    (0.expr(), 0.expr())
-                },
-            }
-        })
+        (self.rlc_value(r), self.rlc_rlp(r))
     }
 
     pub(crate) fn rlc_rlp(&self, r: &[Expression<F>]) -> Expression<F> {
-        self.rlc(r).1
+        self.bytes.rlc(&r)
     }
 
     pub(crate) fn rlc_value(&self, r: &[Expression<F>]) -> Expression<F> {
-        self.rlc(r).0
+        circuit!([meta, _cb!()], {
+            matchx! {
+                self.is_short() => {
+                    self.bytes[0].expr()
+                },
+                self.is_long() => {
+                    self.bytes[1..].rlc(&r)
+                },
+                self.is_very_long() => {
+                    unreachablex!();
+                    0.expr()
+                },
+            }
+        })
     }
 }
 
@@ -471,27 +444,25 @@ impl RLPValueWitness {
 
     /// RLC data
     pub(crate) fn rlc<F: Field>(&self, r: F) -> (F, F) {
+        (self.rlc_value(r), self.rlc_rlp(r))
+    }
+
+    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
+        self.bytes.rlc_value(r)
+    }
+
+    pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
         matchr! {
             self.is_short() => {
-                let value_rlc = self.bytes[0].scalar();
-                (value_rlc, value_rlc)
+                self.bytes[0].scalar()
             },
             self.is_long() => {
-                let value_rlc = self.bytes[1..].rlc_value(r);
-                (value_rlc, self.bytes.rlc_value(r))
+                self.bytes[1..].rlc_value(r)
             },
             self.is_very_long() => {
                 unreachable!();
             },
         }
-    }
-
-    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
-        self.rlc(r).1
-    }
-
-    pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
-        self.rlc(r).0
     }
 }
 
@@ -598,10 +569,6 @@ impl<F: Field> RLPItemGadget<F> {
     ) -> Result<RLPItemWitness, Error> {
         let value_witness = self.value.assign(region, offset, bytes)?;
         let list_witness = self.list.assign(region, offset, bytes)?;
-
-        if value_witness.is_string() && list_witness.is_list() {
-            println!("{:?}", bytes)
-        }
         assert!(!(value_witness.is_string() && list_witness.is_list()));
 
         Ok(RLPItemWitness {
@@ -672,41 +639,26 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
 
-    /// RLC data
-    pub(crate) fn rlc(
-        &self,
-        cb: &mut ConstraintBuilder<F>,
-        r: &[Expression<F>],
-    ) -> (Expression<F>, Expression<F>) {
-        circuit!([meta, cb], {
-            matchx! {
-                self.value.is_string() => self.value.rlc(r),
-                self.list.is_list() => self.list.rlc(r),
-            }
-        })
-    }
-
     pub(crate) fn rlc_rlp(
         &self,
         cb: &mut ConstraintBuilder<F>,
         r: &[Expression<F>],
     ) -> Expression<F> {
-        self.rlc(cb, r).1
+        circuit!([meta, cb], {
+            matchx! {
+                self.value.is_string() => self.value.rlc_rlp(r),
+                self.list.is_list() => self.list.rlc_rlp(r),
+            }
+        })
     }
 
-    pub(crate) fn rlc_value(
-        &self,
-        cb: &mut ConstraintBuilder<F>,
-        r: &[Expression<F>],
-    ) -> Expression<F> {
-        self.rlc(cb, r).0
-    }
-
+    // If the branch is empty or contains a hash, return just the value.
+    // If the branch contains a list return the rlc of all the data.
     pub(crate) fn rlc_branch(&self, r: &[Expression<F>]) -> Expression<F> {
         circuit!([meta, _cb!()], {
             matchx! {
-                self.value.is_string() => self.value.rlc(r).0,
-                self.list.is_list() => self.list.rlc(r).1,
+                self.value.is_string() => self.value.rlc_value(r),
+                self.list.is_list() => self.list.rlc_rlp(r),
             }
         })
     }
@@ -731,8 +683,8 @@ impl RLPItemWitness {
 
     pub(crate) fn rlc_branch<F: Field>(&self, r: F) -> F {
         matchr! {
-            self.value.is_string() => self.value.rlc(r).0,
-            self.list.is_list() => self.list.rlc(r).1,
+            self.value.is_string() => self.value.rlc_value(r),
+            self.list.is_list() => self.list.rlc_rlp(r),
         }
     }
 }

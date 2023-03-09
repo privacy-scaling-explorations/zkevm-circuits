@@ -54,6 +54,14 @@ impl<F: Field> MptWitnessRow<F> {
         }
     }
 
+    pub(crate) fn s(&self) -> Vec<u8> {
+        self.bytes[0..34].to_owned()
+    }
+
+    pub(crate) fn c(&self) -> Vec<u8> {
+        self.bytes[34..68].to_owned()
+    }
+
     pub(crate) fn get_type(&self) -> MptWitnessRowType {
         MptWitnessRowType::try_from(self.get_byte_rev(1)).unwrap()
     }

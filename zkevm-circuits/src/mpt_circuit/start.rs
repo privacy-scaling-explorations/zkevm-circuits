@@ -11,7 +11,7 @@ use crate::{
     assign, circuit,
     mpt_circuit::helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
     mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
-    mpt_circuit::{MPTConfig, ProofValues},
+    mpt_circuit::{MPTConfig, MPTState},
 };
 use eth_types::Field;
 use gadgets::util::Scalar;
@@ -37,10 +37,7 @@ impl<F: Field> StartConfig<F> {
         let mut config = StartConfig::default();
 
         circuit!([meta, cb.base], {
-            let root_bytes = [
-                ctx.expr(meta, 0)[..32].to_owned(),
-                ctx.expr(meta, 0)[34..66].to_owned(),
-            ];
+            let root_bytes = [ctx.s(meta, 0), ctx.c(meta, 0)];
 
             config.proof_type = cb.base.query_cell();
 
@@ -88,7 +85,7 @@ impl<F: Field> StartConfig<F> {
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
         witness: &[MptWitnessRow<F>],
-        pv: &mut ProofValues<F>,
+        pv: &mut MPTState<F>,
         offset: usize,
         idx: usize,
     ) -> Result<(), Error> {

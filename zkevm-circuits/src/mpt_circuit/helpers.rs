@@ -217,8 +217,6 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
             r,
         )
     };
-    // TODO(Brecht): somehow the start index doesn't dependend on the list
-    // is_short/is_long?
     matchr! {
         is_long && !is_key_odd => {
             // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
@@ -298,7 +296,7 @@ impl<F: Field> ListKeyGadget<F> {
 
     pub(crate) fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
         self.rlp_list
-            .rlc_rlp(&r)
+            .rlc_rlp_only(&r)
             .rlc_chain(self.key_value.rlc(&r).1)
     }
 
@@ -317,7 +315,7 @@ impl ListKeyWitness {
     /// Number of bytes of RLP (including list RLP bytes) and key
     pub(crate) fn rlc_leaf<F: Field>(&self, r: F) -> (F, F) {
         self.rlp_list
-            .rlc_rlp2(r)
+            .rlc_rlp_only(r)
             .rlc_chain_value(&self.key_value.bytes[..self.key_value.num_bytes()], r)
     }
 }

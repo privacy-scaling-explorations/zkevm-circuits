@@ -203,10 +203,6 @@ impl<F: Field> MemoryBank<F> {
         self.store_offsets.push(offset);
     }
 
-    pub(crate) fn witness_store_init(&mut self, values: &[F]) {
-        self.stored_values.push(values.to_vec());
-    }
-
     pub(crate) fn witness_load(&self, offset: usize) -> Vec<F> {
         self.stored_values[self.stored_values.len() - 1 - offset].clone()
     }
