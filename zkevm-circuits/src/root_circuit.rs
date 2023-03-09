@@ -14,6 +14,7 @@ use std::iter;
 mod aggregation;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+pub use test::RootCircuit as TestRootCircuit;
 
 pub use aggregation::{
     aggregate, AggregationConfig, EccChip, Halo2Loader, KzgAs, KzgDk, KzgSvk,

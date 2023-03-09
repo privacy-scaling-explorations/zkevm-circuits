@@ -8,6 +8,7 @@ mod table;
 mod test;
 /// Util
 mod util;
+pub use test::KeccakCircuit as TestKeccakCircuit;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;

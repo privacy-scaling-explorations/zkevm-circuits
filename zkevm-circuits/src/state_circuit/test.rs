@@ -1,4 +1,4 @@
-use super::{StateCircuit, StateCircuitConfig};
+pub use super::*;
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
     util::SubCircuit,

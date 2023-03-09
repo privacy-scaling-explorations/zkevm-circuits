@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use super::*;
+pub use super::*;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},

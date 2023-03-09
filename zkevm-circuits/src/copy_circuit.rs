@@ -4,8 +4,10 @@
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+pub use test::CopyCircuit as TestCopyCircuit;
 
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
+pub(crate) mod util;
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::Field;
 use eth_types::Word;
 use gadgets::{
@@ -24,7 +26,7 @@ use std::marker::PhantomData;
 
 use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
-    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
+    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,
@@ -38,24 +40,6 @@ use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     plonk::{Challenge, Circuit},
 };
-
-/// Encode the type `NumberOrHash` into a field element
-pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
-    match v {
-        NumberOrHash::Number(n) => Value::known(F::from(*n as u64)),
-        NumberOrHash::Hash(h) => {
-            // since code hash in the bytecode table is represented in
-            // the little-endian form, we reverse the big-endian bytes
-            // of H256.
-            let le_bytes = {
-                let mut b = h.to_fixed_bytes();
-                b.reverse();
-                b
-            };
-            challenge.map(|challenge| rlc::value(&le_bytes, challenge))
-        }
-    }
-}
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]

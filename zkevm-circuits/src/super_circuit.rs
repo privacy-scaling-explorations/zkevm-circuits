@@ -53,6 +53,7 @@
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) mod test;
+pub use test::SuperCircuit as TestSuperCircuit;
 
 use crate::bytecode_circuit::circuit::{
     BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,

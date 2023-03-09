@@ -1,4 +1,4 @@
-use super::*;
+pub use super::*;
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;

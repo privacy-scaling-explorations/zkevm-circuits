@@ -1,8 +1,8 @@
 //! Table definitions used cross-circuits
 
-use crate::copy_circuit::number_or_hash_to_field;
+use crate::copy_circuit::util::number_or_hash_to_field;
 use crate::evm_circuit::util::rlc;
-use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
+use crate::exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP};
 use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;

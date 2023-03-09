@@ -9,11 +9,11 @@ use halo2_proofs::{
 mod execution;
 pub mod param;
 pub(crate) mod step;
-pub(crate) mod util;
-
 pub mod table;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) mod test;
+pub(crate) mod util;
+pub use test::EvmCircuit as TestEvmCircuit;
 
 use crate::table::{
     BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,

@@ -1,4 +1,5 @@
-use super::*;
+#![allow(unused_imports)]
+pub use super::*;
 use crate::evm_circuit::witness::Block;
 
 use eth_types::{Field, Word};

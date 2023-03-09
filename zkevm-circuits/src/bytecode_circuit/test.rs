@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 use super::bytecode_unroller::*;
-use super::circuit::*;
+pub use super::circuit::*;
 
 use crate::{
     bytecode_circuit::{

@@ -7,6 +7,7 @@
 pub mod sign_verify;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+pub use test::TxCircuit as TestTxCircuit;
 
 use crate::table::{KeccakTable, TxFieldTag, TxTable};
 use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};

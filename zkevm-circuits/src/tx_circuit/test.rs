@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use super::*;
+pub use super::*;
 use crate::util::log2_ceil;
 use eth_types::address;
 use halo2_proofs::{

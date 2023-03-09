@@ -1,4 +1,4 @@
-//! SuperCircuit circuit benchmarks
+//! TestSuperCircuit circuit benchmarks
 
 #[cfg(test)]
 mod tests {
@@ -24,7 +24,7 @@ mod tests {
     use rand_chacha::ChaChaRng;
     use std::collections::HashMap;
     use std::env::var;
-    use zkevm_circuits::super_circuit::SuperCircuit;
+    use zkevm_circuits::super_circuit::TestSuperCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -91,7 +91,8 @@ mod tests {
             max_keccak_rows: 0,
         };
         let (_, circuit, instance, _) =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 0x100>::build(block, circuits_params).unwrap();
+            TestSuperCircuit::<_, MAX_TXS, MAX_CALLDATA, 0x100>::build(block, circuits_params)
+                .unwrap();
         let instance_refs: Vec<&[Fr]> = instance.iter().map(|v| &v[..]).collect();
 
         // Bench setup generation
@@ -119,7 +120,7 @@ mod tests {
             Challenge255<G1Affine>,
             ChaChaRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            SuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, 0x100>,
+            TestSuperCircuit<Fr, MAX_TXS, MAX_CALLDATA, 0x100>,
         >(
             &general_params,
             &pk,

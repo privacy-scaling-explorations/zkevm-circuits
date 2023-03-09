@@ -26,15 +26,17 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 use tokio::sync::Mutex as TokioMutex;
-use zkevm_circuits::bytecode_circuit::circuit::BytecodeCircuit;
-use zkevm_circuits::copy_circuit::CopyCircuit;
-use zkevm_circuits::evm_circuit::EvmCircuit;
-use zkevm_circuits::keccak_circuit::KeccakCircuit;
-use zkevm_circuits::state_circuit::StateCircuit;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::tx_circuit::TxCircuit;
-use zkevm_circuits::util::SubCircuit;
-use zkevm_circuits::witness::{block_convert, Block};
+use zkevm_circuits::{
+    bytecode_circuit::TestBytecodeCircuit,
+    copy_circuit::TestCopyCircuit,
+    evm_circuit::TestEvmCircuit,
+    keccak_circuit::TestKeccakCircuit,
+    state_circuit::StateCircuit,
+    super_circuit::TestSuperCircuit,
+    tx_circuit::TestTxCircuit,
+    util::SubCircuit,
+    witness::{block_convert, Block},
+};
 
 /// TEST_MOCK_RANDOMNESS
 const TEST_MOCK_RANDOMNESS: u64 = 0x100;
@@ -97,7 +99,7 @@ lazy_static! {
 
 lazy_static! {
     /// Integration test for EVM circuit
-    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<EvmCircuit<Fr>>> =
+    pub static ref EVM_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestEvmCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
@@ -105,23 +107,23 @@ lazy_static! {
     TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
-    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TxCircuit<Fr>>> =
+    pub static ref TX_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestTxCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Tx", TX_CIRCUIT_DEGREE));
 
     /// Integration test for Bytecode circuit
-    pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<BytecodeCircuit<Fr>>> =
+    pub static ref BYTECODE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestBytecodeCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Bytecode", BYTECODE_CIRCUIT_DEGREE));
 
     /// Integration test for Copy circuit
-    pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<CopyCircuit<Fr>>> =
+    pub static ref COPY_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestCopyCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Copy", COPY_CIRCUIT_DEGREE));
 
     /// Integration test for Keccak circuit
-    pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<KeccakCircuit<Fr>>> =
+    pub static ref KECCAK_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestKeccakCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE));
 
     /// Integration test for Copy circuit
-    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
+    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestSuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
     TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
 }
 

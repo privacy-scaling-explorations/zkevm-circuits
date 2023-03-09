@@ -25,7 +25,7 @@ mod tests {
     use rand_xorshift::XorShiftRng;
     use std::env::var;
     use zkevm_circuits::evm_circuit::witness::{block_convert, Block};
-    use zkevm_circuits::exp_circuit::ExpCircuit;
+    use zkevm_circuits::exp_circuit::TestExpCircuit;
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -47,7 +47,7 @@ mod tests {
         let base = Word::from(132);
         let exponent = Word::from(27);
         let block = generate_full_events_block(degree, base, exponent);
-        let circuit = ExpCircuit::<Fr>::new(
+        let circuit = TestExpCircuit::<Fr>::new(
             block.exp_events.clone(),
             block.circuits_params.max_exp_steps,
         );
@@ -83,7 +83,7 @@ mod tests {
             Challenge255<G1Affine>,
             XorShiftRng,
             Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
-            ExpCircuit<Fr>,
+            TestExpCircuit<Fr>,
         >(
             &general_params,
             &pk,

@@ -1,6 +1,5 @@
 #![allow(unused_imports)]
-use super::*;
-use crate::copy_circuit::CopyCircuit;
+pub use super::*;
 use crate::evm_circuit::{test::rand_bytes, witness::block_convert};
 use crate::witness::Block;
 use bus_mapping::{

@@ -1,8 +1,6 @@
 #![allow(unused_imports)]
-use crate::{
-    root_circuit::{compile, Config, PoseidonTranscript, RootCircuit},
-    super_circuit::{test::block_1tx, SuperCircuit},
-};
+pub use super::*;
+use crate::super_circuit::{test::block_1tx, SuperCircuit};
 use bus_mapping::circuit_input_builder::CircuitsParams;
 use halo2_proofs::{
     circuit::Value,
