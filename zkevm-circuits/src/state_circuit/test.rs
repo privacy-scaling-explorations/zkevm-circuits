@@ -15,6 +15,7 @@ use eth_types::{
 };
 use gadgets::binary_number::AsBits;
 use halo2_proofs::arithmetic::Field as Halo2Field;
+use halo2_proofs::circuit::SimpleFloorPlanner;
 use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
@@ -23,7 +24,6 @@ use halo2_proofs::{
 };
 use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
-use halo2_proofs::circuit::SimpleFloorPlanner;
 use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
@@ -92,8 +92,8 @@ impl AdviceColumn {
 }
 
 impl<F: Field> Circuit<F> for StateCircuit<F>
-    where
-        F: Field,
+where
+    F: Field,
 {
     type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
@@ -134,8 +134,6 @@ impl<F: Field> Circuit<F> for StateCircuit<F>
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
-
-
 
 fn test_state_circuit_ok(
     memory_ops: Vec<Operation<MemoryOp>>,

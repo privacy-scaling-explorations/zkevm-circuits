@@ -1,7 +1,6 @@
 use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries,
-    param::*,
+    param::*, random_linear_combination::Queries as RlcQueries,
 };
 use crate::util::Expr;
 use crate::{

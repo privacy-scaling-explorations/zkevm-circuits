@@ -3,14 +3,16 @@ mod constraint_builder;
 mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
-mod random_linear_combination;
 mod param;
+mod random_linear_combination;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
 pub use test::StateCircuit as TestStateCircuit;
 
-
-use param::*;
+use self::{
+    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
+    lexicographic_ordering::LimbIndex,
+};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
     table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
@@ -33,16 +35,12 @@ use halo2_proofs::{
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
+use param::*;
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
 use std::marker::PhantomData;
-use self::{
-    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
-    lexicographic_ordering::LimbIndex,
-};
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use std::collections::HashMap;
-
 
 /// Config for StateCircuit
 #[derive(Clone)]
