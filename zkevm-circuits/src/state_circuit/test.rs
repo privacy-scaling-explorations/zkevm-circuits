@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 pub use super::*;
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
@@ -22,6 +23,7 @@ use halo2_proofs::{
 };
 use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
+use halo2_proofs::circuit::SimpleFloorPlanner;
 use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
@@ -88,6 +90,52 @@ impl AdviceColumn {
         }
     }
 }
+
+impl<F: Field> Circuit<F> for StateCircuit<F>
+    where
+        F: Field,
+{
+    type Config = (StateCircuitConfig<F>, Challenges);
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let rw_table = RwTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+
+        let config = {
+            let challenges = challenges.exprs(meta);
+            StateCircuitConfig::new(
+                meta,
+                StateCircuitConfigArgs {
+                    rw_table,
+                    mpt_table,
+                    challenges,
+                },
+            )
+        };
+
+        (config, challenges)
+    }
+
+    fn synthesize(
+        &self,
+        (config, challenges): Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let challenges = challenges.values(&mut layouter);
+        config
+            .mpt_table
+            .load(&mut layouter, &self.updates, challenges.evm_word())?;
+        self.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+}
+
+
 
 fn test_state_circuit_ok(
     memory_ops: Vec<Operation<MemoryOp>>,

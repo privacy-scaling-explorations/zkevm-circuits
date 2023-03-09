@@ -31,7 +31,7 @@ use zkevm_circuits::{
     copy_circuit::TestCopyCircuit,
     evm_circuit::TestEvmCircuit,
     keccak_circuit::TestKeccakCircuit,
-    state_circuit::StateCircuit,
+    state_circuit::TestStateCircuit,
     super_circuit::TestSuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
@@ -103,7 +103,7 @@ lazy_static! {
     TokioMutex::new(IntegrationTest::new("EVM", EVM_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
-    pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<StateCircuit<Fr>>> =
+    pub static ref STATE_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestStateCircuit<Fr>>> =
     TokioMutex::new(IntegrationTest::new("State", STATE_CIRCUIT_DEGREE));
 
     /// Integration test for State circuit
