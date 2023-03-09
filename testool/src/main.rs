@@ -157,9 +157,10 @@ fn go() -> Result<()> {
             .unwrap()
             .filter_map(|f| {
                 let filename = f.unwrap().file_name().to_str().unwrap().to_string();
-                (filename.starts_with(&format!("{}.", args.suite))
-                    && filename.ends_with(".csv")
-                    && !filename.contains(&format!(".{}.", git_hash)))
+                (
+                    filename.starts_with(&format!("{}.", args.suite)) && filename.ends_with(".csv")
+                    //    && !filename.contains(&format!(".{}.", git_hash))
+                )
                 .then_some(filename)
             })
             .collect();
@@ -195,6 +196,7 @@ fn go() -> Result<()> {
 
         run_statetests_suite(state_tests, &circuits_config, &suite, &mut results)?;
 
+        results.write_cache()?;
         let report = results.report(previous);
         std::fs::write(&html_filename, report.gen_html()?)?;
 

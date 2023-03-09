@@ -275,7 +275,7 @@ pub fn run_test(
     if !circuits_config.super_circuit {
         let circuits_params = CircuitsParams {
             max_txs: 1,
-            max_rws: 55000,
+            max_rws: 0,
             max_calldata: 5000,
             max_bytecode: 5000,
             max_copy_rows: 55000,

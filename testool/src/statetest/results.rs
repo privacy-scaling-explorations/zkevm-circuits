@@ -351,6 +351,27 @@ impl Results {
         self.tests.contains_key(test)
     }
 
+    pub fn write_cache(&self) -> Result<()> {
+        if let Some(path) = &self.cache {
+            let mut file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .append(true)
+                .open(path)?;
+            for (test_id, result) in &self.tests {
+                let entry = format!(
+                    "{:?};{};{}\n",
+                    result.level,
+                    test_id,
+                    urlencoding::encode(&result.details)
+                );
+                file.write_all(entry.as_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::map_entry)]
     pub fn insert(&mut self, test_id: String, result: ResultInfo) -> Result<()> {
         if !self.tests.contains_key(&test_id) {
@@ -369,21 +390,6 @@ impl Results {
                     test_id,
                     result.details
                 );
-            }
-            let entry = format!(
-                "{:?};{};{}\n",
-                result.level,
-                test_id,
-                urlencoding::encode(&result.details)
-            );
-            if let Some(path) = &self.cache {
-                std::fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .append(true)
-                    .open(path)?
-                    .write_all(entry.as_bytes())?;
             }
             self.tests.insert(test_id, result);
         }
