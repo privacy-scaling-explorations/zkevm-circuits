@@ -15,7 +15,7 @@ pub use KeccakCircuitConfig as KeccakConfig;
 use self::{cell_manager::*, keccak_packed_multi::*, param::*, table::*, util::*};
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
-    table::KeccakTable,
+    table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
@@ -145,16 +145,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         let mut lookup_counter = 0;
         let part_size = get_num_bits_per_absorb_lookup();
         let input = absorb_from.expr() + absorb_data.expr();
-        let absorb_fat = split::expr(
-            meta,
-            &mut cell_manager,
-            &mut cb,
-            input,
-            0,
-            part_size,
-            false,
-            None,
-        );
+        let absorb_fat = split::expr(meta, &mut cell_manager, &mut cb, input, 0, part_size, false);
         cell_manager.start_region();
         let absorb_res = transform::expr(
             "absorb",
@@ -190,7 +181,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             0,
             8,
             false,
-            None,
         );
         cell_manager.start_region();
         let input_bytes = transform::expr(
@@ -243,7 +233,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                 1,
                 part_size_c,
                 false,
-                None,
             ));
         }
         // Now calculate `bc` by normalizing `c`
@@ -426,16 +415,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         cell_manager.start_region();
         let part_size = get_num_bits_per_absorb_lookup();
         let input = s[0][0].clone() + round_cst_expr.clone();
-        let iota_parts = split::expr(
-            meta,
-            &mut cell_manager,
-            &mut cb,
-            input,
-            0,
-            part_size,
-            false,
-            None,
-        );
+        let iota_parts = split::expr(meta, &mut cell_manager, &mut cb, input, 0, part_size, false);
         cell_manager.start_region();
         // Could share columns with absorb which may end up using 1 lookup/column
         // fewer...
@@ -485,7 +465,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             0,
             8,
             false,
-            None,
         );
         cell_manager.start_region();
         let squeeze_bytes = transform::expr(
@@ -807,6 +786,24 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             cb.gate(1.expr())
         });
 
+        keccak_table.annotate_columns(meta);
+
+        normalize_3.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_3_{}", idx))
+        });
+        normalize_4.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_4_{}", idx))
+        });
+        normalize_6.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_column(col, || format!("KECCAK_normalize_6_{}", idx))
+        });
+        chi_base_table.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_column(col, || format!("KECCAK_chi_base_{}", idx))
+        });
+        pack_table.iter().enumerate().for_each(|(idx, &col)| {
+            meta.annotate_lookup_column(col, || format!("KECCAK_pack_table_{}", idx))
+        });
+
         info!("Degree: {}", meta.degree());
         info!("Minimum rows: {}", meta.minimum_rows());
         info!("Total Lookups: {}", total_lookup_counter);
@@ -859,6 +856,8 @@ impl<F: Field> KeccakCircuitConfig<F> {
                 for (offset, keccak_row) in witness.iter().enumerate() {
                     self.set_row(&mut region, offset, keccak_row)?;
                 }
+                self.keccak_table.annotate_columns_in_region(&mut region);
+                self.annotate_circuit(&mut region);
                 Ok(())
             },
         )
@@ -941,6 +940,15 @@ impl<F: Field> KeccakCircuitConfig<F> {
             &CHI_BASE_LOOKUP_TABLE,
         )?;
         load_pack_table(layouter, &self.pack_table)
+    }
+
+    fn annotate_circuit(&self, region: &mut Region<F>) {
+        region.name_column(|| "KECCAK_q_enable", self.q_enable);
+        region.name_column(|| "KECCAK_q_first", self.q_first);
+        region.name_column(|| "KECCAK_q_round", self.q_round);
+        region.name_column(|| "KECCAK_q_absorb", self.q_absorb);
+        region.name_column(|| "KECCAK_q_round_last", self.q_round_last);
+        region.name_column(|| "KECCAK_q_padding_last", self.q_padding_last);
     }
 }
 
