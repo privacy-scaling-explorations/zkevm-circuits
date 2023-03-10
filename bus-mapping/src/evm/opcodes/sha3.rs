@@ -66,7 +66,10 @@ impl Opcode for Sha3 {
             &mut exec_step,
             CopyEvent {
                 src_addr: offset.low_u64(),
-                src_addr_end: offset.low_u64().checked_add(size.as_u64()).unwrap_or(u64::MAX),
+                src_addr_end: offset
+                    .low_u64()
+                    .checked_add(size.as_u64())
+                    .unwrap_or(u64::MAX),
                 src_type: CopyDataType::Memory,
                 src_id: NumberOrHash::Number(call_id),
                 dst_addr: 0,

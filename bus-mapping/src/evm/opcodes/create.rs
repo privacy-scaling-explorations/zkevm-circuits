@@ -18,7 +18,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // TODO: replace dummy create here
         let geth_step = &geth_steps[0];
 
-        let offset = geth_step.stack.nth_last(1)?.as_usize();
+        // Get low Uint64 of offset.
+        let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
         let curr_memory_word_size = (state.call_ctx()?.memory.len() as u64) / 32;

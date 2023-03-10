@@ -343,37 +343,37 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_ok_root(0x40, 10, 0x00.into(), 0x40.into());
-        test_ok_internal(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
+        test_root_ok(0x40, 10, 0x00.into(), 0x40.into());
+        test_internal_ok(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_large() {
-        test_ok_root(0x204, 0x101, 0x102.into(), 0x103.into());
-        test_ok_internal(0x30, 0x204, 0x101, 0x102.into(), 0x103.into());
+        test_root_ok(0x204, 0x101, 0x102.into(), 0x103.into());
+        test_internal_ok(0x30, 0x204, 0x101, 0x102.into(), 0x103.into());
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_ok_root(0x40, 40, 0x20.into(), 0x40.into());
-        test_ok_internal(0x40, 0x20, 10, 0x28.into(), 0xA0.into());
+        test_root_ok(0x40, 40, 0x20.into(), 0x40.into());
+        test_internal_ok(0x40, 0x20, 10, 0x28.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(0x40, 0, 0x00.into(), 0x40.into());
-        test_ok_internal(0x40, 0x40, 0, 0x10.into(), 0xA0.into());
+        test_root_ok(0x40, 0, 0x00.into(), 0x40.into());
+        test_internal_ok(0x40, 0x40, 0, 0x10.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_data_offset_overflow() {
-        test_ok_root(0x40, 10, Word::MAX, 0x40.into());
-        test_ok_internal(0x40, 0x40, 10, Word::MAX, 0xA0.into());
+        test_root_ok(0x40, 10, Word::MAX, 0x40.into());
+        test_internal_ok(0x40, 0x40, 10, Word::MAX, 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_overflow_memory_offset_and_zero_length() {
-        test_ok_root(0x40, 0, 0x40.into(), Word::MAX);
-        test_ok_internal(0x40, 0x40, 0, 0x10.into(), Word::MAX);
+        test_root_ok(0x40, 0, 0x40.into(), Word::MAX);
+        test_internal_ok(0x40, 0x40, 0, 0x10.into(), Word::MAX);
     }
 }
