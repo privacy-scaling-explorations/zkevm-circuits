@@ -77,8 +77,8 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       # Run an initial build in a separate step to split the build time from execution time
-      - name: pause action
-        run: sleep 2000      
+      - name: Set workdir
+        working-directory: ./integration-tests    
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
