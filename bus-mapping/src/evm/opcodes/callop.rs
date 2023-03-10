@@ -183,6 +183,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 1. Call to precompiled.
             (true, _) => {
                 warn!("Call to precompiled is left unimplemented");
+                state.handle_return(geth_step)?;
                 Ok(vec![exec_step])
             }
             // 2. Call to account with empty code.
