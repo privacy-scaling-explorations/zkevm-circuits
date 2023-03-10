@@ -31,9 +31,9 @@ jobs:
     name: Integration Tests
     runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
-    # defaults:
-    #   run:
-    #     working-directory: ./integration-tests
+    defaults:
+      run:
+        working-directory: integration-tests
     steps:
       - name: Set provertype to mock_prover for push & pull_request_labelled
         run: |
