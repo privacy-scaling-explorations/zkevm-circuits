@@ -192,4 +192,18 @@ mod tests {
         test_ok(Sha3CodeGen::mem_eq_size(0x303, 0x404));
         test_ok(Sha3CodeGen::mem_gt_size(0x404, 0x505));
     }
+
+    #[test]
+    fn sha3_gadget_overflow_offset_and_zero_size() {
+        let bytecode = bytecode! {
+            PUSH1(0)
+            PUSH32(Word::MAX)
+            SHA3
+        };
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
+    }
 }
