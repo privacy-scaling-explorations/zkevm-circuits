@@ -81,9 +81,15 @@ jobs:
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
         run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
-      - run: ./integration-tests/run.sh --steps "setup"
-      - run: ./integration-tests/run.sh --steps "gendata"
-      - run: ./integration-tests/run.sh --steps "tests" --tests "rpc"
-      - run: ./integration-tests/run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: RUST_TEST_THREADS=1 ./integration-tests/run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
-      - run: ./integration-tests/run.sh --steps "cleanup"
+      - run: ./run.sh --steps "setup"
+        working-directory: integration-tests
+      - run: ./run.sh --steps "gendata"
+        working-directory: integration-tests
+      - run: ./run.sh --steps "tests" --tests "rpc"
+        working-directory: integration-tests
+      - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
+        working-directory: integration-tests
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
+        working-directory: integration-tests
+      - run: ./run.sh --steps "cleanup"
+        working-directory: integration-tests
