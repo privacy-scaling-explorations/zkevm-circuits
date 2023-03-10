@@ -25,27 +25,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  prepare-checkout:
-    if: github.event.pull_request.draft == false
-    
-    name: Integration Tests (prepare-checkout)
-    runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
-
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          clean: false
-
   integration-tests:
     if: github.event.pull_request.draft == false
 
     name: Integration Tests
-    needs: prepare-checkout
     runs-on: ["${{github.run_id}}", self-hosted, c5.9xlarge]
 
-    defaults:
-      run:
-        working-directory: integration-tests
+    # defaults:
+    #   run:
+    #     working-directory: integration-tests
     steps:
       - name: Set provertype to mock_prover for push & pull_request_labelled
         run: |
@@ -60,6 +48,7 @@ jobs:
         run: |
           echo "provertype=real_prover" >> $GITHUB_ENV
         if: github.event_name == 'schedule'
+      - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           override: false
@@ -93,8 +82,14 @@ jobs:
       - name: Build tests
         run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
       - run: ./run.sh --steps "setup"
+        working-directory: integration-tests
       - run: ./run.sh --steps "gendata"
+        working-directory: integration-tests
       - run: ./run.sh --steps "tests" --tests "rpc"
+        working-directory: integration-tests
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
+        working-directory: integration-tests
       - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
+        working-directory: integration-tests
       - run: ./run.sh --steps "cleanup"
+        working-directory: integration-tests
