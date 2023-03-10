@@ -79,7 +79,6 @@ fn gen_copy_event(
     let code_size = bytecode.code.len() as u64;
 
     // Get low Uint64 of offset.
-    // https://github.com/ethereum/go-ethereum/blob/bb4ac2d396de254898a5f44b1ea2086bfe5bd193/core/vm/instructions.go#L367
     let dst_addr = dst_offset.low_u64();
     let src_addr_end = code_size;
 
