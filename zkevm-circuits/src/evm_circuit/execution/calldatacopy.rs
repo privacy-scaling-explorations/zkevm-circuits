@@ -263,9 +263,9 @@ mod test {
 
     fn test_root_ok(
         call_data_length: usize,
-        memory_offset: usize,
         length: usize,
         data_offset: Word,
+        memory_offset: Word,
     ) {
         let bytecode = bytecode! {
             PUSH32(length)
@@ -302,9 +302,9 @@ mod test {
     fn test_internal_ok(
         call_data_offset: usize,
         call_data_length: usize,
-        dst_offset: usize,
         length: usize,
         data_offset: Word,
+        dst_offset: Word,
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
@@ -343,31 +343,37 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_root_ok(0x40, 0x40, 10, 0x00.into());
-        test_internal_ok(0x40, 0x40, 0xA0, 10, 0x10.into());
+        test_ok_root(0x40, 10, 0x00.into(), 0x40.into());
+        test_ok_internal(0x40, 0x40, 10, 0x10.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_large() {
-        test_root_ok(0x204, 0x103, 0x101, 0x102.into());
-        test_internal_ok(0x30, 0x204, 0x103, 0x101, 0x102.into());
+        test_ok_root(0x204, 0x101, 0x102.into(), 0x103.into());
+        test_ok_internal(0x30, 0x204, 0x101, 0x102.into(), 0x103.into());
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_root_ok(0x40, 0x40, 40, 0x20.into());
-        test_internal_ok(0x40, 0x20, 0xA0, 10, 0x28.into());
+        test_ok_root(0x40, 40, 0x20.into(), 0x40.into());
+        test_ok_internal(0x40, 0x20, 10, 0x28.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_root_ok(0x40, 0x40, 0, 0x00.into());
-        test_internal_ok(0x40, 0x40, 0xA0, 0, 0x10.into());
+        test_ok_root(0x40, 0, 0x00.into(), 0x40.into());
+        test_ok_internal(0x40, 0x40, 0, 0x10.into(), 0xA0.into());
     }
 
     #[test]
     fn calldatacopy_gadget_data_offset_overflow() {
-        test_root_ok(0x40, 0x40, 0, Word::MAX);
-        test_internal_ok(0x40, 0x40, 0xA0, 0, Word::MAX);
+        test_ok_root(0x40, 10, Word::MAX, 0x40.into());
+        test_ok_internal(0x40, 0x40, 10, Word::MAX, 0xA0.into());
+    }
+
+    #[test]
+    fn calldatacopy_gadget_overflow_memory_offset_and_zero_length() {
+        test_ok_root(0x40, 0, 0x40.into(), Word::MAX);
+        test_ok_internal(0x40, 0x40, 0, 0x10.into(), Word::MAX);
     }
 }

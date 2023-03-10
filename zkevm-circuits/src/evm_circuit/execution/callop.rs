@@ -733,7 +733,7 @@ mod test {
     }
 
     #[test]
-    fn callop_with_overflow_offset_and_zero_length() {
+    fn callop_overflow_offset_and_zero_length() {
         let stack = Stack {
             cd_offset: Word::MAX,
             cd_length: 0,
