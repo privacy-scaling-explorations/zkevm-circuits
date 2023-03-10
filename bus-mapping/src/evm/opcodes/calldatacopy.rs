@@ -102,7 +102,8 @@ fn gen_copy_event(
     let call_data_offset = state.call()?.call_data_offset;
     let call_data_length = state.call()?.call_data_length;
 
-    let dst_addr = memory_offset.as_u64();
+    // Get low Uint64 of offset.
+    let dst_addr = memory_offset.low_u64();
     let src_addr_end = call_data_offset.checked_add(call_data_length).unwrap();
 
     // Reset offset to call_data_length if overflow, and set source start to the

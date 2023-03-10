@@ -198,7 +198,7 @@ mod tests {
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
-    fn test_ok(code_offset: Word, memory_offset: usize, size: usize, large: bool) {
+    fn test_ok(code_offset: Word, memory_offset: Word, size: usize, large: bool) {
         let mut code = bytecode! {};
         if large {
             for _ in 0..size {
@@ -208,7 +208,7 @@ mod tests {
         let tail = bytecode! {
             PUSH32(Word::from(size))
             PUSH32(code_offset)
-            PUSH32(Word::from(memory_offset))
+            PUSH32(memory_offset)
             CODECOPY
             STOP
         };
@@ -222,18 +222,23 @@ mod tests {
 
     #[test]
     fn codecopy_gadget_simple() {
-        test_ok(0x00.into(), 0x00, 0x20, false);
-        test_ok(0x30.into(), 0x20, 0x30, false);
-        test_ok(0x20.into(), 0x10, 0x42, false);
+        test_ok(0x00.into(), 0x00.into(), 0x20, false);
+        test_ok(0x30.into(), 0x20.into(), 0x30, false);
+        test_ok(0x20.into(), 0x10.into(), 0x42, false);
     }
 
     #[test]
     fn codecopy_gadget_large() {
-        test_ok(0x102.into(), 0x103, 0x101, true);
+        test_ok(0x102.into(), 0x103.into(), 0x101, true);
     }
 
     #[test]
     fn codecopy_gadget_code_offset_overflow() {
-        test_ok(Word::MAX, 0x103, 0x101, true);
+        test_ok(Word::MAX, 0x103.into(), 0x101, true);
+    }
+
+    #[test]
+    fn codecopy_gadget_overflow_memory_offset_and_zero_size() {
+        test_ok(0x102.into(), Word::MAX, 0, false);
     }
 }

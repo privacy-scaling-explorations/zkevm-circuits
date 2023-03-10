@@ -43,7 +43,8 @@ impl Opcode for ReturnRevert {
             call.is_success.to_word(),
         );
 
-        let offset = offset.as_usize();
+        // Get low Uint64 of offset.
+        let offset = offset.low_u64() as usize;
         let length = length.as_usize();
 
         // Case A in the spec.

@@ -354,16 +354,16 @@ mod test {
     const CALLEE_ADDRESS: Address = Address::repeat_byte(0xff);
     const CALLER_ADDRESS: Address = Address::repeat_byte(0x34);
 
-    fn callee_bytecode(is_return: bool, offset: u64, length: u64) -> Bytecode {
-        let memory_bytes = [0x60; 10];
+    fn callee_bytecode(is_return: bool, offset: u128, length: u64) -> Bytecode {
+        let memory_bytes = [0x60; 6];
         let memory_address = 0;
         let memory_value = Word::from_big_endian(&memory_bytes);
         let mut code = bytecode! {
-            PUSH10(memory_value)
+            PUSH6(memory_value)
             PUSH1(memory_address)
             MSTORE
             PUSH2(length)
-            PUSH2(32u64 - u64::try_from(memory_bytes.len()).unwrap() + offset)
+            PUSH17(Word::from(offset) + 32 - memory_bytes.len())
         };
         code.write_op(if is_return {
             OpcodeId::RETURN
@@ -655,5 +655,16 @@ mod test {
 
         let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
         CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
+    }
+
+    #[test]
+    fn test_return_overflow_offset_and_zero_length() {
+        for is_return in [true, false] {
+            let code = callee_bytecode(is_return, u128::MAX, 0);
+            CircuitTestBuilder::new_from_test_ctx(
+                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+            )
+            .run();
+        }
     }
 }

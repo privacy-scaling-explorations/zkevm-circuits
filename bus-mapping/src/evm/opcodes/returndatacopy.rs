@@ -121,7 +121,8 @@ fn gen_copy_event(
     state: &mut CircuitInputStateRef,
     geth_step: &GethExecStep,
 ) -> Result<CopyEvent, Error> {
-    let dst_addr = geth_step.stack.nth_last(0)?.as_u64();
+    // Get low Uint64 of offset.
+    let dst_addr = geth_step.stack.nth_last(0)?.low_u64();
     let data_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
 

@@ -870,4 +870,28 @@ mod test {
             run_test_circuits(test_context(caller));
         }
     }
+
+    #[test]
+    fn test_create_overflow_offset_and_zero_size() {
+        for is_create2 in [true, false] {
+            let mut bytecode = bytecode! {
+                PUSH1(0) // size
+                PUSH32(Word::MAX) // offset
+                PUSH2(23414) // value
+            };
+            bytecode.write_op(if is_create2 {
+                OpcodeId::CREATE2
+            } else {
+                OpcodeId::CREATE
+            });
+            let caller = Account {
+                address: *CALLER_ADDRESS,
+                code: bytecode.into(),
+                nonce: 10.into(),
+                balance: eth(10),
+                ..Default::default()
+            };
+            run_test_circuits(test_context(caller));
+        }
+    }
 }

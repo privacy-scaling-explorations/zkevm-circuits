@@ -27,9 +27,9 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.as_usize();
+        let args_offset = geth_step.stack.nth_last(N_ARGS - 4)?.low_u64() as usize;
         let args_length = geth_step.stack.nth_last(N_ARGS - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.as_usize();
+        let ret_offset = geth_step.stack.nth_last(N_ARGS - 2)?.low_u64() as usize;
         let ret_length = geth_step.stack.nth_last(N_ARGS - 1)?.as_usize();
 
         // we need to keep the memory until parse_call complete
@@ -255,7 +255,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
-                    &caller_ctx.memory.0[args_offset..args_offset + args_length],
+                    if args_length != 0 {
+                        &caller_ctx.memory.0[args_offset..args_offset + args_length]
+                    } else {
+                        &[]
+                    },
                     callee_gas_left,
                 );
                 log::trace!(

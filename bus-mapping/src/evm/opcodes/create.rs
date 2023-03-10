@@ -20,7 +20,8 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let offset = geth_step.stack.nth_last(1)?.as_usize();
+        // Get low Uint64 of offset.
+        let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
         let length = geth_step.stack.nth_last(2)?.as_usize();
 
         if length != 0 {

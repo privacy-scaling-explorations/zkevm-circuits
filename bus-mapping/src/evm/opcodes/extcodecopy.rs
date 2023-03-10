@@ -135,7 +135,8 @@ fn gen_copy_event(
     };
     let code_size = bytecode.code.len() as u64;
 
-    let dst_addr = dst_offset.as_u64();
+    // Get low Uint64 of offset.
+    let dst_addr = dst_offset.low_u64();
     let src_addr_end = code_size;
 
     // Reset offset to Uint64 maximum value if overflow, and set source start to the
