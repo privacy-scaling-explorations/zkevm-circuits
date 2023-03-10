@@ -76,17 +76,14 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      # Run an initial build in a separate step to split the build time from execution time
-      - name: Set workdir
-        run: pwd
-        working-directory: ./integration-tests    
+      # Run an initial build in a separate step to split the build time from execution time    
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
         run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
-      - run: ./run.sh --steps "setup"
-      - run: ./run.sh --steps "gendata"
-      - run: ./run.sh --steps "tests" --tests "rpc"
-      - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
-      - run: ./run.sh --steps "cleanup"
+      - run: ./integration-tests/run.sh --steps "setup"
+      - run: ./integration-tests/run.sh --steps "gendata"
+      - run: ./integration-tests/run.sh --steps "tests" --tests "rpc"
+      - run: ./integration-tests/run.sh --steps "tests" --tests "circuit_input_builder"
+      - run: RUST_TEST_THREADS=1 ./integration-tests/run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
+      - run: ./integration-tests/run.sh --steps "cleanup"
