@@ -171,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_code_hash_rlc());
 
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.account_read(
@@ -511,7 +511,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.empty_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
 
         let untrimmed_contract_addr = {

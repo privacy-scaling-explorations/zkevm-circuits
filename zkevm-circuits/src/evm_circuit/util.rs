@@ -191,8 +191,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
-    // todo: rename to empty code hash
-    pub fn empty_hash_rlc(&self) -> Value<F> {
+    pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
     }
 

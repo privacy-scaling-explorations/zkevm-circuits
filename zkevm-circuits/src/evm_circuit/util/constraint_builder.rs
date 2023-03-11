@@ -428,7 +428,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
-    pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
+    pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
     }
 
