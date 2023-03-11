@@ -1,6 +1,6 @@
 use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
 use crate::evm::Opcode;
-use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp};
 use crate::state_db::CodeDB;
 use crate::Error;
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
@@ -69,7 +69,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
@@ -82,7 +81,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         let nonce_prev = state.sdb.get_nonce(&call.caller_address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             AccountOp {
                 address: call.caller_address,
                 field: AccountField::Nonce,
@@ -95,7 +93,6 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         let is_warm = state.sdb.check_account_in_access_list(&call.address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id,
                 address: call.address,
@@ -106,25 +103,26 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         state.push_call(call.clone());
 
+        state.transfer(
+            &mut exec_step,
+            call.caller_address,
+            call.address,
+            true,
+            true,
+            call.value,
+        )?;
+
         // Increase callee's nonce
         let nonce_prev = state.sdb.get_nonce(&call.address);
         debug_assert!(nonce_prev == 0);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             AccountOp {
                 address: call.address,
                 field: AccountField::Nonce,
                 value: 1.into(),
                 value_prev: 0.into(),
             },
-        )?;
-
-        state.transfer(
-            &mut exec_step,
-            call.caller_address,
-            call.address,
-            call.value,
         )?;
 
         let memory_expansion_gas_cost =

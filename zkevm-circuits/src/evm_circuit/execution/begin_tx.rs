@@ -10,11 +10,12 @@ use crate::{
                 ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
+            is_precompiled,
             math_gadget::{
                 ContractCreateGadget, IsEqualGadget, IsZeroGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
             },
-            not, select, CachedRegion, Cell, Word,
+            not, or, select, CachedRegion, Cell, StepRws, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -49,6 +50,7 @@ pub(crate) struct BeginTxGadget<F> {
     is_empty_code_hash: IsEqualGadget<F>,
     caller_nonce_hash_bytes: [Cell<F>; N_BYTES_WORD],
     create: ContractCreateGadget<F, false>,
+    callee_not_exists: IsZeroGadget<F>,
     is_caller_callee_equal: Cell<F>,
 }
 
@@ -67,14 +69,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
             tx_id.expr(),
-        );
-        let mut reversion_info = cb.reversion_info_write(None);
+        ); // rwc_delta += 1
+        let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
             reversion_info.is_persistent(),
-        );
+        ); // rwc_delta += 1
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
             [
@@ -118,7 +120,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             tx_nonce.expr() + 1.expr(),
             tx_nonce.expr(),
             None,
-        );
+        ); // rwc_delta += 1
 
         // TODO: Implement EIP 1559 (currently it only supports legacy
         // transaction format)
@@ -145,7 +147,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             0.expr(),
             None,
-        );
+        ); // rwc_delta += 1
         let is_caller_callee_equal = cb.query_bool();
         cb.account_access_list_write(
             tx_id.expr(),
@@ -155,31 +157,39 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             // Correctness will be enforced in build_tx_access_list_account_constraints
             is_caller_callee_equal.expr(),
             None,
-        );
-
-        // TODO: If value is 0, skip transfer, just like callop.
-        // Transfer value from caller to callee
-        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
-            cb,
-            tx_caller_address.expr(),
-            tx_callee_address.expr(),
-            tx_value.clone(),
-            mul_gas_fee_by_gas.product().clone(),
-            &mut reversion_info,
-        );
+        ); // rwc_delta += 1
 
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
             IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_code_hash_rlc());
+        let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
+        // no_callee_code is true when the account exists and has empty
+        // code hash, or when the account doesn't exist (which we encode with
+        // code_hash = 0).
+        let no_callee_code = is_empty_code_hash.expr() + callee_not_exists.expr();
 
+        // TODO: And not precompile
         cb.condition(not::expr(tx_is_create.expr()), |cb| {
             cb.account_read(
                 tx_callee_address.expr(),
                 AccountFieldTag::CodeHash,
                 phase2_code_hash.expr(),
-            );
+            ); // rwc_delta += 1
         });
+
+        // Transfer value from caller to callee, creating account if necessary.
+        let transfer_with_gas_fee = TransferWithGasFeeGadget::construct(
+            cb,
+            tx_caller_address.expr(),
+            tx_callee_address.expr(),
+            not::expr(callee_not_exists.expr()),
+            or::expr([tx_is_create.expr(), callee_not_exists.expr()]),
+            tx_value.clone(),
+            mul_gas_fee_by_gas.product().clone(),
+            &mut reversion_info,
+        );
+
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal(
@@ -247,7 +257,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             }
 
             cb.require_step_state_transition(StepStateTransition {
-                // 24 reads and writes:
+                // 21 + a reads and writes:
                 //   - Write CallContext TxId
                 //   - Write CallContext RwCounterEndOfReversion
                 //   - Write CallContext IsPersistent
@@ -255,9 +265,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account (Caller) Nonce
                 //   - Write TxAccessListAccount
                 //   - Write TxAccessListAccount
-                //   - Write Account (Caller) Balance (Not Reversible tx fee)
-                //   - Write Account (Caller) Balance (Reversible tx value)
-                //   - Write Account (Callee) Balance (Reversible)
+                //   - a TransferWithGasFeeGadget
                 //   - Write Account (Callee) Nonce (Reversible)
                 //   - Write CallContext Depth
                 //   - Write CallContext CallerAddress
@@ -272,17 +280,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(24.expr()),
+                rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
                 code_hash: To(cb.curr.state.code_hash.expr()),
                 gas_left: To(gas_left.clone()),
-                // There are 3 reversible writes:
-                //  - Caller Account Balance
-                //  - Callee Account Balance
+                // There are a + 1 reversible writes:
+                //  - a TransferWithGasFeeGadget
                 //  - Callee Account Nonce
-                reversible_write_counter: To(3.expr()),
+                reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta() + 1.expr()),
                 log_id: To(0.expr()),
                 ..StepStateTransition::new_context()
             });
@@ -291,43 +298,41 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // TODO: 2. Handle call to precompiled contracts.
 
         // 3. Call to account with empty code.
-        cb.condition(is_empty_code_hash.expr(), |cb| {
-            cb.require_equal(
-                "Tx to account with empty code should be persistent",
-                reversion_info.is_persistent(),
-                1.expr(),
-            );
-            cb.require_equal(
-                "Go to EndTx when Tx to account with empty code",
-                cb.next.execution_state_selector([ExecutionState::EndTx]),
-                1.expr(),
-            );
+        cb.condition(
+            and::expr([not::expr(tx_is_create.expr()), no_callee_code.clone()]),
+            |cb| {
+                cb.require_equal(
+                    "Tx to account with empty code should be persistent",
+                    reversion_info.is_persistent(),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "Go to EndTx when Tx to account with empty code",
+                    cb.next.execution_state_selector([ExecutionState::EndTx]),
+                    1.expr(),
+                );
 
-            cb.require_step_state_transition(StepStateTransition {
-                // 11 reads and writes:
-                //   - Write CallContext TxId
-                //   - Write CallContext RwCounterEndOfReversion
-                //   - Write CallContext IsPersistent
-                //   - Write CallContext IsSuccess
-                //   - Write Account Nonce
-                //   - Write TxAccessListAccount
-                //   - Write TxAccessListAccount
-                //   - Write Account Balance (Not Reversible)
-                //   - Write Account Balance (Reversible)
-                //   - Write Account Balance (Reversible)
-                //   - Read Account CodeHash
-                rw_counter: Delta(11.expr()),
-                call_id: To(call_id.expr()),
-                ..StepStateTransition::any()
-            });
-        });
+                cb.require_step_state_transition(StepStateTransition {
+                    // 8 reads and writes:
+                    //   - Write CallContext TxId
+                    //   - Write CallContext RwCounterEndOfReversion
+                    //   - Write CallContext IsPersistent
+                    //   - Write CallContext IsSuccess
+                    //   - Write Account Nonce
+                    //   - Write TxAccessListAccount
+                    //   - Write TxAccessListAccount
+                    //   - Read Account CodeHash
+                    //   - a TransferWithGasFeeGadget
+                    rw_counter: Delta(8.expr() + transfer_with_gas_fee.rw_delta()),
+                    call_id: To(call_id.expr()),
+                    ..StepStateTransition::any()
+                });
+            },
+        );
 
         // 4. Call to account with non-empty code.
         cb.condition(
-            and::expr([
-                not::expr(tx_is_create.expr()),
-                not::expr(is_empty_code_hash.expr()),
-            ]),
+            and::expr([not::expr(tx_is_create.expr()), not::expr(no_callee_code)]),
             |cb| {
                 // Setup first call's context.
                 for (field_tag, value) in [
@@ -352,7 +357,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 }
 
                 cb.require_step_state_transition(StepStateTransition {
-                    // 23-24 reads and writes:
+                    // 21 reads and writes:
                     //   - Write CallContext TxId
                     //   - Write CallContext RwCounterEndOfReversion
                     //   - Write CallContext IsPersistent
@@ -360,10 +365,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount
                     //   - Write TxAccessListAccount
-                    //   - Write Account Balance (Not Reversible)
-                    //   - Write Account Balance
-                    //   - Write Account Balance
-                    //   - Read Account CodeHash (only if tx is not create)
+                    //   - Read Account CodeHash
+                    //   - a TransferWithGasFeeGadget
                     //   - Write CallContext Depth
                     //   - Write CallContext CallerAddress
                     //   - Write CallContext CalleeAddress
@@ -377,13 +380,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(23.expr() + (1.expr() - tx_is_create.expr())),
+                    rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
                     code_hash: To(phase2_code_hash.expr()),
                     gas_left: To(gas_left),
-                    reversible_write_counter: To(2.expr()),
+                    reversible_write_counter: To(transfer_with_gas_fee.reversible_w_delta()),
                     log_id: To(0.expr()),
                     ..StepStateTransition::new_context()
                 });
@@ -411,6 +414,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             is_empty_code_hash,
             caller_nonce_hash_bytes,
             create,
+            callee_not_exists,
             is_caller_callee_equal,
         }
     }
@@ -425,13 +429,26 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_fee = tx.gas_price * tx.gas;
+        let zero = eth_types::Word::zero();
 
-        let [caller_balance_sub_fee_pair, caller_balance_sub_value_pair, callee_balance_pair] =
-            [7, 8, 9].map(|idx| block.rws[step.rw_indices[idx]].account_value_pair());
-        let callee_code_hash = if tx.is_create {
-            call.code_hash
-        } else {
-            block.rws[step.rw_indices[10]].account_value_pair().0
+        let mut rws = StepRws::new(block, step);
+        rws.offset_add(7);
+        let mut callee_code_hash = zero;
+        if !is_precompiled(&tx.callee_address) && !tx.is_create {
+            callee_code_hash = rws.next().account_value_pair().1;
+        }
+        let callee_exists =
+            is_precompiled(&tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
+        let caller_balance_sub_fee_pair = rws.next().account_value_pair();
+        let must_create = tx.is_create;
+        if (!callee_exists && !tx.value.is_zero()) || must_create {
+            callee_code_hash = rws.next().account_value_pair().1;
+        }
+        let mut caller_balance_sub_value_pair = (zero, zero);
+        let mut callee_balance_pair = (zero, zero);
+        if !tx.value.is_zero() {
+            caller_balance_sub_value_pair = rws.next().account_value_pair();
+            callee_balance_pair = rws.next().account_value_pair();
         };
 
         self.tx_id
@@ -513,6 +530,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region.word_rlc(callee_code_hash),
             region.empty_code_hash_rlc(),
         )?;
+        self.callee_not_exists
+            .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
 
         let untrimmed_contract_addr = {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();

@@ -1,6 +1,6 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
 use crate::state_db::CodeDB;
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
@@ -105,13 +105,11 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             callee_address,
             AccountField::CodeHash,
             callee_code_hash_word,
-            callee_code_hash_word,
         );
 
         let is_warm = state.sdb.check_account_in_access_list(&callee_address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id,
                 address: callee_address,
@@ -156,16 +154,17 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             call.caller_address,
             AccountField::Balance,
             caller_balance,
-            caller_balance,
         );
 
-        // Transfer value only for CALL opcode, insufficient_balance = false
-        // and value > 0.
-        if call.kind == CallKind::Call && !insufficient_balance && !call.value.is_zero() {
+        // TODO: What about transfer for CALLCODE?
+        // Transfer value only for CALL opcode, insufficient_balance = false.
+        if call.kind == CallKind::Call && !insufficient_balance {
             state.transfer(
                 &mut exec_step,
                 call.caller_address,
                 call.address,
+                callee_exists,
+                false,
                 call.value,
             )?;
         }
