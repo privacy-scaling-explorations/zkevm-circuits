@@ -42,6 +42,7 @@ pub(crate) enum MptWitnessRowType {
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     pub(crate) rlp_bytes: Vec<u8>,
+    pub(crate) is_extension: bool,
     _marker: PhantomData<F>,
 }
 
@@ -50,6 +51,7 @@ impl<F: Field> MptWitnessRow<F> {
         Self {
             bytes,
             rlp_bytes: Vec::new(),
+            is_extension: false,
             _marker: PhantomData,
         }
     }

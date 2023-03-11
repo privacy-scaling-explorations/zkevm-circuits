@@ -12,6 +12,8 @@ use std::{convert::TryInto, env::var};
 mod account_leaf;
 mod branch;
 mod columns;
+mod extension;
+mod extension_branch;
 mod helpers;
 mod param;
 mod rlp_gadgets;
@@ -20,8 +22,8 @@ mod start;
 mod storage_leaf;
 mod witness_row;
 
-use branch::BranchConfig;
 use columns::MainCols;
+use extension_branch::ExtensionBranchConfig;
 use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::HASH_WIDTH;
@@ -42,14 +44,18 @@ use crate::{
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::key_memory,
-    param::{RLP_LIST_LONG, RLP_LIST_SHORT},
+    param::{
+        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_LIST_LONG,
+        RLP_LIST_SHORT,
+    },
 };
 
 /// State machine config.
 #[derive(Clone, Debug, Default)]
 pub struct StateMachineConfig<F> {
     start_config: StartConfig<F>,
-    branch_config: BranchConfig<F>,
+    branch_config: ExtensionBranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
 }
@@ -211,7 +217,7 @@ impl<F: Field> MPTConfig<F> {
                             state_machine.start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(is_branch) => {
-                            state_machine.branch_config = BranchConfig::configure(meta, &mut cb, ctx.clone());
+                            state_machine.branch_config = ExtensionBranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(is_account) => {
                             state_machine.account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
@@ -513,6 +519,14 @@ impl<F: Field> MPTConfig<F> {
             if row.get_type() == MptWitnessRowType::InitBranch {
                 row.rlp_bytes = [row.bytes[4..7].to_owned(), row.bytes[7..10].to_owned()].concat();
                 row.bytes = [vec![0; 10], row.bytes[10..].to_owned()].concat();
+
+                row.is_extension = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+                    + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+                    + row.get_byte(IS_EXT_SHORT_C16_POS)
+                    + row.get_byte(IS_EXT_SHORT_C1_POS)
+                    + row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+                    + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+                    == 1;
             }
 
             // Shift the value bytes to the start of the row
