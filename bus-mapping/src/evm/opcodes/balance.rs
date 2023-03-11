@@ -97,10 +97,10 @@ mod balance_tests {
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
     use crate::operation::{AccountOp, CallContextOp, StackOp};
+    use crate::state_db::CodeDB;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;
     use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
-    use keccak256::EMPTY_HASH_LE;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
@@ -249,7 +249,7 @@ mod balance_tests {
             }
         );
 
-        let code_hash = Word::from_little_endian(&*EMPTY_HASH_LE);
+        let code_hash = CodeDB::empty_code_hash().to_word();
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(

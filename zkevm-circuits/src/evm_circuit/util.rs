@@ -7,8 +7,8 @@ use crate::{
     },
     util::{query_expression, Challenges, Expr},
 };
-use eth_types::ToLittleEndian;
-use eth_types::U256;
+use bus_mapping::state_db::CodeDB;
+use eth_types::{ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
@@ -16,7 +16,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::EMPTY_HASH_LE;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
@@ -192,8 +191,9 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+    // todo: rename to empty code hash
     pub fn empty_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
+        self.word_rlc(CodeDB::empty_code_hash().to_word())
     }
 
     /// Constrains a cell to have a constant value.

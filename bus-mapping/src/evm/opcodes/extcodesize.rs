@@ -88,10 +88,10 @@ mod extcodesize_tests {
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
     use crate::operation::{AccountOp, CallContextOp, StackOp};
+    use crate::state_db::CodeDB;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::{Account, GethData};
-    use eth_types::{bytecode, Bytecode, Word, U256};
-    use ethers_core::utils::keccak256;
+    use eth_types::{bytecode, Bytecode, U256};
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
     use pretty_assertions::assert_eq;
 
@@ -228,7 +228,7 @@ mod extcodesize_tests {
             }
         );
 
-        let code_hash = Word::from(keccak256(account.code.clone()));
+        let code_hash = CodeDB::hash(&account.code).to_word();
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(

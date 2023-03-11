@@ -2,15 +2,14 @@ use super::Opcode;
 use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
 use crate::operation::AccountOp;
 use crate::operation::MemoryOp;
+use crate::state_db::CodeDB;
 use crate::{
     circuit_input_builder::CircuitInputStateRef,
     evm::opcodes::ExecStep,
     operation::{AccountField, CallContextField, RW},
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
-use ethers_core::utils::keccak256;
-use keccak256::EMPTY_HASH_LE;
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -80,7 +79,7 @@ impl Opcode for ReturnRevert {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
                     value: code_hash.to_word(),
-                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value_prev: CodeDB::empty_code_hash().to_word(),
                 },
             )?;
         }
@@ -223,7 +222,7 @@ fn handle_create(
     source: Source,
 ) -> Result<H256, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let code_hash = H256(keccak256(&values));
+    let code_hash = CodeDB::hash(&values);
     let dst_id = NumberOrHash::Hash(code_hash);
     let bytes: Vec<_> = Bytecode::from(values)
         .code

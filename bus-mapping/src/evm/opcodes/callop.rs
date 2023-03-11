@@ -1,11 +1,11 @@
 use super::Opcode;
 use crate::circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep};
 use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
+use crate::state_db::CodeDB;
 use crate::Error;
 use eth_types::evm_types::gas_utils::{eip150_gas, memory_expansion_gas_cost};
 use eth_types::evm_types::GasCost;
 use eth_types::{evm_unimplemented, GethExecStep, ToWord, Word};
-use keccak256::EMPTY_HASH;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -95,7 +95,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
                 callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+                callee_code_hash == CodeDB::empty_code_hash(),
             )
         } else {
             (Word::zero(), true)

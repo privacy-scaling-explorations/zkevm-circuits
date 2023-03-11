@@ -7,6 +7,7 @@ use crate::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
         TxRefundOp, RW,
     },
+    state_db::CodeDB,
     Error,
 };
 use core::fmt::Debug;
@@ -15,7 +16,6 @@ use eth_types::{
     evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
-use keccak256::EMPTY_HASH;
 
 #[cfg(any(feature = "test", test))]
 pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
@@ -420,7 +420,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     let (callee_code_hash, is_empty_code_hash) = if callee_exists {
         (
             call.code_hash.to_word(),
-            call.code_hash.to_fixed_bytes() == *EMPTY_HASH,
+            call.code_hash == CodeDB::empty_code_hash(),
         )
     } else {
         (Word::zero(), true)
