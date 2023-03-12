@@ -123,7 +123,7 @@ impl WitnessGenerator {
                 value: HexBytes(word_buf),
             }
         };
-        let storage_before_proofs = trie.prove(key.as_ref());
+        let storage_before_proofs = trie.prove(key.as_ref()).unwrap();
         let storage_before_path = decode_proof_for_mpt_path(storage_key, storage_before_proofs);
         if !new_value.is_zero() {
             trie.update_store(key.as_ref(), &store_after.value.0)
@@ -133,7 +133,7 @@ impl WitnessGenerator {
         } // notice if the value is both zero we never touch the trie layer
 
         let storage_root_after = H256(trie.root());
-        let storage_after_proofs = trie.prove(key.as_ref());
+        let storage_after_proofs = trie.prove(key.as_ref()).unwrap();
         let storage_after_path = decode_proof_for_mpt_path(storage_key, storage_after_proofs);
 
         // sanity check
@@ -173,7 +173,7 @@ impl WitnessGenerator {
     {
         let account_data_before = self.accounts.get(&address).copied();
 
-        let proofs = self.trie.prove(address.as_bytes());
+        let proofs = self.trie.prove(address.as_bytes()).unwrap();
         let address_key = hash_zktrie_key(&extend_address_to_h256(&address));
 
         let account_path_before = decode_proof_for_mpt_path(address_key, proofs).unwrap();
@@ -213,7 +213,7 @@ impl WitnessGenerator {
             self.accounts.remove(&address);
         }
 
-        let proofs = self.trie.prove(address.as_bytes());
+        let proofs = self.trie.prove(address.as_bytes()).unwrap();
         let account_path_after = decode_proof_for_mpt_path(address_key, proofs).unwrap();
 
         SMTTrace {
@@ -361,7 +361,7 @@ impl AsRef<[u8]> for LeafNodeHash {
 fn decode_proof_for_mpt_path(mut key: Word, proofs: Vec<Vec<u8>>) -> Result<SMTPath, IoError> {
     let root = if let Some(arr) = proofs.first() {
         let n = ZkTrieNode::parse(arr.as_slice());
-        smt_hash_from_bytes(n.key().as_slice())
+        smt_hash_from_bytes(n.node_hash().as_slice())
     } else {
         HexBytes::<32>([0; 32])
     };

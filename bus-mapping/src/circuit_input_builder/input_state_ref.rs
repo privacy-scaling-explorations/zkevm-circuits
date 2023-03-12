@@ -24,8 +24,10 @@ use eth_types::{
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use keccak256::EMPTY_HASH;
-use keccak256::EMPTY_HASH_LE;
+//use keccak256::EMPTY_HASH;
+//use keccak256::EMPTY_HASH_LE;
+use ethers_core::utils::keccak256;
+use crate::util::POSEIDON_CODE_HASH_ZERO;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -82,7 +84,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 let mut gas_left = prev_step.gas_left.0 - prev_step.gas_cost.0;
                 if let Ok(call) = self.call() {
                     if call.is_create() {
-                        let code_hash = self.sdb.get_account(&call.address).1.code_hash;
+                        let code_hash = self.sdb.get_account(&call.address).1.poseidon_code_hash;
                         let bytecode_len = self.code(code_hash).unwrap().len() as u64;
                         gas_left += bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST.as_u64();
                     }
@@ -567,8 +569,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 step,
                 AccountOp {
                     address: receiver,
-                    field: AccountField::CodeHash,
-                    value: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    field: AccountField::PoseidonCodeHash,
+                    value: POSEIDON_CODE_HASH_ZERO.to_word(),
                     value_prev: Word::zero(),
                 },
             )?;
@@ -1057,7 +1059,7 @@ impl<'a> CircuitInputStateRef<'a> {
             if !found {
                 return Err(Error::AccountNotFound(call.address));
             }
-            callee_account.keccak_code_hash = poseidon_code_hash;
+            callee_account.poseidon_code_hash = poseidon_code_hash;
             callee_account.keccak_code_hash = code_hash;
             callee_account.code_size = length;
         }

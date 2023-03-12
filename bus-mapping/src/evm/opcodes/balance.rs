@@ -89,7 +89,7 @@ mod balance_tests {
     use super::*;
     use crate::circuit_input_builder::ExecState;
     use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
+    use crate::operation::{AccountOp, CallContextOp, StackOp, RW};
     use crate::util::POSEIDON_CODE_HASH_ZERO;
     use eth_types::evm_types::{OpcodeId, StackAddress};
     use eth_types::geth_types::GethData;

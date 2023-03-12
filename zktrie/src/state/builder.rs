@@ -91,6 +91,8 @@ impl CanRead for AccountData {
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
 
+        let mut byte8_buf = [0u8; 8];
+        let mut byte16_buf = [0u8; 16];
         let mut byte32_buf = [0; 32];
         rd.read_exact(&mut byte16_buf)?;
         rd.read_exact(&mut byte8_buf)?;

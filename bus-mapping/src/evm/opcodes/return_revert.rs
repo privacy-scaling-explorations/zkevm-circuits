@@ -85,7 +85,6 @@ impl Opcode for ReturnRevert {
             )?;
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::PoseidonCodeHash,
@@ -95,7 +94,6 @@ impl Opcode for ReturnRevert {
             )?;
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeSize,

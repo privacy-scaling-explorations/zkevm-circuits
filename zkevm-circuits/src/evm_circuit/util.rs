@@ -11,7 +11,7 @@ use crate::{
 };
 use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
 use eth_types::U256;
-use eth_types::{ToLittleEndian, ToWord};
+use eth_types::{Address, ToLittleEndian, ToWord};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},

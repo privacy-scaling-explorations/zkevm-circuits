@@ -61,16 +61,14 @@ impl Opcode for Extcodesize {
             address,
             AccountField::KeccakCodeHash,
             code_hash.to_word(),
-            code_hash.to_word(),
-        )?;
+        );
         if exists {
             state.account_read(
                 &mut exec_step,
                 address,
                 AccountField::CodeSize,
                 code_size,
-                code_size,
-            )?;
+            );
         }
 
         // Write the EXTCODESIZE result to stack.

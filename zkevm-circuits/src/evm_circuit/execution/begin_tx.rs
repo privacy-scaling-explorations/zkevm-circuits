@@ -183,7 +183,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_poseidon_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
@@ -204,7 +204,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             |cb| {
                 cb.account_read(
                     call_callee_address.expr(),
-                    AccountFieldTag::CodeHash,
+                    AccountFieldTag::PoseidonCodeHash,
                     phase2_code_hash.expr(),
                 ); // rwc_delta += 1
             },
@@ -222,21 +222,6 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             &mut reversion_info,
         );
 
-        // Initialise cells/gadgets required for contract deployment case.
-        let phase2_code_hash = cb.query_cell_phase2();
-        // TODO: guard against call to precompiled contracts.
-        let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
-        let is_zero_code_hash = IsZeroGadget::construct(cb, phase2_code_hash.expr());
-        let is_empty_code = or::expr([is_empty_code_hash.expr(), is_zero_code_hash.expr()]);
-
-        cb.condition(not::expr(tx_is_create.expr()), |cb| {
-            cb.account_read(
-                call_callee_address.expr(),
-                AccountFieldTag::PoseidonCodeHash,
-                phase2_code_hash.expr(),
-            );
-        });
         let caller_nonce_hash_bytes = array_init::array_init(|_| cb.query_byte());
         let create = ContractCreateGadget::construct(cb);
         cb.require_equal(
@@ -384,70 +369,43 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             });
         });
 
-        // check callop.rs
-        // 3. Handle call to account with empty code.
-        let native_transfer = and::expr([
-            not::expr(tx_is_create.expr()),
-            is_empty_code.expr(),
-            not::expr(is_precompile.expr()),
-        ]);
-        let native_nonzero_transfer = native_transfer.expr() * not::expr(tx_value_is_zero.expr());
-        cb.condition(native_nonzero_transfer, |cb| {
-            // this should only happen if an account for transferring to an account that was
-            // previously non-existent.
-            cb.account_write(
-                call_callee_address.expr(),
-                AccountFieldTag::KeccakCodeHash,
-                cb.empty_keccak_hash_rlc(),
-                cb.empty_keccak_hash_rlc(),
-                None, // native transfer cannot fail
-            );
-            cb.account_write(
-                call_callee_address.expr(),
-                AccountFieldTag::PoseidonCodeHash,
-                cb.empty_poseidon_hash_rlc(),
-                cb.empty_poseidon_hash_rlc(),
-                None, // native transfer cannot fail
-            );
-            cb.account_write(
-                call_callee_address.expr(),
-                AccountFieldTag::CodeSize,
-                0.expr(),
-                0.expr(),
-                None, // native transfer cannot fail
-            );
-        });
-        cb.condition(native_transfer, |cb| {
-            cb.require_equal(
-                "Tx to account with empty code should be persistent",
-                reversion_info.is_persistent(),
-                1.expr(),
-            );
-            cb.require_equal(
-                "Go to EndTx when Tx to account with empty code",
-                cb.next.execution_state_selector([ExecutionState::EndTx]),
-                1.expr(),
-            );
+        // 3. Call to account with empty code.
 
-            cb.require_step_state_transition(StepStateTransition {
-                // 11 reads and writes:
-                //   - Write CallContext TxId
-                //   - Write CallContext RwCounterEndOfReversion
-                //   - Write CallContext IsPersistent
-                //   - Write CallContext IsSuccess
-                //   - Write Account Nonce
-                //   - Write TxAccessListAccount
-                //   - Write TxAccessListAccount
-                //   - Write Account Balance (Not Reversible)
-                //   - Write Account Balance (Reversible)
-                //   - Write Account Balance (Reversible)
-                //   - Read Account CodeHash
-                //   - Read Account PoseidonCodeHash
-                rw_counter: Delta(11.expr() + 3.expr() * not::expr(tx_value_is_zero.expr())),
-                call_id: To(call_id.expr()),
-                ..StepStateTransition::any()
-            });
-        });
+        cb.condition(
+            and::expr([
+                not::expr(tx_is_create.expr()),
+                no_callee_code.expr(),
+                not::expr(is_precompile.expr()),
+            ]),
+            |cb| {
+                cb.require_equal(
+                    "Tx to account with empty code should be persistent",
+                    reversion_info.is_persistent(),
+                    1.expr(),
+                );
+                cb.require_equal(
+                    "Go to EndTx when Tx to account with empty code",
+                    cb.next.execution_state_selector([ExecutionState::EndTx]),
+                    1.expr(),
+                );
+
+                cb.require_step_state_transition(StepStateTransition {
+                    // 8 reads and writes:
+                    //   - Write CallContext TxId
+                    //   - Write CallContext RwCounterEndOfReversion
+                    //   - Write CallContext IsPersistent
+                    //   - Write CallContext IsSuccess
+                    //   - Write Account Nonce
+                    //   - Write TxAccessListAccount
+                    //   - Write TxAccessListAccount
+                    //   - Read Account PoseidonCodeHash
+                    //   - a TransferWithGasFeeGadget
+                    rw_counter: Delta(8.expr() + transfer_with_gas_fee.rw_delta()),
+                    call_id: To(call_id.expr()),
+                    ..StepStateTransition::any()
+                });
+            },
+        );
 
         // 4. Call to account with non-empty code.
         cb.condition(

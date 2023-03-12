@@ -388,8 +388,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    cb.empty_hash_rlc(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -518,11 +518,12 @@ impl<F: Field> TransferGadget<F> {
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
-                    AccountFieldTag::CodeHash,
-                    cb.empty_hash_rlc(),
+                    AccountFieldTag::KeccakCodeHash,
+                    cb.empty_keccak_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
+                //TODO: also write poseidon? codesize seems not need yet
             },
         );
         // Skip transfer if value == 0
