@@ -86,8 +86,8 @@ impl CanRead for AccountData {
     fn try_parse(mut rd: impl Read) -> Result<Self, Error> {
         let mut uint_buf = [0; 4];
         rd.read_exact(&mut uint_buf)?;
-        // check it is 0x04040000
-        if uint_buf != [4, 4, 0, 0] {
+        // check it is 0x05080000
+        if uint_buf != [5, 8, 0, 0] {
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
 
