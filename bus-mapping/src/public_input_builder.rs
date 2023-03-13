@@ -88,7 +88,7 @@ mod tests {
                 .unwrap(),
         );
         let tx = get_txs_rlp(&l1_geth_client, propose_tx_hash).await.unwrap();
-        let txs: Vec<eth_types::Traqnsaction> = rlp::Rlp::new(&tx).as_list().unwrap();
+        let txs: Vec<eth_types::Transaction> = rlp::Rlp::new(&tx).as_list().unwrap();
         println!("{:?}", txs);
     }
 }
