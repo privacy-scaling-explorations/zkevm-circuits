@@ -9,17 +9,19 @@ use ethers_providers::JsonRpcClient;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref PROPOSE_TX: Function = Function {
-        name: "proposeBlock".to_string(),
-        inputs: vec![Param {
-            name: "inputs".to_string(),
-            kind: ParamType::Array(Box::new(ParamType::Bytes)),
-            internal_type: None,
-        },],
-        outputs: vec![],
+    static ref PROPOSE_TX: Function = {
         #[allow(deprecated)]
-        constant: Some(false),
-        state_mutability: StateMutability::NonPayable,
+        Function {
+            name: "proposeBlock".to_string(),
+            inputs: vec![Param {
+                name: "inputs".to_string(),
+                kind: ParamType::Array(Box::new(ParamType::Bytes)),
+                internal_type: None,
+            }],
+            outputs: vec![],
+            constant: Some(false),
+            state_mutability: StateMutability::NonPayable,
+        }
     };
 }
 

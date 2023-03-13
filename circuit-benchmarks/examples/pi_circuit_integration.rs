@@ -8,6 +8,7 @@ use halo2_proofs::{
     poly::commitment::ParamsProver,
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
+use log;
 use std::env::var;
 use zkevm_circuits::pi_circuit2::{PiCircuit, PiTestCircuit, PublicData};
 use zkevm_circuits::util::SubCircuit;
@@ -497,6 +498,8 @@ macro_rules! select_circuit_config {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let txs: u32 = var("TXS")
         .unwrap_or_else(|_| "21".to_string())
         .parse()
@@ -551,7 +554,7 @@ async fn main() -> Result<(), Error> {
         txs,
         {
             let public_data = PublicData::new(&block, prover, txs_rlp);
-            println!("using CIRCUIT_CONFIG = {:?}", CIRCUIT_CONFIG);
+            log::info!("using CIRCUIT_CONFIG = {:?}", CIRCUIT_CONFIG);
             let circuit =
                 PiTestCircuit::<Fr, { CIRCUIT_CONFIG.max_txs }, { CIRCUIT_CONFIG.max_calldata }>(
                     PiCircuit::new(

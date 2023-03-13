@@ -10,7 +10,7 @@ mod input_state_ref;
 mod tracer_tests;
 mod transaction;
 
-use self::access::gen_state_access_trace;
+// use self::access::gen_state_access_trace;
 use crate::error::Error;
 use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
 use crate::operation::{CallContextField, Operation, RWCounter, StartOp, RW};
@@ -396,7 +396,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         block_num: u64,
     ) -> Result<(EthBlock, Vec<eth_types::GethExecTrace>, Vec<Word>, Word), Error> {
         let eth_block = self.cli.get_block_by_number(block_num.into()).await?;
-        let geth_traces = self.cli.trace_block_by_number(block_num.into()).await?;
+        let geth_traces = Vec::<GethExecTrace>::new();
+        // self.cli.trace_block_by_number(block_num.into()).await?;
 
         // fetch up to 256 blocks
         let mut n_blocks = std::cmp::min(256, block_num as usize);
@@ -437,9 +438,9 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     pub fn get_state_accesses(
         &self,
         eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
+        _geth_traces: &[eth_types::GethExecTrace],
     ) -> Result<AccessSet, Error> {
-        let mut block_access_trace = vec![Access::new(
+        let block_access_trace = vec![Access::new(
             None,
             RW::WRITE,
             AccessValue::Account {
@@ -448,11 +449,11 @@ impl<P: JsonRpcClient> BuilderClient<P> {
                     .ok_or(Error::EthTypeError(eth_types::Error::IncompleteBlock))?,
             },
         )];
-        for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
-            let geth_trace = &geth_traces[tx_index];
-            let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
-            block_access_trace.extend(tx_access_trace);
-        }
+        // for (tx_index, tx) in eth_block.transactions.iter().enumerate() {
+        //     let geth_trace = &geth_traces[tx_index];
+        //     let tx_access_trace = gen_state_access_trace(eth_block, tx, geth_trace)?;
+        //     block_access_trace.extend(tx_access_trace);
+        // }
 
         Ok(AccessSet::from(block_access_trace))
     }
@@ -461,8 +462,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
     /// Accesses
     pub async fn get_state(
         &self,
-        block_num: u64,
-        access_set: AccessSet,
+        _block_num: u64,
+        _access_set: AccessSet,
     ) -> Result<
         (
             Vec<eth_types::EIP1186ProofResponse>,
@@ -470,26 +471,26 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         ),
         Error,
     > {
-        let mut proofs = Vec::new();
-        for (address, key_set) in access_set.state {
-            let mut keys: Vec<Word> = key_set.iter().cloned().collect();
-            keys.sort();
-            let proof = self
-                .cli
-                .get_proof(address, keys, (block_num - 1).into())
-                .await
-                .unwrap();
-            proofs.push(proof);
-        }
-        let mut codes: HashMap<Address, Vec<u8>> = HashMap::new();
-        for address in access_set.code {
-            let code = self
-                .cli
-                .get_code(address, (block_num - 1).into())
-                .await
-                .unwrap();
-            codes.insert(address, code);
-        }
+        let proofs = Vec::new();
+        // for (address, key_set) in access_set.state {
+        //     let mut keys: Vec<Word> = key_set.iter().cloned().collect();
+        //     keys.sort();
+        //     let proof = self
+        //         .cli
+        //         .get_proof(address, keys, (block_num - 1).into())
+        //         .await
+        //         .unwrap();
+        //     proofs.push(proof);
+        // }
+        let codes: HashMap<Address, Vec<u8>> = HashMap::new();
+        // for address in access_set.code {
+        //     let code = self
+        //         .cli
+        //         .get_code(address, (block_num - 1).into())
+        //         .await
+        //         .unwrap();
+        //     codes.insert(address, code);
+        // }
         Ok((proofs, codes))
     }
 
@@ -530,7 +531,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         sdb: StateDB,
         code_db: CodeDB,
         eth_block: &EthBlock,
-        geth_traces: &[eth_types::GethExecTrace],
+        _geth_traces: &[eth_types::GethExecTrace],
         history_hashes: Vec<Word>,
         prev_state_root: Word,
     ) -> Result<CircuitInputBuilder, Error> {
@@ -541,8 +542,8 @@ impl<P: JsonRpcClient> BuilderClient<P> {
             eth_block,
             self.circuits_params.clone(),
         )?;
-        let mut builder = CircuitInputBuilder::new(sdb, code_db, block);
-        builder.handle_block(eth_block, geth_traces)?;
+        let builder = CircuitInputBuilder::new(sdb, code_db, block);
+        // builder.handle_block(eth_block, geth_traces)?;
         Ok(builder)
     }
 

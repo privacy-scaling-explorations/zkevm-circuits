@@ -550,6 +550,7 @@ dependencies = [
  "hex",
  "itertools",
  "keccak256",
+ "log",
  "mock",
  "rand",
  "rand_chacha",
