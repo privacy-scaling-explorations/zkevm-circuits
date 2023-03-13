@@ -98,7 +98,7 @@ impl MptUpdates {
             self.proof_types.push(proof_tip);
         }
         log::debug!(
-            "mpt update roots (after zktrie) {:?} {:?}",
+            "mpt update roots (after zktrie) {:#x} {:#x}",
             self.old_root,
             self.new_root
         );
