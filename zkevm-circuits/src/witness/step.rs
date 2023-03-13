@@ -181,11 +181,11 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
+                    OpcodeId::EXTCODECOPY => ExecutionState::EXTCODECOPY,
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     // dummy ops
-                    OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),

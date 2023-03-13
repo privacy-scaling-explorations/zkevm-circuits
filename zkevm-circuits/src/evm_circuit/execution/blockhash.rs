@@ -109,7 +109,6 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let block_number = block.rws[step.rw_indices[0]].stack_value();
         self.block_number
             .assign(region, offset, block_number, current_block_number)?;
-        let block_number: F = block_number.to_scalar().unwrap();
 
         self.current_block_number
             .assign(region, offset, Value::known(current_block_number))?;
@@ -124,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             region,
             offset,
             current_block_number,
-            block_number + F::from(257),
+            F::from(u64::try_from(block_number).unwrap_or(u64::MAX)) + F::from(257),
         )?;
 
         Ok(())
