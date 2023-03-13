@@ -1,4 +1,3 @@
-use crate::witness::{Block, ExecStep, Rw, RwMap};
 use crate::{
     evm_circuit::{
         param::{
@@ -8,10 +7,10 @@ use crate::{
     },
     table::RwTableTag,
     util::{query_expression, Challenges, Expr},
+    witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
-use eth_types::U256;
-use eth_types::{Address, ToLittleEndian, ToWord};
+use eth_types::{Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
@@ -19,8 +18,10 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::collections::BTreeMap;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;

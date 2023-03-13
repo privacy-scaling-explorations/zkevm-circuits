@@ -1,8 +1,10 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp};
-use crate::state_db::CodeDB;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp},
+    state_db::CodeDB,
+    Error,
+};
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
 
 #[derive(Debug, Copy, Clone)]
