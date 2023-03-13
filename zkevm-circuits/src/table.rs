@@ -363,14 +363,15 @@ impl From<RwTableTag> for usize {
 /// Tag for an AccountField in RwTable
 #[derive(Clone, Copy, Debug, EnumIter, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AccountFieldTag {
+    /// Variant representing the poseidon hash of an account's code.
+    PoseidonCodeHash = 0, /* we need this to match to the field tag of AccountStorage, which is
+                           * always 0 */
     /// Nonce field
-    Nonce = 1,
+    Nonce,
     /// Balance field
     Balance,
     /// Variant representing the keccak hash of an account's code.
     KeccakCodeHash,
-    /// Variant representing the poseidon hash of an account's code.
-    PoseidonCodeHash,
     /// Variant representing the code size, i.e. length of account's code.
     CodeSize,
     /// NonExisting field

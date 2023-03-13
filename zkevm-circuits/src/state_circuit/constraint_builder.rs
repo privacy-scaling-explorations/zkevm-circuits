@@ -5,11 +5,8 @@ use super::{
 };
 use crate::util::Expr;
 use crate::{
-    evm_circuit::{
-        param::N_BYTES_WORD,
-        util::{math_gadget::generate_lagrange_base_polynomial, not},
-    },
-    table::{AccountFieldTag, ProofType, RwTableTag},
+    evm_circuit::{param::N_BYTES_WORD, util::not},
+    table::{ProofType, RwTableTag},
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -473,37 +470,19 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for Account",
             q.rw_table.storage_key.clone(),
         );
-        self.require_in_set(
-            "field_tag in AccountFieldTag range",
-            q.field_tag(),
-            set::<F, AccountFieldTag>(),
-        );
 
-        // We use code_hash = 0 as non-existing account state.  code_hash: 0->0
-        // transition requires a non-existing proof.
-        // is_non_exist degree = 6
-        //   q.is_non_exist() degree = 1
-        //   generate_lagrange_base_polynomial() degree = 5
-        let is_non_exist = q.is_non_exist()
-            * generate_lagrange_base_polynomial(
-                q.field_tag(),
-                AccountFieldTag::PoseidonCodeHash as usize,
-                [
-                    AccountFieldTag::Nonce,
-                    AccountFieldTag::Balance,
-                    AccountFieldTag::KeccakCodeHash,
-                    AccountFieldTag::CodeSize,
-                    AccountFieldTag::PoseidonCodeHash,
-                ]
-                .iter()
-                .map(|t| *t as usize),
-            );
+        // mpt circuit will verify correctness of mpt proof type and therefore the field
+        // tag. self.require_in_set(
+        //     "field_tag in AccountFieldTag range",
+        //     q.field_tag(),
+        //     set::<F, AccountFieldTag>(),
+        // );
+
         self.require_equal(
             "mpt_proof_type is field_tag or AccountDoesNotExists",
             q.mpt_proof_type(),
-            // degree = max(6, 6 + 1) = 7
-            is_non_exist.expr() * ProofType::AccountDoesNotExist.expr()
-                + (1.expr() - is_non_exist) * q.field_tag(),
+            q.is_non_exist() * ProofType::AccountDoesNotExist.expr()
+                + (1.expr() - q.is_non_exist()) * q.field_tag(),
         );
 
         // last_access degree = 1
