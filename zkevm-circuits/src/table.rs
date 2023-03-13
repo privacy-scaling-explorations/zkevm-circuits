@@ -557,29 +557,29 @@ impl RwTable {
 
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
-pub enum ProofType {
+pub enum MPTProofType {
     /// Nonce updated
-    NonceChanged = AccountFieldTag::Nonce as isize,
+    NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
-    BalanceChanged = AccountFieldTag::Balance as isize,
+    BalanceMod = AccountFieldTag::Balance as isize,
     /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    CodeHashMod = AccountFieldTag::CodeHash as isize,
     /// Account does not exist
-    AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
+    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
-    StorageChanged,
+    StorageMod,
     /// Storage does not exist
-    StorageDoesNotExist,
+    NonExistingStorageProof,
 }
-impl_expr!(ProofType);
+impl_expr!(MPTProofType);
 
-impl From<AccountFieldTag> for ProofType {
+impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceChanged,
-            AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
-            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
+            AccountFieldTag::Nonce => Self::NonceMod,
+            AccountFieldTag::Balance => Self::BalanceMod,
+            AccountFieldTag::CodeHash => Self::CodeHashMod,
+            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
         }
     }
 }

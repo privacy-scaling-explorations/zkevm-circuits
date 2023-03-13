@@ -30,6 +30,7 @@ use zkevm_circuits::{
     bytecode_circuit::TestBytecodeCircuit,
     copy_circuit::TestCopyCircuit,
     evm_circuit::TestEvmCircuit,
+    exp_circuit::TestExpCircuit,
     keccak_circuit::TestKeccakCircuit,
     state_circuit::TestStateCircuit,
     super_circuit::SuperCircuit,
@@ -69,20 +70,14 @@ const CIRCUITS_PARAMS: CircuitsParams = CircuitsParams {
     max_keccak_rows: MAX_KECCAK_ROWS,
 };
 
-/// EVM Circuit degree
 const EVM_CIRCUIT_DEGREE: u32 = 18;
-/// State Circuit degree
 const STATE_CIRCUIT_DEGREE: u32 = 17;
-/// Tx Circuit degree
 const TX_CIRCUIT_DEGREE: u32 = 20;
-/// Bytecode Circuit degree
 const BYTECODE_CIRCUIT_DEGREE: u32 = 16;
-/// Copy Circuit degree
 const COPY_CIRCUIT_DEGREE: u32 = 16;
-
 const KECCAK_CIRCUIT_DEGREE: u32 = 16;
-/// Super Circuit degree
 const SUPER_CIRCUIT_DEGREE: u32 = 20;
+const EXP_CIRCUIT_DEGREE: u32 = 16;
 
 lazy_static! {
     /// Data generation.
@@ -125,6 +120,10 @@ lazy_static! {
     /// Integration test for Copy circuit
     pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
     TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
+
+     /// Integration test for Exp circuit
+     pub static ref EXP_CIRCUIT_TEST: TokioMutex<IntegrationTest<TestExpCircuit::<Fr>>> =
+     TokioMutex::new(IntegrationTest::new("Exp", EXP_CIRCUIT_DEGREE));
 }
 
 /// Generic implementation for integration tests
