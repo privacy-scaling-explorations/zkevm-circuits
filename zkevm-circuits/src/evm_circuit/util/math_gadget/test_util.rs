@@ -2,7 +2,6 @@ use itertools::Itertools;
 use std::marker::PhantomData;
 use strum::IntoEnumIterator;
 
-use crate::table::LookupTable;
 use crate::{
     evm_circuit::{
         param::{MAX_STEP_HEIGHT, N_PHASE2_COLUMNS, STEP_WIDTH},
@@ -14,15 +13,17 @@ use crate::{
         },
         Advice, Column, Fixed,
     },
+    table::LookupTable,
     util::Challenges,
 };
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
-use halo2_proofs::plonk::{FirstPhase, SecondPhase, ThirdPhase};
 use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
-    plonk::{Circuit, ConstraintSystem, Error, Expression, Selector},
+    plonk::{
+        Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, Selector, ThirdPhase,
+    },
 };
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);
