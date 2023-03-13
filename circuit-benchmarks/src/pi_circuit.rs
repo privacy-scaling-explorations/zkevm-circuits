@@ -3,14 +3,18 @@
 mod tests {
     use ark_std::{end_timer, start_timer};
     use eth_types::Word;
-    use halo2_proofs::arithmetic::Field;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
-    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
-    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
-    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
     use halo2_proofs::{
+        arithmetic::Field,
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        poly::commitment::ParamsProver,
+        plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::SingleStrategy,
+            },
+        },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
@@ -19,8 +23,10 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
     use rand_xorshift::XorShiftRng;
     use std::env::var;
-    use zkevm_circuits::pi_circuit::{PiCircuit, PiTestCircuit, PublicData};
-    use zkevm_circuits::util::SubCircuit;
+    use zkevm_circuits::{
+        pi_circuit::{PiCircuit, PiTestCircuit, PublicData},
+        util::SubCircuit,
+    };
 
     #[cfg_attr(not(feature = "benches"), ignore)]
     #[test]
@@ -28,7 +34,7 @@ mod tests {
         let setup_prfx = crate::constants::SETUP_PREFIX;
         let proof_gen_prfx = crate::constants::PROOFGEN_PREFIX;
         let proof_ver_prfx = crate::constants::PROOFVER_PREFIX;
-        //Unique string used by bench results module for parsing the result
+        // Unique string used by bench results module for parsing the result
         const BENCHMARK_ID: &str = "Pi Circuit";
 
         const MAX_TXS: usize = 10;

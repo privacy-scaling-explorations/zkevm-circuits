@@ -3,13 +3,13 @@ use super::{
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
-use crate::util::Expr;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
     table::{AccountFieldTag, MPTProofType, RwTableTag},
+    util::Expr,
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -30,7 +30,7 @@ pub struct RwTableQueries<F: Field> {
     pub storage_key: Expression<F>,
     pub value: Expression<F>,
     pub value_prev: Expression<F>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: Expression<F>, /*meta.query(prev_value, Rotation::cur())
+    pub value_prev_column: Expression<F>, /* meta.query(prev_value, Rotation::cur())
                                     * TODO: aux1 and aux2 */
 }
 

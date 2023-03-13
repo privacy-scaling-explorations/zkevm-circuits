@@ -6,12 +6,13 @@
 
 pub mod sign_verify;
 
-use crate::table::{KeccakTable, TxFieldTag, TxTable};
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness;
+use crate::{
+    table::{KeccakTable, TxFieldTag, TxTable},
+    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
 use eth_types::{
-    sign_types::SignData,
-    {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
+    geth_types::Transaction, sign_types::SignData, Address, Field, ToLittleEndian, ToScalar,
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
