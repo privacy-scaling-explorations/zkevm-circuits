@@ -1,18 +1,125 @@
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::{Region, Value},
-    plonk::Error,
-};
 use num_enum::TryFromPrimitive;
 use std::{convert::TryFrom, marker::PhantomData};
 
 use crate::{
     mpt_circuit::param::{
         COUNTER_WITNESS_LEN, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, NOT_FIRST_LEVEL_POS,
-        WITNESS_ROW_WIDTH,
     },
-    mpt_circuit::MPTConfig,
+    table::ProofType,
 };
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StorageRowType {
+    KeyS,
+    ValueS,
+    KeyC,
+    ValueC,
+    Drifted,
+    Wrong,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum AccountRowType {
+    KeyS,
+    KeyC,
+    NonceS,
+    BalanceS,
+    StorageS,
+    CodehashS,
+    NonceC,
+    BalanceC,
+    StorageC,
+    CodehashC,
+    Drifted,
+    Wrong,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum ExtensionBranchRowType {
+    Mod,
+    Child0,
+    Child1,
+    Child2,
+    Child3,
+    Child4,
+    Child5,
+    Child6,
+    Child7,
+    Child8,
+    Child9,
+    Child10,
+    Child11,
+    Child12,
+    Child13,
+    Child14,
+    Child15,
+    KeyS,
+    ValueS,
+    KeyC,
+    ValueC,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StartRowType {
+    RootS,
+    RootC,
+    Count,
+}
+
+#[derive(Clone, Debug)]
+pub struct BranchNode {
+    pub(crate) modified_index: usize,
+    pub(crate) drifted_index: usize,
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtensionNode {
+    pub(crate) list_rlp_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StartNode {
+    pub(crate) proof_type: ProofType,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtensionBranchNode {
+    pub(crate) is_extension: bool,
+    pub(crate) is_placeholder: [bool; 2],
+    pub(crate) extension: ExtensionNode,
+    pub(crate) branch: BranchNode,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountNode {
+    pub(crate) address: Vec<u8>,
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) drifted_rlp_bytes: Vec<u8>,
+    pub(crate) wrong_rlp_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StorageNode {
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) drifted_rlp_bytes: Vec<u8>,
+    pub(crate) wrong_rlp_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Node {
+    pub(crate) start: Option<StartNode>,
+    pub(crate) extension_branch: Option<ExtensionBranchNode>,
+    pub(crate) account: Option<AccountNode>,
+    pub(crate) storage: Option<StorageNode>,
+    pub(crate) values: Vec<Vec<u8>>,
+}
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -43,6 +150,11 @@ pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
     pub(crate) rlp_bytes: Vec<u8>,
     pub(crate) is_extension: bool,
+    pub(crate) is_placeholder: [bool; 2],
+    pub(crate) modified_index: usize,
+    pub(crate) drifted_index: usize,
+    pub(crate) proof_type: ProofType,
+    pub(crate) address: Vec<u8>,
     _marker: PhantomData<F>,
 }
 
@@ -52,6 +164,11 @@ impl<F: Field> MptWitnessRow<F> {
             bytes,
             rlp_bytes: Vec::new(),
             is_extension: false,
+            is_placeholder: [false; 2],
+            modified_index: 0,
+            drifted_index: 0,
+            proof_type: ProofType::Disabled,
+            address: Vec::new(),
             _marker: PhantomData,
         }
     }
@@ -113,45 +230,5 @@ impl<F: Field> MptWitnessRow<F> {
 
     pub(crate) fn main(&self) -> &[u8] {
         &self.bytes[0..self.bytes.len() - 1]
-    }
-
-    pub(crate) fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let row = self.main();
-
-        for idx in 0..HASH_WIDTH + 2 {
-            region.assign_advice(
-                || format!("assign s_advice {}", idx),
-                mpt_config.s_main.bytes[idx],
-                offset,
-                || Value::known(F::from(row[idx] as u64)),
-            )?;
-        }
-
-        // not all columns may be needed
-        let get_val = |curr_ind: usize| {
-            let val = if curr_ind >= row.len() {
-                0
-            } else {
-                row[curr_ind]
-            };
-
-            val as u64
-        };
-
-        for (idx, _c) in mpt_config.c_main.bytes.iter().enumerate() {
-            let val = get_val(WITNESS_ROW_WIDTH / 2 + idx);
-            region.assign_advice(
-                || format!("assign c_advice {}", idx),
-                mpt_config.c_main.bytes[idx],
-                offset,
-                || Value::known(F::from(val)),
-            )?;
-        }
-        Ok(())
     }
 }

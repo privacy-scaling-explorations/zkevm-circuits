@@ -28,6 +28,23 @@ use witness_row::{MptWitnessRow, MptWitnessRowType};
 
 use param::HASH_WIDTH;
 
+use self::{
+    account_leaf::AccountLeafConfig,
+    helpers::key_memory,
+    param::{
+        ARITY, BRANCH_0_KEY_POS, DRIFTED_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_BALANCE_MOD_POS,
+        IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_CODEHASH_MOD_POS,
+        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS,
+        IS_NON_EXISTING_ACCOUNT_POS, IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS,
+        RLP_LIST_LONG, RLP_LIST_SHORT,
+    },
+    witness_row::{
+        AccountNode, AccountRowType, BranchNode, ExtensionBranchNode, ExtensionBranchRowType,
+        ExtensionNode, Node, StartNode, StartRowType, StorageNode, StorageRowType,
+    },
+};
+use crate::mpt_circuit::helpers::Indexable;
 use crate::{
     assign, assignf, circuit,
     circuit_tools::{cell_manager::CellManager, constraint_builder::merge_lookups, memory::Memory},
@@ -39,16 +56,6 @@ use crate::{
     },
     table::{DynamicTableColumns, KeccakTable, MptTable, ProofType},
     util::{power_of_randomness_from_instance, Challenges},
-};
-
-use self::{
-    account_leaf::AccountLeafConfig,
-    helpers::key_memory,
-    param::{
-        IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
-        IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, RLP_LIST_LONG,
-        RLP_LIST_SHORT,
-    },
 };
 
 /// State machine config.
@@ -66,8 +73,7 @@ pub struct MPTContext<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_not_first: Column<Fixed>,
     pub(crate) mpt_table: MptTable,
-    pub(crate) s_main: MainCols<F>,
-    pub(crate) c_main: MainCols<F>,
+    pub(crate) main: MainCols<F>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) r: Vec<Expression<F>>,
     pub(crate) memory: Memory<F>,
@@ -75,18 +81,11 @@ pub struct MPTContext<F> {
 
 impl<F: Field> MPTContext<F> {
     pub(crate) fn bytes(&self) -> Vec<Column<Advice>> {
-        [self.s_main.bytes, self.c_main.bytes].concat().to_vec()
+        self.main.bytes.to_vec()
     }
 
     pub(crate) fn s(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
         self.bytes()[0..34]
-            .iter()
-            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
-            .collect::<Vec<_>>()
-    }
-
-    pub(crate) fn c(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.bytes()[34..68]
             .iter()
             .map(|&byte| meta.query_advice(byte, Rotation(rot)))
             .collect::<Vec<_>>()
@@ -98,8 +97,7 @@ impl<F: Field> MPTContext<F> {
 pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_not_first: Column<Fixed>,
-    pub(crate) s_main: MainCols<F>,
-    pub(crate) c_main: MainCols<F>,
+    pub(crate) main: MainCols<F>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
     keccak_table: KeccakTable,
@@ -164,8 +162,7 @@ impl<F: Field> MPTConfig<F> {
         let is_account = meta.advice_column();
         let is_storage = meta.advice_column();
 
-        let s_main = MainCols::new(meta);
-        let c_main = MainCols::new(meta);
+        let main = MainCols::new(meta);
 
         let fixed_table: [Column<Fixed>; 3] = (0..3)
             .map(|_| meta.fixed_column())
@@ -173,7 +170,7 @@ impl<F: Field> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let managed_columns = (0..40).map(|_| meta.advice_column()).collect::<Vec<_>>();
+        let managed_columns = (0..20).map(|_| meta.advice_column()).collect::<Vec<_>>();
         let memory_columns = (0..5).map(|_| meta.advice_column()).collect::<Vec<_>>();
 
         let mut memory = Memory::new(memory_columns);
@@ -187,8 +184,7 @@ impl<F: Field> MPTConfig<F> {
             q_enable: q_enable.clone(),
             q_not_first: q_not_first.clone(),
             mpt_table: mpt_table.clone(),
-            s_main: s_main.clone(),
-            c_main: c_main.clone(),
+            main: main.clone(),
             managed_columns: managed_columns.clone(),
             r: extend_rand(&power_of_randomness),
             memory: memory.clone(),
@@ -196,16 +192,14 @@ impl<F: Field> MPTConfig<F> {
 
         let mut state_machine = StateMachineConfig::default();
 
-        let mut cb = MPTConstraintBuilder::new(33, None);
+        let mut cb = MPTConstraintBuilder::new(33 + 10, None);
         meta.create_gate("MPT", |meta| {
             let cell_manager = CellManager::new(meta, &ctx.managed_columns);
             cb.base.set_cell_manager(cell_manager);
 
             circuit!([meta, cb.base], {
-                /* General */
-                //SelectorsConfig::configure(meta, &mut cb, ctx.clone());
-
                 // State machine
+                // TODO(Brecht): state machine constraints
                 ifx!{f!(q_enable) => {
                     // Always start with the start state
                     ifx! {not!(f!(q_not_first)) => {
@@ -235,6 +229,7 @@ impl<F: Field> MPTConfig<F> {
                     }
                 }}
 
+                // TODO(Brecht): decode 1 RLP item/row
                 /* Range checks */
                 // These range checks ensure that the value in the RLP columns are all byte value.
                 // These lookups also enforce the byte value to be zero the byte index >= length.
@@ -242,33 +237,11 @@ impl<F: Field> MPTConfig<F> {
                 /*ifx!{f!(position_cols.q_enable) => {
                     // Sanity checks (can be removed, here for safety)
                     require!(cb.length_s.sum_conditions() => bool);
-                    require!(cb.length_c.sum_conditions() => bool);
                     // Range checks
                     for (idx, &byte) in ctx.s().into_iter().enumerate() {
                         require!((cb.get_range_s(), a!(byte), cb.get_length_s() - (idx + 1).expr()) => @"fixed");
                     }
-                    for (idx, &byte) in ctx.c().into_iter().enumerate() {
-                        require!((FixedTableTag::RangeKeyLen256, a!(byte), cb.get_length_c() - (idx + 1).expr()) => @"fixed");
-                    }
                 }}*/
-
-                /* Mult checks */
-                // TODO(Brecht): manually optimized lookups for now, but the constraint builder can
-                // automatically do this. Shouldn't be too hard hopefully.
-                for tag in ["mult", "mult2"] {
-                    let lookups = cb.base.consume_lookups(&[tag]);
-                    let optimize = true;
-                    if optimize {
-                        let (_, values) = merge_lookups(&mut cb.base, lookups);
-                        require!(values => @"fixed");
-                    } else {
-                        for lookup in lookups.iter() {
-                            ifx!{lookup.condition => {
-                                require!(lookup.description, lookup.values => @"fixed");
-                            }}
-                        }
-                    }
-                }
 
                 /* Populate lookup tables */
                 require!(@"keccak" => keccak_table.columns().iter().map(|table| a!(table)).collect());
@@ -313,6 +286,7 @@ impl<F: Field> MPTConfig<F> {
         println!("num lookups: {}", meta.lookups().len());
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
+        //cb.base.print_stats();
 
         MPTConfig {
             q_enable,
@@ -321,8 +295,7 @@ impl<F: Field> MPTConfig<F> {
             is_branch,
             is_account,
             is_storage,
-            s_main,
-            c_main,
+            main,
             managed_columns,
             memory,
             keccak_table,
@@ -352,6 +325,29 @@ impl<F: Field> MPTConfig<F> {
             .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
             .enumerate()
         {
+            // Get the proof type directly
+            if row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
+                row.proof_type = ProofType::StorageChanged;
+            }
+            if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
+                row.proof_type = ProofType::NonceChanged;
+            }
+            if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
+                row.proof_type = ProofType::BalanceChanged;
+            }
+            if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
+                row.proof_type = ProofType::CodeHashExists;
+            }
+            if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
+                row.proof_type = ProofType::AccountDestructed;
+            }
+            if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
+                row.proof_type = ProofType::AccountDoesNotExist;
+            }
+            if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
+                row.proof_type = ProofType::StorageDoesNotExist;
+            }
+
             if row.get_type() == MptWitnessRowType::BranchChild {
                 //println!("- {:?}", row.bytes);
                 let mut child_s_bytes = row.bytes[0..34].to_owned();
@@ -515,11 +511,11 @@ impl<F: Field> MPTConfig<F> {
                 .concat();
             }
 
-            // Extract the RLP bytes
             if row.get_type() == MptWitnessRowType::InitBranch {
+                // Extract the RLP bytes
                 row.rlp_bytes = [row.bytes[4..7].to_owned(), row.bytes[7..10].to_owned()].concat();
-                row.bytes = [vec![0; 10], row.bytes[10..].to_owned()].concat();
 
+                // Store a single value that the branch is an extension node or not
                 row.is_extension = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
                     + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
                     + row.get_byte(IS_EXT_SHORT_C16_POS)
@@ -527,6 +523,14 @@ impl<F: Field> MPTConfig<F> {
                     + row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
                     + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
                     == 1;
+                row.is_placeholder = [
+                    row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1,
+                    row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1,
+                ];
+                row.modified_index = row.get_byte(BRANCH_0_KEY_POS) as usize;
+                row.drifted_index = row.get_byte(DRIFTED_POS) as usize;
+                // Move the modified branch into the init row
+                row.bytes = [vec![0; 68], row.bytes[68..].to_owned()].concat();
             }
 
             // Shift the value bytes to the start of the row
@@ -538,97 +542,261 @@ impl<F: Field> MPTConfig<F> {
             }
         }
 
+        // TODO(Brecht): change this on the witness generation side
+        let cached_witness = witness.to_owned();
+        for (idx, row) in witness
+            .iter_mut()
+            .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+            .enumerate()
+        {
+            if row.get_type() == MptWitnessRowType::InitBranch {
+                // Move the modified branch into the init row
+                let mod_bytes = cached_witness[idx + 1 + row.modified_index].c();
+                row.bytes = [mod_bytes, row.bytes[34..].to_owned()].concat();
+            }
+        }
+
+        let mut nodes = Vec::new();
+        let witness = witness
+            .iter()
+            .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+            .collect::<Vec<_>>();
+        let mut offset = 0;
+        while offset < witness.len() {
+            //println!("offset: {}", offset);
+            let mut new_proof = offset == 0;
+            if offset > 0 {
+                let row_prev = witness[offset - 1].clone();
+                let not_first_level_prev = row_prev.not_first_level();
+                let not_first_level_cur = witness[offset].not_first_level();
+                if not_first_level_cur == 0 && not_first_level_prev == 1 {
+                    new_proof = true;
+                }
+            }
+
+            if new_proof {
+                let mut new_row = witness[offset].clone();
+                new_row.bytes = [
+                    new_row.s_root_bytes().to_owned(),
+                    vec![0; 2],
+                    new_row.c_root_bytes().to_owned(),
+                    vec![0; 2],
+                ]
+                .concat();
+
+                let mut node_rows = vec![Vec::new(); StartRowType::Count as usize];
+                node_rows[StartRowType::RootS as usize] = new_row.s();
+                node_rows[StartRowType::RootC as usize] = new_row.c();
+
+                let start_node = StartNode {
+                    proof_type: new_row.proof_type.clone(),
+                };
+                let mut node = Node::default();
+                node.start = Some(start_node);
+                node.values = node_rows;
+                nodes.push(node);
+            }
+
+            if witness[offset].get_type() == MptWitnessRowType::InitBranch {
+                let row_init = witness[offset].to_owned();
+                let is_placeholder = row_init.is_placeholder.clone();
+                let is_extension = row_init.is_extension;
+                let modified_index = row_init.modified_index;
+                let mut drifted_index = row_init.drifted_index;
+                // If no placeholder branch, we set `drifted_pos = modified_node`. This
+                // is needed just to make some other constraints (`s_mod_node_hash_rlc`
+                // and `c_mod_node_hash_rlc` correspond to the proper node) easier to write.
+                if !is_placeholder[true.idx()] && !is_placeholder[false.idx()] {
+                    drifted_index = modified_index;
+                }
+                let branch_list_rlp_bytes = [
+                    row_init.rlp_bytes[0..3].to_owned(),
+                    row_init.rlp_bytes[3..6].to_owned(),
+                ];
+                let child_bytes: [Vec<u8>; ARITY + 1] =
+                    array_init::array_init(|i| witness[offset + i].s());
+                let ext_list_rlp_bytes = witness[offset + 17].rlp_bytes.to_owned();
+
+                let mut node_rows = vec![Vec::new(); ExtensionBranchRowType::Count as usize];
+                for idx in 0..ARITY + 1 {
+                    node_rows[idx] = child_bytes[idx].clone();
+                }
+                node_rows[ExtensionBranchRowType::KeyS as usize] = witness[offset + 17].s();
+                node_rows[ExtensionBranchRowType::ValueS as usize] = witness[offset + 17].c();
+                node_rows[ExtensionBranchRowType::KeyC as usize] = witness[offset + 18].s();
+                node_rows[ExtensionBranchRowType::ValueC as usize] = witness[offset + 18].c();
+                offset += 19;
+
+                let extension_branch_node = ExtensionBranchNode {
+                    is_extension,
+                    is_placeholder,
+                    extension: ExtensionNode {
+                        list_rlp_bytes: ext_list_rlp_bytes,
+                    },
+                    branch: BranchNode {
+                        modified_index,
+                        drifted_index,
+                        list_rlp_bytes: branch_list_rlp_bytes,
+                    },
+                };
+                let mut node = Node::default();
+                node.extension_branch = Some(extension_branch_node);
+                node.values = node_rows;
+                nodes.push(node);
+            } else if witness[offset].get_type() == MptWitnessRowType::StorageLeafSKey {
+                let row_key = [&witness[offset + 0], &witness[offset + 2]];
+                let row_value = [&witness[offset + 1], &witness[offset + 3]];
+                let row_drifted = &witness[offset + 4];
+                let row_wrong = &witness[offset + 5];
+                offset += 6;
+
+                let list_rlp_bytes = [
+                    row_key[true.idx()].rlp_bytes.to_owned(),
+                    row_key[false.idx()].rlp_bytes.to_owned(),
+                ];
+                let value_rlp_bytes = [
+                    row_value[true.idx()].rlp_bytes.to_owned(),
+                    row_value[false.idx()].rlp_bytes.to_owned(),
+                ];
+                let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
+                let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
+
+                let mut node_rows = vec![Vec::new(); StorageRowType::Count as usize];
+                node_rows[StorageRowType::KeyS as usize] = row_key[true.idx()].s();
+                node_rows[StorageRowType::ValueS as usize] = row_value[true.idx()].s();
+                node_rows[StorageRowType::KeyC as usize] = row_key[false.idx()].s();
+                node_rows[StorageRowType::ValueC as usize] = row_value[false.idx()].s();
+                node_rows[StorageRowType::Drifted as usize] = row_drifted.s();
+                node_rows[StorageRowType::Wrong as usize] = row_wrong.s();
+
+                let storage_node = StorageNode {
+                    list_rlp_bytes,
+                    value_rlp_bytes,
+                    drifted_rlp_bytes,
+                    wrong_rlp_bytes,
+                };
+                let mut node = Node::default();
+                node.storage = Some(storage_node);
+                node.values = node_rows;
+                nodes.push(node);
+            } else if witness[offset].get_type() == MptWitnessRowType::AccountLeafKeyS {
+                let key_s = witness[offset].to_owned();
+                let key_c = witness[offset + 1].to_owned();
+                let nonce_balance_s = witness[offset + 3].to_owned();
+                let nonce_balance_c = witness[offset + 4].to_owned();
+                let storage_codehash_s = witness[offset + 5].to_owned();
+                let storage_codehash_c = witness[offset + 6].to_owned();
+                let row_drifted = witness[offset + 7].to_owned();
+                let row_wrong = witness[offset + 2].to_owned();
+                let address = witness[offset].address_bytes().to_owned();
+                offset += 8;
+
+                let list_rlp_bytes = [key_s.rlp_bytes.to_owned(), key_c.rlp_bytes.to_owned()];
+                let value_rlp_bytes = [
+                    nonce_balance_s.rlp_bytes.clone(),
+                    nonce_balance_c.rlp_bytes.clone(),
+                ];
+                let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
+                let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
+
+                let mut node_rows = vec![Vec::new(); AccountRowType::Count as usize];
+                node_rows[AccountRowType::KeyS as usize] = key_s.s();
+                node_rows[AccountRowType::KeyC as usize] = key_c.s();
+                node_rows[AccountRowType::NonceS as usize] = nonce_balance_s.s();
+                node_rows[AccountRowType::BalanceS as usize] = nonce_balance_s.c();
+                node_rows[AccountRowType::StorageS as usize] = storage_codehash_s.s();
+                node_rows[AccountRowType::CodehashS as usize] = storage_codehash_s.c();
+                node_rows[AccountRowType::NonceC as usize] = nonce_balance_c.s();
+                node_rows[AccountRowType::BalanceC as usize] = nonce_balance_c.c();
+                node_rows[AccountRowType::StorageC as usize] = storage_codehash_c.s();
+                node_rows[AccountRowType::CodehashC as usize] = storage_codehash_c.c();
+                node_rows[AccountRowType::Drifted as usize] = row_drifted.s();
+                node_rows[AccountRowType::Wrong as usize] = row_wrong.s();
+
+                let account_node = AccountNode {
+                    address,
+                    list_rlp_bytes,
+                    value_rlp_bytes,
+                    drifted_rlp_bytes,
+                    wrong_rlp_bytes,
+                };
+                let mut node = Node::default();
+                node.account = Some(account_node);
+                node.values = node_rows;
+                nodes.push(node);
+            }
+        }
+
         layouter.assign_region(
             || "MPT",
             |mut region| {
-                let mut offset = 0;
                 let mut pv = MPTState::new(&self.memory);
 
                 memory.clear_witness_data();
 
-                let working_witness = witness.to_owned().clone();
-                for (idx, row) in working_witness
-                    .iter()
-                    .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
-                    .enumerate()
-                {
-                    //println!("offset: {}", offset);
-                    let mut new_proof = idx == 0;
-                    if idx > 0 {
-                        let row_prev = working_witness[idx - 1].clone();
-                        let not_first_level_prev = row_prev.not_first_level();
-                        let not_first_level_cur = row.not_first_level();
-                        if not_first_level_cur == 0 && not_first_level_prev == 1 {
-                            new_proof = true;
+                let mut offset = 0;
+                for node in nodes.iter() {
+                    // Assign bytes
+                    for (idx, bytes) in node.values.iter().enumerate() {
+                        for (byte, &column) in bytes.iter().zip(self.main.bytes.iter()) {
+                            assign!(region, (column, offset + idx) => byte.scalar())?;
                         }
                     }
 
-                    if new_proof {
-                        pv = MPTState::new(&pv.memory);
-
+                    // Assign nodes
+                    if node.start.is_some() {
+                        //println!("{}: start", offset);
                         assign!(region, (self.is_start, offset) => 1.scalar())?;
                         self.state_machine.start_config.assign(
                             &mut region,
                             self,
-                            witness,
                             &mut pv,
                             offset,
-                            idx,
+                            node,
                         )?;
-
-                        assignf!(region, (self.q_enable, offset) => true.scalar())?;
-                        assignf!(region, (self.q_not_first, offset) => (offset != 0).scalar())?;
-
-                        offset += 1;
-                    }
-                    //println!("{} -> {:?}", offset, row.get_type());
-
-                    assignf!(region, (self.q_enable, offset) => true.scalar())?;
-                    assignf!(region, (self.q_not_first, offset) => (offset != 0).scalar())?;
-
-                    if row.get_type() == MptWitnessRowType::InitBranch {
+                    } else if node.extension_branch.is_some() {
                         //println!("{}: branch", offset);
                         assign!(region, (self.is_branch, offset) => 1.scalar())?;
                         self.state_machine.branch_config.assign(
                             &mut region,
-                            witness,
                             self,
                             &mut pv,
                             offset,
-                            idx,
+                            node,
                         )?;
-                    } else if row.get_type() == MptWitnessRowType::StorageLeafSKey {
+                    } else if node.storage.is_some() {
                         assign!(region, (self.is_storage, offset) => 1.scalar())?;
                         //println!("{}: storage", offset);
                         self.state_machine.storage_config.assign(
                             &mut region,
                             self,
-                            witness,
                             &mut pv,
                             offset,
-                            idx,
+                            node,
                         )?;
-                    } else if row.get_type() == MptWitnessRowType::AccountLeafKeyS {
+                    } else if node.account.is_some() {
                         assign!(region, (self.is_account, offset) => 1.scalar())?;
                         //println!("{}: account", offset);
                         self.state_machine.account_config.assign(
                             &mut region,
                             self,
-                            witness,
                             &mut pv,
                             offset,
-                            idx,
+                            node,
                         )?;
                     }
 
-                    // assign bytes
-                    witness[idx].assign(&mut region, self, offset)?;
-
-                    offset += 1;
+                    //println!("height: {}", node.bytes.len());
+                    offset += node.values.len();
                 }
 
-                memory = pv.memory;
                 height = offset;
+                memory = pv.memory;
+
+                for offset in 0..height {
+                    assignf!(region, (self.q_enable, offset) => true.scalar())?;
+                    assignf!(region, (self.q_not_first, offset) => (offset != 0).scalar())?;
+                }
 
                 Ok(())
             },
@@ -793,7 +961,7 @@ mod tests {
                 let reader = std::io::BufReader::new(file.unwrap());
                 let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
 
-                let count = w.iter().filter(|r| r[r.len() - 1] != 5).count();
+                let count = w.iter().filter(|r| r[r.len() - 1] != 5).count() * 2;
                 let randomness: Fr = 123456789.scalar();
                 let instance: Vec<Vec<Fr>> = (1..HASH_WIDTH + 1)
                     .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); count])
@@ -806,7 +974,7 @@ mod tests {
 
                 println!("{} {:?}", idx, path);
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
-                let num_rows = w.len();
+                let num_rows = w.len() * 2;
                 let prover = MockProver::run(14 /* 9 */, &circuit, instance).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
                 //assert_eq!(prover.verify_par(), Ok(()));

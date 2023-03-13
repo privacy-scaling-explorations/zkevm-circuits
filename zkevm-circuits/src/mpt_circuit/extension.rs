@@ -8,12 +8,12 @@ use halo2_proofs::{
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MPTConstraintBuilder},
     rlp_gadgets::RLPItemGadget,
+    witness_row::{ExtensionBranchRowType, Node},
     MPTContext,
 };
 use crate::{
     circuit,
     circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
-    mpt_circuit::witness_row::MptWitnessRow,
     mpt_circuit::{helpers::num_nibbles, param::HASH_WIDTH},
     mpt_circuit::{
         helpers::{ext_key_rlc_calc_value, ext_key_rlc_expr, Indexable, KeyData, ParentData},
@@ -60,8 +60,14 @@ impl<F: Field> ExtensionGadget<F> {
 
         circuit!([meta, cb.base], {
             // Data
-            let key_bytes: [Vec<Expression<F>>; 2] = [ctx.s(meta, 17), ctx.s(meta, 18)];
-            let value_bytes: [Vec<Expression<F>>; 2] = [ctx.c(meta, 17), ctx.c(meta, 18)];
+            let key_bytes = [
+                ctx.s(meta, ExtensionBranchRowType::KeyS as i32),
+                ctx.s(meta, ExtensionBranchRowType::KeyC as i32),
+            ];
+            let value_bytes = [
+                ctx.s(meta, ExtensionBranchRowType::ValueS as i32),
+                ctx.s(meta, ExtensionBranchRowType::ValueC as i32),
+            ];
 
             config.rlp_key = ListKeyGadget::construct(&mut cb.base, &key_bytes[0]);
             // TODO(Brecht): add lookup constraint
@@ -185,25 +191,34 @@ impl<F: Field> ExtensionGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
-        witness: &mut [MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
         _pv: &mut MPTState<F>,
         offset: usize,
-        idx: usize,
         key_data: &KeyDataWitness<F>,
         key_rlc: &mut F,
         key_mult: &mut F,
         num_nibbles: &mut usize,
         is_key_odd: &mut bool,
+        node: &Node,
     ) -> Result<(), Error> {
-        // Data
-        let list_rlp_bytes = witness[idx + 17].rlp_bytes.to_owned();
-        let key_bytes: [Vec<u8>; 2] = [witness[idx + 17].s(), witness[idx + 18].s()];
-        let value_bytes: [Vec<u8>; 2] = [witness[idx + 17].c(), witness[idx + 18].c()];
+        let extension = &node.extension_branch.clone().unwrap().extension;
 
-        let rlp_key =
-            self.rlp_key
-                .assign(region, offset, &list_rlp_bytes, &key_bytes[true.idx()])?;
+        // Data
+        let key_bytes = [
+            node.values[ExtensionBranchRowType::KeyS as usize].clone(),
+            node.values[ExtensionBranchRowType::KeyC as usize].clone(),
+        ];
+        let value_bytes = [
+            node.values[ExtensionBranchRowType::ValueS as usize].clone(),
+            node.values[ExtensionBranchRowType::ValueC as usize].clone(),
+        ];
+
+        let rlp_key = self.rlp_key.assign(
+            region,
+            offset,
+            &extension.list_rlp_bytes,
+            &key_bytes[true.idx()],
+        )?;
 
         let mut ext_mult = F::one();
         for _ in 0..rlp_key.num_bytes_on_key_row() {

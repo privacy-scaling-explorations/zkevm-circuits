@@ -1,22 +1,18 @@
 use super::helpers::Indexable;
-use super::param::{
-    IS_ACCOUNT_DELETE_MOD_POS, IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS,
-    IS_NON_EXISTING_ACCOUNT_POS, IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS,
-};
+use super::witness_row::{Node, StartRowType};
 use crate::circuit_tools::cell_manager::Cell;
 use crate::circuit_tools::constraint_builder::{RLCable, RLCableValue};
 use crate::mpt_circuit::helpers::{main_memory, MainData};
-use crate::table::ProofType;
 use crate::{
-    assign, circuit,
+    circuit,
     mpt_circuit::helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
-    mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
+    mpt_circuit::MPTContext,
     mpt_circuit::{MPTConfig, MPTState},
 };
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::{Region, Value},
+    circuit::Region,
     plonk::{Error, VirtualCells},
 };
 
@@ -37,7 +33,10 @@ impl<F: Field> StartConfig<F> {
         let mut config = StartConfig::default();
 
         circuit!([meta, cb.base], {
-            let root_bytes = [ctx.s(meta, 0), ctx.c(meta, 0)];
+            let root_bytes = [
+                ctx.s(meta, StartRowType::RootS as i32),
+                ctx.s(meta, StartRowType::RootC as i32),
+            ];
 
             config.proof_type = cb.base.query_cell();
 
@@ -84,46 +83,19 @@ impl<F: Field> StartConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
-        witness: &[MptWitnessRow<F>],
         pv: &mut MPTState<F>,
         offset: usize,
-        idx: usize,
+        node: &Node,
     ) -> Result<(), Error> {
-        let row = &witness[idx];
+        let start = &node.start.clone().unwrap();
 
-        let root_bytes = [row.s_root_bytes().to_owned(), row.c_root_bytes().to_owned()];
-        let columns = [ctx.s_main.bytes.to_owned(), ctx.c_main.bytes.to_owned()];
+        let root_bytes = [
+            node.values[StartRowType::RootS as usize].clone(),
+            node.values[StartRowType::RootC as usize].clone(),
+        ];
 
-        // TODO(Brecht): change witness and just get the proof type directly
-        let mut i = 0;
-        let mut proof_type = None;
-        while proof_type.is_none() {
-            let row = &witness[idx + i];
-            if row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-                proof_type = Some(ProofType::StorageChanged);
-            }
-            if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
-                proof_type = Some(ProofType::NonceChanged);
-            }
-            if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
-                proof_type = Some(ProofType::BalanceChanged);
-            }
-            if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
-                proof_type = Some(ProofType::CodeHashExists);
-            }
-            if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
-                proof_type = Some(ProofType::AccountDestructed);
-            }
-            if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
-                proof_type = Some(ProofType::AccountDoesNotExist);
-            }
-            if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
-                proof_type = Some(ProofType::StorageDoesNotExist);
-            }
-            i += 1;
-        }
         self.proof_type
-            .assign(region, offset, proof_type.unwrap().scalar())?;
+            .assign(region, offset, start.proof_type.scalar())?;
 
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
@@ -134,7 +106,7 @@ impl<F: Field> StartConfig<F> {
             region,
             offset,
             &mut pv.memory[main_memory()],
-            proof_type.unwrap() as usize,
+            start.proof_type as usize,
             false,
             0.scalar(),
             root[true.idx()],
@@ -142,9 +114,6 @@ impl<F: Field> StartConfig<F> {
         )?;
 
         for is_s in [true, false] {
-            for (byte, column) in root_bytes[is_s.idx()].iter().zip(columns[is_s.idx()]) {
-                assign!(region, (column, offset) => byte.scalar())?;
-            }
             ParentData::witness_store(
                 region,
                 offset,

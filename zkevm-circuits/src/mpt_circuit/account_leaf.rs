@@ -6,7 +6,11 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use super::{helpers::ParentDataWitness, rlp_gadgets::RLPValueGadget};
+use super::{
+    helpers::ParentDataWitness,
+    rlp_gadgets::RLPValueGadget,
+    witness_row::{AccountRowType, Node},
+};
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MainData},
     param::HASH_WIDTH,
@@ -15,6 +19,7 @@ use crate::{
     circuit,
     circuit_tools::cell_manager::Cell,
     circuit_tools::constraint_builder::RLCable,
+    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::{
             key_memory, num_nibbles, parent_memory, KeyData, MPTConstraintBuilder, ParentData,
@@ -22,7 +27,6 @@ use crate::{
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
         FixedTableTag,
     },
-    mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
     mpt_circuit::{MPTConfig, MPTState},
 };
 use crate::{
@@ -72,14 +76,29 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb.base], {
-            let key_bytes = [ctx.s(meta, 0).to_owned(), ctx.s(meta, 1).to_owned()];
-            let wrong_bytes = ctx.s(meta, 2).to_owned();
+            let key_bytes = [
+                ctx.s(meta, AccountRowType::KeyS as i32).to_owned(),
+                ctx.s(meta, AccountRowType::KeyC as i32).to_owned(),
+            ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
-            let nonce_bytes = [ctx.s(meta, 3).to_owned(), ctx.s(meta, 4).to_owned()];
-            let balance_bytes = [ctx.c(meta, 3).to_owned(), ctx.c(meta, 4).to_owned()];
-            let storage_bytes = [ctx.s(meta, 5).to_owned(), ctx.s(meta, 6).to_owned()];
-            let codehash_bytes = [ctx.c(meta, 5).to_owned(), ctx.c(meta, 6).to_owned()];
-            let drifted_bytes = ctx.s(meta, 7).to_owned();
+            let nonce_bytes = [
+                ctx.s(meta, AccountRowType::NonceS as i32).to_owned(),
+                ctx.s(meta, AccountRowType::NonceC as i32).to_owned(),
+            ];
+            let balance_bytes = [
+                ctx.s(meta, AccountRowType::BalanceS as i32).to_owned(),
+                ctx.s(meta, AccountRowType::BalanceC as i32).to_owned(),
+            ];
+            let storage_bytes = [
+                ctx.s(meta, AccountRowType::StorageS as i32).to_owned(),
+                ctx.s(meta, AccountRowType::StorageC as i32).to_owned(),
+            ];
+            let codehash_bytes = [
+                ctx.s(meta, AccountRowType::CodehashS as i32).to_owned(),
+                ctx.s(meta, AccountRowType::CodehashC as i32).to_owned(),
+            ];
+            let drifted_bytes = ctx.s(meta, AccountRowType::Drifted as i32).to_owned();
+            let wrong_bytes = ctx.s(meta, AccountRowType::Wrong as i32).to_owned();
 
             config.main_data = MainData::load(
                 "main storage",
@@ -379,34 +398,34 @@ impl<F: Field> AccountLeafConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
-        witness: &mut [MptWitnessRow<F>],
         pv: &mut MPTState<F>,
         offset: usize,
-        idx: usize,
+        node: &Node,
     ) -> Result<(), Error> {
-        let key_s = witness[idx].to_owned();
-        let key_c = witness[idx + 1].to_owned();
-        let nonce_balance_s = witness[idx + 3].to_owned();
-        let nonce_balance_c = witness[idx + 4].to_owned();
-        let storage_codehash_s = witness[idx + 5].to_owned();
-        let storage_codehash_c = witness[idx + 6].to_owned();
-        let row_drifted = witness[idx + 7].to_owned();
-        let row_wrong = witness[idx + 2].to_owned();
+        let account = &node.account.clone().unwrap();
 
-        let list_rlp_bytes = [key_s.rlp_bytes.to_owned(), key_c.rlp_bytes.to_owned()];
-        let key_bytes = [key_s.s(), key_c.s()];
-        let value_rlp_bytes = [
-            nonce_balance_s.rlp_bytes.clone(),
-            nonce_balance_c.rlp_bytes.clone(),
+        let key_bytes = [
+            node.values[AccountRowType::KeyS as usize].clone(),
+            node.values[AccountRowType::KeyC as usize].clone(),
         ];
-        let nonce_bytes = [nonce_balance_s.s(), nonce_balance_c.s()];
-        let balance_bytes = [nonce_balance_s.c(), nonce_balance_c.c()];
-        let storage_bytes = [storage_codehash_s.s(), storage_codehash_c.s()];
-        let codehash_bytes = [storage_codehash_s.c(), storage_codehash_c.c()];
-        let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
-        let drifted_bytes = row_drifted.s();
-        let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
-        let wrong_bytes = row_wrong.s();
+        let nonce_bytes = [
+            node.values[AccountRowType::NonceS as usize].clone(),
+            node.values[AccountRowType::NonceC as usize].clone(),
+        ];
+        let balance_bytes = [
+            node.values[AccountRowType::BalanceS as usize].clone(),
+            node.values[AccountRowType::BalanceC as usize].clone(),
+        ];
+        let storage_bytes = [
+            node.values[AccountRowType::StorageS as usize].clone(),
+            node.values[AccountRowType::StorageC as usize].clone(),
+        ];
+        let codehash_bytes = [
+            node.values[AccountRowType::CodehashS as usize].clone(),
+            node.values[AccountRowType::CodehashC as usize].clone(),
+        ];
+        let drifted_bytes = node.values[AccountRowType::Drifted as usize].clone();
+        let wrong_bytes = node.values[AccountRowType::Wrong as usize].clone();
 
         let main_data =
             self.main_data
@@ -423,7 +442,7 @@ impl<F: Field> AccountLeafConfig<F> {
         for is_s in [true, false] {
             for (cell, byte) in self.value_rlp_bytes[is_s.idx()]
                 .iter()
-                .zip(value_rlp_bytes[is_s.idx()].iter())
+                .zip(account.value_rlp_bytes[is_s.idx()].iter())
             {
                 cell.assign(region, offset, byte.scalar())?;
             }
@@ -452,7 +471,7 @@ impl<F: Field> AccountLeafConfig<F> {
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
                 region,
                 offset,
-                &list_rlp_bytes[is_s.idx()],
+                &account.list_rlp_bytes[is_s.idx()],
                 &key_bytes[is_s.idx()],
             )?;
             let nonce_witness =
@@ -522,14 +541,13 @@ impl<F: Field> AccountLeafConfig<F> {
         }
 
         // Anything following this node is below the account
-        let address_rlc = witness[idx].address_bytes().rlc_value(ctx.r);
         MainData::witness_store(
             region,
             offset,
             &mut pv.memory[main_memory()],
             main_data.proof_type,
             true,
-            address_rlc,
+            account.address.rlc_value(ctx.r),
             main_data.root_prev,
             main_data.root,
         )?;
@@ -577,7 +595,7 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             &parent_data,
-            &drifted_rlp_bytes,
+            &account.drifted_rlp_bytes,
             &drifted_bytes,
             ctx.r,
         )?;
@@ -588,7 +606,7 @@ impl<F: Field> AccountLeafConfig<F> {
             offset,
             is_non_existing_proof,
             &key_rlc,
-            &wrong_rlp_bytes,
+            &account.wrong_rlp_bytes,
             &wrong_bytes,
             true,
             key_data[true.idx()].clone(),
@@ -615,7 +633,7 @@ impl<F: Field> AccountLeafConfig<F> {
             region,
             offset,
             &MptUpdateRow {
-                address_rlc,
+                address_rlc: account.address.rlc_value(ctx.r),
                 proof_type: proof_type.scalar(),
                 key_rlc: 0.scalar(),
                 value_prev: value[true.idx()],

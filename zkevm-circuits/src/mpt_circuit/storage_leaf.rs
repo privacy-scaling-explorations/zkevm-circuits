@@ -10,12 +10,12 @@ use crate::mpt_circuit::helpers::{num_nibbles, IsEmptyTreeGadget};
 use crate::table::ProofType;
 use crate::{
     circuit,
+    mpt_circuit::MPTContext,
     mpt_circuit::{
         helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
         param::KEY_LEN_IN_NIBBLES,
         FixedTableTag,
     },
-    mpt_circuit::{witness_row::MptWitnessRow, MPTContext},
     mpt_circuit::{MPTConfig, MPTState},
 };
 use crate::{
@@ -31,6 +31,7 @@ use crate::{
 use super::{
     helpers::{Indexable, KeyDataWitness, ListKeyGadget, WrongGadget},
     rlp_gadgets::RLPValueGadget,
+    witness_row::{Node, StorageRowType},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -64,11 +65,17 @@ impl<F: Field> StorageLeafConfig<F> {
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb.base], {
-            let key_bytes = [ctx.s(meta, 0).to_owned(), ctx.s(meta, 2).to_owned()];
+            let key_bytes = [
+                ctx.s(meta, StorageRowType::KeyS as i32),
+                ctx.s(meta, StorageRowType::KeyC as i32),
+            ];
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
-            let value_bytes = [ctx.s(meta, 1), ctx.s(meta, 3)];
-            let drifted_bytes = ctx.s(meta, 4).to_owned();
-            let wrong_bytes = ctx.s(meta, 5).to_owned();
+            let value_bytes = [
+                ctx.s(meta, StorageRowType::ValueS as i32),
+                ctx.s(meta, StorageRowType::ValueC as i32),
+            ];
+            let drifted_bytes = ctx.s(meta, StorageRowType::Drifted as i32);
+            let wrong_bytes = ctx.s(meta, StorageRowType::Wrong as i32);
 
             config.main_data = MainData::load(
                 "main storage",
@@ -262,30 +269,22 @@ impl<F: Field> StorageLeafConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         ctx: &MPTConfig<F>,
-        witness: &[MptWitnessRow<F>],
         pv: &mut MPTState<F>,
         offset: usize,
-        idx: usize,
+        node: &Node,
     ) -> Result<(), Error> {
-        let row_key = [&witness[idx + 0], &witness[idx + 2]];
-        let row_value = [&witness[idx + 1], &witness[idx + 3]];
-        let row_drifted = &witness[idx + 4];
-        let row_wrong = &witness[idx + 5];
+        let storage = &node.storage.clone().unwrap();
 
-        let list_rlp_bytes = [
-            row_key[true.idx()].rlp_bytes.to_owned(),
-            row_key[false.idx()].rlp_bytes.to_owned(),
+        let key_bytes = [
+            node.values[StorageRowType::KeyS as usize].clone(),
+            node.values[StorageRowType::KeyC as usize].clone(),
         ];
-        let key_bytes = [row_key[true.idx()].s(), row_key[false.idx()].s()];
-        let value_rlp_bytes = [
-            row_value[true.idx()].rlp_bytes.to_owned(),
-            row_value[false.idx()].rlp_bytes.to_owned(),
+        let value_bytes = [
+            node.values[StorageRowType::ValueS as usize].clone(),
+            node.values[StorageRowType::ValueC as usize].clone(),
         ];
-        let value_bytes = [row_value[true.idx()].s(), row_value[false.idx()].s()];
-        let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
-        let drifted_bytes = row_drifted.s();
-        let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
-        let wrong_bytes = row_wrong.s();
+        let drifted_bytes = node.values[StorageRowType::Drifted as usize].clone();
+        let wrong_bytes = node.values[StorageRowType::Wrong as usize].clone();
 
         let main_data =
             self.main_data
@@ -306,7 +305,7 @@ impl<F: Field> StorageLeafConfig<F> {
             let rlp_key_witness = self.rlp_key[is_s.idx()].assign(
                 region,
                 offset,
-                &list_rlp_bytes[is_s.idx()],
+                &storage.list_rlp_bytes[is_s.idx()],
                 &key_bytes[is_s.idx()],
             )?;
 
@@ -349,12 +348,15 @@ impl<F: Field> StorageLeafConfig<F> {
             // Value
             for (cell, byte) in self.value_rlp_bytes[is_s.idx()]
                 .iter()
-                .zip(value_rlp_bytes[is_s.idx()].iter())
+                .zip(storage.value_rlp_bytes[is_s.idx()].iter())
             {
                 cell.assign(region, offset, byte.scalar())?;
             }
-            let value_witness =
-                self.rlp_value[is_s.idx()].assign(region, offset, &value_rlp_bytes[is_s.idx()])?;
+            let value_witness = self.rlp_value[is_s.idx()].assign(
+                region,
+                offset,
+                &storage.value_rlp_bytes[is_s.idx()],
+            )?;
             let value_long_witness =
                 self.rlp_value_long[is_s.idx()].assign(region, offset, &value_bytes[is_s.idx()])?;
             value_rlc[is_s.idx()] = if value_witness.is_short() {
@@ -399,7 +401,7 @@ impl<F: Field> StorageLeafConfig<F> {
             region,
             offset,
             &parent_data,
-            &drifted_rlp_bytes,
+            &storage.drifted_rlp_bytes,
             &drifted_bytes,
             ctx.r,
         )?;
@@ -410,7 +412,7 @@ impl<F: Field> StorageLeafConfig<F> {
             offset,
             is_non_existing_proof,
             &key_rlc,
-            &wrong_rlp_bytes,
+            &storage.wrong_rlp_bytes,
             &wrong_bytes,
             false,
             key_data[true.idx()].clone(),

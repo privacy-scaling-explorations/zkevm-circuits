@@ -9,6 +9,7 @@ use super::{
     branch::BranchGadget,
     extension::ExtensionGadget,
     helpers::{MPTConstraintBuilder, ParentDataWitness},
+    witness_row::Node,
     MPTContext,
 };
 use crate::{
@@ -180,21 +181,15 @@ impl<F: Field> ExtensionBranchConfig<F> {
     pub(crate) fn assign(
         &self,
         region: &mut Region<'_, F>,
-        witness: &mut [MptWitnessRow<F>],
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
-        idx: usize,
+        node: &Node,
     ) -> Result<(), Error> {
-        let row_init = witness[idx].to_owned();
-        let is_placeholder = [
-            row_init.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1,
-            row_init.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1,
-        ];
+        let extension_branch = &node.extension_branch.clone().unwrap();
 
-        let is_extension_node = row_init.is_extension;
         self.is_extension
-            .assign(region, offset, is_extension_node.scalar())?;
+            .assign(region, offset, extension_branch.is_extension.scalar())?;
 
         let key_data =
             self.key_data
@@ -210,7 +205,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
             self.is_placeholder[is_s.idx()].assign(
                 region,
                 offset,
-                is_placeholder[is_s.idx()].scalar(),
+                extension_branch.is_placeholder[is_s.idx()].scalar(),
             )?;
         }
 
@@ -220,19 +215,18 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let mut is_key_odd = key_data.is_odd;
 
         // Extension
-        if is_extension_node {
+        if extension_branch.is_extension {
             self.extension.assign(
                 region,
-                witness,
                 mpt_config,
                 pv,
                 offset,
-                idx,
                 &key_data,
                 &mut key_rlc,
                 &mut key_mult,
                 &mut num_nibbles,
                 &mut is_key_odd,
+                node,
             )?;
         }
 
@@ -240,21 +234,20 @@ impl<F: Field> ExtensionBranchConfig<F> {
         let (key_rlc_post_branch, key_rlc_post_drifted, key_mult_post_branch, mod_node_hash_rlc) =
             self.branch.assign(
                 region,
-                witness,
                 mpt_config,
                 pv,
                 offset,
-                idx,
-                &is_placeholder,
+                &extension_branch.is_placeholder,
                 &mut key_rlc,
                 &mut key_mult,
                 &mut num_nibbles,
                 &mut is_key_odd,
+                node,
             )?;
 
         // Set the new parent and key
         for is_s in [true, false] {
-            if !is_placeholder[is_s.idx()] {
+            if !extension_branch.is_placeholder[is_s.idx()] {
                 KeyData::witness_store(
                     region,
                     offset,

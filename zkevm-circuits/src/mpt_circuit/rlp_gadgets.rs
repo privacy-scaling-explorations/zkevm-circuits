@@ -687,4 +687,11 @@ impl RLPItemWitness {
             self.list.is_list() => self.list.rlc_rlp(r),
         }
     }
+
+    pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
+        matchr! {
+            self.value.is_string() => self.value.rlc_rlp(r),
+            self.list.is_list() => self.list.rlc_rlp(r),
+        }
+    }
 }
