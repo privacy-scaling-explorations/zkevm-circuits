@@ -35,9 +35,17 @@ impl Opcode for ErrorCodeStore {
         let call = state.call()?;
         let call_id = call.call_id;
         let is_success = call.is_success;
+        let is_static = call.is_static;
 
-        // create context check
-        assert!(call.is_create());
+        // create context check and non in static call
+        assert!(call.is_create() && !call.is_static);
+
+        state.call_context_read(
+            &mut exec_step,
+            call_id,
+            CallContextField::IsStatic,
+            (is_static as u64).into(),
+        );
 
         state.call_context_read(
             &mut exec_step,

@@ -9,6 +9,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
+    table::CallContextFieldTag,
     util::Expr,
 };
 
@@ -47,6 +48,9 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
+        // constrain in non static call
+        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsStatic, 0.expr());
+
         // constrain code store gas > gas left, that is GasCost::CODE_DEPOSIT_BYTE_COST
         // * length > gas left
         let code_store_gas_insufficient = LtGadget::construct(
@@ -69,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct_with_lastcallee_return_data(
             cb,
             opcode.expr(),
-            4.expr(),
+            5.expr(),
             memory_address.offset(),
             memory_address.length(),
         );
@@ -115,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         )?;
 
         self.common_error_gadget
-            .assign(region, offset, block, call, step, 4)?;
+            .assign(region, offset, block, call, step, 5)?;
         Ok(())
     }
 }
