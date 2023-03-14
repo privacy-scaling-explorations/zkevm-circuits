@@ -25,20 +25,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  set-instance-type:
+  set-outputs:
     if: github.event.pull_request.draft == false
 
     runs-on: ubuntu-latest
     outputs:
-      output1: ${{ steps.set-instance-type.outputs.type }}
+      instancetype: ${{ steps.set-outputs.outputs.instancetype }}
+      provertype: ${{ steps.set-outputs.outputs.provertype }}
     steps:
-      - id: set-instance-type
-        name: Select instance type
+      - id: set-outputs
+        name: Select instance and prover type
         run: |
           if [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
-            echo "type=c5.9xlarge" >> "$GITHUB_OUTPUT"
+            echo "instancetype=c5.9xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=mock_prover" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.inputs.provertype }}" = "real_prover" ]; then
-            echo "type=c5.24xlarge" >> "$GITHUB_OUTPUT"
+            echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=real_prover" >> "$GITHUB_OUTPUT"
           else
             exit 1
           fi
@@ -47,23 +50,10 @@ jobs:
     if: github.event.pull_request.draft == false
 
     name: Integration Tests
-    runs-on: ["${{github.run_id}}", self-hosted, "${{needs.set-instance-type.outputs.output1}}"]
-    needs: set-instance-type
+    runs-on: ["${{github.run_id}}", self-hosted, "${{needs.set-outputs.outputs.instancetype}}"]
+    needs: set-outputs
 
     steps:
-      - name: Set provertype to mock_prover for push & pull_request_labelled
-        run: |
-          echo "provertype=mock_prover" >> $GITHUB_ENV
-        if: github.event_name == 'push' ||
-            github.event_name == 'pull_request'
-      - name: Set provertype to workflow_dispatch choice
-        run: |
-          echo "provertype=${{ inputs.provertype }}" >> $GITHUB_ENV
-        if: github.event_name == 'workflow_dispatch'
-      - name: Set provertype to real_prover for scheduled runs
-        run: |
-          echo "provertype=real_prover" >> $GITHUB_ENV
-        if: github.event_name == 'schedule'
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -105,7 +95,7 @@ jobs:
         working-directory: integration-tests
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
         working-directory: integration-tests
-      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ needs.set-outputs.outputs.provertype }}"
         working-directory: integration-tests
       - run: ./run.sh --steps "cleanup"
         working-directory: integration-tests
