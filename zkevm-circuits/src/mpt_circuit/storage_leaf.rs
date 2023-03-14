@@ -61,7 +61,11 @@ impl<F: Field> StorageLeafConfig<F> {
     ) -> Self {
         let r = ctx.r.clone();
 
-        cb.base.cell_manager.as_mut().unwrap().reset();
+        cb.base
+            .cell_manager
+            .as_mut()
+            .unwrap()
+            .reset(StorageRowType::Count as usize);
         let mut config = StorageLeafConfig::default();
 
         circuit!([meta, cb.base], {
@@ -332,9 +336,9 @@ impl<F: Field> StorageLeafConfig<F> {
                 F::zero(),
                 F::one(),
                 0,
-                false,
                 F::zero(),
                 F::one(),
+                0,
             )?;
 
             // Key

@@ -22,12 +22,13 @@ use eth_types::Field;
 use gadgets::util::{or, Scalar};
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Error, Expression},
+    plonk::{Error, Expression, VirtualCells},
 };
 
 use super::{
     rlp_gadgets::{
-        get_ext_odd_nibble_value, RLPListGadget, RLPListWitness, RLPValueGadget, RLPValueWitness,
+        get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
+        RLPValueGadget, RLPValueWitness,
     },
     FixedTableTag,
 };
@@ -326,9 +327,10 @@ pub(crate) struct KeyData<F> {
     pub(crate) mult: Cell<F>,
     pub(crate) num_nibbles: Cell<F>,
     pub(crate) is_odd: Cell<F>,
-    pub(crate) drifted_is_odd: Cell<F>,
     pub(crate) drifted_rlc: Cell<F>,
     pub(crate) drifted_mult: Cell<F>,
+    pub(crate) drifted_num_nibbles: Cell<F>,
+    pub(crate) drifted_is_odd: Cell<F>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -337,9 +339,10 @@ pub(crate) struct KeyDataWitness<F> {
     pub(crate) mult: F,
     pub(crate) num_nibbles: usize,
     pub(crate) is_odd: bool,
-    pub(crate) drifted_is_odd: bool,
     pub(crate) drifted_rlc: F,
     pub(crate) drifted_mult: F,
+    pub(crate) drifted_num_nibbles: usize,
+    pub(crate) drifted_is_odd: bool,
 }
 
 impl<F: Field> Trackable for KeyData<F> {
@@ -362,9 +365,10 @@ impl<F: Field> KeyData<F> {
             mult: cb.query_cell(),
             num_nibbles: cb.query_cell(),
             is_odd: cb.query_cell(),
-            drifted_is_odd: cb.query_cell(),
             drifted_rlc: cb.query_cell(),
             drifted_mult: cb.query_cell(),
+            drifted_num_nibbles: cb.query_cell(),
+            drifted_is_odd: cb.query_cell(),
         };
         circuit!([meta, cb], {
             memory.load(
@@ -376,9 +380,10 @@ impl<F: Field> KeyData<F> {
                     key_data.mult.expr(),
                     key_data.num_nibbles.expr(),
                     key_data.is_odd.expr(),
-                    key_data.drifted_is_odd.expr(),
                     key_data.drifted_rlc.expr(),
                     key_data.drifted_mult.expr(),
+                    key_data.drifted_num_nibbles.expr(),
+                    key_data.drifted_is_odd.expr(),
                 ],
             );
         });
@@ -388,33 +393,35 @@ impl<F: Field> KeyData<F> {
     pub(crate) fn store(
         cb: &mut ConstraintBuilder<F>,
         memory: &MemoryBank<F>,
-        values: [Expression<F>; 7],
+        values: [Expression<F>; 8],
     ) {
         memory.store(cb, &values);
     }
 
-    pub(crate) fn default_values() -> [F; 7] {
+    pub(crate) fn default_values() -> [F; 8] {
         [
             0.scalar(),
             1.scalar(),
             0.scalar(),
             false.scalar(),
-            false.scalar(),
             0.scalar(),
             1.scalar(),
+            0.scalar(),
+            false.scalar(),
         ]
     }
 
     // TODO(Brecht): fix
-    pub(crate) fn default_values_expr() -> [Expression<F>; 7] {
+    pub(crate) fn default_values_expr() -> [Expression<F>; 8] {
         [
             0.expr(),
             1.expr(),
             0.expr(),
             false.expr(),
-            false.expr(),
             0.expr(),
             1.expr(),
+            0.expr(),
+            false.expr(),
         ]
     }
 
@@ -425,18 +432,19 @@ impl<F: Field> KeyData<F> {
         rlc: F,
         mult: F,
         num_nibbles: usize,
-        placeholder_is_odd: bool,
-        parent_rlc: F,
-        parent_mult: F,
+        drifted_rlc: F,
+        drifted_mult: F,
+        drifted_num_nibbles: usize,
     ) -> Result<(), Error> {
         let values = [
             rlc,
             mult,
             num_nibbles.scalar(),
             (num_nibbles % 2 == 1).scalar(),
-            placeholder_is_odd.scalar(),
-            parent_rlc,
-            parent_mult,
+            drifted_rlc,
+            drifted_mult,
+            drifted_num_nibbles.scalar(),
+            (drifted_num_nibbles % 2 == 1).scalar(),
         ];
         memory.witness_store(offset, &values);
 
@@ -456,18 +464,20 @@ impl<F: Field> KeyData<F> {
         self.mult.assign(region, offset, values[1])?;
         self.num_nibbles.assign(region, offset, values[2])?;
         self.is_odd.assign(region, offset, values[3])?;
-        self.drifted_is_odd.assign(region, offset, values[4])?;
-        self.drifted_rlc.assign(region, offset, values[5])?;
-        self.drifted_mult.assign(region, offset, values[6])?;
+        self.drifted_rlc.assign(region, offset, values[4])?;
+        self.drifted_mult.assign(region, offset, values[5])?;
+        self.drifted_num_nibbles.assign(region, offset, values[6])?;
+        self.drifted_is_odd.assign(region, offset, values[7])?;
 
         Ok(KeyDataWitness {
             rlc: values[0],
             mult: values[1],
             num_nibbles: values[2].get_lower_32() as usize,
             is_odd: values[3] != F::zero(),
-            drifted_is_odd: values[4] != F::zero(),
-            drifted_rlc: values[5],
-            drifted_mult: values[6],
+            drifted_rlc: values[4],
+            drifted_mult: values[5],
+            drifted_num_nibbles: values[6].get_lower_32() as usize,
+            drifted_is_odd: values[7] != F::zero(),
         })
     }
 }
@@ -967,19 +977,26 @@ impl<F: Field> DriftedGadget<F> {
 
                         // Calculate the drifted key RLC
                         // Get the key RLC for the drifted branch
-                        let (key_rlc, key_mult, is_key_odd) = (
+                        let (key_rlc, key_mult, key_num_nibbles, is_key_odd) = (
                             key_data[is_s.idx()].drifted_rlc.expr(),
                             key_data[is_s.idx()].drifted_mult.expr(),
+                            key_data[is_s.idx()].drifted_num_nibbles.expr(),
                             key_data[is_s.idx()].drifted_is_odd.expr(),
                         );
-                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(&mut cb.base, config.drifted_rlp_key.key_value.clone(), key_mult.expr(), is_key_odd, &r);
+                        let key_rlc = key_rlc.expr() + config.drifted_rlp_key.key.expr(
+                            &mut cb.base,
+                            config.drifted_rlp_key.key_value.clone(),
+                            key_mult.expr(),
+                            is_key_odd.expr(),
+                            &r
+                        );
                         // The key of the drifted leaf needs to match the key of the leaf
                         require!(key_rlc => expected_key_rlc[is_s.idx()]);
 
                         // Total number of nibbles needs to be KEY_LEN_IN_NIBBLES
                         // TODO(Brecht): RLC encoding would be the same for some addresses without checking the length
-                        //let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
-                        //require!(key_data.num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
+                        let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
+                        require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                         // Complete the drifted leaf rlc by adding the bytes on the value row
                         let leaf_rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
@@ -1101,6 +1118,99 @@ impl<F: Field> WrongGadget<F> {
             Ok(key_rlc_wrong)
         } else {
             Ok(key_rlc[for_placeholder_s.idx()])
+        }
+    }
+}
+
+/// Main RLP item
+#[derive(Clone, Debug, Default)]
+pub struct MainRLPGadget<F> {
+    rlp: RLPItemGadget<F>,
+    num_bytes: Cell<F>,
+    len: Cell<F>,
+    mult_diff: Cell<F>,
+    rlc_branch: Cell<F>,
+    rlc_rlp: Cell<F>,
+    is_hashed: IsEqualGadget<F>,
+}
+
+/// Main RLP item
+#[derive(Clone, Debug)]
+pub struct RLPItemView<F> {
+    pub(crate) num_bytes: Expression<F>,
+    pub(crate) len: Expression<F>,
+    pub(crate) mult_diff: Expression<F>,
+    pub(crate) rlc_branch: Expression<F>,
+    pub(crate) rlc_rlp: Expression<F>,
+    //pub(crate) is_hashed: Expression<F>,
+}
+
+impl<F: Field> MainRLPGadget<F> {
+    pub(crate) fn construct(
+        cb: &mut MPTConstraintBuilder<F>,
+        bytes: &[Expression<F>],
+        r: &[Expression<F>],
+    ) -> Self {
+        let mut config = MainRLPGadget::default();
+        circuit!([meta, cb.base], {
+            config.rlp = RLPItemGadget::construct(&mut cb.base, bytes);
+
+            config.num_bytes = cb.base.query_cell();
+            require!(config.num_bytes => config.rlp.num_bytes());
+            config.len = cb.base.query_cell();
+            require!(config.len => config.rlp.len());
+            config.rlc_branch = cb.base.query_cell();
+            require!(config.rlc_branch => config.rlp.rlc_content(&r));
+            config.rlc_rlp = cb.base.query_cell();
+            require!(config.rlc_rlp => config.rlp.rlc_rlp(&mut cb.base, &r));
+            config.mult_diff = cb.base.query_cell();
+            let mult_diff = config.mult_diff.expr();
+            require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @format!("fixed"));
+            config.is_hashed = IsEqualGadget::construct(&mut cb.base, config.rlp.len(), 32.expr());
+
+            config
+        })
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        bytes: &[u8],
+        r: F,
+    ) -> Result<RLPItemWitness, Error> {
+        let rlp_witness = self.rlp.assign(region, offset, bytes)?;
+
+        self.num_bytes
+            .assign(region, offset, rlp_witness.num_bytes().scalar())?;
+        self.len
+            .assign(region, offset, rlp_witness.len().scalar())?;
+
+        let mut node_mult_diff = F::one();
+        for _ in 0..rlp_witness.num_bytes() {
+            node_mult_diff *= r;
+        }
+        self.mult_diff.assign(region, offset, node_mult_diff)?;
+
+        self.rlc_branch
+            .assign(region, offset, rlp_witness.rlc_content(r))?;
+        self.rlc_rlp
+            .assign(region, offset, rlp_witness.rlc_rlp(r))?;
+        let _is_hashed =
+            self.is_hashed
+                .assign(region, offset, rlp_witness.len().scalar(), 32.scalar())?;
+
+        Ok(rlp_witness)
+    }
+
+    pub(crate) fn create_view_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> RLPItemView<F> {
+        RLPItemView {
+            num_bytes: self.num_bytes.at(meta, rot),
+            len: self.len.at(meta, rot),
+            mult_diff: self.mult_diff.at(meta, rot),
+            rlc_branch: self.rlc_branch.at(meta, rot),
+            rlc_rlp: self.rlc_rlp.at(meta, rot),
+            //is_hashed: self.is_hashed..at(meta, rot),
         }
     }
 }

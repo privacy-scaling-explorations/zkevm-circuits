@@ -37,7 +37,7 @@ pub(crate) struct RLPListWitness {
 
 impl<F: Field> RLPListGadget<F> {
     pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
-        // TODO(Brecht): add lookup/LtGadget
+        // TODO(Brecht): add lookup
         RLPListGadget {
             is_short: cb.query_cell(),
             is_long: cb.query_cell(),
@@ -652,9 +652,9 @@ impl<F: Field> RLPItemGadget<F> {
         })
     }
 
-    // If the branch is empty or contains a hash, return just the value.
-    // If the branch contains a list return the rlc of all the data.
-    pub(crate) fn rlc_branch(&self, r: &[Expression<F>]) -> Expression<F> {
+    // Returns the RLC of the value if the RLP is a string,
+    // returns the RLC of the full string if the RLP is a list.
+    pub(crate) fn rlc_content(&self, r: &[Expression<F>]) -> Expression<F> {
         circuit!([meta, _cb!()], {
             matchx! {
                 self.value.is_string() => self.value.rlc_value(r),
@@ -681,7 +681,7 @@ impl RLPItemWitness {
         }
     }
 
-    pub(crate) fn rlc_branch<F: Field>(&self, r: F) -> F {
+    pub(crate) fn rlc_content<F: Field>(&self, r: F) -> F {
         matchr! {
             self.value.is_string() => self.value.rlc_value(r),
             self.list.is_list() => self.list.rlc_rlp(r),

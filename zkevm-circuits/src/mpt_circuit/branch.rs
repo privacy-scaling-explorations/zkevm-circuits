@@ -6,9 +6,9 @@ use halo2_proofs::{
 };
 
 use super::{
-    helpers::MPTConstraintBuilder,
+    helpers::{MPTConstraintBuilder, RLPItemView},
     param::ARITY,
-    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListDataGadget},
+    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListDataGadget, RLPValueWitness},
     witness_row::Node,
     MPTContext,
 };
@@ -36,18 +36,8 @@ pub(crate) struct BranchState<F> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BranchChildConfig<F> {
-    rlp: RLPItemGadget<F>,
-    mult_diff: Cell<F>,
-    rlc_branch: Cell<F>,
-    rlc_rlp: Cell<F>,
-    is_hashed: IsEqualGadget<F>,
-}
-
-#[derive(Clone, Debug, Default)]
 pub(crate) struct BranchGadget<F> {
     rlp_list: [RLPListDataGadget<F>; 2],
-    children: [BranchChildConfig<F>; ARITY + 1],
     is_modified: [Cell<F>; ARITY],
     is_drifted: [Cell<F>; ARITY],
     mod_rlc: [Cell<F>; 2],
@@ -63,7 +53,6 @@ impl<F: Field> BranchGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
         is_placeholder: &[Cell<F>; 2],
-        is_extension: Expression<F>,
         parent_rlc: &[Expression<F>; 2],
         is_root: &[Expression<F>; 2],
         key_rlc: Expression<F>,
@@ -77,8 +66,8 @@ impl<F: Field> BranchGadget<F> {
 
         circuit!([meta, cb.base], {
             // Data
-            let child_bytes: [Vec<Expression<F>>; ARITY + 1] =
-                array_init::array_init(|i| ctx.s(meta, i as i32));
+            let children: [RLPItemView<F>; ARITY + 1] =
+                array_init::array_init(|i| ctx.rlp_item(meta, i));
 
             let mut num_bytes_left = vec![0.expr(); 2];
             let mut node_rlc = vec![0.expr(); 2];
@@ -117,44 +106,25 @@ impl<F: Field> BranchGadget<F> {
             }
 
             // Process the branch children
-            // The modified branch is stored at position 0.
-            for node_index in 0..ARITY + 1 {
-                let child = &mut config.children[node_index];
-                // Read the branch
-                child.rlp = RLPItemGadget::construct(&mut cb.base, &child_bytes[node_index]);
-                let num_bytes = child.rlp.num_bytes();
-                let length = child.rlp.len();
-
-                child.rlc_branch = cb.base.query_cell();
-                require!(child.rlc_branch => child.rlp.rlc_branch(&r));
-                child.rlc_rlp = cb.base.query_cell();
-                require!(child.rlc_rlp => child.rlp.rlc_rlp(&mut cb.base, &r));
-                child.mult_diff = cb.base.query_cell();
-                let mult_diff = child.mult_diff.expr();
-                require!((FixedTableTag::RMult, num_bytes.expr(), mult_diff) => @format!("fixed"));
-                child.is_hashed = IsEqualGadget::construct(&mut cb.base, length.expr(), 32.expr());
-            }
-
-            // Process the branch children
             for node_index in 0..ARITY {
                 for is_s in [true, false] {
                     // Get the correct child.
                     // All s children are stored directly in the circuit, but the only modified
                     // child branch for c is stored in child 0.
-                    let child = &config.children[node_index + 1];
-                    let mod_child = &config.children[0];
+                    let child = &children[node_index + 1];
+                    let mod_child = &children[0];
                     let (rlc_rlp, num_bytes, length, mult_diff) = if is_s {
                         (
                             child.rlc_rlp.expr(),
-                            child.rlp.num_bytes(),
-                            child.rlp.len(),
+                            child.num_bytes.expr(),
+                            child.len.expr(),
                             child.mult_diff.expr(),
                         )
                     } else {
                         ifx! {config.is_modified[node_index] => {
-                            (mod_child.rlc_rlp.expr(), mod_child.rlp.num_bytes(), mod_child.rlp.len(), mod_child.mult_diff.expr())
+                            (mod_child.rlc_rlp.expr(), mod_child.num_bytes.expr(), mod_child.len.expr(), mod_child.mult_diff.expr())
                         } elsex {
-                            (child.rlc_rlp.expr(), child.rlp.num_bytes(), child.rlp.len(), child.mult_diff.expr())
+                            (child.rlc_rlp.expr(), child.num_bytes.expr(), child.len.expr(), child.mult_diff.expr())
                         }}
                     };
 
@@ -222,16 +192,13 @@ impl<F: Field> BranchGadget<F> {
                     )
                 };
 
-                // TODO(Brecht): should not need is_extension check
-                ifx! {not!(is_extension) => {
-                    ifx! {not!(is_placeholder[is_s.idx()]) => {
-                        ifx!{or::expr(&[is_root[is_s.idx()].expr(), not!(is_not_hashed)]) => {
-                            // Hashed branch hash in parent branch
-                            require!((1, rlc, num_bytes, parent_rlc[is_s.idx()].expr()) => @"keccak");
-                        } elsex {
-                            // Non-hashed branch hash in parent branch
-                            require!(rlc => parent_rlc[is_s.idx()].expr());
-                        }}
+                ifx! {not!(is_placeholder[is_s.idx()]) => {
+                    ifx!{or::expr(&[is_root[is_s.idx()].expr(), not!(is_not_hashed)]) => {
+                        // Hashed branch hash in parent branch
+                        require!((1, rlc, num_bytes, parent_rlc[is_s.idx()].expr()) => @"keccak");
+                    } elsex {
+                        // Non-hashed branch hash in parent branch
+                        require!(rlc => parent_rlc[is_s.idx()].expr());
                     }}
                 }}
             }
@@ -266,7 +233,7 @@ impl<F: Field> BranchGadget<F> {
                     for node_index in 0..ARITY {
                         ifx!{config.is_drifted[node_index].expr() => {
                             require!(config.mod_rlc[is_s.idx()] =>
-                                config.children[node_index + 1].rlc_branch);
+                                children[node_index + 1].rlc_branch);
                         }}
                     }
                 } elsex {
@@ -274,11 +241,11 @@ impl<F: Field> BranchGadget<F> {
                         for node_index in 0..ARITY {
                             ifx!{config.is_modified[node_index].expr() => {
                                 require!(config.mod_rlc[is_s.idx()] =>
-                                    config.children[node_index + 1].rlc_branch);
+                                    children[node_index + 1].rlc_branch);
                             }}
                         }
                     } else {
-                        require!(config.mod_rlc[is_s.idx()] => config.children[0].rlc_branch.expr());
+                        require!(config.mod_rlc[is_s.idx()] => children[0].rlc_branch.expr());
                     }
                 }}
             }
@@ -317,6 +284,7 @@ impl<F: Field> BranchGadget<F> {
         num_nibbles: &mut usize,
         is_key_odd: &mut bool,
         node: &Node,
+        rlp_values: &[RLPItemWitness],
     ) -> Result<(F, F, F, [F; 2]), Error> {
         let branch = &node.extension_branch.clone().unwrap().branch;
 
@@ -350,41 +318,6 @@ impl<F: Field> BranchGadget<F> {
             )?;
         }
 
-        // Process the branch children
-        let mut child_witnesses = vec![RLPItemWitness::default(); ARITY + 1];
-        for node_index in 0..ARITY + 1 {
-            let child_witness =
-                self.children[node_index]
-                    .rlp
-                    .assign(region, offset, &child_bytes[node_index])?;
-            child_witnesses[node_index] = child_witness.clone();
-
-            let mut node_mult_diff = F::one();
-            for _ in 0..child_witness.num_bytes() {
-                node_mult_diff *= mpt_config.r;
-            }
-
-            self.children[node_index]
-                .mult_diff
-                .assign(region, offset, node_mult_diff)?;
-            self.children[node_index].rlc_branch.assign(
-                region,
-                offset,
-                child_witness.rlc_branch(mpt_config.r),
-            )?;
-            self.children[node_index].rlc_rlp.assign(
-                region,
-                offset,
-                child_witness.rlc_rlp(mpt_config.r),
-            )?;
-            let _is_hashed = self.children[node_index].is_hashed.assign(
-                region,
-                offset,
-                child_witness.len().scalar(),
-                32.scalar(),
-            )?;
-        }
-
         // one nibble is used for position in branch
         *num_nibbles += 1;
         // Update key parity
@@ -410,12 +343,12 @@ impl<F: Field> BranchGadget<F> {
         let mut mod_node_hash_rlc = [0.scalar(); 2];
         for is_s in [true, false] {
             mod_node_hash_rlc[is_s.idx()] = if is_placeholder[is_s.idx()] {
-                child_witnesses[1 + branch.drifted_index].rlc_branch(mpt_config.r)
+                rlp_values[1 + branch.drifted_index].rlc_content(mpt_config.r)
             } else {
                 if is_s {
-                    child_witnesses[1 + branch.modified_index].rlc_branch(mpt_config.r)
+                    rlp_values[1 + branch.modified_index].rlc_content(mpt_config.r)
                 } else {
-                    child_witnesses[0].rlc_branch(mpt_config.r)
+                    rlp_values[0].rlc_content(mpt_config.r)
                 }
             };
             self.mod_rlc[is_s.idx()].assign(region, offset, mod_node_hash_rlc[is_s.idx()])?;

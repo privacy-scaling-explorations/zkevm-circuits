@@ -9,15 +9,17 @@ use super::{
     branch::BranchGadget,
     extension::ExtensionGadget,
     helpers::{MPTConstraintBuilder, ParentDataWitness},
+    rlp_gadgets::RLPItemWitness,
     witness_row::Node,
     MPTContext,
 };
 use crate::{
     circuit,
     circuit_tools::cell_manager::Cell,
-    mpt_circuit::helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
-    mpt_circuit::param::{ARITY, IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS},
-    mpt_circuit::witness_row::MptWitnessRow,
+    mpt_circuit::{
+        helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
+        witness_row::ExtensionBranchRowType,
+    },
     mpt_circuit::{MPTConfig, MPTState},
 };
 
@@ -37,7 +39,11 @@ impl<F: Field> ExtensionBranchConfig<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        cb.base.cell_manager.as_mut().unwrap().reset();
+        cb.base
+            .cell_manager
+            .as_mut()
+            .unwrap()
+            .reset(ExtensionBranchRowType::Count as usize);
         let mut config = ExtensionBranchConfig::default();
 
         circuit!([meta, cb.base], {
@@ -116,7 +122,6 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 cb,
                 ctx.clone(),
                 &config.is_placeholder,
-                config.is_extension.expr(),
                 &parent_rlc,
                 &is_root,
                 key_rlc_post_ext.expr(),
@@ -137,9 +142,10 @@ impl<F: Field> ExtensionBranchConfig<F> {
                             branch.key_mult_post_branch.expr(),
                             branch.num_nibbles.expr(),
                             branch.is_key_odd.expr(),
+                            0.expr(),
+                            0.expr(),
+                            0.expr(),
                             false.expr(),
-                            0.expr(),
-                            0.expr(),
                         ],
                     );
                     ParentData::store(
@@ -156,9 +162,10 @@ impl<F: Field> ExtensionBranchConfig<F> {
                             config.key_data.mult.expr(),
                             config.key_data.num_nibbles.expr(),
                             config.key_data.is_odd.expr(),
-                            branch.is_key_odd.expr(),
                             branch.key_rlc_post_drifted.expr(),
                             branch.key_mult_post_drifted.expr(),
+                            branch.num_nibbles.expr(),
+                            branch.is_key_odd.expr(),
                         ],
                     );
                     ParentData::store(
@@ -185,6 +192,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
+        rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
         let extension_branch = &node.extension_branch.clone().unwrap();
 
@@ -243,6 +251,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 &mut num_nibbles,
                 &mut is_key_odd,
                 node,
+                rlp_values,
             )?;
 
         // Set the new parent and key
@@ -255,9 +264,9 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_rlc_post_branch,
                     key_mult_post_branch,
                     num_nibbles,
-                    false,
                     0.scalar(),
                     0.scalar(),
+                    0,
                 )?;
                 ParentData::witness_store(
                     region,
@@ -276,9 +285,9 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     key_data.rlc,
                     key_data.mult,
                     key_data.num_nibbles,
-                    is_key_odd,
                     key_rlc_post_drifted,
                     key_mult_post_branch,
+                    num_nibbles,
                 )?;
                 ParentData::witness_store(
                     region,

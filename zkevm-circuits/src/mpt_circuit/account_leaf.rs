@@ -72,7 +72,11 @@ impl<F: Field> AccountLeafConfig<F> {
     ) -> Self {
         let r = ctx.r.clone();
 
-        cb.base.cell_manager.as_mut().unwrap().reset();
+        cb.base
+            .cell_manager
+            .as_mut()
+            .unwrap()
+            .reset(AccountRowType::Count as usize);
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb.base], {
@@ -80,6 +84,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 ctx.s(meta, AccountRowType::KeyS as i32).to_owned(),
                 ctx.s(meta, AccountRowType::KeyC as i32).to_owned(),
             ];
+            // TODO(Brecht): split
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
             let nonce_bytes = [
                 ctx.s(meta, AccountRowType::NonceS as i32).to_owned(),
@@ -215,7 +220,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 }}
 
                 // Check the RLP encoding consistency.
-                // RlP encoding: account = [key, [nonce, balance, storage, codehash]]
+                // RLP encoding: account = [key, [nonce, balance, storage, codehash]]
                 // We always store between 55 and 256 bytes of data in the values list.
                 require!(config.value_rlp_bytes[is_s.idx()][0] => RLP_LONG + 1);
                 // The RLP encoded list always has 2 RLP bytes.
@@ -525,9 +530,9 @@ impl<F: Field> AccountLeafConfig<F> {
                 F::zero(),
                 F::one(),
                 0,
-                false,
                 F::zero(),
                 F::one(),
+                0,
             )?;
             ParentData::witness_store(
                 region,

@@ -84,7 +84,7 @@ impl<F: Field> ExtensionGadget<F> {
                 // In C we have the key nibbles, we check below only for S.
                 if is_s {
                     // RLP encoding checks: [key, branch]
-                    // Verify that the lenghts are consistent.
+                    // Verify that the lengths are consistent.
                     require!(config.rlp_key.rlp_list.len() => config.rlp_key.key_value.num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
 
                     // Update the multiplier with the number of bytes on the first row
@@ -99,7 +99,7 @@ impl<F: Field> ExtensionGadget<F> {
                 cb.set_length_c(config.rlp_value[is_s.idx()].num_bytes());
 
                 // The branch expected in the extension node
-                branch_rlp_rlc[is_s.idx()] = config.rlp_value[is_s.idx()].rlc_rlp(&mut cb.base, &r);
+                branch_rlp_rlc[is_s.idx()] = config.rlp_value[is_s.idx()].rlc_content(&r);
 
                 // Check if the extension node is in its parent.
                 let (rlc, num_bytes, is_not_hashed) = {
@@ -137,7 +137,6 @@ impl<F: Field> ExtensionGadget<F> {
             // Make sure the nibble counter is updated correctly
             let num_nibbles = key_data.num_nibbles.expr() + num_nibbles.expr();
 
-            // We need to take account the nibbles of the extension node.
             // The parity alternates when there's an even number of nibbles, remains the
             // same otherwise
             let is_key_odd = ifx! {config.is_key_part_odd => {

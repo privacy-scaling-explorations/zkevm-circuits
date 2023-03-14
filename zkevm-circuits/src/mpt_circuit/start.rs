@@ -29,7 +29,11 @@ impl<F: Field> StartConfig<F> {
     ) -> Self {
         let r = ctx.r.clone();
 
-        cb.base.cell_manager.as_mut().unwrap().reset();
+        cb.base
+            .cell_manager
+            .as_mut()
+            .unwrap()
+            .reset(StartRowType::Count as usize);
         let mut config = StartConfig::default();
 
         circuit!([meta, cb.base], {
@@ -42,7 +46,7 @@ impl<F: Field> StartConfig<F> {
 
             let mut root = vec![0.expr(); 2];
             for is_s in [true, false] {
-                root[is_s.idx()] = root_bytes[is_s.idx()].rlc(&r);
+                root[is_s.idx()] = root_bytes[is_s.idx()][1..].rlc(&r);
             }
 
             MainData::store(
@@ -99,7 +103,7 @@ impl<F: Field> StartConfig<F> {
 
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
-            root[is_s.idx()] = root_bytes[is_s.idx()].rlc_value(ctx.r);
+            root[is_s.idx()] = root_bytes[is_s.idx()][1..].rlc_value(ctx.r);
         }
 
         MainData::witness_store(
@@ -130,9 +134,9 @@ impl<F: Field> StartConfig<F> {
                 F::zero(),
                 F::one(),
                 0,
-                false,
                 F::zero(),
                 F::one(),
+                0,
             )?;
         }
 

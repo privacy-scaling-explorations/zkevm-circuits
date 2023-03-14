@@ -118,6 +118,14 @@ impl<F: Field> Cell<F> {
             || Value::known(value),
         )
     }
+
+    pub(crate) fn column(&self) -> Column<Advice> {
+        self.column.unwrap()
+    }
+
+    pub(crate) fn at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+        meta.query_advice(self.column.unwrap(), Rotation((self.rotation + rot) as i32))
+    }
 }
 
 impl<F: Field> Expr<F> for Cell<F> {
@@ -161,6 +169,7 @@ pub struct CellManager<F> {
     height: usize,
     cells: Vec<Cell<F>>,
     columns: Vec<CellColumn<F>>,
+    height_limit: usize,
 }
 
 impl<F: Field> CellManager<F> {
@@ -187,6 +196,7 @@ impl<F: Field> CellManager<F> {
             height,
             cells,
             columns,
+            height_limit: height,
         }
     }
 
@@ -205,7 +215,9 @@ impl<F: Field> CellManager<F> {
         self.query_cells(cell_type, 1)[0].clone()
     }
 
-    pub(crate) fn reset(&mut self) {
+    pub(crate) fn reset(&mut self, height_limit: usize) {
+        assert!(height_limit <= self.height);
+        self.height_limit = height_limit;
         for column in self.columns.iter_mut() {
             column.height = 0;
         }
@@ -219,6 +231,9 @@ impl<F: Field> CellManager<F> {
                 best_index = Some(column.index);
                 best_height = column.height;
             }
+        }
+        if best_height >= self.height_limit {
+            best_index = None;
         }
         match best_index {
             Some(index) => index,
