@@ -25,11 +25,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  set-instance-type:
+    if: github.event.pull_request.draft == false
+
+    runs-on: ubuntu-latest
+    outputs:
+      output1: ${{ steps.set-instance-type.outputs.type }}
+    steps:
+      - id: set-instance-type
+        name: Select instance type
+        run: |
+          if [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
+            echo "type=c5.9xlarge" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "real_prover" ]; then
+            echo "type=c5.24xlarge" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
+
   integration-tests:
     if: github.event.pull_request.draft == false
 
     name: Integration Tests
-    runs-on: ["${{github.run_id}}", self-hosted, x1e.4xlarge]
+    runs-on: ["${{github.run_id}}", self-hosted, "${{needs.set-instance-type.outputs.output1}}"]
+    needs: set-instance-type
 
     steps:
       - name: Set provertype to mock_prover for push & pull_request_labelled
