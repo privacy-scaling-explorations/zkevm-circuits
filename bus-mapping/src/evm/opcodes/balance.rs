@@ -1,7 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
+};
 use eth_types::{GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Debug, Copy, Clone)]
@@ -45,7 +47,6 @@ impl Opcode for Balance {
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
@@ -68,16 +69,9 @@ impl Opcode for Balance {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-            code_hash.to_word(),
         );
         if exists {
-            state.account_read(
-                &mut exec_step,
-                address,
-                AccountField::Balance,
-                balance,
-                balance,
-            );
+            state.account_read(&mut exec_step, address, AccountField::Balance, balance);
         }
 
         // Write the BALANCE result to stack.
@@ -94,12 +88,17 @@ impl Opcode for Balance {
 #[cfg(test)]
 mod balance_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::geth_types::GethData;
-    use eth_types::{address, bytecode, Bytecode, ToWord, Word, U256};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp, RW},
+    };
+    use eth_types::{
+        address, bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::GethData,
+        Bytecode, ToWord, Word, U256,
+    };
     use keccak256::EMPTY_HASH_LE;
     use mock::TestContext;
     use pretty_assertions::assert_eq;

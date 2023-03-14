@@ -1,11 +1,8 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::AccountOp;
-use crate::operation::MemoryOp;
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, RW},
+    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     Error,
 };
 use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
@@ -75,7 +72,6 @@ impl Opcode for ReturnRevert {
 
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
@@ -135,27 +131,6 @@ impl Opcode for ReturnRevert {
                     },
                 )?;
             }
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeId,
-                state.call()?.call_id.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataOffset,
-                offset.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataLength,
-                length.into(),
-            );
         }
 
         state.handle_return(step)?;
@@ -201,18 +176,21 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(destination.id),
-        dst_addr: destination.offset.try_into().unwrap(),
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Memory,
+            dst_id: NumberOrHash::Number(destination.id),
+            dst_addr: destination.offset.try_into().unwrap(),
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(())
 }
@@ -240,18 +218,21 @@ fn handle_create(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id,
-        dst_addr: 0,
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Bytecode,
+            dst_id,
+            dst_addr: 0,
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(code_hash)
 }
@@ -259,10 +240,11 @@ fn handle_create(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     #[test]
     fn test_ok() {

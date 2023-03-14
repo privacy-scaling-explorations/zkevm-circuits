@@ -5,10 +5,11 @@ use crate::{
         },
         table::Table,
     },
+    table::RwTableTag,
     util::{query_expression, Challenges, Expr},
+    witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::ToLittleEndian;
-use eth_types::U256;
+use eth_types::{Address, ToLittleEndian, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
@@ -17,8 +18,10 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use keccak256::EMPTY_HASH_LE;
-use std::collections::BTreeMap;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+};
 
 pub(crate) mod common_gadget;
 pub(crate) mod constraint_builder;
@@ -421,7 +424,9 @@ impl<F: FieldExt> CellManager<F> {
         }
         match best_index {
             Some(index) => index,
-            None => unreachable!("not enough cells for query: {:?}", cell_type),
+            // If we reach this case, it means that all the columns of cell_type have assignments
+            // taking self.height rows, so there's no more space.
+            None => panic!("not enough cells for query: {:?}", cell_type),
         }
     }
 
@@ -611,4 +616,36 @@ pub(crate) fn transpose_val_ret<F, E>(value: Value<Result<F, E>>) -> Result<Valu
         ret = value.map(Value::known);
     });
     ret
+}
+
+pub(crate) fn is_precompiled(address: &Address) -> bool {
+    address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
+}
+
+/// Helper struct to read rw operations from a step sequentially.
+pub(crate) struct StepRws<'a> {
+    rws: &'a RwMap,
+    rw_indices: &'a Vec<(RwTableTag, usize)>,
+    offset: usize,
+}
+
+impl<'a> StepRws<'a> {
+    /// Create a new StateRws by taking the reference to a block and the step.
+    pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
+        Self {
+            rws: &block.rws,
+            rw_indices: &step.rw_indices,
+            offset: 0,
+        }
+    }
+    /// Increment the step rw operation offset by `offset`.
+    pub(crate) fn offset_add(&mut self, offset: usize) {
+        self.offset = offset
+    }
+    /// Return the next rw operation from the step.
+    pub(crate) fn next(&mut self) -> Rw {
+        let rw = self.rws[self.rw_indices[self.offset]];
+        self.offset += 1;
+        rw
+    }
 }

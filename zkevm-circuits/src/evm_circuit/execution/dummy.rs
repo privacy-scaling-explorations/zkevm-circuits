@@ -1,14 +1,15 @@
 use std::marker::PhantomData;
 
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    step::ExecutionState,
-    util::{constraint_builder::ConstraintBuilder, CachedRegion, Word},
-    witness::{Block, Call, ExecStep, Transaction},
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        step::ExecutionState,
+        util::{constraint_builder::ConstraintBuilder, CachedRegion, Word},
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    util::Expr,
 };
-use crate::util::Expr;
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]

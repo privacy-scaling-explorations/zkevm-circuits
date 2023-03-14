@@ -79,6 +79,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             code_hash.expr(),
         );
         let code_size = cb.query_cell();
+        // TODO: If external_address doesn't exist, we will get code_hash = 0.  With
+        // this value, the bytecode_length lookup will not work, and the copy
+        // from code_hash = 0 will not work. We should use EMPTY_HASH when
+        // code_hash = 0.
         cb.bytecode_length(code_hash.expr(), code_size.expr());
 
         let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
@@ -231,8 +235,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes_array;
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_bytes_array, test_util::CircuitTestBuilder};
     use eth_types::{
         address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word,
     };
