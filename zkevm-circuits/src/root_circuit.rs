@@ -209,10 +209,11 @@ mod application {
             vec![vec![self.0]]
         }
 
+        #[allow(clippy::type_complexity)]
         pub fn build() -> Result<(u32, Self, Vec<Vec<Fr>>, Vec<Fr>), Error> {
             let stand_plonk = StandardPlonk::rand(OsRng);
             let instances = stand_plonk.instances();
-            return Ok((22, stand_plonk, instances, vec![]));
+            Ok((22, stand_plonk, instances, vec![]))
         }
     }
 
