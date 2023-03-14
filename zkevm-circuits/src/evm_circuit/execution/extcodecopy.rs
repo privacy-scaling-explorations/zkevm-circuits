@@ -5,7 +5,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
+                ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition,
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},

@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
             math_gadget::LtGadget,
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             CachedRegion, Cell,

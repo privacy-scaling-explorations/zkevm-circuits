@@ -14,7 +14,7 @@ pub use KeccakCircuitConfig as KeccakConfig;
 
 use self::{cell_manager::*, keccak_packed_multi::*, param::*, table::*, util::*};
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,

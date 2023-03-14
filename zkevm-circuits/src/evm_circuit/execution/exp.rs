@@ -4,6 +4,7 @@ use eth_types::{Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use crate::evm_circuit::{
     step::ExecutionState,
     util::{

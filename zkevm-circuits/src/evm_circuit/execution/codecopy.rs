@@ -8,7 +8,9 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition,
+            },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, CachedRegion, Cell, MemoryAddress,

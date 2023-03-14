@@ -4,7 +4,9 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+            },
             sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},

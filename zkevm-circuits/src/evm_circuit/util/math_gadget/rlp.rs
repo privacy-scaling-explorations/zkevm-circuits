@@ -7,7 +7,10 @@ use halo2_proofs::{
 
 use crate::evm_circuit::{
     param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64, N_BYTES_WORD},
-    util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell, RandomLinearCombination},
+    util::{
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        CachedRegion, Cell, RandomLinearCombination,
+    },
 };
 
 use super::IsZeroGadget;
@@ -345,7 +348,10 @@ mod test {
     use gadgets::util::{not, Expr};
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell};
+    use crate::evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        CachedRegion, Cell,
+    };
 
     #[derive(Clone)]
     struct ContractCreateGadgetContainer<F, const IS_CREATE2: bool> {

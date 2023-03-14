@@ -3,8 +3,10 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::IsZeroGadget, sum, CachedRegion, Cell, Word as RLCWord,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+            math_gadget::IsZeroGadget,
+            sum, CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

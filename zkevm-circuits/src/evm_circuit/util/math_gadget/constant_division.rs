@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::ConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
-        Cell, CellType,
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        math_gadget::*,
+        transpose_val_ret, CachedRegion, Cell, CellType,
     },
     util::Expr,
 };

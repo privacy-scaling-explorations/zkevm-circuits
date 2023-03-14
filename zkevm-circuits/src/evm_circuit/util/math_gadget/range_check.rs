@@ -1,5 +1,6 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, from_bytes, CachedRegion, Cell,
+    constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+    from_bytes, CachedRegion, Cell,
 };
 use eth_types::Field;
 use halo2_proofs::{

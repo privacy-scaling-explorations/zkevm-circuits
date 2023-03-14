@@ -68,6 +68,7 @@ impl<F: Field> IsZeroGadget<F> {
 mod tests {
     use super::super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use crate::evm_circuit::util::Cell;
     use crate::util::Expr;
     use eth_types::{ToScalar, Word};

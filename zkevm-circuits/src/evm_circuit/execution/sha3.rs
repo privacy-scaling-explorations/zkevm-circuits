@@ -8,7 +8,9 @@ use crate::evm_circuit::{
     step::ExecutionState,
     util::{
         common_gadget::SameContextGadget,
-        constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+        constraint_builder::{
+            ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition,
+        },
         memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
         rlc, CachedRegion, Cell, Word,
     },

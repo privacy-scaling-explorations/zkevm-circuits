@@ -12,7 +12,9 @@ use crate::{
         step::{ExecutionState, Step},
         table::Table,
         util::{
-            constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
+            constraint_builder::{
+                BaseConstraintBuilder, ConstrainBuilderCommon, ConstraintBuilder,
+            },
             rlc, CellType,
         },
         witness::{Block, Call, ExecStep, Transaction},

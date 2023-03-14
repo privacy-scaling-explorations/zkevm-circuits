@@ -11,7 +11,9 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+            },
             from_bytes,
             memory_gadget::BufferReaderGadget,
             not, CachedRegion, Cell, MemoryAddress,

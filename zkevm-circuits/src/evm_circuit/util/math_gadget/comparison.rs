@@ -53,6 +53,7 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
 mod tests {
     use super::test_util::*;
     use super::*;
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use crate::evm_circuit::util::Cell;
     use eth_types::*;
     use halo2_proofs::halo2curves::bn256::Fr;

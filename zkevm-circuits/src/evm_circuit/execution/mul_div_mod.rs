@@ -5,7 +5,9 @@ use crate::{
         util::{
             self,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+            },
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             select, sum, CachedRegion,
         },

@@ -1,4 +1,4 @@
-use super::CachedRegion;
+use super::{constraint_builder::ConstrainBuilderCommon, CachedRegion};
 use crate::{
     evm_circuit::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_ADDRESS, N_BYTES_MEMORY_WORD_SIZE},

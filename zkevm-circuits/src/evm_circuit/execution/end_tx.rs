@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::UpdateBalanceGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::{

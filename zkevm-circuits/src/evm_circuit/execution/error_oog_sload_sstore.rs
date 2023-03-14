@@ -5,7 +5,7 @@ use crate::evm_circuit::util::common_gadget::{
     cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment, CommonErrorGadget,
     SloadGasGadget, SstoreGasGadget,
 };
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
+use crate::evm_circuit::util::constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder};
 use crate::evm_circuit::util::math_gadget::{LtGadget, PairSelectGadget};
 use crate::evm_circuit::util::{and, or, select, CachedRegion, Cell};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};

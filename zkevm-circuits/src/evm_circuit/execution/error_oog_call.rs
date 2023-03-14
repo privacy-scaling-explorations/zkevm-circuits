@@ -1,3 +1,4 @@
+use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use crate::table::CallContextFieldTag;
 use crate::util::Expr;
 use crate::{

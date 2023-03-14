@@ -6,7 +6,8 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, SstoreGasGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,

@@ -1,4 +1,5 @@
 use super::{
+    constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},

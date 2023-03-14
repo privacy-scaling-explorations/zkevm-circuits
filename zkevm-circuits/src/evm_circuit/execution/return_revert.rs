@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},

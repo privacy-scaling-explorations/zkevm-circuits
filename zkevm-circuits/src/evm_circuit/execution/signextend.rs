@@ -6,7 +6,9 @@ use crate::{
         util::{
             and,
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             rlc, select, sum, CachedRegion, Cell, Word,
         },

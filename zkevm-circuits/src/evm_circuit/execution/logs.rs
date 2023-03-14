@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},

@@ -2,7 +2,7 @@ use crate::evm_circuit::execution::ExecutionGadget;
 use crate::evm_circuit::param::N_BYTES_GAS;
 use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::CommonErrorGadget;
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
+use crate::evm_circuit::util::constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder};
 use crate::evm_circuit::util::math_gadget::{ByteSizeGadget, LtGadget};
 use crate::evm_circuit::util::{CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};

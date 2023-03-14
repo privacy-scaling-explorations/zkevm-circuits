@@ -5,7 +5,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::IsZeroGadget,

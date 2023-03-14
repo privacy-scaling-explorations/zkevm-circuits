@@ -5,7 +5,10 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-use crate::evm_circuit::util::{constraint_builder::ConstraintBuilder, CachedRegion, Cell};
+use crate::evm_circuit::util::{
+    constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+    CachedRegion, Cell,
+};
 
 #[derive(Clone, Debug)]
 pub struct BinaryNumberGadget<F, const N: usize> {

@@ -7,7 +7,7 @@ use crate::{
             and,
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             is_precompiled,

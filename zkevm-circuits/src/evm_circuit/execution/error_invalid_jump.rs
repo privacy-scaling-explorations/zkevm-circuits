@@ -6,7 +6,7 @@ use crate::{
         util::{
             and,
             common_gadget::CommonErrorGadget,
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
             from_bytes,
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             select, sum, CachedRegion, Cell, Word,

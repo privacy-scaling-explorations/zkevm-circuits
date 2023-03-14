@@ -3,8 +3,10 @@ use crate::evm_circuit::{
     param::N_BYTES_GAS,
     step::ExecutionState,
     util::{
-        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-        math_gadget::LtGadget, CachedRegion, Cell,
+        common_gadget::CommonErrorGadget,
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        math_gadget::LtGadget,
+        CachedRegion, Cell,
     },
     witness::{Block, Call, ExecStep, Transaction},
 };

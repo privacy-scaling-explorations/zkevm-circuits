@@ -141,40 +141,22 @@ impl<F: Field> ReversionInfo<F> {
     }
 }
 
-#[derive(Default)]
-pub struct BaseConstraintBuilder<F> {
-    pub constraints: Vec<(&'static str, Expression<F>)>,
-    pub max_degree: usize,
-    pub condition: Option<Expression<F>>,
-}
+pub(crate) trait ConstrainBuilderCommon<F: Field> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>);
 
-impl<F: Field> BaseConstraintBuilder<F> {
-    pub(crate) fn new(max_degree: usize) -> Self {
-        BaseConstraintBuilder {
-            constraints: Vec::new(),
-            max_degree,
-            condition: None,
-        }
-    }
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
+    fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
     }
 
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
+    fn require_equal(&mut self, name: &'static str, lhs: Expression<F>, rhs: Expression<F>) {
         self.add_constraint(name, lhs - rhs);
     }
 
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
+    fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
-    pub(crate) fn require_in_set(
+    fn require_in_set(
         &mut self,
         name: &'static str,
         value: Expression<F>,
@@ -185,6 +167,40 @@ impl<F: Field> BaseConstraintBuilder<F> {
             set.iter()
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
+    }
+
+    fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct BaseConstraintBuilder<F> {
+    pub constraints: Vec<(&'static str, Expression<F>)>,
+    pub max_degree: usize,
+    pub condition: Option<Expression<F>>,
+}
+
+impl<F: Field> ConstrainBuilderCommon<F> for BaseConstraintBuilder<F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
+    }
+}
+
+impl<F: Field> BaseConstraintBuilder<F> {
+    pub(crate) fn new(max_degree: usize) -> Self {
+        BaseConstraintBuilder {
+            constraints: Vec::new(),
+            max_degree,
+            condition: None,
+        }
     }
 
     pub(crate) fn condition<R>(
@@ -200,21 +216,6 @@ impl<F: Field> BaseConstraintBuilder<F> {
         let ret = constraint(self);
         self.condition = None;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-        self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -278,6 +279,19 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
+}
+
+impl<'a, F: Field> ConstrainBuilderCommon<F> for ConstraintBuilder<'a, F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = self.split_expression(
+            name,
+            constraint * self.condition_expr(),
+            MAX_DEGREE - IMPLICIT_DEGREE,
+        );
+
+        self.validate_degree(constraint.degree(), name);
+        self.push_constraint(name, constraint);
+    }
 }
 
 impl<'a, F: Field> ConstraintBuilder<'a, F> {
@@ -441,38 +455,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
         self.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()))
-    }
-
-    // Common
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.add_constraint(name, constraint);
-    }
-
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
-        self.add_constraint(name, lhs - rhs);
-    }
-
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
-        self.add_constraint(name, value.clone() * (1.expr() - value));
-    }
-
-    pub(crate) fn require_in_set(
-        &mut self,
-        name: &'static str,
-        value: Expression<F>,
-        set: Vec<Expression<F>>,
-    ) {
-        self.add_constraint(
-            name,
-            set.iter()
-                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
-        );
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -1376,12 +1358,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         self.in_next_step = false;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
     }
 
     pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {

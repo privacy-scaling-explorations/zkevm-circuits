@@ -59,6 +59,8 @@ impl<F: Field> PairSelectGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+
     use super::super::test_util::*;
     use super::*;
     use eth_types::*;

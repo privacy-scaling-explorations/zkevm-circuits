@@ -19,6 +19,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},

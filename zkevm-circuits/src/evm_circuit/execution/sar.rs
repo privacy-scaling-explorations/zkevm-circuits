@@ -4,7 +4,9 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::table::{FixedTableTag, Lookup};
 use crate::evm_circuit::util::common_gadget::SameContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{ConstraintBuilder, StepStateTransition};
+use crate::evm_circuit::util::constraint_builder::{
+    ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition,
+};
 use crate::evm_circuit::util::math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget};
 use crate::evm_circuit::util::{from_bytes, select, sum, CachedRegion, Cell, Word};
 use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};

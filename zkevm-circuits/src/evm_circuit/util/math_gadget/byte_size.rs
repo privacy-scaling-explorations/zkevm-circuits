@@ -1,7 +1,10 @@
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
-        util::{constraint_builder::ConstraintBuilder, sum, CachedRegion, Cell},
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+            sum, CachedRegion, Cell,
+        },
     },
     util::Expr,
 };

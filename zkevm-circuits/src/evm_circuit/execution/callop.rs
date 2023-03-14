@@ -4,7 +4,7 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::{CommonCallGadget, TransferGadget};
 use crate::evm_circuit::util::constraint_builder::Transition::{Delta, To};
 use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+    ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::math_gadget::{
     ConstantDivisionGadget, IsZeroGadget, LtWordGadget, MinMaxGadget,

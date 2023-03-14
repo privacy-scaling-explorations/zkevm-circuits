@@ -3,7 +3,9 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Same},
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Same,
+            },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
         },

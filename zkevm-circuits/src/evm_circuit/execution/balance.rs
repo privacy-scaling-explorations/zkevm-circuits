@@ -4,7 +4,7 @@ use crate::evm_circuit::step::ExecutionState;
 use crate::evm_circuit::util::common_gadget::SameContextGadget;
 use crate::evm_circuit::util::constraint_builder::Transition::Delta;
 use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+    ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
 };
 use crate::evm_circuit::util::{
     from_bytes, math_gadget::IsZeroGadget, not, select, CachedRegion, Cell, Word,

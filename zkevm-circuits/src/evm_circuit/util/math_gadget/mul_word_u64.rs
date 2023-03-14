@@ -1,7 +1,8 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, pow_of_two_expr, split_u256,
-        CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        from_bytes, pow_of_two_expr, split_u256, CachedRegion,
     },
     util::Expr,
 };
