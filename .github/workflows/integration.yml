@@ -36,12 +36,12 @@ jobs:
       - id: set-outputs
         name: Select instance and prover type
         run: |
-          if [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
-            echo "instancetype=c5.9xlarge" >> "$GITHUB_OUTPUT"
-            echo "provertype=mock_prover" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.inputs.provertype }}" = "real_prover" ]; then
+          if [ "${{ github.event.inputs.provertype }}" = "real_prover" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
             echo "provertype=real_prover" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
+            echo "instancetype=c5.9xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=mock_prover" >> "$GITHUB_OUTPUT"
           else
             exit 1
           fi
