@@ -13,12 +13,12 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
-use halo2_proofs::arithmetic::Field as Halo2Field;
-use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
+    arithmetic::Field as Halo2Field,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
+    poly::kzg::commitment::ParamsKZG,
 };
 use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
@@ -133,11 +133,15 @@ fn verifying_key_independent_of_rw_length() {
         N_ROWS,
     );
 
-    // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
-    // its debug string.
+    let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
+    let vk_one_rows = keygen_vk(&params, &one_row).unwrap();
     assert_eq!(
-        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
-        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
+        vk_no_rows.fixed_commitments(),
+        vk_one_rows.fixed_commitments()
+    );
+    assert_eq!(
+        vk_no_rows.permutation().commitments(),
+        vk_one_rows.permutation().commitments()
     );
 }
 
@@ -984,6 +988,68 @@ fn bad_initial_tx_log_value() {
         verify_with_overrides(rows, overrides),
         "initial TxLog value is 0",
     );
+}
+
+#[test]
+fn variadic_size_check() {
+    let mut rows = vec![
+        Rw::Stack {
+            rw_counter: 24,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1022,
+            value: U256::from(394500u64),
+        },
+        Rw::Stack {
+            rw_counter: 25,
+            is_write: false,
+            call_id: 1,
+            stack_pointer: 1022,
+            value: U256::from(394500u64),
+        },
+    ];
+
+    let updates = MptUpdates::mock_from(&rows);
+    let circuit = StateCircuit::<Fr> {
+        rows: rows.clone(),
+        updates,
+        overrides: HashMap::default(),
+        n_rows: N_ROWS,
+        _marker: std::marker::PhantomData::default(),
+    };
+    let power_of_randomness = circuit.instance();
+    let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+
+    rows.extend_from_slice(&[
+        Rw::Stack {
+            rw_counter: 26,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1021,
+            value: U256::from(394511u64),
+        },
+        Rw::Stack {
+            rw_counter: 27,
+            is_write: false,
+            call_id: 1,
+            stack_pointer: 1021,
+            value: U256::from(394511u64),
+        },
+    ]);
+
+    let updates = MptUpdates::mock_from(&rows);
+    let circuit = StateCircuit::<Fr> {
+        rows,
+        updates,
+        overrides: HashMap::default(),
+        n_rows: N_ROWS,
+        _marker: std::marker::PhantomData::default(),
+    };
+    let power_of_randomness = circuit.instance();
+    let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+
+    assert_eq!(prover1.fixed(), prover2.fixed());
+    assert_eq!(prover1.permutation(), prover2.permutation());
 }
 
 #[test]

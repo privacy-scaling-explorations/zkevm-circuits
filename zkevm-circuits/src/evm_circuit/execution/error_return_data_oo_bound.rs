@@ -4,39 +4,33 @@ use crate::{
         param::N_BYTES_U64,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget,
-            constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
-                Transition::{Delta, Same},
-            },
+            common_gadget::CommonErrorGadget,
+            constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
-            not, CachedRegion, Cell,
+            not, or, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToScalar, U256};
-
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ErrorReturnDataOutOfBoundGadget<F> {
     opcode: Cell<F>,
     memory_offset: Cell<F>,
-    sum: AddWordsGadget<F, 2, true>,
-    /// Holds the size of the last callee return data.
+    sum: AddWordsGadget<F, 2, false>,
+    // Hold the size of the last callee return data.
     return_data_length: Cell<F>,
-
-    is_data_offset_within_range: IsZeroGadget<F>,
-    // end = data_offset + length
-    is_end_within_range: IsZeroGadget<F>,
-    // when `end` not overflow, check if it exceeds return data size.
-    is_end_exceed_length: LtGadget<F, N_BYTES_U64>,
-    rw_counter_end_of_reversion: Cell<F>,
-    restore_context: RestoreContextGadget<F>,
+    is_data_offset_within_u64: IsZeroGadget<F>,
+    // remainder_end = (data_offset + size) mod U256
+    is_remainder_end_within_u64: IsZeroGadget<F>,
+    // when remainder end is within Uint64, check if it exceeds return data size.
+    is_remainder_end_exceed_len: LtGadget<F, N_BYTES_U64>,
+    common_error_gadget: CommonErrorGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
@@ -46,13 +40,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-        cb.opcode_lookup(opcode.expr(), 1.expr());
         let memory_offset = cb.query_cell();
         let data_offset = cb.query_word_rlc();
-        let length = cb.query_word_rlc();
-        let end = cb.query_word_rlc();
-        let rw_counter_end_of_reversion = cb.query_cell();
-
+        let size = cb.query_word_rlc();
+        let remainder_end = cb.query_word_rlc();
         let return_data_length = cb.query_cell();
 
         cb.require_equal(
@@ -61,12 +52,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             OpcodeId::RETURNDATACOPY.expr(),
         );
 
-        // Pop memory_offset, offset, length from stack
+        // Pop memory_offset, offset, size from stack
         cb.stack_pop(memory_offset.expr());
         cb.stack_pop(data_offset.expr());
-        cb.stack_pop(length.expr());
+        cb.stack_pop(size.expr());
 
-        // read last callee return data length
+        // Read last callee return data length
         cb.call_context_lookup(
             false.expr(),
             None,
@@ -74,88 +65,52 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             return_data_length.expr(),
         );
 
-        // check `data_offset` u64 overflow
-        let data_offset_larger_u64 = from_bytes::expr(&data_offset.cells[8..]);
-        let is_data_offset_within_range = IsZeroGadget::construct(cb, data_offset_larger_u64);
+        // Check if `data_offset` is Uint64 overflow.
+        let data_offset_larger_u64 = sum::expr(&data_offset.cells[N_BYTES_U64..]);
+        let is_data_offset_within_u64 = IsZeroGadget::construct(cb, data_offset_larger_u64);
 
-        // check if `end` u64  overflow or not.
-        let sum = AddWordsGadget::construct(cb, [data_offset, length], end.clone());
+        // Check if `remainder_end` is Uint64 overflow.
+        let sum = AddWordsGadget::construct(cb, [data_offset, size], remainder_end.clone());
+        let is_end_u256_overflow = sum.carry().as_ref().unwrap();
 
-        let end_larger_u64 = from_bytes::expr(&end.cells[8..]);
-        let is_end_within_range = IsZeroGadget::construct(cb, end_larger_u64);
+        let remainder_end_larger_u64 = sum::expr(&remainder_end.cells[N_BYTES_U64..]);
+        let is_remainder_end_within_u64 = IsZeroGadget::construct(cb, remainder_end_larger_u64);
 
-        // check if `end` exceeds return data length
-        let is_end_exceed_length = LtGadget::construct(
+        // check if `remainder_end` exceeds return data length.
+        let is_remainder_end_exceed_len = LtGadget::construct(
             cb,
             return_data_length.expr(),
-            from_bytes::expr(&end.cells[..N_BYTES_U64]),
+            from_bytes::expr(&remainder_end.cells[..N_BYTES_U64]),
         );
-        // Any of [offset_out_of_range, end_out_of_range, end_exceed_length] occurs.
-        cb.require_in_set(
-            "Any of [offset_out_of_range, end_out_of_range, end_exceed_length] occurs",
-            not::expr(is_data_offset_within_range.expr())
-                + not::expr(is_end_within_range.expr())
-                + is_end_exceed_length.expr(),
-            vec![1.expr(), 2.expr(), 3.expr()],
-        );
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsSuccess, 0.expr());
 
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::RwCounterEndOfReversion,
-            rw_counter_end_of_reversion.expr(),
-        );
-        // Go to EndTx only when is_root
-        let is_to_end_tx = cb.next.execution_state_selector([ExecutionState::EndTx]);
+        // Need to check if `data_offset + size` is U256 overflow via `AddWordsGadget` carry. If
+        // yes, it should be also an error of return data out of bound.
         cb.require_equal(
-            "Go to EndTx only when is_root",
-            cb.curr.state.is_root.expr(),
-            is_to_end_tx,
+            "Any of [data_offset > u64::MAX, data_offset + size > U256::MAX, remainder_end > u64::MAX, remainder_end > return_data_length] occurs",
+            or::expr([
+                // data_offset > u64::MAX
+                not::expr(is_data_offset_within_u64.expr()),
+                // data_offset + size > U256::MAX
+                is_end_u256_overflow.expr(),
+                // remainder_end > u64::MAX
+                not::expr(is_remainder_end_within_u64.expr()),
+                // remainder_end > return_data_length
+                is_remainder_end_exceed_len.expr(),
+            ]),
+            1.expr(),
         );
 
-        // When it's a root call
-        cb.condition(cb.curr.state.is_root.expr(), |cb| {
-            // Do step state transition
-            cb.require_step_state_transition(StepStateTransition {
-                call_id: Same,
-                rw_counter: Delta(6.expr() + cb.curr.state.reversible_write_counter.expr()),
-                ..StepStateTransition::any()
-            });
-        });
-
-        // When it's an internal call, need to restore caller's state as finishing this
-        // call. Restore caller state to next StepState
-        let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(
-                cb,
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-                0.expr(),
-            )
-        });
-        // constrain RwCounterEndOfReversion
-        let rw_counter_end_of_step =
-            cb.curr.state.rw_counter.expr() + cb.rw_counter_offset() - 1.expr();
-        cb.require_equal(
-            "rw_counter_end_of_reversion = rw_counter_end_of_step + reversible_counter",
-            rw_counter_end_of_reversion.expr(),
-            rw_counter_end_of_step + cb.curr.state.reversible_write_counter.expr(),
-        );
+        let common_error_gadget = CommonErrorGadget::construct(cb, opcode.expr(), 6.expr());
 
         Self {
             opcode,
             memory_offset,
-            is_data_offset_within_range,
-            is_end_within_range,
-            is_end_exceed_length,
+            is_data_offset_within_u64,
+            is_remainder_end_within_u64,
+            is_remainder_end_exceed_len,
             sum,
             return_data_length,
-            rw_counter_end_of_reversion,
-            restore_context,
+            common_error_gadget,
         }
     }
 
@@ -179,9 +134,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.memory_offset
             .assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
 
-        let end = data_offset + size;
+        let remainder_end = data_offset.overflowing_add(size).0;
+        self.sum
+            .assign(region, offset, [data_offset, size], remainder_end)?;
 
-        self.sum.assign(region, offset, [data_offset, size], end)?;
         let return_data_length = block.rws[step.rw_indices[3]].call_context_value();
         self.return_data_length.assign(
             region,
@@ -193,31 +149,29 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             ),
         )?;
 
-        // when u64::MAX < data_offset = true, not within u64 range.
-        let data_offset_overflow = U256::from(u64::MAX) < data_offset;
-        self.is_data_offset_within_range.assign(
-            region,
-            offset,
-            F::from(data_offset_overflow as u64),
-        )?;
-        // check `end` if u64 overflow.
-        let end_overflow = U256::from(u64::MAX) < end;
+        let data_offset_overflow = data_offset.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.is_data_offset_within_u64
+            .assign(region, offset, F::from(data_offset_overflow))?;
 
-        self.is_end_within_range
-            .assign(region, offset, F::from(end_overflow as u64))?;
+        let remainder_end_overflow = remainder_end.to_le_bytes()[N_BYTES_U64..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.is_remainder_end_within_u64
+            .assign(region, offset, F::from(remainder_end_overflow))?;
 
         // check if it exceeds last callee return data length
-        let end_u64 = end.low_u64();
+        let remainder_end_u64 = remainder_end.low_u64();
         let return_length = return_data_length.to_scalar().unwrap();
-        self.is_end_exceed_length
-            .assign(region, offset, return_length, F::from(end_u64))?;
-
-        self.rw_counter_end_of_reversion.assign(
+        self.is_remainder_end_exceed_len.assign(
             region,
             offset,
-            Value::known(F::from(call.rw_counter_end_of_reversion as u64)),
+            return_length,
+            F::from(remainder_end_u64),
         )?;
-        self.restore_context
+
+        self.common_error_gadget
             .assign(region, offset, block, call, step, 6)?;
         Ok(())
     }
@@ -225,8 +179,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::TestContext;
 
@@ -234,7 +187,7 @@ mod test {
         return_data_offset: usize,
         return_data_size: usize,
         dest_offset: usize,
-        offset: u128,
+        offset: Word,
         size: usize,
         is_root: bool,
     ) {
@@ -318,18 +271,31 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // test root & internal calls
+    // data_offset > u64::MAX
     #[test]
-    fn returndatacopy_out_of_bound_error() {
-        // test root call cases: `end` exceed return data size
-        test_ok(0x00, 0x10, 0x20, 0x10, 0x10, true);
-        // test root call case: `end` exceed return data size
-        test_ok(0x00, 0x10, 0x20, 0x10, 0x10, true);
-        // test data offset u64 overflow
-        test_ok(0x00, 0x10, 0x20, u128::from(u64::MAX) + 1, 0x10, false);
-        // test end = data offset + length(size) overflow
-        test_ok(0x00, 0x10, 0x20, 0x1, 0x10, false);
-        // test end overflow with end > 0xff
-        test_ok(0x00, 0x10, 0x20, 0x1, 0xff, false);
+    fn test_return_data_oo_bound_data_offset_overflow() {
+        test_ok(0, 0x10, 0x20, Word::from(u64::MAX) + 1, 0x10, false);
+        test_ok(0, 0x10, 0x20, Word::MAX, 0, true);
+    }
+
+    // data_offset + size > U256::MAX
+    #[test]
+    fn test_return_data_oo_bound_data_offset_plus_size_word_overflow() {
+        test_ok(0, 0x10, 0x20, Word::MAX, 1, false);
+        test_ok(0, 0x10, 0x20, Word::MAX - 1000, 1001, true);
+    }
+
+    // data_offset + size > u64::MAX
+    #[test]
+    fn test_return_data_oo_bound_data_offset_plus_size_u64_overflow() {
+        test_ok(0, 0x10, 0x20, Word::from(u64::MAX), 1, false);
+        test_ok(0, 0x10, 0x20, Word::from(u64::MAX) - 100, 101, true);
+    }
+
+    // data_offset + size > return_data_length
+    #[test]
+    fn test_return_data_oo_bound_exceed_return_data_length() {
+        test_ok(0, 0x10, 0x20, 0x10.into(), 0x10, false);
+        test_ok(0, 0x10, 0x20, 1.into(), 0xff, true);
     }
 }

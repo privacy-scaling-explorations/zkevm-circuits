@@ -6,12 +6,13 @@
 
 pub mod sign_verify;
 
-use crate::table::{KeccakTable, TxFieldTag, TxTable};
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness;
+use crate::{
+    table::{KeccakTable, TxFieldTag, TxTable},
+    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
 use eth_types::{
-    sign_types::SignData,
-    {geth_types::Transaction, Address, Field, ToLittleEndian, ToScalar},
+    geth_types::Transaction, sign_types::SignData, Address, Field, ToLittleEndian, ToScalar,
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -33,6 +34,7 @@ pub use halo2_proofs::halo2curves::{
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
@@ -524,5 +526,23 @@ mod tx_circuit_tests {
             MAX_CALLDATA
         )
         .is_err(),);
+    }
+
+    #[test]
+    fn variadic_size_check() {
+        const MAX_TXS: usize = 2;
+        const MAX_CALLDATA: usize = 32;
+
+        let chain_id: u64 = mock::MOCK_CHAIN_ID.as_u64();
+        let tx1: Transaction = mock::CORRECT_MOCK_TXS[0].clone().into();
+        let tx2: Transaction = mock::CORRECT_MOCK_TXS[1].clone().into();
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, vec![tx1.clone()]);
+        let prover1 = MockProver::<Fr>::run(20, &circuit, vec![vec![]]).unwrap();
+
+        let circuit = TxCircuit::<Fr>::new(MAX_TXS, MAX_CALLDATA, chain_id, vec![tx1, tx2]);
+        let prover2 = MockProver::<Fr>::run(20, &circuit, vec![vec![]]).unwrap();
+
+        assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
     }
 }

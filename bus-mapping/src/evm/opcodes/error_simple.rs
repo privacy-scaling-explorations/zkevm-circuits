@@ -1,12 +1,18 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    Error,
+};
 use eth_types::GethExecStep;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ErrorStackOogConstant;
+pub(crate) struct ErrorSimple;
 
-impl Opcode for ErrorStackOogConstant {
+// ErrorSimple is to deal with errors with general common ops as below
+// - added error to current `ExecStep`
+// - restore call context
+// no extra ops e.g. stack read etc...
+impl Opcode for ErrorSimple {
     fn gen_associated_ops(
         state: &mut CircuitInputStateRef,
         geth_steps: &[GethExecStep],

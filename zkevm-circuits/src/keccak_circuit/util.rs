@@ -21,7 +21,7 @@ pub(crate) struct WordParts {
 
 impl WordParts {
     /// Returns a description of how a word will be split into parts
-    pub(crate) fn new(part_size: usize, rot: usize, normalize: bool) -> Self {
+    pub(crate) fn new(part_size: usize, rot: usize, uniform: bool) -> Self {
         let mut bits = (0usize..64).collect::<Vec<_>>();
         bits.rotate_right(rot);
 
@@ -29,29 +29,13 @@ impl WordParts {
         let mut rot_idx = 0;
 
         let mut idx = 0;
-        let target_sizes = if normalize {
+        let target_sizes = if uniform {
             // After the rotation we want the parts of all the words to be at the same
             // positions
             target_part_sizes(part_size)
         } else {
             // Here we only care about minimizing the number of parts
-            let num_parts_a = rot / part_size;
-            let partial_part_a = rot % part_size;
-
-            let num_parts_b = (64 - rot) / part_size;
-            let partial_part_b = (64 - rot) % part_size;
-
-            let mut part_sizes = vec![part_size; num_parts_a];
-            if partial_part_a > 0 {
-                part_sizes.push(partial_part_a);
-            }
-
-            part_sizes.extend(vec![part_size; num_parts_b]);
-            if partial_part_b > 0 {
-                part_sizes.push(partial_part_b);
-            }
-
-            part_sizes
+            target_part_sizes_rot(part_size, rot)
         };
         // Split into parts bit by bit
         for part_size in target_sizes {
@@ -196,6 +180,28 @@ pub(crate) fn target_part_sizes(part_size: usize) -> Vec<usize> {
     part_sizes
 }
 
+/// Returns the size (in bits) of each part size when splitting up a keccak word
+/// in parts of `part_size`, with a special alignment for a rotation.
+pub(crate) fn target_part_sizes_rot(part_size: usize, rot: usize) -> Vec<usize> {
+    let num_parts_a = rot / part_size;
+    let partial_part_a = rot % part_size;
+
+    let num_parts_b = (NUM_BITS_PER_WORD - rot) / part_size;
+    let partial_part_b = (NUM_BITS_PER_WORD - rot) % part_size;
+
+    let mut part_sizes = vec![part_size; num_parts_a];
+    if partial_part_a > 0 {
+        part_sizes.push(partial_part_a);
+    }
+
+    part_sizes.extend(vec![part_size; num_parts_b]);
+    if partial_part_b > 0 {
+        part_sizes.push(partial_part_b);
+    }
+
+    part_sizes
+}
+
 /// Gets the rotation count in parts
 pub(crate) fn get_rotate_count(count: usize, part_size: usize) -> usize {
     (count + part_size - 1) / part_size
@@ -210,12 +216,18 @@ pub(crate) fn get_degree() -> usize {
 }
 
 /// Returns how many bits we can process in a single lookup given the range of
-/// values the bit can have and the height of the circuit.
+/// values the bit can have and the height of the circuit (via KECCAK_DEGREE).
 pub(crate) fn get_num_bits_per_lookup(range: usize) -> usize {
+    let log_height = get_degree();
+    get_num_bits_per_lookup_impl(range, log_height)
+}
+
+// Implementation of the above without environment dependency.
+pub(crate) fn get_num_bits_per_lookup_impl(range: usize, log_height: usize) -> usize {
     let num_unusable_rows = 31;
-    let degree = get_degree() as u32;
+    let height = 2usize.pow(log_height as u32);
     let mut num_bits = 1;
-    while range.pow(num_bits + 1) + num_unusable_rows <= 2usize.pow(degree) {
+    while range.pow(num_bits + 1) + num_unusable_rows <= height {
         num_bits += 1;
     }
     num_bits as usize
@@ -289,5 +301,33 @@ pub(crate) mod to_bytes {
             bytes.push(value);
         }
         bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2_proofs::halo2curves::bn256::Fr as F;
+
+    #[test]
+    fn pack_into_bits() {
+        // The example number 128 in binary: |1|0|0|0|0|0|0|0|
+        // In packed form:                 |001|000|000|000|000|000|000|000|
+        let msb = 1 << (7 * BIT_COUNT);
+        for (idx, expected) in [(0, 0), (1, 1), (128, msb), (129, msb | 1)] {
+            let packed: F = pack(&into_bits(&[idx as u8]));
+            assert_eq!(packed, F::from(expected));
+        }
+    }
+
+    #[test]
+    fn num_bits_per_lookup() {
+        // Typical values.
+        assert_eq!(get_num_bits_per_lookup_impl(3, 19), 11);
+        assert_eq!(get_num_bits_per_lookup_impl(4, 19), 9);
+        assert_eq!(get_num_bits_per_lookup_impl(5, 19), 8);
+        assert_eq!(get_num_bits_per_lookup_impl(6, 19), 7);
+        // The largest possible value does not overflow u64.
+        assert_eq!(get_num_bits_per_lookup_impl(3, 32) * BIT_COUNT, 60);
     }
 }

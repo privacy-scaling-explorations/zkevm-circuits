@@ -1,9 +1,11 @@
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    evm::Opcode,
+    operation::{CallContextField, MemoryOp, RW},
+    Error,
 };
-use crate::evm::Opcode;
-use crate::operation::{CallContextField, MemoryOp, RW};
-use crate::Error;
 use eth_types::GethExecStep;
 
 #[derive(Clone, Copy, Debug)]
@@ -15,7 +17,7 @@ impl Opcode for Returndatacopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_returndatacopy_step(state, geth_step)?];
 
         // reconstruction
         let geth_step = &geth_steps[0];
@@ -29,24 +31,10 @@ impl Opcode for Returndatacopy {
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
         let length = size.as_usize();
-        if length != 0 {
-            let mem_starts = dest_offset.as_usize();
-            let mem_ends = mem_starts + length;
-            let data_starts = offset.as_usize();
-            let data_ends = data_starts + length;
-            let minimal_length = dest_offset.as_usize() + length;
-            if data_ends <= return_data.len() {
-                memory.extend_at_least(minimal_length);
-                memory[mem_starts..mem_ends].copy_from_slice(&return_data[data_starts..data_ends]);
-            } else {
-                assert_eq!(geth_steps.len(), 1);
-                // if overflows this opcode would fails current context, so
-                // there is no more steps.
-            }
-        }
+        memory.copy_from(dest_offset.as_u64(), &return_data, offset.as_u64(), length);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -182,10 +170,11 @@ fn gen_copy_event(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
     #[test]
     fn test_ok() {

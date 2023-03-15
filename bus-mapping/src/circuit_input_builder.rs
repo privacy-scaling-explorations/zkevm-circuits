@@ -11,18 +11,22 @@ mod tracer_tests;
 mod transaction;
 
 use self::access::gen_state_access_trace;
-use crate::error::Error;
-use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, Operation, RWCounter, StartOp, RW};
-use crate::rpc::GethClient;
-use crate::state_db::{self, CodeDB, StateDB};
+use crate::{
+    error::Error,
+    evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
+    operation::{CallContextField, Operation, RWCounter, StartOp, RW},
+    rpc::GethClient,
+    state_db::{self, CodeDB, StateDB},
+};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::ToWord;
-use eth_types::{self, geth_types, Address, GethExecStep, GethExecTrace, Word};
+use eth_types::{
+    self, geth_types,
+    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Address, GethExecStep, GethExecTrace, ToWord, Word,
+};
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
@@ -53,15 +57,17 @@ pub struct CircuitsParams {
     /// Maximum number of bytes supported in the Bytecode Circuit
     pub max_bytecode: usize,
     /// Pad evm circuit number of rows.
-    /// When 0, the EVM circuit number of row will be dynamically calculated, so
-    /// the same circuit will not be able to proof different witnesses. In this
-    /// case it will contain as many rows for all steps + 1 row
+    /// When 0, the EVM circuit number of rows will be dynamically calculated,
+    /// so the same circuit will not be able to proof different witnesses.
+    /// In this case it will contain as many rows for all steps + 1 row
     /// for EndBlock.
     pub max_evm_rows: usize,
-    // TODO: Rename for consistency
     /// Pad the keccak circuit with this number of invocations to a static
     /// capacity.  Number of keccak_f that the Keccak circuit will support.
-    pub keccak_padding: Option<usize>,
+    /// When 0, the Keccak circuit number of rows will be dynamically
+    /// calculated, so the same circuit will not be able to prove different
+    /// witnesses.
+    pub max_keccak_rows: usize,
 }
 
 impl Default for CircuitsParams {
@@ -77,7 +83,7 @@ impl Default for CircuitsParams {
             max_exp_steps: 1000,
             max_bytecode: 512,
             max_evm_rows: 0,
-            keccak_padding: None,
+            max_keccak_rows: 0,
         }
     }
 }

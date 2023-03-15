@@ -3,8 +3,7 @@
 //! etc.
 
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use eth_types::Field;
-use eth_types::Word;
+use eth_types::{Field, Word};
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -16,10 +15,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::collections::HashMap;
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
-use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
     evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
     table::{
@@ -28,6 +25,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
+    witness::{Bytecode, RwMap, Transaction},
 };
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
@@ -492,7 +490,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 )?;
             }
 
-            //tag
+            // tag
             tag_chip.assign(region, *offset, tag)?;
 
             // lt chip
@@ -855,8 +853,7 @@ impl<F: Field> Circuit<F> for CopyCircuit<F> {
 /// Dev helpers
 #[cfg(any(feature = "test", test))]
 pub mod dev {
-    use crate::copy_circuit::*;
-    use crate::witness::Block;
+    use crate::{copy_circuit::*, witness::Block};
     use halo2_proofs::dev::{MockProver, VerifyFailure};
 
     /// Test copy circuit from copy events and test data
@@ -897,18 +894,21 @@ pub mod dev {
 #[cfg(test)]
 mod tests {
     use super::dev::test_copy_circuit_from_block;
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
+    use crate::{
+        copy_circuit::CopyCircuit,
+        evm_circuit::{test::rand_bytes, witness::block_convert},
+    };
     use bus_mapping::{
         circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+        evm::{gen_sha3_code, MemoryKind},
         mock::BlockData,
     };
     use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
-    use halo2_proofs::dev::VerifyFailure;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{TestContext, MOCK_ACCOUNTS};
+    use halo2_proofs::{
+        dev::{MockProver, VerifyFailure},
+        halo2curves::bn256::Fr,
+    };
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
     use pretty_assertions::assert_eq;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
@@ -1157,6 +1157,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn variadic_size_check() {
+        let builder = gen_tx_log_data();
+        let block1 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        let block: GethData = TestContext::<0, 0>::new(None, |_| {}, |_, _| {}, |b, _| b)
+            .unwrap()
+            .into();
+        let mut builder =
+            BlockData::new_from_geth_data_with_params(block.clone(), CircuitsParams::default())
+                .new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        let block2 = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+
+        let circuit =
+            CopyCircuit::<Fr>::new(block1.copy_events, block1.circuits_params.max_copy_rows);
+        let prover1 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
+
+        let circuit = CopyCircuit::<Fr>::new(
+            block2.copy_events.clone(),
+            block2.circuits_params.max_copy_rows,
+        );
+        let prover2 = MockProver::<Fr>::run(14, &circuit, vec![]).unwrap();
+
+        assert_eq!(prover1.fixed(), prover2.fixed());
+        assert_eq!(prover1.permutation(), prover2.permutation());
+    }
+
     fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>) {
         let errors = result.expect_err("result is not an error");
         assert_eq!(errors.len(), names.len(), "{:?}", errors);
@@ -1178,8 +1208,10 @@ mod tests {
 
 #[cfg(test)]
 mod copy_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
-    use crate::stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
+    use crate::{
+        evm_circuit::step::ExecutionState,
+        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
+    };
 
     /// Prints the stats of Copy circuit per execution state.  See
     /// `print_circuit_stats_by_states` for more details.
