@@ -162,13 +162,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
             .assign(region, offset, F::from(remainder_end_overflow))?;
 
         // check if it exceeds last callee return data length
-        let reaminder_end_u64 = remainder_end.low_u64();
+        let remainder_end_u64 = remainder_end.low_u64();
         let return_length = return_data_length.to_scalar().unwrap();
         self.is_remainder_end_exceed_len.assign(
             region,
             offset,
             return_length,
-            F::from(reaminder_end_u64),
+            F::from(remainder_end_u64),
         )?;
 
         self.common_error_gadget
