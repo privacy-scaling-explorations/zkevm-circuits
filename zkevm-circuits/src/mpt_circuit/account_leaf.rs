@@ -8,7 +8,7 @@ use halo2_proofs::{
 
 use super::{
     helpers::ParentDataWitness,
-    rlp_gadgets::RLPValueGadget,
+    rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
 };
 use super::{
@@ -25,7 +25,6 @@ use crate::{
             key_memory, num_nibbles, parent_memory, KeyData, MPTConstraintBuilder, ParentData,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
-        FixedTableTag,
     },
     mpt_circuit::{MPTConfig, MPTState},
 };
@@ -45,14 +44,7 @@ pub(crate) struct AccountLeafConfig<F> {
     key_data: [KeyData<F>; 2],
     parent_data: [ParentData<F>; 2],
     rlp_key: [ListKeyGadget<F>; 2],
-    key_mult: [Cell<F>; 2],
     value_rlp_bytes: [[Cell<F>; 4]; 2],
-    rlp_nonce: [RLPValueGadget<F>; 2],
-    rlp_balance: [RLPValueGadget<F>; 2],
-    rlp_storage: [RLPValueGadget<F>; 2],
-    rlp_codehash: [RLPValueGadget<F>; 2],
-    nonce_mult: [Cell<F>; 2],
-    balance_mult: [Cell<F>; 2],
     is_in_empty_trie: [IsEmptyTreeGadget<F>; 2],
     drifted: DriftedGadget<F>,
     wrong: WrongGadget<F>,
@@ -80,30 +72,30 @@ impl<F: Field> AccountLeafConfig<F> {
         let mut config = AccountLeafConfig::default();
 
         circuit!([meta, cb.base], {
-            let key_bytes = [
-                ctx.s(meta, AccountRowType::KeyS as i32).to_owned(),
-                ctx.s(meta, AccountRowType::KeyC as i32).to_owned(),
+            let key_items = [
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::KeyS as usize),
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::KeyC as usize),
             ];
             // TODO(Brecht): split
             config.value_rlp_bytes = [cb.base.query_bytes(), cb.base.query_bytes()];
-            let nonce_bytes = [
-                ctx.s(meta, AccountRowType::NonceS as i32).to_owned(),
-                ctx.s(meta, AccountRowType::NonceC as i32).to_owned(),
+            let nonce_items = [
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::NonceS as usize),
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::NonceC as usize),
             ];
-            let balance_bytes = [
-                ctx.s(meta, AccountRowType::BalanceS as i32).to_owned(),
-                ctx.s(meta, AccountRowType::BalanceC as i32).to_owned(),
+            let balance_items = [
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::BalanceS as usize),
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::BalanceC as usize),
             ];
-            let storage_bytes = [
-                ctx.s(meta, AccountRowType::StorageS as i32).to_owned(),
-                ctx.s(meta, AccountRowType::StorageC as i32).to_owned(),
+            let storage_items = [
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::StorageS as usize),
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::StorageC as usize),
             ];
-            let codehash_bytes = [
-                ctx.s(meta, AccountRowType::CodehashS as i32).to_owned(),
-                ctx.s(meta, AccountRowType::CodehashC as i32).to_owned(),
+            let codehash_items = [
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::CodehashS as usize),
+                ctx.rlp_item(meta, &mut cb.base, AccountRowType::CodehashC as usize),
             ];
-            let drifted_bytes = ctx.s(meta, AccountRowType::Drifted as i32).to_owned();
-            let wrong_bytes = ctx.s(meta, AccountRowType::Wrong as i32).to_owned();
+            let drifted_bytes = ctx.rlp_item(meta, &mut cb.base, AccountRowType::Drifted as usize);
+            let wrong_bytes = ctx.rlp_item(meta, &mut cb.base, AccountRowType::Wrong as usize);
 
             config.main_data = MainData::load(
                 "main storage",
@@ -141,41 +133,26 @@ impl<F: Field> AccountLeafConfig<F> {
 
                 // Calculate the key RLC
                 let rlp_key = &mut config.rlp_key[is_s.idx()];
-                *rlp_key = ListKeyGadget::construct(&mut cb.base, &key_bytes[is_s.idx()]);
-                config.rlp_nonce[is_s.idx()] =
-                    RLPValueGadget::construct(&mut cb.base, &nonce_bytes[is_s.idx()]);
-                config.rlp_balance[is_s.idx()] =
-                    RLPValueGadget::construct(&mut cb.base, &balance_bytes[is_s.idx()]);
-                config.rlp_storage[is_s.idx()] =
-                    RLPValueGadget::construct(&mut cb.base, &storage_bytes[is_s.idx()]);
-                config.rlp_codehash[is_s.idx()] =
-                    RLPValueGadget::construct(&mut cb.base, &codehash_bytes[is_s.idx()]);
+                *rlp_key = ListKeyGadget::construct(&mut cb.base, &key_items[is_s.idx()]);
 
                 // Storage root and codehash are always 32-byte hashes.
-                require!(config.rlp_storage[is_s.idx()].len() => HASH_WIDTH);
-                require!(config.rlp_codehash[is_s.idx()].len() => HASH_WIDTH);
+                require!(storage_items[is_s.idx()].len() => HASH_WIDTH);
+                require!(codehash_items[is_s.idx()].len() => HASH_WIDTH);
 
-                config.key_mult[is_s.idx()] = cb.base.query_cell();
-                config.nonce_mult[is_s.idx()] = cb.base.query_cell();
-                config.balance_mult[is_s.idx()] = cb.base.query_cell();
-                require!((FixedTableTag::RMult, rlp_key.num_bytes_on_key_row(), config.key_mult[is_s.idx()].expr()) => @"fixed");
-                require!((FixedTableTag::RMult, config.rlp_nonce[is_s.idx()].num_bytes() + 4.expr(), config.nonce_mult[is_s.idx()].expr()) => @format!("fixed"));
-                require!((FixedTableTag::RMult, config.rlp_balance[is_s.idx()].num_bytes(), config.balance_mult[is_s.idx()].expr()) => @format!("fixed"));
-
-                // RLC bytes zero check
-                cb.set_length(rlp_key.num_bytes_on_key_row());
+                // Multiplier after list and key
+                let mult = rlp_key.rlp_list.rlc_rlp_only(&r).1 * key_items[is_s.idx()].mult_diff();
 
                 let nonce_rlp_rlc;
                 let balance_rlp_rlc;
                 let storage_rlp_rlc;
                 let codehash_rlp_rlc;
-                (nonce_rlc[is_s.idx()], nonce_rlp_rlc) = config.rlp_nonce[is_s.idx()].rlc(&r);
-                (balance_rlc[is_s.idx()], balance_rlp_rlc) = config.rlp_balance[is_s.idx()].rlc(&r);
-                (storage_rlc[is_s.idx()], storage_rlp_rlc) = config.rlp_storage[is_s.idx()].rlc(&r);
-                (codehash_rlc[is_s.idx()], codehash_rlp_rlc) =
-                    config.rlp_codehash[is_s.idx()].rlc(&r);
+                (nonce_rlc[is_s.idx()], nonce_rlp_rlc) = nonce_items[is_s.idx()].rlc();
+                (balance_rlc[is_s.idx()], balance_rlp_rlc) = balance_items[is_s.idx()].rlc();
+                (storage_rlc[is_s.idx()], storage_rlp_rlc) = storage_items[is_s.idx()].rlc();
+                (codehash_rlc[is_s.idx()], codehash_rlp_rlc) = codehash_items[is_s.idx()].rlc();
 
                 // Calculate the leaf RLC
+                let value_rlp_mult = r[3].clone();
                 leaf_no_key_rlc[is_s.idx()] = (0.expr(), 1.expr()).rlc_chain(
                     (
                         [
@@ -188,16 +165,16 @@ impl<F: Field> AccountLeafConfig<F> {
                         ]
                         .concat()
                         .rlc(&r),
-                        config.nonce_mult[is_s.idx()].expr(),
+                        value_rlp_mult * nonce_items[is_s.idx()].mult_diff(),
                     )
                         .rlc_chain(
-                            (balance_rlp_rlc, config.balance_mult[is_s.idx()].expr()).rlc_chain(
+                            (balance_rlp_rlc, balance_items[is_s.idx()].mult_diff()).rlc_chain(
                                 (storage_rlp_rlc, r[32].expr()).rlc_chain(codehash_rlp_rlc),
                             ),
                         ),
                 );
-                let leaf_rlc = (rlp_key.rlc(&r), config.key_mult[is_s.idx()].expr())
-                    .rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                let leaf_rlc =
+                    (rlp_key.rlc(&r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
 
                 // Key
                 key_rlc[is_s.idx()] = key_data.rlc.expr()
@@ -228,7 +205,7 @@ impl<F: Field> AccountLeafConfig<F> {
                 // The first RLP byte of the list is always RLP_LIST_LONG + 1.
                 require!(config.value_rlp_bytes[is_s.idx()][2] => RLP_LIST_LONG + 1);
                 // The length of the list is `#(nonce) + #(balance) + 2 * (1 + #(hash))`.
-                require!(config.value_rlp_bytes[is_s.idx()][3] => config.rlp_nonce[is_s.idx()].num_bytes() + config.rlp_balance[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
+                require!(config.value_rlp_bytes[is_s.idx()][3] => nonce_items[is_s.idx()].num_bytes() + balance_items[is_s.idx()].num_bytes() + (2 * (1 + 32)).expr());
                 // Now check that the the key and value list length matches the account length.
                 // The RLP encoded string always has 2 RLP bytes.
                 let value_list_num_bytes = config.value_rlp_bytes[is_s.idx()][1].expr() + 2.expr();
@@ -406,31 +383,32 @@ impl<F: Field> AccountLeafConfig<F> {
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
+        rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
         let account = &node.account.clone().unwrap();
 
-        let key_bytes = [
-            node.values[AccountRowType::KeyS as usize].clone(),
-            node.values[AccountRowType::KeyC as usize].clone(),
+        let key_items = [
+            rlp_values[AccountRowType::KeyS as usize].clone(),
+            rlp_values[AccountRowType::KeyC as usize].clone(),
         ];
-        let nonce_bytes = [
-            node.values[AccountRowType::NonceS as usize].clone(),
-            node.values[AccountRowType::NonceC as usize].clone(),
+        let nonce_items = [
+            rlp_values[AccountRowType::NonceS as usize].clone(),
+            rlp_values[AccountRowType::NonceC as usize].clone(),
         ];
-        let balance_bytes = [
-            node.values[AccountRowType::BalanceS as usize].clone(),
-            node.values[AccountRowType::BalanceC as usize].clone(),
+        let balance_items = [
+            rlp_values[AccountRowType::BalanceS as usize].clone(),
+            rlp_values[AccountRowType::BalanceC as usize].clone(),
         ];
-        let storage_bytes = [
-            node.values[AccountRowType::StorageS as usize].clone(),
-            node.values[AccountRowType::StorageC as usize].clone(),
+        let storage_items = [
+            rlp_values[AccountRowType::StorageS as usize].clone(),
+            rlp_values[AccountRowType::StorageC as usize].clone(),
         ];
-        let codehash_bytes = [
-            node.values[AccountRowType::CodehashS as usize].clone(),
-            node.values[AccountRowType::CodehashC as usize].clone(),
+        let codehash_items = [
+            rlp_values[AccountRowType::CodehashS as usize].clone(),
+            rlp_values[AccountRowType::CodehashC as usize].clone(),
         ];
-        let drifted_bytes = node.values[AccountRowType::Drifted as usize].clone();
-        let wrong_bytes = node.values[AccountRowType::Wrong as usize].clone();
+        let drifted_item = rlp_values[AccountRowType::Drifted as usize].clone();
+        let wrong_item = rlp_values[AccountRowType::Wrong as usize].clone();
 
         let main_data =
             self.main_data
@@ -477,50 +455,21 @@ impl<F: Field> AccountLeafConfig<F> {
                 region,
                 offset,
                 &account.list_rlp_bytes[is_s.idx()],
-                &key_bytes[is_s.idx()],
-            )?;
-            let nonce_witness =
-                self.rlp_nonce[is_s.idx()].assign(region, offset, &nonce_bytes[is_s.idx()])?;
-            let balance_witness =
-                self.rlp_balance[is_s.idx()].assign(region, offset, &balance_bytes[is_s.idx()])?;
-            let storage_witness =
-                self.rlp_storage[is_s.idx()].assign(region, offset, &storage_bytes[is_s.idx()])?;
-            let codehash_witness = self.rlp_codehash[is_s.idx()].assign(
-                region,
-                offset,
-                &codehash_bytes[is_s.idx()],
+                &key_items[is_s.idx()],
             )?;
 
-            nonce_rlc[is_s.idx()] = nonce_witness.rlc_value(ctx.r);
-            balance_rlc[is_s.idx()] = balance_witness.rlc_value(ctx.r);
-            storage_rlc[is_s.idx()] = storage_witness.rlc_value(ctx.r);
-            codehash_rlc[is_s.idx()] = codehash_witness.rlc_value(ctx.r);
-
-            // + 4 because of s_rlp1, s_rlp2, c_rlp1, c_rlp2
-            let mut mult_nonce = F::one();
-            for _ in 0..nonce_witness.num_bytes() + 4 {
-                mult_nonce *= ctx.r;
-            }
-            let mut mult_balance = F::one();
-            for _ in 0..balance_witness.num_bytes() {
-                mult_balance *= ctx.r;
-            }
-            self.nonce_mult[is_s.idx()].assign(region, offset, mult_nonce)?;
-            self.balance_mult[is_s.idx()].assign(region, offset, mult_balance)?;
+            nonce_rlc[is_s.idx()] = nonce_items[is_s.idx()].rlc_content(ctx.r);
+            balance_rlc[is_s.idx()] = balance_items[is_s.idx()].rlc_content(ctx.r);
+            storage_rlc[is_s.idx()] = storage_items[is_s.idx()].rlc_content(ctx.r);
+            codehash_rlc[is_s.idx()] = codehash_items[is_s.idx()].rlc_content(ctx.r);
 
             // Key
             (key_rlc[is_s.idx()], _) = rlp_key_witness.key.key(
-                rlp_key_witness.key_value.clone(),
+                rlp_key_witness.key_item.clone(),
                 key_data[is_s.idx()].rlc,
                 key_data[is_s.idx()].mult,
                 ctx.r,
             );
-
-            let mut key_mult = F::one();
-            for _ in 0..rlp_key_witness.num_bytes_on_key_row() {
-                key_mult *= ctx.r;
-            }
-            self.key_mult[is_s.idx()].assign(region, offset, key_mult)?;
 
             // Update key and parent state
             KeyData::witness_store(
@@ -601,7 +550,7 @@ impl<F: Field> AccountLeafConfig<F> {
             offset,
             &parent_data,
             &account.drifted_rlp_bytes,
-            &drifted_bytes,
+            &drifted_item,
             ctx.r,
         )?;
 
@@ -612,7 +561,7 @@ impl<F: Field> AccountLeafConfig<F> {
             is_non_existing_proof,
             &key_rlc,
             &account.wrong_rlp_bytes,
-            &wrong_bytes,
+            &wrong_item,
             true,
             key_data[true.idx()].clone(),
             ctx.r,

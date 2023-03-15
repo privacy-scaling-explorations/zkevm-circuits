@@ -7,7 +7,7 @@ use halo2_proofs::{
 
 use super::{
     helpers::{KeyDataWitness, ListKeyGadget, MPTConstraintBuilder},
-    rlp_gadgets::RLPItemGadget,
+    rlp_gadgets::RLPItemWitness,
     witness_row::{ExtensionBranchRowType, Node},
     MPTContext,
 };
@@ -35,8 +35,6 @@ pub(crate) struct ExtState<F> {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ExtensionGadget<F> {
     rlp_key: ListKeyGadget<F>,
-    rlp_value: [RLPItemGadget<F>; 2],
-    mult: Cell<F>,
     is_not_hashed: LtGadget<F, 2>,
     is_key_part_odd: Cell<F>,
     mult_key: Cell<F>,
@@ -60,46 +58,38 @@ impl<F: Field> ExtensionGadget<F> {
 
         circuit!([meta, cb.base], {
             // Data
-            let key_bytes = [
-                ctx.s(meta, ExtensionBranchRowType::KeyS as i32),
-                ctx.s(meta, ExtensionBranchRowType::KeyC as i32),
+            let key_items = [
+                ctx.rlp_item(meta, &mut cb.base, ExtensionBranchRowType::KeyS as usize),
+                ctx.nibbles(meta, &mut cb.base, ExtensionBranchRowType::KeyC as usize),
             ];
-            let value_bytes = [
-                ctx.s(meta, ExtensionBranchRowType::ValueS as i32),
-                ctx.s(meta, ExtensionBranchRowType::ValueC as i32),
+            let rlp_value = [
+                ctx.rlp_item(meta, &mut cb.base, ExtensionBranchRowType::ValueS as usize),
+                ctx.rlp_item(meta, &mut cb.base, ExtensionBranchRowType::ValueC as usize),
             ];
 
-            config.rlp_key = ListKeyGadget::construct(&mut cb.base, &key_bytes[0]);
+            config.rlp_key = ListKeyGadget::construct(&mut cb.base, &key_items[0]);
             // TODO(Brecht): add lookup constraint
             config.is_key_part_odd = cb.base.query_cell();
 
-            // We need to check that the nibbles we stored in s are between 0 and 15.
-            cb.set_range_s(FixedTableTag::RangeKeyLen16.expr());
-
             let mut branch_rlp_rlc = vec![0.expr(); 2];
             for is_s in [true, false] {
-                config.rlp_value[is_s.idx()] =
-                    RLPItemGadget::construct(&mut cb.base, &value_bytes[is_s.idx()]);
-
                 // In C we have the key nibbles, we check below only for S.
                 if is_s {
                     // RLP encoding checks: [key, branch]
                     // Verify that the lengths are consistent.
-                    require!(config.rlp_key.rlp_list.len() => config.rlp_key.key_value.num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
-
-                    // Update the multiplier with the number of bytes on the first row
-                    config.mult = cb.base.query_cell();
-                    require!((FixedTableTag::RMult, config.rlp_key.num_bytes_on_key_row(), config.mult.expr()) => @"fixed");
+                    require!(config.rlp_key.rlp_list.len() => config.rlp_key.key_value.num_bytes() + rlp_value[is_s.idx()].num_bytes());
                 }
 
+                // Multiplier after list and key
+                let mult =
+                    config.rlp_key.rlp_list.rlc_rlp_only(&r).1 * key_items[true.idx()].mult_diff();
+
                 // Extension node RLC
-                let node_rlc = (config.rlp_key.rlc(&r), config.mult.expr())
-                    .rlc_chain(config.rlp_value[is_s.idx()].rlc_rlp(&mut cb.base, &r));
-                // Branch value data zero check
-                cb.set_length_c(config.rlp_value[is_s.idx()].num_bytes());
+                let node_rlc = (config.rlp_key.rlc(&r), mult.expr())
+                    .rlc_chain(rlp_value[is_s.idx()].rlc_rlp());
 
                 // The branch expected in the extension node
-                branch_rlp_rlc[is_s.idx()] = config.rlp_value[is_s.idx()].rlc_content(&r);
+                branch_rlp_rlc[is_s.idx()] = rlp_value[is_s.idx()].rlc_content();
 
                 // Check if the extension node is in its parent.
                 let (rlc, num_bytes, is_not_hashed) = {
@@ -126,9 +116,6 @@ impl<F: Field> ExtensionGadget<F> {
                     }}
                 }}
             }
-
-            // Extension key zero check
-            cb.set_length(config.rlp_key.num_bytes_on_key_row());
 
             // Calculate the number of bytes
             let key_len = config.rlp_key.key_value.len();
@@ -157,7 +144,12 @@ impl<F: Field> ExtensionGadget<F> {
                     key_data.mult.expr(),
                     config.is_key_part_odd.expr(),
                     not!(is_key_odd),
-                    key_bytes.clone(),
+                    key_items
+                        .iter()
+                        .map(|item| item.bytes())
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
                     &ctx.r,
                 );
 
@@ -199,33 +191,29 @@ impl<F: Field> ExtensionGadget<F> {
         num_nibbles: &mut usize,
         is_key_odd: &mut bool,
         node: &Node,
+        rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
         let extension = &node.extension_branch.clone().unwrap().extension;
 
         // Data
-        let key_bytes = [
-            node.values[ExtensionBranchRowType::KeyS as usize].clone(),
-            node.values[ExtensionBranchRowType::KeyC as usize].clone(),
+        let key_items = [
+            rlp_values[ExtensionBranchRowType::KeyS as usize].clone(),
+            rlp_values[ExtensionBranchRowType::KeyC as usize].clone(),
         ];
-        let value_bytes = [
-            node.values[ExtensionBranchRowType::ValueS as usize].clone(),
-            node.values[ExtensionBranchRowType::ValueC as usize].clone(),
+        let _value_bytes = [
+            rlp_values[ExtensionBranchRowType::ValueS as usize].clone(),
+            rlp_values[ExtensionBranchRowType::ValueC as usize].clone(),
         ];
 
         let rlp_key = self.rlp_key.assign(
             region,
             offset,
             &extension.list_rlp_bytes,
-            &key_bytes[true.idx()],
+            &key_items[true.idx()],
         )?;
 
-        let mut ext_mult = F::one();
-        for _ in 0..rlp_key.num_bytes_on_key_row() {
-            ext_mult *= mpt_config.r;
-        }
-        self.mult.assign(region, offset, ext_mult)?;
-
-        let is_key_part_odd = key_bytes[0][rlp_key.key_value.num_rlp_bytes()] >> 4 == 1;
+        let is_key_part_odd =
+            key_items[true.idx()].bytes[rlp_key.key_item.num_rlp_bytes()] >> 4 == 1;
         self.is_key_part_odd
             .assign(region, offset, is_key_part_odd.scalar())?;
 
@@ -236,13 +224,13 @@ impl<F: Field> ExtensionGadget<F> {
             HASH_WIDTH.scalar(),
         )?;
 
-        let mut key_len_mult = rlp_key.key_value.len();
+        let mut key_len_mult = rlp_key.key_item.len();
         if !(*is_key_odd && is_key_part_odd) {
             key_len_mult -= 1;
         }
 
         // Update number of nibbles
-        *num_nibbles += num_nibbles::value(rlp_key.key_value.len(), is_key_part_odd);
+        *num_nibbles += num_nibbles::value(rlp_key.key_item.len(), is_key_part_odd);
 
         // Update parity
         *is_key_odd = if is_key_part_odd {
@@ -253,11 +241,16 @@ impl<F: Field> ExtensionGadget<F> {
 
         // Key RLC
         let (key_rlc_ext, _) = ext_key_rlc_calc_value(
-            rlp_key.key_value.clone(),
+            rlp_key.key_item.clone(),
             key_data.mult,
             is_key_part_odd,
             !*is_key_odd,
-            key_bytes.clone(),
+            key_items
+                .iter()
+                .map(|item| item.bytes.clone())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
             mpt_config.r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
@@ -269,10 +262,6 @@ impl<F: Field> ExtensionGadget<F> {
         }
         self.mult_key.assign(region, offset, mult_key)?;
         *key_mult = key_data.mult * mult_key;
-
-        for is_s in [true, false] {
-            self.rlp_value[is_s.idx()].assign(region, offset, &value_bytes[is_s.idx()])?;
-        }
 
         Ok(())
     }

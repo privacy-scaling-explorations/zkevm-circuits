@@ -8,19 +8,15 @@ use halo2_proofs::{
 use super::{
     helpers::{MPTConstraintBuilder, RLPItemView},
     param::ARITY,
-    rlp_gadgets::{RLPItemGadget, RLPItemWitness, RLPListDataGadget, RLPValueWitness},
+    rlp_gadgets::{RLPItemWitness, RLPListDataGadget},
     witness_row::Node,
     MPTContext,
 };
 use crate::{
     circuit,
-    circuit_tools::{
-        cell_manager::Cell,
-        constraint_builder::RLCChainable,
-        gadgets::{IsEqualGadget, LtGadget},
-    },
+    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
     mpt_circuit::{helpers::nibble_rlc, param::HASH_WIDTH},
-    mpt_circuit::{helpers::Indexable, param::RLP_NIL, FixedTableTag},
+    mpt_circuit::{helpers::Indexable, param::RLP_NIL},
     mpt_circuit::{MPTConfig, MPTState},
 };
 
@@ -67,7 +63,7 @@ impl<F: Field> BranchGadget<F> {
         circuit!([meta, cb.base], {
             // Data
             let children: [RLPItemView<F>; ARITY + 1] =
-                array_init::array_init(|i| ctx.rlp_item(meta, i));
+                array_init::array_init(|i| ctx.rlp_item(meta, &mut cb.base, i));
 
             let mut num_bytes_left = vec![0.expr(); 2];
             let mut node_rlc = vec![0.expr(); 2];
@@ -115,16 +111,16 @@ impl<F: Field> BranchGadget<F> {
                     let mod_child = &children[0];
                     let (rlc_rlp, num_bytes, length, mult_diff) = if is_s {
                         (
-                            child.rlc_rlp.expr(),
-                            child.num_bytes.expr(),
-                            child.len.expr(),
-                            child.mult_diff.expr(),
+                            child.rlc_rlp(),
+                            child.num_bytes(),
+                            child.len(),
+                            child.mult_diff(),
                         )
                     } else {
                         ifx! {config.is_modified[node_index] => {
-                            (mod_child.rlc_rlp.expr(), mod_child.num_bytes.expr(), mod_child.len.expr(), mod_child.mult_diff.expr())
+                            (mod_child.rlc_rlp(), mod_child.num_bytes(), mod_child.len(), mod_child.mult_diff())
                         } elsex {
-                            (child.rlc_rlp.expr(), child.num_bytes.expr(), child.len.expr(), child.mult_diff.expr())
+                            (child.rlc_rlp(), child.num_bytes(), child.len(), child.mult_diff())
                         }}
                     };
 
@@ -233,7 +229,7 @@ impl<F: Field> BranchGadget<F> {
                     for node_index in 0..ARITY {
                         ifx!{config.is_drifted[node_index].expr() => {
                             require!(config.mod_rlc[is_s.idx()] =>
-                                children[node_index + 1].rlc_branch);
+                                children[node_index + 1].rlc_content());
                         }}
                     }
                 } elsex {
@@ -241,11 +237,11 @@ impl<F: Field> BranchGadget<F> {
                         for node_index in 0..ARITY {
                             ifx!{config.is_modified[node_index].expr() => {
                                 require!(config.mod_rlc[is_s.idx()] =>
-                                    children[node_index + 1].rlc_branch);
+                                    children[node_index + 1].rlc_content());
                             }}
                         }
                     } else {
-                        require!(config.mod_rlc[is_s.idx()] => children[0].rlc_branch.expr());
+                        require!(config.mod_rlc[is_s.idx()] => children[0].rlc_content());
                     }
                 }}
             }
@@ -287,9 +283,6 @@ impl<F: Field> BranchGadget<F> {
         rlp_values: &[RLPItemWitness],
     ) -> Result<(F, F, F, [F; 2]), Error> {
         let branch = &node.extension_branch.clone().unwrap().branch;
-
-        // Data
-        let child_bytes: [Vec<u8>; ARITY + 1] = array_init::array_init(|i| node.values[i].clone());
 
         for is_s in [true, false] {
             let rlp_list_witness = self.rlp_list[is_s.idx()].assign(

@@ -673,11 +673,33 @@ impl RLPItemWitness {
         }
     }
 
+    /// Number of bytes in total (including RLP bytes)
+    pub(crate) fn num_rlp_bytes(&self) -> usize {
+        matchr! {
+            self.value.is_string() => self.value.num_rlp_bytes(),
+            self.list.is_list() => self.list.num_rlp_bytes(),
+        }
+    }
+
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> usize {
         matchr! {
             self.value.is_string() => self.value.len(),
             self.list.is_list() => self.list.len(),
+        }
+    }
+
+    pub(crate) fn is_short(&self) -> bool {
+        matchr! {
+            self.value.is_string() => self.value.is_short(),
+            self.list.is_list() => self.list.is_short(),
+        }
+    }
+
+    pub(crate) fn is_long(&self) -> bool {
+        matchr! {
+            self.value.is_string() => self.value.is_long(),
+            self.list.is_list() => self.list.is_long(),
         }
     }
 

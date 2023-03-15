@@ -1,4 +1,5 @@
 use super::helpers::Indexable;
+use super::rlp_gadgets::RLPItemWitness;
 use super::witness_row::{Node, StartRowType};
 use crate::circuit_tools::cell_manager::Cell;
 use crate::circuit_tools::constraint_builder::{RLCable, RLCableValue};
@@ -38,15 +39,15 @@ impl<F: Field> StartConfig<F> {
 
         circuit!([meta, cb.base], {
             let root_bytes = [
-                ctx.s(meta, StartRowType::RootS as i32),
-                ctx.s(meta, StartRowType::RootC as i32),
+                ctx.rlp_item(meta, &mut cb.base, StartRowType::RootS as usize),
+                ctx.rlp_item(meta, &mut cb.base, StartRowType::RootC as usize),
             ];
 
             config.proof_type = cb.base.query_cell();
 
             let mut root = vec![0.expr(); 2];
             for is_s in [true, false] {
-                root[is_s.idx()] = root_bytes[is_s.idx()][1..].rlc(&r);
+                root[is_s.idx()] = root_bytes[is_s.idx()].rlc_content();
             }
 
             MainData::store(
@@ -90,12 +91,13 @@ impl<F: Field> StartConfig<F> {
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,
+        rlp_values: &[RLPItemWitness],
     ) -> Result<(), Error> {
         let start = &node.start.clone().unwrap();
 
-        let root_bytes = [
-            node.values[StartRowType::RootS as usize].clone(),
-            node.values[StartRowType::RootC as usize].clone(),
+        let root_items = [
+            rlp_values[StartRowType::RootS as usize].clone(),
+            rlp_values[StartRowType::RootC as usize].clone(),
         ];
 
         self.proof_type
@@ -103,7 +105,7 @@ impl<F: Field> StartConfig<F> {
 
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
-            root[is_s.idx()] = root_bytes[is_s.idx()][1..].rlc_value(ctx.r);
+            root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(ctx.r);
         }
 
         MainData::witness_store(

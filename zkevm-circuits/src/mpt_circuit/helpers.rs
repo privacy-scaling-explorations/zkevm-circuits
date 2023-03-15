@@ -5,8 +5,7 @@ use crate::{
     circuit_tools::{
         cell_manager::{Cell, CellManager, Trackable},
         constraint_builder::{
-            Conditionable, ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable,
-            RLCableValue,
+            ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
         gadgets::IsEqualGadget,
         memory::MemoryBank,
@@ -22,13 +21,13 @@ use eth_types::Field;
 use gadgets::util::{or, Scalar};
 use halo2_proofs::{
     circuit::Region,
-    plonk::{Error, Expression, VirtualCells},
+    plonk::{Advice, Column, Error, Expression, VirtualCells},
+    poly::Rotation,
 };
 
 use super::{
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
-        RLPValueGadget, RLPValueWitness,
     },
     FixedTableTag,
 };
@@ -60,11 +59,11 @@ pub(crate) struct LeafKeyWitness {
 }
 
 impl<F: Field> LeafKeyGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, rlp_key: RLPValueGadget<F>) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, rlp_key: RLPItemView<F>) -> Self {
         circuit!([meta, cb], {
             let has_no_nibbles = IsEqualGadget::<F>::construct(
                 cb,
-                rlp_key.bytes[0].expr(),
+                rlp_key.bytes()[0].expr(),
                 KEY_TERMINAL_PREFIX_EVEN.expr(),
             );
             LeafKeyGadget { has_no_nibbles }
@@ -74,7 +73,7 @@ impl<F: Field> LeafKeyGadget<F> {
     pub(crate) fn expr(
         &self,
         cb: &mut ConstraintBuilder<F>,
-        rlp_key: RLPValueGadget<F>,
+        rlp_key: RLPItemView<F>,
         key_mult_prev: Expression<F>,
         is_key_odd: Expression<F>,
         r: &[Expression<F>],
@@ -90,11 +89,11 @@ impl<F: Field> LeafKeyGadget<F> {
                     // When no nibbles: only terminal prefix at `bytes[1]`.
                     // Else: Terminal prefix + single nibble  at `bytes[1]`
                     let is_odd = not!(self.has_no_nibbles);
-                    calc_rlc(cb, &rlp_key.bytes[0..1], is_odd)
+                    calc_rlc(cb, &rlp_key.bytes()[0..1], is_odd)
                 },
                 rlp_key.is_long() => {
                     // First key byte is at `bytes[2]`.
-                    calc_rlc(cb, &rlp_key.bytes[1..34], is_key_odd.expr())
+                    calc_rlc(cb, &rlp_key.bytes()[1..34], is_key_odd.expr())
                 },
             }
         })
@@ -104,12 +103,12 @@ impl<F: Field> LeafKeyGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        rlp_key: RLPValueWitness,
+        bytes: &[u8],
     ) -> Result<LeafKeyWitness, Error> {
         let has_no_nibble = self.has_no_nibbles.assign(
             region,
             offset,
-            F::from(rlp_key.bytes[0] as u64),
+            F::from(bytes[0] as u64),
             F::from(KEY_TERMINAL_PREFIX_EVEN as u64),
         )?;
         Ok(LeafKeyWitness {
@@ -121,7 +120,7 @@ impl<F: Field> LeafKeyGadget<F> {
 impl LeafKeyWitness {
     pub(crate) fn key<F: Field>(
         &self,
-        rlp_key: RLPValueWitness,
+        rlp_key: RLPItemWitness,
         key_rlc: F,
         key_mult: F,
         r: F,
@@ -147,7 +146,7 @@ impl LeafKeyWitness {
 
 pub(crate) fn ext_key_rlc_expr<F: Field>(
     cb: &mut ConstraintBuilder<F>,
-    key_value: RLPValueGadget<F>,
+    key_value: RLPItemView<F>,
     key_mult_prev: Expression<F>,
     is_key_part_odd: Expression<F>,
     is_key_odd: Expression<F>,
@@ -199,7 +198,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
 }
 
 pub(crate) fn ext_key_rlc_calc_value<F: Field>(
-    key_value: RLPValueWitness,
+    key_value: RLPItemWitness,
     key_mult_prev: F,
     is_key_part_odd: bool,
     is_key_odd: bool,
@@ -249,27 +248,26 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
 pub(crate) struct ListKeyGadget<F> {
     pub(crate) rlp_list_bytes: [Cell<F>; 3],
     pub(crate) rlp_list: RLPListGadget<F>,
-    pub(crate) key_value: RLPValueGadget<F>,
+    pub(crate) key_value: RLPItemView<F>,
     pub(crate) key: LeafKeyGadget<F>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ListKeyWitness {
     pub(crate) rlp_list: RLPListWitness,
-    pub(crate) key_value: RLPValueWitness,
+    pub(crate) key_item: RLPItemWitness,
     pub(crate) key: LeafKeyWitness,
 }
 
 impl<F: Field> ListKeyGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, bytes: &[Expression<F>]) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, key_value: &RLPItemView<F>) -> Self {
         let rlp_list_bytes = cb.query_bytes();
         let rlp_list_bytes_expr = rlp_list_bytes.iter().map(|c| c.expr()).collect::<Vec<_>>();
-        let key_value = RLPValueGadget::construct(cb, &bytes);
         let key = LeafKeyGadget::construct(cb, key_value.clone());
         ListKeyGadget {
-            rlp_list: RLPListGadget::construct(cb, &rlp_list_bytes_expr),
-            key_value,
             rlp_list_bytes,
+            rlp_list: RLPListGadget::construct(cb, &rlp_list_bytes_expr),
+            key_value: key_value.clone(),
             key,
         }
     }
@@ -279,18 +277,17 @@ impl<F: Field> ListKeyGadget<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         list_bytes: &[u8],
-        bytes: &[u8],
+        key_item: &RLPItemWitness,
     ) -> Result<ListKeyWitness, Error> {
         for (cell, byte) in self.rlp_list_bytes.iter().zip(list_bytes.iter()) {
             cell.assign(region, offset, byte.scalar())?;
         }
         let rlp_list = self.rlp_list.assign(region, offset, list_bytes)?;
-        let key_value = self.key_value.assign(region, offset, bytes)?;
-        let key = self.key.assign(region, offset, key_value.clone())?;
+        let key = self.key.assign(region, offset, &key_item.bytes)?;
 
         Ok(ListKeyWitness {
             rlp_list,
-            key_value,
+            key_item: key_item.clone(),
             key,
         })
     }
@@ -298,7 +295,7 @@ impl<F: Field> ListKeyGadget<F> {
     pub(crate) fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
         self.rlp_list
             .rlc_rlp_only(&r)
-            .rlc_chain(self.key_value.rlc(&r).1)
+            .rlc_chain(self.key_value.rlc_rlp())
     }
 
     /// Number of bytes of RLP (including list RLP bytes) and key
@@ -310,14 +307,14 @@ impl<F: Field> ListKeyGadget<F> {
 impl ListKeyWitness {
     /// Number of bytes of RLP (including list RLP bytes) and key
     pub(crate) fn num_bytes_on_key_row(&self) -> usize {
-        self.rlp_list.num_rlp_bytes() + self.key_value.num_bytes()
+        self.rlp_list.num_rlp_bytes() + self.key_item.num_bytes()
     }
 
     /// Number of bytes of RLP (including list RLP bytes) and key
     pub(crate) fn rlc_leaf<F: Field>(&self, r: F) -> (F, F) {
         self.rlp_list
             .rlc_rlp_only(r)
-            .rlc_chain_value(&self.key_value.bytes[..self.key_value.num_bytes()], r)
+            .rlc_chain_value(&self.key_item.bytes[..self.key_item.num_bytes()], r)
     }
 }
 
@@ -821,81 +818,13 @@ pub(crate) fn main_memory() -> String {
 #[derive(Clone)]
 pub struct MPTConstraintBuilder<F> {
     pub base: ConstraintBuilder<F>,
-    /// Number of non-zero s bytes
-    pub length_s: Vec<(Expression<F>, Expression<F>)>,
-    /// Number of non-zero s bytes in c bytes (when only using s length)
-    pub length_sc: Expression<F>,
-    /// Number of non-zero c bytes
-    pub length_c: Vec<(Expression<F>, Expression<F>)>,
-    /// The range to check in s bytes
-    pub range_s: Vec<(Expression<F>, Expression<F>)>,
 }
 
-/// Length is set in the configuration of the rows where unused columns might
-/// appear (and which need to be checked to be zeros). From the vector of
-/// lengths, the expression is computed that returns the length of the used
-/// columns for each row. This enables a generalised constraint (for all rows)
-/// for the values in the unused columns being zeros in mpt.rs.
 impl<F: Field> MPTConstraintBuilder<F> {
-    const DEFAULT_LENGTH_S: usize = 34;
-    const DEFAULT_LENGTH_C: usize = 32;
-    const NUM_BYTES_SKIP: usize = 2; // RLP bytes never need to be zero checked
-    const DEFAULT_RANGE: FixedTableTag = FixedTableTag::RangeKeyLen256;
-
     pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F>>) -> Self {
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(max_degree, cell_manager),
-            length_s: Vec::new(),
-            length_sc: 0.expr(),
-            length_c: Vec::new(),
-            range_s: Vec::new(),
         }
-    }
-
-    pub(crate) fn set_length_s(&mut self, length: Expression<F>) {
-        self.length_s.push((
-            self.base.get_condition_expr(),
-            Self::DEFAULT_LENGTH_S.expr() - (length - Self::NUM_BYTES_SKIP.expr()),
-        ));
-    }
-
-    pub(crate) fn set_length_c(&mut self, length: Expression<F>) {
-        self.length_c.push((
-            self.base.get_condition_expr(),
-            Self::DEFAULT_LENGTH_C.expr() - (length - Self::NUM_BYTES_SKIP.expr()),
-        ));
-    }
-
-    pub(crate) fn set_length_sc(&mut self, is_s: bool, length: Expression<F>) {
-        if is_s {
-            self.set_length_s(length);
-        } else {
-            self.set_length_c(length);
-        }
-    }
-
-    pub(crate) fn set_length(&mut self, length: Expression<F>) {
-        self.set_length_s(length);
-        self.length_sc = self.length_sc.expr() + self.base.get_condition_expr();
-    }
-
-    pub(crate) fn get_length_s(&self) -> Expression<F> {
-        Self::DEFAULT_LENGTH_S.expr() - self.length_s.apply_conditions()
-    }
-
-    pub(crate) fn get_length_c(&self) -> Expression<F> {
-        Self::DEFAULT_LENGTH_C.expr() - self.length_c.apply_conditions()
-    }
-
-    pub(crate) fn set_range_s(&mut self, range: Expression<F>) {
-        self.range_s.push((
-            self.base.get_condition_expr(),
-            Self::DEFAULT_RANGE.expr() - range,
-        ));
-    }
-
-    pub(crate) fn get_range_s(&self) -> Expression<F> {
-        Self::DEFAULT_RANGE.expr() - self.range_s.apply_conditions()
     }
 }
 
@@ -952,7 +881,6 @@ impl<F: Field> IsEmptyTreeGadget<F> {
 #[derive(Clone, Debug, Default)]
 pub struct DriftedGadget<F> {
     drifted_rlp_key: ListKeyGadget<F>,
-    drifted_mult: Cell<F>,
 }
 
 impl<F: Field> DriftedGadget<F> {
@@ -962,14 +890,13 @@ impl<F: Field> DriftedGadget<F> {
         key_data: &[KeyData<F>],
         expected_key_rlc: &[Expression<F>],
         leaf_no_key_rlc: &[Expression<F>],
-        drifted_bytes: &[Expression<F>],
+        drifted_item: &RLPItemView<F>,
         r: &[Expression<F>],
     ) -> Self {
         let mut config = DriftedGadget::default();
         circuit!([meta, cb.base], {
             ifx! {parent_data[true.idx()].is_placeholder.expr() + parent_data[false.idx()].is_placeholder.expr() => {
-                config.drifted_rlp_key = ListKeyGadget::construct(&mut cb.base, drifted_bytes);
-                config.drifted_mult = cb.base.query_cell();
+                config.drifted_rlp_key = ListKeyGadget::construct(&mut cb.base, drifted_item);
                 for is_s in [true, false] {
                     ifx! {parent_data[is_s.idx()].is_placeholder.expr() => {
                         // Check that the drifted leaf is unchanged and is stored at `drifted_index`.
@@ -998,14 +925,13 @@ impl<F: Field> DriftedGadget<F> {
                         let num_nibbles = num_nibbles::expr(config.drifted_rlp_key.key_value.len(), is_key_odd.expr());
                         require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
+                        // Multiplier after list and key
+                        let mult = config.drifted_rlp_key.rlp_list.rlc_rlp_only(&r).1 * drifted_item.mult_diff();
+
                         // Complete the drifted leaf rlc by adding the bytes on the value row
-                        let leaf_rlc = (config.drifted_rlp_key.rlc(&r), config.drifted_mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                        let leaf_rlc = (config.drifted_rlp_key.rlc(&r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
                         require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].placeholder_rlc.expr()) => @"keccak");
-
-                        // Check zero bytes and mult_diff
-                        require!((FixedTableTag::RMult, config.drifted_rlp_key.num_bytes_on_key_row(), config.drifted_mult.expr()) => @"fixed");
-                        cb.set_length(config.drifted_rlp_key.num_bytes_on_key_row());
                     }
                 }}
             }}
@@ -1019,15 +945,12 @@ impl<F: Field> DriftedGadget<F> {
         offset: usize,
         parent_data: &[ParentDataWitness<F>],
         drifted_list_bytes: &[u8],
-        drifted_bytes: &[u8],
-        r: F,
+        drifted_item: &RLPItemWitness,
+        _r: F,
     ) -> Result<(), Error> {
         if parent_data[true.idx()].is_placeholder || parent_data[false.idx()].is_placeholder {
-            let drifted_key_witness =
-                self.drifted_rlp_key
-                    .assign(region, offset, drifted_list_bytes, drifted_bytes)?;
-            let (_, leaf_mult) = drifted_key_witness.rlc_leaf(r);
-            self.drifted_mult.assign(region, offset, leaf_mult)?;
+            self.drifted_rlp_key
+                .assign(region, offset, drifted_list_bytes, drifted_item)?;
         }
         Ok(())
     }
@@ -1047,9 +970,9 @@ impl<F: Field> WrongGadget<F> {
         cb: &mut MPTConstraintBuilder<F>,
         expected_address: Expression<F>,
         is_non_existing: Expression<F>,
-        key_value: &RLPValueGadget<F>,
+        key_value: &RLPItemView<F>,
         key_rlc: &Expression<F>,
-        wrong_bytes: &[Expression<F>],
+        wrong_item: &RLPItemView<F>,
         is_in_empty_tree: Expression<F>,
         key_data: KeyData<F>,
         r: &[Expression<F>],
@@ -1059,7 +982,7 @@ impl<F: Field> WrongGadget<F> {
             // Get the previous key data
             ifx! {is_non_existing, not!(is_in_empty_tree) => {
                 // Calculate the key
-                config.wrong_rlp_key = ListKeyGadget::construct(&mut cb.base, &wrong_bytes);
+                config.wrong_rlp_key = ListKeyGadget::construct(&mut cb.base, wrong_item);
                 let key_rlc_wrong = key_data.rlc.expr() + config.wrong_rlp_key.key.expr(
                     &mut cb.base,
                     config.wrong_rlp_key.key_value.clone(),
@@ -1079,8 +1002,6 @@ impl<F: Field> WrongGadget<F> {
                 require!(config.is_key_equal => false);
                 // Make sure the lengths of the keys are the same
                 require!(config.wrong_rlp_key.key_value.len() => key_value.len());
-                // RLC bytes zero check
-                cb.set_length(config.wrong_rlp_key.num_bytes_on_key_row());
             }}
             config
         })
@@ -1093,17 +1014,17 @@ impl<F: Field> WrongGadget<F> {
         is_non_existing: bool,
         key_rlc: &[F],
         list_bytes: &[u8],
-        wrong_bytes: &[u8],
+        wrong_item: &RLPItemWitness,
         for_placeholder_s: bool,
         key_data: KeyDataWitness<F>,
         r: F,
     ) -> Result<F, Error> {
         if is_non_existing {
-            let wrong_witness =
-                self.wrong_rlp_key
-                    .assign(region, offset, list_bytes, wrong_bytes)?;
+            let wrong_witness = self
+                .wrong_rlp_key
+                .assign(region, offset, list_bytes, wrong_item)?;
             let (key_rlc_wrong, _) = wrong_witness.key.key(
-                wrong_witness.key_value.clone(),
+                wrong_witness.key_item.clone(),
                 key_data.rlc,
                 key_data.mult,
                 r,
@@ -1131,27 +1052,21 @@ pub struct MainRLPGadget<F> {
     mult_diff: Cell<F>,
     rlc_branch: Cell<F>,
     rlc_rlp: Cell<F>,
-    is_hashed: IsEqualGadget<F>,
-}
-
-/// Main RLP item
-#[derive(Clone, Debug)]
-pub struct RLPItemView<F> {
-    pub(crate) num_bytes: Expression<F>,
-    pub(crate) len: Expression<F>,
-    pub(crate) mult_diff: Expression<F>,
-    pub(crate) rlc_branch: Expression<F>,
-    pub(crate) rlc_rlp: Expression<F>,
-    //pub(crate) is_hashed: Expression<F>,
+    bytes: Vec<Expression<F>>,
+    byte_columns: Vec<Column<Advice>>,
+    tag: Cell<F>,
 }
 
 impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn construct(
+        meta: &mut VirtualCells<F>,
         cb: &mut MPTConstraintBuilder<F>,
         bytes: &[Expression<F>],
+        byte_columns: &[Column<Advice>],
         r: &[Expression<F>],
     ) -> Self {
         let mut config = MainRLPGadget::default();
+        config.byte_columns = byte_columns.to_owned();
         circuit!([meta, cb.base], {
             config.rlp = RLPItemGadget::construct(&mut cb.base, bytes);
 
@@ -1166,7 +1081,18 @@ impl<F: Field> MainRLPGadget<F> {
             config.mult_diff = cb.base.query_cell();
             let mult_diff = config.mult_diff.expr();
             require!((FixedTableTag::RMult, config.rlp.num_bytes(), mult_diff) => @format!("fixed"));
-            config.is_hashed = IsEqualGadget::construct(&mut cb.base, config.rlp.len(), 32.expr());
+
+            // "free" input that needs to be constrained externally!
+            config.tag = cb.base.query_cell();
+
+            // Range/zero checks
+            // These range checks ensure that the value in the RLP columns are all byte
+            // value. These lookups also enforce the byte value to be zero when
+            // the byte index >= num_bytes.
+            // TODO(Brecht): do 2 bytes/lookup when circuit height >= 2**21
+            for (idx, &byte) in byte_columns.iter().enumerate() {
+                require!((config.tag.expr(), a!(byte), config.num_bytes.expr() - idx.expr()) => @"fixed");
+            }
 
             config
         })
@@ -1178,6 +1104,7 @@ impl<F: Field> MainRLPGadget<F> {
         offset: usize,
         bytes: &[u8],
         r: F,
+        is_nibbles: bool,
     ) -> Result<RLPItemWitness, Error> {
         let rlp_witness = self.rlp.assign(region, offset, bytes)?;
 
@@ -1196,21 +1123,96 @@ impl<F: Field> MainRLPGadget<F> {
             .assign(region, offset, rlp_witness.rlc_content(r))?;
         self.rlc_rlp
             .assign(region, offset, rlp_witness.rlc_rlp(r))?;
-        let _is_hashed =
-            self.is_hashed
-                .assign(region, offset, rlp_witness.len().scalar(), 32.scalar())?;
+
+        let tag = if is_nibbles {
+            FixedTableTag::RangeKeyLen16
+        } else {
+            FixedTableTag::RangeKeyLen256
+        };
+        self.tag.assign(region, offset, tag.scalar())?;
 
         Ok(rlp_witness)
     }
 
-    pub(crate) fn create_view_at(&self, meta: &mut VirtualCells<F>, rot: usize) -> RLPItemView<F> {
+    pub(crate) fn create_view_at(
+        &self,
+        meta: &mut VirtualCells<F>,
+        cb: &mut ConstraintBuilder<F>,
+        rot: usize,
+        is_nibbles: bool,
+    ) -> RLPItemView<F> {
+        let tag = if is_nibbles {
+            FixedTableTag::RangeKeyLen16
+        } else {
+            FixedTableTag::RangeKeyLen256
+        };
+        circuit!([meta, cb], {
+            require!(self.tag.at(meta, rot) => tag.expr());
+        });
         RLPItemView {
-            num_bytes: self.num_bytes.at(meta, rot),
-            len: self.len.at(meta, rot),
-            mult_diff: self.mult_diff.at(meta, rot),
-            rlc_branch: self.rlc_branch.at(meta, rot),
-            rlc_rlp: self.rlc_rlp.at(meta, rot),
-            //is_hashed: self.is_hashed..at(meta, rot),
+            num_bytes: Some(self.num_bytes.at(meta, rot)),
+            len: Some(self.len.at(meta, rot)),
+            mult_diff: Some(self.mult_diff.at(meta, rot)),
+            rlc_content: Some(self.rlc_branch.at(meta, rot)),
+            rlc_rlp: Some(self.rlc_rlp.at(meta, rot)),
+            bytes: self
+                .byte_columns
+                .iter()
+                .map(|&column| meta.query_advice(column, Rotation(rot as i32)))
+                .collect(),
+            is_short: Some(self.rlp.value.is_short.at(meta, rot)),
+            is_long: Some(self.rlp.value.is_long.at(meta, rot)),
         }
+    }
+}
+
+/// Main RLP item
+#[derive(Clone, Debug, Default)]
+pub struct RLPItemView<F> {
+    pub(crate) num_bytes: Option<Expression<F>>,
+    pub(crate) len: Option<Expression<F>>,
+    pub(crate) mult_diff: Option<Expression<F>>,
+    pub(crate) rlc_content: Option<Expression<F>>,
+    pub(crate) rlc_rlp: Option<Expression<F>>,
+    pub(crate) bytes: Vec<Expression<F>>,
+    pub(crate) is_short: Option<Expression<F>>,
+    pub(crate) is_long: Option<Expression<F>>,
+}
+
+impl<F: Field> RLPItemView<F> {
+    pub(crate) fn num_bytes(&self) -> Expression<F> {
+        self.num_bytes.clone().unwrap()
+    }
+
+    pub(crate) fn len(&self) -> Expression<F> {
+        self.len.clone().unwrap()
+    }
+
+    pub(crate) fn mult_diff(&self) -> Expression<F> {
+        self.mult_diff.clone().unwrap()
+    }
+
+    pub(crate) fn rlc_content(&self) -> Expression<F> {
+        self.rlc_content.clone().unwrap()
+    }
+
+    pub(crate) fn rlc_rlp(&self) -> Expression<F> {
+        self.rlc_rlp.clone().unwrap()
+    }
+
+    pub(crate) fn rlc(&self) -> (Expression<F>, Expression<F>) {
+        (self.rlc_content(), self.rlc_rlp())
+    }
+
+    pub(crate) fn bytes(&self) -> Vec<Expression<F>> {
+        self.bytes.clone()
+    }
+
+    pub(crate) fn is_short(&self) -> Expression<F> {
+        self.is_short.clone().unwrap()
+    }
+
+    pub(crate) fn is_long(&self) -> Expression<F> {
+        self.is_long.clone().unwrap()
     }
 }

@@ -235,6 +235,7 @@ impl<F: Field> ExtensionBranchConfig<F> {
                 &mut num_nibbles,
                 &mut is_key_odd,
                 node,
+                rlp_values,
             )?;
         }
 
