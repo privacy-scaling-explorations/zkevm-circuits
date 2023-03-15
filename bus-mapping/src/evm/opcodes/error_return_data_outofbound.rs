@@ -51,14 +51,15 @@ impl Opcode for ErrorReturnDataOutOfBound {
             "callee return data size should be correct"
         );
 
-        let end = data_offset.overflowing_add(length).0;
+        let remainder_end = data_offset.overflowing_add(length).0;
         // check data_offset or end is u64 overflow, or
-        // last_callee_return_data_length < end
+        // last_callee_return_data_length < reaminder_end
         let data_offset_overflow = data_offset > Word::from(u64::MAX);
-        let end_overflow = end > Word::from(u64::MAX);
-        let end_exceed_length = Word::from(last_callee_return_data_length) < end;
+        let remainder_end_overflow = remainder_end > Word::from(u64::MAX);
+        let remainder_end_exceed_length =
+            Word::from(last_callee_return_data_length) < remainder_end;
         // one of three must hold at least one.
-        assert!(data_offset_overflow | end_overflow | end_exceed_length);
+        assert!(data_offset_overflow | remainder_end_overflow | remainder_end_exceed_length);
         // read last callee info
         state.call_context_read(
             &mut exec_step,
