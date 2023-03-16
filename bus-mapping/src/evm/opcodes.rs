@@ -528,6 +528,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     }
 
     // Transfer with fee
+    let fee = state.tx.gas_price * state.tx.gas + state.tx_ctx.l1_fee;
     state.transfer_with_fee(
         &mut exec_step,
         call.caller_address,
@@ -535,7 +536,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         callee_exists,
         call.is_create(),
         call.value,
-        Some(state.tx.gas_price * state.tx.gas),
+        Some(fee),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the
@@ -605,52 +606,10 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             Ok(exec_step)
         }
         // 2. Call to precompiled.
-        (_, true, _) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::PoseidonCodeHash,
-                callee_code_hash,
-            );
-
-            Ok(exec_step)
-        }
+        (_, true, _) => Ok(exec_step),
         (_, _, is_empty_code_hash) => {
-            state.account_read(
-                &mut exec_step,
-                call.address,
-                AccountField::PoseidonCodeHash,
-                callee_code_hash,
-            );
-
             // 3. Call to account with empty code.
             if is_empty_code_hash {
-                // if the transfer values make an account from non-exist to exist
-                // we need to handle to codehash change
-                if !call.value.is_zero() {
-                    // these should be reads?
-                    state.account_write(
-                        &mut exec_step,
-                        call.address,
-                        AccountField::KeccakCodeHash,
-                        KECCAK_CODE_HASH_ZERO.to_word(),
-                        KECCAK_CODE_HASH_ZERO.to_word(),
-                    )?;
-                    state.account_write(
-                        &mut exec_step,
-                        call.address,
-                        AccountField::PoseidonCodeHash,
-                        POSEIDON_CODE_HASH_ZERO.to_word(),
-                        POSEIDON_CODE_HASH_ZERO.to_word(),
-                    )?;
-                    state.account_write(
-                        &mut exec_step,
-                        call.address,
-                        AccountField::CodeSize,
-                        Word::zero(),
-                        Word::zero(),
-                    )?;
-                }
                 return Ok(exec_step);
             }
 
@@ -740,7 +699,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         .clone();
     let effective_tip = state.tx.gas_price - block_info.base_fee;
     let gas_cost = state.tx.gas - exec_step.gas_left.0 - effective_refund;
-    let coinbase_reward = effective_tip * gas_cost;
+    let coinbase_reward = effective_tip * gas_cost + state.tx_ctx.l1_fee;
     log::trace!(
         "coinbase reward = ({} - {}) * ({} - {} - {}) = {}",
         state.tx.gas_price,

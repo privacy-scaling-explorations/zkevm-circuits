@@ -402,6 +402,8 @@ pub struct ResultGethExecTrace {
 /// before the step is executed.
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
+    /// L1 fee
+    pub l1_fee: u64,
     /// Used gas
     pub gas: Gas,
     /// True when the transaction has failed.
