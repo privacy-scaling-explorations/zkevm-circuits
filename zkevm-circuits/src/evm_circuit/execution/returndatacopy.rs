@@ -373,17 +373,4 @@ mod test {
         // rlc value matters only if length > 255, i.e., size.cells.len() > 1
         test_ok_internal(0x200, 0x200, 0x200, 0x00, 0x150);
     }
-
-    // TODO: Add negative cases for out-of-bound and out-of-gas
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_bound() {
-    //     test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10);
-    // }
-
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_gas() {
-    //     test_ok_internal(0x00, 0x10, 0x2000000, 0x00, 0x10);
-    // }
 }
