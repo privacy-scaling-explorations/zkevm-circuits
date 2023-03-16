@@ -19,7 +19,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-/* 
+/*
 use bus_mapping::{
     circuit_input_builder::CopyDataType, evm::OpcodeId,
 };
@@ -331,8 +331,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
 
             // poseidon hash of code.
-            let poseidon_code_hash =
-                bus_mapping::util::hash_code(&values);
+            let poseidon_code_hash = bus_mapping::util::hash_code(&values);
             self.poseidon_code_hash.assign(
                 region,
                 offset,

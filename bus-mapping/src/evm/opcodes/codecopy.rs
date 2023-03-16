@@ -125,12 +125,12 @@ mod codecopy_tests {
         TestContext,
     };
 
+    use crate::util::hash_code;
     use crate::{
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
     };
-    use crate::util::hash_code;
 
     #[test]
     fn codecopy_opcode_impl() {

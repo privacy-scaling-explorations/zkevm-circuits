@@ -604,9 +604,12 @@ impl Rw {
             Self::Account {
                 value, field_tag, ..
             } => match field_tag {
-                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance | AccountFieldTag::PoseidonCodeHash => {
+                AccountFieldTag::KeccakCodeHash
+                | AccountFieldTag::Balance
+                | AccountFieldTag::PoseidonCodeHash => {
                     rlc::value(&value.to_le_bytes(), randomness)
-                    // TODO: PoseidonCodeHash is already a field element and balance cannot, in practice
+                    // TODO: PoseidonCodeHash is already a field element and
+                    // balance cannot, in practice
                 }
                 AccountFieldTag::Nonce
                 | AccountFieldTag::NonExisting
@@ -637,7 +640,9 @@ impl Rw {
                 field_tag,
                 ..
             } => Some(match field_tag {
-                AccountFieldTag::KeccakCodeHash | AccountFieldTag::Balance | AccountFieldTag::PoseidonCodeHash => {
+                AccountFieldTag::KeccakCodeHash
+                | AccountFieldTag::Balance
+                | AccountFieldTag::PoseidonCodeHash => {
                     rlc::value(&value_prev.to_le_bytes(), randomness)
                 }
                 AccountFieldTag::Nonce

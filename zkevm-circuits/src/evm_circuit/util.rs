@@ -201,9 +201,7 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
     }
 
     pub fn empty_poseidon_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(
-            POSEIDON_CODE_HASH_ZERO.to_word(),
-        )
+        self.word_rlc(POSEIDON_CODE_HASH_ZERO.to_word())
     }
 
     /// Constrains a cell to have a constant value.

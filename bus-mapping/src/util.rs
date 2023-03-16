@@ -13,19 +13,14 @@ pub fn read_env_var<T: Clone + FromStr>(var_name: &'static str, default: T) -> T
         .unwrap_or(default)
 }
 /// ..
-pub static CHECK_MEM_STRICT: Lazy<bool> =
-    Lazy::new(|| read_env_var("CHECK_MEM_STRICT", false));
+pub static CHECK_MEM_STRICT: Lazy<bool> = Lazy::new(|| read_env_var("CHECK_MEM_STRICT", false));
 
 /// Default number of bytes to pack into a field element.
 pub const POSEIDON_HASH_BYTES_IN_FIELD: usize = 31;
 
 /// Default code hash (use poseidon hash now)
 pub fn hash_code(code: &[u8]) -> Hash {
-    use poseidon_circuit::hash::{
-        Hashable, 
-        MessageHashable, 
-        HASHABLE_DOMAIN_SPEC
-    };
+    use poseidon_circuit::hash::{Hashable, MessageHashable, HASHABLE_DOMAIN_SPEC};
 
     let bytes_in_field = POSEIDON_HASH_BYTES_IN_FIELD;
     let fls = (0..(code.len() / bytes_in_field))
@@ -62,7 +57,6 @@ pub fn hash_code(code: &[u8]) -> Hash {
     Hash::from_slice(&buf)
 }
 
-
 #[test]
 fn code_hashing() {
     assert_eq!(
@@ -95,7 +89,6 @@ fn code_hashing() {
         format!("{:?}", hash_code(&bytes)),
         "0x26f706f949ff4faad54ee72308e9d30ece46e37cf8b9968bdb274e750a264937"
     );
-
 }
 
 /// the zero keccak code hash

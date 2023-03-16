@@ -85,7 +85,6 @@ impl From<&ZktrieState> for WitnessGenerator {
 }
 
 impl WitnessGenerator {
-
     /// dump inner data for debugging
     pub fn dump(&self) {
         log::info!("account data {:#?}", self.accounts);
@@ -183,8 +182,9 @@ impl WitnessGenerator {
         if let Some(account_data_after) = account_data_after {
             let mut nonce_codesize = [0u8; 32];
             let u64factor = U256::from(0x10000000000000000u128);
-            (U256::from(account_data_after.code_size) * u64factor 
-                + U256::from(account_data_after.nonce)).to_big_endian(nonce_codesize.as_mut_slice());
+            (U256::from(account_data_after.code_size) * u64factor
+                + U256::from(account_data_after.nonce))
+            .to_big_endian(nonce_codesize.as_mut_slice());
             let mut balance = [0u8; 32];
             account_data_after
                 .balance
@@ -286,7 +286,10 @@ impl WitnessGenerator {
                             {
                                 log::trace!("codehash 0->poseidon(nil)");
                             } else {
-                                debug_assert_eq!(H256::from(code_hash), acc_data.poseidon_code_hash);
+                                debug_assert_eq!(
+                                    H256::from(code_hash),
+                                    acc_data.poseidon_code_hash
+                                );
                             }
                         }
                         new_val.to_big_endian(code_hash.as_mut_slice());

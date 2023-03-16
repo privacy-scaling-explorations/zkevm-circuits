@@ -26,8 +26,8 @@ use eth_types::{
 use ethers_core::utils::{get_contract_address, get_create2_address};
 //use keccak256::EMPTY_HASH;
 //use keccak256::EMPTY_HASH_LE;
-use ethers_core::utils::keccak256;
 use crate::util::POSEIDON_CODE_HASH_ZERO;
+use ethers_core::utils::keccak256;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -88,10 +88,13 @@ impl<'a> CircuitInputStateRef<'a> {
                     let code_hash = self.sdb.get_account(&call.address).1.poseidon_code_hash;
                     let bytecode_len = self.code(code_hash).unwrap().len() as u64;
                     let deposit_cost = bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST.as_u64();
-                    assert!(gas_left > deposit_cost, "gas left {gas_left} is not enough for deposit cost {deposit_cost}");
+                    assert!(
+                        gas_left > deposit_cost,
+                        "gas left {gas_left} is not enough for deposit cost {deposit_cost}"
+                    );
                     gas_left -= deposit_cost;
                 }
-                
+
                 Gas(gas_left)
             } else {
                 // consume all remaining gas when non revert err happens
@@ -830,7 +833,10 @@ impl<'a> CircuitInputStateRef<'a> {
                     if !found {
                         (CodeSource::Address(code_address), *POSEIDON_CODE_HASH_ZERO)
                     } else {
-                        (CodeSource::Address(code_address), account.poseidon_code_hash)
+                        (
+                            CodeSource::Address(code_address),
+                            account.poseidon_code_hash,
+                        )
                     }
                 }
             }

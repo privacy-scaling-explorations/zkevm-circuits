@@ -22,9 +22,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{
-    circuit_input_builder::CopyDataType, evm::OpcodeId,
-};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, U256};
 use ethers_core::utils::{keccak256, rlp};
 use halo2_proofs::{
@@ -269,7 +267,6 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (CallContextFieldTag::IsCreate, true.expr()),
             (CallContextFieldTag::CodeHash, poseidon_code_hash.expr()),
             (CallContextFieldTag::Value, value.expr()),
-
         ] {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
         }

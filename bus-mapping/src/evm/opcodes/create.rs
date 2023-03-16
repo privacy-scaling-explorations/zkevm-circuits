@@ -69,11 +69,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
         let (initialization_code, keccak_code_hash, poseidon_code_hash) = if length > 0 {
             handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
-            (
-                vec![],
-                H256(keccak256([])),
-                *POSEIDON_CODE_HASH_ZERO,
-            )
+            (vec![], H256(keccak256([])), *POSEIDON_CODE_HASH_ZERO)
         };
 
         let tx_id = state.tx_ctx.id();
@@ -271,7 +267,8 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(step,
+    state.push_copy(
+        step,
         CopyEvent {
             rw_counter_start,
             src_type: CopyDataType::Memory,
@@ -283,7 +280,8 @@ fn handle_copy(
             dst_addr: 0,
             log_id: None,
             bytes,
-    });
+        },
+    );
 
     Ok((initialization_bytes, keccak_code_hash, poseidon_code_hash))
 }

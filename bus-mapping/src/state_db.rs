@@ -48,7 +48,7 @@ impl CodeDB {
     /// Specify code hash for empty code (nil)
     pub fn empty_code_hash() -> Hash {
         *POSEIDON_CODE_HASH_ZERO
-    }    
+    }
 }
 
 /// Account of the Ethereum State Trie, which contains an in-memory key-value

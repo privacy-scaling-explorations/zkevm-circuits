@@ -470,9 +470,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn empty_poseidon_hash_rlc(&self) -> Expression<F> {
-        let bytes = POSEIDON_CODE_HASH_ZERO
-            .to_word()
-            .to_le_bytes();
+        let bytes = POSEIDON_CODE_HASH_ZERO.to_word().to_le_bytes();
         self.word_rlc(bytes.map(|byte| byte.expr()))
     }
 
