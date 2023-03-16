@@ -6,6 +6,5 @@ pub mod extension;
 pub mod helpers;
 pub mod mpt;
 pub mod param;
-pub mod selectors;
 pub mod storage_leaf;
 pub mod witness_row;

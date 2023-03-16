@@ -81,8 +81,7 @@ impl<F: Field> ExtensionGadget<F> {
                 }
 
                 // Multiplier after list and key
-                let mult =
-                    config.rlp_key.rlp_list.rlc_rlp_only(&r).1 * key_items[true.idx()].mult_diff();
+                let mult = config.rlp_key.rlp_list.rlp_mult(&r) * key_items[true.idx()].mult();
 
                 // Extension node RLC
                 let node_rlc = (config.rlp_key.rlc(&r), mult.expr())

@@ -114,13 +114,13 @@ impl<F: Field> BranchGadget<F> {
                             child.rlc_rlp(),
                             child.num_bytes(),
                             child.len(),
-                            child.mult_diff(),
+                            child.mult(),
                         )
                     } else {
                         ifx! {config.is_modified[node_index] => {
-                            (mod_child.rlc_rlp(), mod_child.num_bytes(), mod_child.len(), mod_child.mult_diff())
+                            (mod_child.rlc_rlp(), mod_child.num_bytes(), mod_child.len(), mod_child.mult())
                         } elsex {
-                            (child.rlc_rlp(), child.num_bytes(), child.len(), child.mult_diff())
+                            (child.rlc_rlp(), child.num_bytes(), child.len(), child.mult())
                         }}
                     };
 

@@ -28,8 +28,6 @@ impl<F: Field> StartConfig<F> {
         cb: &mut MPTConstraintBuilder<F>,
         ctx: MPTContext<F>,
     ) -> Self {
-        let r = ctx.r.clone();
-
         cb.base
             .cell_manager
             .as_mut()
@@ -38,7 +36,7 @@ impl<F: Field> StartConfig<F> {
         let mut config = StartConfig::default();
 
         circuit!([meta, cb.base], {
-            let root_bytes = [
+            let root_items = [
                 ctx.rlp_item(meta, &mut cb.base, StartRowType::RootS as usize),
                 ctx.rlp_item(meta, &mut cb.base, StartRowType::RootC as usize),
             ];
@@ -47,7 +45,7 @@ impl<F: Field> StartConfig<F> {
 
             let mut root = vec![0.expr(); 2];
             for is_s in [true, false] {
-                root[is_s.idx()] = root_bytes[is_s.idx()].rlc_content();
+                root[is_s.idx()] = root_items[is_s.idx()].rlc_content();
             }
 
             MainData::store(
@@ -66,18 +64,12 @@ impl<F: Field> StartConfig<F> {
                 ParentData::store(
                     &mut cb.base,
                     &ctx.memory[parent_memory(is_s)],
-                    [
-                        root[is_s.idx()].expr(),
-                        true.expr(),
-                        false.expr(),
-                        root[is_s.idx()].expr(),
-                    ],
+                    root[is_s.idx()].expr(),
+                    true.expr(),
+                    false.expr(),
+                    root[is_s.idx()].expr(),
                 );
-                KeyData::store(
-                    &mut cb.base,
-                    &ctx.memory[key_memory(is_s)],
-                    KeyData::default_values_expr(),
-                );
+                KeyData::store_defaults(&mut cb.base, &ctx.memory[key_memory(is_s)]);
             }
         });
 
@@ -95,7 +87,7 @@ impl<F: Field> StartConfig<F> {
     ) -> Result<(), Error> {
         let start = &node.start.clone().unwrap();
 
-        let root_items = [
+        let _root_items = [
             rlp_values[StartRowType::RootS as usize].clone(),
             rlp_values[StartRowType::RootC as usize].clone(),
         ];

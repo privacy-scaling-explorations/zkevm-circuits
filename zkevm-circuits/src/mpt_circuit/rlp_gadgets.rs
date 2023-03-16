@@ -144,6 +144,10 @@ impl<F: Field> RLPListGadget<F> {
             }
         })
     }
+
+    pub(crate) fn rlp_mult(&self, r: &[Expression<F>]) -> Expression<F> {
+        self.rlc_rlp_only(r).1
+    }
 }
 
 impl RLPListWitness {

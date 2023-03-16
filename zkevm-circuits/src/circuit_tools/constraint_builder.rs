@@ -5,7 +5,7 @@ use gadgets::util::{and, select, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::cell_manager::{Cell, CellManager, CellType, DataTransition, Trackable};
+use super::cell_manager::{Cell, CellManager, CellType};
 
 /// Lookup data
 #[derive(Clone)]
@@ -30,12 +30,8 @@ pub struct ConstraintBuilder<F> {
     pub lookups: Vec<LookupData<F>>,
     /// The lookup tables
     pub lookup_tables: Vec<LookupData<F>>,
-    /// Query offset
-    pub query_offset: i32,
     /// CellManager
     pub cell_manager: Option<CellManager<F>>,
-    /// Tracked objects
-    objects: Vec<Box<dyn Trackable>>,
 }
 
 impl<F: Field> ConstraintBuilder<F> {
@@ -46,9 +42,7 @@ impl<F: Field> ConstraintBuilder<F> {
             conditions: Vec::new(),
             lookups: Vec::new(),
             lookup_tables: Vec::new(),
-            query_offset: 0,
             cell_manager,
-            objects: Vec::new(),
         }
     }
 
@@ -138,18 +132,24 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells(CellType::Storage, count)
+        self.query_cells_dyn(CellType::Storage, count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
         self.query_cell_with_type(CellType::Storage)
     }
 
-    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
-        self.query_cells(cell_type, 1).first().unwrap().clone()
+    pub(crate) fn query_cells<const N: usize>(&mut self) -> [Cell<F>; N] {
+        self.query_cells_dyn(CellType::Storage, N)
+            .try_into()
+            .unwrap()
     }
 
-    fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
+        self.query_cells_dyn(cell_type, 1).first().unwrap().clone()
+    }
+
+    fn query_cells_dyn(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
         self.cell_manager
             .as_mut()
             .unwrap()
@@ -321,14 +321,6 @@ impl<F: Field> ConstraintBuilder<F> {
             println!("'{}': {}", name, expr.degree());
         }
     }
-
-    pub(crate) fn get_query_offset(&self) -> i32 {
-        self.query_offset
-    }
-
-    pub(crate) fn set_query_offset(&mut self, query_offset: i32) {
-        self.query_offset = query_offset;
-    }
 }
 
 pub(crate) fn merge_lookups<F: Field>(
@@ -349,7 +341,6 @@ pub(crate) fn merge_values<F: Field>(
     values: Vec<(Expression<F>, Vec<Expression<F>>)>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
-    // Sanity checks (can be removed, here for safety)
     crate::circuit!([meta, cb], {
         require!(selector => bool);
     });
@@ -475,7 +466,6 @@ impl_expressable!(u64);
 impl_expressable!(usize);
 impl_expressable!(isize);
 impl_expressable!(Expression<F>);
-impl_expressable!(DataTransition<F>);
 impl_expressable!(Cell<F>);
 
 /// Trait around select
@@ -1078,18 +1068,33 @@ macro_rules! matchw {
     }};
 }
 
-/// assign
+/// assign advice
 #[macro_export]
 macro_rules! assign {
+    // Column
     ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
+        use halo2_proofs::circuit::Value;
         let description =
             $crate::concat_with_preamble!(stringify!($column), " => ", stringify!($value));
         let value: F = $value;
         $region.assign_advice(|| description, $column, $offset, || Value::known(value))
     }};
+    // Cell
+    ($region:expr, $cell:expr, $offset:expr => $value:expr) => {{
+        use halo2_proofs::circuit::Value;
+        let description =
+            $crate::concat_with_preamble!(stringify!($cell), " => ", stringify!($value));
+        let value: F = $value;
+        $region.assign_advice(
+            || description,
+            $cell.column(),
+            $offset + $cell.rotation(),
+            || Value::known(value),
+        )
+    }};
 }
 
-/// assign
+/// assign fixed
 #[macro_export]
 macro_rules! assignf {
     ($region:expr, ($column:expr, $offset:expr) => $value:expr) => {{
@@ -1269,14 +1274,5 @@ macro_rules! circuit {
         }
 
         $content
-    }};
-}
-
-macro_rules! witness {
-    ($name:ident, $t:ty) => {{
-        match objects[0].as_any().downcast_ref::<$t>() {
-            Some(b) => b,
-            None => panic!("&a isn't a B!"),
-        }
     }};
 }

@@ -109,6 +109,7 @@ pub struct AccountNode {
     pub(crate) address: Vec<u8>,
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) drifted_rlp_bytes: Vec<u8>,
     pub(crate) wrong_rlp_bytes: Vec<u8>,
 }
@@ -466,7 +467,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
         }
     }
 
-    // TODO(Brecht): change this on the witness generation side
     let cached_witness = witness.to_owned();
     for (idx, row) in witness
         .iter_mut()
@@ -619,8 +619,12 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
 
             let list_rlp_bytes = [key_s.rlp_bytes.to_owned(), key_c.rlp_bytes.to_owned()];
             let value_rlp_bytes = [
-                nonce_balance_s.rlp_bytes.clone(),
-                nonce_balance_c.rlp_bytes.clone(),
+                nonce_balance_s.rlp_bytes[..2].to_owned(),
+                nonce_balance_c.rlp_bytes[..2].to_owned(),
+            ];
+            let value_list_rlp_bytes = [
+                nonce_balance_s.rlp_bytes[2..].to_owned(),
+                nonce_balance_c.rlp_bytes[2..].to_owned(),
             ];
             let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
             let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
@@ -643,6 +647,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 address,
                 list_rlp_bytes,
                 value_rlp_bytes,
+                value_list_rlp_bytes,
                 drifted_rlp_bytes,
                 wrong_rlp_bytes,
             };
@@ -652,5 +657,15 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             nodes.push(node);
         }
     }
+
+    // Dummy end state
+    let start_node = StartNode {
+        proof_type: ProofType::Disabled,
+    };
+    let mut node = Node::default();
+    node.start = Some(start_node);
+    node.values = vec![vec![0; 34]; StartRowType::Count as usize];
+    nodes.push(node);
+
     nodes
 }

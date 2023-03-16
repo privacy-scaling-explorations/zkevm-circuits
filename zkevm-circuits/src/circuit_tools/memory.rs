@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use super::constraint_builder::{merge_lookups, ConstraintBuilder};
+use super::constraint_builder::ConstraintBuilder;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F> {
@@ -63,15 +63,6 @@ impl<F: Field> Memory<F> {
         for bank in self.banks.iter() {
             bank.generate_constraints(cb, is_first_row.expr());
             cb.generate_lookup_table_checks(bank.tag());
-
-            /*let lookups = cb.consume_lookups(&[bank.tag()]);
-            if !lookups.is_empty() {
-                println!("{}: {}", bank.tag, lookups.len());
-                let (_, values) = merge_lookups(cb, lookups);
-                crate::circuit!([meta, cb], {
-                    require!(values => @bank.tag());
-                })
-            }*/
         }
     }
 
@@ -176,10 +167,7 @@ impl<F: Field> MemoryBank<F> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        // Insert the key in the front
-        let mut key_and_values = values.to_vec();
-        key_and_values.insert(0, key);
-        cb.lookup(description, self.tag(), key_and_values);
+        cb.lookup(description, self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn store(&self, cb: &mut ConstraintBuilder<F>, values: &[Expression<F>]) {
@@ -192,10 +180,7 @@ impl<F: Field> MemoryBank<F> {
         key: Expression<F>,
         values: &[Expression<F>],
     ) {
-        // Insert the key in the front
-        let mut key_and_values = values.to_vec();
-        key_and_values.insert(0, key);
-        cb.lookup_table("memory store", self.tag(), key_and_values);
+        cb.lookup_table("memory store", self.tag(), self.insert_key(key, values));
     }
 
     pub(crate) fn witness_store(&mut self, offset: usize, values: &[F]) {
@@ -258,5 +243,11 @@ impl<F: Field> MemoryBank<F> {
 
     pub(crate) fn tag(&self) -> String {
         self.tag.clone()
+    }
+
+    pub(crate) fn insert_key<T: Clone>(&self, key: T, values: &[T]) -> Vec<T> {
+        let mut key_and_values = values.to_owned();
+        key_and_values.insert(0, key);
+        key_and_values
     }
 }

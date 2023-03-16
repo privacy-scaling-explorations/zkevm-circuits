@@ -120,7 +120,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 );
 
                 // Multiplier after list and key
-                let mult = rlp_key.rlp_list.rlc_rlp_only(&r).1 * key_items[is_s.idx()].mult_diff();
+                let mult = rlp_key.rlp_list.rlp_mult(&r) * key_items[is_s.idx()].mult();
 
                 // Because the storage value is an rlp encoded string inside another rlp encoded
                 // string (leaves are always encoded as [key, value], with
@@ -162,7 +162,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
                 // Make sure the RLP encoding is correct.
                 // storage = [key, "value"]
-                require!(rlp_key.rlp_list.num_bytes() => rlp_key.num_bytes_on_key_row() + config.rlp_value[is_s.idx()].num_bytes());
+                require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
 
                 // Check if the account is in its parent.
                 // Check is skipped for placeholder leafs which are dummy leafs
@@ -178,16 +178,15 @@ impl<F: Field> StorageLeafConfig<F> {
                 }}
 
                 // Key done, set the default values
-                KeyData::store(
-                    &mut cb.base,
-                    &ctx.memory[key_memory(is_s)],
-                    KeyData::default_values_expr(),
-                );
+                KeyData::store_defaults(&mut cb.base, &ctx.memory[key_memory(is_s)]);
                 // Store the new parent
                 ParentData::store(
                     &mut cb.base,
                     &ctx.memory[parent_memory(is_s)],
-                    [0.expr(), true.expr(), false.expr(), 0.expr()],
+                    0.expr(),
+                    true.expr(),
+                    false.expr(),
+                    0.expr(),
                 );
             }
 

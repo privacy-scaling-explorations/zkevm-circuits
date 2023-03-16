@@ -11,19 +11,14 @@ use std::{convert::TryInto, env::var};
 
 mod account_leaf;
 mod branch;
-mod columns;
 mod extension;
 mod extension_branch;
 mod helpers;
 mod param;
 mod rlp_gadgets;
-mod selectors;
 mod start;
 mod storage_leaf;
 mod witness_row;
-
-use columns::MainCols;
-use extension_branch::ExtensionBranchConfig;
 
 use self::{
     account_leaf::AccountLeafConfig,
@@ -44,50 +39,67 @@ use crate::{
 use crate::{
     circuit_tools::constraint_builder::ConstraintBuilder, mpt_circuit::helpers::MainRLPGadget,
 };
+use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
 
 /// State machine config.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct StateMachineConfig<F> {
+    is_start: Column<Advice>,
+    is_branch: Column<Advice>,
+    is_account: Column<Advice>,
+    is_storage: Column<Advice>,
+
     start_config: StartConfig<F>,
     branch_config: ExtensionBranchConfig<F>,
     storage_config: StorageLeafConfig<F>,
     account_config: AccountLeafConfig<F>,
 }
 
+impl<F: Field> StateMachineConfig<F> {
+    /// Construct a new StateMachine
+    pub(crate) fn construct(meta: &mut ConstraintSystem<F>) -> Self {
+        Self {
+            is_start: meta.advice_column(),
+            is_branch: meta.advice_column(),
+            is_account: meta.advice_column(),
+            is_storage: meta.advice_column(),
+            start_config: StartConfig::default(),
+            branch_config: ExtensionBranchConfig::default(),
+            storage_config: StorageLeafConfig::default(),
+            account_config: AccountLeafConfig::default(),
+        }
+    }
+
+    /// Returns all state selectors
+    pub(crate) fn state_selectors(&self) -> Vec<Column<Advice>> {
+        vec![
+            self.is_start,
+            self.is_branch,
+            self.is_account,
+            self.is_storage,
+        ]
+    }
+}
+
 /// Merkle Patricia Trie context
 #[derive(Clone, Debug)]
 pub struct MPTContext<F> {
-    pub(crate) q_enable: Column<Fixed>,
-    pub(crate) q_not_first: Column<Fixed>,
     pub(crate) mpt_table: MptTable,
-    pub(crate) main: MainCols<F>,
     pub(crate) rlp_item: MainRLPGadget<F>,
-    pub(crate) rlp_columns: Vec<Column<Advice>>,
-    pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) r: Vec<Expression<F>>,
     pub(crate) memory: Memory<F>,
 }
 
 impl<F: Field> MPTContext<F> {
-    pub(crate) fn bytes(&self) -> Vec<Column<Advice>> {
-        self.main.bytes.to_vec()
-    }
-
-    pub(crate) fn s(&self, meta: &mut VirtualCells<F>, rot: i32) -> Vec<Expression<F>> {
-        self.bytes()[0..34]
-            .iter()
-            .map(|&byte| meta.query_advice(byte, Rotation(rot)))
-            .collect::<Vec<_>>()
-    }
-
     pub(crate) fn rlp_item(
         &self,
         meta: &mut VirtualCells<F>,
         cb: &mut ConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
-        self.rlp_item.create_view_at(meta, cb, idx, false)
+        // TODO(Brecht): Add RLP limitations like max num bytes
+        self.rlp_item.create_view(meta, cb, idx, false)
     }
 
     pub(crate) fn nibbles(
@@ -96,7 +108,7 @@ impl<F: Field> MPTContext<F> {
         cb: &mut ConstraintBuilder<F>,
         idx: usize,
     ) -> RLPItemView<F> {
-        self.rlp_item.create_view_at(meta, cb, idx, true)
+        self.rlp_item.create_view(meta, cb, idx, true)
     }
 }
 
@@ -104,8 +116,8 @@ impl<F: Field> MPTContext<F> {
 #[derive(Clone)]
 pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
-    pub(crate) q_not_first: Column<Fixed>,
-    pub(crate) main: MainCols<F>,
+    pub(crate) q_first: Column<Fixed>,
+    pub(crate) q_last: Column<Fixed>,
     pub(crate) rlp_columns: Vec<Column<Advice>>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
@@ -113,10 +125,6 @@ pub struct MPTConfig<F> {
     fixed_table: [Column<Fixed>; 3],
     rlp_item: MainRLPGadget<F>,
     state_machine: StateMachineConfig<F>,
-    pub(crate) is_start: Column<Advice>,
-    pub(crate) is_branch: Column<Advice>,
-    pub(crate) is_account: Column<Advice>,
-    pub(crate) is_storage: Column<Advice>,
     pub(crate) r: F,
     pub(crate) mpt_table: MptTable,
     cb: MPTConstraintBuilder<F>,
@@ -163,16 +171,10 @@ impl<F: Field> MPTConfig<F> {
         keccak_table: KeccakTable,
     ) -> Self {
         let q_enable = meta.fixed_column();
-        let q_not_first = meta.fixed_column();
+        let q_first = meta.fixed_column();
+        let q_last = meta.fixed_column();
 
         let mpt_table = MptTable::construct(meta);
-
-        let is_start = meta.advice_column();
-        let is_branch = meta.advice_column();
-        let is_account = meta.advice_column();
-        let is_storage = meta.advice_column();
-
-        let main = MainCols::new(meta);
 
         let fixed_table: [Column<Fixed>; 3] = (0..3)
             .map(|_| meta.fixed_column())
@@ -180,11 +182,11 @@ impl<F: Field> MPTConfig<F> {
             .try_into()
             .unwrap();
 
-        let rlp_columns = (0..20).map(|_| meta.advice_column()).collect::<Vec<_>>();
-        let managed_columns = (0..20).map(|_| meta.advice_column()).collect::<Vec<_>>();
+        let rlp_columns = (0..50).map(|_| meta.advice_column()).collect::<Vec<_>>();
+        let managed_columns = (0..15).map(|_| meta.advice_column()).collect::<Vec<_>>();
         let memory_columns = (0..5).map(|_| meta.advice_column()).collect::<Vec<_>>();
 
-        let mut state_machine = StateMachineConfig::default();
+        let mut state_machine = StateMachineConfig::construct(meta);
         let mut rlp_item = MainRLPGadget::default();
 
         let mut memory = Memory::new(memory_columns);
@@ -195,13 +197,8 @@ impl<F: Field> MPTConfig<F> {
         memory.allocate(meta, main_memory());
 
         let mut ctx = MPTContext {
-            q_enable: q_enable.clone(),
-            q_not_first: q_not_first.clone(),
             mpt_table: mpt_table.clone(),
-            main: main.clone(),
             rlp_item: rlp_item.clone(),
-            rlp_columns: rlp_columns.clone(),
-            managed_columns: managed_columns.clone(),
             r: extend_rand(&power_of_randomness),
             memory: memory.clone(),
         };
@@ -215,48 +212,45 @@ impl<F: Field> MPTConfig<F> {
 
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
-                    let mut cell_manager = CellManager::new(meta, &ctx.rlp_columns);
+                    let mut cell_manager = CellManager::new(meta, &rlp_columns);
                     cell_manager.reset(1);
                     cb.base.set_cell_manager(cell_manager);
-                    let bytes = ctx.s(meta, 0);
-                    rlp_item = MainRLPGadget::construct(meta, &mut cb, &bytes, &main.bytes, &ctx.r);
+                    rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
                     ctx.rlp_item = rlp_item.clone();
 
                     // Main MPT circuit
-                    let cell_manager = CellManager::new(meta, &ctx.managed_columns);
+                    let cell_manager = CellManager::new(meta, &managed_columns);
                     cb.base.set_cell_manager(cell_manager);
 
                     // State machine
                     // TODO(Brecht): state machine constraints
-                    // Always start with the start state
-                    ifx! {not!(f!(q_not_first)) => {
-                        require!(a!(is_start) => true);
+                    // Always start and end with the start state
+                    ifx! {f!(q_first) + f!(q_last) => {
+                        require!(a!(state_machine.is_start) => true);
                     }};
                     // Main state machine
                     matchx! {
-                        a!(is_start) => {
+                        a!(state_machine.is_start) => {
                             state_machine.start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(is_branch) => {
+                        a!(state_machine.is_branch) => {
                             state_machine.branch_config = ExtensionBranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(is_account) => {
+                        a!(state_machine.is_account) => {
                             state_machine.account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        a!(is_storage) => {
+                        a!(state_machine.is_storage) => {
                             state_machine.storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         _ => (),
                     };
                     // Only account and storage rows can have lookups, disable lookups on all other rows
-                    matchx! {
-                        a!(is_account) => (),
-                        a!(is_storage) => (),
-                        _ => require!(a!(ctx.mpt_table.proof_type) => ProofType::Disabled.expr()),
-                    }
+                    ifx! {not!(a!(state_machine.is_account) + a!(state_machine.is_storage)) => {
+                        require!(a!(ctx.mpt_table.proof_type) => ProofType::Disabled.expr());
+                    }}
 
                     // Memory banks
-                    ctx.memory.generate_constraints(&mut cb.base, not!(f!(q_not_first)));
+                    ctx.memory.generate_constraints(&mut cb.base, f!(q_first));
                 }}
             });
 
@@ -297,12 +291,8 @@ impl<F: Field> MPTConfig<F> {
 
         MPTConfig {
             q_enable,
-            q_not_first,
-            is_start,
-            is_branch,
-            is_account,
-            is_storage,
-            main,
+            q_first,
+            q_last,
             rlp_columns,
             managed_columns,
             memory,
@@ -339,9 +329,6 @@ impl<F: Field> MPTConfig<F> {
                     // Assign bytes
                     let mut rlp_values = Vec::new();
                     for (idx, bytes) in node.values.iter().enumerate() {
-                        for (byte, &column) in bytes.iter().zip(self.main.bytes.iter()) {
-                            assign!(region, (column, offset + idx) => byte.scalar())?;
-                        }
                         let is_nibbles = node.extension_branch.is_some()
                             && idx == ExtensionBranchRowType::KeyC as usize;
                         let rlp_value = self.rlp_item.assign(
@@ -357,7 +344,7 @@ impl<F: Field> MPTConfig<F> {
                     // Assign nodes
                     if node.start.is_some() {
                         //println!("{}: start", offset);
-                        assign!(region, (self.is_start, offset) => 1.scalar())?;
+                        assign!(region, (self.state_machine.is_start, offset) => true.scalar())?;
                         self.state_machine.start_config.assign(
                             &mut region,
                             self,
@@ -368,7 +355,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     } else if node.extension_branch.is_some() {
                         //println!("{}: branch", offset);
-                        assign!(region, (self.is_branch, offset) => 1.scalar())?;
+                        assign!(region, (self.state_machine.is_branch, offset) => true.scalar())?;
                         self.state_machine.branch_config.assign(
                             &mut region,
                             self,
@@ -379,7 +366,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     } else if node.storage.is_some() {
                         //println!("{}: storage", offset);
-                        assign!(region, (self.is_storage, offset) => 1.scalar())?;
+                        assign!(region, (self.state_machine.is_storage, offset) => true.scalar())?;
                         self.state_machine.storage_config.assign(
                             &mut region,
                             self,
@@ -390,7 +377,7 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     } else if node.account.is_some() {
                         //println!("{}: account", offset);
-                        assign!(region, (self.is_account, offset) => 1.scalar())?;
+                        assign!(region, (self.state_machine.is_account, offset) => true.scalar())?;
                         self.state_machine.account_config.assign(
                             &mut region,
                             self,
@@ -410,7 +397,8 @@ impl<F: Field> MPTConfig<F> {
 
                 for offset in 0..height {
                     assignf!(region, (self.q_enable, offset) => true.scalar())?;
-                    assignf!(region, (self.q_not_first, offset) => (offset != 0).scalar())?;
+                    assignf!(region, (self.q_first, offset) => (offset == 0).scalar())?;
+                    assignf!(region, (self.q_last, offset) => (offset == height - 2).scalar())?;
                 }
 
                 Ok(())
@@ -455,6 +443,13 @@ impl<F: Field> MPTConfig<F> {
                     offset += 1;
                 }
 
+                // Nibble range table
+                for ind in 0..16 {
+                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::Range16.scalar())?;
+                    assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
+                    offset += 1;
+                }
+
                 // Byte range with length table
                 // These fixed rows enable to easily check whether there are zeros in the unused columns (the number of unused columns vary).
                 // The lookups ensure that when the unused columns start, the values in these columns are zeros -
@@ -476,13 +471,6 @@ impl<F: Field> MPTConfig<F> {
                             offset += 1;
                         }
                     }
-                }
-
-                // Nibble range table
-                for ind in 0..16 {
-                    assignf!(region, (self.fixed_table[0], offset) => FixedTableTag::Range16.scalar())?;
-                    assignf!(region, (self.fixed_table[1], offset) => ind.scalar())?;
-                    offset += 1;
                 }
 
                 Ok(())

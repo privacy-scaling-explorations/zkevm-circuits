@@ -6,72 +6,7 @@ use halo2_proofs::{
     plonk::{Advice, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
-use std::{any::Any, collections::BTreeMap};
-
-#[derive(Clone)]
-pub(crate) struct DataTransition<F> {
-    prev: Expression<F>,
-    cur: Expression<F>,
-}
-
-impl<F: Field> DataTransition<F> {
-    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>) -> DataTransition<F> {
-        DataTransition {
-            prev: meta.query_advice(column, Rotation::prev()),
-            cur: meta.query_advice(column, Rotation::cur()),
-        }
-    }
-
-    pub(crate) fn new_with_rot(
-        meta: &mut VirtualCells<F>,
-        column: Column<Advice>,
-        rot_prev: i32,
-        rot_cur: i32,
-    ) -> DataTransition<F> {
-        DataTransition {
-            prev: meta.query_advice(column, Rotation(rot_prev)),
-            cur: meta.query_advice(column, Rotation(rot_cur)),
-        }
-    }
-
-    pub(crate) fn from(prev: Expression<F>, cur: Expression<F>) -> DataTransition<F> {
-        DataTransition { prev, cur }
-    }
-
-    pub(crate) fn cur(&self) -> Expression<F> {
-        self.cur.clone()
-    }
-
-    pub(crate) fn prev(&self) -> Expression<F> {
-        self.prev.clone()
-    }
-
-    pub(crate) fn delta(&self) -> Expression<F> {
-        self.prev() - self.cur()
-    }
-}
-
-impl<F: Field> Expr<F> for DataTransition<F> {
-    fn expr(&self) -> Expression<F> {
-        self.cur.clone()
-    }
-}
-
-/// Trackable object
-pub trait Trackable {
-    /// To allow downcasting
-    fn as_any(&self) -> &dyn Any;
-
-    /// Cloning
-    fn clone_box(&self) -> Box<dyn Trackable>;
-}
-
-// We can now implement Clone manually by forwarding to clone_box.
-impl Clone for Box<dyn Trackable> {
-    fn clone(&self) -> Box<dyn Trackable> {
-        self.clone_box()
-    }
-}
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Cell<F> {
@@ -80,15 +15,6 @@ pub(crate) struct Cell<F> {
     column: Option<Column<Advice>>,
     // relative position to selector for synthesis
     rotation: usize,
-}
-
-impl<F: Field> Trackable for Cell<F> {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn clone_box(&self) -> Box<dyn Trackable> {
-        Box::new(self.clone())
-    }
 }
 
 impl<F: Field> Cell<F> {
@@ -123,7 +49,11 @@ impl<F: Field> Cell<F> {
         self.column.unwrap()
     }
 
-    pub(crate) fn at(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
+    pub(crate) fn rotation(&self) -> usize {
+        self.rotation
+    }
+
+    pub(crate) fn rot(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
         meta.query_advice(self.column.unwrap(), Rotation((self.rotation + rot) as i32))
     }
 }

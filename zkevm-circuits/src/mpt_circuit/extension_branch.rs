@@ -137,46 +137,43 @@ impl<F: Field> ExtensionBranchConfig<F> {
                     KeyData::store(
                         &mut cb.base,
                         &ctx.memory[key_memory(is_s)],
-                        [
-                            branch.key_rlc_post_branch.expr(),
-                            branch.key_mult_post_branch.expr(),
-                            branch.num_nibbles.expr(),
-                            branch.is_key_odd.expr(),
-                            0.expr(),
-                            0.expr(),
-                            0.expr(),
-                            false.expr(),
-                        ],
+                        branch.key_rlc_post_branch.expr(),
+                        branch.key_mult_post_branch.expr(),
+                        branch.num_nibbles.expr(),
+                        branch.is_key_odd.expr(),
+                        0.expr(),
+                        0.expr(),
+                        0.expr(),
+                        false.expr(),
                     );
                     ParentData::store(
                         &mut cb.base,
                         &ctx.memory[parent_memory(is_s)],
-                        [branch.mod_rlc[is_s.idx()].expr(), false.expr(), false.expr(), 0.expr()]
+                        branch.mod_rlc[is_s.idx()].expr(),
+                        false.expr(),
+                        false.expr(),
+                        0.expr(),
                     );
                  } elsex {
                     KeyData::store(
                         &mut cb.base,
                         &ctx.memory[key_memory(is_s)],
-                        [
-                            config.key_data.rlc.expr(),
-                            config.key_data.mult.expr(),
-                            config.key_data.num_nibbles.expr(),
-                            config.key_data.is_odd.expr(),
-                            branch.key_rlc_post_drifted.expr(),
-                            branch.key_mult_post_drifted.expr(),
-                            branch.num_nibbles.expr(),
-                            branch.is_key_odd.expr(),
-                        ],
+                        config.key_data.rlc.expr(),
+                        config.key_data.mult.expr(),
+                        config.key_data.num_nibbles.expr(),
+                        config.key_data.is_odd.expr(),
+                        branch.key_rlc_post_drifted.expr(),
+                        branch.key_mult_post_drifted.expr(),
+                        branch.num_nibbles.expr(),
+                        branch.is_key_odd.expr(),
                     );
                     ParentData::store(
                         &mut cb.base,
                         &ctx.memory[parent_memory(is_s)],
-                        [
-                            config.parent_data[is_s.idx()].rlc.expr(),
-                            config.parent_data[is_s.idx()].is_root.expr(),
-                            true.expr(),
-                            branch.mod_rlc[is_s.idx()].expr()
-                        ]
+                        config.parent_data[is_s.idx()].rlc.expr(),
+                        config.parent_data[is_s.idx()].is_root.expr(),
+                        true.expr(),
+                        branch.mod_rlc[is_s.idx()].expr(),
                     );
                 }}
             }
