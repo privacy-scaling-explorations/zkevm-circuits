@@ -62,7 +62,7 @@ jobs:
           cd /tmp
           cargo new foobar
           cd foobar
-          cp "${GIT_ROOT}/rust-toolchain" || true
+          cp "${GIT_ROOT}/rust-toolchain" . || true
           cargo add --path "${GIT_ROOT}/zkevm-circuits"
           cargo build
           rm -rf foobar
@@ -73,7 +73,7 @@ jobs:
           cd /tmp
           cargo new foobar
           cd foobar
-          cp "${GIT_ROOT}/rust-toolchain" || true
+          cp "${GIT_ROOT}/rust-toolchain" . || true
           cargo add --path "${GIT_ROOT}/zkevm-circuits" --features test-circuits
           cargo build
           rm -rf foobar
