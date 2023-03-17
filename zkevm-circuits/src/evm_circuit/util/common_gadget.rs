@@ -388,8 +388,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
-                    AccountFieldTag::KeccakCodeHash,
-                    cb.empty_keccak_hash_rlc(),
+                    AccountFieldTag::PoseidonCodeHash,
+                    cb.empty_poseidon_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );

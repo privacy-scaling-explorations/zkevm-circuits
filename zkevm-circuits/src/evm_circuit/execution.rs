@@ -1256,11 +1256,11 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
-                true,
+                false,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step, false)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
     }
 
     #[allow(clippy::too_many_arguments)]

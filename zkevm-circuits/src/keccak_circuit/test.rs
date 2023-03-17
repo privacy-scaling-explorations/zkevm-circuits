@@ -20,7 +20,7 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
 
 #[test]
 fn packed_multi_keccak_simple() {
-    let k = 14;
+    let k = 19;
     let inputs = vec![
         vec![],
         (0u8..1).collect::<Vec<_>>(),

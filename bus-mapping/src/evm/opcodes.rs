@@ -427,7 +427,6 @@ pub fn gen_associated_ops(
 }
 
 pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Error> {
-    //dbg!("hiiii");
     let mut exec_step = state.new_begin_tx_step();
     let call = state.call()?.clone();
 
