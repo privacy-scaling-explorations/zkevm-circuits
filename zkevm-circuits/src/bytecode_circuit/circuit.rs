@@ -241,12 +241,12 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
                 meta.query_advice(length, Rotation::cur()),
             );
 
+            /*
             let empty_hash = rlc::expr(
                 &EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
                 challenges.evm_word(),
             );
 
-            /*
                         // FIXME: poseidon
                         cb.require_equal(
                             "assert cur.hash == EMPTY_HASH",

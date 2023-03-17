@@ -33,7 +33,7 @@ fn packed_multi_keccak_simple() {
 
 #[test]
 fn variadic_size_check() {
-    let k = 14;
+    let k = 19;
     let num_rows = 2usize.pow(k);
     // Empty
     let inputs = vec![];

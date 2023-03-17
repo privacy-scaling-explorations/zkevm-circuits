@@ -251,7 +251,7 @@ mod balance_tests {
             }
         );
 
-        let code_hash = if let Some(code) = account_code {
+        let code_hash = if let Some(_code) = account_code {
             POSEIDON_CODE_HASH_ZERO.to_word()
         } else if exists {
             POSEIDON_CODE_HASH_ZERO.to_word()
