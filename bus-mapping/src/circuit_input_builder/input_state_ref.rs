@@ -89,7 +89,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     let bytecode_len = self.code(code_hash).unwrap().len() as u64;
                     let deposit_cost = bytecode_len * GasCost::CODE_DEPOSIT_BYTE_COST.as_u64();
                     assert!(
-                        gas_left > deposit_cost,
+                        gas_left >= deposit_cost,
                         "gas left {gas_left} is not enough for deposit cost {deposit_cost}"
                     );
                     gas_left -= deposit_cost;
