@@ -33,6 +33,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           override: false
+
       # Go cache for building geth-utils
       - name: Go cache
         uses: actions/cache@v3
@@ -43,6 +44,7 @@ jobs:
           key: ${{ github.workflow }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+
       - name: Cargo cache
         uses: actions/cache@v3
         with:
@@ -53,6 +55,7 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ github.workflow }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
       - name: zkevm-circuits: default
         run: |
           echo $(pwd)
@@ -63,6 +66,7 @@ jobs:
           cargo add --path "${GIT_ROOT}/zkevm-circuits"
           cargo build
           rm -rf foobar
+
       - name: zkevm-circuits: test-circuits
         run: |
           echo $(pwd)
