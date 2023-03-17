@@ -104,7 +104,13 @@ impl MptUpdates {
         );
         let root_pair2 = (self.old_root, self.new_root);
         if root_pair2 != root_pair {
-            log::error!("roots non consistent {:?} vs {:?}", root_pair, root_pair2);
+            log::error!(
+                "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
+                root_pair.0,
+                root_pair.1,
+                root_pair2.0,
+                root_pair2.1
+            );
         }
     }
 

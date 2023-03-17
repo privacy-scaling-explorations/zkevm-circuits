@@ -129,6 +129,9 @@ impl WitnessGenerator {
                 .unwrap();
         } else if !old_value.is_zero() {
             trie.delete(key.as_ref());
+            if trie.get_store(key.as_ref()).is_some() {
+                log::error!("fail to delete key {} in {:?}", key.hex(), address);
+            }
         } // notice if the value is both zero we never touch the trie layer
 
         let storage_root_after = H256(trie.root());
