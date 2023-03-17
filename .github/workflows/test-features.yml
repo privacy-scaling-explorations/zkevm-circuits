@@ -28,6 +28,13 @@ jobs:
       (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crate:
+          - zkevm-circuits
+        feature:
+          - default
+          - test-circuits
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -56,24 +63,14 @@ jobs:
             target/
           key: ${{ github.workflow }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: 'zkevm-circuits: default'
+      - name: '${{ matrix.crate }}: ${{ matrix.feature }}'
         run: |
           GIT_ROOT=$(pwd)
           cd /tmp
           cargo new foobar
           cd foobar
           cp "${GIT_ROOT}/rust-toolchain" . || true
-          cargo add --path "${GIT_ROOT}/zkevm-circuits"
+          cargo add --path "${GIT_ROOT}/${{ matrix.crate }}" --features '${{ matrix.feature }}'
           cargo build
-          rm -rf foobar
-
-      - name: 'zkevm-circuits: test-circuits'
-        run: |
-          GIT_ROOT=$(pwd)
-          cd /tmp
-          cargo new foobar
-          cd foobar
-          cp "${GIT_ROOT}/rust-toolchain" . || true
-          cargo add --path "${GIT_ROOT}/zkevm-circuits" --features test-circuits
-          cargo build
+          cd ../
           rm -rf foobar
