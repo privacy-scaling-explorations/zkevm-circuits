@@ -23,9 +23,9 @@ jobs:
 
   test_features:
     needs: [skip_check]
-    #if: |
-    #  github.event.pull_request.draft == false &&
-    #  (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
+    if: |
+      github.event.pull_request.draft == false &&
+      (github.event.action == 'ready_for_review' || needs.skip_check.outputs.should_skip != 'true')
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -58,22 +58,22 @@ jobs:
 
       - name: 'zkevm-circuits: default'
         run: |
-          echo $(pwd)
           GIT_ROOT=$(pwd)
           cd /tmp
           cargo new foobar
           cd foobar
+          cp "${GIT_ROOT}/rust-toolchain" || true
           cargo add --path "${GIT_ROOT}/zkevm-circuits"
           cargo build
           rm -rf foobar
 
       - name: 'zkevm-circuits: test-circuits'
         run: |
-          echo $(pwd)
           GIT_ROOT=$(pwd)
           cd /tmp
           cargo new foobar
           cd foobar
+          cp "${GIT_ROOT}/rust-toolchain" || true
           cargo add --path "${GIT_ROOT}/zkevm-circuits" --features test-circuits
           cargo build
           rm -rf foobar
