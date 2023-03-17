@@ -48,7 +48,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ github.workflow }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ github.workflow }}-${{ toJSON(matrix) }}-${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
@@ -61,7 +61,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ github.workflow }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ github.workflow }}-${{ toJSON(matrix) }}-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: '${{ matrix.crate }}: ${{ matrix.feature }}'
         run: |
