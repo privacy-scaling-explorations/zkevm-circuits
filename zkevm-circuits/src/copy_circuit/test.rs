@@ -1,7 +1,9 @@
 #![allow(unused_imports)]
 pub use super::*;
-use crate::evm_circuit::{test::rand_bytes, witness::block_convert};
-use crate::witness::Block;
+use crate::{
+    evm_circuit::{test::rand_bytes, witness::block_convert},
+    witness::Block,
+};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     evm::{gen_sha3_code, MemoryKind},
@@ -12,8 +14,7 @@ use halo2_proofs::{
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
 };
-use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-use mock::{TestContext, MOCK_ACCOUNTS};
+use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS};
 
 impl<F: Field> Circuit<F> for CopyCircuit<F> {
     type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);

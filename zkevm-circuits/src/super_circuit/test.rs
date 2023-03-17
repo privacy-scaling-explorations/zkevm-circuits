@@ -1,7 +1,6 @@
 pub use super::*;
 use ethers_signers::{LocalWallet, Signer};
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 use mock::{TestContext, MOCK_CHAIN_ID};
 use rand::SeedableRng;
