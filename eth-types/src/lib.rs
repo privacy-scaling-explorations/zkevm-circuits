@@ -403,6 +403,7 @@ pub struct ResultGethExecTrace {
 #[derive(Deserialize, Serialize, Clone, Debug, Eq, PartialEq)]
 pub struct GethExecTrace {
     /// L1 fee
+    #[serde(default)]
     pub l1_fee: u64,
     /// Used gas
     pub gas: Gas,
