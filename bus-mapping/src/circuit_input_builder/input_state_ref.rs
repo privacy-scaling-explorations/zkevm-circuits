@@ -313,6 +313,12 @@ impl<'a> CircuitInputStateRef<'a> {
             }
             AccountField::PoseidonCodeHash => {
                 if account.is_empty() {
+                    if op.value.is_zero() {
+                        // Writing code_hash=0 to empty account is a noop to the StateDB.
+                        return;
+                    }
+                    // Reading a code_hash=EMPTY_HASH of an empty account in the StateDB is encoded
+                    // as code_hash=0 (non-existing account encoding) in the State Circuit.
                     Word::zero()
                 } else {
                     account.poseidon_code_hash.to_word()
