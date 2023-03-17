@@ -34,6 +34,7 @@ jobs:
           - zkevm-circuits
         feature:
           - default
+          - test
           - test-circuits
     steps:
       - uses: actions/checkout@v2
