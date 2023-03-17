@@ -297,8 +297,13 @@ impl WitnessGenerator {
                     }
                     MPTProofType::CodeSizeExists => {
                         // code size can only change from 0
-                        debug_assert_eq!(0u64, old_val.as_u64());
-                        debug_assert_eq!(0u64, acc_data.code_size);
+                        debug_assert_eq!(old_val.as_u64(), acc_data.code_size);
+                        debug_assert!(
+                            old_val.as_u64() == 0u64 || old_val.as_u64() == new_val.as_u64(),
+                            "old {:?} new {:?}",
+                            old_val,
+                            new_val
+                        );
                         acc_data.code_size = new_val.as_u64();
                     }
                     MPTProofType::AccountDoesNotExist => (),

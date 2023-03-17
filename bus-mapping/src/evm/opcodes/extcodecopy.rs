@@ -178,7 +178,7 @@ mod extcodecopy_tests {
             AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
-        util::{hash_code, POSEIDON_CODE_HASH_ZERO},
+        util::hash_code,
     };
     use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
     use eth_types::{
@@ -217,7 +217,7 @@ mod extcodecopy_tests {
         // TODO: bytecode_ext = vec![] is being used to indicate an empty account.
         // Should be an optional vec and we need to add tests for EOA vs. non-EOA.
         let code_hash = if bytecode_ext.code.is_empty() {
-            *POSEIDON_CODE_HASH_ZERO
+            Default::default()
         } else {
             hash_code(&code_ext.to_vec())
         };
