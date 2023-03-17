@@ -1,20 +1,28 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_GAS;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::{
-    cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment, CommonErrorGadget,
-    SloadGasGadget, SstoreGasGadget,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_GAS,
+        step::ExecutionState,
+        util::{
+            and,
+            common_gadget::{
+                cal_sload_gas_cost_for_assignment, cal_sstore_gas_cost_for_assignment,
+                CommonErrorGadget, SloadGasGadget, SstoreGasGadget,
+            },
+            constraint_builder::ConstraintBuilder,
+            math_gadget::{LtGadget, PairSelectGadget},
+            or, select, CachedRegion, Cell,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::CallContextFieldTag,
+    util::Expr,
 };
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::math_gadget::{LtGadget, PairSelectGadget};
-use crate::evm_circuit::util::{and, or, select, CachedRegion, Cell};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::CallContextFieldTag;
-use crate::util::Expr;
-use eth_types::evm_types::{GasCost, OpcodeId};
-use eth_types::{Field, ToScalar, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field, ToScalar, U256,
+};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for
 /// [`OpcodeId::SLOAD`] and [`OpcodeId::SSTORE`].
@@ -241,11 +249,15 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::util::common_gadget::cal_sstore_gas_cost_for_assignment;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::{bytecode, Bytecode, ToWord, U256};
+    use crate::{
+        evm_circuit::{test::rand_bytes, util::common_gadget::cal_sstore_gas_cost_for_assignment},
+        test_util::CircuitTestBuilder,
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{GasCost, OpcodeId},
+        Bytecode, ToWord, U256,
+    };
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
     use std::cmp::max;
 

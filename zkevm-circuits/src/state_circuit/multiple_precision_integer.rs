@@ -1,5 +1,4 @@
-use super::lookups;
-use super::param::*;
+use super::{lookups, param::*};
 use crate::util::Expr;
 use eth_types::{Address, Field};
 use halo2_proofs::{

@@ -1,7 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp},
+    Error,
+};
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
 use keccak256::EMPTY_HASH;
 

@@ -1,10 +1,9 @@
 //! The Super Circuit is a circuit that contains all the circuits of the
 //! zkEVM in order to achieve two things:
-//! - Check the correct integration between circuits via the shared lookup
-//!   tables, to verify that the table layouts match.
-//! - Allow having a single circuit setup for which a proof can be generated
-//!   that would be verified under a single aggregation circuit for the first
-//!   milestone.
+//! - Check the correct integration between circuits via the shared lookup tables, to verify that
+//!   the table layouts match.
+//! - Allow having a single circuit setup for which a proof can be generated that would be verified
+//!   under a single aggregation circuit for the first milestone.
 //!
 //! The current implementation contains the following circuits:
 //!
@@ -54,25 +53,28 @@
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) mod test;
 
-use crate::bytecode_circuit::circuit::{
-    BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
+use crate::{
+    bytecode_circuit::circuit::{
+        BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
+    },
+    copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
+    evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
+    exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
+    state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
+    table::{
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
+    },
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block, MptUpdates},
 };
-use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
-use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
-use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
-use crate::keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs};
-use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
-use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
-use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
 };
-use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
-use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{block_convert, Block, MptUpdates};
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
-use eth_types::geth_types::GethData;
-use eth_types::Field;
+use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},

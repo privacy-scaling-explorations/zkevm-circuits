@@ -8,8 +8,8 @@ pub use test::CopyCircuit as TestCopyCircuit;
 
 pub(crate) mod util;
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
-use eth_types::Field;
-use eth_types::Word;
+use eth_types::{Field, Word};
+
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -21,10 +21,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::collections::HashMap;
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
-use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::{
@@ -33,6 +31,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
+    witness::{Bytecode, RwMap, Transaction},
 };
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
@@ -479,7 +478,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 )?;
             }
 
-            //tag
+            // tag
             tag_chip.assign(region, *offset, tag)?;
 
             // lt chip
@@ -776,8 +775,10 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
 
 #[cfg(test)]
 mod copy_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
-    use crate::stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
+    use crate::{
+        evm_circuit::step::ExecutionState,
+        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
+    };
 
     /// Prints the stats of Copy circuit per execution state.  See
     /// `print_circuit_stats_by_states` for more details.

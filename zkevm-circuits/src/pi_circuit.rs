@@ -5,26 +5,26 @@ mod param;
 mod test;
 pub use test::PiTestCircuit;
 
-use eth_types::geth_types::BlockConstants;
-use eth_types::sign_types::SignData;
-use eth_types::H256;
 use eth_types::{
-    geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
-    Word,
+    geth_types::{BlockConstants, Transaction},
+    sign_types::SignData,
+    Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
 use keccak256::plain::Keccak;
 use param::*;
 use std::marker::PhantomData;
 
-use crate::table::TxFieldTag;
-use crate::table::TxTable;
-use crate::table::{BlockTable, LookupTable};
-use crate::tx_circuit::TX_LEN;
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness;
-use gadgets::is_zero::IsZeroChip;
-use gadgets::util::{not, or, Expr};
+use crate::{
+    table::{BlockTable, LookupTable, TxFieldTag, TxTable},
+    tx_circuit::TX_LEN,
+    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
+use gadgets::{
+    is_zero::IsZeroChip,
+    util::{not, or, Expr},
+};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
@@ -51,7 +51,7 @@ pub struct BlockValues {
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
     nonce: Word,
-    gas: Word, //gas limit
+    gas: Word, // gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
