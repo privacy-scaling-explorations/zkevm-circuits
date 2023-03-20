@@ -1073,7 +1073,6 @@ impl<'a> CircuitInputStateRef<'a> {
             if call_success_create {
                 caller_ctx.return_data.truncate(0);
             }
-            }
         }
 
         self.tx_ctx.pop_call_ctx();

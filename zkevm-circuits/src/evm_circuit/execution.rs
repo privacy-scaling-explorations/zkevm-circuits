@@ -136,6 +136,7 @@ use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
+use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
@@ -324,10 +325,10 @@ pub(crate) struct ExecutionConfig<F> {
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
-    error_oog_code_store: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCodeStore }>>,
     error_insufficient_balance:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInsufficientBalance }>>,
-    error_nonce_uint_overflow: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorNonceUintOverflow }>>,
+    error_nonce_uint_overflow:
+        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorNonceUintOverflow }>>,
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
@@ -337,7 +338,7 @@ pub(crate) struct ExecutionConfig<F> {
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
-    error_gas_uint_overflow: DummyGadget<F, 0, 0, { ExecutionState::ErrorGasUintOverflow }>,
+    error_gas_uint_overflow: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorGasUintOverflow }>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {

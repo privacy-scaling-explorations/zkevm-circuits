@@ -1,6 +1,6 @@
 use crate::evm_circuit::util::rlc;
 use crate::evm_circuit::witness::Rw;
-use crate::table::{AccountFieldTag, MPTProofType};
+use crate::table::{AccountFieldTag, MPTProofType as ProofType};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
@@ -25,9 +25,9 @@ impl MptUpdate {
         match self.key {
             Key::AccountStorage { .. } => {
                 if self.old_value.is_zero() && self.new_value.is_zero() {
-                    MPTProofType::NonExistingStorageProof
+                    ProofType::NonExistingStorageProof
                 } else {
-                    MPTProofType::StorageMod
+                    ProofType::StorageMod
                 }
             }
             Key::Account { field_tag, .. } => field_tag.into(),
