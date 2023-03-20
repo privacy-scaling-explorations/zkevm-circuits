@@ -83,7 +83,6 @@ mod extcodehash_tests {
         circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
-        state_db::CodeDB,
     };
     use eth_types::{
         address, bytecode,
@@ -91,6 +90,7 @@ mod extcodehash_tests {
         geth_types::GethData,
         Bytecode, Bytes, Word, U256,
     };
+    use ethers_core::utils::keccak256;
     use mock::TestContext;
     use pretty_assertions::assert_eq;
 
@@ -169,7 +169,7 @@ mod extcodehash_tests {
         .unwrap()
         .into();
 
-        let code_hash = CodeDB::hash(&code_ext).to_word();
+        let code_hash = Word::from(keccak256(code_ext));
 
         let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
         builder

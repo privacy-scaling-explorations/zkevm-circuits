@@ -3,10 +3,9 @@
 
 use crate::{
     precompile::is_precompiled,
-    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+    util::{hash_code, KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
 };
 use eth_types::{Address, Hash, Word, H256, U256};
-use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 
@@ -58,7 +57,7 @@ impl CodeDB {
 
     /// Compute hash of given code.
     pub fn hash(code: &[u8]) -> Hash {
-        H256(keccak256(code))
+        H256(hash_code(code).into())
     }
 }
 
