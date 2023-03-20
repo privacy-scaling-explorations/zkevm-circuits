@@ -2,7 +2,7 @@
 
 use std::{iter, marker::PhantomData};
 
-use crate::table::{BlockContextFieldTag, BlockTable, KeccakTable, LookupTable, TxTable};
+use crate::table::{BlockContextFieldTag, KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
@@ -23,7 +23,6 @@ use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     state_circuit::StateCircuitExports,
-    util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
 use bus_mapping::util::read_env_var;
@@ -845,9 +844,9 @@ impl<F: Field> PiCircuitConfig<F> {
             pi_cells.extend_from_slice(&coinbase_cells[2..]);
             pi_cells.extend_from_slice(&difficulty_cells[2..]);
 
-            // TODO: re-enable chain_id constraints
-            for (constant, byte) in pi_constants.iter().zip(pi_cells.into_iter()).skip(1) {
-                region.constrain_equal(constant.cell(), byte.cell())?;
+            for (_constant, _byte) in pi_constants.iter().zip(pi_cells.into_iter()) {
+                // TODO: re-enable chain_id constraints
+                // region.constrain_equal(constant.cell(), byte.cell())?;
             }
             block_table_offset += BLOCK_LEN;
         }

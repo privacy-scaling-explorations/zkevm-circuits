@@ -15,6 +15,7 @@ use crate::{
     },
     precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
+    util::POSEIDON_CODE_HASH_ZERO,
     Error,
 };
 use eth_types::{
@@ -23,10 +24,7 @@ use eth_types::{
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
-use ethers_core::utils::{get_contract_address, get_create2_address};
-use keccak256::{EMPTY_HASH, EMPTY_HASH_LE};
-use crate::util::POSEIDON_CODE_HASH_ZERO;
-use ethers_core::utils::keccak256;
+use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular

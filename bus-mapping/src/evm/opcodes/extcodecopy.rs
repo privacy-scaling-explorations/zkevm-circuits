@@ -186,7 +186,7 @@ mod extcodecopy_tests {
         address, bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        Bytecode, Bytes, ToWord, Word, H256, U256,
+        Bytecode, Bytes, ToWord, Word, U256,
     };
     use mock::TestContext;
 

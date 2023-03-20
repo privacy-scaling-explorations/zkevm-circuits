@@ -84,10 +84,7 @@ use crate::{
     },
 };
 
-use crate::{
-    util::{circuit_stats, log2_ceil, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block, SignedTransaction},
-};
+use crate::{util::circuit_stats, witness::SignedTransaction};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -102,7 +99,6 @@ use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     rlp_circuit::{RlpCircuit, RlpCircuitConfig},
 };
-
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]
@@ -681,7 +677,7 @@ pub(crate) mod super_circuit_tests {
         SuperCircuit::<_, 1, 32, 64, 0x100>::configure(&mut cs);
         log::info!("super circuit degree: {}", cs.degree());
         log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
-        assert!(cs.degree() <= 11);
+        assert!(cs.degree() <= 9);
     }
 
     fn test_super_circuit<
