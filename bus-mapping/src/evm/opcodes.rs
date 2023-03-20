@@ -16,7 +16,6 @@ use eth_types::{
     evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
-// use keccak256::EMPTY_HASH;
 
 use crate::util::CHECK_MEM_STRICT;
 
@@ -517,7 +516,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             );
             (
                 call.code_hash.to_word(),
-                call.code_hash.to_fixed_bytes() == POSEIDON_CODE_HASH_ZERO.0,
+                call.code_hash == CodeDB::empty_code_hash(),
             )
         }
         (_, false) => (Word::zero(), true),

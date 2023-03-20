@@ -468,26 +468,17 @@ fn tracer_err_address_collision() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            nonce: Word::zero(),
             balance: Word::from(555u64), /* same value as in
                                           * `mock::new_tracer_account` */
-            storage: HashMap::new(),
-            keccak_code_hash: Hash::zero(),
-            poseidon_code_hash: Hash::zero(),
-            code_size: Word::zero(),
+            ..Account::zero()
+            
+            
         },
     );
-    builder.builder.sdb.set_account(
-        &create2_address,
-        Account {
-            nonce: Word::zero(),
-            balance: Word::zero(),
-            storage: HashMap::new(),
-            keccak_code_hash: Hash::zero(),
-            poseidon_code_hash: Hash::zero(),
-            code_size: Word::zero(),
-        },
-    );
+    builder
+        .builder
+        .sdb
+        .set_account(&create2_address, Account::zero());
     assert_eq!(
         builder.state_ref().get_step_err(step, next_step).unwrap(),
         Some(ExecError::ContractAddressCollision)
@@ -1869,11 +1860,8 @@ fn create_address() {
         &ADDR_B,
         Account {
             nonce: Word::from(1),
-            balance: Word::zero(),
-            storage: HashMap::new(),
-            keccak_code_hash: Hash::zero(),
-            poseidon_code_hash: Hash::zero(),
-            code_size: Word::zero(),
+            ..Account::zero()
+            
         },
     );
     let addr = builder.state_ref().create_address().unwrap();

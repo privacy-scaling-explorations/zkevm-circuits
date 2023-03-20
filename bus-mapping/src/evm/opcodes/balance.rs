@@ -94,7 +94,7 @@ mod balance_tests {
         circuit_input_builder::ExecState,
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
-        util::{hash_code, POSEIDON_CODE_HASH_ZERO},
+        state_db::CodeDB,
     };
     use eth_types::{
         address, bytecode,
@@ -261,7 +261,7 @@ mod balance_tests {
         let code_hash = if let Some(code) = account_code {
             hash_code(&code).to_word()
         } else if exists {
-            POSEIDON_CODE_HASH_ZERO.to_word()
+            CodeDB::empty_code_hash().to_word()
         } else {
             U256::zero()
         };

@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
     operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled},
-    util::POSEIDON_CODE_HASH_ZERO,
+    state_db::CodeDB,
     Error,
 };
 use eth_types::{
@@ -103,7 +103,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
                 callee_code_hash.to_word(),
-                callee_code_hash.eq(&*POSEIDON_CODE_HASH_ZERO),
+                callee_code_hash == CodeDB::empty_code_hash(),
             )
         } else {
             (Word::zero(), true)

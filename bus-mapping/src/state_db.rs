@@ -11,8 +11,16 @@ use std::collections::{HashMap, HashSet};
 
 lazy_static! {
     static ref ACCOUNT_ZERO: Account = Account::zero();
-    static ref VALUE_ZERO: Word = Word::zero();
+    static ref EMPTY_CODE_HASH: Hash = CodeDB::hash(&[]);
+    /// bytes of empty code hash, in little endian order.
+    pub static ref EMPTY_CODE_HASH_LE: [u8; 32] = {
+        let mut bytes = EMPTY_CODE_HASH.to_fixed_bytes();
+        bytes.reverse();
+        bytes
+    };
 }
+
+const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
 #[derive(Debug)]
@@ -37,17 +45,19 @@ impl CodeDB {
     }
     /// Insert code indexed by code hash, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
-        let hash = if code.is_empty() {
-            *POSEIDON_CODE_HASH_ZERO
-        } else {
-            hash_code(&code)
-        };
+        let hash = Self::hash(&code);
+
         self.0.insert(hash, code);
         hash
     }
     /// Specify code hash for empty code (nil)
     pub fn empty_code_hash() -> Hash {
-        *POSEIDON_CODE_HASH_ZERO
+        *EMPTY_CODE_HASH
+    }
+
+    /// Compute hash of given code.
+    pub fn hash(code: &[u8]) -> Hash {
+        H256(keccak256(code))
     }
 }
 
@@ -116,14 +126,7 @@ pub struct StateDB {
 impl StateDB {
     /// Create an empty Self
     pub fn new() -> Self {
-        Self {
-            state: HashMap::new(),
-            access_list_account: HashSet::new(),
-            access_list_account_storage: HashSet::new(),
-            dirty_storage: HashMap::new(),
-            destructed_account: HashSet::new(),
-            refund: 0,
-        }
+        Self::default()
     }
 
     /// Set an [`Account`] at `addr` in the StateDB.
@@ -172,7 +175,7 @@ impl StateDB {
         let (_, acc) = self.get_account(addr);
         match acc.storage.get(key) {
             Some(value) => (true, value),
-            None => (false, &(*VALUE_ZERO)),
+            None => (false, &VALUE_ZERO),
         }
     }
 

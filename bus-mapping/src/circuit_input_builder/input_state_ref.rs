@@ -583,7 +583,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 AccountOp {
                     address: receiver,
                     field: AccountField::PoseidonCodeHash,
-                    value: POSEIDON_CODE_HASH_ZERO.to_word(),
+                    value: CodeDB::empty_code_hash().to_word(),
                     value_prev: Word::zero(),
                 },
             )?;
@@ -830,11 +830,11 @@ impl<'a> CircuitInputStateRef<'a> {
                     _ => address,
                 };
                 if is_precompiled(&code_address) {
-                    (CodeSource::Address(code_address), *POSEIDON_CODE_HASH_ZERO)
+                    (CodeSource::Address(code_address), CodeDB::empty_code_hash())
                 } else {
                     let (found, account) = self.sdb.get_account(&code_address);
                     if !found {
-                        (CodeSource::Address(code_address), *POSEIDON_CODE_HASH_ZERO)
+                        (CodeSource::Address(code_address), CodeDB::empty_code_hash())
                     } else {
                         (
                             CodeSource::Address(code_address),

@@ -6,9 +6,7 @@ use crate::{
     util::{hash_code, POSEIDON_CODE_HASH_ZERO},
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
-use ethers_core::utils::keccak256;
-use keccak256::EMPTY_HASH_LE;
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -77,7 +75,7 @@ impl Opcode for ReturnRevert {
                     address: state.call()?.address,
                     field: AccountField::KeccakCodeHash,
                     value: code_info.keccak_hash.to_word(),
-                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value_prev: CodeDB::empty_code_hash().to_word(),
                 },
             )?;
             state.push_op_reversible(

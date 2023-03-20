@@ -9,7 +9,8 @@ use crate::{
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
+use bus_mapping::util::{KECCAK_CODE_HASH_ZERO, OSEIDON_CODE_HASH_ZERO};
+use bus_mapping::state_db::CodeDB;
 use eth_types::{Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -18,7 +19,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::EMPTY_HASH_LE;
 use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
@@ -196,9 +196,12 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
+    pub fn empty_code_hash_rlc(&self) -> Value<F> {
+        self.word_rlc(CodeDB::empty_code_hash().to_word())
+    }
 
     pub fn empty_keccak_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
+	self.word_rlc(KECCAK_CODE_HASH_ZERO.to_word())
     }
 
     pub fn empty_poseidon_hash_rlc(&self) -> Value<F> {

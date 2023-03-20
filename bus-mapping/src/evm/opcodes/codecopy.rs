@@ -129,7 +129,7 @@ mod codecopy_tests {
         circuit_input_builder::{CopyDataType, ExecState, NumberOrHash},
         mock::BlockData,
         operation::{MemoryOp, StackOp, RW},
-        util::hash_code,
+        state_db::CodeDB,
     };
 
     #[test]
