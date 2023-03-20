@@ -4,7 +4,7 @@ use crate::{
     evm::opcodes::ExecStep,
     operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
     state_db::CodeDB,
-    util::{hash_code, POSEIDON_CODE_HASH_ZERO},
+    util::{hash_code, POSEIDON_CODE_HASH_ZERO, KECCAK_CODE_HASH_ZERO},
     Error,
 };
 use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
@@ -77,7 +77,7 @@ impl Opcode for ReturnRevert {
                     address: state.call()?.address,
                     field: AccountField::KeccakCodeHash,
                     value: code_info.keccak_hash.to_word(),
-                    value_prev: CodeDB::empty_code_hash().to_word(),
+                    value_prev: KECCAK_CODE_HASH_ZERO.to_word(),
                 },
             )?;
             state.push_op_reversible(
