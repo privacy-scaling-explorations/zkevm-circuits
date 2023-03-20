@@ -3,9 +3,10 @@
 
 use crate::{
     precompile::is_precompiled,
-    util::{hash_code, KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
 };
-use eth_types::{Address, Hash, Word, U256};
+use eth_types::{Address, Hash, Word, H256, U256};
+use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 

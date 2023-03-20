@@ -468,11 +468,10 @@ fn tracer_err_address_collision() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
-            balance: Word::from(555u64), /* same value as in
-                                          * `mock::new_tracer_account` */
+            // same value as in
+            // `mock::new_tracer_account`
+            balance: Word::from(555u64),
             ..Account::zero()
-            
-            
         },
     );
     builder
@@ -1861,7 +1860,6 @@ fn create_address() {
         Account {
             nonce: Word::from(1),
             ..Account::zero()
-            
         },
     );
     let addr = builder.state_ref().create_address().unwrap();

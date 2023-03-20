@@ -11,8 +11,7 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use bus_mapping::util::POSEIDON_CODE_HASH_ZERO;
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use bus_mapping::util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO};
 use eth_types::{Field, ToLittleEndian, ToWord};
 use gadgets::util::{and, not};
 use halo2_proofs::{
@@ -467,7 +466,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn empty_keccak_hash_rlc(&self) -> Expression<F> {
         let bytes = KECCAK_CODE_HASH_ZERO.to_word().to_le_bytes();
-        self.word_rlc((bytes.map(|byte| byte.expr()))
+        self.word_rlc(bytes.map(|byte| byte.expr()))
     }
 
     pub(crate) fn empty_poseidon_hash_rlc(&self) -> Expression<F> {

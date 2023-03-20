@@ -7,7 +7,8 @@ use crate::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
         TxRefundOp, RW,
     },
-    util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO},
+    state_db::CodeDB,
+    util::KECCAK_CODE_HASH_ZERO,
     Error,
 };
 use core::fmt::Debug;

@@ -95,6 +95,7 @@ mod balance_tests {
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
         state_db::CodeDB,
+        util::hash_code,
     };
     use eth_types::{
         address, bytecode,

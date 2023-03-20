@@ -15,7 +15,6 @@ use crate::{
     },
     precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
-    util::POSEIDON_CODE_HASH_ZERO,
     Error,
 };
 use eth_types::{

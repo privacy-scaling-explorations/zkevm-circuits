@@ -18,11 +18,9 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, state_db::CodeDB};
-// use bus_mapping::{
-// circuit_input_builder::CopyDataType, evm::OpcodeId,
-// };
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
