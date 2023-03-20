@@ -7,7 +7,12 @@ use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
+// Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 
+use crate::{
+    table::{BlockTable, LookupTable, TxTable},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]

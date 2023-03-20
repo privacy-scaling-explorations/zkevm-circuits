@@ -63,6 +63,9 @@ use crate::{
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{log2_ceil, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block},
 };
 
 #[cfg(feature = "zktrie")]
@@ -98,8 +101,8 @@ use halo2_proofs::{
 use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     rlp_circuit::{RlpCircuit, RlpCircuitConfig},
-    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
 };
+
 
 /// Configuration of the Super Circuit
 #[derive(Clone)]

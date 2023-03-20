@@ -7,6 +7,7 @@ use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::not},
     table::{MPTProofType as ProofType, RwTableTag},
     util::Expr,
+    util::Expr,
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
