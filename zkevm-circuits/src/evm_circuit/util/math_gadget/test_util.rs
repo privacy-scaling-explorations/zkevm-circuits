@@ -37,6 +37,8 @@ use halo2_proofs::{
     circuit::SimpleFloorPlanner,
     dev::MockProver,
     plonk::{Circuit, ConstraintSystem, Error, Selector},
+        Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, Selector, ThirdPhase,
+    },
 };
 
 pub(crate) const WORD_LOW_MAX: Word = U256([u64::MAX, u64::MAX, 0, 0]);

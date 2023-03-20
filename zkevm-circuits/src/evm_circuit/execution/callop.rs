@@ -26,6 +26,7 @@ use eth_types::{
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
+
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
 /// both for successful and failure(insufficient balance error) cases.

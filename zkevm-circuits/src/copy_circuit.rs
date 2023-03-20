@@ -17,7 +17,6 @@ use halo2_proofs::{
 use itertools::Itertools;
 use std::{collections::HashMap, marker::PhantomData};
 
-use crate::witness::{Bytecode, RwMap, Transaction};
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
 #[cfg(not(feature = "onephase"))]
@@ -30,6 +29,7 @@ use crate::{
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
+    witness::{Bytecode, RwMap, Transaction},
 };
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]

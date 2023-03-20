@@ -53,7 +53,7 @@
 #[cfg(feature = "poseidon-codehash")]
 use crate::bytecode_circuit::circuit::to_poseidon_hash::{
     ToHashBlockBytecodeCircuitConfigArgs, ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD,
-};
+    },
 #[cfg(not(feature = "poseidon-codehash"))]
 use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
 use crate::{
@@ -63,6 +63,9 @@ use crate::{
     exp_circuit::{ExpCircuit, ExpCircuitConfig},
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block, MptUpdates},
 };
 
 #[cfg(feature = "zktrie")]
