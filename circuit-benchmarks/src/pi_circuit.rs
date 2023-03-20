@@ -7,7 +7,6 @@ mod tests {
     use bus_mapping::mock::BlockData;
     use eth_types::{bytecode, geth_types::GethData};
     use halo2_proofs::{
-        arithmetic::Field,
         halo2curves::bn256::{Bn256, Fr, G1Affine},
         plonk::{create_proof, keygen_pk, keygen_vk, verify_proof},
         poly::{

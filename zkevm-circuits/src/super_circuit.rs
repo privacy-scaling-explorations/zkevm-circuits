@@ -53,7 +53,7 @@
 #[cfg(feature = "poseidon-codehash")]
 use crate::bytecode_circuit::circuit::to_poseidon_hash::{
     ToHashBlockBytecodeCircuitConfigArgs, ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD,
-    },
+};
 #[cfg(not(feature = "poseidon-codehash"))]
 use crate::bytecode_circuit::circuit::BytecodeCircuitConfig;
 use crate::{
@@ -64,8 +64,8 @@ use crate::{
     keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
     poseidon_circuit::{PoseidonCircuit, PoseidonCircuitConfig, PoseidonCircuitConfigArgs},
     tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
-    util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block, MptUpdates},
+    util::{log2_ceil, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block},
 };
 
 #[cfg(feature = "zktrie")]
@@ -84,10 +84,7 @@ use crate::{
     },
 };
 
-use crate::{
-    util::{circuit_stats, log2_ceil, SubCircuit, SubCircuitConfig},
-    witness::{block_convert, Block, SignedTransaction},
-};
+use crate::{util::circuit_stats, witness::SignedTransaction};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     mock::BlockData,
@@ -101,7 +98,6 @@ use halo2_proofs::{
 use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
     rlp_circuit::{RlpCircuit, RlpCircuitConfig},
-    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
 };
 
 /// Configuration of the Super Circuit

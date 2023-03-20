@@ -2,22 +2,16 @@
 
 use std::{iter, marker::PhantomData};
 
-use crate::table::{BlockContextFieldTag, BlockTable, KeccakTable, LookupTable, TxTable};
+use crate::table::{BlockContextFieldTag, KeccakTable};
 use bus_mapping::circuit_input_builder::get_dummy_tx_hash;
 use eth_types::{Address, Field, Hash, ToBigEndian, Word, H256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::plonk::{Assigned, Expression, Fixed, Instance};
-    //Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
+// Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 
 use crate::{
-    table::{BlockTable, LookupTable, TxFieldTag, TxTable},
-    tx_circuit::TX_LEN,
-    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
-};
-use gadgets::{
-    is_zero::IsZeroChip,
-    util::{not, or, Expr},
+    table::{BlockTable, LookupTable, TxTable},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -29,7 +23,6 @@ use crate::tx_circuit::{TX_HASH_OFFSET, TX_LEN};
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     state_circuit::StateCircuitExports,
-    util::{Challenges, SubCircuit, SubCircuitConfig},
     witness::{self, Block, BlockContext, BlockContexts, Transaction},
 };
 use bus_mapping::util::read_env_var;
