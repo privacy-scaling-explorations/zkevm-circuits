@@ -9,7 +9,7 @@ mod test;
 
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -62,8 +62,8 @@ pub struct StateCircuitConfig<F> {
     // others, it is 0.
     initial_value: Column<Advice>,
     // For Rw::AccountStorage, identify non-existing if both committed value and
-    // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
-    // non-existing, otherwise do lookup for ProofType::StorageChanged.
+    // new value are zero. Will do lookup for MPTProofType::NonExistingStorageProof if
+    // non-existing, otherwise do lookup for MPTProofType::StorageMod.
     is_non_exist: BatchedIsZeroConfig,
     // Intermediary witness used to reduce mpt lookup expression degree
     mpt_proof_type: Column<Advice>,
@@ -346,9 +346,9 @@ impl<F: Field> StateCircuitConfig<F> {
                 F::from(match row {
                     Rw::AccountStorage { .. } => {
                         if committed_value.is_zero_vartime() && value.is_zero_vartime() {
-                            ProofType::StorageDoesNotExist as u64
+                            MPTProofType::NonExistingStorageProof as u64
                         } else {
-                            ProofType::StorageChanged as u64
+                            MPTProofType::StorageMod as u64
                         }
                     }
                     Rw::Account { field_tag, .. } => {
@@ -357,7 +357,7 @@ impl<F: Field> StateCircuitConfig<F> {
                             && matches!(field_tag, AccountFieldTag::PoseidonCodeHash)
                         // todo fix this!!!
                         {
-                            ProofType::AccountDoesNotExist as u64
+                            MPTProofType::NonExistingAccountProof as u64
                         } else {
                             *field_tag as u64
                         }

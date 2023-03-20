@@ -597,11 +597,11 @@ impl RwTable {
 
 /// The types of proofs in the MPT table
 #[derive(Clone, Copy, Debug)]
-pub enum ProofType {
+pub enum MPTProofType {
     /// Nonce updated
-    NonceChanged = AccountFieldTag::Nonce as isize,
+    NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
-    BalanceChanged = AccountFieldTag::Balance as isize,
+    BalanceMod = AccountFieldTag::Balance as isize,
     /// Keccak Code hash exists
     KeccakCodeHashExists = AccountFieldTag::KeccakCodeHash as isize,
     /// Poseidon Code hash exits
@@ -609,23 +609,23 @@ pub enum ProofType {
     /// Code size exists
     CodeSizeExists = AccountFieldTag::CodeSize as isize,
     /// Account does not exist
-    AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
+    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
-    StorageChanged,
+    StorageMod,
     /// Storage does not exist
-    StorageDoesNotExist,
+    NonExistingStorageProof,
 }
-impl_expr!(ProofType);
+impl_expr!(MPTProofType);
 
-impl From<AccountFieldTag> for ProofType {
+impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceChanged,
-            AccountFieldTag::Balance => Self::BalanceChanged,
+            AccountFieldTag::Nonce => Self::NonceMod,
+            AccountFieldTag::Balance => Self::BalanceMod,
             AccountFieldTag::KeccakCodeHash => Self::KeccakCodeHashExists,
             AccountFieldTag::PoseidonCodeHash => Self::PoseidonCodeHashExists,
+            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
             AccountFieldTag::CodeSize => Self::CodeSizeExists,
-            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
         }
     }
 }

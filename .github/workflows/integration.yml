@@ -1,6 +1,8 @@
 name: Integration Tests
 
 on:
+  schedule:
+    - cron: '50 1 * * SUN'
   pull_request:
     types: [synchronize, labeled]
     # Ignore when target branch is `main` and source branch is scroll-stable.
@@ -10,13 +12,24 @@ on:
   push:
     branches:
       - scroll-stable
-
-env:
-  CARGO_NET_GIT_FETCH_WITH_CLI: true
+  workflow_dispatch:    
+    inputs:
+      provertype:
+        description: 'invoke real vs mock prover'
+        required: true
+        default: 'mock_prover'
+        type: choice
+        options:
+        - real_prover
+        - mock_prover  
 
 jobs:
   consecutiveness:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
+    if: github.event_name == 'schedule' ||
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
+
 
     runs-on: ubuntu-latest
     steps:
@@ -47,6 +60,19 @@ jobs:
       run:
         working-directory: ./integration-tests
     steps:
+      - name: Set provertype to mock_prover for push & pull_request_labelled
+        run: |
+          echo "provertype=mock_prover" >> $GITHUB_ENV
+        if: github.event_name == 'push' ||
+            github.event_name == 'pull_request'
+      - name: Set provertype to workflow_dispatch choice
+        run: |
+          echo "provertype=${{ inputs.provertype }}" >> $GITHUB_ENV
+        if: github.event_name == 'workflow_dispatch'
+      - name: Set provertype to real_prover for scheduled runs
+        run: |
+          echo "provertype=real_prover" >> $GITHUB_ENV
+        if: github.event_name == 'schedule'
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -79,5 +105,5 @@ jobs:
       - run: ./run.sh --steps "gendata"
       - run: ./run.sh --steps "tests" --tests "rpc"
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::mock_prover"
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
       - run: ./run.sh --steps "cleanup"

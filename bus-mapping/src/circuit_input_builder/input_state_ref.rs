@@ -1064,9 +1064,11 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
+        let call_success_create: bool =
+            call.is_create() && call.is_success && step.op == OpcodeId::RETURN;
 
         // Store deployed code if it's a successful create
-        if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+        if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
             let code = call_ctx
@@ -1092,7 +1094,7 @@ impl<'a> CircuitInputStateRef<'a> {
         if let Ok(caller) = self.caller_mut() {
             caller.last_callee_id = call.call_id;
             // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
-            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+            if call_success_create {
                 caller.last_callee_return_data_length = 0u64;
                 caller.last_callee_return_data_offset = 0u64;
             } else {
@@ -1102,9 +1104,9 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // If current call has caller_ctx (has caller)
-        // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         if let Ok(caller_ctx) = self.caller_ctx_mut() {
-            if step.op == OpcodeId::RETURN && call.is_create() && call.is_success {
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            if call_success_create {
                 caller_ctx.return_data.truncate(0);
             }
         }
