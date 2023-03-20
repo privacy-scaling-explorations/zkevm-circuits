@@ -3,6 +3,7 @@ use crate::{
     circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
     operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled},
+    state_db::CodeDB,
     Error,
 };
 use eth_types::{
@@ -12,7 +13,6 @@ use eth_types::{
     },
     GethExecStep, ToWord, Word,
 };
-use keccak256::EMPTY_HASH;
 use std::cmp::min;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
@@ -103,7 +103,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
                 callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+                callee_code_hash == CodeDB::empty_code_hash(),
             )
         } else {
             (Word::zero(), true)
