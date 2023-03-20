@@ -362,8 +362,8 @@ impl<F: Field> ConstraintBuilder<F> {
         self.require_equal(
             "mpt_proof_type is field_tag or NonExistingStorageProof",
             q.mpt_proof_type(),
-            is_non_exist.expr() * MPTProofType::NonExistingStorageProof.expr()
-                + (1.expr() - is_non_exist) * MPTProofType::StorageMod.expr(),
+            is_non_exist.expr() * ProofType::NonExistingStorageProof.expr()
+                + (1.expr() - is_non_exist) * ProofType::StorageMod.expr(),
         );
 
         // ref. spec 4.1. MPT lookup for last access to (address, storage_key)
