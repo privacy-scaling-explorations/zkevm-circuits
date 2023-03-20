@@ -1,9 +1,11 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
-use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Clone, Copy, Debug)]
@@ -180,11 +182,11 @@ mod extcodecopy_tests {
         },
         util::hash_code,
     };
-    use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
     use eth_types::{
+        address, bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        U256,
+        Bytecode, Bytes, ToWord, Word, U256,
     };
     use mock::TestContext;
 

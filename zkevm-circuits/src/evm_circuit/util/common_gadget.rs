@@ -523,7 +523,7 @@ impl<F: Field> TransferGadget<F> {
                     0.expr(),
                     Some(reversion_info),
                 );
-                //TODO: also write poseidon? codesize seems not need yet
+                // TODO: also write poseidon? codesize seems not need yet
             },
         );
         // Skip transfer if value == 0

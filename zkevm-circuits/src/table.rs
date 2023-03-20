@@ -1,27 +1,29 @@
 //! Table definitions used cross-circuits
 
-use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::util::rlc;
-use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
-use crate::impl_expr;
-use crate::util::build_tx_log_address;
-use crate::util::Challenges;
-use crate::witness::{
-    Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
-    RwMap, RwRow, SignedTransaction, Transaction,
+use crate::{
+    copy_circuit::number_or_hash_to_field,
+    evm_circuit::util::rlc,
+    exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
+    impl_expr,
+    util::{build_tx_log_address, Challenges},
+    witness::{
+        Block, BlockContext, BlockContexts, Bytecode, MptUpdateRow, MptUpdates, RlpWitnessGen, Rw,
+        RwMap, RwRow, SignedTransaction, Transaction,
+    },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use gadgets::util::{split_u256, split_u256_limb64};
-use halo2_proofs::plonk::{Any, Expression, Fixed, VirtualCells};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::{split_u256, split_u256_limb64},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
+    poly::Rotation,
 };
-use halo2_proofs::{circuit::Layouter, poly::Rotation};
 use std::iter::repeat;
 
 #[cfg(feature = "onephase")]

@@ -16,7 +16,7 @@ use eth_types::{
     evm_unimplemented, GethExecStep, ToAddress, ToWord, Word,
 };
 use ethers_core::utils::get_contract_address;
-//use keccak256::EMPTY_HASH;
+// use keccak256::EMPTY_HASH;
 
 use crate::util::CHECK_MEM_STRICT;
 
@@ -302,7 +302,7 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
-        //ExecError::
+        // ExecError::
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),

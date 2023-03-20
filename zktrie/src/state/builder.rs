@@ -6,9 +6,10 @@ use std::{
     io::{Error, ErrorKind, Read},
 };
 
-use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::halo2curves::group::ff::PrimeField;
+use halo2_proofs::{
+    arithmetic::FieldExt,
+    halo2curves::{bn256::Fr, group::ff::PrimeField},
+};
 use mpt_circuits::hash::Hashable;
 
 use lazy_static::lazy_static;
@@ -102,15 +103,15 @@ impl CanRead for AccountData {
 
         rd.read_exact(&mut byte32_buf)?; // balance
         let balance = U256::from_big_endian(&byte32_buf);
-        rd.read_exact(&mut byte32_buf)?; //storage root
+        rd.read_exact(&mut byte32_buf)?; // storage root
         let storage_root = H256::from(&byte32_buf);
         rd.read_exact(&mut byte32_buf)?; // keccak hash of code
         let keccak_code_hash = H256::from(&byte32_buf);
         rd.read_exact(&mut byte32_buf)?; // poseidon hash of code
         let poseidon_code_hash = H256::from(&byte32_buf);
 
-        //rd.read_exact(&mut byte32_buf)?; // code size
-        //let code_size = U64::from_big_endian(&byte32_buf[24..]);
+        // rd.read_exact(&mut byte32_buf)?; // code size
+        // let code_size = U64::from_big_endian(&byte32_buf[24..]);
 
         Ok(AccountData {
             nonce: nonce.as_u64(),

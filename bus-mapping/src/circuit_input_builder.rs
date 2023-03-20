@@ -12,21 +12,28 @@ mod transaction;
 
 use self::access::gen_state_access_trace;
 pub use self::block::BlockHead;
-use crate::error::Error;
-use crate::evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops};
-use crate::operation::{CallContextField, Operation, RWCounter, StartOp, RW};
-use crate::rpc::GethClient;
-use crate::state_db::{self, CodeDB, StateDB};
+use crate::{
+    error::Error,
+    evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
+    operation::{CallContextField, Operation, RWCounter, StartOp, RW},
+    rpc::GethClient,
+    state_db::{self, CodeDB, StateDB},
+};
 pub use access::{Access, AccessSet, AccessValue, CodeSource};
 pub use block::{Block, BlockContext};
 pub use call::{Call, CallContext, CallKind};
 use core::fmt::Debug;
-use eth_types::evm_types::{GasCost, OpcodeId};
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::{self, Address, GethExecStep, GethExecTrace, ToWord, Word, H256, U256};
-use eth_types::{geth_types, ToBigEndian};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::types::{Bytes, NameOrAddress, Signature, TransactionRequest};
+use eth_types::{
+    self,
+    evm_types::{GasCost, OpcodeId},
+    geth_types,
+    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Address, GethExecStep, GethExecTrace, ToBigEndian, ToWord, Word, H256, U256,
+};
+use ethers_core::{
+    k256::ecdsa::SigningKey,
+    types::{Bytes, NameOrAddress, Signature, TransactionRequest},
+};
 use ethers_providers::JsonRpcClient;
 pub use execution::{
     CopyDataType, CopyEvent, CopyStep, ExecState, ExecStep, ExpEvent, ExpStep, NumberOrHash,
@@ -37,8 +44,10 @@ use ethers_core::utils::keccak256;
 pub use input_state_ref::CircuitInputStateRef;
 use itertools::Itertools;
 use log::warn;
-use std::collections::{BTreeMap, HashMap};
-use std::iter;
+use std::{
+    collections::{BTreeMap, HashMap},
+    iter,
+};
 pub use transaction::{Transaction, TransactionContext};
 
 /// Circuit Setup Parameters
@@ -479,7 +488,7 @@ pub fn keccak_inputs(block: &Block, code_db: &CodeDB) -> Result<Vec<Vec<u8>>, Er
     ));
     // Bytecode Circuit
     for _bytecode in code_db.0.values() {
-        //keccak_inputs.push(bytecode.clone());
+        // keccak_inputs.push(bytecode.clone());
     }
     log::debug!(
         "keccak total len after bytecodes: {}",
@@ -799,7 +808,7 @@ impl<P: JsonRpcClient> BuilderClient<P> {
         let geth_traces = self.cli.trace_block_by_number(block_num.into()).await?;
 
         // fetch up to 256 blocks
-        let mut n_blocks = 0; //std::cmp::min(256, block_num as usize);
+        let mut n_blocks = 0; // std::cmp::min(256, block_num as usize);
         let mut next_hash = eth_block.parent_hash;
         let mut prev_state_root: Option<Word> = None;
         let mut history_hashes = vec![Word::default(); n_blocks];

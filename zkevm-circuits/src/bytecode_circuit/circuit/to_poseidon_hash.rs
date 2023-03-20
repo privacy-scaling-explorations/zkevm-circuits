@@ -14,8 +14,10 @@ use keccak256::EMPTY_HASH_LE;
 use log::trace;
 use std::vec;
 
-use super::super::bytecode_unroller::{BytecodeRow, UnrolledBytecode};
-use super::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs};
+use super::{
+    super::bytecode_unroller::{BytecodeRow, UnrolledBytecode},
+    BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
+};
 
 /// specify byte in field for encoding bytecode
 pub const HASHBLOCK_BYTES_IN_FIELD: usize = bus_mapping::util::POSEIDON_HASH_BYTES_IN_FIELD;
@@ -53,7 +55,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         // TODO: does this col still used for storing poseidon hash?
         // let code_hash = bytecode_table.code_hash;
 
-        let q_enable = base_conf.q_enable; //from 0 to last avaliable row
+        let q_enable = base_conf.q_enable; // from 0 to last avaliable row
 
         let control_length = meta.advice_column();
         let field_input = meta.advice_column();
@@ -269,22 +271,21 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             ]))
         });
 
-        /* not need
-        meta.create_gate("padding", |meta| {
-            let mut cb = BaseConstraintBuilder::default();
-
-            cb.require_zero(
-                "enforce not is_field_border",
-                meta.query_advice(is_field_border, Rotation::cur()),
-            );
-            // Conditions:
-            // - Padding
-            cb.gate(and::expr(vec![
-                meta.query_fixed(q_enable, Rotation::cur()),
-                meta.query_advice(base_conf.padding, Rotation::cur()),
-            ]))
-        });
-         */
+        // not need
+        // meta.create_gate("padding", |meta| {
+        // let mut cb = BaseConstraintBuilder::default();
+        //
+        // cb.require_zero(
+        // "enforce not is_field_border",
+        // meta.query_advice(is_field_border, Rotation::cur()),
+        // );
+        // Conditions:
+        // - Padding
+        // cb.gate(and::expr(vec![
+        // meta.query_fixed(q_enable, Rotation::cur()),
+        // meta.query_advice(base_conf.padding, Rotation::cur()),
+        // ]))
+        // });
 
         #[cfg(feature = "codehash")]
         let lookup_columns = [/* code_hash, */ field_input, control_length];
@@ -316,10 +317,10 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     meta.query_advice(is_field_border, Rotation::cur()),
                     field_selector(meta)[i].clone(),
                 ]);
-                let mut constraints = Vec::new(); /*vec![(
-                                                      enable.clone(),
-                                                      meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
-                                                  )];*/
+                let mut constraints = Vec::new(); // vec![(
+                                                  // enable.clone(),
+                                                  // meta.query_advice(keccak_table.is_enabled, Rotation::cur()),
+                                                  // )];
                 for (l_col, tbl_col) in lookup_columns.into_iter().zip(pick_hash_tbl_cols(i)) {
                     constraints.push((
                         enable.clone() * meta.query_advice(l_col, Rotation::cur()),
@@ -330,7 +331,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
             });
         }
 
-        //the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
+        // the canonical form should be `for i in 1..PoseidonTable::INPUT_WIDTH{...}`
         #[cfg(feature = "codehash")]
         meta.lookup_any("poseidon input padding zero for final", |meta| {
             // Conditions:
@@ -709,8 +710,8 @@ pub fn unroll_to_hash_input<F: Field, const BYTES_IN_FIELD: usize, const INPUT_L
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    //use super::super::tests::get_randomness;
-    //use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled,
+    // use super::super::tests::get_randomness;
+    // use crate::{bytecode_circuit::dev::test_bytecode_circuit_unrolled,
     // util::DEFAULT_RAND}; use eth_types::Bytecode;
     use halo2_proofs::halo2curves::bn256::Fr;
 

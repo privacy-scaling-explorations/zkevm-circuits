@@ -19,11 +19,9 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-/*
-use bus_mapping::{
-    circuit_input_builder::CopyDataType, evm::OpcodeId,
-};
-*/
+// use bus_mapping::{
+// circuit_input_builder::CopyDataType, evm::OpcodeId,
+// };
 use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
 use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -71,14 +69,12 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         let is_success = cb.call_context(None, CallContextFieldTag::IsSuccess);
         cb.require_boolean("is_success is boolean", is_success.expr());
-        /*
-        cb.require_equal(
-            "if is_success, opcode is RETURN. if not, opcode is REVERT",
-            opcode.expr(),
-            is_success.expr() * OpcodeId::RETURN.expr()
-                + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
-        );
-        */
+        // cb.require_equal(
+        // "if is_success, opcode is RETURN. if not, opcode is REVERT",
+        // opcode.expr(),
+        // is_success.expr() * OpcodeId::RETURN.expr()
+        // + not::expr(is_success.expr()) * OpcodeId::REVERT.expr(),
+        // );
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at
@@ -403,10 +399,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::geth_types::GethData;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
-        Word, U256,
+        address, bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+        Address, Bytecode, ToWord, Word, U256,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
