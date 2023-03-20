@@ -1635,7 +1635,7 @@ impl<F: Field> ExecutionConfig<F> {
                     rw,
                     rw_idx, idx);
 
-                //debug_assert_eq!(
+                // debug_assert_eq!(
                 //    rlc, assigned_rw_values[idx].1,
                 //    "left is witness, right is expression"
                 //);

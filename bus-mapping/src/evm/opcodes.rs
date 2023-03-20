@@ -302,7 +302,7 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
-        //ExecError::
+        // ExecError::
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::CodeStoreOutOfGas => Some(ErrorCodeStore::gen_associated_ops),

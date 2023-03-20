@@ -3,13 +3,13 @@ use super::{
     random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
     N_LIMBS_RW_COUNTER,
 };
-use crate::util::Expr;
 use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
     table::{AccountFieldTag, MPTProofType, RwTableTag},
+    util::Expr,
 };
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
@@ -30,7 +30,7 @@ pub struct RwTableQueries<F: Field> {
     pub storage_key: Expression<F>,
     pub value: Expression<F>,
     pub value_prev: Expression<F>, // meta.query(value, Rotation::prev())
-    pub value_prev_column: Expression<F>, /*meta.query(prev_value, Rotation::cur())
+    pub value_prev_column: Expression<F>, /* meta.query(prev_value, Rotation::cur())
                                     * TODO: aux1 and aux2 */
 }
 
@@ -160,13 +160,11 @@ impl<F: Field> ConstraintBuilder<F> {
             );
             // FIXME
             // https://github.com/scroll-tech/zkevm-circuits/issues/343
-            /*
-                        cb.require_equal(
-                            "value_prev column is initial_value for first access",
-                            q.value_prev_column(),
-                            q.initial_value.clone(),
-                        );
-            */
+            // cb.require_equal(
+            // "value_prev column is initial_value for first access",
+            // q.value_prev_column(),
+            // q.initial_value.clone(),
+            // );
         });
 
         // When all the keys in the current row and previous row are equal.
@@ -202,56 +200,52 @@ impl<F: Field> ConstraintBuilder<F> {
         // constraints It should be aux2/committed_value.
         // We should fix this after the committed_value field of Rw::Account in
         // both bus-mapping and evm-circuits are implemented.
-        /*
-        self.condition(q.first_access(), |cb| {
-            cb.require_equal(
-                "prev value when first access",
-                q.value_prev_col.clone(),
-                (q.tag_matches(RwTableTag::TxAccessListAccount)
-                    + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
-                    + q.tag_matches(RwTableTag::AccountDestructed)
-                    + q.tag_matches(RwTableTag::TxRefund))
-                    * 0u64.expr()
-                    + q.tag_matches(RwTableTag::Account)
-                          *  q.value_prev_col.clone()
-                    + q.tag_matches(RwTableTag::AccountStorage)
-                       *     q.aux2.clone(), // committed value
-            );
-        });
-        self.condition(q.not_first_access(), |cb| {
-            cb.require_equal(
-                "prev value when not first acccess",
-                q.value_prev_col.clone(),
-                (q.tag_matches(RwTableTag::TxAccessListAccount)
-                    + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
-                    + q.tag_matches(RwTableTag::AccountDestructed)
-                    + q.tag_matches(RwTableTag::TxRefund))
-                    * q.value_prev.clone()
-                    + q.tag_matches(RwTableTag::Account) * q.value_prev_col.clone()
-                    + q.tag_matches(RwTableTag::AccountStorage) * q.value_prev.clone(),
-            );
-        });
-        */
-        /*
-        self.require_equal("rw table rlc", q.rw_rlc.clone(), {
-            rlc::expr(
-                &[
-                    q.rw_counter.value.clone(),
-                    q.is_write.clone(),
-                    q.tag.clone(),
-                    q.id.value.clone(),
-                    q.address.value.clone(),
-                    q.field_tag.clone(),
-                    q.storage_key.encoded.clone(),
-                    q.value.clone(),
-                    q.value_prev_col.clone(),
-                    0u64.expr(), //q.aux1,
-                    q.aux2.clone(),
-                ],
-                &q.power_of_randomness,
-            )
-        })
-        */
+        // self.condition(q.first_access(), |cb| {
+        // cb.require_equal(
+        // "prev value when first access",
+        // q.value_prev_col.clone(),
+        // (q.tag_matches(RwTableTag::TxAccessListAccount)
+        // + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
+        // + q.tag_matches(RwTableTag::AccountDestructed)
+        // + q.tag_matches(RwTableTag::TxRefund))
+        // 0u64.expr()
+        // + q.tag_matches(RwTableTag::Account)
+        //  q.value_prev_col.clone()
+        // + q.tag_matches(RwTableTag::AccountStorage)
+        //     q.aux2.clone(), // committed value
+        // );
+        // });
+        // self.condition(q.not_first_access(), |cb| {
+        // cb.require_equal(
+        // "prev value when not first acccess",
+        // q.value_prev_col.clone(),
+        // (q.tag_matches(RwTableTag::TxAccessListAccount)
+        // + q.tag_matches(RwTableTag::TxAccessListAccountStorage)
+        // + q.tag_matches(RwTableTag::AccountDestructed)
+        // + q.tag_matches(RwTableTag::TxRefund))
+        // q.value_prev.clone()
+        // + q.tag_matches(RwTableTag::Account) * q.value_prev_col.clone()
+        // + q.tag_matches(RwTableTag::AccountStorage) * q.value_prev.clone(),
+        // );
+        // });
+        // self.require_equal("rw table rlc", q.rw_rlc.clone(), {
+        // rlc::expr(
+        // &[
+        // q.rw_counter.value.clone(),
+        // q.is_write.clone(),
+        // q.tag.clone(),
+        // q.id.value.clone(),
+        // q.address.value.clone(),
+        // q.field_tag.clone(),
+        // q.storage_key.encoded.clone(),
+        // q.value.clone(),
+        // q.value_prev_col.clone(),
+        // 0u64.expr(), //q.aux1,
+        // q.aux2.clone(),
+        // ],
+        // &q.power_of_randomness,
+        // )
+        // })
     }
 
     fn build_start_constraints(&mut self, q: &Queries<F>) {

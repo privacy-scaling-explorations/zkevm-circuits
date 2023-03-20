@@ -24,8 +24,7 @@ use crate::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256, rlp::RlpStream};
 use gadgets::util::{expr_from_bytes, not, or, Expr};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[cfg(feature = "reject-eip2718")]
 use gadgets::util::select;

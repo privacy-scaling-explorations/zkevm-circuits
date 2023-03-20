@@ -1,11 +1,11 @@
-use crate::evm_circuit::util::rlc;
-use crate::evm_circuit::witness::Rw;
-use crate::table::{AccountFieldTag, MPTProofType as ProofType};
+use crate::{
+    evm_circuit::{util::rlc, witness::Rw},
+    table::{AccountFieldTag, MPTProofType as ProofType},
+};
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
-use mpt_zktrie::state::witness::WitnessGenerator;
-use mpt_zktrie::{serde::SMTTrace, state, MPTProofType};
+use mpt_zktrie::{serde::SMTTrace, state, state::witness::WitnessGenerator, MPTProofType};
 use std::collections::BTreeMap;
 
 pub use state::ZktrieState;

@@ -1,15 +1,13 @@
 use super::{cell_manager::*, param::*, util::*};
-use crate::evm_circuit::util::rlc;
-use crate::util::Challenges;
+use crate::{evm_circuit::util::rlc, util::Challenges};
 use eth_types::Field;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
 use log::{debug, trace};
-use rayon::iter::IntoParallelRefIterator;
-use rayon::prelude::ParallelIterator;
+use rayon::{iter::IntoParallelRefIterator, prelude::ParallelIterator};
 use std::{env::var, vec};
 
 const MAX_DEGREE: usize = 9;
@@ -109,8 +107,7 @@ impl<F: FieldExt> KeccakRegion<F> {
 /// Recombines parts back together
 pub(crate) mod decode {
     use super::{Part, PartValue};
-    use crate::keccak_circuit::param::BIT_COUNT;
-    use crate::util::Expr;
+    use crate::{keccak_circuit::param::BIT_COUNT, util::Expr};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
@@ -130,8 +127,11 @@ pub(crate) mod decode {
 /// Splits a word into parts
 pub(crate) mod split {
     use super::{decode, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, pack_part, unpack, WordParts};
-    use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
+    use crate::{
+        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        keccak_circuit::util::{pack, pack_part, unpack, WordParts},
+        util::Expr,
+    };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
@@ -190,9 +190,14 @@ pub(crate) mod split {
 // table layout in `output_cells` regardless of rotation.
 pub(crate) mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::param::BIT_COUNT;
-    use crate::keccak_circuit::util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts};
-    use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
+    use crate::{
+        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        keccak_circuit::{
+            param::BIT_COUNT,
+            util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts},
+        },
+        util::Expr,
+    };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
@@ -356,8 +361,7 @@ pub(crate) mod split_uniform {
 pub(crate) mod transform {
     use super::{transform_to, CellManager, KeccakRegion, Part, PartValue};
     use eth_types::Field;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::plonk::TableColumn;
+    use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(
@@ -411,11 +415,12 @@ pub(crate) mod transform {
 // Transfroms values to cells
 pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, to_bytes, unpack};
-    use crate::util::Expr;
+    use crate::{
+        keccak_circuit::util::{pack, to_bytes, unpack},
+        util::Expr,
+    };
     use eth_types::Field;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::plonk::TableColumn;
+    use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(
@@ -853,17 +858,16 @@ pub fn multi_keccak<F: Field>(
     }
 
     // Dedup actual keccaks
-    /*
-    let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
-    let inputs_num = bytes.len();
-    for (idx, bytes) in bytes.iter().enumerate() {
-        debug!("{}th keccak is of len {}", idx, bytes.len());
-    }
-    let bytes: Vec<_> = bytes.iter().unique().collect();
-    let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
-    let inputs_num2 = bytes.len();
-    debug!("after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len {inputs_len}->{inputs_len2}");
-    */
+    // let inputs_len: usize = bytes.iter().map(|k| k.len()).sum();
+    // let inputs_num = bytes.len();
+    // for (idx, bytes) in bytes.iter().enumerate() {
+    // debug!("{}th keccak is of len {}", idx, bytes.len());
+    // }
+    // let bytes: Vec<_> = bytes.iter().unique().collect();
+    // let inputs_len2: usize = bytes.iter().map(|k| k.len()).sum();
+    // let inputs_num2 = bytes.len();
+    // debug!("after dedup inputs, input num {inputs_num}->{inputs_num2}, input total len
+    // {inputs_len}->{inputs_len2}");
 
     // TODO: optimize the `extend` using Iter?
     let real_rows: Vec<_> = bytes

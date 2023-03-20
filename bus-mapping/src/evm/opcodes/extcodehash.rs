@@ -60,7 +60,7 @@ impl Opcode for Extcodehash {
         } else {
             H256::zero()
         };
-        //log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
+        // log::trace!("extcodehash addr {:?} acc {:?} exists {:?} codehash {:?}",
         // external_address, account, exists, code_hash);
         state.account_read(
             &mut exec_step,
@@ -79,9 +79,11 @@ impl Opcode for Extcodehash {
 #[cfg(test)]
 mod extcodehash_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp, RW};
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp, RW},
+    };
     use eth_types::{
         address, bytecode,
         evm_types::{OpcodeId, StackAddress},

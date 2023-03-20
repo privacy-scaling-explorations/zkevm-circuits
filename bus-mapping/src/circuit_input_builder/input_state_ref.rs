@@ -5,7 +5,6 @@ use super::{
     CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
     TransactionContext,
 };
-use crate::precompile::is_precompiled;
 use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
@@ -14,6 +13,7 @@ use crate::{
         StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
         RW,
     },
+    precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
     Error,
 };
@@ -24,8 +24,7 @@ use eth_types::{
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use keccak256::EMPTY_HASH;
-use keccak256::EMPTY_HASH_LE;
+use keccak256::{EMPTY_HASH, EMPTY_HASH_LE};
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -1465,8 +1464,8 @@ impl<'a> CircuitInputStateRef<'a> {
                 0u64.into(),
             );
 
-            //Even call.rw_counter_end_of_reversion is zero for now, it will set in
-            //set_value_ops_call_context_rwc_eor later
+            // Even call.rw_counter_end_of_reversion is zero for now, it will set in
+            // set_value_ops_call_context_rwc_eor later
             // if call fails, no matter root or internal, read RwCounterEndOfReversion for
             // circuit constraint.
             self.call_context_read(
