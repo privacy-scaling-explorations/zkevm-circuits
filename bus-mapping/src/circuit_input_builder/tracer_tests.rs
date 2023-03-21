@@ -483,7 +483,7 @@ fn tracer_err_address_collision() {
 }
 
 #[test]
-fn tracer_create_without_collision() {
+fn tracer_create_collision_free() {
     // We do CREATE twice with the same parameters, with a code_creater
     // that outputs not the same, which will lead to the different new
     // contract address.
