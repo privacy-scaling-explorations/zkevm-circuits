@@ -4,6 +4,7 @@ use crate::{
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
 };
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::{Field, ToLittleEndian};
 use gadgets::is_zero::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
 use halo2_proofs::{
@@ -13,7 +14,6 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use keccak256::EMPTY_HASH_LE;
 use log::trace;
 use std::vec;
 
@@ -221,7 +221,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             );
 
             let empty_hash = rlc::expr(
-                &EMPTY_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
+                &EMPTY_CODE_HASH_LE.map(|v| Expression::Constant(F::from(v as u64))),
                 challenges.evm_word(),
             );
 
@@ -437,7 +437,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         let empty_hash = challenges
             .evm_word()
-            .map(|challenge| rlc::value(EMPTY_HASH_LE.as_ref(), challenge));
+            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
 
         layouter.assign_region(
             || "assign bytecode",

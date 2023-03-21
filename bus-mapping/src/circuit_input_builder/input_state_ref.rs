@@ -23,7 +23,6 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use keccak256::EMPTY_HASH_LE;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -522,7 +521,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 AccountOp {
                     address: receiver,
                     field: AccountField::CodeHash,
-                    value: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value: CodeDB::empty_code_hash().to_word(),
                     value_prev: Word::zero(),
                 },
             )?;
