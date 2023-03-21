@@ -1261,12 +1261,9 @@ impl<'a> CircuitInputStateRef<'a> {
             }
 
             // Address collision
-            if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
-                let address = match step.op {
-                    OpcodeId::CREATE => self.create_address()?,
-                    OpcodeId::CREATE2 => self.create2_address(step)?,
-                    _ => unreachable!(),
-                };
+            if matches!(step.op, OpcodeId::CREATE2) {
+                let address = self.create2_address(step)?;
+
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
                     return Ok(Some(ExecError::ContractAddressCollision));
