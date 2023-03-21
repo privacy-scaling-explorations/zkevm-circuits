@@ -411,9 +411,10 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        self.assign_internal(layouter, size, witness, challenges, true)
+        self.assign_internal(layouter, size, witness, overwrite, challenges, true)
     }
 
     pub(crate) fn assign_internal(
@@ -421,6 +422,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         layouter: &mut impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
@@ -471,6 +473,50 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         idx,
                         last_row_offset,
                     )?;
+                }
+
+                // Overwrite
+                let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
+                for (offset, row) in overwrite.rows.iter().enumerate() {
+                    for (name, column, value) in [
+                        ("tag", self.bytecode_table.tag, row.tag),
+                        ("index", self.bytecode_table.index, row.index),
+                        ("is_code", self.bytecode_table.is_code, row.is_code),
+                        ("value", self.bytecode_table.value, row.value),
+                        ("length", self.length, F::from(overwrite.bytes.len() as u64)),
+                    ] {
+                        region.assign_advice(
+                            || format!("assign {} {}", name, offset),
+                            column,
+                            offset,
+                            || Value::known(value),
+                        )?;
+                    }
+
+                    if row.tag == F::one() {
+                        value_rlc.as_mut().zip(challenges.keccak_input()).map(
+                            |(value_rlc, challenge)| {
+                                *value_rlc = *value_rlc * challenge + row.value
+                            },
+                        );
+                    } else {
+                        value_rlc = challenges.keccak_input().map(|_| F::zero());
+                    }
+
+                    let code_hash = challenges
+                        .evm_word()
+                        .map(|challenge| rlc::value(&row.code_hash.to_le_bytes(), challenge));
+                    for (name, column, value) in [
+                        ("code_hash", self.bytecode_table.code_hash, code_hash),
+                        ("value_rlc", self.value_rlc, value_rlc),
+                    ] {
+                        region.assign_advice(
+                            || format!("assign {} {}", name, offset),
+                            column,
+                            offset,
+                            || value,
+                        )?;
+                    }
                 }
                 Ok(())
             },
@@ -747,12 +793,18 @@ pub struct BytecodeCircuit<F: Field> {
     pub bytecodes: Vec<UnrolledBytecode<F>>,
     /// Circuit size
     pub size: usize,
+    /// Overwrite
+    pub overwrite: UnrolledBytecode<F>,
 }
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
     pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
-        BytecodeCircuit { bytecodes, size }
+        BytecodeCircuit {
+            bytecodes,
+            size,
+            overwrite: Default::default(),
+        }
     }
 
     /// Creates bytecode circuit from block and bytecode_size.
@@ -801,7 +853,14 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.load_aux_tables(layouter)?;
-        config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
+        config.assign_internal(
+            layouter,
+            self.size,
+            &self.bytecodes,
+            &self.overwrite,
+            challenges,
+            false,
+        )
     }
 }
 
@@ -1093,5 +1152,39 @@ mod tests {
             invalid.rows[7].is_code = Fr::one();
             test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
         }
+    }
+
+    use halo2_proofs::dev::MockProver;
+
+    #[test]
+    fn bytecode_soundness_bug_1() {
+        let k = 9;
+        let bytecode = vec![1, 2, 3, 4];
+        let bytecode_len = bytecode.len();
+        let unrolled = unroll(bytecode);
+        let unrolled_len = unrolled.rows.len();
+        let code_hash = unrolled.rows[0].code_hash.clone();
+        let mut index = bytecode_len as u64;
+        let size = 100;
+        let minimum_rows = 8;
+
+        let mut overwrite = unrolled.clone();
+        for i in 0..size - minimum_rows + 3 {
+            if i >= unrolled_len {
+                overwrite.rows.push(BytecodeRow {
+                    code_hash: code_hash.clone(),
+                    tag: Fr::one(),
+                    index: Fr::from(index),
+                    is_code: Fr::one(),
+                    value: Fr::from((i % 10 + 1) as u64),
+                });
+                index += 1;
+            }
+        }
+        let mut circuit = BytecodeCircuit::<Fr>::new(vec![unrolled], size);
+        circuit.overwrite = overwrite;
+
+        let prover = MockProver::<Fr>::run(k, &circuit, Vec::new()).unwrap();
+        prover.assert_satisfied_par();
     }
 }
