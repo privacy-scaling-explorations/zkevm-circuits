@@ -13,7 +13,11 @@ use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::test_ctx::{gen_geth_traces, LoggerConfig};
 use serde_json::{from_value, Value};
 use std::{collections::HashMap, fs::File, io::BufReader};
-use zkevm_circuits::{super_circuit::SuperCircuit, util::SubCircuit, witness::block_convert};
+use zkevm_circuits::{
+    super_circuit::{SuperCircuit, SUPER_CIRCUIT_FLAG_DEFAULT},
+    util::SubCircuit,
+    witness::block_convert,
+};
 
 #[derive(serde::Deserialize)]
 struct MyAccount {
@@ -104,8 +108,13 @@ fn prover_error() {
         block.randomness = Fr::from(MOCK_RANDOMNESS);
         block
     };
-    let circuit =
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::new_from_block(&block_witness);
+    let circuit = SuperCircuit::<
+        _,
+        MAX_TXS,
+        MAX_CALLDATA,
+        MOCK_RANDOMNESS,
+        { SUPER_CIRCUIT_FLAG_DEFAULT },
+    >::new_from_block(&block_witness);
     let res = MockProver::run(k, &circuit, circuit.instance())
         .expect("MockProver::run")
         .verify_par();

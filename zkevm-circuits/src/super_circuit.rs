@@ -223,6 +223,46 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
     }
 }
 
+/// The type used for SuperCircuit configuration.
+pub type SuperCircuitFlag = u64;
+/// Does not configure any sub circuits nor tables.
+pub const SUPER_CIRCUIT_FLAG_NONE: SuperCircuitFlag = 0;
+/// Enable the `EVMCircuit`.
+pub const SUPER_CIRCUIT_FLAG_EVM: SuperCircuitFlag = 1 << 0;
+/// Enable the `StateCircuit`.
+pub const SUPER_CIRCUIT_FLAG_STATE: SuperCircuitFlag = 1 << 1;
+/// Enable the `TxCircuit`.
+pub const SUPER_CIRCUIT_FLAG_TX: SuperCircuitFlag = 1 << 2;
+/// Enable the `PiCircuit`.
+pub const SUPER_CIRCUIT_FLAG_PI: SuperCircuitFlag = 1 << 3;
+/// Enable the `BytecodeCircuit`.
+pub const SUPER_CIRCUIT_FLAG_BYTECODE: SuperCircuitFlag = 1 << 4;
+/// Enable the `CopyCircuit`.
+pub const SUPER_CIRCUIT_FLAG_COPY: SuperCircuitFlag = 1 << 5;
+/// Enable the `ExpCircuit`.
+pub const SUPER_CIRCUIT_FLAG_EXP: SuperCircuitFlag = 1 << 6;
+/// Enable the `KeccakCircuit`.
+pub const SUPER_CIRCUIT_FLAG_KECCAK: SuperCircuitFlag = 1 << 7;
+/// Load the `BlockTable`.
+pub const SUPER_CIRCUIT_FLAG_BLOCK_TABLE: SuperCircuitFlag = 1 << 8;
+/// Load the `MptTable`.
+pub const SUPER_CIRCUIT_FLAG_MPT_TABLE: SuperCircuitFlag = 1 << 9;
+/// Enable all sub circuits and tables.
+pub const SUPER_CIRCUIT_FLAG_DEFAULT: SuperCircuitFlag = SUPER_CIRCUIT_FLAG_EVM
+    | SUPER_CIRCUIT_FLAG_STATE
+    | SUPER_CIRCUIT_FLAG_TX
+    | SUPER_CIRCUIT_FLAG_PI
+    | SUPER_CIRCUIT_FLAG_BYTECODE
+    | SUPER_CIRCUIT_FLAG_COPY
+    | SUPER_CIRCUIT_FLAG_EXP
+    | SUPER_CIRCUIT_FLAG_KECCAK
+    | SUPER_CIRCUIT_FLAG_BLOCK_TABLE
+    | SUPER_CIRCUIT_FLAG_MPT_TABLE;
+
+fn is_enabled(value: SuperCircuitFlag, flag: SuperCircuitFlag) -> bool {
+    (value & flag) != 0
+}
+
 /// The Super Circuit contains all the zkEVM circuits
 #[derive(Clone, Default, Debug)]
 pub struct SuperCircuit<
@@ -230,6 +270,7 @@ pub struct SuperCircuit<
     const MAX_TXS: usize,
     const MAX_CALLDATA: usize,
     const MOCK_RANDOMNESS: u64,
+    const FLAGS: SuperCircuitFlag,
 > {
     /// EVM Circuit
     pub evm_circuit: EvmCircuit<F>,
@@ -249,15 +290,28 @@ pub struct SuperCircuit<
     pub keccak_circuit: KeccakCircuit<F>,
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MOCK_RANDOMNESS: u64,
+        const FLAGS: SuperCircuitFlag,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS, FLAGS>
 {
     /// Return the number of rows required to verify a given block
     pub fn get_num_rows_required(block: &Block<F>) -> usize {
-        let num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
-        let num_rows_tx_circuit =
-            TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+
+        let mut num_rows_evm_circuit = 0;
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EVM) {
+            num_rows_evm_circuit = EvmCircuit::<F>::get_num_rows_required(block);
+        }
+        let mut num_rows_tx_circuit = 0;
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_TX) {
+            num_rows_tx_circuit =
+                TxCircuitConfig::<F>::get_num_rows_required(block.circuits_params.max_txs);
+        }
+
         num_rows_evm_circuit.max(num_rows_tx_circuit)
     }
 }
@@ -265,8 +319,13 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
 // Eventhough the SuperCircuit is not a subcircuit we implement the SubCircuit
 // trait for it in order to get the `new_from_block` and `instance` methods that
 // allow us to generalize integration tests.
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    SubCircuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MOCK_RANDOMNESS: u64,
+        const FLAGS: SuperCircuitFlag,
+    > SubCircuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS, FLAGS>
 {
     type Config = SuperCircuitConfig<F>;
 
@@ -280,7 +339,7 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         let exp_circuit = ExpCircuit::new_from_block(block);
         let keccak_circuit = KeccakCircuit::new_from_block(block);
 
-        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS> {
+        SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS, FLAGS> {
             evm_circuit,
             state_circuit,
             tx_circuit,
@@ -295,30 +354,63 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
     /// Returns suitable inputs for the SuperCircuit.
     fn instance(&self) -> Vec<Vec<F>> {
         let mut instance = Vec::new();
-        instance.extend_from_slice(&self.keccak_circuit.instance());
-        instance.extend_from_slice(&self.pi_circuit.instance());
-        instance.extend_from_slice(&self.tx_circuit.instance());
-        instance.extend_from_slice(&self.bytecode_circuit.instance());
-        instance.extend_from_slice(&self.copy_circuit.instance());
-        instance.extend_from_slice(&self.state_circuit.instance());
-        instance.extend_from_slice(&self.exp_circuit.instance());
-        instance.extend_from_slice(&self.evm_circuit.instance());
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_KECCAK) {
+            instance.extend_from_slice(&self.keccak_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_PI) {
+            instance.extend_from_slice(&self.pi_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_TX) {
+            instance.extend_from_slice(&self.tx_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_BYTECODE) {
+            instance.extend_from_slice(&self.bytecode_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_COPY) {
+            instance.extend_from_slice(&self.copy_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_STATE) {
+            instance.extend_from_slice(&self.state_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EXP) {
+            instance.extend_from_slice(&self.exp_circuit.instance());
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EVM) {
+            instance.extend_from_slice(&self.evm_circuit.instance());
+        }
 
         instance
     }
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &Block<F>) -> (usize, usize) {
-        let evm = EvmCircuit::min_num_rows_block(block);
-        let state = StateCircuit::min_num_rows_block(block);
-        let bytecode = BytecodeCircuit::min_num_rows_block(block);
-        let copy = CopyCircuit::min_num_rows_block(block);
-        let keccak = KeccakCircuit::min_num_rows_block(block);
-        let tx = TxCircuit::min_num_rows_block(block);
-        let exp = ExpCircuit::min_num_rows_block(block);
-        let pi = PiCircuit::min_num_rows_block(block);
+        let mut rows: Vec<(usize, usize)> = Vec::new();
 
-        let rows: Vec<(usize, usize)> = vec![evm, state, bytecode, copy, keccak, tx, exp, pi];
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EVM) {
+            rows.push(EvmCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_STATE) {
+            rows.push(StateCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_BYTECODE) {
+            rows.push(BytecodeCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_COPY) {
+            rows.push(CopyCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_KECCAK) {
+            rows.push(KeccakCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_TX) {
+            rows.push(TxCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EXP) {
+            rows.push(ExpCircuit::min_num_rows_block(block));
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_PI) {
+            rows.push(PiCircuit::min_num_rows_block(block));
+        }
+
         let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
             rows.into_iter().unzip();
         (
@@ -334,28 +426,49 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        self.keccak_circuit
-            .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
-        self.bytecode_circuit
-            .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
-        self.tx_circuit
-            .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
-        self.state_circuit
-            .synthesize_sub(&config.state_circuit, challenges, layouter)?;
-        self.copy_circuit
-            .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
-        self.exp_circuit
-            .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
-        self.evm_circuit
-            .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
-        self.pi_circuit
-            .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_KECCAK) {
+            self.keccak_circuit
+                .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_BYTECODE) {
+            self.bytecode_circuit
+                .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_TX) {
+            self.tx_circuit
+                .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_STATE) {
+            self.state_circuit
+                .synthesize_sub(&config.state_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_COPY) {
+            self.copy_circuit
+                .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EXP) {
+            self.exp_circuit
+                .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EVM) {
+            self.evm_circuit
+                .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+        }
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_PI) {
+            self.pi_circuit
+                .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
+        }
         Ok(())
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MOCK_RANDOMNESS: u64,
+        const FLAGS: SuperCircuitFlag,
+    > Circuit<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS, FLAGS>
 {
     type Config = SuperCircuitConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
@@ -388,24 +501,33 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         );
         let rws = &self.state_circuit.rows;
 
-        config.block_table.load(
-            &mut layouter,
-            &block.context,
-            Value::known(block.randomness),
-        )?;
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_BLOCK_TABLE) {
+            config.block_table.load(
+                &mut layouter,
+                &block.context,
+                Value::known(block.randomness),
+            )?;
+        }
 
-        config.mpt_table.load(
-            &mut layouter,
-            &MptUpdates::mock_from(rws),
-            Value::known(block.randomness),
-        )?;
+        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_MPT_TABLE) {
+            config.mpt_table.load(
+                &mut layouter,
+                &MptUpdates::mock_from(rws),
+                Value::known(block.randomness),
+            )?;
+        }
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDOMNESS: u64>
-    SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MOCK_RANDOMNESS: u64,
+        const FLAGS: SuperCircuitFlag,
+    > SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS, FLAGS>
 {
     /// From the witness data, generate a SuperCircuit instance with all of the
     /// sub-circuits filled with their corresponding witnesses.
@@ -447,7 +569,9 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         log::debug!("super circuit uses k = {}", k);
 
         let circuit =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::new_from_block(&block);
+            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS, FLAGS>::new_from_block(
+                &block,
+            );
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))

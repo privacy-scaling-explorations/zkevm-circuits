@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 pub use super::*;
-use crate::super_circuit::{test::block_1tx, SuperCircuit};
+use crate::super_circuit::{test::block_1tx, SuperCircuit, SUPER_CIRCUIT_FLAG_DEFAULT};
 use bus_mapping::circuit_input_builder::CircuitsParams;
 use halo2_proofs::{
     circuit::Value,
@@ -33,12 +33,14 @@ fn test_root_circuit() {
             max_evm_rows: 0,
             max_keccak_rows: 0,
         };
-        let (k, circuit, instance, _) =
-            SuperCircuit::<_, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>::build(
-                block_1tx(),
-                circuits_params,
-            )
-            .unwrap();
+        let (k, circuit, instance, _) = SuperCircuit::<
+            _,
+            MAX_TXS,
+            MAX_CALLDATA,
+            TEST_MOCK_RANDOMNESS,
+            SUPER_CIRCUIT_FLAG_DEFAULT,
+        >::build(block_1tx(), circuits_params)
+        .unwrap();
         let params = ParamsKZG::<Bn256>::setup(k, OsRng);
         let pk = keygen_pk(&params, keygen_vk(&params, &circuit).unwrap(), &circuit).unwrap();
         let protocol = compile(

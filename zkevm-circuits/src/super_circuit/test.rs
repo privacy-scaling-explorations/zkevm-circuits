@@ -12,7 +12,7 @@ use eth_types::{address, bytecode, geth_types::GethData, Word};
 #[test]
 fn super_circuit_degree() {
     let mut cs = ConstraintSystem::<Fr>::default();
-    SuperCircuit::<_, 1, 32, 0x100>::configure(&mut cs);
+    SuperCircuit::<_, 1, 32, 0x100, SUPER_CIRCUIT_FLAG_DEFAULT>::configure(&mut cs);
     log::info!("super circuit degree: {}", cs.degree());
     log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
     assert!(cs.degree() <= 9);
@@ -26,9 +26,14 @@ fn test_super_circuit<
     block: GethData,
     circuits_params: CircuitsParams,
 ) {
-    let (k, circuit, instance, _) =
-        SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::build(block, circuits_params)
-            .unwrap();
+    let (k, circuit, instance, _) = SuperCircuit::<
+        Fr,
+        MAX_TXS,
+        MAX_CALLDATA,
+        MOCK_RANDOMNESS,
+        SUPER_CIRCUIT_FLAG_DEFAULT,
+    >::build(block, circuits_params)
+    .unwrap();
     let prover = MockProver::run(k, &circuit, instance).unwrap();
     let res = prover.verify_par();
     if let Err(err) = res {

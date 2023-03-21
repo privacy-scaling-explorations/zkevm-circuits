@@ -34,7 +34,7 @@ use zkevm_circuits::{
     exp_circuit::TestExpCircuit,
     keccak_circuit::TestKeccakCircuit,
     state_circuit::TestStateCircuit,
-    super_circuit::SuperCircuit,
+    super_circuit::{SuperCircuit, SUPER_CIRCUIT_FLAG_DEFAULT},
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
     witness::{block_convert, Block},
@@ -119,7 +119,7 @@ lazy_static! {
     TokioMutex::new(IntegrationTest::new("Keccak", KECCAK_CIRCUIT_DEGREE));
 
     /// Integration test for Copy circuit
-    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>>> =
+    pub static ref SUPER_CIRCUIT_TEST: TokioMutex<IntegrationTest<SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS, { SUPER_CIRCUIT_FLAG_DEFAULT }>>> =
     TokioMutex::new(IntegrationTest::new("Super", SUPER_CIRCUIT_DEGREE));
 
      /// Integration test for Exp circuit
