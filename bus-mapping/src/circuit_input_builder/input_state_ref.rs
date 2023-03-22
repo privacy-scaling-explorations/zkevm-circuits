@@ -23,7 +23,6 @@ use eth_types::{
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
-use keccak256::EMPTY_HASH_LE;
 use std::cmp::max;
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -522,7 +521,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 AccountOp {
                     address: receiver,
                     field: AccountField::CodeHash,
-                    value: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value: CodeDB::empty_code_hash().to_word(),
                     value_prev: Word::zero(),
                 },
             )?;
@@ -1262,12 +1261,9 @@ impl<'a> CircuitInputStateRef<'a> {
             }
 
             // Address collision
-            if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
-                let address = match step.op {
-                    OpcodeId::CREATE => self.create_address()?,
-                    OpcodeId::CREATE2 => self.create2_address(step)?,
-                    _ => unreachable!(),
-                };
+            if matches!(step.op, OpcodeId::CREATE2) {
+                let address = self.create2_address(step)?;
+
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
                     return Ok(Some(ExecError::ContractAddressCollision));
