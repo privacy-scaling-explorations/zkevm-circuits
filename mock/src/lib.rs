@@ -19,6 +19,25 @@ pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
 pub fn mock_bytecode(
     addr_b: Address,
     pushdata: Vec<u8>,
+    call_data_length: usize,
+    call_data_offset: usize,
+) -> Vec<u8> {
+    let return_data_offset = 0x00usize;
+    let return_data_size = 0x00usize;
+    mock_bytecode_with_return_data(
+        addr_b,
+        pushdata,
+        return_data_offset,
+        return_data_size,
+        call_data_length,
+        call_data_offset,
+    )
+}
+
+/// Mock bytecode
+pub fn mock_bytecode_with_return_data(
+    addr_b: Address,
+    pushdata: Vec<u8>,
     return_data_offset: usize,
     return_data_size: usize,
     call_data_length: usize,

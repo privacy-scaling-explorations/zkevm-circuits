@@ -314,16 +314,7 @@ mod test {
         };
 
         let pushdata = rand_bytes(32);
-        let return_data_offset = 0x00usize;
-        let return_data_size = 0x00usize;
-        let code_a = mock_bytecode(
-            addr_b,
-            pushdata,
-            return_data_offset,
-            return_data_size,
-            call_data_length,
-            call_data_offset,
-        );
+        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
 
         let ctx = TestContext::<3, 1>::new(
             None,

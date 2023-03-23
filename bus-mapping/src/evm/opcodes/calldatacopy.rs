@@ -215,18 +215,9 @@ mod calldatacopy_tests {
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
 
-        let return_data_offset = 0x00usize;
-        let return_data_size = 0x00usize;
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = mock_bytecode(
-            addr_b,
-            pushdata,
-            return_data_offset,
-            return_data_size,
-            call_data_length,
-            call_data_offset,
-        );
+        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -400,18 +391,9 @@ mod calldatacopy_tests {
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
 
-        let return_data_offset = 0x00usize;
-        let return_data_size = 0x00usize;
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = mock_bytecode(
-            addr_b,
-            pushdata,
-            return_data_offset,
-            return_data_size,
-            call_data_length,
-            call_data_offset,
-        );
+        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
