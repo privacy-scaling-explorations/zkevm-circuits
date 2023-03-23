@@ -183,10 +183,13 @@ mod calldatacopy_tests {
         bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
-        ToWord, Word,
+        Word,
     };
 
-    use mock::test_ctx::{helpers::*, TestContext};
+    use mock::{
+        mock_bytecode,
+        test_ctx::{helpers::*, TestContext},
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -211,24 +214,19 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
+
+        let return_data_offset = 0x00usize;
+        let return_data_size = 0x00usize;
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = mock_bytecode(
+            addr_b,
+            pushdata,
+            return_data_offset,
+            return_data_size,
+            call_data_length,
+            call_data_offset,
+        );
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -401,24 +399,19 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
+
+        let return_data_offset = 0x00usize;
+        let return_data_size = 0x00usize;
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH1(call_data_length) // argsLength
-            PUSH1(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = mock_bytecode(
+            addr_b,
+            pushdata,
+            return_data_offset,
+            return_data_size,
+            call_data_length,
+            call_data_offset,
+        );
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(

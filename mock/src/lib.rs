@@ -1,6 +1,6 @@
 //! Mock types and functions to generate GethData used for tests
 
-use eth_types::{address, Address, Bytes, Word};
+use eth_types::{address, bytecode, Address, Bytes, ToWord, Word};
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
 use rand::SeedableRng;
@@ -14,6 +14,56 @@ pub(crate) use account::MockAccount;
 pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
+
+/// Mock bytecode
+pub fn mock_bytecode(
+    addr_b: Address,
+    pushdata: Vec<u8>,
+    return_data_offset: usize,
+    return_data_size: usize,
+    call_data_length: usize,
+    call_data_offset: usize,
+) -> Vec<u8> {
+    let default_gas = 0x1_0000u64;
+    mock_bytecode_with_gas(
+        addr_b,
+        pushdata,
+        return_data_offset,
+        return_data_size,
+        call_data_length,
+        call_data_offset,
+        default_gas,
+    )
+}
+
+/// Mock bytecode with gas
+pub fn mock_bytecode_with_gas(
+    addr_b: Address,
+    pushdata: Vec<u8>,
+    return_data_offset: usize,
+    return_data_size: usize,
+    call_data_length: usize,
+    call_data_offset: usize,
+    gas: u64,
+) -> Vec<u8> {
+    let code_a = bytecode! {
+        // populate memory in A's context.
+        PUSH32(Word::from_big_endian(&pushdata))
+        PUSH1(0x00) // offset
+        MSTORE
+        // call addr_b
+        PUSH32(return_data_offset) // retLength
+        PUSH32(return_data_size) // retOffset
+        PUSH32(call_data_length) // argsLength
+        PUSH32(call_data_offset) // argsOffset
+        PUSH1(0x00) // value
+        PUSH32(addr_b.to_word()) // addr
+        PUSH32(gas) // gas
+        CALL
+        STOP
+    };
+    code_a.to_vec()
+}
 
 lazy_static! {
     /// Mock 1 ETH

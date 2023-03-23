@@ -243,15 +243,20 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::TestContext;
+    use eth_types::{bytecode, Word};
+    use mock::{mock_bytecode, TestContext};
 
-    fn test_root_ok(offset: usize) {
+    fn test_bytecode(offset: usize) -> eth_types::Bytecode {
         let bytecode = bytecode! {
             PUSH32(Word::from(offset))
             CALLDATALOAD
             STOP
         };
+        bytecode
+    }
+
+    fn test_root_ok(offset: usize) {
+        let bytecode = test_bytecode(offset);
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
@@ -263,29 +268,19 @@ mod test {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let code_b = bytecode! {
-            PUSH32(Word::from(offset))
-            CALLDATALOAD
-            STOP
-        };
+        let code_b = test_bytecode(offset);
 
         let pushdata = rand_bytes(32);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call addr_b
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let return_data_offset: usize = 0x00;
+        let return_data_size: usize = 0x00;
+        let code_a = mock_bytecode(
+            addr_b,
+            pushdata,
+            return_data_offset,
+            return_data_size,
+            call_data_length,
+            call_data_offset,
+        );
 
         let ctx = TestContext::<3, 1>::new(
             None,

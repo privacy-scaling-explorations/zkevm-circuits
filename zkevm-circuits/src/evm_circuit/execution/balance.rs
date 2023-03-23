@@ -150,7 +150,7 @@ mod test {
         address, bytecode, geth_types::Account, Address, Bytecode, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::TestContext;
+    use mock::{mock_bytecode, test_ctx::TestContext};
 
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
@@ -270,22 +270,16 @@ mod test {
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let return_data_offset = 0x00usize;
+        let return_data_size = 0x00usize;
+        let code_a = mock_bytecode(
+            addr_b,
+            pushdata,
+            return_data_offset,
+            return_data_size,
+            call_data_length,
+            call_data_offset,
+        );
 
         let ctx = TestContext::<4, 1>::new(
             None,

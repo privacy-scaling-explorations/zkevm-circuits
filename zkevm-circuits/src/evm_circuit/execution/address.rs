@@ -90,8 +90,8 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::TestContext;
+    use eth_types::{bytecode, Word};
+    use mock::{mock_bytecode, test_ctx::TestContext};
 
     fn test_root_ok() {
         let bytecode = bytecode! {
@@ -116,22 +116,16 @@ mod test {
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let return_data_offset = 0x00usize;
+        let return_data_size = 0x00usize;
+        let code_a = mock_bytecode(
+            addr_b,
+            pushdata,
+            return_data_offset,
+            return_data_size,
+            call_data_length,
+            call_data_offset,
+        );
 
         let ctx = TestContext::<3, 1>::new(
             None,
