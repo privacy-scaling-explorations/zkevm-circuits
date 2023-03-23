@@ -1,14 +1,18 @@
 //! Utility traits, functions used in the crate.
-use eth_types::evm_types::{GasCost, OpcodeId};
-use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field,
+};
+use halo2_proofs::plonk::Expression;
 
 /// Returns the sum of the passed in cells
 pub mod sum {
     use crate::util::Expr;
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     /// Returns an expression for the sum of the list of expressions.
-    pub fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
+    pub fn expr<F: Field, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
         inputs
             .into_iter()
             .fold(0.expr(), |acc, input| acc + input.expr())
@@ -26,11 +30,12 @@ pub mod sum {
 /// otherwise. Inputs need to be boolean
 pub mod and {
     use crate::util::Expr;
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     /// Returns an expression that evaluates to 1 only if all the expressions in
     /// the given list are 1, else returns 0.
-    pub fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
+    pub fn expr<F: Field, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
         inputs
             .into_iter()
             .fold(1.expr(), |acc, input| acc * input.expr())
@@ -47,11 +52,12 @@ pub mod and {
 pub mod or {
     use super::{and, not};
     use crate::util::Expr;
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     /// Returns an expression that evaluates to 1 if any expression in the given
     /// list is 1. Returns 0 if all the expressions were 0.
-    pub fn expr<F: FieldExt, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
+    pub fn expr<F: Field, E: Expr<F>, I: IntoIterator<Item = E>>(inputs: I) -> Expression<F> {
         not::expr(and::expr(inputs.into_iter().map(not::expr)))
     }
 
@@ -65,10 +71,11 @@ pub mod or {
 /// `b` needs to be boolean
 pub mod not {
     use crate::util::Expr;
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     /// Returns an expression that represents the NOT of the given expression.
-    pub fn expr<F: FieldExt, E: Expr<F>>(b: E) -> Expression<F> {
+    pub fn expr<F: Field, E: Expr<F>>(b: E) -> Expression<F> {
         1.expr() - b.expr()
     }
 
@@ -82,10 +89,11 @@ pub mod not {
 /// `a` and `b` needs to be boolean
 pub mod xor {
     use crate::util::Expr;
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
     /// Returns an expression that represents the XOR of the given expression.
-    pub fn expr<F: FieldExt, E: Expr<F>>(a: E, b: E) -> Expression<F> {
+    pub fn expr<F: Field, E: Expr<F>>(a: E, b: E) -> Expression<F> {
         a.expr() + b.expr() - 2.expr() * a.expr() * b.expr()
     }
 
@@ -99,11 +107,12 @@ pub mod xor {
 /// `selector == 0`. `selector` needs to be boolean.
 pub mod select {
     use crate::util::Expr;
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
 
     /// Returns the `when_true` expression when the selector is true, else
     /// returns the `when_false` expression.
-    pub fn expr<F: FieldExt>(
+    pub fn expr<F: Field>(
         selector: Expression<F>,
         when_true: Expression<F>,
         when_false: Expression<F>,
@@ -113,13 +122,13 @@ pub mod select {
 
     /// Returns the `when_true` value when the selector is true, else returns
     /// the `when_false` value.
-    pub fn value<F: FieldExt>(selector: F, when_true: F, when_false: F) -> F {
+    pub fn value<F: Field>(selector: F, when_true: F, when_false: F) -> F {
         selector * when_true + (F::one() - selector) * when_false
     }
 
     /// Returns the `when_true` word when selector is true, else returns the
     /// `when_false` word.
-    pub fn value_word<F: FieldExt>(
+    pub fn value_word<F: Field>(
         selector: F,
         when_true: [u8; 32],
         when_false: [u8; 32],
@@ -134,7 +143,7 @@ pub mod select {
 
 /// Trait that implements functionality to get a scalar from
 /// commonly used types.
-pub trait Scalar<F: FieldExt> {
+pub trait Scalar<F: Field> {
     /// Returns a scalar for the type.
     fn scalar(&self) -> F;
 }
@@ -143,7 +152,7 @@ pub trait Scalar<F: FieldExt> {
 #[macro_export]
 macro_rules! impl_scalar {
     ($type:ty) => {
-        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Scalar<F> for $type {
+        impl<F: eth_types::Field> $crate::util::Scalar<F> for $type {
             #[inline]
             fn scalar(&self) -> F {
                 F::from(*self as u64)
@@ -151,7 +160,7 @@ macro_rules! impl_scalar {
         }
     };
     ($type:ty, $method:path) => {
-        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Scalar<F> for $type {
+        impl<F: eth_types::Field> $crate::util::Scalar<F> for $type {
             #[inline]
             fn scalar(&self) -> F {
                 F::from($method(self) as u64)
@@ -162,7 +171,7 @@ macro_rules! impl_scalar {
 
 /// Trait that implements functionality to get a constant expression from
 /// commonly used types.
-pub trait Expr<F: FieldExt> {
+pub trait Expr<F: Field> {
     /// Returns an expression for the type.
     fn expr(&self) -> Expression<F>;
 }
@@ -172,7 +181,7 @@ pub trait Expr<F: FieldExt> {
 macro_rules! impl_expr {
     ($type:ty) => {
         $crate::impl_scalar!($type);
-        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Expr<F> for $type {
+        impl<F: eth_types::Field> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
                 Expression::Constant(F::from(*self as u64))
@@ -181,7 +190,7 @@ macro_rules! impl_expr {
     };
     ($type:ty, $method:path) => {
         $crate::impl_scalar!($type, $method);
-        impl<F: halo2_proofs::arithmetic::FieldExt> $crate::util::Expr<F> for $type {
+        impl<F: eth_types::Field> $crate::util::Expr<F> for $type {
             #[inline]
             fn expr(&self) -> Expression<F> {
                 Expression::Constant(F::from($method(self) as u64))
@@ -198,7 +207,7 @@ impl_expr!(isize);
 impl_expr!(OpcodeId, OpcodeId::as_u8);
 impl_expr!(GasCost, GasCost::as_u64);
 
-impl<F: FieldExt> Scalar<F> for i32 {
+impl<F: Field> Scalar<F> for i32 {
     #[inline]
     fn scalar(&self) -> F {
         F::from(self.unsigned_abs() as u64)
@@ -210,21 +219,28 @@ impl<F: FieldExt> Scalar<F> for i32 {
     }
 }
 
-impl<F: FieldExt> Expr<F> for i32 {
+impl<F: Field> Scalar<F> for &F {
+    #[inline]
+    fn scalar(&self) -> F {
+        *self.clone()
+    }
+}
+
+impl<F: Field> Expr<F> for i32 {
     #[inline]
     fn expr(&self) -> Expression<F> {
         Expression::Constant(self.scalar())
     }
 }
 
-impl<F: FieldExt> Expr<F> for Expression<F> {
+impl<F: Field> Expr<F> for Expression<F> {
     #[inline]
     fn expr(&self) -> Expression<F> {
         self.clone()
     }
 }
 
-impl<F: FieldExt> Expr<F> for &Expression<F> {
+impl<F: Field> Expr<F> for &Expression<F> {
     #[inline]
     fn expr(&self) -> Expression<F> {
         (*self).clone()
@@ -233,7 +249,7 @@ impl<F: FieldExt> Expr<F> for &Expression<F> {
 
 /// Given a bytes-representation of an expression, it computes and returns the
 /// single expression.
-pub fn expr_from_bytes<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+pub fn expr_from_bytes<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
     let mut value = 0.expr();
     let mut multiplier = F::one();
     for byte in bytes.iter() {
@@ -244,6 +260,6 @@ pub fn expr_from_bytes<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
 }
 
 /// Returns 2**by as FieldExt
-pub fn pow_of_two<F: FieldExt>(by: usize) -> F {
+pub fn pow_of_two<F: Field>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])
 }

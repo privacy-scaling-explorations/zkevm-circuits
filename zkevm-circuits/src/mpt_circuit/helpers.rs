@@ -8,7 +8,7 @@ use crate::{
         gadgets::IsEqualGadget,
         memory::MemoryBank,
     },
-    matchr, matchw,
+    matchw,
     mpt_circuit::{
         param::{EMPTY_TRIE_HASH, KEY_LEN_IN_NIBBLES, KEY_PREFIX_EVEN, KEY_TERMINAL_PREFIX_EVEN},
         rlp_gadgets::{get_ext_odd_nibble, get_terminal_odd_nibble},
@@ -137,7 +137,8 @@ impl LeafKeyWitness {
             key_rlc += F::from((rlp_key.bytes[start + 1] - 48) as u64) * key_mult;
             key_mult *= r;
         }
-        (key_rlc, key_mult).rlc_chain_value(&rlp_key.bytes[start + 2..start + 2 + len - 1], r)
+        (key_rlc, key_mult)
+            .rlc_chain_value(rlp_key.bytes[start + 2..start + 2 + len - 1].to_vec(), r)
     }
 }
 
@@ -214,13 +215,11 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
             r,
         )
     };
-    matchr! {
+    matchw! {
         is_long && !is_key_odd => {
             // Here we need to multiply nibbles over bytes with different r's so we need to rlc over separate nibbles.
             // Note that there can be at max 31 key bytes because 32 same bytes would mean
             // the two keys being the same - update operation, not splitting into extension node.
-            // So, we do not need to look further than `s_main.bytes` even if `s_main.bytes[0]`
-            // is not used (when even number of nibbles).
             let mut key_bytes = vec![data[0][1].scalar()];
             key_bytes.append(&mut data[0][1..].iter().skip(1).zip(data[1][2..].iter()).map(|(byte, nibble_hi)| {
                 let nibble_lo = (byte - nibble_hi) >> 4;
@@ -301,7 +300,7 @@ impl ListKeyWitness {
     pub(crate) fn rlc_leaf<F: Field>(&self, r: F) -> (F, F) {
         self.rlp_list
             .rlc_rlp_only(r)
-            .rlc_chain_value(&self.key_item.bytes[..self.key_item.num_bytes()], r)
+            .rlc_chain_value(self.key_item.bytes[..self.key_item.num_bytes()].to_vec(), r)
     }
 }
 
@@ -752,7 +751,8 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
         assert!(bytes[0] == KEY_PREFIX_EVEN.scalar());
         (0.scalar(), 1.scalar())
     };
-    (rlc, key_mult_prev * mult).rlc_chain_value_f(&bytes[1..], r)
+    (rlc, key_mult_prev * mult)
+        .rlc_chain_value(bytes[1..].iter().map(|v| v).collect::<Vec<&F>>(), r)
 }
 
 // Returns the number of nibbles stored in a key value

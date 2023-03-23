@@ -161,7 +161,7 @@ impl<F: Field> BranchGadget<F> {
             for is_s in [true, false] {
                 // Number of bytes left needs to be 1 because ValueNode which occupies 1 byte
                 require!(num_bytes_left[is_s.idx()] => 1);
-                // TODO: acc currently doesn'thave branch ValueNode info (which 128 if nil)
+                // TODO: acc currently doesn'thave branch ValueNode info
                 node_rlc[is_s.idx()] = (node_rlc[is_s.idx()].expr(), mult[is_s.idx()].expr())
                     .rlc_chain(RLP_NIL.expr());
             }

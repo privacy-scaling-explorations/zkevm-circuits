@@ -366,8 +366,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 _ => is_string = true,
             }
 
-            //println!("bytes: {:?}", key_bytes);
-
             let num_rlp_bytes = if is_short {
                 1
             } else if is_long {
@@ -377,6 +375,8 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             } else {
                 if row.get_type() == MptWitnessRowType::ExtensionNodeS {
                     0
+                } else if is_string {
+                    unreachable!()
                 } else {
                     unreachable!()
                 }

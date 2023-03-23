@@ -4,6 +4,7 @@
 //!  - witnesses `inv0(value)`, where `inv0(x)` is 0 when `x` = 0, and
 //!  `1/x` otherwise
 
+use eth_types::Field;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Chip, Region, Value},
@@ -51,7 +52,7 @@ pub struct IsZeroChip<F> {
 }
 
 #[rustfmt::skip]
-impl<F: FieldExt> IsZeroChip<F> {
+impl<F: Field> IsZeroChip<F> {
     /// Sets up the configuration of the chip by creating the required columns
     /// and defining the constraints that take part when using `is_zero` gate.
     ///
@@ -138,8 +139,8 @@ impl<F: FieldExt> Chip<F> for IsZeroChip<F> {
 #[cfg(test)]
 mod test {
     use super::{IsZeroChip, IsZeroConfig, IsZeroInstruction};
+    use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         halo2curves::bn256::Fr as Fp,
@@ -193,14 +194,14 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<u64>>,
             // checks[i] = is_zero(values[i + 1] - values[i])
             checks: Option<Vec<bool>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
@@ -325,14 +326,14 @@ mod test {
         }
 
         #[derive(Default)]
-        struct TestCircuit<F: FieldExt> {
+        struct TestCircuit<F: Field> {
             values: Option<Vec<(u64, u64)>>,
             // checks[i] = is_zero(values[i].0 - values[i].1)
             checks: Option<Vec<bool>>,
             _marker: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+        impl<F: Field> Circuit<F> for TestCircuit<F> {
             type Config = TestCircuitConfig<F>;
             type FloorPlanner = SimpleFloorPlanner;
 

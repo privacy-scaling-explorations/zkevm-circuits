@@ -388,7 +388,6 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     }
 
-                    //println!("height: {}", node.bytes.len());
                     offset += node.values.len();
                 }
 

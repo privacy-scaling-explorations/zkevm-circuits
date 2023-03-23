@@ -4,7 +4,7 @@ use crate::{
         cell_manager::Cell,
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
     },
-    matchr, matchw,
+    matchw,
     mpt_circuit::param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
     util::Expr,
 };
@@ -172,7 +172,7 @@ impl RLPListWitness {
 
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> usize {
-        matchr! {
+        matchw! {
             self.is_short() => 1,
             self.is_long() => 2,
             self.is_very_long() => 3,
@@ -181,7 +181,7 @@ impl RLPListWitness {
 
     /// Returns the total length of the list (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> usize {
-        matchr! {
+        matchw! {
             self.is_short => get_num_bytes_list_short::value(self.bytes[0]),
             self.is_long => 2 + (self.bytes[1] as usize),
             self.is_very_long => 3 + (self.bytes[1] as usize) * 256 + (self.bytes[2] as usize),
@@ -190,7 +190,7 @@ impl RLPListWitness {
 
     /// Returns the length of the list (excluding RLP bytes)
     pub(crate) fn len(&self) -> usize {
-        matchr! {
+        matchw! {
             self.is_short() => get_len_list_short::value(self.bytes[0]),
             self.is_long() => self.bytes[1] as usize,
         }
@@ -204,7 +204,7 @@ impl RLPListWitness {
 
     /// Returns the rlc of the RLP bytes
     pub(crate) fn rlc_rlp_only<F: Field>(&self, r: F) -> (F, F) {
-        matchr! {
+        matchw! {
             self.is_short() => (self.bytes[..1].rlc_value(r), r),
             self.is_long() => (self.bytes[..2].rlc_value(r), r*r),
             self.is_very_long() => (self.bytes[..3].rlc_value(r), r*r*r),
@@ -421,7 +421,7 @@ impl RLPValueWitness {
 
     /// Number of RLP bytes
     pub(crate) fn num_rlp_bytes(&self) -> usize {
-        matchr! {
+        matchw! {
             self.is_short() => 0,
             self.is_long() => 1,
             self.is_very_long() => 2,
@@ -430,7 +430,7 @@ impl RLPValueWitness {
 
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> usize {
-        matchr! {
+        matchw! {
             self.is_short() => 1,
             self.is_long() => get_num_bytes_short::value(self.bytes[0]),
             self.is_very_long() => unreachable!(),
@@ -439,7 +439,7 @@ impl RLPValueWitness {
 
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> usize {
-        matchr! {
+        matchw! {
             self.is_short() => 1,
             self.is_long() => get_len_short::value(self.bytes[0]),
             self.is_very_long() => unreachable!(),
@@ -456,7 +456,7 @@ impl RLPValueWitness {
     }
 
     pub(crate) fn rlc_value<F: Field>(&self, r: F) -> F {
-        matchr! {
+        matchw! {
             self.is_short() => {
                 self.bytes[0].scalar()
             },
@@ -671,7 +671,7 @@ impl<F: Field> RLPItemGadget<F> {
 impl RLPItemWitness {
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_bytes(&self) -> usize {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.num_bytes(),
             self.list.is_list() => self.list.num_bytes(),
         }
@@ -679,7 +679,7 @@ impl RLPItemWitness {
 
     /// Number of bytes in total (including RLP bytes)
     pub(crate) fn num_rlp_bytes(&self) -> usize {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.num_rlp_bytes(),
             self.list.is_list() => self.list.num_rlp_bytes(),
         }
@@ -687,35 +687,35 @@ impl RLPItemWitness {
 
     /// Length of the value (excluding RLP bytes)
     pub(crate) fn len(&self) -> usize {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.len(),
             self.list.is_list() => self.list.len(),
         }
     }
 
     pub(crate) fn is_short(&self) -> bool {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.is_short(),
             self.list.is_list() => self.list.is_short(),
         }
     }
 
     pub(crate) fn is_long(&self) -> bool {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.is_long(),
             self.list.is_list() => self.list.is_long(),
         }
     }
 
     pub(crate) fn rlc_content<F: Field>(&self, r: F) -> F {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.rlc_value(r),
             self.list.is_list() => self.list.rlc_rlp(r),
         }
     }
 
     pub(crate) fn rlc_rlp<F: Field>(&self, r: F) -> F {
-        matchr! {
+        matchw! {
             self.value.is_string() => self.value.rlc_rlp(r),
             self.list.is_list() => self.list.rlc_rlp(r),
         }

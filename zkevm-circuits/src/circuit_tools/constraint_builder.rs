@@ -1,7 +1,9 @@
 //! Circuit utilities
+use std::ops::{Add, Mul};
+
 use crate::{evm_circuit::util::rlc, util::Expr};
 use eth_types::Field;
-use gadgets::util::{and, select, sum, Scalar};
+use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
@@ -366,91 +368,85 @@ pub(crate) fn merge_values_unsafe<F: Field>(
     (selector, merged_values)
 }
 
-pub(crate) fn select<F: Field>(
-    condition: Expression<F>,
-    when_true: &[Expression<F>],
-    when_false: &[Expression<F>],
-) -> Vec<Expression<F>> {
-    when_true
-        .into_iter()
-        .zip(when_false.into_iter())
-        .map(|(when_true, when_false)| {
-            select::expr(condition.expr(), when_true.expr(), when_false.expr())
-        })
-        .collect()
+/// General trait to convert to a vec
+pub trait ToVec<T: Clone> {
+    /// Converts a tuple to a vector
+    fn to_vec(&self) -> Vec<T>;
 }
 
+impl<T: Clone> ToVec<T> for Vec<T> {
+    fn to_vec(&self) -> Vec<T> {
+        self.clone()
+    }
+}
+
+impl<T: Clone> ToVec<T> for [T] {
+    fn to_vec(&self) -> Vec<T> {
+        self.to_owned()
+    }
+}
+
+impl<T: Clone> ToVec<T> for &[T] {
+    fn to_vec(&self) -> Vec<T> {
+        self.clone().to_owned()
+    }
+}
+
+macro_rules! impl_to_vec {
+    (($($t:ty),*), ($($v:ident),*)) => {
+        impl<T: Clone> ToVec<T> for ($($t,)*) {
+            fn to_vec(&self) -> Vec<T> {
+                let ($($v,)*) = self;
+                vec![$($v.clone()),*]
+            }
+        }
+    };
+}
+
+impl_to_vec!((T, T), (a, b));
+impl_to_vec!((T, T, T), (a, b, c));
+impl_to_vec!((T, T, T, T), (a, b, c, d));
+impl_to_vec!((T, T, T, T, T), (a, b, c, d, e));
+impl_to_vec!((T, T, T, T, T, T), (a, b, c, d, e, f));
+impl_to_vec!((T, T, T, T, T, T, T), (a, b, c, d, e, f, g));
+impl_to_vec!((T, T, T, T, T, T, T, T), (a, b, c, d, e, f, g, h));
+
 /// Trait that generates a vector of expressions
-pub trait Expressable<F> {
+pub trait ExprVec<F> {
     /// Returns a vector of the expressions from itself
     fn to_expr_vec(&self) -> Vec<Expression<F>>;
 }
 
-impl<F: Field> Expressable<F> for std::ops::Range<isize> {
+impl<F: Field> ExprVec<F> for std::ops::Range<isize> {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        self.clone()
-            .map(|e| e.to_expr_vec()[0].expr())
-            .collect::<Vec<_>>()
+        self.clone().map(|e| e.expr()).collect::<Vec<_>>()
     }
 }
 
-impl<F: Field, E: Expressable<F>> Expressable<F> for Vec<E> {
+impl<F: Field, E: Expr<F>> ExprVec<F> for Vec<E> {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        self.iter()
-            .map(|e| e.to_expr_vec()[0].expr())
-            .collect::<Vec<_>>()
+        self.iter().map(|e| e.expr()).collect::<Vec<_>>()
     }
 }
 
-impl<F: Field, E: Expressable<F>> Expressable<F> for [E] {
+impl<F: Field, E: Expr<F>> ExprVec<F> for [E] {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        self.iter()
-            .map(|e| e.to_expr_vec()[0].expr())
-            .collect::<Vec<_>>()
+        self.iter().map(|e| e.expr()).collect::<Vec<_>>()
     }
 }
 
-impl<F: Field, E: Expressable<F>> Expressable<F> for &[E] {
+impl<F: Field, E: Expr<F>> ExprVec<F> for &[E] {
     fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        self.iter()
-            .map(|e| e.to_expr_vec()[0].expr())
-            .collect::<Vec<_>>()
+        self.iter().map(|e| e.expr()).collect::<Vec<_>>()
     }
 }
 
-impl<F: Field, E: Expressable<F>> Expressable<F> for (E, E) {
-    fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        let mut res = self.0.to_expr_vec();
-        res.append(&mut self.1.to_expr_vec());
-        res
-    }
-}
-
-impl<F: Field, E: Expressable<F>> Expressable<F> for (E, E, E) {
-    fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        let mut res = self.0.to_expr_vec();
-        res.append(&mut self.1.to_expr_vec());
-        res.append(&mut self.2.to_expr_vec());
-        res
-    }
-}
-
-impl<F: Field, E: Expressable<F>> Expressable<F> for (E, E, E, E) {
-    fn to_expr_vec(&self) -> Vec<Expression<F>> {
-        let mut res = self.0.to_expr_vec();
-        res.append(&mut self.1.to_expr_vec());
-        res.append(&mut self.2.to_expr_vec());
-        res.append(&mut self.3.to_expr_vec());
-        res
-    }
-}
-
-/// Implementation trait `Expressable` for type able to be casted to an
+/// Implementation trait `ExprVec` for type able to be casted to an
 /// Expression
 #[macro_export]
-macro_rules! impl_expressable {
+macro_rules! impl_expr_vec {
     ($type:ty) => {
-        impl<F: eth_types::Field> Expressable<F> for $type {
+        impl<F: eth_types::Field> ExprVec<F> for $type {
             #[inline]
             fn to_expr_vec(&self) -> Vec<Expression<F>> {
                 vec![self.expr()]
@@ -459,258 +455,142 @@ macro_rules! impl_expressable {
     };
 }
 
-impl_expressable!(bool);
-impl_expressable!(u8);
-impl_expressable!(i32);
-impl_expressable!(u64);
-impl_expressable!(usize);
-impl_expressable!(isize);
-impl_expressable!(Expression<F>);
-impl_expressable!(Cell<F>);
+impl_expr_vec!(bool);
+impl_expr_vec!(u8);
+impl_expr_vec!(i32);
+impl_expr_vec!(u64);
+impl_expr_vec!(usize);
+impl_expr_vec!(isize);
+impl_expr_vec!(Expression<F>);
+impl_expr_vec!(Cell<F>);
 
-/// Trait around select
-pub trait Selectable<F> {
-    /// Selects between itself and another value using the given condition
-    fn select(&self, condition: Expression<F>, other: &Self) -> Self;
-    /// Returns itself if the condition holds, else zero
-    fn conditional(&self, condition: Expression<F>) -> Self;
-    /// Adds 2 Selectables together
-    fn add_expr(&self, other: &Self) -> Self;
-    /// Creates a vector of Expressions representing itself
-    fn to_vec(&self) -> Vec<Expression<F>>;
-}
+/// Newtype wrapper for `Vec<Expression<F>>`
+#[derive(Clone)]
+pub struct ExpressionVec<F: Field>(pub Vec<Expression<F>>);
 
-impl<F: Field> Selectable<F> for () {
-    fn select(&self, _condition: Expression<F>, _when_false: &Self) -> Self {
-        ()
-    }
-    fn conditional(&self, _condition: Expression<F>) -> Self {
-        ()
-    }
-    fn add_expr(&self, _other: &Self) -> Self {
-        ()
-    }
-    fn to_vec(&self) -> Vec<Expression<F>> {
-        vec![]
+impl<F: Field> Add for ExpressionVec<F> {
+    type Output = ExpressionVec<F>;
+
+    fn add(self, rhs: ExpressionVec<F>) -> Self::Output {
+        ExpressionVec(
+            self.0
+                .iter()
+                .zip(rhs.0.iter())
+                .map(|(a, b)| a.expr() + b.expr())
+                .collect(),
+        )
     }
 }
 
-impl<F: Field> Selectable<F> for Expression<F> {
-    fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
-        gadgets::util::select::expr(condition, self.expr(), when_false.expr())
-    }
-    fn conditional(&self, condition: Expression<F>) -> Self {
-        condition * self.expr()
-    }
-    fn add_expr(&self, other: &Self) -> Self {
-        self.expr() + other.expr()
-    }
-    fn to_vec(&self) -> Vec<Expression<F>> {
-        vec![self.expr()]
+impl<F: Field> Mul for ExpressionVec<F> {
+    type Output = ExpressionVec<F>;
+
+    fn mul(self, rhs: ExpressionVec<F>) -> Self::Output {
+        ExpressionVec(
+            self.0
+                .iter()
+                .zip(rhs.0.iter())
+                .map(|(a, b)| a.expr() * b.expr())
+                .collect(),
+        )
     }
 }
 
-/// Implementation trait `Selectable` for type able to be casted to an
-/// expression
+/// Trait for doing math on Expressions, no matter the type they are stored in
+pub trait ExprResult<F> {
+    /// Adds two values together
+    fn add(&self, other: &Self) -> Self;
+    /// Multiply with a scalar
+    fn mul(&self, other: &Expression<F>) -> Self;
+}
+
+impl<F: Field> ExprResult<F> for () {
+    fn add(&self, _other: &Self) -> Self {
+        ()
+    }
+    fn mul(&self, _other: &Expression<F>) -> Self {
+        ()
+    }
+}
+
+impl<F: Field> ExprResult<F> for Vec<Expression<F>> {
+    fn add(&self, other: &Self) -> Self {
+        (ExpressionVec(self.clone()) + ExpressionVec(other.clone())).0
+    }
+    fn mul(&self, other: &Expression<F>) -> Self {
+        (ExpressionVec(self.clone()) * ExpressionVec(vec![other.clone(); self.len()])).0
+    }
+}
+
+impl<F: Field> ExprResult<F> for Expression<F> {
+    fn add(&self, other: &Self) -> Self {
+        vec![self.clone()].add(&vec![other.clone()])[0].clone()
+    }
+    fn mul(&self, other: &Expression<F>) -> Self {
+        vec![self.clone()].mul(other)[0].clone()
+    }
+}
+
+/// Implement `ExprResult` for tupples
 #[macro_export]
-macro_rules! impl_selectable {
-    ($type:ty, $v:expr) => {
-        impl<F: eth_types::Field> Selectable<F> for $type {
-            fn select(&self, condition: Expression<F>, when_false: &Self) -> Self {
-                select(condition, &self.to_vec(), &when_false.to_vec())
-                    .into_iter()
-                    .collect_tuple()
-                    .unwrap()
+macro_rules! impl_expr_result {
+    ($($type:ty),*) => {
+        impl<F: eth_types::Field> ExprResult<F> for ($($type),*) {
+            fn add(&self, other: &Self) -> Self {
+                self.to_vec().add(&other.to_vec()).into_iter().collect_tuple().unwrap()
             }
-            fn conditional(&self, condition: Expression<F>) -> Self {
-                self.to_vec()
-                    .into_iter()
-                    .map(|when_true| condition.expr() * when_true.expr())
-                    .collect_tuple()
-                    .unwrap()
-            }
-            fn add_expr(&self, other: &Self) -> Self {
-                self.to_vec()
-                    .iter()
-                    .zip(other.to_vec().iter())
-                    .map(|(a, b)| a.expr() + b.expr())
-                    .collect_tuple()
-                    .unwrap()
-            }
-            fn to_vec(&self) -> Vec<Expression<F>> {
-                $v(self)
+            fn mul(&self, other: &Expression<F>) -> Self {
+                self.to_vec().mul(other).into_iter().collect_tuple().unwrap()
             }
         }
     };
 }
 
-impl_selectable!((Expression<F>, Expression<F>), |t: &(
+impl_expr_result!(Expression<F>, Expression<F>);
+impl_expr_result!(Expression<F>, Expression<F>, Expression<F>);
+impl_expr_result!(Expression<F>, Expression<F>, Expression<F>, Expression<F>);
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
     Expression<F>,
     Expression<F>
-)| {
-    vec![t.0.expr(), t.1.expr()]
-});
-impl_selectable!((Expression<F>, Expression<F>, Expression<F>), |t: &(
+);
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
     Expression<F>,
     Expression<F>,
     Expression<F>
-)| {
-    vec![t.0.expr(), t.1.expr(), t.2.expr()]
-});
-impl_selectable!(
-    (Expression<F>, Expression<F>, Expression<F>, Expression<F>),
-    |t: &(Expression<F>, Expression<F>, Expression<F>, Expression<F>)| {
-        vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr()]
-    }
 );
-impl_selectable!(
-    (
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>
-    ),
-    |t: &(
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>
-    )| { vec![t.0.expr(), t.1.expr(), t.2.expr(), t.3.expr(), t.4.expr()] }
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>
 );
-impl_selectable!(
-    (
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    ),
-    |t: &(
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    )| {
-        vec![
-            t.0.expr(),
-            t.1.expr(),
-            t.2.expr(),
-            t.3.expr(),
-            t.4.expr(),
-            t.5.expr(),
-        ]
-    }
+impl_expr_result!(
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>,
+    Expression<F>
 );
-impl_selectable!(
-    (
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    ),
-    |t: &(
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    )| {
-        vec![
-            t.0.expr(),
-            t.1.expr(),
-            t.2.expr(),
-            t.3.expr(),
-            t.4.expr(),
-            t.5.expr(),
-            t.6.expr(),
-        ]
-    }
-);
-impl_selectable!(
-    (
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    ),
-    |t: &(
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-        Expression<F>,
-    )| {
-        vec![
-            t.0.expr(),
-            t.1.expr(),
-            t.2.expr(),
-            t.3.expr(),
-            t.4.expr(),
-            t.5.expr(),
-            t.6.expr(),
-            t.7.expr(),
-        ]
-    }
-);
-
-/// Trait that conditionally combines multiple types
-pub trait Conditionable<F, E> {
-    /// Conditionally combines multiple values
-    fn apply_conditions(&self) -> E;
-    /// Gets the list of all conditions
-    fn get_conditions(&self) -> Vec<Expression<F>>;
-    /// Gets the sum of all conditions
-    fn sum_conditions(&self) -> Expression<F>;
-}
-
-impl<F: Field, E: Selectable<F>> Conditionable<F, E> for Vec<(Expression<F>, E)> {
-    fn apply_conditions(&self) -> E {
-        let mut res = self[0].1.conditional(self[0].0.expr());
-        for pair in self.iter().skip(1) {
-            res = res.add_expr(&pair.1.conditional(pair.0.expr()));
-        }
-        res
-    }
-
-    fn get_conditions(&self) -> Vec<Expression<F>> {
-        self.iter().map(|v| v.0.expr()).collect()
-    }
-
-    fn sum_conditions(&self) -> Expression<F> {
-        sum::expr(&self.get_conditions())
-    }
-}
 
 /// Trait around RLC
-pub trait RLCable<F> {
+pub trait RLCable<F: Field> {
     /// Returns the RLC of itself
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F>;
 }
 
-impl<F: Field, E: Expressable<F>> RLCable<F> for Vec<E> {
-    fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
-        rlc::expr(&self.to_expr_vec(), r)
-    }
-}
-
-impl<F: Field, E: Expressable<F>> RLCable<F> for [E] {
+impl<F: Field, E: ExprVec<F> + ?Sized> RLCable<F> for E {
     fn rlc(&self, r: &[Expression<F>]) -> Expression<F> {
         rlc::expr(&self.to_expr_vec(), r)
     }
@@ -726,16 +606,6 @@ impl<F: Field> RLCChainable<F> for (Expression<F>, Expression<F>) {
     fn rlc_chain(&self, other: Expression<F>) -> Expression<F> {
         self.0.expr() + self.1.expr() * other.expr()
     }
-}
-
-pub(crate) fn rlc_acc<F: Field>(values: &[F], rlc: F, mult: F, r: F) -> (F, F) {
-    let mut rlc = rlc;
-    let mut mult = mult;
-    for &value in values.iter() {
-        rlc = rlc + value * mult;
-        mult *= r;
-    }
-    (rlc, mult)
 }
 
 /// Trait around RLC
@@ -757,22 +627,20 @@ impl<F: Field> RLCableValue<F> for [u8] {
 }
 
 /// Trait around RLC
-pub trait RLCChainableValue<F> {
+pub trait RLCChainableValue<F, S, I> {
     /// Returns the RLC of itself with a starting rlc/multiplier
-    fn rlc_chain_value(&self, values: &[u8], r: F) -> (F, F);
-
-    /// Returns the RLC of itself with a starting rlc/multiplier
-    fn rlc_chain_value_f(&self, values: &[F], r: F) -> (F, F);
+    fn rlc_chain_value(&self, values: I, r: F) -> (F, F);
 }
 
-impl<F: Field> RLCChainableValue<F> for (F, F) {
-    fn rlc_chain_value(&self, values: &[u8], r: F) -> (F, F) {
-        let values = values.iter().map(|byte| byte.scalar()).collect::<Vec<F>>();
-        rlc_acc(&values, self.0, self.1, r)
-    }
-
-    fn rlc_chain_value_f(&self, values: &[F], r: F) -> (F, F) {
-        rlc_acc(values, self.0, self.1, r)
+impl<F: Field, S: Scalar<F>, I: IntoIterator<Item = S>> RLCChainableValue<F, S, I> for (F, F) {
+    fn rlc_chain_value(&self, values: I, r: F) -> (F, F) {
+        let mut rlc = self.0;
+        let mut mult = self.1;
+        for value in values.into_iter().map(|byte| byte.scalar()) {
+            rlc = rlc + value * mult;
+            mult *= r;
+        }
+        (rlc, mult)
     }
 }
 
@@ -1007,7 +875,12 @@ macro_rules! _matchx {
         // Exactly 1 case needs to be enabled
         _require!($cb, sum::expr(&conditions) => 1);
 
-        cases.apply_conditions()
+        // Apply the conditions to all corresponding values
+        let mut res = cases[0].1.mul(&cases[0].0.expr());
+        for pair in cases.iter().skip(1) {
+            res = <_ as ExprResult<F>>::add(&res, &pair.1.mul(&pair.0.expr()));
+        }
+        res
     }};
 }
 
@@ -1022,7 +895,7 @@ macro_rules! _ifx {
         $cb.pop_condition();
 
         #[allow(unused_assignments, unused_mut)]
-        let mut ret = ret_true.conditional(condition.expr());
+        let mut ret = ret_true.mul(&condition.expr());
         $(
             // In if/else cases, the condition needs to be boolean
             _require!($cb, condition => bool);
@@ -1031,40 +904,30 @@ macro_rules! _ifx {
             let ret_false = $when_false;
             $cb.pop_condition();
 
-            ret = ret_true.select(condition.expr(), &ret_false);
+            ret = <_ as ExprResult<F>>::add(&ret_true.mul(&condition), &ret_false.mul(&not::expr(condition.expr())));
         )*
         ret
     }};
 }
 
-/// matchr
-#[macro_export]
-macro_rules! matchr {
-    ($($condition:expr => $when:expr),* $(, _ => $catch_all:expr)? $(,)?)  => {{
-        $(
-            if $condition {
-                return $when;
-            }
-        )*
-        $(
-            return $catch_all;
-        )*
-        unreachable!();
-    }};
-}
-
-/// matchw
+/// matchw - Resembles matchx so that the witness generation can look like the
+/// circuit code.
 #[macro_export]
 macro_rules! matchw {
     ($($condition:expr => $when:expr),* $(, _ => $catch_all:expr)? $(,)?)  => {{
-        $(
-            if $condition {
-                $when
-            }
+        if false {
+            unreachable!()
+        }
+        $(else if $condition {
+            $when
+        }
         )*
-        $(
-            $catch_all
-        )*
+        else {
+            $(
+                $catch_all
+            )*
+            unreachable!()
+        }
     }};
 }
 
@@ -1116,7 +979,7 @@ macro_rules! circuit {
         #[allow(unused_imports)]
         use gadgets::util::{and, not, or, sum, Expr};
         #[allow(unused_imports)]
-        use $crate::circuit_tools::constraint_builder::{Conditionable, Expressable, Selectable};
+        use $crate::circuit_tools::constraint_builder::{ExprVec, ExprResult};
 
         #[allow(unused_macros)]
         macro_rules! f {
@@ -1212,9 +1075,6 @@ macro_rules! circuit {
             }};
             ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr => $when_true:block elsex $when_false:block) => {{
                 _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d => $when_true elsex $when_false)
-            }};
-            ($condition_a:expr, $condition_b:expr, $condition_c:expr, $condition_d:expr, $condition_e:expr, $condition_f:expr, $condition_g:expr => $when_true:block elsex $when_false:block) => {{
-                _ifx!($cb, $condition_a, $condition_b, $condition_c, $condition_d, $condition_e, $condition_f, $condition_g => $when_true elsex $when_false)
             }};
 
             ($condition:expr => $when_true:block) => {{

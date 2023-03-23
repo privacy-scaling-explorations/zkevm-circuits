@@ -211,8 +211,14 @@ impl<F: Field> ExtensionGadget<F> {
             &key_items[true.idx()],
         )?;
 
-        let is_key_part_odd =
-            key_items[true.idx()].bytes[rlp_key.key_item.num_rlp_bytes()] >> 4 == 1;
+        let first_key_byte = key_items[true.idx()].bytes[rlp_key.key_item.num_rlp_bytes()];
+        // Compact encoding
+        let is_key_part_odd = first_key_byte >> 4 == 1;
+        if is_key_part_odd {
+            assert!(first_key_byte < 0b10_0000);
+        } else {
+            assert!(first_key_byte == 0);
+        }
         self.is_key_part_odd
             .assign(region, offset, is_key_part_odd.scalar())?;
 

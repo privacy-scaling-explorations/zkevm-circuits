@@ -5,7 +5,7 @@ use crate::{
     },
     util::{query_expression, Expr},
 };
-use eth_types::U256;
+use eth_types::{Field, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
@@ -30,7 +30,7 @@ pub(crate) struct Cell<F> {
     rotation: usize,
 }
 
-impl<F: FieldExt> Cell<F> {
+impl<F: Field> Cell<F> {
     pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>, rotation: usize) -> Self {
         Self {
             expression: meta.query_advice(column, Rotation(rotation as i32)),
@@ -59,19 +59,19 @@ impl<F: FieldExt> Cell<F> {
     }
 }
 
-impl<F: FieldExt> Expr<F> for Cell<F> {
+impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-impl<F: FieldExt> Expr<F> for &Cell<F> {
+impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
 }
 
-pub struct CachedRegion<'r, 'b, F: FieldExt> {
+pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
     power_of_randomness: [F; 31],
@@ -79,7 +79,7 @@ pub struct CachedRegion<'r, 'b, F: FieldExt> {
     height_start: usize,
 }
 
-impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
+impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
@@ -147,7 +147,7 @@ pub struct StoredExpression<F> {
     expr_id: String,
 }
 
-impl<F: FieldExt> StoredExpression<F> {
+impl<F: Field> StoredExpression<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -193,7 +193,7 @@ pub(crate) struct CellColumn<F> {
     pub(crate) expr: Expression<F>,
 }
 
-impl<F: FieldExt> Expr<F> for CellColumn<F> {
+impl<F: Field> Expr<F> for CellColumn<F> {
     fn expr(&self) -> Expression<F> {
         self.expr.clone()
     }
@@ -207,7 +207,7 @@ pub(crate) struct CellManager<F> {
     columns: Vec<CellColumn<F>>,
 }
 
-impl<F: FieldExt> CellManager<F> {
+impl<F: Field> CellManager<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         height: usize,
@@ -314,7 +314,7 @@ pub(crate) struct RandomLinearCombination<F, const N: usize> {
     pub(crate) cells: [Cell<F>; N],
 }
 
-impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> RandomLinearCombination<F, N> {
     const N_BYTES: usize = N;
 
     // TODO: replace `bytes` type by a reference
@@ -357,7 +357,7 @@ impl<F: FieldExt, const N: usize> RandomLinearCombination<F, N> {
     }
 }
 
-impl<F: FieldExt, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
+impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     fn expr(&self) -> Expression<F> {
         self.expression.clone()
     }
@@ -369,9 +369,10 @@ pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADD
 /// Decodes a field element from its byte representation
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
+    pub(crate) fn expr<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
         debug_assert!(
             bytes.len() <= MAX_N_BYTES_INTEGER,
             "Too many bytes to compose an integer in field"
@@ -404,9 +405,10 @@ pub(crate) mod from_bytes {
 /// Encoding is done as follows: v_0 * R^0 + v_1 * R^1 + ...
 pub(crate) mod rlc {
     use crate::util::Expr;
+    use eth_types::Field;
     use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
 
-    pub(crate) fn expr<F: FieldExt, E: Expr<F>>(
+    pub(crate) fn expr<F: Field, E: Expr<F>>(
         expressions: &[E],
         power_of_randomness: &[E],
     ) -> Expression<F> {

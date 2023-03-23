@@ -2,7 +2,6 @@ use super::helpers::Indexable;
 use super::rlp_gadgets::RLPItemWitness;
 use super::witness_row::{Node, StartRowType};
 use crate::circuit_tools::cell_manager::Cell;
-use crate::circuit_tools::constraint_builder::{RLCable, RLCableValue};
 use crate::mpt_circuit::helpers::{main_memory, MainData};
 use crate::{
     circuit,

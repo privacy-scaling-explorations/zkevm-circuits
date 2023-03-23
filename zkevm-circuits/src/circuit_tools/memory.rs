@@ -170,8 +170,14 @@ impl<F: Field> MemoryBank<F> {
         cb.lookup(description, self.tag(), self.insert_key(key, values));
     }
 
-    pub(crate) fn store(&self, cb: &mut ConstraintBuilder<F>, values: &[Expression<F>]) {
-        self.store_with_key(cb, self.key() + 1.expr(), values);
+    pub(crate) fn store(
+        &self,
+        cb: &mut ConstraintBuilder<F>,
+        values: &[Expression<F>],
+    ) -> Expression<F> {
+        let key = self.key() + 1.expr();
+        self.store_with_key(cb, key.expr(), values);
+        key
     }
 
     pub(crate) fn store_with_key(
@@ -246,8 +252,6 @@ impl<F: Field> MemoryBank<F> {
     }
 
     pub(crate) fn insert_key<T: Clone>(&self, key: T, values: &[T]) -> Vec<T> {
-        let mut key_and_values = values.to_owned();
-        key_and_values.insert(0, key);
-        key_and_values
+        [vec![key], values.to_owned()].concat().to_vec()
     }
 }

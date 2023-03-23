@@ -219,7 +219,7 @@ impl<F: Field> AccountLeafConfig<F> {
 
             // Anything following this node is below the account
             // TODO(Brecht): For non-existing accounts it should be impossible to prove
-            // storage leafs unless it's also a non-existing proof?
+            // storage leaves unless it's also a non-existing proof?
             MainData::store(
                 &mut cb.base,
                 &ctx.memory[main_memory()],

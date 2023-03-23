@@ -85,7 +85,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 0.expr(),
             );
 
-            // Storage leafs always need to be below accounts
+            // Storage leaves always need to be below accounts
             require!(config.main_data.is_below_account => true);
 
             let mut key_rlc = vec![0.expr(); 2];
@@ -165,7 +165,7 @@ impl<F: Field> StorageLeafConfig<F> {
                 require!(rlp_key.rlp_list.len() => key_items[is_s.idx()].num_bytes() + config.rlp_value[is_s.idx()].num_bytes());
 
                 // Check if the account is in its parent.
-                // Check is skipped for placeholder leafs which are dummy leafs
+                // Check is skipped for placeholder leaves which are dummy leaves
                 ifx! {not!(is_placeholder_leaf) => {
                     config.is_not_hashed[is_s.idx()] = LtGadget::construct(&mut cb.base, rlp_key.rlp_list.num_bytes(), 32.expr());
                     ifx!{or::expr(&[parent_data.is_root.expr(), not!(config.is_not_hashed[is_s.idx()])]) => {

@@ -1,6 +1,5 @@
 //! Common utility traits and functions.
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Value},
     plonk::{Challenge, ConstraintSystem, Expression, FirstPhase, VirtualCells},
     poly::Rotation,
@@ -11,7 +10,7 @@ use eth_types::{Field, ToAddress};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
-pub(crate) fn query_expression<F: FieldExt, T>(
+pub(crate) fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
     mut f: impl FnMut(&mut VirtualCells<F>) -> T,
 ) -> T {
@@ -23,14 +22,14 @@ pub(crate) fn query_expression<F: FieldExt, T>(
     expr.unwrap()
 }
 
-pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
+pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     crate::evm_circuit::util::Word::random_linear_combine(bytes, randomness)
 }
 
 /// Query N instances at current rotation and return their expressions.  This
 /// function is used to get the power of randomness (passed as
 /// instances) in our tests.
-pub fn power_of_randomness_from_instance<F: FieldExt, const N: usize>(
+pub fn power_of_randomness_from_instance<F: Field, const N: usize>(
     meta: &mut ConstraintSystem<F>,
 ) -> [Expression<F>; N] {
     // This gate is used just to get the array of expressions from the power of
@@ -53,7 +52,7 @@ pub struct Challenges<T = Challenge> {
 
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
             evm_word: meta.challenge_usable_after(FirstPhase),
             keccak_input: meta.challenge_usable_after(FirstPhase),
@@ -61,7 +60,7 @@ impl Challenges {
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
-    pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+    pub fn exprs<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
         let [evm_word, keccak_input] = query_expression(meta, |meta| {
             [self.evm_word, self.keccak_input].map(|challenge| meta.query_challenge(challenge))
         });
@@ -72,7 +71,7 @@ impl Challenges {
     }
 
     /// Returns `Value` of challenges from `Layouter`.
-    pub fn values<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),
