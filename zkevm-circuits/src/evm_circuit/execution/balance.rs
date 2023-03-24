@@ -156,7 +156,7 @@ mod test {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
     }
 
-    fn test_bytecode_pop(address: Address) -> eth_types::Bytecode {
+    fn pop_bytecode(address: Address) -> eth_types::Bytecode {
         bytecode! {
             PUSH20(address.to_word())
             BALANCE
@@ -164,7 +164,7 @@ mod test {
         }
     }
 
-    fn test_bytecode_stop(address: Address) -> eth_types::Bytecode {
+    fn stop_bytecode(address: Address) -> eth_types::Bytecode {
         bytecode! {
             PUSH20(address.to_word())
             BALANCE
@@ -219,9 +219,9 @@ mod test {
 
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&test_bytecode_pop(address));
+            code.append(&pop_bytecode(address));
         }
-        code.append(&test_bytecode_stop(address));
+        code.append(&stop_bytecode(address));
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -264,9 +264,9 @@ mod test {
         // code B gets called by code A, so the call is an internal call.
         let mut code_b = Bytecode::default();
         if is_warm {
-            code_b.append(&test_bytecode_pop(address));
+            code_b.append(&pop_bytecode(address));
         }
-        code_b.append(&test_bytecode_stop(address));
+        code_b.append(&stop_bytecode(address));
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
