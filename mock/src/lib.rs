@@ -69,7 +69,7 @@ pub fn gwei(x: u64) -> Word {
     Word::from(x) * Word::from(10u64.pow(9))
 }
 
-/// Define MockBytecodeParams to hold the parameters.
+/// Struct that holds the parameters for generating mock EVM bytecode.
 pub struct MockBytecodeParams {
     pub address: Address,
     pub pushdata: Vec<u8>,
@@ -95,7 +95,7 @@ impl Default for MockBytecodeParams {
     }
 }
 
-/// Mock bytecode
+/// Generates mock EVM bytecode that performs a simple contract call
 pub fn generate_mock_bytecode(params: MockBytecodeParams) -> Vec<u8> {
     let bytecode = bytecode! {
         // populate memory in the context.
@@ -116,7 +116,8 @@ pub fn generate_mock_bytecode(params: MockBytecodeParams) -> Vec<u8> {
     bytecode.to_vec()
 }
 
-/// Mock bytecode with instruction that is added before STOP
+/// Generates mock bytecode with an additional instruction
+/// that is added before the STOP instruction.
 pub fn generate_mock_bytecode_with_instruction(
     params: MockBytecodeParams,
     instruction: Vec<u8>,
@@ -127,7 +128,7 @@ pub fn generate_mock_bytecode_with_instruction(
     bytecode
 }
 
-/// Mock bytecode for RETURN
+/// Generates mock EVM bytecode with the `RETURN` instruction.
 pub fn generate_mock_return_bytecode(
     pushdata: Vec<u8>,
     return_offset: usize,
