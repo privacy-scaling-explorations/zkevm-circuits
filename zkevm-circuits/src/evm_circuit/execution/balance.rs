@@ -150,10 +150,26 @@ mod test {
         address, bytecode, geth_types::Account, Address, Bytecode, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::{mock_bytecode, test_ctx::TestContext};
+    use mock::{mock_bytecode, test_ctx::TestContext, MockBytecodeParams};
 
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
+    }
+
+    fn test_bytecode_pop(address: Address) -> eth_types::Bytecode {
+        bytecode! {
+            PUSH20(address.to_word())
+            BALANCE
+            POP
+        }
+    }
+
+    fn test_bytecode_stop(address: Address) -> eth_types::Bytecode {
+        bytecode! {
+            PUSH20(address.to_word())
+            BALANCE
+            STOP
+        }
     }
 
     #[test]
@@ -203,17 +219,9 @@ mod test {
 
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
-                POP
-            });
+            code.append(&test_bytecode_pop(address));
         }
-        code.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            STOP
-        });
+        code.append(&test_bytecode_stop(address));
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -256,21 +264,19 @@ mod test {
         // code B gets called by code A, so the call is an internal call.
         let mut code_b = Bytecode::default();
         if is_warm {
-            code_b.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
-                POP
-            });
+            code_b.append(&test_bytecode_pop(address));
         }
-        code_b.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            STOP
-        });
+        code_b.append(&test_bytecode_stop(address));
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockBytecodeParams::default()
+        });
 
         let ctx = TestContext::<4, 1>::new(
             None,

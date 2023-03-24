@@ -189,8 +189,19 @@ mod calldatacopy_tests {
     use mock::{
         mock_bytecode,
         test_ctx::{helpers::*, TestContext},
+        MockBytecodeParams,
     };
     use pretty_assertions::assert_eq;
+
+    fn test_bytecode(copy_size: usize, offset: usize, dst_offset: usize) -> eth_types::Bytecode {
+        bytecode! {
+            PUSH32(copy_size)  // size
+            PUSH32(offset)     // offset
+            PUSH32(dst_offset) // dst_offset
+            CALLDATACOPY
+            STOP
+        }
+    }
 
     #[test]
     fn calldatacopy_opcode_internal() {
@@ -200,13 +211,7 @@ mod calldatacopy_tests {
         let dst_offset = 0x00usize;
         let offset = 0x00usize;
         let copy_size = 0x10usize;
-        let code_b = bytecode! {
-            PUSH32(copy_size)  // size
-            PUSH32(offset)     // offset
-            PUSH32(dst_offset) // dst_offset
-            CALLDATACOPY
-            STOP
-        };
+        let code_b = test_bytecode(copy_size, offset, dst_offset);
 
         // code A calls code B.
         let pushdata = hex::decode("1234567890abcdef").unwrap();
@@ -217,7 +222,13 @@ mod calldatacopy_tests {
 
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -390,10 +401,13 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
-
-        let call_data_length = 0x20usize;
-        let call_data_offset = 0x10usize;
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length: 0x20usize,
+            call_data_offset: 0x10usize,
+            ..MockBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(
@@ -426,13 +440,7 @@ mod calldatacopy_tests {
         let dst_offset = 0x00;
         let calldata = vec![1, 3, 5, 7, 9, 2, 4, 6, 8];
         let calldata_len = calldata.len();
-        let code = bytecode! {
-            PUSH32(size)
-            PUSH32(offset)
-            PUSH32(dst_offset)
-            CALLDATACOPY
-            STOP
-        };
+        let code = test_bytecode(size, offset, dst_offset);
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(

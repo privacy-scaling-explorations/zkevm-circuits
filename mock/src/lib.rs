@@ -15,75 +15,6 @@ pub(crate) use block::MockBlock;
 pub use test_ctx::TestContext;
 pub use transaction::{AddrOrWallet, MockTransaction, CORRECT_MOCK_TXS};
 
-/// Mock bytecode
-pub fn mock_bytecode(
-    addr_b: Address,
-    pushdata: Vec<u8>,
-    call_data_length: usize,
-    call_data_offset: usize,
-) -> Vec<u8> {
-    let return_data_offset = 0x00usize;
-    let return_data_size = 0x00usize;
-    mock_bytecode_with_return_data(
-        addr_b,
-        pushdata,
-        return_data_offset,
-        return_data_size,
-        call_data_length,
-        call_data_offset,
-    )
-}
-
-/// Mock bytecode
-pub fn mock_bytecode_with_return_data(
-    addr_b: Address,
-    pushdata: Vec<u8>,
-    return_data_offset: usize,
-    return_data_size: usize,
-    call_data_length: usize,
-    call_data_offset: usize,
-) -> Vec<u8> {
-    let default_gas = 0x1_0000u64;
-    mock_bytecode_with_gas(
-        addr_b,
-        pushdata,
-        return_data_offset,
-        return_data_size,
-        call_data_length,
-        call_data_offset,
-        default_gas,
-    )
-}
-
-/// Mock bytecode with gas
-pub fn mock_bytecode_with_gas(
-    addr_b: Address,
-    pushdata: Vec<u8>,
-    return_data_offset: usize,
-    return_data_size: usize,
-    call_data_length: usize,
-    call_data_offset: usize,
-    gas: u64,
-) -> Vec<u8> {
-    let code_a = bytecode! {
-        // populate memory in A's context.
-        PUSH32(Word::from_big_endian(&pushdata))
-        PUSH1(0x00) // offset
-        MSTORE
-        // call addr_b
-        PUSH32(return_data_offset) // retLength
-        PUSH32(return_data_size) // retOffset
-        PUSH32(call_data_length) // argsLength
-        PUSH32(call_data_offset) // argsOffset
-        PUSH1(0x00) // value
-        PUSH32(addr_b.to_word()) // addr
-        PUSH32(gas) // gas
-        CALL
-        STOP
-    };
-    code_a.to_vec()
-}
-
 lazy_static! {
     /// Mock 1 ETH
     pub static ref MOCK_1_ETH: Word = eth(1);
@@ -136,4 +67,51 @@ pub fn eth(x: u64) -> Word {
 /// Express an amount of ETH in GWei.
 pub fn gwei(x: u64) -> Word {
     Word::from(x) * Word::from(10u64.pow(9))
+}
+
+/// Define MockBytecodeParams to hold the parameters.
+pub struct MockBytecodeParams {
+    pub address: Address,
+    pub pushdata: Vec<u8>,
+    pub return_data_offset: usize,
+    pub return_data_size: usize,
+    pub call_data_length: usize,
+    pub call_data_offset: usize,
+    pub gas: u64,
+}
+
+/// Set default parameters for MockBytecodeParams
+impl Default for MockBytecodeParams {
+    fn default() -> Self {
+        MockBytecodeParams {
+            address: address!("0x0000000000000000000000000000000000000000"),
+            pushdata: Vec::new(),
+            return_data_offset: 0x00usize,
+            return_data_size: 0x00usize,
+            call_data_length: 0x00usize,
+            call_data_offset: 0x00usize,
+            gas: 0x1_0000u64,
+        }
+    }
+}
+
+/// Mock bytecode
+pub fn mock_bytecode(params: MockBytecodeParams) -> Vec<u8> {
+    let bytecode = bytecode! {
+        // populate memory in the context.
+        PUSH32(Word::from_big_endian(&params.pushdata))
+        PUSH1(0x00) // offset
+        MSTORE
+        // call address
+        PUSH32(params.return_data_offset) // retLength
+        PUSH32(params.return_data_size) // retOffset
+        PUSH32(params.call_data_length) // argsLength
+        PUSH32(params.call_data_offset) // argsOffset
+        PUSH1(0x00) // value
+        PUSH32(params.address.to_word()) // address
+        PUSH32(params.gas) // gas
+        CALL
+        STOP
+    };
+    bytecode.to_vec()
 }

@@ -104,7 +104,10 @@ mod calldataload_tests {
         geth_types::GethData,
         Word,
     };
-    use mock::{mock_bytecode, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
+    use mock::{
+        mock_bytecode, test_ctx::helpers::account_0_code_account_1_no_code, MockBytecodeParams,
+        TestContext,
+    };
     use rand::random;
 
     use crate::{circuit_input_builder::ExecState, mock::BlockData, operation::StackOp};
@@ -138,8 +141,13 @@ mod calldataload_tests {
         if memory_a.len() < call_data_length {
             memory_a.resize(call_data_length, 0);
         }
-
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockBytecodeParams::default()
+        });
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<3, 1>::new(

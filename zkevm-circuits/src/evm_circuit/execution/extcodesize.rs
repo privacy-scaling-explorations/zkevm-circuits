@@ -146,7 +146,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord};
-    use mock::{mock_bytecode, TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
+    use mock::{
+        mock_bytecode, MockBytecodeParams, TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES,
+    };
 
     #[test]
     fn test_extcodesize_gadget_simple() {
@@ -202,7 +204,13 @@ mod test {
         let pushdata = rand_bytes(32);
         let call_data_length = 0xffusize;
         let call_data_offset = 0x1010usize;
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockBytecodeParams::default()
+        });
 
         let ctx = TestContext::<4, 1>::new(
             None,

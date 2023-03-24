@@ -91,7 +91,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
-    use mock::{mock_bytecode, test_ctx::TestContext};
+    use mock::{mock_bytecode, test_ctx::TestContext, MockBytecodeParams};
 
     fn test_root_ok() {
         let bytecode = bytecode! {
@@ -116,7 +116,13 @@ mod test {
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

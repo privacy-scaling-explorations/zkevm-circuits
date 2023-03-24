@@ -255,6 +255,7 @@ mod test {
     use mock::{
         mock_bytecode,
         test_ctx::{helpers::*, TestContext},
+        MockBytecodeParams,
     };
 
     fn test_root_ok(
@@ -312,9 +313,13 @@ mod test {
             CALLDATACOPY
             STOP
         };
-
-        let pushdata = rand_bytes(32);
-        let code_a = mock_bytecode(addr_b, pushdata, call_data_length, call_data_offset);
+        let code_a = mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length,
+            call_data_offset,
+            ..MockBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,
