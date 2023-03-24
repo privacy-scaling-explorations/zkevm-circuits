@@ -137,7 +137,7 @@ mod tests {
         Bytecode, U256,
     };
     use mock::{
-        eth, mock_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
+        eth, generate_mock_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
         MockBytecodeParams, TestContext, MOCK_ACCOUNTS,
     };
 
@@ -208,11 +208,11 @@ mod tests {
         // code A calls code B.
         let pushdata = rand_bytes(32);
         // Decrease expected gas cost (by 1) to trigger out of gas error.
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata,
-            call_data_length: 0x20usize,
-            call_data_offset: 0x10usize,
+            call_data_length: 0x00usize,
+            call_data_offset: 0x20usize,
             gas: gas_cost_b - 1,
             ..MockBytecodeParams::default()
         });

@@ -253,7 +253,7 @@ mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::{
-        mock_bytecode,
+        generate_mock_bytecode,
         test_ctx::{helpers::*, TestContext},
         MockBytecodeParams,
     };
@@ -313,7 +313,7 @@ mod test {
             CALLDATACOPY
             STOP
         };
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata: rand_bytes(32),
             call_data_length,

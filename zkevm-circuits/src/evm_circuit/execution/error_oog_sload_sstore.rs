@@ -258,7 +258,7 @@ mod test {
         evm_types::{GasCost, OpcodeId},
         Bytecode, U256,
     };
-    use mock::{eth, mock_bytecode, MockBytecodeParams, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, generate_mock_bytecode, MockBytecodeParams, TestContext, MOCK_ACCOUNTS};
     use std::cmp::max;
 
     const TESTING_STORAGE_KEY: U256 = U256([0, 0, 0, 0x030201]);
@@ -493,7 +493,7 @@ mod test {
 
         // code A calls code B.
         // Decrease expected gas cost (by 1) to trigger out of gas error.
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata: rand_bytes(32),
             return_data_offset: 0x00usize,

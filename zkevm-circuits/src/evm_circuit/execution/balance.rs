@@ -150,7 +150,7 @@ mod test {
         address, bytecode, geth_types::Account, Address, Bytecode, ToWord, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::{mock_bytecode, test_ctx::TestContext, MockBytecodeParams};
+    use mock::{generate_mock_bytecode, test_ctx::TestContext, MockBytecodeParams};
 
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
@@ -270,7 +270,7 @@ mod test {
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length,

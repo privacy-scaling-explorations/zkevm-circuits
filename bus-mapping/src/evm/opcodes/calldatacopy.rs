@@ -187,7 +187,7 @@ mod calldatacopy_tests {
     };
 
     use mock::{
-        mock_bytecode,
+        generate_mock_bytecode,
         test_ctx::{helpers::*, TestContext},
         MockBytecodeParams,
     };
@@ -222,7 +222,7 @@ mod calldatacopy_tests {
 
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length,
@@ -401,7 +401,7 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length: 0x20usize,

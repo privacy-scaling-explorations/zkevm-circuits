@@ -87,8 +87,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::TestContext;
+    use eth_types::{bytecode, Word};
+    use mock::{
+        generate_mock_bytecode_with_instruction, test_ctx::TestContext, MockBytecodeParams,
+    };
 
     fn test_ok_internal(return_data_offset: usize, return_data_size: usize) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
@@ -98,27 +100,24 @@ mod test {
             PUSH32(Word::from_big_endian(&pushdata))
             PUSH1(0)
             MSTORE
-
             PUSH32(return_data_size)
             PUSH1(return_data_offset)
             RETURN
             STOP
         };
 
-        // code A calls code B.
-        let code_a = bytecode! {
-            // call ADDR_B.
-            PUSH32(return_data_size) // retLength
-            PUSH1(return_data_offset) // retOffset
-            PUSH1(0x00) // argsLength
-            PUSH1(0x00) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
+        let instruction = bytecode! {
             RETURNDATASIZE
-            STOP
         };
+        let code_a = generate_mock_bytecode_with_instruction(
+            MockBytecodeParams {
+                address: addr_b,
+                return_data_offset,
+                return_data_size,
+                ..MockBytecodeParams::default()
+            },
+            instruction.to_vec(),
+        );
 
         let ctx = TestContext::<3, 1>::new(
             None,

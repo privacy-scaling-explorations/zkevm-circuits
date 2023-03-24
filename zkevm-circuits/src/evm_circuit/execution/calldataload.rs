@@ -244,7 +244,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
-    use mock::{mock_bytecode, MockBytecodeParams, TestContext};
+    use mock::{generate_mock_bytecode, MockBytecodeParams, TestContext};
 
     fn test_bytecode(offset: usize) -> eth_types::Bytecode {
         bytecode! {
@@ -268,7 +268,7 @@ mod test {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = test_bytecode(offset);
-        let code_a = mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
             pushdata: rand_bytes(32),
             call_data_length,

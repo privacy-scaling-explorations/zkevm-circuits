@@ -96,7 +96,7 @@ impl Default for MockBytecodeParams {
 }
 
 /// Mock bytecode
-pub fn mock_bytecode(params: MockBytecodeParams) -> Vec<u8> {
+pub fn generate_mock_bytecode(params: MockBytecodeParams) -> Vec<u8> {
     let bytecode = bytecode! {
         // populate memory in the context.
         PUSH32(Word::from_big_endian(&params.pushdata))
@@ -114,4 +114,15 @@ pub fn mock_bytecode(params: MockBytecodeParams) -> Vec<u8> {
         STOP
     };
     bytecode.to_vec()
+}
+
+/// Mock bytecode with instruction that is added before STOP
+pub fn generate_mock_bytecode_with_instruction(
+    params: MockBytecodeParams,
+    instruction: Vec<u8>,
+) -> Vec<u8> {
+    let mut bytecode = generate_mock_bytecode(params);
+    let last_index = bytecode.len() - 1;
+    bytecode.splice(last_index..last_index, instruction);
+    bytecode
 }
