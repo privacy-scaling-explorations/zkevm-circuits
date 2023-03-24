@@ -89,22 +89,15 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::{
-        generate_mock_bytecode_with_instruction, test_ctx::TestContext, MockBytecodeParams,
+        generate_mock_bytecode_with_instruction, generate_mock_return_bytecode,
+        test_ctx::TestContext, MockBytecodeParams,
     };
 
     fn test_ok_internal(return_data_offset: usize, return_data_size: usize) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        let pushdata = rand_bytes(32);
-        let code_b = bytecode! {
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH1(0)
-            MSTORE
-            PUSH32(return_data_size)
-            PUSH1(return_data_offset)
-            RETURN
-            STOP
-        };
+        let code_b =
+            generate_mock_return_bytecode(rand_bytes(32), 0, return_data_offset, return_data_size);
 
         let instruction = bytecode! {
             RETURNDATASIZE

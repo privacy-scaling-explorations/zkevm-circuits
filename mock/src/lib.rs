@@ -126,3 +126,22 @@ pub fn generate_mock_bytecode_with_instruction(
     bytecode.splice(last_index..last_index, instruction);
     bytecode
 }
+
+/// Mock bytecode for RETURN
+pub fn generate_mock_return_bytecode(
+    pushdata: Vec<u8>,
+    return_offset: usize,
+    return_data_offset: usize,
+    return_data_size: usize,
+) -> Vec<u8> {
+    let bytecode = bytecode! {
+        PUSH32(Word::from_big_endian(&pushdata))
+        PUSH32(return_offset)
+        MSTORE
+        PUSH32(return_data_size)
+        PUSH32(return_data_offset)
+        RETURN
+        STOP
+    };
+    bytecode.to_vec()
+}

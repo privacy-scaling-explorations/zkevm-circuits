@@ -271,7 +271,8 @@ mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::{
-        generate_mock_bytecode_with_instruction, test_ctx::TestContext, MockBytecodeParams,
+        generate_mock_bytecode_with_instruction, generate_mock_return_bytecode,
+        test_ctx::TestContext, MockBytecodeParams,
     };
 
     fn test_ok_internal(
@@ -283,18 +284,14 @@ mod test {
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        let pushdata = rand_bytes(32);
         let return_offset =
             std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
-        let code_b = bytecode! {
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH32(return_offset)
-            MSTORE
-            PUSH32(return_data_size)
-            PUSH32(return_data_offset)
-            RETURN
-            STOP
-        };
+        let code_b = generate_mock_return_bytecode(
+            rand_bytes(32),
+            return_offset,
+            return_data_offset,
+            return_data_size,
+        );
 
         // code A calls code B.
         let instruction = bytecode! {
