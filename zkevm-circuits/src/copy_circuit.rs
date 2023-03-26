@@ -4,6 +4,7 @@
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::CopyCircuit as TestCopyCircuit;
 
 pub(crate) mod util;

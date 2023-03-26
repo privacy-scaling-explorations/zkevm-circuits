@@ -3,6 +3,7 @@
 mod param;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::PiTestCircuit;
 
 use eth_types::{

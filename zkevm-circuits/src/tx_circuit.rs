@@ -7,6 +7,7 @@
 pub mod sign_verify;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::TxCircuit as TestTxCircuit;
 
 use crate::{

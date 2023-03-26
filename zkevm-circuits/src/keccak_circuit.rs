@@ -8,6 +8,7 @@ mod table;
 mod test;
 /// Util
 mod util;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::KeccakCircuit as TestKeccakCircuit;
 
 use std::marker::PhantomData;

@@ -13,6 +13,7 @@ pub mod table;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub(crate) mod test;
 pub(crate) mod util;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;

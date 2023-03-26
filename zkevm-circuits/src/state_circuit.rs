@@ -7,6 +7,7 @@ mod param;
 mod random_linear_combination;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::StateCircuit as TestStateCircuit;
 
 use self::{
