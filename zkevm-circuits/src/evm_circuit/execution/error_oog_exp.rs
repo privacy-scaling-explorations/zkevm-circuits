@@ -203,17 +203,15 @@ mod tests {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = testing_data.bytecode.clone();
-        let gas_cost_b = testing_data.gas_cost;
 
         // code A calls code B.
-        let pushdata = rand_bytes(32);
         // Decrease expected gas cost (by 1) to trigger out of gas error.
         let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
-            pushdata,
+            pushdata: rand_bytes(32),
             call_data_length: 0x00usize,
             call_data_offset: 0x20usize,
-            gas: gas_cost_b - 1,
+            gas: testing_data.gas_cost - 1,
             ..MockBytecodeParams::default()
         });
 

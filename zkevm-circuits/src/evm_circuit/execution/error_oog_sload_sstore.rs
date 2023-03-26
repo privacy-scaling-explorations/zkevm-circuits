@@ -501,6 +501,7 @@ mod test {
             call_data_length: 0x20usize,
             call_data_offset: 0x10usize,
             gas: gas_cost_b - 1,
+            ..MockBytecodeParams::default()
         });
 
         let ctx = TestContext::<3, 1>::new(

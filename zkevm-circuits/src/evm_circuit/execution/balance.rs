@@ -147,29 +147,16 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{
-        address, bytecode, geth_types::Account, Address, Bytecode, ToWord, Word, U256,
+        address, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word, U256,
     };
     use lazy_static::lazy_static;
-    use mock::{generate_mock_bytecode, test_ctx::TestContext, MockBytecodeParams};
+    use mock::{
+        generate_mock_balance_bytecode, generate_mock_bytecode, test_ctx::TestContext,
+        MockBytecodeParams,
+    };
 
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
-    }
-
-    fn pop_bytecode(address: Address) -> eth_types::Bytecode {
-        bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            POP
-        }
-    }
-
-    fn stop_bytecode(address: Address) -> eth_types::Bytecode {
-        bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
-            STOP
-        }
     }
 
     #[test]
@@ -219,9 +206,9 @@ mod test {
 
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&pop_bytecode(address));
+            code.append(&generate_mock_balance_bytecode(address, OpcodeId::POP));
         }
-        code.append(&stop_bytecode(address));
+        code.append(&generate_mock_balance_bytecode(address, OpcodeId::STOP));
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -264,9 +251,9 @@ mod test {
         // code B gets called by code A, so the call is an internal call.
         let mut code_b = Bytecode::default();
         if is_warm {
-            code_b.append(&pop_bytecode(address));
+            code_b.append(&generate_mock_balance_bytecode(address, OpcodeId::POP));
         }
-        code_b.append(&stop_bytecode(address));
+        code_b.append(&generate_mock_balance_bytecode(address, OpcodeId::STOP));
 
         // code A calls code B.
         let pushdata = rand_bytes(8);

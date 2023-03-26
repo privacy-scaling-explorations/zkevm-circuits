@@ -89,8 +89,8 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::{
-        generate_mock_bytecode_with_instruction, generate_mock_return_bytecode,
-        test_ctx::TestContext, MockBytecodeParams,
+        generate_mock_bytecode, generate_mock_return_bytecode, test_ctx::TestContext,
+        MockBytecodeParams,
     };
 
     fn test_ok_internal(return_data_offset: usize, return_data_size: usize) {
@@ -102,15 +102,13 @@ mod test {
         let instruction = bytecode! {
             RETURNDATASIZE
         };
-        let code_a = generate_mock_bytecode_with_instruction(
-            MockBytecodeParams {
-                address: addr_b,
-                return_data_offset,
-                return_data_size,
-                ..MockBytecodeParams::default()
-            },
-            instruction.to_vec(),
-        );
+        let code_a = generate_mock_bytecode(MockBytecodeParams {
+            address: addr_b,
+            return_data_offset,
+            return_data_size,
+            instructions_before_stop: instruction,
+            ..MockBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

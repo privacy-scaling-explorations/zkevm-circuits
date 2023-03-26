@@ -202,14 +202,11 @@ mod test {
         });
 
         // code A calls code B.
-        let pushdata = rand_bytes(32);
-        let call_data_length = 0xffusize;
-        let call_data_offset = 0x1010usize;
         let code_a = generate_mock_bytecode(MockBytecodeParams {
             address: addr_b,
-            pushdata,
-            call_data_length,
-            call_data_offset,
+            pushdata: rand_bytes(32),
+            call_data_length: 0xffusize,
+            call_data_offset: 0x1010usize,
             ..MockBytecodeParams::default()
         });
 
