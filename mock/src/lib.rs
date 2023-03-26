@@ -4,7 +4,7 @@ use eth_types::{
     address, bytecode,
     bytecode::{Bytecode, OpcodeWithData},
     evm_types::OpcodeId,
-    Address, Bytes, ToWord, Word,
+    word, Address, Bytes, ToWord, Word,
 };
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
@@ -62,6 +62,27 @@ lazy_static! {
             LocalWallet::new(&mut rng),
     ]
     };
+    /// Mock EVM bytecode for a deployed contract.
+    /// PUSH1 0x20
+    /// PUSH1 0
+    /// PUSH1 0
+    /// CALLDATACOPY
+    /// PUSH1 0x20
+    /// PUSH1 0
+    /// RETURN
+    ///
+    /// bytecode: 0x6020600060003760206000F3
+    ///
+    /// // constructor
+    /// PUSH12 0x6020600060003760206000F3
+    /// PUSH1 0
+    /// MSTORE
+    /// PUSH1 0xC
+    /// PUSH1 0x14
+    /// RETURN
+    ///
+    /// bytecode: 0x6B6020600060003760206000F3600052600C6014F3
+    pub static ref MOCK_DEPLOYED_CONTRACT_BYTECODE: Word = word!("6B6020600060003760206000F3600052600C6014F3");
 }
 
 /// Generate a [`Word`] which corresponds to a certain amount of ETH.
