@@ -72,7 +72,7 @@ impl MptUpdates {
         self.proof_types = Vec::new();
 
         for (key, update) in &mut self.updates {
-            log::trace!("apply update {:?} {:?}", key, update);
+            log::trace!("apply update {:?} {:#?}", key, update);
             let proof_tip = state::as_proof_type(update.proof_type() as i32);
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
@@ -111,6 +111,7 @@ impl MptUpdates {
                 root_pair2.0,
                 root_pair2.1
             );
+            wit_gen.dump();
         }
     }
 

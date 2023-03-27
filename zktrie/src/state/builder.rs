@@ -6,6 +6,7 @@ use std::{
     io::{Error, ErrorKind, Read},
 };
 
+use bus_mapping::util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO};
 use halo2_proofs::{
     arithmetic::FieldExt,
     halo2curves::{bn256::Fr, group::ff::PrimeField},
@@ -59,7 +60,7 @@ const NODE_TYPE_MIDDLE: u8 = 0;
 const NODE_TYPE_LEAF: u8 = 1;
 const NODE_TYPE_EMPTY: u8 = 2;
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct AccountData {
     pub nonce: u64,
     pub balance: U256,
@@ -80,6 +81,19 @@ pub(crate) trait CanRead: Sized {
     fn parse_leaf(data: &[u8]) -> Result<Self, Error> {
         // notice the first 33 bytes has been read external
         Self::try_parse(&data[33..])
+    }
+}
+
+impl Default for AccountData {
+    fn default() -> Self {
+        Self {
+            nonce: 0,
+            balance: Default::default(),
+            code_size: 0,
+            storage_root: Default::default(),
+            keccak_code_hash: *KECCAK_CODE_HASH_ZERO,
+            poseidon_code_hash: *POSEIDON_CODE_HASH_ZERO,
+        }
     }
 }
 

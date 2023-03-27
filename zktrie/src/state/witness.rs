@@ -56,8 +56,14 @@ impl From<&ZktrieState> for WitnessGenerator {
                     existed,
                     "expected to be consistented between records in sdb and account root"
                 );
+                (*addr, acc_data, storage_root)
+            })
+            // filter out the account data which is empty can provide update applying some
+            // convenient
+            .filter(|(_, acc_data, _)| !acc_data.is_empty())
+            .map(|(addr, acc_data, storage_root)| {
                 (
-                    *addr,
+                    addr,
                     AccountData {
                         nonce: acc_data.nonce.as_u64(),
                         balance: acc_data.balance,
@@ -74,6 +80,8 @@ impl From<&ZktrieState> for WitnessGenerator {
             .accounts
             .iter()
             .map(|(addr, storage_root)| (*addr, state.zk_db.borrow_mut().new_trie(storage_root)))
+            // if an account has no storage slot being touched in execution, they do not need
+            // storage trie and would be filter out here
             .filter(|(_, storage_root)| storage_root.is_some())
             .map(|(addr, storage_root)| (addr, storage_root.expect("None has been filtered")))
             .collect();
@@ -213,10 +221,11 @@ impl WitnessGenerator {
                 log::warn!("invalid update {:?}", rs);
             }
             self.accounts.insert(address, account_data_after);
-        } else {
+        } else if account_data_before.is_some() {
+            log::warn!("trace update try delete account {address:?} trie while we have no SELFDESTRUCT yet");
             self.trie.delete(address.as_bytes());
             self.accounts.remove(&address);
-        }
+        } // no touch for non-exist proof
 
         let proofs = self.trie.prove(address.as_bytes()).unwrap();
         let account_path_after = decode_proof_for_mpt_path(address_key, proofs).unwrap();
@@ -311,7 +320,22 @@ impl WitnessGenerator {
                         );
                         acc_data.code_size = new_val.as_u64();
                     }
-                    MPTProofType::AccountDoesNotExist => (),
+                    MPTProofType::AccountDoesNotExist => {
+                        // for proof NotExist, the account_before must be empty
+                        assert!(
+                            acc_data.balance.is_zero(),
+                            "not-exist proof on existed account balance: {address}"
+                        );
+                        assert_eq!(
+                            0, acc_data.nonce,
+                            "not-exist proof on existed account nonce: {address}"
+                        );
+                        assert!(
+                            acc_data.storage_root.is_zero(),
+                            "not-exist proof on existed account storage: {address}"
+                        );
+                        return None;
+                    }
                     _ => unreachable!("invalid proof type: {:?}", proof_type),
                 }
                 Some(acc_data)
