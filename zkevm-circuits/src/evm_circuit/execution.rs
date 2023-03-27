@@ -78,14 +78,17 @@ mod end_block;
 mod end_inner_block;
 mod end_tx;
 mod error_code_store;
+mod error_invalid_creation_code;
 mod error_invalid_jump;
 mod error_invalid_opcode;
 mod error_oog_call;
 mod error_oog_constant;
+mod error_oog_create2;
 mod error_oog_dynamic_memory;
 mod error_oog_exp;
 mod error_oog_log;
 mod error_oog_memory_copy;
+mod error_oog_sha3;
 mod error_oog_sload_sstore;
 mod error_oog_static_memory;
 mod error_precompile_failed;
@@ -136,7 +139,7 @@ use balance::BalanceGadget;
 use begin_tx::BeginTxGadget;
 use bitwise::BitwiseGadget;
 use block_ctx::{BlockCtxU160Gadget, BlockCtxU256Gadget, BlockCtxU64Gadget};
-// use blockhash::BlockHashGadget;
+use blockhash::BlockHashGadget;
 use byte::ByteGadget;
 use calldatacopy::CallDataCopyGadget;
 use calldataload::CallDataLoadGadget;
@@ -155,14 +158,17 @@ use end_block::EndBlockGadget;
 use end_inner_block::EndInnerBlockGadget;
 use end_tx::EndTxGadget;
 use error_code_store::ErrorCodeStoreGadget;
+use error_invalid_creation_code::ErrorInvalidCreationCodeGadget;
 use error_invalid_jump::ErrorInvalidJumpGadget;
 use error_invalid_opcode::ErrorInvalidOpcodeGadget;
 use error_oog_call::ErrorOOGCallGadget;
 use error_oog_constant::ErrorOOGConstantGadget;
+use error_oog_create2::ErrorOOGCreate2Gadget;
 use error_oog_dynamic_memory::ErrorOOGDynamicMemoryGadget;
 use error_oog_exp::ErrorOOGExpGadget;
 use error_oog_log::ErrorOOGLogGadget;
 use error_oog_memory_copy::ErrorOOGMemoryCopyGadget;
+use error_oog_sha3::ErrorOOGSha3Gadget;
 use error_oog_sload_sstore::ErrorOOGSloadSstoreGadget;
 use error_oog_static_memory::ErrorOOGStaticMemoryGadget;
 use error_precompile_failed::ErrorPrecompileFailedGadget;
@@ -302,7 +308,7 @@ pub(crate) struct ExecutionConfig<F> {
     sstore_gadget: Box<SstoreGadget<F>>,
     stop_gadget: Box<StopGadget<F>>,
     swap_gadget: Box<SwapGadget<F>>,
-    blockhash_gadget: Box<DummyGadget<F, 1, 1, { ExecutionState::BLOCKHASH }>>,
+    blockhash_gadget: Box<BlockHashGadget<F>>,
     block_ctx_u64_gadget: Box<BlockCtxU64Gadget<F>>,
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
@@ -319,9 +325,8 @@ pub(crate) struct ExecutionConfig<F> {
     error_oog_log: Box<ErrorOOGLogGadget<F>>,
     error_oog_account_access:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasAccountAccess }>>,
-    error_oog_sha3: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSHA3 }>>,
-    error_oog_ext_codecopy: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasEXTCODECOPY }>>,
-    error_oog_create2: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasCREATE2 }>>,
+    error_oog_sha3: Box<ErrorOOGSha3Gadget<F>>,
+    error_oog_create2: Box<ErrorOOGCreate2Gadget<F>>,
     error_code_store: Box<ErrorCodeStoreGadget<F>>,
     error_oog_self_destruct:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorOutOfGasSELFDESTRUCT }>>,
@@ -334,8 +339,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
     error_contract_address_collision:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
-    error_invalid_creation_code:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>>,
+    error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
     error_gas_uint_overflow: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorGasUintOverflow }>>,
@@ -588,7 +592,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_oog_memory_copy: configure_gadget!(),
             error_oog_account_access: configure_gadget!(),
             error_oog_sha3: configure_gadget!(),
-            error_oog_ext_codecopy: configure_gadget!(),
             error_oog_exp: configure_gadget!(),
             error_oog_create2: configure_gadget!(),
             error_oog_self_destruct: configure_gadget!(),
@@ -1403,9 +1406,6 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorOutOfGasSHA3 => {
                 assign_exec_step!(self.error_oog_sha3)
-            }
-            ExecutionState::ErrorOutOfGasEXTCODECOPY => {
-                assign_exec_step!(self.error_oog_ext_codecopy)
             }
             ExecutionState::ErrorOutOfGasEXP => {
                 assign_exec_step!(self.error_oog_exp)
