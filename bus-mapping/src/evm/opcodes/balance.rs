@@ -57,11 +57,10 @@ impl Opcode for Balance {
 
         // Read account balance.
         let account = state.sdb.get_account(&address).1;
-        dbg!(account, account.is_empty());
         let exists = !account.is_empty();
         let balance = account.balance;
         let code_hash = if exists {
-            account.poseidon_code_hash
+            account.code_hash
         } else {
             H256::zero()
         };
@@ -69,7 +68,7 @@ impl Opcode for Balance {
         state.account_read(
             &mut exec_step,
             address,
-            AccountField::PoseidonCodeHash,
+            AccountField::CodeHash,
             code_hash.to_word(),
         );
         if exists {
@@ -95,7 +94,6 @@ mod balance_tests {
         mock::BlockData,
         operation::{AccountOp, CallContextOp, StackOp, RW},
         state_db::CodeDB,
-        util::hash_code,
     };
     use eth_types::{
         address, bytecode,
@@ -260,7 +258,7 @@ mod balance_tests {
         );
 
         let code_hash = if let Some(code) = account_code {
-            hash_code(&code).to_word()
+            CodeDB::hash(&code).to_word()
         } else if exists {
             CodeDB::empty_code_hash().to_word()
         } else {
@@ -272,7 +270,7 @@ mod balance_tests {
             operation.op(),
             &AccountOp {
                 address,
-                field: AccountField::PoseidonCodeHash,
+                field: AccountField::CodeHash,
                 value: if exists { code_hash } else { U256::zero() },
                 value_prev: if exists { code_hash } else { U256::zero() },
             }

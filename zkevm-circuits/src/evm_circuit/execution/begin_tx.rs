@@ -192,7 +192,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_poseidon_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_code_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
@@ -213,7 +213,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             |cb| {
                 cb.account_read(
                     call_callee_address.expr(),
-                    AccountFieldTag::PoseidonCodeHash,
+                    AccountFieldTag::CodeHash,
                     phase2_code_hash.expr(),
                 ); // rwc_delta += 1
             },
@@ -652,7 +652,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.empty_poseidon_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, region.word_rlc(callee_code_hash))?;

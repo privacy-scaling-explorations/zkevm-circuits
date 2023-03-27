@@ -3,7 +3,7 @@ use super::{
     builder::{extend_address_to_h256, AccountData, BytesArray, CanRead, TrieProof},
     MPTProofType, ZktrieState,
 };
-use bus_mapping::util::{KECCAK_CODE_HASH_ZERO, POSEIDON_CODE_HASH_ZERO};
+use bus_mapping::{state_db::CodeDB, util::KECCAK_CODE_HASH_ZERO};
 use eth_types::{Address, Hash, Word, H256, U256};
 use halo2_proofs::halo2curves::group::ff::PrimeField;
 use mpt_circuits::serde::{
@@ -67,7 +67,7 @@ impl From<&ZktrieState> for WitnessGenerator {
                     AccountData {
                         nonce: acc_data.nonce.as_u64(),
                         balance: acc_data.balance,
-                        poseidon_code_hash: acc_data.poseidon_code_hash,
+                        poseidon_code_hash: acc_data.code_hash,
                         keccak_code_hash: acc_data.keccak_code_hash,
                         code_size: acc_data.code_size.as_u64(),
                         storage_root: H256::from(storage_root),
@@ -296,7 +296,7 @@ impl WitnessGenerator {
                         old_val.to_big_endian(code_hash.as_mut_slice());
                         if H256::from(code_hash) != acc_data.poseidon_code_hash {
                             if H256::from(code_hash).is_zero()
-                                && acc_data.poseidon_code_hash == *POSEIDON_CODE_HASH_ZERO
+                                && acc_data.poseidon_code_hash == CodeDB::empty_code_hash()
                             {
                                 log::trace!("codehash 0->poseidon(nil)");
                             } else {

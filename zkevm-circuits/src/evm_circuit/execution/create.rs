@@ -22,7 +22,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{evm_types::GasCost, Field, ToBigEndian, ToLittleEndian, ToScalar, ToWord, U256};
 use ethers_core::utils::{keccak256, rlp};
 use halo2_proofs::{
@@ -60,8 +60,8 @@ pub(crate) struct CreateGadget<F> {
 
     gas_left: ConstantDivisionGadget<F, N_BYTES_GAS>,
 
+    code_hash: Cell<F>,
     keccak_code_hash: Cell<F>,
-    poseidon_code_hash: Cell<F>,
 
     keccak_input: Cell<F>,
     keccak_input_length: Cell<F>,
@@ -115,14 +115,14 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
         let callee_is_success = cb.query_bool();
         cb.stack_push(callee_is_success.expr() * new_address_rlc);
 
+        let code_hash = cb.query_cell_phase2();
         let keccak_code_hash = cb.query_cell_phase2();
-        let poseidon_code_hash = cb.query_cell_phase2();
         cb.condition(initialization_code.has_length(), |cb| {
             // TODO(rohit): lookup to keccak table to verify keccak code hash?
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
                 CopyDataType::Memory.expr(),
-                poseidon_code_hash.expr(),
+                code_hash.expr(),
                 CopyDataType::Bytecode.expr(),
                 initialization_code.offset(),
                 initialization_code.address(),
@@ -139,9 +139,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 cb.empty_keccak_hash_rlc(),
             );
             cb.require_equal(
-                "poseidon hash of empty bytes",
-                poseidon_code_hash.expr(),
-                cb.empty_poseidon_hash_rlc(),
+                "code hash of empty bytes",
+                code_hash.expr(),
+                cb.empty_code_hash_rlc(),
             );
         });
 
@@ -265,7 +265,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             (CallContextFieldTag::IsRoot, false.expr()),
             (CallContextFieldTag::IsStatic, false.expr()),
             (CallContextFieldTag::IsCreate, true.expr()),
-            (CallContextFieldTag::CodeHash, poseidon_code_hash.expr()),
+            (CallContextFieldTag::CodeHash, code_hash.expr()),
             (CallContextFieldTag::Value, value.expr()),
         ] {
             cb.call_context_lookup(true.expr(), Some(callee_call_id.expr()), field_tag, value);
@@ -277,7 +277,7 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
                 call_id: To(callee_call_id.expr()),
                 is_root: To(false.expr()),
                 is_create: To(true.expr()),
-                code_hash: To(poseidon_code_hash.expr()),
+                code_hash: To(code_hash.expr()),
                 gas_left: To(callee_gas_left),
                 reversible_write_counter: To(1.expr() + transfer.reversible_w_delta()),
                 ..StepStateTransition::new_context()
@@ -304,60 +304,58 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
 
         let keccak_input = cb.query_cell_phase2();
         let keccak_input_length = cb.query_cell();
-        /*
-        cb.condition(is_create2.expr(), |cb| {
-            // For CREATE2, the keccak input is the concatenation of 0xff, address, salt,
-            // and code_hash. Each sequence of bytes occurs in a fixed position, so to
-            // compute the RLC of the input, we only need to compute some fixed powers of
-            // the randomness.
-            let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
-            let randomness_raised_to_32 = randomness_raised_to_16.square();
-            let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
-            let randomness_raised_to_84 =
-                randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
-            cb.require_equal(
-                "for CREATE2, keccak input is 0xff ++ address ++ salt ++ code_hash",
-                keccak_input.expr(),
-                0xff.expr() * randomness_raised_to_84
-                    + caller_address.expr() * randomness_raised_to_64
-                    + salt.expr() * randomness_raised_to_32
-                    + code_hash.expr(),
-            );
-            cb.require_equal(
-                "for CREATE2, keccak input length is 85",
-                keccak_input_length.expr(),
-                (1 + 20 + 32 + 32).expr(),
-            );
-        });
 
+        // cb.condition(is_create2.expr(), |cb| {
+        // For CREATE2, the keccak input is the concatenation of 0xff, address, salt,
+        // and code_hash. Each sequence of bytes occurs in a fixed position, so to
+        // compute the RLC of the input, we only need to compute some fixed powers of
+        // the randomness.
+        // let randomness_raised_to_16 = cb.power_of_randomness()[15].clone();
+        // let randomness_raised_to_32 = randomness_raised_to_16.square();
+        // let randomness_raised_to_64 = randomness_raised_to_32.clone().square();
+        // let randomness_raised_to_84 =
+        // randomness_raised_to_64.clone() * cb.power_of_randomness()[19].clone();
+        // cb.require_equal(
+        // "for CREATE2, keccak input is 0xff ++ address ++ salt ++ code_hash",
+        // keccak_input.expr(),
+        // 0xff.expr() * randomness_raised_to_84
+        // + caller_address.expr() * randomness_raised_to_64
+        // + salt.expr() * randomness_raised_to_32
+        // + code_hash.expr(),
+        // );
+        // cb.require_equal(
+        // "for CREATE2, keccak input length is 85",
+        // keccak_input_length.expr(),
+        // (1 + 20 + 32 + 32).expr(),
+        // );
+        // });
 
-        cb.condition(not::expr(is_create2.expr()), |cb| {
-            let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
-            let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
-            cb.require_equal(
-                "for CREATE, keccak input is rlp([address, nonce])",
-                keccak_input.expr(),
-                nonce.rlp_rlc(cb)
-                    + nonce.randomness_raised_to_rlp_length(cb)
-                        * (((0xc0.expr() + 21.expr() + nonce.rlp_length())
-                            * randomness_raised_to_21)
-                            + (0x80 + 20).expr() * randomness_raised_to_20
-                            + caller_address.expr()),
-            );
-            cb.require_equal(
-                "for CREATE, keccak input length is rlp([address, nonce]).len()",
-                keccak_input_length.expr(),
-                (1 + 1 + 20).expr() + nonce.rlp_length(),
-            );
-        });
-
-
-        cb.keccak_table_lookup(
-            keccak_input.expr(),
-            keccak_input_length.expr(),
-            keccak_output.expr(),
-        );
-        */
+        // cb.condition(not::expr(is_create2.expr()), |cb| {
+        // let randomness_raised_to_20 = cb.power_of_randomness()[19].clone();
+        // let randomness_raised_to_21 = cb.power_of_randomness()[20].clone();
+        // cb.require_equal(
+        // "for CREATE, keccak input is rlp([address, nonce])",
+        // keccak_input.expr(),
+        // nonce.rlp_rlc(cb)
+        // + nonce.randomness_raised_to_rlp_length(cb)
+        // * (((0xc0.expr() + 21.expr() + nonce.rlp_length())
+        // * randomness_raised_to_21)
+        // + (0x80 + 20).expr() * randomness_raised_to_20
+        // + caller_address.expr()),
+        // );
+        // cb.require_equal(
+        // "for CREATE, keccak input length is rlp([address, nonce]).len()",
+        // keccak_input_length.expr(),
+        // (1 + 1 + 20).expr() + nonce.rlp_length(),
+        // );
+        // });
+        //
+        //
+        // cb.keccak_table_lookup(
+        // keccak_input.expr(),
+        // keccak_input_length.expr(),
+        // keccak_output.expr(),
+        // );
 
         Self {
             opcode,
@@ -376,8 +374,8 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             memory_expansion,
             gas_left,
             callee_is_success,
+            code_hash,
             keccak_code_hash,
-            poseidon_code_hash,
             keccak_output,
             keccak_input,
             keccak_input_length,
@@ -423,12 +421,9 @@ impl<F: Field> ExecutionGadget<F> for CreateGadget<F> {
             offset,
             region.word_rlc(U256::from_big_endian(&keccak_code_hash)),
         )?;
-        let poseidon_code_hash = bus_mapping::util::hash_code(&values);
-        self.poseidon_code_hash.assign(
-            region,
-            offset,
-            region.word_rlc(poseidon_code_hash.to_word()),
-        )?;
+        let code_hash = CodeDB::hash(&values);
+        self.code_hash
+            .assign(region, offset, region.word_rlc(code_hash.to_word()))?;
 
         for (word, assignment) in [(&self.value, value), (&self.salt, salt)] {
             word.assign(region, offset, Some(assignment.to_le_bytes()))?;
@@ -704,43 +699,41 @@ impl<F: Field> RlpU64Gadget<F> {
     fn rlp_length(&self) -> Expression<F> {
         1.expr() + not::expr(self.is_less_than_128.expr()) * self.n_bytes_nonce()
     }
-    /*
-    fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        select::expr(
-            and::expr(&[
-                self.is_less_than_128.expr(),
-                not::expr(self.most_significant_byte_is_zero.expr()),
-            ]),
-            self.value(),
-            (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_n_bytes_nonce(cb)
-                + self.bytes.expr(),
-        )
-    }
-
-    fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        let powers_of_randomness = cb.power_of_randomness();
-        powers_of_randomness[0].clone()
-            * select::expr(
-                self.is_less_than_128.expr(),
-                1.expr(),
-                self.randomness_raised_n_bytes_nonce(cb),
-            )
-    }
-
-    fn randomness_raised_n_bytes_nonce(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
-        let powers_of_randomness = cb.power_of_randomness();
-        select::expr(
-            self.most_significant_byte_is_zero.expr(),
-            1.expr(),
-            sum::expr(
-                self.is_most_significant_byte
-                    .iter()
-                    .zip(powers_of_randomness)
-                    .map(|(indicator, power)| indicator.expr() * power.clone()),
-            ),
-        )
-    }
-    */
+    // fn rlp_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    // select::expr(
+    // and::expr(&[
+    // self.is_less_than_128.expr(),
+    // not::expr(self.most_significant_byte_is_zero.expr()),
+    // ]),
+    // self.value(),
+    // (0x80.expr() + self.n_bytes_nonce()) * self.randomness_raised_n_bytes_nonce(cb)
+    // + self.bytes.expr(),
+    // )
+    // }
+    //
+    // fn randomness_raised_to_rlp_length(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    // let powers_of_randomness = cb.power_of_randomness();
+    // powers_of_randomness[0].clone()
+    // select::expr(
+    // self.is_less_than_128.expr(),
+    // 1.expr(),
+    // self.randomness_raised_n_bytes_nonce(cb),
+    // )
+    // }
+    //
+    // fn randomness_raised_n_bytes_nonce(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    // let powers_of_randomness = cb.power_of_randomness();
+    // select::expr(
+    // self.most_significant_byte_is_zero.expr(),
+    // 1.expr(),
+    // sum::expr(
+    // self.is_most_significant_byte
+    // .iter()
+    // .zip(powers_of_randomness)
+    // .map(|(indicator, power)| indicator.expr() * power.clone()),
+    // ),
+    // )
+    // }
 }
 
 #[cfg(test)]
