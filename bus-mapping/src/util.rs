@@ -93,3 +93,6 @@ fn code_hashing() {
 
 /// the zero keccak code hash
 pub static KECCAK_CODE_HASH_ZERO: Lazy<Hash> = Lazy::new(|| H256(keccak256([])));
+/// the zero poseidon code hash
+pub static POSEIDON_CODE_HASH_ZERO: Lazy<Hash> = Lazy::new(|| hash_code(&[]));
+
