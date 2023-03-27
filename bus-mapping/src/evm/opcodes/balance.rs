@@ -95,7 +95,7 @@ mod balance_tests {
         state_db::CodeDB,
     };
     use eth_types::{
-        address,
+        address, bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
         Bytecode, ToWord, Word, U256,
@@ -124,9 +124,19 @@ mod balance_tests {
         // Pop balance first for warm account.
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&generate_mock_balance_bytecode(address, OpcodeId::POP));
+            code.append(&generate_mock_balance_bytecode(
+                address,
+                &bytecode! {
+                    POP
+                },
+            ));
         }
-        code.append(&generate_mock_balance_bytecode(address, OpcodeId::STOP));
+        code.append(&generate_mock_balance_bytecode(
+            address,
+            &bytecode! {
+                STOP
+            },
+        ));
 
         let balance = if exists {
             Word::from(800u64)

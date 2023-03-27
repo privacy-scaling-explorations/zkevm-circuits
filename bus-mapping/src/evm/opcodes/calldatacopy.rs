@@ -180,28 +180,17 @@ mod calldatacopy_tests {
         operation::{CallContextField, CallContextOp, MemoryOp, StackOp, RW},
     };
     use eth_types::{
-        bytecode,
         evm_types::{OpcodeId, StackAddress},
         geth_types::GethData,
         Word,
     };
 
     use mock::{
-        generate_mock_bytecode,
+        generate_mock_call_bytecode, generate_mock_calldatacopy_bytecode,
         test_ctx::{helpers::*, TestContext},
-        MockBytecodeParams,
+        MockCallBytecodeParams,
     };
     use pretty_assertions::assert_eq;
-
-    fn test_bytecode(copy_size: usize, offset: usize, dst_offset: usize) -> eth_types::Bytecode {
-        bytecode! {
-            PUSH32(copy_size)  // size
-            PUSH32(offset)     // offset
-            PUSH32(dst_offset) // dst_offset
-            CALLDATACOPY
-            STOP
-        }
-    }
 
     #[test]
     fn calldatacopy_opcode_internal() {
@@ -211,7 +200,7 @@ mod calldatacopy_tests {
         let dst_offset = 0x00usize;
         let offset = 0x00usize;
         let copy_size = 0x10usize;
-        let code_b = test_bytecode(copy_size, offset, dst_offset);
+        let code_b = generate_mock_calldatacopy_bytecode(copy_size, offset, dst_offset);
 
         // code A calls code B.
         let pushdata = hex::decode("1234567890abcdef").unwrap();
@@ -222,12 +211,12 @@ mod calldatacopy_tests {
 
         let call_data_length = 0x20usize;
         let call_data_offset = 0x10usize;
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length,
             call_data_offset,
-            ..MockBytecodeParams::default()
+            ..MockCallBytecodeParams::default()
         });
 
         // Get the execution steps from the external tracer
@@ -384,16 +373,7 @@ mod calldatacopy_tests {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let dst_offset = 0x00usize;
-        let offset = 0x00usize;
-        let copy_size = 0x50usize;
-        let code_b = bytecode! {
-            PUSH32(copy_size)  // size
-            PUSH32(offset)     // offset
-            PUSH32(dst_offset) // dst_offset
-            CALLDATACOPY
-            STOP
-        };
+        let code_b = generate_mock_calldatacopy_bytecode(0x50usize, 0x00usize, 0x00usize);
 
         // code A calls code B.
         let pushdata = hex::decode("1234567890abcdef").unwrap();
@@ -401,12 +381,12 @@ mod calldatacopy_tests {
             .take(24)
             .chain(pushdata.clone())
             .collect::<Vec<u8>>();
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length: 0x20usize,
             call_data_offset: 0x10usize,
-            ..MockBytecodeParams::default()
+            ..MockCallBytecodeParams::default()
         });
 
         // Get the execution steps from the external tracer
@@ -440,7 +420,7 @@ mod calldatacopy_tests {
         let dst_offset = 0x00;
         let calldata = vec![1, 3, 5, 7, 9, 2, 4, 6, 8];
         let calldata_len = calldata.len();
-        let code = test_bytecode(size, offset, dst_offset);
+        let code = generate_mock_calldatacopy_bytecode(size, offset, dst_offset);
 
         // Get the execution steps from the external tracer
         let block: GethData = TestContext::<2, 1>::new(

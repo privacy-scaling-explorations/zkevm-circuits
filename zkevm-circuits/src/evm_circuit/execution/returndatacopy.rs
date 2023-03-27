@@ -271,8 +271,8 @@ mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::{
-        generate_mock_bytecode, generate_mock_return_bytecode, test_ctx::TestContext,
-        MockBytecodeParams,
+        generate_mock_call_bytecode, generate_mock_return_bytecode, test_ctx::TestContext,
+        MockCallBytecodeParams,
     };
 
     fn test_ok_internal(
@@ -300,12 +300,12 @@ mod test {
             PUSH32(dest_offset) // dest_offset
             RETURNDATACOPY
         };
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             return_data_offset,
             return_data_size,
-            instructions_before_stop: instruction,
-            ..MockBytecodeParams::default()
+            instructions_after_call: instruction,
+            ..MockCallBytecodeParams::default()
         });
 
         let ctx = TestContext::<3, 1>::new(

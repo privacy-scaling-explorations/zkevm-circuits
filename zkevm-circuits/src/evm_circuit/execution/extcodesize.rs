@@ -147,8 +147,8 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, geth_types::Account, Bytecode, ToWord};
     use mock::{
-        generate_mock_bytecode, MockBytecodeParams, TestContext, MOCK_1_ETH, MOCK_ACCOUNTS,
-        MOCK_CODES,
+        generate_mock_call_bytecode, MockCallBytecodeParams, TestContext, MOCK_1_ETH,
+        MOCK_ACCOUNTS, MOCK_CODES,
     };
 
     #[test]
@@ -202,12 +202,12 @@ mod test {
         });
 
         // code A calls code B.
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata: rand_bytes(32),
             call_data_length: 0xffusize,
             call_data_offset: 0x1010usize,
-            ..MockBytecodeParams::default()
+            ..MockCallBytecodeParams::default()
         });
 
         let ctx = TestContext::<4, 1>::new(

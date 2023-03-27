@@ -69,7 +69,7 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode::Bytecode, Word};
     use lazy_static::lazy_static;
-    use mock::{generate_mock_bytecode, MockBytecodeParams, TestContext};
+    use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
 
     lazy_static! {
         static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
@@ -120,12 +120,12 @@ mod test {
         });
 
         // code A calls code B.
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata: rand_bytes(32),
             call_data_length,
             call_data_offset,
-            ..MockBytecodeParams::default()
+            ..MockCallBytecodeParams::default()
         });
 
         let ctx = TestContext::<3, 1>::new(

@@ -105,8 +105,8 @@ mod calldataload_tests {
         Word,
     };
     use mock::{
-        generate_mock_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
-        MockBytecodeParams, TestContext,
+        generate_mock_call_bytecode, test_ctx::helpers::account_0_code_account_1_no_code,
+        MockCallBytecodeParams, TestContext,
     };
     use rand::random;
 
@@ -141,12 +141,12 @@ mod calldataload_tests {
         if memory_a.len() < call_data_length {
             memory_a.resize(call_data_length, 0);
         }
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length,
             call_data_offset,
-            ..MockBytecodeParams::default()
+            ..MockCallBytecodeParams::default()
         });
 
         // Get the execution steps from the external tracer

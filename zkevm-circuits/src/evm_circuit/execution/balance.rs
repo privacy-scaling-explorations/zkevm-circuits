@@ -146,13 +146,11 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::{
-        address, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, Word, U256,
-    };
+    use eth_types::{address, bytecode, geth_types::Account, Address, Bytecode, Word, U256};
     use lazy_static::lazy_static;
     use mock::{
-        generate_mock_balance_bytecode, generate_mock_bytecode, test_ctx::TestContext,
-        MockBytecodeParams,
+        generate_mock_balance_bytecode, generate_mock_call_bytecode, test_ctx::TestContext,
+        MockCallBytecodeParams,
     };
 
     lazy_static! {
@@ -206,9 +204,19 @@ mod test {
 
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&generate_mock_balance_bytecode(address, OpcodeId::POP));
+            code.append(&generate_mock_balance_bytecode(
+                address,
+                &bytecode! {
+                    POP
+                },
+            ));
         }
-        code.append(&generate_mock_balance_bytecode(address, OpcodeId::STOP));
+        code.append(&generate_mock_balance_bytecode(
+            address,
+            &bytecode! {
+                STOP
+            },
+        ));
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -251,18 +259,28 @@ mod test {
         // code B gets called by code A, so the call is an internal call.
         let mut code_b = Bytecode::default();
         if is_warm {
-            code_b.append(&generate_mock_balance_bytecode(address, OpcodeId::POP));
+            code_b.append(&generate_mock_balance_bytecode(
+                address,
+                &bytecode! {
+                    POP
+                },
+            ));
         }
-        code_b.append(&generate_mock_balance_bytecode(address, OpcodeId::STOP));
+        code_b.append(&generate_mock_balance_bytecode(
+            address,
+            &bytecode! {
+                STOP
+            },
+        ));
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = generate_mock_bytecode(MockBytecodeParams {
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata,
             call_data_length,
             call_data_offset,
-            ..MockBytecodeParams::default()
+            ..MockCallBytecodeParams::default()
         });
 
         let ctx = TestContext::<4, 1>::new(
