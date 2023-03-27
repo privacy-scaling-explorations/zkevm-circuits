@@ -289,6 +289,9 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::Constant) => {
             Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops)
         }
+        ExecError::OutOfGas(OogError::Create2) => {
+            Some(StackOnlyOpcode::<4, 0, true>::gen_associated_ops)
+        }
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
         ExecError::OutOfGas(OogError::DynamicMemoryExpansion) => {
             Some(OOGDynamicMemory::gen_associated_ops)
