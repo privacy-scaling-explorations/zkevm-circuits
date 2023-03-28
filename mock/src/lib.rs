@@ -1,6 +1,6 @@
 //! Mock types and functions to generate GethData used for tests
 
-use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, ToWord, Word};
+use eth_types::{address, bytecode, bytecode::Bytecode, word, Address, Bytes, Word};
 use ethers_signers::LocalWallet;
 use lazy_static::lazy_static;
 use rand::SeedableRng;
@@ -128,40 +128,23 @@ impl Default for MockCallBytecodeParams {
 
 /// Generate mock EVM bytecode that performs a contract call
 pub fn generate_mock_call_bytecode(params: MockCallBytecodeParams) -> Bytecode {
-    let mut bytecode = bytecode! {
+    bytecode! {
         // populate memory in the context.
         PUSH32(Word::from_big_endian(&params.pushdata))
         PUSH1(0x00) // offset
         MSTORE
-        // call address
-        PUSH32(params.return_data_offset) // retLength
-        PUSH32(params.return_data_size) // retOffset
-        PUSH32(params.call_data_length) // argsLength
-        PUSH32(params.call_data_offset) // argsOffset
-        PUSH1(0x00) // value
-        PUSH32(params.address.to_word()) // address
-        PUSH32(params.gas) // gas
-        CALL
-    };
-    bytecode.append(&params.instructions_after_call);
-    bytecode.append(&bytecode! {
+        .call(
+            params.gas,
+            params.address,
+            0u64,
+            params.call_data_offset,
+            params.call_data_length,
+            params.return_data_size,
+            params.return_data_offset,
+        )
+        .append(&params.instructions_after_call)
         STOP
-    });
-    bytecode
-}
-
-// Generate EVM bytecode that loads the balance of a given address
-// and performs instructions after `BALANCE`
-pub fn generate_mock_balance_bytecode(
-    address: Address,
-    instructions_after_balance: &eth_types::Bytecode,
-) -> eth_types::Bytecode {
-    let mut bytecode = bytecode! {
-        PUSH20(address.to_word())
-        BALANCE
-    };
-    bytecode.append(instructions_after_balance);
-    bytecode
+    }
 }
 
 /// Generate mock EVM bytecode with the `RETURN` instruction.

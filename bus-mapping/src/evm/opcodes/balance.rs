@@ -100,7 +100,7 @@ mod balance_tests {
         geth_types::GethData,
         Bytecode, ToWord, Word, U256,
     };
-    use mock::{generate_mock_balance_bytecode, TestContext};
+    use mock::TestContext;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -124,19 +124,15 @@ mod balance_tests {
         // Pop balance first for warm account.
         let mut code = Bytecode::default();
         if is_warm {
-            code.append(&generate_mock_balance_bytecode(
-                address,
-                &bytecode! {
-                    POP
-                },
-            ));
+            code.append(&bytecode! {
+                .balance(address)
+                POP
+            });
         }
-        code.append(&generate_mock_balance_bytecode(
-            address,
-            &bytecode! {
-                STOP
-            },
-        ));
+        code.append(&bytecode! {
+            .balance(address)
+            STOP
+        });
 
         let balance = if exists {
             Word::from(800u64)
