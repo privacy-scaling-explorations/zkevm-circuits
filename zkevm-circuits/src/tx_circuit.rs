@@ -192,7 +192,7 @@ impl<F: Field> TxCircuit<F> {
                     Value::known(F::ZERO),
                 )?;
                 offset += 1;
-                // Assign al Tx fields except for call data
+                // Assign all Tx fields except for call data
                 let tx_default = Transaction::default();
                 for (i, assigned_sig_verif) in assigned_sig_verifs.iter().enumerate() {
                     let tx = if i < self.txs.len() {

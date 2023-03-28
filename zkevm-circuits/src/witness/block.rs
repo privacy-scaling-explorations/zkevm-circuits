@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     evm_circuit::{detect_fixed_table_tags, EvmCircuit},
     exp_circuit::param::OFFSET_INCREMENT,
+    instance::public_data_convert,
     table::BlockContextFieldTag,
     util::{log2_ceil, word, SubCircuit},
 };
@@ -240,7 +241,7 @@ pub fn block_convert<F: Field>(
 ) -> Result<Block<F>, Error> {
     let rws = RwMap::from(&block.container);
     rws.check_value();
-    Ok(Block {
+    let mut block = Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
@@ -269,5 +270,13 @@ pub fn block_convert<F: Field>(
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
         eth_block: block.eth_block.clone(),
-    })
+    };
+    let public_data = public_data_convert(&block);
+    let rpi_bytes = public_data.get_pi_bytes(
+        block.circuits_params.max_txs,
+        block.circuits_params.max_calldata,
+    );
+    // PI Circuit
+    block.keccak_inputs.extend_from_slice(&[rpi_bytes]);
+    Ok(block)
 }

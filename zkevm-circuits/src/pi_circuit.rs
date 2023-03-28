@@ -5,22 +5,34 @@ mod param;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+use std::{cmp::min, iter, marker::PhantomData};
+
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::PiCircuit as TestPiCircuit;
 
-use eth_types::{
-    geth_types::{BlockConstants, Transaction},
-    sign_types::SignData,
-    Address, BigEndianHash, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
-};
-use halo2_proofs::plonk::{Instance, SecondPhase};
+use eth_types::{self, Field, ToLittleEndian};
+use halo2_proofs::plonk::{Expression, Instance, SecondPhase};
+use itertools::Itertools;
 use param::*;
-use std::marker::PhantomData;
 
 use crate::{
-    table::{BlockTable, LookupTable, TxFieldTag, TxTable},
+    evm_circuit::{
+        param::{
+            N_BYTES_BLOCK, N_BYTES_EXTRA_VALUE, N_BYTES_HALF_WORD, N_BYTES_TX, N_BYTES_U64,
+            N_BYTES_WORD,
+        },
+        util::{
+            constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+            from_bytes,
+        },
+    },
+    instance::{
+        public_data_convert, BlockValues, ExtraValues, PublicData, TxValues, NONZERO_BYTE_GAS_COST,
+        ZERO_BYTE_GAS_COST,
+    },
+    table::{BlockTable, KeccakTable, LookupTable, TxFieldTag, TxTable},
     tx_circuit::TX_LEN,
-    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    util::{word::Word, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
 use gadgets::{
@@ -36,139 +48,6 @@ use halo2_proofs::{
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
-/// Values of the block table (as in the spec)
-#[derive(Clone, Default, Debug)]
-pub struct BlockValues {
-    coinbase: Address,
-    gas_limit: u64,
-    number: u64,
-    timestamp: u64,
-    difficulty: Word,
-    base_fee: Word, // NOTE: BaseFee was added by EIP-1559 and is ignored in legacy headers.
-    chain_id: u64,
-    history_hashes: Vec<H256>,
-}
-
-/// Values of the tx table (as in the spec)
-#[derive(Default, Debug, Clone)]
-pub struct TxValues {
-    nonce: u64,
-    gas: u64, // gas limit
-    gas_price: Word,
-    from_addr: Address,
-    to_addr: Address,
-    is_create: bool,
-    value: Word,
-    call_data_len: u64,
-    call_data_gas_cost: u64,
-    tx_sign_hash: [u8; 32],
-}
-
-/// Extra values (not contained in block or tx tables)
-#[derive(Default, Debug, Clone)]
-pub struct ExtraValues {
-    // block_hash: H256,
-    state_root: H256,
-    prev_state_root: H256,
-}
-
-/// PublicData contains all the values that the PiCircuit recieves as input
-#[derive(Debug, Clone)]
-pub struct PublicData {
-    /// chain id
-    pub chain_id: Word,
-    /// History hashes contains the most recent 256 block hashes in history,
-    /// where the latest one is at history_hashes[history_hashes.len() - 1].
-    pub history_hashes: Vec<Word>,
-    /// Block Transactions
-    pub transactions: Vec<eth_types::Transaction>,
-    /// Block State Root
-    pub state_root: H256,
-    /// Previous block root
-    pub prev_state_root: H256,
-    /// Constants related to Ethereum block
-    pub block_constants: BlockConstants,
-}
-
-impl Default for PublicData {
-    fn default() -> Self {
-        PublicData {
-            chain_id: Word::default(),
-            history_hashes: vec![],
-            transactions: vec![],
-            state_root: H256::zero(),
-            prev_state_root: H256::zero(),
-            block_constants: BlockConstants::default(),
-        }
-    }
-}
-
-impl PublicData {
-    /// Returns struct with values for the block table
-    pub fn get_block_table_values(&self) -> BlockValues {
-        let history_hashes = [
-            vec![H256::zero(); 256 - self.history_hashes.len()],
-            self.history_hashes
-                .iter()
-                .map(|&hash| H256::from(hash.to_be_bytes()))
-                .collect(),
-        ]
-        .concat();
-        BlockValues {
-            coinbase: self.block_constants.coinbase,
-            gas_limit: self.block_constants.gas_limit.as_u64(),
-            number: self.block_constants.number.as_u64(),
-            timestamp: self.block_constants.timestamp.as_u64(),
-            difficulty: self.block_constants.difficulty,
-            base_fee: self.block_constants.base_fee,
-            chain_id: self.chain_id.as_u64(),
-            history_hashes,
-        }
-    }
-
-    /// Returns struct with values for the tx table
-    pub fn get_tx_table_values(&self) -> Vec<TxValues> {
-        let chain_id: u64 = self
-            .chain_id
-            .try_into()
-            .expect("Error converting chain_id to u64");
-        let mut tx_vals = vec![];
-        for tx in &self.txs() {
-            let sign_data: SignData = tx
-                .sign_data(chain_id)
-                .expect("Error computing tx_sign_hash");
-            let mut msg_hash_le = [0u8; 32];
-            msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
-            tx_vals.push(TxValues {
-                nonce: tx.nonce.as_u64(),
-                gas_price: tx.gas_price,
-                gas: tx.gas_limit.as_u64(),
-                from_addr: tx.from,
-                to_addr: tx.to_or_zero(),
-                is_create: tx.is_create(),
-                value: tx.value,
-                call_data_len: tx.call_data.len() as u64,
-                call_data_gas_cost: tx.call_data_gas_cost(),
-                tx_sign_hash: msg_hash_le,
-            });
-        }
-        tx_vals
-    }
-
-    /// Returns struct with the extra values
-    pub fn get_extra_values(&self) -> ExtraValues {
-        ExtraValues {
-            // block_hash: self.hash.unwrap_or_else(H256::zero),
-            state_root: self.state_root,
-            prev_state_root: self.prev_state_root,
-        }
-    }
-
-    fn txs(&self) -> Vec<Transaction> {
-        self.transactions.iter().map(Transaction::from).collect()
-    }
-}
-
 /// Config for PiCircuit
 #[derive(Clone, Debug)]
 pub struct PiCircuitConfig<F: Field> {
@@ -177,34 +56,57 @@ pub struct PiCircuitConfig<F: Field> {
     /// Max number of supported calldata bytes
     max_calldata: usize,
 
-    q_block_table: Selector,
+    q_digest_last: Selector,
+    q_bytes_last: Selector,
     q_tx_table: Selector,
     q_tx_calldata: Selector,
     q_calldata_start: Selector,
+    q_rpi_keccak_lookup: Selector,
+    // q_rpi_value_start: assure rpi_bytes sync with rpi_value_lc when cross boundary.
+    // because we layout rpi bytes vertically, which is concated from multiple original values.
+    // The value can be one byte or multiple bytes. The order of values is pre-defined and
+    // hardcode. can't use selector here because we need rotation
+    q_rpi_value_start: Column<Fixed>,
+    // q_digest_value_start: mark starting of hi and low. can't use selector here because we need
+    // rotation
+    q_digest_value_start: Column<Fixed>,
 
     tx_id_inv: Column<Advice>,
-    tx_value_inv: Column<Advice>,
+    // Do not need tx_value_hi_inv, because tx_value_inv only
+    // refer in tx_calldata constrains, and only need tx_value.lo() part
+    tx_value_lo_inv: Column<Advice>,
     tx_id_diff_inv: Column<Advice>,
     fixed_u16: Column<Fixed>,
     calldata_gas_cost: Column<Advice>,
     is_final: Column<Advice>,
+    // is_value_rlc: Column<Fixed>,
 
-    raw_public_inputs: Column<Advice>,
-    rpi_rlc_acc: Column<Advice>,
-    rand_rpi: Column<Advice>,
-    q_not_end: Selector,
-    q_end: Selector,
+    // rpi_bytes: raw public input bytes laid verticlly
+    rpi_bytes: Column<Advice>,
+    // rpi_bytes_keccakrlc: rpi_bytes rlc by keccak challenge. This is for Keccak lookup input
+    // rlc
+    rpi_bytes_keccakrlc: Column<Advice>,
+    // rpi_value_lc: This is similar with rpi_bytes_keccakrlc, while the key differences is
+    // it's rlc in value based and reset for next new value. rand value is control by is_value_rlc
+    rpi_value_lc: Column<Advice>,
+    // rpi_digest_bytes: Keccak digest raw bytes laid verticlly in this column
+    rpi_digest_bytes: Column<Advice>,
+    // rpi_digest_bytes_limbs: hi, lo limbs of digest
+    rpi_digest_bytes_limbs: Column<Advice>,
 
-    pi: Column<Instance>, // rpi_rand, rpi_rlc, chain_ID, state_root, prev_state_root
+    q_rpi_byte_enable: Selector,
+
+    pi_instance: Column<Instance>, // keccak_digest_hi, keccak_digest_lo
 
     _marker: PhantomData<F>,
     // External tables
     block_table: BlockTable,
     tx_table: TxTable,
+    keccak_table: KeccakTable,
 }
 
 /// Circuit configuration arguments
-pub struct PiCircuitConfigArgs {
+pub struct PiCircuitConfigArgs<F: Field> {
     /// Max number of supported transactions
     pub max_txs: usize,
     /// Max number of supported calldata bytes
@@ -213,10 +115,14 @@ pub struct PiCircuitConfigArgs {
     pub tx_table: TxTable,
     /// BlockTable
     pub block_table: BlockTable,
+    /// Keccak Table
+    pub keccak_table: KeccakTable,
+    /// Challenges
+    pub challenges: Challenges<Expression<F>>,
 }
 
 impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
-    type ConfigArgs = PiCircuitConfigArgs;
+    type ConfigArgs = PiCircuitConfigArgs<F>;
 
     /// Return a new PiCircuitConfig
     fn new(
@@ -226,20 +132,21 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             max_calldata,
             block_table,
             tx_table,
+            keccak_table,
+            challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let q_block_table = meta.selector();
-
         let q_tx_table = meta.complex_selector();
         let q_tx_calldata = meta.complex_selector();
         let q_calldata_start = meta.complex_selector();
+        let q_rpi_keccak_lookup = meta.complex_selector();
         // Tx Table
         let tx_id = tx_table.tx_id;
-        let tx_value = tx_table.value;
+        let tx_value = tx_table.value_word;
         let tag = tx_table.tag;
         let index = tx_table.index;
         let tx_id_inv = meta.advice_column();
-        let tx_value_inv = meta.advice_column_in(SecondPhase);
+        let tx_value_lo_inv = meta.advice_column();
         let tx_id_diff_inv = meta.advice_column();
         // The difference of tx_id of adjacent rows in calldata part of tx table
         // lies in the interval [0, 2^16] if their tx_id both do not equal to zero.
@@ -249,113 +156,146 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let calldata_gas_cost = meta.advice_column_in(SecondPhase);
         let is_final = meta.advice_column();
 
-        let raw_public_inputs = meta.advice_column_in(SecondPhase);
-        let rpi_rlc_acc = meta.advice_column_in(SecondPhase);
-        let rand_rpi = meta.advice_column();
-        let q_not_end = meta.selector();
-        let q_end = meta.selector();
+        let q_digest_last = meta.complex_selector();
+        let q_bytes_last = meta.complex_selector();
+        let q_rpi_byte_enable = meta.complex_selector();
+        let q_rpi_value_start = meta.fixed_column();
+        let q_digest_value_start = meta.fixed_column();
 
-        let pi = meta.instance_column();
+        let rpi_bytes = meta.advice_column();
+        let rpi_bytes_keccakrlc = meta.advice_column_in(SecondPhase);
+        let rpi_value_lc = meta.advice_column();
+        // let is_value_rlc = meta.fixed_column();
+        let rpi_digest_bytes = meta.advice_column();
+        let rpi_digest_bytes_limbs = meta.advice_column();
+
+        let pi_instance = meta.instance_column();
 
         // Annotate table columns
         tx_table.annotate_columns(meta);
         block_table.annotate_columns(meta);
 
-        meta.enable_equality(raw_public_inputs);
-        meta.enable_equality(rpi_rlc_acc);
-        meta.enable_equality(rand_rpi);
-        meta.enable_equality(pi);
+        meta.enable_equality(block_table.value_word.lo());
+        meta.enable_equality(block_table.value_word.hi());
+        meta.enable_equality(tx_table.tx_id);
+        meta.enable_equality(tx_table.index);
+        meta.enable_equality(tx_table.value_word.lo());
+        meta.enable_equality(tx_table.value_word.hi());
 
-        // 0.0 rpi_rlc_acc[0] == RLC(raw_public_inputs, rand_rpi)
-        meta.create_gate(
-            "rpi_rlc_acc[i] = rand_rpi * rpi_rlc_acc[i+1] + raw_public_inputs[i]",
-            |meta| {
-                // q_not_end * row.rpi_rlc_acc ==
-                // (q_not_end * row_next.rpi_rlc_acc * row.rand_rpi + row.raw_public_inputs )
-                let q_not_end = meta.query_selector(q_not_end);
-                let cur_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-                let next_rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::next());
-                let rand_rpi = meta.query_advice(rand_rpi, Rotation::cur());
-                let raw_public_inputs = meta.query_advice(raw_public_inputs, Rotation::cur());
+        meta.enable_equality(rpi_value_lc);
+        meta.enable_equality(rpi_bytes_keccakrlc);
 
-                vec![
-                    q_not_end * (next_rpi_rlc_acc * rand_rpi + raw_public_inputs - cur_rpi_rlc_acc),
-                ]
-            },
-        );
-        meta.create_gate("rpi_rlc_acc[last] = raw_public_inputs[last]", |meta| {
-            let q_end = meta.query_selector(q_end);
-            let raw_public_inputs = meta.query_advice(raw_public_inputs, Rotation::cur());
-            let rpi_rlc_acc = meta.query_advice(rpi_rlc_acc, Rotation::cur());
-            vec![q_end * (raw_public_inputs - rpi_rlc_acc)]
+        meta.enable_equality(rpi_digest_bytes_limbs);
+
+        meta.enable_equality(pi_instance);
+
+        // gate 1 and gate 2 are compensation branch
+        // 1: rpi_bytes_keccakrlc[last] = rpi_bytes[last]
+        meta.create_gate("rpi_bytes_keccakrlc[last] = rpi_bytes[last]", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+
+            cb.require_equal(
+                "rpi_bytes_keccakrlc[last] = rpi_bytes[last]",
+                meta.query_advice(rpi_bytes_keccakrlc, Rotation::cur()),
+                meta.query_advice(rpi_bytes, Rotation::cur()),
+            );
+
+            cb.gate(meta.query_selector(q_bytes_last) * meta.query_selector(q_rpi_byte_enable))
         });
 
-        // 0.1 rand_rpi[i] == rand_rpi[j]
-        meta.create_gate("rand_pi = rand_rpi.next", |meta| {
-            // q_not_end * row.rand_rpi == q_not_end * row_next.rand_rpi
-            let q_not_end = meta.query_selector(q_not_end);
-            let cur_rand_rpi = meta.query_advice(rand_rpi, Rotation::cur());
-            let next_rand_rpi = meta.query_advice(rand_rpi, Rotation::next());
-
-            vec![q_not_end * (cur_rand_rpi - next_rand_rpi)]
-        });
-
-        // 0.2 Block table -> value column match with raw_public_inputs at expected
-        // offset
-        meta.create_gate("block_table[i] = raw_public_inputs[offset + i]", |meta| {
-            let q_block_table = meta.query_selector(q_block_table);
-            let block_value = meta.query_advice(block_table.value, Rotation::cur());
-            let rpi_block_value = meta.query_advice(raw_public_inputs, Rotation::cur());
-            vec![q_block_table * (block_value - rpi_block_value)]
-        });
-
-        let offset = BLOCK_LEN + 1 + EXTRA_LEN;
-        let tx_table_len = max_txs * TX_LEN + 1;
-
-        //  0.3 Tx table -> {tx_id, index, value} column match with raw_public_inputs
-        // at expected offset
+        // 2: rpi_bytes_keccakrlc[i] = keccak_rand * rpi_bytes_keccakrlc[i+1] + rpi_bytes[i]"
         meta.create_gate(
-            "tx_table.tx_id[i] == raw_public_inputs[offset + i]",
+            "rpi_bytes_keccakrlc[i] = keccak_rand * rpi_bytes_keccakrlc[i+1] + rpi_bytes[i]",
             |meta| {
-                // row.q_tx_table * row.tx_table.tx_id
-                // == row.q_tx_table * row_offset_tx_table_tx_id.raw_public_inputs
-                let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_id = meta.query_advice(tx_table.tx_id, Rotation::cur());
-                let rpi_tx_id = meta.query_advice(raw_public_inputs, Rotation(offset as i32));
+                let mut cb = BaseConstraintBuilder::default();
 
-                vec![q_tx_table * (tx_id - rpi_tx_id)]
-            },
-        );
+                let rpi_bytes_keccakrlc_cur =
+                    meta.query_advice(rpi_bytes_keccakrlc, Rotation::cur());
+                let rpi_bytes_keccakrlc_next =
+                    meta.query_advice(rpi_bytes_keccakrlc, Rotation::next());
+                let rpi_bytes_cur = meta.query_advice(rpi_bytes, Rotation::cur());
 
-        meta.create_gate(
-            "tx_table.index[i] == raw_public_inputs[offset + tx_table_len + i]",
-            |meta| {
-                // row.q_tx_table * row.tx_table.tx_index
-                // == row.q_tx_table * row_offset_tx_table_tx_index.raw_public_inputs
-                let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_index = meta.query_advice(tx_table.index, Rotation::cur());
-                let rpi_tx_index =
-                    meta.query_advice(raw_public_inputs, Rotation((offset + tx_table_len) as i32));
-
-                vec![q_tx_table * (tx_index - rpi_tx_index)]
-            },
-        );
-
-        meta.create_gate(
-            "tx_table.tx_value[i] == raw_public_inputs[offset + 2* tx_table_len + i]",
-            |meta| {
-                // (row.q_tx_calldata | row.q_tx_table) * row.tx_table.tx_value
-                // == (row.q_tx_calldata | row.q_tx_table) *
-                // row_offset_tx_table_tx_value.raw_public_inputs
-                let q_tx_table = meta.query_selector(q_tx_table);
-                let tx_value = meta.query_advice(tx_value, Rotation::cur());
-                let q_tx_calldata = meta.query_selector(q_tx_calldata);
-                let rpi_tx_value = meta.query_advice(
-                    raw_public_inputs,
-                    Rotation((offset + 2 * tx_table_len) as i32),
+                let keccak_rand = challenges.keccak_input();
+                cb.require_equal(
+                    "rpi_bytes_keccakrlc[i] = keccak_rand * rpi_bytes_keccakrlc[i+1] + rpi_bytes[i]",
+                    rpi_bytes_keccakrlc_cur,
+                    rpi_bytes_keccakrlc_next * keccak_rand + rpi_bytes_cur,
                 );
 
-                vec![or::expr([q_tx_table, q_tx_calldata]) * (tx_value - rpi_tx_value)]
+                cb.gate(
+                    not::expr(meta.query_selector(q_bytes_last)) *
+                    meta.query_selector(q_rpi_byte_enable)
+                )
+            },
+        );
+
+        // gate 3 and gate 4 are compensation branch
+        // 3: rpi_value_lc[i] = rpi_value_lc[i+1] * byte_pow_base
+        // + rpi_bytes[i]
+        meta.create_gate(
+            "rpi_value_lc[i] = rpi_value_lc[i-1] * byte_pow_base + rpi_bytes[i]",
+            |meta| {
+                let mut cb = BaseConstraintBuilder::default();
+                let q_rpi_value_start_cur = meta.query_fixed(q_rpi_value_start, Rotation::cur());
+                let rpi_value_lc_next = meta.query_advice(rpi_value_lc, Rotation::next());
+                let rpi_value_lc_cur = meta.query_advice(rpi_value_lc, Rotation::cur());
+                let rpi_bytes_cur = meta.query_advice(rpi_bytes, Rotation::cur());
+
+                cb.require_equal(
+                    "rpi_value_lc[i] = rpi_value_lc[i+1] * r + rpi_bytes[i]",
+                    rpi_value_lc_cur,
+                    rpi_value_lc_next * BYTE_POW_BASE.expr() + rpi_bytes_cur,
+                );
+
+                cb.gate(not::expr(q_rpi_value_start_cur) * meta.query_selector(q_rpi_byte_enable))
+            },
+        );
+
+        // 4. rpi_value_lc[i] = rpi_bytes[i]
+        meta.create_gate("rpi_value_lc[i] = rpi_bytes[i]", |meta| {
+            let mut cb = BaseConstraintBuilder::default();
+            let q_rpi_value_start_cur = meta.query_fixed(q_rpi_value_start, Rotation::cur());
+
+            cb.require_equal(
+                "rpi_value_lc[i] = rpi_bytes[i]",
+                meta.query_advice(rpi_bytes, Rotation::cur()),
+                meta.query_advice(rpi_value_lc, Rotation::cur()),
+            );
+
+            cb.gate(q_rpi_value_start_cur * meta.query_selector(q_rpi_byte_enable))
+        });
+
+        // 5. lookup rpi_bytes_keccakrlc against rpi_digest_bytes_limbs
+        meta.lookup_any(
+            "lookup rpi_bytes_keccakrlc against rpi_digest_bytes_limbs",
+            |meta| {
+                let circuit_len =
+                    PiCircuitConfig::<F>::circuit_len_by_txs_calldata(max_txs, max_calldata).expr();
+                let is_enabled = meta.query_advice(keccak_table.is_enabled, Rotation::cur());
+                let input_rlc = meta.query_advice(keccak_table.input_rlc, Rotation::cur());
+                let input_len = meta.query_advice(keccak_table.input_len, Rotation::cur());
+                let output_lo = meta.query_advice(keccak_table.output.lo(), Rotation::cur());
+                let output_hi = meta.query_advice(keccak_table.output.hi(), Rotation::cur());
+
+                // is_enabled
+                let q_rpi_keccak_lookup = meta.query_selector(q_rpi_keccak_lookup);
+                // input_rlc
+                let rpi_bytes_keccakrlc_cur =
+                    meta.query_advice(rpi_bytes_keccakrlc, Rotation::cur());
+                // output
+                let rpi_digest_lo = meta.query_advice(rpi_digest_bytes_limbs, Rotation::cur());
+                let rpi_digest_hi = meta.query_advice(rpi_digest_bytes_limbs, Rotation::next());
+
+                vec![
+                    (q_rpi_keccak_lookup.expr() * 1.expr(), is_enabled),
+                    (
+                        q_rpi_keccak_lookup.expr() * rpi_bytes_keccakrlc_cur,
+                        input_rlc,
+                    ),
+                    (q_rpi_keccak_lookup.expr() * circuit_len, input_len),
+                    (q_rpi_keccak_lookup.expr() * rpi_digest_lo, output_lo),
+                    (q_rpi_keccak_lookup * rpi_digest_hi, output_hi),
+                ]
             },
         );
 
@@ -365,7 +305,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             |meta| meta.query_advice(tx_table.tx_id, Rotation::cur()),
             tx_id_inv,
         );
-        let tx_value_is_zero_config = IsZeroChip::configure(
+
+        let tx_value_is_zero_lo_config = IsZeroChip::configure(
             meta,
             |meta| {
                 or::expr([
@@ -373,9 +314,10 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
                     meta.query_selector(q_tx_calldata),
                 ])
             },
-            |meta| meta.query_advice(tx_value, Rotation::cur()),
-            tx_value_inv,
+            |meta| meta.query_advice(tx_value.lo(), Rotation::cur()),
+            tx_value_lo_inv,
         );
+        let tx_value_is_zero_config = tx_value_is_zero_lo_config.expr();
         let _tx_id_diff_is_zero_config = IsZeroChip::configure(
             meta,
             |meta| meta.query_selector(q_tx_calldata),
@@ -412,8 +354,8 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let tx_idx_diff_inv = meta.query_advice(tx_id_diff_inv, Rotation::cur());
             let idx = meta.query_advice(index, Rotation::cur());
             let idx_next = meta.query_advice(index, Rotation::next());
-            let value_next = meta.query_advice(tx_value, Rotation::next());
-            let value_next_inv = meta.query_advice(tx_value_inv, Rotation::next());
+            let value_next_lo = meta.query_advice(tx_value.lo(), Rotation::next());
+            let value_inv_next_lo = meta.query_advice(tx_value_lo_inv, Rotation::next());
 
             let gas_cost = meta.query_advice(calldata_gas_cost, Rotation::cur());
             let gas_cost_next = meta.query_advice(calldata_gas_cost, Rotation::next());
@@ -425,7 +367,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
             let is_value_zero = tx_value_is_zero_config.expr();
             let is_value_nonzero = not::expr(tx_value_is_zero_config.expr());
 
-            let is_value_next_nonzero = value_next.expr() * value_next_inv.expr();
+            let is_value_next_nonzero = value_next_lo.expr() * value_inv_next_lo.expr();
             let is_value_next_zero = not::expr(is_value_next_nonzero.expr());
 
             // gas = value == 0 ? 4 : 16
@@ -499,7 +441,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
                 let is_calldata_length_zero = tx_value_is_zero_config.expr();
                 let is_calldata_length_row = tx_tag_is_cdl_config.expr();
-                let calldata_cost = meta.query_advice(tx_value, Rotation::next());
+                let calldata_cost = meta.query_advice(tx_value.lo(), Rotation::next());
 
                 vec![q_tx_table * is_calldata_length_row * is_calldata_length_zero * calldata_cost]
             },
@@ -513,7 +455,7 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
 
             // calldata gas cost assigned in the tx table
             // CallDataGasCost is on the next row of CallDataLength
-            let calldata_cost_assigned = meta.query_advice(tx_value, Rotation::next());
+            let calldata_cost_assigned = meta.query_advice(tx_value.lo(), Rotation::next());
             // calldata gas cost calculated in call data
             let calldata_cost_calc = meta.query_advice(calldata_gas_cost, Rotation::cur());
 
@@ -538,24 +480,30 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         Self {
             max_txs,
             max_calldata,
-            q_block_table,
             block_table,
-            q_tx_table,
+            q_digest_last,
+            q_bytes_last,
             q_tx_calldata,
             q_calldata_start,
+            q_rpi_keccak_lookup,
+            q_rpi_value_start,
+            q_tx_table,
+            q_digest_value_start,
             tx_table,
+            keccak_table,
             tx_id_inv,
-            tx_value_inv,
+            tx_value_lo_inv,
             tx_id_diff_inv,
             fixed_u16,
             calldata_gas_cost,
             is_final,
-            raw_public_inputs,
-            rpi_rlc_acc,
-            rand_rpi,
-            q_not_end,
-            q_end,
-            pi,
+            rpi_bytes,
+            rpi_bytes_keccakrlc,
+            rpi_value_lc,
+            rpi_digest_bytes,
+            rpi_digest_bytes_limbs,
+            q_rpi_byte_enable,
+            pi_instance,
             _marker: PhantomData,
         }
     }
@@ -565,20 +513,68 @@ impl<F: Field> PiCircuitConfig<F> {
     /// Return the number of rows in the circuit
     #[inline]
     fn circuit_len(&self) -> usize {
-        // +1 empty row in block table, +1 empty row in tx_table
-        BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * self.max_txs + 1) + self.max_calldata
+        Self::circuit_len_by_txs_calldata(self.max_txs, self.max_calldata)
     }
 
-    fn assign_tx_empty_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+    /// Return the number of rows for txs and calldata
+    #[inline]
+    fn circuit_len_by_txs_calldata(txs: usize, calldata: usize) -> usize {
+        N_BYTES_ONE
+            + N_BYTES_BLOCK
+            + N_BYTES_EXTRA_VALUE
+            + Self::circuit_len_tx_id(txs)
+            + Self::circuit_len_tx_index(txs)
+            + Self::circuit_len_tx_values(txs)
+            + calldata
+    }
+
+    #[inline]
+    fn circuit_len_tx_values(txs: usize) -> usize {
+        N_BYTES_TX * (txs) + N_BYTES_ONE
+    }
+
+    #[inline]
+    fn circuit_len_tx_id(txs: usize) -> usize {
+        N_BYTES_U64 * TX_LEN * txs + N_BYTES_U64 // empty row
+    }
+
+    #[inline]
+    fn circuit_len_tx_index(txs: usize) -> usize {
+        N_BYTES_U64 * TX_LEN * txs + N_BYTES_U64 // empty row
+    }
+
+    fn assign_empty_txtable_row(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+    ) -> Result<(), Error> {
         region.assign_advice(
-            || "tx_id",
-            self.tx_table.tx_id,
+            || "tx_id_inv",
+            self.tx_id_inv,
             offset,
             || Value::known(F::ZERO),
         )?;
         region.assign_advice(
-            || "tx_id_inv",
-            self.tx_id_inv,
+            || "tx_value_lo_inv",
+            self.tx_value_lo_inv,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "is_final",
+            self.is_final,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "gas_cost",
+            self.calldata_gas_cost,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+        region.assign_advice(
+            || "tx_id",
+            self.tx_table.tx_id,
             offset,
             || Value::known(F::ZERO),
         )?;
@@ -594,32 +590,62 @@ impl<F: Field> PiCircuitConfig<F> {
             offset,
             || Value::known(F::ZERO),
         )?;
-        region.assign_advice(
+        Word::default().into_value().assign_advice(
+            region,
             || "tx_value",
-            self.tx_table.value,
+            self.tx_table.value_word,
             offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "tx_value_inv",
-            self.tx_value_inv,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "is_final",
-            self.is_final,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "gas_cost",
-            self.calldata_gas_cost,
-            offset,
-            || Value::known(F::ZERO),
         )?;
         Ok(())
     }
+
+    fn reset_rpi_digest_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+        region.assign_advice(
+            || "rpi_digest_bytes_limbs",
+            self.rpi_digest_bytes_limbs,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        Ok(())
+    }
+
+    fn reset_rpi_bytes_row(&self, region: &mut Region<'_, F>, offset: usize) -> Result<(), Error> {
+        // assign q_rpi_value_start
+        region.assign_fixed(
+            || "q_rpi_value_start",
+            self.q_rpi_value_start,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        // assign rpi bytes
+        region.assign_advice(
+            || "rpi_bytes",
+            self.rpi_bytes,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        // assign rpi_bytes_keccakrlc
+        region.assign_advice(
+            || "rpi_bytes_keccakrlc",
+            self.rpi_bytes_keccakrlc,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        // assign rpi_value_lc
+        region.assign_advice(
+            || "rpi_value_lc",
+            self.rpi_value_lc,
+            offset,
+            || Value::known(F::ZERO),
+        )?;
+
+        Ok(())
+    }
+
     /// Assigns a tx_table row and stores the values in a vec for the
     /// raw_public_inputs column
     #[allow(clippy::too_many_arguments)]
@@ -627,13 +653,16 @@ impl<F: Field> PiCircuitConfig<F> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        tx_id: usize,
+        tx_id: u64,
         tag: TxFieldTag,
-        index: usize,
-        tx_value: F,
-        raw_pi_vals: &mut [F],
+        index: u64,
+        tx_value_bytes_le: &[u8],
+        rpi_bytes_keccakrlc: &mut Value<F>,
+        challenges: &Challenges<Value<F>>,
+        current_offset: &mut usize,
+        rpi_bytes: &mut [u8],
+        zero_cell: AssignedCell<F, F>,
     ) -> Result<(), Error> {
-        let tx_id = F::from(tx_id as u64);
         // tx_id_inv = (tag - CallDataLength)^(-1)
         let tx_id_inv = if tag != TxFieldTag::CallDataLength {
             let x = F::from(tag as u64) - F::from(TxFieldTag::CallDataLength as u64);
@@ -642,77 +671,91 @@ impl<F: Field> PiCircuitConfig<F> {
             F::ZERO
         };
         let tag = F::from(tag as u64);
-        let index = F::from(index as u64);
-        let tx_value = tx_value;
-        let tx_value_inv = tx_value.invert().unwrap_or(F::ZERO);
+        let tx_value = Word::new([
+            from_bytes::value(
+                &tx_value_bytes_le[..min(N_BYTES_HALF_WORD, tx_value_bytes_le.len())],
+            ),
+            if tx_value_bytes_le.len() > N_BYTES_HALF_WORD {
+                from_bytes::value(&tx_value_bytes_le[N_BYTES_HALF_WORD..])
+            } else {
+                F::ZERO
+            },
+        ])
+        .into_value();
+        let tx_value_inv = tx_value.map(|t| t.map(|x| x.invert().unwrap_or(F::ZERO)));
 
         self.q_tx_table.enable(region, offset)?;
 
         // Assign vals to Tx_table
-        region.assign_advice(
+        let tx_id_assignedcell = region.assign_advice(
             || "tx_id",
             self.tx_table.tx_id,
             offset,
-            || Value::known(tx_id),
+            || Value::known(F::from(tx_id)),
         )?;
         region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
-        region.assign_advice(
+
+        let tx_index_assignedcell = region.assign_advice(
             || "index",
             self.tx_table.index,
             offset,
-            || Value::known(index),
+            || Value::known(F::from(index)),
         )?;
-        region.assign_advice(
-            || "tx_value",
-            self.tx_table.value,
-            offset,
-            || Value::known(tx_value),
+
+        let tx_value_assignedcell =
+            tx_value.assign_advice(region, || "tx_value", self.tx_table.value_word, offset)?;
+
+        // tx_id
+        let (_, raw_tx_id) = self.assign_raw_bytes(
+            region,
+            &tx_id.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
+        region.constrain_equal(tx_id_assignedcell.cell(), raw_tx_id.lo().cell())?;
+
+        // index
+        let (_, raw_tx_index) = self.assign_raw_bytes(
+            region,
+            &index.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
+        )?;
+        region.constrain_equal(tx_index_assignedcell.cell(), raw_tx_index.lo().cell())?;
+
+        // tx value
+        let (_, raw_tx_value) = self.assign_raw_bytes(
+            region,
+            tx_value_bytes_le,
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell,
+        )?;
+        region.constrain_equal(tx_value_assignedcell.lo().cell(), raw_tx_value.lo().cell())?;
+        region.constrain_equal(tx_value_assignedcell.hi().cell(), raw_tx_value.hi().cell())?;
+
+        // derived inverse not belong to TxTable so do not need copy constraints
         region.assign_advice(
             || "tx_id_inv",
             self.tx_id_inv,
             offset,
             || Value::known(tx_id_inv),
         )?;
+        // tx_value_lo_inv have no use in tx table non-calldata row
         region.assign_advice(
-            || "tx_value_inverse",
-            self.tx_value_inv,
+            || "tx_value_lo_inv",
+            self.tx_value_lo_inv,
             offset,
-            || Value::known(tx_value_inv),
+            || tx_value_inv.lo(),
         )?;
-
-        // Assign vals to raw_public_inputs column
-        let tx_table_len = TX_LEN * self.max_txs + 1;
-
-        let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
-        let index_offset = id_offset + tx_table_len;
-        let value_offset = index_offset + tx_table_len;
-
-        region.assign_advice(
-            || "raw_pi.tx_id",
-            self.raw_public_inputs,
-            offset + id_offset,
-            || Value::known(tx_id),
-        )?;
-
-        region.assign_advice(
-            || "raw_pi.tx_index",
-            self.raw_public_inputs,
-            offset + index_offset,
-            || Value::known(index),
-        )?;
-
-        region.assign_advice(
-            || "raw_pi.tx_value",
-            self.raw_public_inputs,
-            offset + value_offset,
-            || Value::known(tx_value),
-        )?;
-
-        // Add copy to vec
-        raw_pi_vals[offset + id_offset] = tx_id;
-        raw_pi_vals[offset + index_offset] = index;
-        raw_pi_vals[offset + value_offset] = tx_value;
 
         Ok(())
     }
@@ -726,282 +769,435 @@ impl<F: Field> PiCircuitConfig<F> {
         tx_id: usize,
         tx_id_next: usize,
         index: usize,
-        tx_value: F,
+        tx_value_byte: u8,
+        rpi_bytes_keccakrlc: &mut Value<F>,
+        challenges: &Challenges<Value<F>>,
+        current_offset: &mut usize,
+        rpi_bytes: &mut [u8],
         is_final: bool,
         gas_cost: F,
-        raw_pi_vals: &mut [F],
-    ) -> Result<(), Error> {
+        zero_cell: AssignedCell<F, F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
         let tx_id = F::from(tx_id as u64);
         let tx_id_inv = tx_id.invert().unwrap_or(F::ZERO);
         let tx_id_diff = F::from(tx_id_next as u64) - tx_id;
         let tx_id_diff_inv = tx_id_diff.invert().unwrap_or(F::ZERO);
         let tag = F::from(TxFieldTag::CallData as u64);
         let index = F::from(index as u64);
-        let tx_value = tx_value;
-        let tx_value_inv = tx_value.invert().unwrap_or(F::ZERO);
+        let tx_value: Word<Value<F>> = Word::from(tx_value_byte).into_value();
+        let tx_value_inv = tx_value.map(|t| t.map(|x| x.invert().unwrap_or(F::ZERO)));
         let is_final = if is_final { F::ONE } else { F::ZERO };
 
-        // Assign vals to raw_public_inputs column
-        let tx_table_len = TX_LEN * self.max_txs + 1;
-        let calldata_offset = tx_table_len + offset;
-
-        self.q_tx_calldata.enable(region, calldata_offset)?;
+        self.q_tx_calldata.enable(region, offset)?;
 
         // Assign vals to Tx_table
         region.assign_advice(
             || "tx_id",
             self.tx_table.tx_id,
-            calldata_offset,
+            offset,
             || Value::known(tx_id),
         )?;
         region.assign_advice(
             || "tx_id_inv",
             self.tx_id_inv,
-            calldata_offset,
+            offset,
             || Value::known(tx_id_inv),
         )?;
-        region.assign_fixed(
-            || "tag",
-            self.tx_table.tag,
-            calldata_offset,
-            || Value::known(tag),
-        )?;
+        region.assign_fixed(|| "tag", self.tx_table.tag, offset, || Value::known(tag))?;
         region.assign_advice(
             || "index",
             self.tx_table.index,
-            calldata_offset,
+            offset,
             || Value::known(index),
         )?;
+
+        let tx_value_cell =
+            tx_value.assign_advice(region, || "tx_value", self.tx_table.value_word, offset)?;
+
         region.assign_advice(
-            || "tx_value",
-            self.tx_table.value,
-            calldata_offset,
-            || Value::known(tx_value),
-        )?;
-        region.assign_advice(
-            || "tx_value_inv",
-            self.tx_value_inv,
-            calldata_offset,
-            || Value::known(tx_value_inv),
+            || "tx_value_lo_inv",
+            self.tx_value_lo_inv,
+            offset,
+            || tx_value_inv.lo(),
         )?;
         region.assign_advice(
             || "tx_id_diff_inv",
             self.tx_id_diff_inv,
-            calldata_offset,
+            offset,
             || Value::known(tx_id_diff_inv),
         )?;
         region.assign_advice(
             || "is_final",
             self.is_final,
-            calldata_offset,
+            offset,
             || Value::known(is_final),
         )?;
         region.assign_advice(
             || "gas_cost",
             self.calldata_gas_cost,
-            calldata_offset,
+            offset,
             || Value::known(gas_cost),
         )?;
 
-        let value_offset = BLOCK_LEN + 1 + EXTRA_LEN + 3 * tx_table_len;
-
-        region.assign_advice(
-            || "raw_pi.tx_value",
-            self.raw_public_inputs,
-            offset + value_offset,
-            || Value::known(tx_value),
+        let (rpi_bytes_keccakrlc_cell, rpi_value_lc_cell) = self.assign_raw_bytes(
+            region,
+            &[tx_value_byte],
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell,
         )?;
 
-        // Add copy to vec
-        raw_pi_vals[offset + value_offset] = tx_value;
+        // calldata value also need to be in copy constraint
+        region.constrain_equal(rpi_value_lc_cell.lo().cell(), tx_value_cell.lo().cell())?;
+        region.constrain_equal(rpi_value_lc_cell.hi().cell(), tx_value_cell.hi().cell())?;
 
-        Ok(())
+        Ok(rpi_bytes_keccakrlc_cell)
+    }
+
+    /// assign raw bytes
+    #[allow(clippy::too_many_arguments)]
+    fn assign_raw_bytes(
+        &self,
+        region: &mut Region<'_, F>,
+        value_bytes_le: &[u8],
+        rpi_bytes_keccakrlc: &mut Value<F>,
+        rpi_bytes: &mut [u8],
+        current_offset: &mut usize,
+        challenges: &Challenges<Value<F>>,
+        zero_cell: AssignedCell<F, F>,
+    ) -> Result<AssignedByteCells<F>, Error> {
+        assert!(!value_bytes_le.is_empty());
+        assert!(value_bytes_le.len() <= N_BYTES_WORD);
+
+        let keccak_rand = challenges.keccak_input();
+
+        let mut rpi_value_lc_cells: Vec<AssignedCell<F, F>> = vec![];
+        let mut rpi_bytes_keccakrlc_cells: Vec<AssignedCell<F, F>> = vec![];
+        let start_offset = *current_offset;
+
+        let value_bytes_be: Vec<u8> = value_bytes_le.iter().rev().copied().collect_vec();
+        let value_bytes_chunk: Vec<Vec<u8>> = value_bytes_be
+            .rchunks(N_BYTES_HALF_WORD)
+            // chunks will go from right to left first, here we reverse the order to assure left to
+            // right
+            .rev()
+            .map(|x| x.to_vec())
+            .collect();
+
+        *current_offset = value_bytes_chunk.iter().try_fold(
+            // after rchunk
+            start_offset,
+            |mut offset, bytes| -> Result<usize, Error> {
+                bytes.iter().enumerate().try_fold(
+                    Value::known(F::ZERO),
+                    |rpi_value_lc, (i, byte)| -> Result<Value<F>, Error> {
+                        // assign q_rpi_value_start when index match beginning of chunk size
+                        region.assign_fixed(
+                            || "q_rpi_value_start",
+                            self.q_rpi_value_start,
+                            offset,
+                            || Value::known(if i == 0 { F::ONE } else { F::ZERO }),
+                        )?;
+
+                        let rpi_value_lc = if i == 0 {
+                            Value::known(F::ZERO)
+                        } else {
+                            rpi_value_lc
+                        }
+                        .zip(Value::known(F::from(BYTE_POW_BASE)))
+                        .and_then(|(acc, rand)| Value::known(acc * rand + F::from(*byte as u64)));
+
+                        // assign rpi_value_lc
+                        let rpi_value_lc_cell = region.assign_advice(
+                            || "rpi_value_lc",
+                            self.rpi_value_lc,
+                            offset,
+                            || rpi_value_lc,
+                        )?;
+
+                        // for rpi_value_lc_cell, it accumulated per N_BYTES_HALF_WORD chunk size,
+                        // and the remains
+                        if i == bytes.len() - 1 {
+                            rpi_value_lc_cells.push(rpi_value_lc_cell);
+                        }
+
+                        rpi_bytes[offset] = *byte;
+
+                        // this is mutable for accumulated across value
+                        *rpi_bytes_keccakrlc =
+                            rpi_bytes_keccakrlc
+                                .zip(keccak_rand)
+                                .and_then(|(acc, rand)| {
+                                    Value::known(acc * rand + F::from(*byte as u64))
+                                });
+
+                        // enable
+                        self.q_rpi_byte_enable.enable(region, offset)?;
+
+                        // assign rpi bytes
+                        region.assign_advice(
+                            || "rpi_bytes",
+                            self.rpi_bytes,
+                            offset,
+                            || Value::known(F::from(*byte as u64)),
+                        )?;
+
+                        // assign rpi_bytes_keccakrlc
+                        let rpi_bytes_keccakrlc_cell = region.assign_advice(
+                            || "rpi_bytes_keccakrlc",
+                            self.rpi_bytes_keccakrlc,
+                            offset,
+                            || *rpi_bytes_keccakrlc,
+                        )?;
+
+                        if start_offset - offset == value_bytes_le.len() - 1 {
+                            rpi_bytes_keccakrlc_cells.push(rpi_bytes_keccakrlc_cell);
+                        }
+
+                        offset = offset.saturating_sub(1);
+
+                        Ok(rpi_value_lc)
+                    },
+                )?;
+                Ok(offset)
+            },
+        )?;
+
+        assert!(rpi_value_lc_cells.len() <= 2); // at most hi, lo 2 cells
+        rpi_value_lc_cells.reverse(); // reverse to lo, hi order
+        assert!(rpi_bytes_keccakrlc_cells.len() == 1); // keccak rlc only 1 cell
+
+        Ok((
+            rpi_bytes_keccakrlc_cells[0].clone(),
+            Word::new(
+                (0..2) // padding rpi_value_lc_cells to 2 limbs if less then 2
+                    .map(|i| rpi_value_lc_cells.get(i).unwrap_or(&zero_cell).clone())
+                    .collect_vec()
+                    .try_into()
+                    .unwrap(),
+            ),
+        ))
     }
 
     /// Assigns the values for block table in the block_table column
-    /// and in the raw_public_inputs column. A copy is also stored in
-    /// a vector for computing RLC(raw_public_inputs)
+    /// and rpi_bytes columns. Copy constraints will be enable
+    /// to assure block_table value cell equal with respective rpi_byte_rlc cell
+    #[allow(clippy::too_many_arguments)]
     fn assign_block_table(
         &self,
         region: &mut Region<'_, F>,
+        block_table_offset: &mut usize,
         block_values: BlockValues,
-        randomness: F,
-        raw_pi_vals: &mut [F],
-    ) -> Result<AssignedCell<F, F>, Error> {
-        let mut offset = 0;
-        for i in 0..BLOCK_LEN + 1 {
-            self.q_block_table.enable(region, offset + i)?;
-        }
-
-        // zero row
-        region.assign_advice(
-            || "zero",
-            self.block_table.value,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        region.assign_advice(
-            || "zero",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(F::ZERO),
-        )?;
-        raw_pi_vals[offset] = F::ZERO;
-        offset += 1;
+        rpi_bytes_keccakrlc: &mut Value<F>,
+        challenges: &Challenges<Value<F>>,
+        current_offset: &mut usize,
+        rpi_bytes: &mut [u8],
+        zero_cell: AssignedCell<F, F>,
+    ) -> Result<(), Error> {
+        let mut block_copy_cells = vec![];
 
         // coinbase
-        let coinbase = block_values.coinbase.to_scalar().unwrap();
-        region.assign_advice(
-            || "coinbase",
-            self.block_table.value,
-            offset,
-            || Value::known(coinbase),
+        let block_value = Word::from(block_values.coinbase)
+            .into_value()
+            .assign_advice(
+                region,
+                || "coinbase",
+                self.block_table.value_word,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values
+                .coinbase
+                .to_fixed_bytes()
+                .iter()
+                .rev()
+                .copied()
+                .collect_vec(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        region.assign_advice(
-            || "coinbase",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(coinbase),
-        )?;
-        raw_pi_vals[offset] = coinbase;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         // gas_limit
-        let gas_limit = F::from(block_values.gas_limit);
-        region.assign_advice(
-            || "gas_limit",
-            self.block_table.value,
-            offset,
-            || Value::known(gas_limit),
+        let block_value = Word::from(block_values.gas_limit)
+            .into_value()
+            .assign_advice(
+                region,
+                || "gas_limit",
+                self.block_table.value_word,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.gas_limit.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        region.assign_advice(
-            || "gas_limit",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(gas_limit),
-        )?;
-        raw_pi_vals[offset] = gas_limit;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         // number
-        let number = F::from(block_values.number);
-        region.assign_advice(
+        let block_value = Word::from(block_values.number).into_value().assign_advice(
+            region,
             || "number",
-            self.block_table.value,
-            offset,
-            || Value::known(number),
+            self.block_table.value_word,
+            *block_table_offset,
         )?;
-        region.assign_advice(
-            || "number",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(number),
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.number.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        raw_pi_vals[offset] = number;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         // timestamp
-        let timestamp = F::from(block_values.timestamp);
-        region.assign_advice(
-            || "timestamp",
-            self.block_table.value,
-            offset,
-            || Value::known(timestamp),
+        let block_value = Word::from(block_values.timestamp)
+            .into_value()
+            .assign_advice(
+                region,
+                || "timestamp",
+                self.block_table.value_word,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.timestamp.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        region.assign_advice(
-            || "timestamp",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(timestamp),
-        )?;
-        raw_pi_vals[offset] = timestamp;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         // difficulty
-        let difficulty = rlc(block_values.difficulty.to_le_bytes(), randomness);
-        region.assign_advice(
-            || "difficulty",
-            self.block_table.value,
-            offset,
-            || Value::known(difficulty),
+        let block_value = Word::from(block_values.difficulty)
+            .into_value()
+            .assign_advice(
+                region,
+                || "difficulty",
+                self.block_table.value_word,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.difficulty.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        region.assign_advice(
-            || "difficulty",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(difficulty),
-        )?;
-        raw_pi_vals[offset] = difficulty;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         // base_fee
-        let base_fee = rlc(block_values.base_fee.to_le_bytes(), randomness);
-        region.assign_advice(
-            || "base_fee",
-            self.block_table.value,
-            offset,
-            || Value::known(base_fee),
+        let block_value = Word::from(block_values.base_fee)
+            .into_value()
+            .assign_advice(
+                region,
+                || "base_fee",
+                self.block_table.value_word,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.base_fee.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        region.assign_advice(
-            || "base_fee",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(base_fee),
-        )?;
-        raw_pi_vals[offset] = base_fee;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         // chain_id
-        let chain_id = F::from(block_values.chain_id);
-        region.assign_advice(
-            || "chain_id",
-            self.block_table.value,
-            offset,
-            || Value::known(chain_id),
+        let block_value = Word::from(block_values.chain_id)
+            .into_value()
+            .assign_advice(
+                region,
+                || "chain_id",
+                self.block_table.value_word,
+                *block_table_offset,
+            )?;
+        let (_, word) = self.assign_raw_bytes(
+            region,
+            &block_values.chain_id.to_le_bytes(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        let chain_id_cell = region.assign_advice(
-            || "chain_id",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(chain_id),
-        )?;
-        raw_pi_vals[offset] = chain_id;
-        offset += 1;
+        block_copy_cells.push((block_value, word));
+        *block_table_offset += 1;
 
         for prev_hash in block_values.history_hashes {
-            let prev_hash = rlc(prev_hash.to_fixed_bytes(), randomness);
-            region.assign_advice(
+            let block_value = Word::from(prev_hash).into_value().assign_advice(
+                region,
                 || "prev_hash",
-                self.block_table.value,
-                offset,
-                || Value::known(prev_hash),
+                self.block_table.value_word,
+                *block_table_offset,
             )?;
-            region.assign_advice(
-                || "prev_hash",
-                self.raw_public_inputs,
-                offset,
-                || Value::known(prev_hash),
+            let (_, word) = self.assign_raw_bytes(
+                region,
+                &prev_hash
+                    .to_fixed_bytes()
+                    .iter()
+                    .rev()
+                    .copied()
+                    .collect_vec(),
+                rpi_bytes_keccakrlc,
+                rpi_bytes,
+                current_offset,
+                challenges,
+                zero_cell.clone(),
             )?;
-            raw_pi_vals[offset] = prev_hash;
-            offset += 1;
+            block_copy_cells.push((block_value, word));
+            *block_table_offset += 1;
         }
 
-        Ok(chain_id_cell)
+        block_copy_cells.iter().try_for_each(|(left, right)| {
+            region.constrain_equal(left.lo().cell(), right.lo().cell())?;
+            region.constrain_equal(left.hi().cell(), right.hi().cell())?;
+            Ok::<(), Error>(())
+        })?;
+
+        Ok(())
     }
 
     /// Assigns the extra fields (not in block or tx tables):
     ///   - state root
     ///   - previous block state root
-    /// to the raw_public_inputs column and stores a copy in a
-    /// vector for computing RLC(raw_public_inputs).
+    /// to the rpi_byte column
+    #[allow(clippy::too_many_arguments)]
     fn assign_extra_fields(
         &self,
         region: &mut Region<'_, F>,
         extra: ExtraValues,
-        randomness: F,
-        raw_pi_vals: &mut [F],
-    ) -> Result<[AssignedCell<F, F>; 2], Error> {
-        let mut offset = BLOCK_LEN + 1;
+        rpi_bytes_keccakrlc: &mut Value<F>,
+        challenges: &Challenges<Value<F>>,
+        current_offset: &mut usize,
+        rpi_bytes: &mut [u8],
+        zero_cell: AssignedCell<F, F>,
+    ) -> Result<(), Error> {
         // block hash
         // let block_hash = rlc(extra.block_hash.to_fixed_bytes(), randomness);
         // region.assign_advice(
@@ -1014,88 +1210,61 @@ impl<F: Field> PiCircuitConfig<F> {
         // offset += 1;
 
         // block state root
-        let state_root = rlc(extra.state_root.to_fixed_bytes(), randomness);
-        let state_root_cell = region.assign_advice(
-            || "state.root",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(state_root),
+        self.assign_raw_bytes(
+            region,
+            &extra
+                .state_root
+                .to_fixed_bytes()
+                .iter()
+                .copied()
+                .rev()
+                .collect_vec(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell.clone(),
         )?;
-        raw_pi_vals[offset] = state_root;
-        offset += 1;
 
         // previous block state root
-        let prev_state_root = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
-        let prev_state_root_cell = region.assign_advice(
-            || "parent_block.hash",
-            self.raw_public_inputs,
-            offset,
-            || Value::known(prev_state_root),
+        self.assign_raw_bytes(
+            region,
+            &extra
+                .prev_state_root
+                .to_fixed_bytes()
+                .iter()
+                .copied()
+                .rev()
+                .collect_vec(),
+            rpi_bytes_keccakrlc,
+            rpi_bytes,
+            current_offset,
+            challenges,
+            zero_cell,
         )?;
-        raw_pi_vals[offset] = prev_state_root;
-        Ok([state_root_cell, prev_state_root_cell])
+
+        Ok(())
     }
 
-    /// Assign `rpi_rlc_acc` and `rand_rpi` columns
-    #[allow(clippy::type_complexity)]
-    fn assign_rlc_pi(
+    /// Assign digest word
+    fn assign_rpi_digest_word(
         &self,
         region: &mut Region<'_, F>,
-        rand_rpi: F,
-        raw_pi_vals: Vec<F>,
-    ) -> Result<(AssignedCell<F, F>, AssignedCell<F, F>), Error> {
-        let circuit_len = self.circuit_len();
-        assert_eq!(circuit_len, raw_pi_vals.len());
-
-        // Last row
-        let offset = circuit_len - 1;
-        let mut rpi_rlc_acc = raw_pi_vals[offset];
-        region.assign_advice(
-            || "rpi_rlc_acc",
-            self.rpi_rlc_acc,
-            offset,
-            || Value::known(rpi_rlc_acc),
-        )?;
-        region.assign_advice(
-            || "rand_rpi",
-            self.rand_rpi,
-            offset,
-            || Value::known(rand_rpi),
-        )?;
-        self.q_end.enable(region, offset)?;
-
-        // Next rows
-        for offset in (1..circuit_len - 1).rev() {
-            rpi_rlc_acc *= rand_rpi;
-            rpi_rlc_acc += raw_pi_vals[offset];
-            region.assign_advice(
-                || "rpi_rlc_acc",
-                self.rpi_rlc_acc,
-                offset,
-                || Value::known(rpi_rlc_acc),
-            )?;
-            region.assign_advice(
-                || "rand_rpi",
-                self.rand_rpi,
-                offset,
-                || Value::known(rand_rpi),
-            )?;
-            self.q_not_end.enable(region, offset)?;
-        }
-
-        // First row
-        rpi_rlc_acc *= rand_rpi;
-        rpi_rlc_acc += raw_pi_vals[0];
-        let rpi_rlc = region.assign_advice(
-            || "rpi_rlc_acc",
-            self.rpi_rlc_acc,
+        digest_word: Word<F>,
+    ) -> Result<Word<AssignedCell<F, F>>, Error> {
+        let lo_assigned_cell = region.assign_advice(
+            || "rpi_digest_bytes_limbs_lo",
+            self.rpi_digest_bytes_limbs,
             0,
-            || Value::known(rpi_rlc_acc),
+            || digest_word.into_value().lo(),
         )?;
-        let rpi_rand =
-            region.assign_advice(|| "rand_rpi", self.rand_rpi, 0, || Value::known(rand_rpi))?;
-        self.q_not_end.enable(region, 0)?;
-        Ok((rpi_rand, rpi_rlc))
+        let hi_assigned_cell = region.assign_advice(
+            || "rpi_digest_bytes_limbs_hi",
+            self.rpi_digest_bytes_limbs,
+            1,
+            || digest_word.into_value().hi(),
+        )?;
+        Ok(Word::new([lo_assigned_cell, hi_assigned_cell]))
     }
 }
 
@@ -1104,29 +1273,19 @@ impl<F: Field> PiCircuitConfig<F> {
 pub struct PiCircuit<F: Field> {
     max_txs: usize,
     max_calldata: usize,
-    /// Randomness for RLC encdoing
-    pub randomness: F,
-    /// Randomness for PI encoding
-    pub rand_rpi: F,
     /// PublicInputs data known by the verifier
     pub public_data: PublicData,
+    _marker: PhantomData<F>,
 }
 
 impl<F: Field> PiCircuit<F> {
     /// Creates a new PiCircuit
-    pub fn new(
-        max_txs: usize,
-        max_calldata: usize,
-        randomness: impl Into<F>,
-        rand_rpi: impl Into<F>,
-        public_data: PublicData,
-    ) -> Self {
+    pub fn new(max_txs: usize, max_calldata: usize, public_data: PublicData) -> Self {
         Self {
             max_txs,
             max_calldata,
-            randomness: randomness.into(),
-            rand_rpi: rand_rpi.into(),
             public_data,
+            _marker: PhantomData,
         }
     }
 }
@@ -1135,55 +1294,26 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
-        // Column raw_public_inputs is queried at 4 distinct rotations at
-        // - Rotation::cur()
-        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN)
-        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + max_txs * TX_LEN + 1)
-        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + 2 * (max_txs * TX_LEN + 1))
-        // so returns 7 unusable rows.
-        7
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
-        let public_data = PublicData {
-            chain_id: block.context.chain_id,
-            history_hashes: block.context.history_hashes.clone(),
-            transactions: block.eth_block.transactions.clone(),
-            state_root: block.eth_block.state_root,
-            prev_state_root: H256::from_uint(&block.prev_state_root),
-            block_constants: BlockConstants {
-                coinbase: block.context.coinbase,
-                timestamp: block.context.timestamp,
-                number: block.context.number.as_u64().into(),
-                difficulty: block.context.difficulty,
-                gas_limit: block.context.gas_limit.into(),
-                base_fee: block.context.base_fee,
-            },
-        };
-        let rand_rpi = gen_rand_rpi::<F>(
-            block.circuits_params.max_txs,
-            block.circuits_params.max_calldata,
-            &public_data,
-            block.randomness,
-        );
+        let public_data = public_data_convert(block);
         PiCircuit::new(
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
-            block.randomness,
-            rand_rpi,
             public_data,
         )
     }
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let row_num = |tx_num, calldata_len| {
-            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * tx_num + 1) + calldata_len
-        };
         let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
         (
-            row_num(block.txs.len(), calldata_len),
-            row_num(
+            Self::Config::circuit_len_by_txs_calldata(block.txs.len(), calldata_len),
+            Self::Config::circuit_len_by_txs_calldata(
                 block.circuits_params.max_txs,
                 block.circuits_params.max_calldata,
             ),
@@ -1192,50 +1322,18 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Compute the public inputs for this circuit.
     fn instance(&self) -> Vec<Vec<F>> {
-        let rlc_rpi_col = raw_public_inputs_col::<F>(
-            self.max_txs,
-            self.max_calldata,
-            &self.public_data,
-            self.randomness,
-        );
-        assert_eq!(
-            rlc_rpi_col.len(),
-            BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * self.max_txs + 1) + self.max_calldata
-        );
+        let rpi_digest_byte_field = self
+            .public_data
+            .get_rpi_digest_word(self.max_txs, self.max_calldata);
 
-        // Computation of raw_pulic_inputs
-        let rlc_rpi = rlc_rpi_col
-            .iter()
-            .rev()
-            .fold(F::ZERO, |acc, val| acc * self.rand_rpi + val);
-
-        // let block_hash = public_data
-        //     .eth_block
-        //     .hash
-        //     .unwrap_or_else(H256::zero)
-        //     .to_fixed_bytes();
-        let public_inputs = vec![
-            self.rand_rpi,
-            rlc_rpi,
-            F::from(self.public_data.chain_id.as_u64()),
-            rlc(
-                self.public_data.state_root.to_fixed_bytes(),
-                self.randomness,
-            ),
-            rlc(
-                self.public_data.prev_state_root.to_fixed_bytes(),
-                self.randomness,
-            ),
-        ];
-
-        vec![public_inputs]
+        vec![vec![rpi_digest_byte_field.lo(), rpi_digest_byte_field.hi()]]
     }
 
     /// Make the assignments to the PiCircuit
     fn synthesize_sub(
         &self,
         config: &Self::Config,
-        _challenges: &Challenges<Value<F>>,
+        challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         layouter.assign_region(
@@ -1253,114 +1351,205 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                 Ok(())
             },
         )?;
-        let pi_cells = layouter.assign_region(
+        let digest_word_assigned = layouter.assign_region(
             || "region 0",
             |mut region| {
                 // Annotate columns
 
                 config.tx_table.annotate_columns_in_region(&mut region);
                 config.block_table.annotate_columns_in_region(&mut region);
+                config.keccak_table.annotate_columns_in_region(&mut region);
 
-                region.name_column(|| "raw_public_inputs", config.raw_public_inputs);
+                region.name_column(|| "q_rpi_value_start", config.q_rpi_value_start);
+                region.name_column(|| "rpi_bytes", config.rpi_bytes);
+                region.name_column(|| "rpi_bytes_keccakrlc", config.rpi_bytes_keccakrlc);
+                region.name_column(|| "rpi_value_lc", config.rpi_value_lc);
+                // region.name_column(|| "is_value_rlc", config.is_value_rlc);
+                region.name_column(|| "q_digest_value_start", config.q_digest_value_start);
+                region.name_column(|| "rpi_digest_bytes", config.rpi_digest_bytes);
+                region.name_column(|| "rpi_digest_bytes_lc", config.rpi_digest_bytes_limbs);
                 region.name_column(|| "tx_id_inv", config.tx_id_inv);
-                region.name_column(|| "tx_value_inv", config.tx_value_inv);
+                region.name_column(|| "tx_value_lo_inv", config.tx_value_lo_inv);
                 region.name_column(|| "tx_id_diff_inv", config.tx_id_diff_inv);
 
                 region.name_column(|| "fixed_u16", config.fixed_u16);
                 region.name_column(|| "calldata_gas_cost", config.calldata_gas_cost);
                 region.name_column(|| "is_final", config.is_final);
 
-                region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
-                region.name_column(|| "rand_rpi", config.rand_rpi);
-
-                region.name_column(|| "Public_Inputs", config.pi);
+                region.name_column(|| "Public_Inputs", config.pi_instance);
 
                 let circuit_len = config.circuit_len();
-                let mut raw_pi_vals = vec![F::ZERO; circuit_len];
+                let mut rpi_bytes = vec![0u8; circuit_len];
+
+                let mut rpi_bytes_keccakrlc = Value::known(F::ZERO);
+
+                // traverse reversely of the region
+                let mut current_offset: usize = circuit_len - 1;
+                let start_offset = current_offset;
+
+                config.q_digest_last.enable(&mut region, N_BYTES_WORD - 1)?; // digest is 32 bytes
+                config.q_bytes_last.enable(&mut region, start_offset)?;
+
+                // assign last + 1 to 0 to as wordaround to skip CellNotAssigned Error from
+                // Mock_prover
+                config.reset_rpi_bytes_row(&mut region, start_offset + 1)?;
+                config.reset_rpi_digest_row(&mut region, N_BYTES_WORD)?;
 
                 // Assign block table
                 let block_values = self.public_data.get_block_table_values();
-                let chain_id = config.assign_block_table(
+                let mut block_table_offset = 0;
+
+                // assign empty row in block table
+                let zero_word = Word::default().into_value().assign_advice(
                     &mut region,
-                    block_values,
-                    self.randomness,
-                    &mut raw_pi_vals,
+                    || "zero",
+                    config.block_table.value_word,
+                    block_table_offset,
                 )?;
+                let zero_cell = zero_word.hi();
+                let (_, _) = config.assign_raw_bytes(
+                    &mut region,
+                    &0u8.to_le_bytes(),
+                    &mut rpi_bytes_keccakrlc,
+                    &mut rpi_bytes,
+                    &mut current_offset,
+                    challenges,
+                    zero_cell.clone(),
+                )?;
+                block_table_offset += 1;
+                config.assign_block_table(
+                    &mut region,
+                    &mut block_table_offset,
+                    block_values,
+                    &mut rpi_bytes_keccakrlc,
+                    challenges,
+                    &mut current_offset,
+                    &mut rpi_bytes,
+                    zero_cell.clone(),
+                )?;
+                assert_eq!(start_offset - current_offset, N_BYTES_ONE + N_BYTES_BLOCK);
 
                 // Assign extra fields
                 let extra_vals = self.public_data.get_extra_values();
-                let [state_root, prev_state_root] = config.assign_extra_fields(
+                config.assign_extra_fields(
                     &mut region,
                     extra_vals,
-                    self.randomness,
-                    &mut raw_pi_vals,
+                    &mut rpi_bytes_keccakrlc,
+                    challenges,
+                    &mut current_offset,
+                    &mut rpi_bytes,
+                    zero_cell,
                 )?;
+                assert_eq!(
+                    start_offset - current_offset,
+                    N_BYTES_ONE + N_BYTES_BLOCK + N_BYTES_EXTRA_VALUE
+                );
 
-                let mut offset = 0;
+                let mut tx_table_offset = 0;
                 // Assign Tx table
                 let txs = self.public_data.get_tx_table_values();
                 assert!(txs.len() <= config.max_txs);
                 let tx_default = TxValues::default();
 
                 // Add empty row
+                // assign first tx_value empty row, and to obtain zero cell via hi() part.
+                // we use hi() part to copy-constrains other tx_table value `hi` cells.
+                let zero_cell = Word::default()
+                    .into_value()
+                    .assign_advice(&mut region, || "tx_value", config.tx_table.value_word, 0)?
+                    .hi();
                 config.assign_tx_row(
                     &mut region,
-                    offset,
-                    0,
+                    tx_table_offset,
+                    0u64,
                     TxFieldTag::Null,
-                    0,
-                    F::ZERO,
-                    &mut raw_pi_vals,
+                    0u64,
+                    &[0u8; 1],
+                    &mut rpi_bytes_keccakrlc,
+                    challenges,
+                    &mut current_offset,
+                    &mut rpi_bytes,
+                    zero_cell.clone(),
                 )?;
-                offset += 1;
+                tx_table_offset += 1;
 
-                for i in 0..config.max_txs {
-                    let tx = if i < txs.len() { &txs[i] } else { &tx_default };
+                iter::empty()
+                    .chain(&txs)
+                    .chain((0..(config.max_txs - txs.len())).map(|_| &tx_default))
+                    .enumerate()
+                    .try_for_each(|(i, tx)| -> Result<(), Error> {
+                        for (tag, value_bytes) in &[
+                            (TxFieldTag::Nonce, tx.nonce.to_le_bytes().to_vec()),
+                            (TxFieldTag::Gas, tx.gas_limit.to_le_bytes().to_vec()),
+                            (TxFieldTag::GasPrice, tx.gas_price.to_le_bytes().to_vec()),
+                            (
+                                TxFieldTag::CallerAddress,
+                                tx.from_addr
+                                    .as_fixed_bytes()
+                                    .iter()
+                                    .copied()
+                                    .rev()
+                                    .collect_vec(),
+                            ),
+                            (
+                                TxFieldTag::CalleeAddress,
+                                tx.to_addr
+                                    .as_fixed_bytes()
+                                    .iter()
+                                    .copied()
+                                    .rev()
+                                    .collect_vec(),
+                            ),
+                            (TxFieldTag::IsCreate, tx.is_create.to_le_bytes().to_vec()),
+                            (TxFieldTag::Value, tx.value.to_le_bytes().to_vec()),
+                            (
+                                TxFieldTag::CallDataLength,
+                                tx.call_data_len.to_le_bytes().to_vec(),
+                            ),
+                            (
+                                TxFieldTag::CallDataGasCost,
+                                tx.call_data_gas_cost.to_le_bytes().to_vec(),
+                            ),
+                            // TODO witness tx.tx_sign_hash
+                            (TxFieldTag::TxSignHash, tx.tx_sign_hash.to_vec()),
+                        ] {
+                            let i: u64 = i.try_into().unwrap();
+                            // assign tx field
+                            config.assign_tx_row(
+                                &mut region,
+                                tx_table_offset,
+                                i + 1,
+                                *tag,
+                                0,
+                                value_bytes,
+                                &mut rpi_bytes_keccakrlc,
+                                challenges,
+                                &mut current_offset,
+                                &mut rpi_bytes,
+                                zero_cell.clone(),
+                            )?;
+                            tx_table_offset += 1;
+                        }
+                        Ok(())
+                    })?;
+                assert_eq!(
+                    start_offset - current_offset,
+                    N_BYTES_ONE
+                        + N_BYTES_BLOCK
+                        + N_BYTES_EXTRA_VALUE
+                        + Self::Config::circuit_len_tx_id(config.max_txs)
+                        + Self::Config::circuit_len_tx_index(config.max_txs)
+                        + Self::Config::circuit_len_tx_values(config.max_txs)
+                );
 
-                    for (tag, value) in &[
-                        (TxFieldTag::Nonce, F::from(tx.nonce)),
-                        (TxFieldTag::Gas, F::from(tx.gas)),
-                        (
-                            TxFieldTag::GasPrice,
-                            rlc(tx.gas_price.to_le_bytes(), self.randomness),
-                        ),
-                        (
-                            TxFieldTag::CallerAddress,
-                            tx.from_addr.to_scalar().expect("tx.from too big"),
-                        ),
-                        (
-                            TxFieldTag::CalleeAddress,
-                            tx.to_addr.to_scalar().expect("tx.to too big"),
-                        ),
-                        (TxFieldTag::IsCreate, F::from(tx.is_create as u64)),
-                        (
-                            TxFieldTag::Value,
-                            rlc(tx.value.to_le_bytes(), self.randomness),
-                        ),
-                        (TxFieldTag::CallDataLength, F::from(tx.call_data_len)),
-                        (TxFieldTag::CallDataGasCost, F::from(tx.call_data_gas_cost)),
-                        (
-                            TxFieldTag::TxSignHash,
-                            rlc(tx.tx_sign_hash, self.randomness),
-                        ),
-                    ] {
-                        config.assign_tx_row(
-                            &mut region,
-                            offset,
-                            i + 1,
-                            *tag,
-                            0,
-                            *value,
-                            &mut raw_pi_vals,
-                        )?;
-                        offset += 1;
-                    }
-                }
                 // Tx Table CallData
                 let mut calldata_count = 0;
-                config.q_calldata_start.enable(&mut region, offset)?;
-                // the call data bytes assignment starts at offset 0
-                offset = 0;
+                config
+                    .q_calldata_start
+                    .enable(&mut region, tx_table_offset)?;
+
+                let mut call_data_offset = TX_LEN * self.max_txs + EMPTY_TX_ROW_COUNT;
+
                 let txs = self.public_data.txs();
                 for (i, tx) in self.public_data.txs().iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
@@ -1389,185 +1578,68 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                         config.assign_tx_calldata_row(
                             &mut region,
-                            offset,
+                            call_data_offset,
                             i + 1,
                             tx_id_next,
                             index,
-                            F::from(*byte as u64),
+                            *byte,
+                            &mut rpi_bytes_keccakrlc,
+                            challenges,
+                            &mut current_offset,
+                            &mut rpi_bytes,
                             is_final,
                             gas_cost,
-                            &mut raw_pi_vals,
+                            zero_cell.clone(),
                         )?;
-                        offset += 1;
+                        call_data_offset += 1;
                         calldata_count += 1;
                     }
                 }
+
                 for _ in calldata_count..config.max_calldata {
                     config.assign_tx_calldata_row(
                         &mut region,
-                        offset,
+                        call_data_offset,
                         0, // tx_id
                         0,
                         0,
-                        F::ZERO,
+                        0u8,
+                        &mut rpi_bytes_keccakrlc,
+                        challenges,
+                        &mut current_offset,
+                        &mut rpi_bytes,
                         false,
                         F::ZERO,
-                        &mut raw_pi_vals,
+                        zero_cell.clone(),
                     )?;
-                    offset += 1;
+                    call_data_offset += 1;
                 }
-                // NOTE: we add this empty row so as to pass mock prover's check
-                //      otherwise it will emit CellNotAssigned Error
-                let tx_table_len = TX_LEN * self.max_txs + 1;
-                config.assign_tx_empty_row(&mut region, tx_table_len + offset)?;
+                assert_eq!(current_offset, 0);
 
-                // rpi_rlc and rand_rpi cols
-                let (rpi_rand, rpi_rlc) =
-                    config.assign_rlc_pi(&mut region, self.rand_rpi, raw_pi_vals)?;
+                // assign keccak digest
+                let digest_word = self
+                    .public_data
+                    .get_rpi_digest_word::<F>(config.max_txs, config.max_calldata);
 
-                Ok(vec![
-                    rpi_rand,
-                    rpi_rlc,
-                    chain_id,
-                    state_root,
-                    prev_state_root,
-                ])
+                let digest_word_assigned =
+                    config.assign_rpi_digest_word(&mut region, digest_word)?;
+
+                // lookup assignment
+                // also assign empty to last of TxTable
+                config.assign_empty_txtable_row(&mut region, call_data_offset)?;
+
+                // keccak lookup occur on offset 0
+                config.q_rpi_keccak_lookup.enable(&mut region, 0)?;
+
+                Ok(digest_word_assigned)
             },
         )?;
 
         // Constrain raw_public_input cells to public inputs
-        for (i, pi_cell) in pi_cells.iter().enumerate() {
-            layouter.constrain_instance(pi_cell.cell(), config.pi, i)?;
-        }
+
+        layouter.constrain_instance(digest_word_assigned.lo().cell(), config.pi_instance, 0)?;
+        layouter.constrain_instance(digest_word_assigned.hi().cell(), config.pi_instance, 1)?;
 
         Ok(())
     }
-}
-
-/// Compute the raw_public_inputs column from the verifier's perspective.
-fn raw_public_inputs_col<F: Field>(
-    max_txs: usize,
-    max_calldata: usize,
-    public_data: &PublicData,
-    randomness: F, // For RLC encoding
-) -> Vec<F> {
-    let block = public_data.get_block_table_values();
-    let extra = public_data.get_extra_values();
-    let txs = public_data.get_tx_table_values();
-
-    let mut offset = 0;
-    let mut result =
-        vec![F::ZERO; BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * max_txs + 1) + max_calldata];
-
-    //  Insert Block Values
-    // zero row
-    result[offset] = F::ZERO;
-    offset += 1;
-    // coinbase
-    result[offset] = block.coinbase.to_scalar().unwrap();
-    offset += 1;
-    // gas_limit
-    result[offset] = F::from(block.gas_limit);
-    offset += 1;
-    // number
-    result[offset] = F::from(block.number);
-    offset += 1;
-    // timestamp
-    result[offset] = F::from(block.timestamp);
-    offset += 1;
-    // difficulty
-    result[offset] = rlc(block.difficulty.to_le_bytes(), randomness);
-    offset += 1;
-    // base_fee
-    result[offset] = rlc(block.base_fee.to_le_bytes(), randomness);
-    offset += 1;
-    // chain_id
-    result[offset] = F::from(block.chain_id);
-    offset += 1;
-    // Previous block hashes
-    for prev_hash in block.history_hashes {
-        result[offset] = rlc(prev_hash.to_fixed_bytes(), randomness);
-        offset += 1;
-    }
-
-    // Insert Extra Values
-    // block Root
-    result[BLOCK_LEN + 1] = rlc(extra.state_root.to_fixed_bytes(), randomness);
-    // parent block hash
-    result[BLOCK_LEN + 2] = rlc(extra.prev_state_root.to_fixed_bytes(), randomness);
-
-    // Insert Tx table
-    offset = 0;
-    assert!(txs.len() <= max_txs);
-    let tx_default = TxValues::default();
-
-    let tx_table_len = TX_LEN * max_txs + 1;
-
-    let id_offset = BLOCK_LEN + 1 + EXTRA_LEN;
-    let index_offset = id_offset + tx_table_len;
-    let value_offset = index_offset + tx_table_len;
-
-    // Insert zero row
-    result[id_offset + offset] = F::ZERO;
-    result[index_offset + offset] = F::ZERO;
-    result[value_offset + offset] = F::ZERO;
-
-    offset += 1;
-
-    for i in 0..max_txs {
-        let tx = if i < txs.len() { &txs[i] } else { &tx_default };
-
-        for val in &[
-            F::from(tx.nonce),
-            F::from(tx.gas),
-            rlc(tx.gas_price.to_le_bytes(), randomness),
-            tx.from_addr.to_scalar().expect("tx.from too big"),
-            tx.to_addr.to_scalar().expect("tx.to too big"),
-            F::from(tx.is_create as u64),
-            rlc(tx.value.to_le_bytes(), randomness),
-            F::from(tx.call_data_len),
-            F::from(tx.call_data_gas_cost),
-            rlc(tx.tx_sign_hash, randomness),
-        ] {
-            result[id_offset + offset] = F::from((i + 1) as u64);
-            result[index_offset + offset] = F::ZERO;
-            result[value_offset + offset] = *val;
-
-            offset += 1;
-        }
-    }
-    // Tx Table CallData
-    let mut calldata_count = 0;
-    for (_i, tx) in public_data.txs().iter().enumerate() {
-        for (_index, byte) in tx.call_data.0.iter().enumerate() {
-            assert!(calldata_count < max_calldata);
-            result[value_offset + offset] = F::from(*byte as u64);
-            offset += 1;
-            calldata_count += 1;
-        }
-    }
-    for _ in calldata_count..max_calldata {
-        result[value_offset + offset] = F::ZERO;
-        offset += 1;
-    }
-
-    result
-}
-
-/// Computes `rand_rpi` - a commitment to the `raw_public_inputs_col` values.
-pub fn gen_rand_rpi<F: Field>(
-    max_txs: usize,
-    max_calldata: usize,
-    public_data: &PublicData,
-    randomness: F,
-) -> F {
-    let rlc_rpi_col = raw_public_inputs_col::<F>(max_txs, max_calldata, public_data, randomness);
-    let mut keccak = Keccak::default();
-    for value in rlc_rpi_col.iter() {
-        let mut tmp = value.to_repr();
-        tmp.reverse();
-        keccak.update(&tmp);
-    }
-    let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
-    rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
 }

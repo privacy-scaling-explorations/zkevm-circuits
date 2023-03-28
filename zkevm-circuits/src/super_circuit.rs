@@ -155,6 +155,8 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
                 max_calldata,
                 block_table: block_table.clone(),
                 tx_table: tx_table.clone(),
+                keccak_table: keccak_table.clone(),
+                challenges: challenges.clone(),
             },
         );
         let tx_circuit = TxCircuitConfig::new(

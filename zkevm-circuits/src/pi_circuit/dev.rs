@@ -29,6 +29,9 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
     fn configure_with_params(meta: &mut ConstraintSystem<F>, params: Self::Params) -> Self::Config {
         let block_table = BlockTable::construct(meta);
         let tx_table = TxTable::construct(meta);
+        let keccak_table = KeccakTable::construct(meta);
+        let challenges = Challenges::construct(meta);
+        let challenge_exprs = challenges.exprs(meta);
         (
             PiCircuitConfig::new(
                 meta,
@@ -37,9 +40,11 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
                     max_calldata: params.max_calldata,
                     block_table,
                     tx_table,
+                    keccak_table,
+                    challenges: challenge_exprs,
                 },
             ),
-            Challenges::construct(meta),
+            challenges,
         )
     }
 
@@ -53,6 +58,14 @@ impl<F: Field> Circuit<F> for PiCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
+        // assign keccak table
+        let rpi_bytes = self
+            .public_data
+            .get_pi_bytes(config.max_txs, config.max_calldata);
+        config
+            .keccak_table
+            .dev_load(&mut layouter, vec![&rpi_bytes], &challenges)?;
+
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
