@@ -129,10 +129,10 @@ impl Default for MockCallBytecodeParams {
 /// Generate mock EVM bytecode that performs a contract call
 pub fn generate_mock_call_bytecode(params: MockCallBytecodeParams) -> Bytecode {
     bytecode! {
-        // populate memory in the context.
-        PUSH32(Word::from_big_endian(&params.pushdata))
-        PUSH1(0x00) // offset
-        MSTORE
+        .mstore(
+            0u64,
+            Word::from_big_endian(&params.pushdata)
+        )
         .call(
             params.gas,
             params.address,
@@ -143,39 +143,6 @@ pub fn generate_mock_call_bytecode(params: MockCallBytecodeParams) -> Bytecode {
             params.return_data_offset,
         )
         .append(&params.instructions_after_call)
-        STOP
-    }
-}
-
-/// Generate mock EVM bytecode with the `RETURN` instruction.
-pub fn generate_mock_return_bytecode(
-    pushdata: Vec<u8>,
-    return_offset: usize,
-    return_data_offset: usize,
-    return_data_size: usize,
-) -> Bytecode {
-    bytecode! {
-        PUSH32(Word::from_big_endian(&pushdata))
-        PUSH32(return_offset)
-        MSTORE
-        PUSH32(return_data_size)
-        PUSH32(return_data_offset)
-        RETURN
-        STOP
-    }
-}
-
-/// Generate mock EVM bytecode with the `CALLDATACOPY` instruction.
-pub fn generate_mock_calldatacopy_bytecode(
-    copy_size: usize,
-    offset: usize,
-    dst_offset: usize,
-) -> eth_types::Bytecode {
-    bytecode! {
-        PUSH32(copy_size)
-        PUSH32(offset)
-        PUSH32(dst_offset)
-        CALLDATACOPY
         STOP
     }
 }

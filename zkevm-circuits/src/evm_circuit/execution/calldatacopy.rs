@@ -253,7 +253,7 @@ mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
     use mock::{
-        generate_mock_call_bytecode, generate_mock_calldatacopy_bytecode,
+        generate_mock_call_bytecode,
         test_ctx::{helpers::*, TestContext},
         MockCallBytecodeParams,
     };
@@ -306,7 +306,11 @@ mod test {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         // code B gets called by code A, so the call is an internal call.
-        let code_b = generate_mock_calldatacopy_bytecode(length, offset, dst_offset);
+        let code_b = bytecode! {
+            .calldatacopy(dst_offset, offset, length)
+            STOP
+        };
+
         let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
             address: addr_b,
             pushdata: rand_bytes(32),

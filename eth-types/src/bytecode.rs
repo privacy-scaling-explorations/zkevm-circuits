@@ -209,6 +209,16 @@ impl Bytecode {
         self
     }
 
+    /// return
+    pub fn return_bytecode<T: ToWord, U: ToWord>(&mut self, offset: T, size: U) -> &mut Self {
+        self.append(&crate::bytecode! {
+            PUSH32(size)
+            PUSH32(offset)
+            RETURN
+        });
+        self
+    }
+
     /// Generate the diassembly
     pub fn disasm(&self) -> String {
         let mut asm = String::new();

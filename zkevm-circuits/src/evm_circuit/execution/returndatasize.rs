@@ -88,16 +88,16 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
-    use mock::{
-        generate_mock_call_bytecode, generate_mock_return_bytecode, test_ctx::TestContext,
-        MockCallBytecodeParams,
-    };
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_ok_internal(return_data_offset: usize, return_data_size: usize) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        let code_b =
-            generate_mock_return_bytecode(rand_bytes(32), 0, return_data_offset, return_data_size);
+        let code_b = bytecode! {
+            .mstore(0, Word::from_big_endian(&rand_bytes(32)))
+            .return_bytecode(return_data_offset, return_data_size)
+            STOP
+        };
 
         let instruction = bytecode! {
             RETURNDATASIZE

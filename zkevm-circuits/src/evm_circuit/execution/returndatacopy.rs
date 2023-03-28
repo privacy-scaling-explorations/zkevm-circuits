@@ -270,10 +270,7 @@ mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, Word};
-    use mock::{
-        generate_mock_call_bytecode, generate_mock_return_bytecode, test_ctx::TestContext,
-        MockCallBytecodeParams,
-    };
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_ok_internal(
         return_data_offset: usize,
@@ -286,12 +283,11 @@ mod test {
 
         let return_offset =
             std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
-        let code_b = generate_mock_return_bytecode(
-            rand_bytes(32),
-            return_offset,
-            return_data_offset,
-            return_data_size,
-        );
+        let code_b = bytecode! {
+            .mstore(return_offset, Word::from_big_endian(&rand_bytes(32)))
+            .return_bytecode(return_data_offset, return_data_size)
+            STOP
+        };
 
         // code A calls code B.
         let instruction = bytecode! {
