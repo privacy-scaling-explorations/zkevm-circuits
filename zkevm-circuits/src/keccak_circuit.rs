@@ -4,7 +4,7 @@ mod cell_manager;
 pub mod keccak_packed_multi;
 mod param;
 mod table;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 mod test;
 /// Util
 mod util;

@@ -53,5 +53,5 @@ serde_json = "1.0.78"
 [features]
 default = []
 test = ["ethers-signers", "mock", "bus-mapping/test"]
-test-circuits = ["ethers-signers", "mock", "bus-mapping/test"]
+test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]

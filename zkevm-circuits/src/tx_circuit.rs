@@ -5,7 +5,7 @@
 // - *_le: Little-Endian bytes
 
 pub mod sign_verify;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::TxCircuit as TestTxCircuit;
@@ -35,11 +35,6 @@ pub use halo2_proofs::halo2curves::{
     },
     secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
 };
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,

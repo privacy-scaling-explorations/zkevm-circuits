@@ -50,7 +50,7 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 pub(crate) mod test;
 
 use crate::{

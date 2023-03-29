@@ -1,10 +1,13 @@
 #![allow(unused_imports)]
 pub use super::*;
 use crate::util::log2_ceil;
+use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::address;
 use halo2_proofs::{
+    circuit::SimpleFloorPlanner,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
+    plonk::Circuit,
 };
 use mock::AddrOrWallet;
 

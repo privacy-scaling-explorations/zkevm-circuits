@@ -2,7 +2,7 @@
 //! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
 //! etc.
 
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::CopyCircuit as TestCopyCircuit;

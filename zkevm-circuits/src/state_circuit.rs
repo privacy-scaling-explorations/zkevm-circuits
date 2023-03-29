@@ -5,7 +5,7 @@ mod lookups;
 mod multiple_precision_integer;
 mod param;
 mod random_linear_combination;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::StateCircuit as TestStateCircuit;

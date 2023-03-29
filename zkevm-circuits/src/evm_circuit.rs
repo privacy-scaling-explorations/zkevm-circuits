@@ -10,7 +10,7 @@ mod execution;
 pub mod param;
 pub(crate) mod step;
 pub mod table;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 pub(crate) mod test;
 pub(crate) mod util;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]

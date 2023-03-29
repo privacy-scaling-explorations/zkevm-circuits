@@ -12,7 +12,7 @@ use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkPr
 use std::iter;
 
 mod aggregation;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+#[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use test::RootCircuit as TestRootCircuit;
