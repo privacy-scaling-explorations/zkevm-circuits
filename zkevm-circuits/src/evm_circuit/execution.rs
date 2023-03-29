@@ -56,6 +56,7 @@ mod chainid;
 mod codecopy;
 mod codesize;
 mod comparator;
+mod create;
 mod dummy;
 mod dup;
 mod end_block;
@@ -124,6 +125,7 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
+use create::CreateGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -229,6 +231,8 @@ pub(crate) struct ExecutionConfig<F> {
     codecopy_gadget: CodeCopyGadget<F>,
     codesize_gadget: CodesizeGadget<F>,
     comparator_gadget: ComparatorGadget<F>,
+    create_gadget: CreateGadget<F, false, { ExecutionState::CREATE }>,
+    create2_gadget: CreateGadget<F, true, { ExecutionState::CREATE2 }>,
     dup_gadget: DupGadget<F>,
     exp_gadget: ExponentiationGadget<F>,
     extcodehash_gadget: ExtcodehashGadget<F>,
@@ -258,8 +262,6 @@ pub(crate) struct ExecutionConfig<F> {
     shl_shr_gadget: ShlShrGadget<F>,
     returndatasize_gadget: ReturnDataSizeGadget<F>,
     returndatacopy_gadget: ReturnDataCopyGadget<F>,
-    create_gadget: DummyGadget<F, 3, 1, { ExecutionState::CREATE }>,
-    create2_gadget: DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>,
     selfdestruct_gadget: DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>,
     signed_comparator_gadget: SignedComparatorGadget<F>,
     signextend_gadget: SignextendGadget<F>,
@@ -477,6 +479,8 @@ impl<F: Field> ExecutionConfig<F> {
             codecopy_gadget: configure_gadget!(),
             codesize_gadget: configure_gadget!(),
             comparator_gadget: configure_gadget!(),
+            create_gadget: configure_gadget!(),
+            create2_gadget: configure_gadget!(),
             dup_gadget: configure_gadget!(),
             extcodehash_gadget: configure_gadget!(),
             extcodesize_gadget: configure_gadget!(),
@@ -508,8 +512,6 @@ impl<F: Field> ExecutionConfig<F> {
             extcodecopy_gadget: configure_gadget!(),
             returndatasize_gadget: configure_gadget!(),
             returndatacopy_gadget: configure_gadget!(),
-            create_gadget: configure_gadget!(),
-            create2_gadget: configure_gadget!(),
             selfdestruct_gadget: configure_gadget!(),
             shl_shr_gadget: configure_gadget!(),
             signed_comparator_gadget: configure_gadget!(),
