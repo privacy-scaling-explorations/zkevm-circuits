@@ -71,7 +71,6 @@ jobs:
           cd foobar
           cp "${GIT_ROOT}/rust-toolchain" . || true
           cargo add --path "${GIT_ROOT}/${{ matrix.crate }}" --features '${{ matrix.feature }}'
-          cargo add --path "${GIT_ROOT}/bus-mapping" --features test
           cargo build
           cd ../
           rm -rf foobar
