@@ -157,16 +157,16 @@ fn check_err_depth(step: &GethExecStep, next_step: Option<&GethExecStep>) -> boo
 fn tracer_err_depth() {
     // Recursive CALL will exaust the call depth
     let code = bytecode! {
-            PUSH1(0x0) // retLength
-            PUSH1(0x0) // retOffset
-            PUSH1(0x0) // argsLength
-            PUSH1(0x0) // argsOffset
-            PUSH1(0x42) // value
-            PUSH32(*WORD_ADDR_A) // addr
-            PUSH32(0x8_0000_0000_0000_u64) // gas
-            CALL
-            PUSH2(0xab)
-            STOP
+             PUSH1(0x0) // retLength
+             PUSH1(0x0) // retOffset
+             PUSH1(0x0) // argsLength
+             PUSH1(0x0) // argsOffset
+             PUSH1(0x42) // value
+             PUSH32(*WORD_ADDR_A) // addr
+             PUSH32(0x8_0000_0000_0000_u64) // gas
+             CALL
+             PUSH2(0xab)
+             STOP
     };
 
     // Create a custom tx setting Gas to

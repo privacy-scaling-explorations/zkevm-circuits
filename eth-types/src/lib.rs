@@ -218,12 +218,12 @@ impl ToWord for usize {
 
 impl ToWord for i32 {
     fn to_word(&self) -> Word {
-        Word::from(self.unsigned_abs() as u64)
-            * if self.is_negative() {
-                Word::zero() - Word::one()
-            } else {
-                Word::one()
-            }
+        let value = Word::from(self.unsigned_abs() as u64);
+        if self.is_negative() {
+            value.overflowing_neg().0
+        } else {
+            value
+        }
     }
 }
 
