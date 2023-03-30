@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         crate:
           - zkevm-circuits
@@ -71,6 +72,11 @@ jobs:
           cd foobar
           cp "${GIT_ROOT}/rust-toolchain" . || true
           cargo add --path "${GIT_ROOT}/${{ matrix.crate }}" --features '${{ matrix.feature }}'
-          cargo build
           cd ../
           rm -rf foobar
+
+  test_features_complete:
+    needs: [test_features]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo dummy
