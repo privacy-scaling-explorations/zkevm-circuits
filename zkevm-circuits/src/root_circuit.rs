@@ -12,10 +12,11 @@ use snark_verifier::{util::arithmetic::MultiMillerLoop, verifier::plonk::PlonkPr
 use std::iter;
 
 mod aggregation;
+
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use test::RootCircuit as TestRootCircuit;
+pub use self::RootCircuit as TestRootCircuit;
 
 pub use aggregation::{
     aggregate, AggregationConfig, EccChip, Halo2Loader, KzgAs, KzgDk, KzgSvk,

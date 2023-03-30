@@ -428,7 +428,7 @@ pub struct StateCircuit<F> {
     updates: MptUpdates,
     pub(crate) n_rows: usize,
     #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-    overrides: HashMap<(test::AdviceColumn, isize), F>,
+    overrides: HashMap<(dev::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
 }
 
