@@ -339,7 +339,7 @@ pub fn gen_associated_ops(
             // For exceptions that fail to enter next call context, we need
             // to restore call context of current caller
             } else {
-                state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+                state.handle_restore_context(&mut exec_step, geth_steps)?;
             }
             state.handle_return(geth_step)?;
             return Ok(vec![exec_step]);

@@ -68,9 +68,8 @@ impl Opcode for ErrorReturnDataOutOfBound {
             return_data.len().into(),
         );
 
-        // `IsSuccess` call context operation is added in gen_restore_context_ops
-
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        // `IsSuccess` call context operation is added in handle_restore_context
+        state.handle_restore_context(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;
         Ok(vec![exec_step])
     }

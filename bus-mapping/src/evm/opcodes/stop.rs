@@ -37,7 +37,7 @@ impl Opcode for Stop {
             // Instruction.step_state_transition_to_restored_context
             // in python spec, and should be reusable among all expected halting opcodes or
             // exceptions.
-            state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+            state.handle_restore_context(&mut exec_step, geth_steps)?;
         }
 
         state.handle_return(geth_step)?;

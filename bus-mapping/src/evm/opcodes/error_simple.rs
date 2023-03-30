@@ -23,7 +23,7 @@ impl Opcode for ErrorSimple {
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
 
         // handles all required steps
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+        state.handle_restore_context(&mut exec_step, geth_steps)?;
         state.handle_return(geth_step)?;
 
         Ok(vec![exec_step])
