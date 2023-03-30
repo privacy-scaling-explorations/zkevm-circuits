@@ -1,19 +1,25 @@
 use super::*;
-use crate::circuit_input_builder::access::gen_state_access_trace;
-use crate::error::{ExecError, OogError};
-use crate::geth_errors::{
-    GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
-    GETH_ERR_STACK_UNDERFLOW,
+use crate::{
+    circuit_input_builder::access::gen_state_access_trace,
+    error::{ExecError, OogError},
+    geth_errors::{
+        GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
+        GETH_ERR_STACK_UNDERFLOW,
+    },
+    operation::RWCounter,
+    state_db::Account,
 };
-use crate::operation::RWCounter;
-use crate::state_db::Account;
-use eth_types::evm_types::{stack::Stack, Gas, OpcodeId};
 use eth_types::{
-    address, bytecode, geth_types::GethData, word, Bytecode, Hash, ToAddress, ToWord, Word,
+    address, bytecode,
+    evm_types::{stack::Stack, Gas, OpcodeId},
+    geth_types::GethData,
+    word, Bytecode, Hash, ToAddress, ToWord, Word,
 };
 use lazy_static::lazy_static;
-use mock::test_ctx::{helpers::*, LoggerConfig, TestContext};
-use mock::MOCK_COINBASE;
+use mock::{
+    test_ctx::{helpers::*, LoggerConfig, TestContext},
+    MOCK_COINBASE,
+};
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 
@@ -127,7 +133,6 @@ fn mock_root_create() -> Call {
     }
 }
 
-//
 // Geth Errors ignored
 //
 // These errors happen in a CALL, CALLCODE, DELEGATECALL or STATICCALL, and
@@ -462,6 +467,135 @@ fn tracer_err_address_collision() {
     builder.builder.sdb.set_account(
         &ADDR_B,
         Account {
+            balance: Word::from(555u64), /* same value as in
+                                          * `mock::new_tracer_account` */
+            ..Account::zero()
+        },
+    );
+    builder
+        .builder
+        .sdb
+        .set_account(&create2_address, Account::zero());
+    assert_eq!(
+        builder.state_ref().get_step_err(step, next_step).unwrap(),
+        Some(ExecError::ContractAddressCollision)
+    );
+}
+
+#[test]
+fn tracer_create_collision_free() {
+    // We do CREATE twice with the same parameters, with a code_creater
+    // that outputs not the same, which will lead to the different new
+    // contract address.
+    let code_creator = bytecode! {
+        PUSH1(0x00) // value
+        PUSH1(0x00) // offset
+        MSTORE
+        PUSH1(0x01) // length
+        PUSH1(0x00) // offset
+        RETURN
+    };
+
+    // code_a calls code_b which executes code_creator in CREATE2
+    let code_a = bytecode! {
+        PUSH1(0x0) // retLength
+        PUSH1(0x0) // retOffset
+        PUSH1(0x0) // argsLength
+        PUSH1(0x0) // argsOffset
+        PUSH1(0x0) // value
+        PUSH32(*WORD_ADDR_B) // addr
+        PUSH32(0x1_0000) // gas
+        CALL
+
+        PUSH2(0xaa)
+    };
+
+    let mut code_b = Bytecode::default();
+    // pad code_creator to multiple of 32 bytes
+    let len = code_creator.to_vec().len();
+    let code_creator: Vec<u8> = code_creator
+        .to_vec()
+        .iter()
+        .cloned()
+        .chain(0u8..((32 - len % 32) as u8))
+        .collect();
+    for (index, word) in code_creator.chunks(32).enumerate() {
+        code_b.push(32, Word::from_big_endian(word));
+        code_b.push(32, Word::from(index * 32));
+        code_b.write_op(OpcodeId::MSTORE);
+    }
+    let code_b_end = bytecode! {
+        PUSH1(len) // length
+        PUSH1(0x00) // offset
+        PUSH1(0x00) // value
+        CREATE
+
+        PUSH1(len) // length
+        PUSH1(0x00) // offset
+        PUSH1(0x00) // value
+        CREATE
+
+        PUSH3(0xbb)
+    };
+    code_b.append(&code_b_end);
+    // Get the execution steps from the external tracer
+    let block: GethData = TestContext::<3, 2>::new_with_logger_config(
+        None,
+        |accs| {
+            accs[0]
+                .address(address!("0x0000000000000000000000000000000000000000"))
+                .code(code_a);
+            accs[1].address(*ADDR_B).code(code_b);
+            accs[2]
+                .address(address!("0x000000000000000000000000000000000cafe002"))
+                .balance(Word::from(1u64 << 30));
+        },
+        |mut txs, accs| {
+            txs[0].to(accs[0].address).from(accs[2].address);
+            txs[1]
+                .to(accs[1].address)
+                .from(accs[2].address)
+                .nonce(Word::one());
+        },
+        |block, _tx| block.number(0xcafeu64),
+        LoggerConfig::enable_memory(),
+    )
+    .unwrap()
+    .into();
+
+    // get last CREATE
+    let (index, step) = block.geth_traces[0]
+        .struct_logs
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, s)| s.op == OpcodeId::CREATE)
+        .unwrap();
+    let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+    let memory = next_step.unwrap().memory.clone();
+
+    let create_address: Address = {
+        // get first RETURN
+        let (index, _) = block.geth_traces[0]
+            .struct_logs
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.op == OpcodeId::RETURN)
+            .unwrap();
+        let next_step = block.geth_traces[0].struct_logs.get(index + 1);
+        let addr_word = next_step.unwrap().stack.last().unwrap();
+        addr_word.to_address()
+    };
+
+    let mut builder = CircuitInputBuilderTx::new(&block, step);
+    // Set up call context at CREATE
+    builder.tx_ctx.call_is_success.push(false);
+    builder.state_ref().push_call(mock_internal_create());
+    builder.state_ref().call_ctx_mut().unwrap().memory = memory;
+    // Set up account and contract that exist during the second CREATE2
+    builder.builder.sdb.set_account(
+        &ADDR_B,
+        Account {
             nonce: Word::zero(),
             balance: Word::from(555u64), /* same value as in
                                           * `mock::new_tracer_account` */
@@ -470,7 +604,7 @@ fn tracer_err_address_collision() {
         },
     );
     builder.builder.sdb.set_account(
-        &create2_address,
+        &create_address,
         Account {
             nonce: Word::zero(),
             balance: Word::zero(),
@@ -478,10 +612,10 @@ fn tracer_err_address_collision() {
             code_hash: Hash::zero(),
         },
     );
-    assert_eq!(
-        builder.state_ref().get_step_err(step, next_step).unwrap(),
-        Some(ExecError::ContractAddressCollision)
-    );
+
+    let error = builder.state_ref().get_step_err(step, next_step);
+    // expects no errors detected
+    assert_eq!(error.unwrap(), None);
 }
 
 fn check_err_code_store_out_of_gas(step: &GethExecStep, next_step: Option<&GethExecStep>) -> bool {
@@ -1007,7 +1141,6 @@ fn tracer_create_stop() {
     );
 }
 
-//
 // Geth Errors not reported
 //
 // These errors are specific to some opcodes and due to the way the tracing
@@ -1368,7 +1501,6 @@ fn tracer_err_return_data_out_of_bounds() {
     );
 }
 
-//
 // Geth Errors Reported
 //
 // These errors can be found in the trace step error field.
@@ -1484,7 +1616,7 @@ fn tracer_err_write_protection(is_call: bool) {
         code_b.push(1, Word::zero());
         code_b.push(1, Word::from(0x20));
         code_b.push(1, Word::from(0x10)); // value
-        code_b.push(32, *WORD_ADDR_B); //addr
+        code_b.push(32, *WORD_ADDR_B); // addr
         code_b.push(32, Word::from(0x1000)); // gas
         code_b.write_op(OpcodeId::CALL);
     } else {
@@ -1650,7 +1782,6 @@ fn tracer_err_stack_underflow() {
     );
 }
 
-//
 // Circuit Input Builder tests
 //
 
@@ -1862,9 +1993,7 @@ fn create_address() {
         &ADDR_B,
         Account {
             nonce: Word::from(1),
-            balance: Word::zero(),
-            storage: HashMap::new(),
-            code_hash: Hash::zero(),
+            ..Account::zero()
         },
     );
     let addr = builder.state_ref().create_address().unwrap();

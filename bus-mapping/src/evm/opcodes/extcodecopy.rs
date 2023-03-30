@@ -1,9 +1,11 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp};
-use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Clone, Copy, Debug)]
@@ -191,14 +193,14 @@ mod extcodecopy_tests {
             AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
+        state_db::CodeDB,
     };
-    use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
     use eth_types::{
+        address, bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        H256, U256,
+        Bytecode, Bytes, ToWord, Word, U256,
     };
-    use ethers_core::utils::keccak256;
     use mock::TestContext;
 
     fn test_ok(
@@ -230,7 +232,7 @@ mod extcodecopy_tests {
         let code_hash = if code_ext.is_empty() {
             Default::default()
         } else {
-            keccak256(code_ext.clone())
+            CodeDB::hash(&code_ext)
         };
 
         // Get the execution steps from the external tracer
@@ -398,8 +400,8 @@ mod extcodecopy_tests {
                 &AccountOp {
                     address: external_address,
                     field: AccountField::CodeHash,
-                    value: Word::from(code_hash),
-                    value_prev: Word::from(code_hash),
+                    value: code_hash.to_word(),
+                    value_prev: code_hash.to_word(),
                 }
             )
         );
@@ -438,7 +440,7 @@ mod extcodecopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), copy_size);
-        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(H256(code_hash)));
+        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code_hash));
         assert_eq!(copy_events[0].src_addr as usize, data_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code_ext.len());
         assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);

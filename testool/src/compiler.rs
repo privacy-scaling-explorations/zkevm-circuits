@@ -1,16 +1,16 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::{bail, Context, Result};
-use eth_types::{bytecode, Bytecode};
-use eth_types::{Bytes, H256};
+use eth_types::{bytecode, Bytecode, Bytes, H256};
 use keccak256::plain::Keccak;
-use std::collections::HashMap;
-use std::io::Read;
-use std::io::Write;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::str::FromStr;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    str::FromStr,
+};
 
 struct Cache {
     entries: HashMap<H256, Bytes>,
@@ -109,7 +109,12 @@ struct Source {
 impl CompilerInput {
     pub fn new_default(language: Language, src: &str) -> Self {
         let mut sources = HashMap::new();
-        sources.insert("stdin".to_string(), Source { content: src.to_string() });
+        sources.insert(
+            "stdin".to_string(),
+            Source {
+                content: src.to_string(),
+            },
+        );
         CompilerInput {
             language,
             settings: Default::default(),
@@ -289,14 +294,7 @@ impl Compiler {
         let compiler_input = CompilerInput::new_default(language, src);
 
         let stdout = Self::exec(
-            &[
-                "run",
-                "-i",
-                "--rm",
-                "solc",
-                "--standard-json",
-                "-",
-            ],
+            &["run", "-i", "--rm", "solc", "--standard-json", "-"],
             serde_json::to_string(&compiler_input).unwrap().as_str(),
         )?;
         let mut compilation_result: CompilationResult = serde_json::from_str(&stdout)?;

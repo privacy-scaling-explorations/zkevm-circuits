@@ -1,6 +1,7 @@
 name: Integration Tests
 
 on:
+  merge_group:
   schedule:
     - cron: '50 1 * * SUN'
   pull_request:
@@ -19,56 +20,40 @@ on:
         - real_prover
         - mock_prover  
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  consecutiveness:
-    if: github.event_name == 'schedule' ||
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        contains(github.event.pull_request.labels.*.name, 'trigger-integration-tests')
-
-
-    runs-on: ubuntu-latest
-    steps:
-      - uses: mktcode/consecutive-workflow-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  wakeuprunner:
+  set-outputs:
     if: github.event.pull_request.draft == false
 
-    needs: [consecutiveness]
-    name: Wake up self-hosted runner
-    runs-on: pse-runner
-
+    runs-on: ubuntu-latest
+    outputs:
+      instancetype: ${{ steps.set-outputs.outputs.instancetype }}
+      provertype: ${{ steps.set-outputs.outputs.provertype }}
     steps:
-      - uses: actions/checkout@v2
-      - run: |
-          .github/integrationTestsScripts/wakeUpRunner.sh
+      - id: set-outputs
+        name: Select instance and prover type
+        run: |
+          if [ "${{ github.event.inputs.provertype }}" = "real_prover" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "instancetype=r6i.32xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=real_prover" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.provertype }}" = "mock_prover" ] || [ -z ${{ github.event.inputs.provertype }} ]; then
+            echo "instancetype=c5.9xlarge" >> "$GITHUB_OUTPUT"
+            echo "provertype=mock_prover" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
 
   integration-tests:
     if: github.event.pull_request.draft == false
 
-    needs: [wakeuprunner]
     name: Integration Tests
-    runs-on: integration-tests-runner
+    runs-on: ["${{github.run_id}}", self-hosted, "${{needs.set-outputs.outputs.instancetype}}"]
+    needs: set-outputs
 
-    defaults:
-      run:
-        working-directory: ./integration-tests
     steps:
-      - name: Set provertype to mock_prover for push & pull_request_labelled
-        run: |
-          echo "provertype=mock_prover" >> $GITHUB_ENV
-        if: github.event_name == 'push' ||
-            github.event_name == 'pull_request'
-      - name: Set provertype to workflow_dispatch choice
-        run: |
-          echo "provertype=${{ inputs.provertype }}" >> $GITHUB_ENV
-        if: github.event_name == 'workflow_dispatch'
-      - name: Set provertype to real_prover for scheduled runs
-        run: |
-          echo "provertype=real_prover" >> $GITHUB_ENV
-        if: github.event_name == 'schedule'
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -88,7 +73,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Cargo cache
-        uses: actions/cache@v3
+        uses: actions/cache@v3  
         with:
           path: |
             ~/.cargo/bin/
@@ -97,14 +82,20 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      # Run an initial build in a separate step to split the build time from execution time
+      # Run an initial build in a separate step to split the build time from execution time    
       - name: Build bins
         run: cargo build --bin gen_blockchain_data
       - name: Build tests
         run: for testname in rpc circuit_input_builder circuits; do cargo test --profile release --test $testname --features $testname --no-run; done
       - run: ./run.sh --steps "setup"
+        working-directory: integration-tests
       - run: ./run.sh --steps "gendata"
+        working-directory: integration-tests
       - run: ./run.sh --steps "tests" --tests "rpc"
+        working-directory: integration-tests
       - run: ./run.sh --steps "tests" --tests "circuit_input_builder"
-      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ env.provertype }}"
+        working-directory: integration-tests
+      - run: RUST_TEST_THREADS=1 ./run.sh --steps "tests" --tests "circuits::${{ needs.set-outputs.outputs.provertype }}"
+        working-directory: integration-tests
       - run: ./run.sh --steps "cleanup"
+        working-directory: integration-tests
