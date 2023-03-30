@@ -5,10 +5,13 @@
 // - *_le: Little-Endian bytes
 
 pub mod sign_verify;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use test::TxCircuit as TestTxCircuit;
+pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
     table::{KeccakTable, TxFieldTag, TxTable},
@@ -26,15 +29,6 @@ use itertools::Itertools;
 use log::error;
 use sign_verify::{AssignedSignatureVerify, SignVerifyChip, SignVerifyConfig};
 use std::marker::PhantomData;
-
-pub use halo2_proofs::halo2curves::{
-    group::{
-        ff::{Field as GroupField, PrimeField},
-        prime::PrimeCurveAffine,
-        Curve, Group, GroupEncoding,
-    },
-    secp256k1::{self, Secp256k1Affine, Secp256k1Compressed},
-};
 
 /// Number of static fields per tx: [nonce, gas, gas_price,
 /// caller_address, callee_address, is_create, value, call_data_length,

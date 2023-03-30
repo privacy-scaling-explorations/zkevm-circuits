@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
-pub use super::*;
-use crate::evm_circuit::witness::Block;
+pub use super::EvmCircuit;
+use crate::evm_circuit::{detect_fixed_table_tags, witness::Block};
 
 use eth_types::{Field, Word};
 use rand::{

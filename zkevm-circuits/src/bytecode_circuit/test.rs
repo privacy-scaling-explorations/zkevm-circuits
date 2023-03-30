@@ -1,70 +1,13 @@
 #![allow(unused_imports)]
-use super::bytecode_unroller::*;
-pub use super::circuit::*;
-
 use crate::{
-    bytecode_circuit::{
-        bytecode_unroller::BytecodeRow,
-        circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
-    },
-    table::{BytecodeFieldTag, BytecodeTable, KeccakTable},
-    util::{is_push, keccak, Challenges, SubCircuit, SubCircuitConfig},
+    bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
+    table::BytecodeFieldTag,
+    util::{is_push, keccak, Challenges, SubCircuit},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
-    dev::MockProver,
-    halo2curves::bn256::Fr,
-    plonk::{Circuit, ConstraintSystem, Error},
-};
-use log::{error, trace};
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
-    type Config = (BytecodeCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let bytecode_table = BytecodeTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            BytecodeCircuitConfig::new(
-                meta,
-                BytecodeCircuitConfigArgs {
-                    bytecode_table,
-                    keccak_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-
-        config.keccak_table.dev_load(
-            &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
-            &challenges,
-        )?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)?;
-        Ok(())
-    }
-}
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use log::error;
 
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
@@ -245,7 +188,7 @@ fn bytecode_invalid_hash_data() {
     {
         let mut invalid = unrolled;
         invalid.rows[0].code_hash += Word::one();
-        trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
+        log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
     // TODO: other rows code_hash are ignored by the witness generation, to

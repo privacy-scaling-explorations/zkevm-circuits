@@ -4,12 +4,15 @@ mod cell_manager;
 pub mod keccak_packed_multi;
 mod param;
 mod table;
-#[cfg(any(feature = "test", test))]
-mod test;
 /// Util
 mod util;
+
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use test::KeccakCircuit as TestKeccakCircuit;
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::KeccakCircuit as TestKeccakCircuit;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;

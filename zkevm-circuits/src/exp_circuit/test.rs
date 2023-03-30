@@ -1,5 +1,8 @@
 #![allow(unused_imports)]
-pub use super::*;
+use crate::{
+    evm_circuit::witness::{block_convert, Block},
+    exp_circuit::ExpCircuit,
+};
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
     evm::OpcodeId,
@@ -10,32 +13,6 @@ use halo2_proofs::{
     circuit::SimpleFloorPlanner, dev::MockProver, halo2curves::bn256::Fr, plonk::Circuit,
 };
 use mock::TestContext;
-
-use crate::evm_circuit::witness::{block_convert, Block};
-
-impl<F: Field> Circuit<F> for ExpCircuit<F> {
-    type Config = (ExpCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let exp_table = ExpTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-        (ExpCircuitConfig::new(meta, exp_table), challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), halo2_proofs::plonk::Error> {
-        let challenges = challenges.values(&mut layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
 
 /// Test exponentiation circuit with the provided block witness
 pub fn test_exp_circuit<F: Field>(k: u32, block: Block<F>) {

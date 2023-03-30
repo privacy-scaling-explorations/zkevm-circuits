@@ -1,13 +1,15 @@
 //! The Copy circuit implements constraints and lookups for read-write steps for
 //! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
 //! etc.
+pub(crate) mod util;
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use test::CopyCircuit as TestCopyCircuit;
+pub use dev::CopyCircuit as TestCopyCircuit;
 
-pub(crate) mod util;
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
 use eth_types::{Field, Word};
 
@@ -33,12 +35,6 @@ use crate::{
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
     witness::{Bytecode, RwMap, Transaction},
-};
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{
-    circuit::SimpleFloorPlanner,
-    plonk::{Challenge, Circuit},
 };
 
 /// The rw table shared between evm circuit and state circuit

@@ -1,8 +1,8 @@
-pub use super::circuit::BytecodeCircuit;
+pub use super::StateCircuit;
 
 use crate::{
-    bytecode_circuit::circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
-    table::{BytecodeTable, KeccakTable},
+    state_circuit::{StateCircuitConfig, StateCircuitConfigArgs},
+    table::{MptTable, RwTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
 use eth_types::Field;
@@ -11,8 +11,11 @@ use halo2_proofs::{
     plonk::{Circuit, ConstraintSystem, Error},
 };
 
-impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
-    type Config = (BytecodeCircuitConfig<F>, Challenges);
+impl<F: Field> Circuit<F> for StateCircuit<F>
+where
+    F: Field,
+{
+    type Config = (StateCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -20,17 +23,17 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let bytecode_table = BytecodeTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
+        let rw_table = RwTable::construct(meta);
+        let mpt_table = MptTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);
-            BytecodeCircuitConfig::new(
+            StateCircuitConfig::new(
                 meta,
-                BytecodeCircuitConfigArgs {
-                    bytecode_table,
-                    keccak_table,
+                StateCircuitConfigArgs {
+                    rw_table,
+                    mpt_table,
                     challenges,
                 },
             )
@@ -45,13 +48,9 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
-
-        config.keccak_table.dev_load(
-            &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
-            &challenges,
-        )?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)?;
-        Ok(())
+        config
+            .mpt_table
+            .load(&mut layouter, &self.updates, challenges.evm_word())?;
+        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }

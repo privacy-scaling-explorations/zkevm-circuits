@@ -5,10 +5,13 @@ mod lookups;
 mod multiple_precision_integer;
 mod param;
 mod random_linear_combination;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use test::StateCircuit as TestStateCircuit;
+pub use dev::StateCircuit as TestStateCircuit;
 
 use self::{
     constraint_builder::{MptUpdateTableQueries, RwTableQueries},

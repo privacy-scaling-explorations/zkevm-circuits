@@ -10,11 +10,12 @@ mod execution;
 pub mod param;
 pub(crate) mod step;
 pub mod table;
+pub(crate) mod util;
+
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
-pub(crate) mod util;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use test::EvmCircuit as TestEvmCircuit;
+pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{

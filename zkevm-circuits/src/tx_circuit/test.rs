@@ -1,62 +1,12 @@
 #![allow(unused_imports)]
-pub use super::*;
+use super::*;
 use crate::util::log2_ceil;
-use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::address;
 use halo2_proofs::{
-    circuit::SimpleFloorPlanner,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::Fr,
-    plonk::Circuit,
 };
 use mock::AddrOrWallet;
-
-impl<F: Field> Circuit<F> for TxCircuit<F> {
-    type Config = (TxCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let tx_table = TxTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            TxCircuitConfig::new(
-                meta,
-                TxCircuitConfigArgs {
-                    tx_table,
-                    keccak_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-
-        config.keccak_table.dev_load(
-            &mut layouter,
-            &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
-                error!("keccak_inputs_tx_circuit error: {:?}", e);
-                Error::Synthesis
-            })?,
-            &challenges,
-        )?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)
-    }
-}
 
 const NUM_BLINDING_ROWS: usize = 64;
 
