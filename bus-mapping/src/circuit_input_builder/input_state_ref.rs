@@ -901,9 +901,19 @@ impl<'a> CircuitInputStateRef<'a> {
         }
     }
 
-    /// Handle a return step caused by any opcode that causes a return to the
+    /// Handle a restore and a return step caused by any opcode that causes a return to the
     /// previous call context.
-    pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
+    pub fn handle_return(
+        &mut self,
+        exec_step: &mut ExecStep,
+        geth_steps: &[GethExecStep],
+        need_restore: bool,
+    ) -> Result<(), Error> {
+        if need_restore {
+            self.handle_restore_context(exec_step, geth_steps)?;
+        }
+
+        let step = &geth_steps[0];
         // handle return_data
         let (return_data_offset, return_data_length) = {
             if !self.call()?.is_root {
@@ -986,7 +996,6 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Bus mapping for the RestoreContextGadget as used in RETURN.
-    // TODO: unify this with the `handle return function above.`
     pub fn handle_restore_context(
         &mut self,
         exec_step: &mut ExecStep,

@@ -89,9 +89,7 @@ impl Opcode for OOGSloadSstore {
             );
         }
 
-        state.handle_restore_context(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
-
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }
