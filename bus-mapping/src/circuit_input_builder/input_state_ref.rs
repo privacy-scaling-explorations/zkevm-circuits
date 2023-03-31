@@ -993,9 +993,7 @@ impl<'a> CircuitInputStateRef<'a> {
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
-        let caller = self.caller()?.clone();
         let geth_step = &steps[0];
-        let geth_step_next = &steps[1];
         let is_return_revert = geth_step.op == OpcodeId::REVERT || geth_step.op == OpcodeId::RETURN;
 
         if !is_return_revert && !call.is_success {
@@ -1023,6 +1021,8 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
 
+        let caller = self.caller()?.clone();
+        let geth_step_next = &steps[1];
         self.call_context_read(
             exec_step,
             call.call_id,
