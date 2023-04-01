@@ -53,7 +53,7 @@ struct Args {
 
     /// whitelist level from cache result
     #[clap(short, long, value_parser, value_delimiter = ',')]
-    levels: Vec<String>,
+    levels: Vec<ResultLevel>,
 
     /// Generates log and and html file with info.
     #[clap(long)]
@@ -159,11 +159,7 @@ fn go() -> Result<()> {
         // are used, but by default removing all Ignored tests
         // Another way is to skip the test which level not in whitelist_levels
         let mut results_to_skip = if let Some(cache_filename) = args.cache {
-            let whitelist_levels = HashSet::<ResultLevel>::from_iter(
-                args.levels
-                    .iter()
-                    .flat_map(|s| ResultLevel::from_str(s).ok()),
-            );
+            let whitelist_levels = HashSet::<ResultLevel>::from_iter(args.levels);
 
             let mut results_to_skip = Results::from_file(PathBuf::from(cache_filename))?;
             if !whitelist_levels.is_empty() {

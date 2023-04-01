@@ -154,13 +154,16 @@ impl Report {
         self.by_result.print_html(&mut by_result)?;
         self.diffs.gen_info().1.print_html(&mut diffs)?;
 
-        // skip leading `tests/` for rendering purpose. It helps to generate hyperlink
+        // strip_prefix `tests/` for rendering purpose. It helps to generate hyperlink
         let leading_tests_path = "tests/";
         let mut tests_for_render = self.tests.clone();
         for (_, result) in tests_for_render.iter_mut() {
             assert!(result.path.starts_with(leading_tests_path));
-            let leading_dir_len = leading_tests_path.len();
-            result.path = result.path[leading_dir_len..].to_string();
+            result.path = result
+                .path
+                .strip_prefix(leading_tests_path)
+                .unwrap()
+                .to_string();
         }
 
         let data = &json!({

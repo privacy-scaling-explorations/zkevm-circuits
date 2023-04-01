@@ -171,9 +171,13 @@ pub fn current_submodule_git_commit() -> Result<String> {
         .stdin(Stdio::from(grep_cmd.unwrap().stdout.unwrap()))
         .output()
         .unwrap();
-    let git_hash = String::from_utf8(output.stdout).unwrap();
-    let git_hash = git_hash[..7].to_string();
-    Ok(git_hash)
+    let git_hash = String::from_utf8(output.stdout)?
+        .lines()
+        .filter_map(|l| l.strip_suffix(" tests").and_then(|l| l.split(" ").nth(2)))
+        .next()
+        .ok_or("parse output failed");
+    // let git_hash = git_hash[..7].to_string();
+    git_hash
 }
 
 pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {
