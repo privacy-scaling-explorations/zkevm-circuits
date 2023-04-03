@@ -192,7 +192,12 @@ impl Results {
         file.read_to_string(&mut buf)?;
         let mut tests = HashMap::new();
         for line in buf.lines().filter(|l| l.len() > 1) {
-            let mut split = line.splitn(5, ';');
+            let split: Vec<&str> = line.splitn(4, ';').collect();
+            if split.len() != 4 {
+                log::warn!("un-supported line {:?}", line);
+                return Ok(Self { cache: None, tests });
+            }
+            let mut split = split.iter();
             let level = split.next().unwrap();
             let level = ResultLevel::from_str(level).unwrap();
             let test_id = split.next().unwrap().to_string();

@@ -15,7 +15,7 @@ use statetest::{
     geth_trace, load_statetests_suite, run_statetests_suite, run_test, CircuitsConfig, Results,
     StateTest,
 };
-use std::{collections::HashSet, path::PathBuf, str::FromStr, time::SystemTime};
+use std::{collections::HashSet, path::PathBuf, time::SystemTime};
 use strum::EnumString;
 
 const REPORT_FOLDER: &str = "report";
@@ -158,28 +158,28 @@ fn go() -> Result<()> {
         // when running a report, the tests result of the containing cache file
         // are used, but by default removing all Ignored tests
         // Another way is to skip the test which level not in whitelist_levels
-        let mut results_to_skip = if let Some(cache_filename) = args.cache {
+        let mut previous_results = if let Some(cache_filename) = args.cache {
             let whitelist_levels = HashSet::<ResultLevel>::from_iter(args.levels);
 
-            let mut results_to_skip = Results::from_file(PathBuf::from(cache_filename))?;
+            let mut previous_results = Results::from_file(PathBuf::from(cache_filename))?;
             if !whitelist_levels.is_empty() {
                 // if whitelist is provided, test not in whitelist will be skip
-                results_to_skip
+                previous_results
                     .tests
                     .retain(|_, test| !whitelist_levels.contains(&test.level));
             } else {
                 // by default only skip ignore
-                results_to_skip
+                previous_results
                     .tests
                     .retain(|_, test| test.level != ResultLevel::Ignored);
             }
 
-            results_to_skip
+            previous_results
         } else {
             Results::default()
         };
-        results_to_skip.set_cache(PathBuf::from(csv_filename));
-        run_statetests_suite(state_tests, &circuits_config, &suite, &mut results_to_skip)?;
+        previous_results.set_cache(PathBuf::from(csv_filename));
+        run_statetests_suite(state_tests, &circuits_config, &suite, &mut previous_results)?;
 
         // filter non-csv files and files from the same commit
         let mut files: Vec<_> = std::fs::read_dir(REPORT_FOLDER)
@@ -202,7 +202,7 @@ fn go() -> Result<()> {
         } else {
             None
         };
-        let report = results_to_skip.report(previous);
+        let report = previous_results.report(previous);
         std::fs::write(&html_filename, report.gen_html(git_submodule_tests_hash)?)?;
 
         report.print_tty()?;
