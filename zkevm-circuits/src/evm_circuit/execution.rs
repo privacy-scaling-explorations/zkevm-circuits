@@ -338,8 +338,6 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_jump: Box<ErrorInvalidJumpGadget<F>>,
     error_invalid_opcode: Box<ErrorInvalidOpcodeGadget<F>>,
     error_depth: Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorDepth }>>,
-    error_contract_address_collision:
-        Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorContractAddressCollision }>>,
     error_invalid_creation_code: Box<ErrorInvalidCreationCodeGadget<F>>,
     error_precompile_failed: Box<ErrorPrecompileFailedGadget<F>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
@@ -604,7 +602,6 @@ impl<F: Field> ExecutionConfig<F> {
             error_write_protection: configure_gadget!(),
             error_depth: configure_gadget!(),
             error_nonce_uint_overflow: configure_gadget!(),
-            error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
             error_precompile_failed: configure_gadget!(),
@@ -1445,7 +1442,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_nonce_uint_overflow)
             }
             ExecutionState::ErrorContractAddressCollision => {
-                assign_exec_step!(self.error_contract_address_collision)
+                assign_exec_step!(self.create_gadget)
             }
             ExecutionState::ErrorInvalidCreationCode => {
                 assign_exec_step!(self.error_invalid_creation_code)
