@@ -1,34 +1,29 @@
-use std::cell::RefCell;
-
+use super::{
+    bytecode_unroller::{unroll, UnrolledBytecode},
+    wit_gen::BytecodeWitnessGen,
+};
+use crate::{
+    table::{BytecodeTable, KeccakTable},
+    util::{get_push_size, Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use chiquito::{
     ast::{query::Queriable, Expr, ToExpr, ToField},
     backend::halo2::{chiquito2Halo2, ChiquitoHalo2},
     compiler::{
         cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Circuit,
-        Compiler, FixedGenContext, TraceContext, WitnessGenContext,
+        Compiler, FixedGenContext, WitnessGenContext,
     },
     dsl::{circuit, StepTypeContext},
 };
-
-use eth_types::{Field, ToLittleEndian, Word};
+use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::{bn256::Fr, FieldExt},
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase},
+    circuit::{Layouter, Value},
+    halo2curves::FieldExt,
+    plonk::{Column, ConstraintSystem, Error, Expression, Fixed},
 };
-
-use crate::{
-    evm_circuit::util::rlc as util_rlc,
-    table::{BytecodeTable, KeccakTable},
-    util::{get_push_size, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
-};
-
-use super::{
-    bytecode_unroller::{unroll, BytecodeRow, UnrolledBytecode},
-    wit_gen::BytecodeWitnessGen,
-};
+use std::cell::RefCell;
 
 struct IsZero<F> {
     value_inv: Queriable<F>,
@@ -310,13 +305,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         let compiler = Compiler::new(SingleRowCellManager {}, SimpleStepSelectorBuilder {});
 
-        let compiled = compiler.compile(&mut bytecode_circuit);
-
-        // println!("{:#?}", bytecode_circuit);
-
-        // println!("{:#?}", compiled);
-
-        compiled
+        compiler.compile(&mut bytecode_circuit)
     }
 
     fn circuit_push_data_table(
@@ -338,13 +327,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
         let compiler = Compiler::new(SingleRowCellManager {}, SimpleStepSelectorBuilder {});
 
-        let compiled = compiler.compile(&mut push_data_table_circuit);
-
-        // println!("{:#?}", push_data_table_circuit);
-
-        // println!("{:#?}", compiled);
-
-        compiled
+        compiler.compile(&mut push_data_table_circuit)
     }
 }
 
@@ -401,11 +384,6 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        // config.load_aux_tables(layouter)?;
-        // config.assign_internal(layouter, self.size, &self.bytecodes, challenges, false)
-
-        // println!("{:?}", self.bytecodes.clone());
-
         config.push_data_table.synthesize(layouter, ());
         config.compiled.synthesize(
             layouter,
