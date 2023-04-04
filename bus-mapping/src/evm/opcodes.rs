@@ -60,6 +60,7 @@ mod error_codestore;
 mod error_contract_address_collision;
 mod error_invalid_creation_code;
 mod error_invalid_jump;
+mod error_oog_account_access;
 mod error_oog_call;
 mod error_oog_dynamic_memory;
 mod error_oog_log;
@@ -89,6 +90,7 @@ use dup::Dup;
 use error_codestore::ErrorCodeStore;
 use error_invalid_creation_code::ErrorCreationCode;
 use error_invalid_jump::InvalidJump;
+use error_oog_account_access::ErrorOOGAccountAccess;
 use error_oog_call::OOGCall;
 use error_oog_dynamic_memory::OOGDynamicMemory;
 use error_oog_log::ErrorOOGLog;
@@ -306,6 +308,9 @@ fn fn_gen_error_state_associated_ops(
             Some(StackOnlyOpcode::<2, 0, true>::gen_associated_ops)
         }
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
+        ExecError::OutOfGas(OogError::AccountAccess) => {
+            Some(ErrorOOGAccountAccess::gen_associated_ops)
+        }
         // ExecError::
         ExecError::StackOverflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
         ExecError::StackUnderflow => Some(StackOnlyOpcode::<0, 0, true>::gen_associated_ops),
