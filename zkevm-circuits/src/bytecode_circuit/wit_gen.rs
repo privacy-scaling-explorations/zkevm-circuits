@@ -6,7 +6,7 @@ use crate::{
     util::{get_push_size, Challenges},
 };
 
-use super::bytecode_unroller::{BytecodeRow, UnrolledBytecode};
+use super::bytecode_unroller::UnrolledBytecode;
 
 #[derive(Debug, Clone)]
 pub struct BytecodeWitnessGen<F: Field> {

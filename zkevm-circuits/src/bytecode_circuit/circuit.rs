@@ -1,32 +1,25 @@
-use super::{
-    bytecode_chiquito,
-    bytecode_unroller::{unroll, BytecodeRow, UnrolledBytecode},
-    push_data_chiquito::{self, push_data_table_circuit},
-    wit_gen::BytecodeWitnessGen,
-};
-use crate::{
-    bytecode_circuit::bytecode_chiquito::bytecode_circuit,
-    table::{BytecodeTable, KeccakTable},
-    util::{get_push_size, Challenges, SubCircuit, SubCircuitConfig},
-    witness,
-};
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use chiquito::{
-    ast::{query::Queriable, Expr, ToExpr, ToField},
-    backend::halo2::{chiquito2Halo2, ChiquitoHalo2},
-    compiler::{
-        cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Circuit,
-        Compiler, FixedGenContext, WitnessGenContext,
-    },
-    dsl::{circuit, StepTypeContext},
-};
+use std::cell::RefCell;
+
+use chiquito::backend::halo2::{chiquito2Halo2, ChiquitoHalo2};
+
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::{bn256::Fr, FieldExt},
-    plonk::{Column, ConstraintSystem, Error, Expression, Fixed},
+    plonk::{ConstraintSystem, Error, Expression},
 };
-use std::cell::RefCell;
+
+use crate::{
+    bytecode_circuit::bytecode_chiquito::bytecode_circuit,
+    table::{BytecodeTable, KeccakTable},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
+
+use super::{
+    bytecode_unroller::{unroll, UnrolledBytecode},
+    push_data_chiquito::push_data_table_circuit,
+    wit_gen::BytecodeWitnessGen,
+};
 
 /// WitnessInput
 pub type WitnessInput<F> = (Vec<UnrolledBytecode<F>>, Challenges<Value<F>>, usize);
@@ -64,12 +57,8 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
 
         push_data_table.configure(meta);
 
-        let mut circuit = chiquito2Halo2(bytecode_circuit(
-            meta,
-            &config,
-            push_data_value,
-            push_data_size,
-        ));
+        let mut circuit =
+            chiquito2Halo2(bytecode_circuit(&config, push_data_value, push_data_size));
 
         circuit.configure(meta);
 

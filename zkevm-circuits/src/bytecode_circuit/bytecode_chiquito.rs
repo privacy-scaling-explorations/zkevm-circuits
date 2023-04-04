@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use chiquito::{compiler::{Circuit, Compiler, cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, WitnessGenContext}, dsl::{circuit, StepTypeContext}, ast::{ToField, ToExpr, Expr, query::Queriable}};
 use eth_types::Field;
-use halo2_proofs::{plonk::{ConstraintSystem, Column, Fixed}, halo2curves::FieldExt};
+use halo2_proofs::{plonk::{Column, Fixed}, halo2curves::FieldExt};
 
 use crate::bytecode_circuit::bytecode_unroller::unroll;
 
@@ -42,7 +42,6 @@ impl<F: Field> IsZero<F> {
     }
 }
 pub fn bytecode_circuit<F: Field>(
-    meta: &mut ConstraintSystem<F>,
     BytecodeCircuitConfigArgs {
         bytecode_table,
         keccak_table,
