@@ -1,7 +1,6 @@
-pub use super::circuit::BytecodeCircuit;
-
+pub use super::ccircuit::BytecodeCircuit;
 use crate::{
-    bytecode_circuit::circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
+    bytecode_circuit::ccircuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
     table::{BytecodeTable, KeccakTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };

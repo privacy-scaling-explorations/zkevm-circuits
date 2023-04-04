@@ -29,11 +29,11 @@ use std::{collections::HashMap, marker::PhantomData, sync::Mutex};
 use tokio::sync::Mutex as TokioMutex;
 use zkevm_circuits::{
     bytecode_circuit::TestBytecodeCircuit,
-    copy_circuit::TestCopyCircuit,
-    evm_circuit::TestEvmCircuit,
-    exp_circuit::TestExpCircuit,
-    keccak_circuit::TestKeccakCircuit,
-    state_circuit::TestStateCircuit,
+    copy_circuit::{CopyCircuit, TestCopyCircuit},
+    evm_circuit::{EvmCircuit, TestEvmCircuit},
+    exp_circuit::{ExpCircuit, TestExpCircuit},
+    keccak_circuit::{KeccakCircuit, TestKeccakCircuit},
+    state_circuit::{StateCircuit, TestStateCircuit},
     super_circuit::SuperCircuit,
     tx_circuit::TestTxCircuit,
     util::SubCircuit,
