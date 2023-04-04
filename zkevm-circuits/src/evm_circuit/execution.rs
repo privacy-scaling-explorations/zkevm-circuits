@@ -1087,22 +1087,23 @@ impl<F: Field> ExecutionConfig<F> {
 
                 // part2: assign non-last EndBlock steps when padding needed
                 if !no_padding {
-                    if offset >= evm_rows {
-                        log::error!(
-                            "evm circuit offset larger than padding: {} > {}",
-                            offset,
-                            evm_rows
-                        );
-                        return Err(Error::Synthesis);
-                    }
                     let height = ExecutionState::EndBlock.get_step_height();
                     debug_assert_eq!(height, 1);
-                    let last_row = evm_rows - 1;
+                    // 1 for EndBlock(last), 1 for "part 4" cells
+                    let last_row = evm_rows - 2;
                     log::trace!(
                         "assign non-last EndBlock in range [{},{})",
                         offset,
                         last_row
                     );
+                    if offset > last_row {
+                        log::error!(
+                            "evm circuit row not enough, offset: {}, max_evm_rows: {}",
+                            offset,
+                            evm_rows
+                        );
+                        return Err(Error::Synthesis);
+                    }
                     self.assign_same_exec_step_in_range(
                         &mut region,
                         offset,
@@ -1272,11 +1273,11 @@ impl<F: Field> ExecutionConfig<F> {
                 transaction_next,
                 call_next,
                 step_next,
-                true,
+                false,
             )?;
         }
 
-        self.assign_exec_step_int(region, offset, block, transaction, call, step, false)
+        self.assign_exec_step_int(region, offset, block, transaction, call, step, true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1639,7 +1640,7 @@ impl<F: Field> ExecutionConfig<F> {
                 // debug_assert_eq!(
                 //    rlc, assigned_rw_values[idx].1,
                 //    "left is witness, right is expression"
-                //);
+                // );
             }
         }
         // for (idx, assigned_rw_value) in assigned_rw_values.iter().enumerate()
