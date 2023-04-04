@@ -510,6 +510,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "chiquito"
 version = "0.1.0"
+source = "git+https://github.com/leolara/chiquito?tag=v2023_04_04#9a54b830e6ddfafd465cf52cc5556aca1680f97c"
 dependencies = [
  "halo2_proofs 0.2.0",
 ]
