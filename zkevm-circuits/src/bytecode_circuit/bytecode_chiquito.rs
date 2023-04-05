@@ -1,13 +1,26 @@
 use std::cell::RefCell;
 
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
-use chiquito::{compiler::{Circuit, Compiler, cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, WitnessGenContext}, dsl::{circuit, StepTypeContext}, ast::{ToField, ToExpr, Expr, query::Queriable}};
+use chiquito::{
+    ast::{query::Queriable, Expr, ToExpr, ToField},
+    compiler::{
+        cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Circuit,
+        Compiler, WitnessGenContext,
+    },
+    dsl::{circuit, StepTypeContext},
+};
 use eth_types::Field;
-use halo2_proofs::{plonk::{Column, Fixed}, halo2curves::FieldExt};
+use halo2_proofs::{
+    halo2curves::FieldExt,
+    plonk::{Column, Fixed},
+};
 
 use crate::bytecode_circuit::bytecode_unroller::unroll;
 
-use super::{circuit::{BytecodeCircuitConfigArgs, WitnessInput}, wit_gen::BytecodeWitnessGen};
+use super::{
+    circuit::{BytecodeCircuitConfigArgs, WitnessInput},
+    wit_gen::BytecodeWitnessGen,
+};
 
 struct IsZero<F> {
     value_inv: Queriable<F>,
@@ -47,32 +60,34 @@ pub fn bytecode_circuit<F: Field>(
         keccak_table,
         challenges,
     }: &BytecodeCircuitConfigArgs<F>,
-    push_data_table_value: Column<Fixed>, push_data_table_size: Column<Fixed>,
+    push_data_table_value: Column<Fixed>,
+    push_data_table_size: Column<Fixed>,
 ) -> Circuit<F, WitnessInput<F>, RefCell<BytecodeWitnessGen<F>>> {
     let mut bytecode_circuit = circuit::<F, WitnessInput<F>, RefCell<BytecodeWitnessGen<F>>, _>(
         "bytecode circuit",
         |ctx| {
             use chiquito::dsl::cb::*;
 
-            let length = ctx.forward("length");                
+            let length = ctx.forward("length");
             let push_data_left = ctx.forward("push_data_left");
             let value_rlc = ctx.forward_with_phase("value_rlc", 1); // 1 -> SecondPhase
 
             let index = ctx.import_halo2_advice("index", bytecode_table.index);
             let hash = ctx.import_halo2_advice("hash", bytecode_table.code_hash);
             let is_code = ctx.import_halo2_advice("is_code", bytecode_table.is_code);
-            let value = ctx.import_halo2_advice("value", bytecode_table.value); 
+            let value = ctx.import_halo2_advice("value", bytecode_table.value);
             let tag = ctx.import_halo2_advice("tag", bytecode_table.tag);
 
-            let push_data_table_value = ctx.import_halo2_fixed("push_data_value", push_data_table_value);
-            let push_data_table_size = ctx.import_halo2_fixed("push_data_size", push_data_table_size);
+            let push_data_table_value =
+                ctx.import_halo2_fixed("push_data_value", push_data_table_value);
+            let push_data_table_size =
+                ctx.import_halo2_fixed("push_data_size", push_data_table_size);
 
             let keccak_is_enabled =
                 ctx.import_halo2_advice("keccak_is_enabled", keccak_table.is_enabled);
             let keccak_value_rlc =
                 ctx.import_halo2_advice("keccak_value_rlc", keccak_table.input_rlc);
-            let keccak_length =
-                ctx.import_halo2_advice("keccak_length", keccak_table.input_len);
+            let keccak_length = ctx.import_halo2_advice("keccak_length", keccak_table.input_len);
             let keccak_hash = ctx.import_halo2_advice("keccak_hash", keccak_table.output_rlc);
 
             let header = ctx.step_type("header");
@@ -123,7 +138,6 @@ pub fn bytecode_circuit<F: Field>(
             });
 
             ctx.step_type_def(byte_step, move |ctx| {
-                
                 let push_data_size = ctx.signal("push_data_size");
                 let push_data_left_inv = ctx.signal("push_data_left_inv");
 
