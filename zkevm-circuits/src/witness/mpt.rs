@@ -19,8 +19,16 @@ pub struct MptUpdate {
 pub struct MptUpdates(HashMap<Key, MptUpdate>);
 
 /// The field element encoding of an MPT update, which is used by the MptTable
-#[derive(Debug, Clone, Copy)]
-pub struct MptUpdateRow<F>([F; 7]);
+#[derive(Default, Clone, Copy, Debug)]
+pub struct MptUpdateRow<F> {
+    pub(crate) address_rlc: F,
+    pub(crate) proof_type: F,
+    pub(crate) key_rlc: F,
+    pub(crate) value_prev: F,
+    pub(crate) value: F,
+    pub(crate) root_prev: F,
+    pub(crate) root: F,
+}
 
 impl MptUpdates {
     pub(crate) fn get(&self, row: &Rw) -> Option<MptUpdate> {
@@ -58,15 +66,15 @@ impl MptUpdates {
             .map(|update| {
                 let (new_root, old_root) = update.root_assignments(randomness);
                 let (new_value, old_value) = update.value_assignments(randomness);
-                MptUpdateRow([
-                    update.key.address(),
-                    update.key.storage_key(randomness),
-                    update.key.proof_type(),
-                    new_root,
-                    old_root,
-                    new_value,
-                    old_value,
-                ])
+                MptUpdateRow {
+                    address_rlc: update.key.address(),
+                    proof_type: update.key.proof_type(),
+                    key_rlc: update.key.storage_key(randomness),
+                    value_prev: old_value,
+                    value: new_value,
+                    root_prev: old_root,
+                    root: new_root,
+                }
             })
             .collect()
     }
@@ -143,8 +151,16 @@ impl Key {
 impl<F: Field> MptUpdateRow<F> {
     /// The individual values of the row, in the column order used by the
     /// MptTable
-    pub fn values(&self) -> impl Iterator<Item = &F> {
-        self.0.iter()
+    pub fn values(&self) -> [F; 7] {
+        [
+            self.address_rlc,
+            self.proof_type,
+            self.key_rlc,
+            self.value_prev,
+            self.value,
+            self.root_prev,
+            self.root,
+        ]
     }
 }
 

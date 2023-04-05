@@ -1,26 +1,137 @@
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::{Region, Value},
-    plonk::Error,
-};
+use eth_types::Field;
 use num_enum::TryFromPrimitive;
 use std::{convert::TryFrom, marker::PhantomData};
 
+use crate::mpt_circuit::param::{
+    ARITY, BRANCH_0_KEY_POS, DRIFTED_POS, IS_ACCOUNT_DELETE_MOD_POS, IS_BALANCE_MOD_POS,
+    IS_BRANCH_C_PLACEHOLDER_POS, IS_BRANCH_S_PLACEHOLDER_POS, IS_CODEHASH_MOD_POS,
+    IS_EXT_LONG_EVEN_C16_POS, IS_EXT_LONG_EVEN_C1_POS, IS_EXT_LONG_ODD_C16_POS,
+    IS_EXT_LONG_ODD_C1_POS, IS_EXT_SHORT_C16_POS, IS_EXT_SHORT_C1_POS, IS_NONCE_MOD_POS,
+    IS_NON_EXISTING_ACCOUNT_POS, IS_STORAGE_MOD_POS, RLP_LIST_LONG, RLP_LIST_SHORT,
+};
 use crate::{
-    mpt_circuit::account_leaf::AccountLeaf,
-    mpt_circuit::branch::Branch,
-    mpt_circuit::helpers::bytes_into_rlc,
     mpt_circuit::param::{
-        COUNTER_WITNESS_LEN, C_RLP_START, C_START, HASH_WIDTH, IS_ACCOUNT_DELETE_MOD_POS,
-        IS_BALANCE_MOD_POS, IS_CODEHASH_MOD_POS, IS_NONCE_MOD_POS, IS_NON_EXISTING_ACCOUNT_POS,
-        IS_NON_EXISTING_STORAGE_POS, IS_STORAGE_MOD_POS, NOT_FIRST_LEVEL_POS, RLP_NUM, S_RLP_START,
-        S_START, WITNESS_ROW_WIDTH,
+        COUNTER_WITNESS_LEN, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, NOT_FIRST_LEVEL_POS,
     },
-    mpt_circuit::storage_leaf::StorageLeaf,
-    mpt_circuit::{MPTConfig, ProofValues},
+    table::ProofType,
 };
 
-#[derive(Eq, PartialEq, TryFromPrimitive)]
+use super::helpers::Indexable;
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StorageRowType {
+    KeyS,
+    ValueS,
+    KeyC,
+    ValueC,
+    Drifted,
+    Wrong,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum AccountRowType {
+    KeyS,
+    KeyC,
+    NonceS,
+    BalanceS,
+    StorageS,
+    CodehashS,
+    NonceC,
+    BalanceC,
+    StorageC,
+    CodehashC,
+    Drifted,
+    Wrong,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum ExtensionBranchRowType {
+    Mod,
+    Child0,
+    Child1,
+    Child2,
+    Child3,
+    Child4,
+    Child5,
+    Child6,
+    Child7,
+    Child8,
+    Child9,
+    Child10,
+    Child11,
+    Child12,
+    Child13,
+    Child14,
+    Child15,
+    KeyS,
+    ValueS,
+    KeyC,
+    ValueC,
+    Count,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum StartRowType {
+    RootS,
+    RootC,
+    Count,
+}
+
+#[derive(Clone, Debug)]
+pub struct BranchNode {
+    pub(crate) modified_index: usize,
+    pub(crate) drifted_index: usize,
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtensionNode {
+    pub(crate) list_rlp_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StartNode {
+    pub(crate) proof_type: ProofType,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExtensionBranchNode {
+    pub(crate) is_extension: bool,
+    pub(crate) is_placeholder: [bool; 2],
+    pub(crate) extension: ExtensionNode,
+    pub(crate) branch: BranchNode,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountNode {
+    pub(crate) address: Vec<u8>,
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) value_list_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) drifted_rlp_bytes: Vec<u8>,
+    pub(crate) wrong_rlp_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StorageNode {
+    pub(crate) list_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) value_rlp_bytes: [Vec<u8>; 2],
+    pub(crate) drifted_rlp_bytes: Vec<u8>,
+    pub(crate) wrong_rlp_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Node {
+    pub(crate) start: Option<StartNode>,
+    pub(crate) extension_branch: Option<ExtensionBranchNode>,
+    pub(crate) account: Option<AccountNode>,
+    pub(crate) storage: Option<StorageNode>,
+    pub(crate) values: Vec<Vec<u8>>,
+}
+
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 pub(crate) enum MptWitnessRowType {
     InitBranch = 0,
@@ -44,17 +155,40 @@ pub(crate) enum MptWitnessRowType {
     StorageNonExisting = 19,
 }
 
+#[derive(Clone, Debug)]
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
+    pub(crate) rlp_bytes: Vec<u8>,
+    pub(crate) is_extension: bool,
+    pub(crate) is_placeholder: [bool; 2],
+    pub(crate) modified_index: usize,
+    pub(crate) drifted_index: usize,
+    pub(crate) proof_type: ProofType,
+    pub(crate) address: Vec<u8>,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> MptWitnessRow<F> {
+impl<F: Field> MptWitnessRow<F> {
     pub fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes,
+            rlp_bytes: Vec::new(),
+            is_extension: false,
+            is_placeholder: [false; 2],
+            modified_index: 0,
+            drifted_index: 0,
+            proof_type: ProofType::Disabled,
+            address: Vec::new(),
             _marker: PhantomData,
         }
+    }
+
+    pub(crate) fn s(&self) -> Vec<u8> {
+        self.bytes[0..34].to_owned()
+    }
+
+    pub(crate) fn c(&self) -> Vec<u8> {
+        self.bytes[34..68].to_owned()
     }
 
     pub(crate) fn get_type(&self) -> MptWitnessRowType {
@@ -104,520 +238,434 @@ impl<F: FieldExt> MptWitnessRow<F> {
                 + HASH_WIDTH]
     }
 
-    pub(crate) fn s_hash_bytes(&self) -> &[u8] {
-        &self.bytes[S_START..S_START + HASH_WIDTH]
-    }
-
-    pub(crate) fn c_hash_bytes(&self) -> &[u8] {
-        &self.bytes[C_START..C_START + HASH_WIDTH]
-    }
-
     pub(crate) fn main(&self) -> &[u8] {
         &self.bytes[0..self.bytes.len() - 1]
     }
+}
 
-    pub(crate) fn assign(
-        &self,
-        region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        account_leaf: AccountLeaf,
-        storage_leaf: StorageLeaf,
-        branch: Branch,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let row = self.main();
-
-        region.assign_advice(
-            || "assign is_branch_init".to_string(),
-            mpt_config.branch.is_init,
-            offset,
-            || Value::known(F::from(branch.is_branch_init as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_branch_child".to_string(),
-            mpt_config.branch.is_child,
-            offset,
-            || Value::known(F::from(branch.is_branch_child as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_s".to_string(),
-            mpt_config.accumulators.acc_s.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_s".to_string(),
-            mpt_config.accumulators.acc_s.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_c".to_string(),
-            mpt_config.accumulators.acc_c.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign acc_mult_c".to_string(),
-            mpt_config.accumulators.acc_c.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        // because used for is_long
-        region.assign_advice(
-            || "assign s_modified_node_rlc".to_string(),
-            mpt_config.accumulators.s_mod_node_rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-        // because used for is_short
-        region.assign_advice(
-            || "assign c_modified_node_rlc".to_string(),
-            mpt_config.accumulators.c_mod_node_rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign is_last_branch_child".to_string(),
-            mpt_config.branch.is_last_child,
-            offset,
-            || Value::known(F::from(branch.is_last_branch_child as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign node_index".to_string(),
-            mpt_config.branch.node_index,
-            offset,
-            || Value::known(F::from(branch.node_index as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign modified node".to_string(),
-            mpt_config.branch.modified_node,
-            offset,
-            || Value::known(F::from(branch.modified_node as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign drifted_pos".to_string(),
-            mpt_config.branch.drifted_pos,
-            offset,
-            || Value::known(F::from(branch.drifted_pos as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_at_drifted_pos".to_string(),
-            mpt_config.branch.is_at_drifted_pos,
-            offset,
-            || Value::known(F::from((branch.drifted_pos == branch.node_index) as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign key rlc".to_string(),
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign key rlc mult".to_string(),
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign mult diff".to_string(),
-            mpt_config.accumulators.mult_diff,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign sel1".to_string(),
-            mpt_config.denoter.sel1,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-        region.assign_advice(
-            || "assign sel2".to_string(),
-            mpt_config.denoter.sel2,
-            offset,
-            || Value::known(F::zero()),
-        )?;
-
-        region.assign_advice(
-            || "assign is_modified".to_string(),
-            mpt_config.branch.is_modified,
-            offset,
-            || Value::known(F::from((branch.modified_node == branch.node_index) as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_leaf_s".to_string(),
-            mpt_config.storage_leaf.is_s_key,
-            offset,
-            || Value::known(F::from(storage_leaf.is_s_key as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is_leaf_c".to_string(),
-            mpt_config.storage_leaf.is_c_key,
-            offset,
-            || Value::known(F::from(storage_leaf.is_c_key as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is_leaf_s_value".to_string(),
-            mpt_config.storage_leaf.is_s_value,
-            offset,
-            || Value::known(F::from(storage_leaf.is_s_value as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is_leaf_c_value".to_string(),
-            mpt_config.storage_leaf.is_c_value,
-            offset,
-            || Value::known(F::from(storage_leaf.is_c_value as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is leaf in added branch".to_string(),
-            mpt_config.storage_leaf.is_in_added_branch,
-            offset,
-            || Value::known(F::from(storage_leaf.is_in_added_branch as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is storage non existing".to_string(),
-            mpt_config.storage_leaf.is_non_existing,
-            offset,
-            || Value::known(F::from(storage_leaf.is_non_existing as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is account leaf key s".to_string(),
-            mpt_config.account_leaf.is_key_s,
-            offset,
-            || Value::known(F::from(account_leaf.is_key_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf key c".to_string(),
-            mpt_config.account_leaf.is_key_c,
-            offset,
-            || Value::known(F::from(account_leaf.is_key_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is non existing account row".to_string(),
-            mpt_config.account_leaf.is_non_existing_account_row,
-            offset,
-            || Value::known(F::from(account_leaf.is_non_existing_account_row as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf nonce balance s".to_string(),
-            mpt_config.account_leaf.is_nonce_balance_s,
-            offset,
-            || Value::known(F::from(account_leaf.is_nonce_balance_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf nonce balance c".to_string(),
-            mpt_config.account_leaf.is_nonce_balance_c,
-            offset,
-            || Value::known(F::from(account_leaf.is_nonce_balance_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf storage codehash s".to_string(),
-            mpt_config.account_leaf.is_storage_codehash_s,
-            offset,
-            || Value::known(F::from(account_leaf.is_storage_codehash_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf storage codehash c".to_string(),
-            mpt_config.account_leaf.is_storage_codehash_c,
-            offset,
-            || Value::known(F::from(account_leaf.is_storage_codehash_c as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is account leaf in added branch".to_string(),
-            mpt_config.account_leaf.is_in_added_branch,
-            offset,
-            || Value::known(F::from(account_leaf.is_in_added_branch as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign is extension node s".to_string(),
-            mpt_config.branch.is_extension_node_s,
-            offset,
-            || Value::known(F::from(branch.is_extension_node_s as u64)),
-        )?;
-        region.assign_advice(
-            || "assign is extension node c".to_string(),
-            mpt_config.branch.is_extension_node_c,
-            offset,
-            || Value::known(F::from(branch.is_extension_node_c as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign s_rlp1".to_string(),
-            mpt_config.s_main.rlp1,
-            offset,
-            || Value::known(F::from(row[0] as u64)),
-        )?;
-
-        region.assign_advice(
-            || "assign s_rlp2".to_string(),
-            mpt_config.s_main.rlp2,
-            offset,
-            || Value::known(F::from(row[1] as u64)),
-        )?;
-
-        for idx in 0..HASH_WIDTH {
-            region.assign_advice(
-                || format!("assign s_advice {}", idx),
-                mpt_config.s_main.bytes[idx],
-                offset,
-                || Value::known(F::from(row[RLP_NUM + idx] as u64)),
-            )?;
+// TODO(Brecht): Do all of this on the MPT proof generation side
+pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> {
+    let mut key_rlp_bytes = Vec::new();
+    for (_, row) in witness
+        .iter_mut()
+        .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+        .enumerate()
+    {
+        // Get the proof type directly
+        if row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
+            row.proof_type = ProofType::StorageChanged;
+        }
+        if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
+            row.proof_type = ProofType::NonceChanged;
+        }
+        if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
+            row.proof_type = ProofType::BalanceChanged;
+        }
+        if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
+            row.proof_type = ProofType::CodeHashExists;
+        }
+        if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
+            row.proof_type = ProofType::AccountDestructed;
+        }
+        if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
+            row.proof_type = ProofType::AccountDoesNotExist;
+        }
+        if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
+            row.proof_type = ProofType::StorageDoesNotExist;
         }
 
-        // not all columns may be needed
-        let get_val = |curr_ind: usize| {
-            let val = if curr_ind >= row.len() {
-                0
+        if row.get_type() == MptWitnessRowType::BranchChild {
+            //println!("- {:?}", row.bytes);
+            let mut child_s_bytes = row.bytes[0..34].to_owned();
+            if child_s_bytes[1] == 160 {
+                child_s_bytes[0] = 0;
+                child_s_bytes.rotate_left(1);
             } else {
-                row[curr_ind]
+                child_s_bytes[0] = 0;
+                child_s_bytes[1] = 0;
+                child_s_bytes.rotate_left(2);
             };
 
-            val as u64
-        };
+            let mut child_c_bytes = row.bytes[34..68].to_owned();
+            if child_c_bytes[1] == 160 {
+                child_c_bytes[0] = 0;
+                child_c_bytes.rotate_left(1);
+            } else {
+                child_c_bytes[0] = 0;
+                child_c_bytes[1] = 0;
+                child_c_bytes.rotate_left(2);
+            };
 
-        region.assign_advice(
-            || "assign c_rlp1".to_string(),
-            mpt_config.c_main.rlp1,
-            offset,
-            || Value::known(F::from(get_val(WITNESS_ROW_WIDTH / 2))),
-        )?;
-        region.assign_advice(
-            || "assign c_rlp2".to_string(),
-            mpt_config.c_main.rlp2,
-            offset,
-            || Value::known(F::from(get_val(WITNESS_ROW_WIDTH / 2 + 1))),
-        )?;
-
-        for (idx, _c) in mpt_config.c_main.bytes.iter().enumerate() {
-            let val = get_val(WITNESS_ROW_WIDTH / 2 + RLP_NUM + idx);
-            region.assign_advice(
-                || format!("assign c_advice {}", idx),
-                mpt_config.c_main.bytes[idx],
-                offset,
-                || Value::known(F::from(val)),
-            )?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn assign_branch_row(
-        &self,
-        region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        pv: &ProofValues<F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let row = self.main();
-
-        let account_leaf = AccountLeaf::default();
-        let storage_leaf = StorageLeaf::default();
-        let branch = Branch {
-            is_branch_child: true,
-            is_last_branch_child: pv.node_index == 15,
-            node_index: pv.node_index,
-            modified_node: pv.modified_node,
-            drifted_pos: pv.drifted_pos,
-            ..Default::default()
-        };
-
-        self.assign(
-            region,
-            mpt_config,
-            account_leaf,
-            storage_leaf,
-            branch,
-            offset,
-        )?;
-
-        region.assign_advice(
-            || "s_mod_node_hash_rlc",
-            mpt_config.accumulators.s_mod_node_rlc,
-            offset,
-            || Value::known(pv.s_mod_node_hash_rlc),
-        )?;
-        region.assign_advice(
-            || "c_mod_node_hash_rlc",
-            mpt_config.accumulators.c_mod_node_rlc,
-            offset,
-            || Value::known(pv.c_mod_node_hash_rlc),
-        )?;
-
-        region.assign_advice(
-            || "key rlc",
-            mpt_config.accumulators.key.rlc,
-            offset,
-            || Value::known(pv.key_rlc),
-        )?;
-        region.assign_advice(
-            || "key rlc mult",
-            mpt_config.accumulators.key.mult,
-            offset,
-            || Value::known(pv.key_rlc_mult),
-        )?;
-        region.assign_advice(
-            || "mult diff",
-            mpt_config.accumulators.mult_diff,
-            offset,
-            || Value::known(pv.mult_diff),
-        )?;
-
-        region.assign_advice(
-            || "s_rlp1",
-            mpt_config.s_main.rlp1,
-            offset,
-            || Value::known(F::from(pv.rlp_len_rem_s as u64)),
-        )?;
-        region.assign_advice(
-            || "c_rlp1",
-            mpt_config.c_main.rlp1,
-            offset,
-            || Value::known(F::from(pv.rlp_len_rem_c as u64)),
-        )?;
-
-        region.assign_advice(
-            || "is_node_hashed_s",
-            mpt_config.denoter.is_node_hashed_s,
-            offset,
-            || {
-                Value::known(F::from(
-                    (row[S_RLP_START + 1] == 0 && row[S_START] > 192) as u64,
-                ))
-            },
-        )?;
-        region.assign_advice(
-            || "is_node_hashed_c",
-            mpt_config.denoter.is_node_hashed_c,
-            offset,
-            || {
-                Value::known(F::from(
-                    (row[C_RLP_START + 1] == 0 && row[C_START] > 192) as u64,
-                ))
-            },
-        )?;
-
-        Ok(())
-    }
-
-    /*
-    Assignment of the columns that are used for all lookups. There are other columns used for
-    lookups which are lookup-specific (for example requiring old and new nonce value).
-    */
-    pub(crate) fn assign_lookup_columns(
-        &self,
-        region: &mut Region<'_, F>,
-        mpt_config: &MPTConfig<F>,
-        pv: &ProofValues<F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        let s_root_rlc = bytes_into_rlc(self.s_root_bytes(), mpt_config.randomness);
-        let c_root_rlc = bytes_into_rlc(self.c_root_bytes(), mpt_config.randomness);
-
-        region.assign_advice(
-            || "inter start root",
-            mpt_config.inter_start_root,
-            offset,
-            || Value::known(s_root_rlc),
-        )?;
-        region.assign_advice(
-            || "inter final root",
-            mpt_config.inter_final_root,
-            offset,
-            || Value::known(c_root_rlc),
-        )?;
-
-        if pv.before_account_leaf {
-            region.assign_advice(
-                || "address RLC",
-                mpt_config.address_rlc,
-                offset,
-                || Value::known(F::zero()),
-            )?;
-        } else {
-            /*
-            `address_rlc` can be set only in the account leaf row - this is to
-            prevent omitting account proof (and having only storage proof
-            with the appropriate address RLC)
-            */
-            let address_rlc = bytes_into_rlc(self.address_bytes(), mpt_config.randomness);
-
-            region.assign_advice(
-                || "address RLC",
-                mpt_config.address_rlc,
-                offset,
-                || Value::known(address_rlc),
-            )?;
+            row.bytes = [
+                child_s_bytes.clone(),
+                child_c_bytes.clone(),
+                row.bytes[68..].to_owned(),
+            ]
+            .concat();
+            //println!("+ {:?}", row.bytes);
         }
 
-        region.assign_advice(
-            || "is_storage_mod",
-            mpt_config.proof_type.is_storage_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_STORAGE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_nonce_mod",
-            mpt_config.proof_type.is_nonce_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_NONCE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_balance_mod",
-            mpt_config.proof_type.is_balance_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_BALANCE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_codehash_mod",
-            mpt_config.proof_type.is_codehash_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_CODEHASH_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_account_delete_mod",
-            mpt_config.proof_type.is_account_delete_mod,
-            offset,
-            || Value::known(F::from(self.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) as u64)),
-        )?;
-        region.assign_advice(
-            || "is_non_existing_account",
-            mpt_config.proof_type.is_non_existing_account_proof,
-            offset,
-            || {
-                Value::known(F::from(
-                    self.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) as u64
-                ))
-            },
-        )?;
-        region.assign_advice(
-            || "is_non_existing_storage",
-            mpt_config.proof_type.is_non_existing_storage_proof,
-            offset,
-            || {
-                Value::known(F::from(
-                    self.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) as u64
-                ))
-            },
-        )?;
+        if row.get_type() == MptWitnessRowType::ExtensionNodeS
+            || row.get_type() == MptWitnessRowType::ExtensionNodeC
+        {
+            //println!("- {:?}", row.bytes);
+            let mut value_bytes = row.bytes[34..68].to_owned();
+            if value_bytes[1] == 160 {
+                value_bytes[0] = 0;
+                value_bytes.rotate_left(1);
+            } else {
+                value_bytes[0] = 0;
+                value_bytes[1] = 0;
+                value_bytes.rotate_left(2);
+            };
+            row.bytes = [
+                row.bytes[0..34].to_owned(),
+                value_bytes.clone(),
+                row.bytes[68..].to_owned(),
+            ]
+            .concat();
+            //println!("+ {:?}", row.bytes);
+        }
 
-        Ok(())
+        // Separate the list rlp bytes from the key bytes
+        if row.get_type() == MptWitnessRowType::StorageLeafSKey
+            || row.get_type() == MptWitnessRowType::StorageLeafCKey
+            || row.get_type() == MptWitnessRowType::StorageNonExisting
+            || row.get_type() == MptWitnessRowType::NeighbouringStorageLeaf
+            || row.get_type() == MptWitnessRowType::AccountLeafKeyS
+            || row.get_type() == MptWitnessRowType::AccountLeafKeyC
+            || row.get_type() == MptWitnessRowType::AccountNonExisting
+            || row.get_type() == MptWitnessRowType::AccountLeafNeighbouringLeaf
+            || row.get_type() == MptWitnessRowType::ExtensionNodeS
+        {
+            let len = if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                34
+            } else {
+                36
+            };
+            let mut key_bytes = row.bytes[0..len].to_owned();
+
+            // Currently the list rlp bytes are dropped for non-key row, restore them here
+            if key_bytes[0] < RLP_LIST_SHORT && row.get_type() != MptWitnessRowType::ExtensionNodeS
+            {
+                for idx in 0..key_rlp_bytes.len() {
+                    key_bytes[idx] = key_rlp_bytes[idx];
+                }
+            }
+
+            const RLP_LIST_LONG_1: u8 = RLP_LIST_LONG + 1;
+            const RLP_LIST_LONG_2: u8 = RLP_LIST_LONG + 2;
+            let mut is_short = false;
+            let mut is_long = false;
+            let mut is_very_long = false;
+            let mut is_string = false;
+            match key_bytes[0] {
+                RLP_LIST_SHORT..=RLP_LIST_LONG => is_short = true,
+                RLP_LIST_LONG_1 => is_long = true,
+                RLP_LIST_LONG_2 => is_very_long = true,
+                _ => is_string = true,
+            }
+
+            let num_rlp_bytes = if is_short {
+                1
+            } else if is_long {
+                2
+            } else if is_very_long {
+                3
+            } else {
+                if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                    0
+                } else if is_string {
+                    unreachable!()
+                } else {
+                    unreachable!()
+                }
+            };
+
+            //println!("bytes: {:?}", key_bytes);
+            row.rlp_bytes = key_bytes[..num_rlp_bytes].to_vec();
+            for byte in key_bytes[..num_rlp_bytes].iter_mut() {
+                *byte = 0;
+            }
+            key_bytes.rotate_left(num_rlp_bytes);
+            row.bytes = [key_bytes.clone(), row.bytes[len..].to_owned()].concat();
+
+            if row.get_type() == MptWitnessRowType::AccountLeafKeyS
+                || row.get_type() == MptWitnessRowType::StorageLeafSKey
+            {
+                key_rlp_bytes = row.rlp_bytes.clone();
+            }
+
+            //println!("list : {:?}", row.rlp_bytes);
+            //println!("key  : {:?}", row.bytes);
+        }
+
+        // Separate the RLP bytes and shift the value bytes to the start of the row
+        if row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceS
+            || row.get_type() == MptWitnessRowType::AccountLeafNonceBalanceC
+        {
+            row.rlp_bytes = [row.bytes[..2].to_owned(), row.bytes[34..36].to_owned()].concat();
+
+            let nonce = row.bytes[2..34].to_owned();
+            let balance = row.bytes[36..68].to_owned();
+
+            row.bytes = [
+                nonce,
+                vec![0; 2],
+                balance,
+                vec![0; 2],
+                row.bytes[68..].to_owned(),
+            ]
+            .concat();
+        }
+
+        // Shift the value bytes to the start of the row
+        if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
+            || row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
+        {
+            let storage_root = row.bytes[1..34].to_owned();
+            let codehash = row.bytes[35..68].to_owned();
+
+            row.bytes = [
+                storage_root,
+                vec![0; 1],
+                codehash,
+                vec![0; 1],
+                row.bytes[68..].to_owned(),
+            ]
+            .concat();
+        }
+
+        if row.get_type() == MptWitnessRowType::InitBranch {
+            // Extract the RLP bytes
+            row.rlp_bytes = [row.bytes[4..7].to_owned(), row.bytes[7..10].to_owned()].concat();
+
+            // Store a single value that the branch is an extension node or not
+            row.is_extension = row.get_byte(IS_EXT_LONG_ODD_C16_POS)
+                + row.get_byte(IS_EXT_LONG_ODD_C1_POS)
+                + row.get_byte(IS_EXT_SHORT_C16_POS)
+                + row.get_byte(IS_EXT_SHORT_C1_POS)
+                + row.get_byte(IS_EXT_LONG_EVEN_C16_POS)
+                + row.get_byte(IS_EXT_LONG_EVEN_C1_POS)
+                == 1;
+            row.is_placeholder = [
+                row.get_byte(IS_BRANCH_S_PLACEHOLDER_POS) == 1,
+                row.get_byte(IS_BRANCH_C_PLACEHOLDER_POS) == 1,
+            ];
+            row.modified_index = row.get_byte(BRANCH_0_KEY_POS) as usize;
+            row.drifted_index = row.get_byte(DRIFTED_POS) as usize;
+            // Move the modified branch into the init row
+            row.bytes = [vec![0; 68], row.bytes[68..].to_owned()].concat();
+        }
+
+        // Shift the value bytes to the start of the row
+        if row.get_type() == MptWitnessRowType::StorageLeafSValue
+            || row.get_type() == MptWitnessRowType::StorageLeafCValue
+        {
+            row.rlp_bytes = vec![row.bytes[0]];
+            row.bytes = [row.bytes[1..].to_owned()].concat();
+        }
     }
+
+    let cached_witness = witness.to_owned();
+    for (idx, row) in witness
+        .iter_mut()
+        .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+        .enumerate()
+    {
+        if row.get_type() == MptWitnessRowType::InitBranch {
+            // Move the modified branch into the init row
+            let mod_bytes = cached_witness[idx + 1 + row.modified_index].c();
+            row.bytes = [mod_bytes, row.bytes[34..].to_owned()].concat();
+        }
+    }
+
+    let mut nodes = Vec::new();
+    let witness = witness
+        .iter()
+        .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
+        .collect::<Vec<_>>();
+    let mut offset = 0;
+    while offset < witness.len() {
+        //println!("offset: {}", offset);
+        let mut new_proof = offset == 0;
+        if offset > 0 {
+            let row_prev = witness[offset - 1].clone();
+            let not_first_level_prev = row_prev.not_first_level();
+            let not_first_level_cur = witness[offset].not_first_level();
+            if not_first_level_cur == 0 && not_first_level_prev == 1 {
+                new_proof = true;
+            }
+        }
+
+        if new_proof {
+            let mut new_row = witness[offset].clone();
+            new_row.bytes = [
+                vec![160; 1],
+                new_row.s_root_bytes().to_owned(),
+                vec![0; 1],
+                vec![160; 1],
+                new_row.c_root_bytes().to_owned(),
+                vec![0; 1],
+            ]
+            .concat();
+
+            let mut node_rows = vec![Vec::new(); StartRowType::Count as usize];
+            node_rows[StartRowType::RootS as usize] = new_row.s();
+            node_rows[StartRowType::RootC as usize] = new_row.c();
+
+            let start_node = StartNode {
+                proof_type: new_row.proof_type.clone(),
+            };
+            let mut node = Node::default();
+            node.start = Some(start_node);
+            node.values = node_rows;
+            nodes.push(node);
+        }
+
+        if witness[offset].get_type() == MptWitnessRowType::InitBranch {
+            let row_init = witness[offset].to_owned();
+            let is_placeholder = row_init.is_placeholder.clone();
+            let is_extension = row_init.is_extension;
+            let modified_index = row_init.modified_index;
+            let mut drifted_index = row_init.drifted_index;
+            // If no placeholder branch, we set `drifted_pos = modified_node`. This
+            // is needed just to make some other constraints (`s_mod_node_hash_rlc`
+            // and `c_mod_node_hash_rlc` correspond to the proper node) easier to write.
+            if !is_placeholder[true.idx()] && !is_placeholder[false.idx()] {
+                drifted_index = modified_index;
+            }
+            let branch_list_rlp_bytes = [
+                row_init.rlp_bytes[0..3].to_owned(),
+                row_init.rlp_bytes[3..6].to_owned(),
+            ];
+            let child_bytes: [Vec<u8>; ARITY + 1] =
+                array_init::array_init(|i| witness[offset + i].s());
+            let ext_list_rlp_bytes = witness[offset + 17].rlp_bytes.to_owned();
+
+            let mut node_rows = vec![Vec::new(); ExtensionBranchRowType::Count as usize];
+            for idx in 0..ARITY + 1 {
+                node_rows[idx] = child_bytes[idx].clone();
+            }
+            node_rows[ExtensionBranchRowType::KeyS as usize] = witness[offset + 17].s();
+            node_rows[ExtensionBranchRowType::ValueS as usize] = witness[offset + 17].c();
+            node_rows[ExtensionBranchRowType::KeyC as usize] = witness[offset + 18].s();
+            node_rows[ExtensionBranchRowType::ValueC as usize] = witness[offset + 18].c();
+            offset += 19;
+
+            let extension_branch_node = ExtensionBranchNode {
+                is_extension,
+                is_placeholder,
+                extension: ExtensionNode {
+                    list_rlp_bytes: ext_list_rlp_bytes,
+                },
+                branch: BranchNode {
+                    modified_index,
+                    drifted_index,
+                    list_rlp_bytes: branch_list_rlp_bytes,
+                },
+            };
+            let mut node = Node::default();
+            node.extension_branch = Some(extension_branch_node);
+            node.values = node_rows;
+            nodes.push(node);
+        } else if witness[offset].get_type() == MptWitnessRowType::StorageLeafSKey {
+            let row_key = [&witness[offset + 0], &witness[offset + 2]];
+            let row_value = [&witness[offset + 1], &witness[offset + 3]];
+            let row_drifted = &witness[offset + 4];
+            let row_wrong = &witness[offset + 5];
+            offset += 6;
+
+            let list_rlp_bytes = [
+                row_key[true.idx()].rlp_bytes.to_owned(),
+                row_key[false.idx()].rlp_bytes.to_owned(),
+            ];
+            let value_rlp_bytes = [
+                row_value[true.idx()].rlp_bytes.to_owned(),
+                row_value[false.idx()].rlp_bytes.to_owned(),
+            ];
+            let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
+            let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
+
+            let mut node_rows = vec![Vec::new(); StorageRowType::Count as usize];
+            node_rows[StorageRowType::KeyS as usize] = row_key[true.idx()].s();
+            node_rows[StorageRowType::ValueS as usize] = row_value[true.idx()].s();
+            node_rows[StorageRowType::KeyC as usize] = row_key[false.idx()].s();
+            node_rows[StorageRowType::ValueC as usize] = row_value[false.idx()].s();
+            node_rows[StorageRowType::Drifted as usize] = row_drifted.s();
+            node_rows[StorageRowType::Wrong as usize] = row_wrong.s();
+
+            let storage_node = StorageNode {
+                list_rlp_bytes,
+                value_rlp_bytes,
+                drifted_rlp_bytes,
+                wrong_rlp_bytes,
+            };
+            let mut node = Node::default();
+            node.storage = Some(storage_node);
+            node.values = node_rows;
+            nodes.push(node);
+        } else if witness[offset].get_type() == MptWitnessRowType::AccountLeafKeyS {
+            let key_s = witness[offset].to_owned();
+            let key_c = witness[offset + 1].to_owned();
+            let nonce_balance_s = witness[offset + 3].to_owned();
+            let nonce_balance_c = witness[offset + 4].to_owned();
+            let storage_codehash_s = witness[offset + 5].to_owned();
+            let storage_codehash_c = witness[offset + 6].to_owned();
+            let row_drifted = witness[offset + 7].to_owned();
+            let row_wrong = witness[offset + 2].to_owned();
+            let address = witness[offset].address_bytes().to_owned();
+            offset += 8;
+
+            let list_rlp_bytes = [key_s.rlp_bytes.to_owned(), key_c.rlp_bytes.to_owned()];
+            let value_rlp_bytes = [
+                nonce_balance_s.rlp_bytes[..2].to_owned(),
+                nonce_balance_c.rlp_bytes[..2].to_owned(),
+            ];
+            let value_list_rlp_bytes = [
+                nonce_balance_s.rlp_bytes[2..].to_owned(),
+                nonce_balance_c.rlp_bytes[2..].to_owned(),
+            ];
+            let drifted_rlp_bytes = row_drifted.rlp_bytes.clone();
+            let wrong_rlp_bytes = row_wrong.rlp_bytes.clone();
+
+            let mut node_rows = vec![Vec::new(); AccountRowType::Count as usize];
+            node_rows[AccountRowType::KeyS as usize] = key_s.s();
+            node_rows[AccountRowType::KeyC as usize] = key_c.s();
+            node_rows[AccountRowType::NonceS as usize] = nonce_balance_s.s();
+            node_rows[AccountRowType::BalanceS as usize] = nonce_balance_s.c();
+            node_rows[AccountRowType::StorageS as usize] = storage_codehash_s.s();
+            node_rows[AccountRowType::CodehashS as usize] = storage_codehash_s.c();
+            node_rows[AccountRowType::NonceC as usize] = nonce_balance_c.s();
+            node_rows[AccountRowType::BalanceC as usize] = nonce_balance_c.c();
+            node_rows[AccountRowType::StorageC as usize] = storage_codehash_c.s();
+            node_rows[AccountRowType::CodehashC as usize] = storage_codehash_c.c();
+            node_rows[AccountRowType::Drifted as usize] = row_drifted.s();
+            node_rows[AccountRowType::Wrong as usize] = row_wrong.s();
+
+            let account_node = AccountNode {
+                address,
+                list_rlp_bytes,
+                value_rlp_bytes,
+                value_list_rlp_bytes,
+                drifted_rlp_bytes,
+                wrong_rlp_bytes,
+            };
+            let mut node = Node::default();
+            node.account = Some(account_node);
+            node.values = node_rows;
+            nodes.push(node);
+        }
+    }
+
+    // Dummy end state
+    let start_node = StartNode {
+        proof_type: ProofType::Disabled,
+    };
+    let mut node = Node::default();
+    node.start = Some(start_node);
+    node.values = vec![vec![0; 34]; StartRowType::Count as usize];
+    nodes.push(node);
+
+    nodes
 }

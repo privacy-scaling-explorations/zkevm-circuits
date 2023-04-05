@@ -1,13 +1,14 @@
 //! Table definitions used cross-circuits
 
+use crate::circuit_tools::constraint_builder::ConstraintBuilder;
 use crate::copy_circuit::number_or_hash_to_field;
 use crate::evm_circuit::util::{rlc, RandomLinearCombination};
-use crate::impl_expr;
 use crate::util::build_tx_log_address;
 use crate::util::Challenges;
 use crate::witness::{
     Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
 };
+use crate::{circuit, impl_expr};
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
@@ -429,7 +430,10 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
+#[derive(Clone, Copy, Debug)]
 pub enum ProofType {
+    /// Disabled
+    Disabled,
     /// Nonce updated
     NonceChanged = AccountFieldTag::Nonce as isize,
     /// Balance updated
@@ -442,6 +446,8 @@ pub enum ProofType {
     AccountDoesNotExist,
     /// Storage updated
     StorageChanged,
+    /// Storage does not exist
+    StorageDoesNotExist,
 }
 impl_expr!(ProofType);
 
@@ -457,18 +463,72 @@ impl From<AccountFieldTag> for ProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable([Column<Advice>; 7]);
+pub struct MptTable {
+    /// Account address
+    pub address_rlc: Column<Advice>,
+    /// Proof type
+    pub proof_type: Column<Advice>,
+    /// Storage address
+    pub key_rlc: Column<Advice>,
+    /// Old value
+    pub value_prev: Column<Advice>,
+    /// New value
+    pub value: Column<Advice>,
+    /// Previous MPT root
+    pub root_prev: Column<Advice>,
+    /// New MPT root
+    pub root: Column<Advice>,
+}
 
 impl DynamicTableColumns for MptTable {
     fn columns(&self) -> Vec<Column<Advice>> {
-        self.0.to_vec()
+        vec![
+            self.address_rlc,
+            self.proof_type,
+            self.key_rlc,
+            self.value_prev,
+            self.value,
+            self.root_prev,
+            self.root,
+        ]
     }
 }
 
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([0; 7].map(|_| meta.advice_column()))
+        Self {
+            address_rlc: meta.advice_column(),
+            proof_type: meta.advice_column(),
+            key_rlc: meta.advice_column(),
+            value_prev: meta.advice_column(),
+            value: meta.advice_column(),
+            root_prev: meta.advice_column(),
+            root: meta.advice_column(),
+        }
+    }
+
+    pub(crate) fn constrain<F: Field>(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+        cb: &mut ConstraintBuilder<F>,
+        address_rlc: Expression<F>,
+        proof_type: Expression<F>,
+        key_rlc: Expression<F>,
+        value_prev: Expression<F>,
+        value: Expression<F>,
+        root_prev: Expression<F>,
+        root: Expression<F>,
+    ) {
+        circuit!([meta, cb], {
+            require!(a!(self.proof_type) => proof_type);
+            require!(a!(self.address_rlc) => address_rlc);
+            require!(a!(self.key_rlc) => key_rlc);
+            require!(a!(self.value_prev) => value_prev);
+            require!(a!(self.value) => value);
+            require!(a!(self.root_prev) => root_prev);
+            require!(a!(self.root) => root);
+        })
     }
 
     pub(crate) fn assign<F: Field>(
@@ -477,12 +537,12 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<F>,
     ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row.values()) {
+        for (column, value) in self.columns().iter().zip_eq(row.values()) {
             region.assign_advice(
                 || "assign mpt table row value",
                 *column,
                 offset,
-                || Value::known(*value),
+                || Value::known(value),
             )?;
         }
         Ok(())
