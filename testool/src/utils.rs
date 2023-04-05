@@ -158,15 +158,9 @@ pub fn current_submodule_git_commit() -> Result<String> {
     let git_cmd = Command::new("git")
         .args(&["ls-tree", "HEAD"])
         .stdout(Stdio::piped())
-        .spawn();
-
-    let grep_cmd = Command::new("grep")
-        .args(&["-m1", "commit"])
-        .stdin(Stdio::from(git_cmd.unwrap().stdout.unwrap()))
-        .stdout(Stdio::piped())
         .output()?;
 
-    match String::from_utf8(grep_cmd.stdout)?
+    match String::from_utf8(git_cmd.stdout)?
         .lines()
         .filter_map(|l| l.strip_suffix("\ttests").and_then(|l| l.split(' ').nth(2)))
         .next()
