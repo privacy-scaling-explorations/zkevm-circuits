@@ -15,6 +15,15 @@ use serde_with::serde_as;
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 
+pub mod block;
+pub mod call;
+pub mod step;
+pub mod tx;
+
+pub use block::ZkEvmBlock;
+pub use call::ZkEvmCall;
+pub use step::ZkEvmExecStep;
+pub use tx::ZkEvmTransaction;
 /// Definition of all of the data related to an account.
 #[serde_as]
 #[derive(PartialEq, Eq, Debug, Default, Clone, Serialize)]
