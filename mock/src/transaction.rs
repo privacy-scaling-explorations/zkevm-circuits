@@ -1,15 +1,13 @@
 //! Mock Transaction definition and builder related methods.
 
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
-use eth_types::word;
 use eth_types::{
-    geth_types::Transaction as GethTransaction, AccessList, Address, Bytes, Hash, Transaction,
-    Word, U64,
+    geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
+    Transaction, Word, U64,
 };
-use ethers_core::types::OtherFields;
 use ethers_core::{
     rand::{CryptoRng, RngCore},
-    types::TransactionRequest,
+    types::{OtherFields, TransactionRequest},
 };
 use ethers_signers::{LocalWallet, Signer};
 use lazy_static::lazy_static;
@@ -45,7 +43,15 @@ lazy_static! {
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
-            .build()]
+            .build(),
+            MockTransaction::default()
+            .from(AddrOrWallet::random(&mut rng))
+            .to(MOCK_ACCOUNTS[0])
+            .nonce(word!("0x106"))
+            .value(word!("0x3e8"))
+            .gas_price(word!("0x4d2"))
+            .input(Bytes::from(b"hello"))
+            .build(),]
     };
 }
 

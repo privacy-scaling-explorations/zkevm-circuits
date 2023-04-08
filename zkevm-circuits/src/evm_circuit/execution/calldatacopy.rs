@@ -45,9 +45,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let memory_offset = cb.query_cell();
-        let data_offset = cb.query_rlc();
-        let length = cb.query_rlc();
+        let memory_offset = cb.query_cell_phase2();
+        let data_offset = cb.query_word_rlc();
+        let length = cb.query_word_rlc();
 
         // Pop memory_offset, data_offset, length from stack
         cb.stack_pop(memory_offset.expr());
@@ -97,11 +97,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Calculate the next memory size and the gas cost for this memory
         // access
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -176,9 +172,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let [memory_offset, data_offset, length] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
                 .map(|idx| block.rws[idx].stack_value());
-        let memory_address =
-            self.memory_address
-                .assign(region, offset, memory_offset, length, block.randomness)?;
+        let memory_address = self
+            .memory_address
+            .assign(region, offset, memory_offset, length)?;
         self.data_offset.assign(
             region,
             offset,
@@ -253,7 +249,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{bytecode, ToWord, Word};
     use mock::test_ctx::{helpers::*, TestContext};
 
@@ -287,7 +284,12 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_calldata: 600,
+                ..CircuitsParams::default()
+            })
+            .run();
     }
 
     fn test_ok_internal(
@@ -343,7 +345,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, None), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

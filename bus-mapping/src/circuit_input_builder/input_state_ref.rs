@@ -2,7 +2,8 @@
 
 use super::{
     get_call_memory_offset_length, get_create_init_code, Block, BlockContext, Call, CallContext,
-    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, Transaction, TransactionContext,
+    CallKind, CodeSource, CopyEvent, ExecState, ExecStep, ExpEvent, Transaction,
+    TransactionContext,
 };
 use crate::{
     error::{get_step_reported_error, ExecError},
@@ -19,7 +20,7 @@ use eth_types::{
     evm_types::{
         gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -99,6 +100,9 @@ impl<'a> CircuitInputStateRef<'a> {
     /// bus-mapping instance of the current [`ExecStep`].  Then increase the
     /// block_ctx [`RWCounter`](crate::operation::RWCounter) by one.
     pub fn push_op<T: Op>(&mut self, step: &mut ExecStep, rw: RW, op: T) {
+        if let OpEnum::Account(op) = op.clone().into_enum() {
+            self.check_update_sdb_account(rw, &op)
+        }
         let op_ref =
             self.block
                 .container
@@ -161,24 +165,18 @@ impl<'a> CircuitInputStateRef<'a> {
     /// This method should be used in `Opcode::gen_associated_ops` instead of
     /// `push_op` when the operation is `RW::WRITE` and it can be reverted (for
     /// example, a write [`StorageOp`](crate::operation::StorageOp)).
-    pub fn push_op_reversible<T: Op>(
-        &mut self,
-        step: &mut ExecStep,
-        rw: RW,
-        op: T,
-    ) -> Result<(), Error> {
-        if matches!(rw, RW::WRITE) {
-            self.apply_op(&op.clone().into_enum());
-        }
+    pub fn push_op_reversible<T: Op>(&mut self, step: &mut ExecStep, op: T) -> Result<(), Error> {
+        self.check_apply_op(&op.clone().into_enum());
         let op_ref = self.block.container.insert(Operation::new_reversible(
             self.block_ctx.rwc.inc_pre(),
-            rw,
+            RW::WRITE,
             op,
         ));
         step.bus_mapping_instance.push(op_ref);
 
         // Increase reversible_write_counter
         self.call_ctx_mut()?.reversible_write_counter += 1;
+        step.reversible_write_counter_delta += 1;
 
         // Add the operation into reversible_ops if this call is not persistent
         if !self.call()?.is_persistent {
@@ -261,6 +259,72 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    /// First check the validity and consistency of the rw operation against the
+    /// account in the StateDB, then if the rw operation is a write, apply
+    /// it to the corresponding account in the StateDB.
+    fn check_update_sdb_account(&mut self, rw: RW, op: &AccountOp) {
+        let account = self.sdb.get_account_mut(&op.address).1;
+        // -- sanity check begin --
+        // Verify that a READ doesn't change the field value
+        if matches!(rw, RW::READ) && op.value_prev != op.value {
+            panic!(
+                "RWTable Account field read where value_prev != value rwc: {}, op: {:?}",
+                self.block_ctx.rwc.0, op
+            )
+        }
+        // NOTE: In the State Circuit we use code_hash=0 to encode non-existing
+        // accounts, but the corresponding account in the state DB is empty
+        // (which means code_hash=EMPTY_HASH).
+        let account_value_prev = match op.field {
+            AccountField::Nonce => account.nonce,
+            AccountField::Balance => account.balance,
+            AccountField::CodeHash => {
+                if account.is_empty() {
+                    if op.value.is_zero() {
+                        // Writing code_hash=0 to empty account is a noop to the StateDB.
+                        return;
+                    }
+                    // Reading a code_hash=EMPTY_HASH of an empty account in the StateDB is encoded
+                    // as code_hash=0 (non-existing account encoding) in the State Circuit.
+                    Word::zero()
+                } else {
+                    account.code_hash.to_word()
+                }
+            }
+        };
+
+        // Verify that the previous value matches the account field value in the StateDB
+        if op.value_prev != account_value_prev {
+            panic!(
+                "RWTable Account field {:?} lookup doesn't match account value
+        account: {:?}, rwc: {}, op: {:?}",
+                rw, account, self.block_ctx.rwc.0, op
+            );
+        }
+        // Verify that no read is done to a field other than CodeHash to a non-existing
+        // account (only CodeHash reads with value=0 can be done to non-existing
+        // accounts, which the State Circuit translates to MPT
+        // AccountNonExisting proofs lookups).
+        if (!matches!(op.field, AccountField::CodeHash)
+            && (matches!(rw, RW::READ) || (op.value_prev.is_zero() && op.value.is_zero())))
+            && account.is_empty()
+        {
+            panic!(
+                "RWTable Account field {:?} lookup to non-existing account rwc: {}, op: {:?}",
+                rw, self.block_ctx.rwc.0, op
+            );
+        }
+        // -- sanity check end --
+        // Perform the write to the account in the StateDB
+        if matches!(rw, RW::WRITE) {
+            match op.field {
+                AccountField::Nonce => account.nonce = op.value,
+                AccountField::Balance => account.balance = op.value,
+                AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
+            }
+        }
+    }
+
     /// Push a read type [`AccountOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the
     /// next [`RWCounter`](crate::operation::RWCounter), and then
@@ -273,14 +337,9 @@ impl<'a> CircuitInputStateRef<'a> {
         address: Address,
         field: AccountField,
         value: Word,
-        value_prev: Word,
-    ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::READ,
-            AccountOp::new(address, field, value, value_prev),
-        );
-        Ok(())
+    ) {
+        let op = AccountOp::new(address, field, value, value);
+        self.push_op(step, RW::READ, op);
     }
 
     /// Push a write type [`AccountOp`] into the
@@ -297,11 +356,8 @@ impl<'a> CircuitInputStateRef<'a> {
         value: Word,
         value_prev: Word,
     ) -> Result<(), Error> {
-        self.push_op(
-            step,
-            RW::WRITE,
-            AccountOp::new(address, field, value, value_prev),
-        );
+        let op = AccountOp::new(address, field, value, value_prev);
+        self.push_op(step, RW::WRITE, op);
         Ok(())
     }
 
@@ -406,24 +462,77 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push 2 reversible [`AccountOp`] to update `sender` and `receiver`'s
-    /// balance by `value`, with `sender` being extraly charged with `fee`.
+    /// balance by `value`. If `fee` is existing (not None), also need to push 1
+    /// non-reversible [`AccountOp`] to update `sender` balance by `fee`.
+    #[allow(clippy::too_many_arguments)]
     pub fn transfer_with_fee(
         &mut self,
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
         value: Word,
-        fee: Word,
+        fee: Option<Word>,
     ) -> Result<(), Error> {
         let (found, sender_account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
         }
-        let sender_balance_prev = sender_account.balance;
-        let sender_balance = sender_account.balance - value - fee;
+        let mut sender_balance_prev = sender_account.balance;
+        debug_assert!(
+            sender_account.balance >= value + fee.unwrap_or_default(),
+            "invalid amount balance {:?} value {:?} fee {:?}",
+            sender_balance_prev,
+            value,
+            fee
+        );
+        if let Some(fee) = fee {
+            let sender_balance = sender_balance_prev - fee;
+            log::trace!(
+                "sender balance update with fee (not reversible): {:?} {:?}->{:?}",
+                sender,
+                sender_balance_prev,
+                sender_balance
+            );
+            self.push_op(
+                step,
+                RW::WRITE,
+                AccountOp {
+                    address: sender,
+                    field: AccountField::Balance,
+                    value: sender_balance,
+                    value_prev: sender_balance_prev,
+                },
+            );
+            sender_balance_prev = sender_balance;
+        }
+        let sender_balance = sender_balance_prev - value;
+        log::trace!(
+            "sender balance update with value: {:?} {:?}->{:?}",
+            sender,
+            sender_balance_prev,
+            sender_balance
+        );
+        // If receiver doesn't exist, create it
+        if (!receiver_exists && !value.is_zero()) || must_create {
+            self.push_op_reversible(
+                step,
+                AccountOp {
+                    address: receiver,
+                    field: AccountField::CodeHash,
+                    value: CodeDB::empty_code_hash().to_word(),
+                    value_prev: Word::zero(),
+                },
+            )?;
+        }
+        if value.is_zero() {
+            // Skip transfer if value == 0
+            return Ok(());
+        }
+
         self.push_op_reversible(
             step,
-            RW::WRITE,
             AccountOp {
                 address: sender,
                 field: AccountField::Balance,
@@ -437,7 +546,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let receiver_balance = receiver_account.balance + value;
         self.push_op_reversible(
             step,
-            RW::WRITE,
             AccountOp {
                 address: receiver,
                 field: AccountField::Balance,
@@ -455,9 +563,19 @@ impl<'a> CircuitInputStateRef<'a> {
         step: &mut ExecStep,
         sender: Address,
         receiver: Address,
+        receiver_exists: bool,
+        must_create: bool,
         value: Word,
     ) -> Result<(), Error> {
-        self.transfer_with_fee(step, sender, receiver, value, Word::zero())
+        self.transfer_with_fee(
+            step,
+            sender,
+            receiver,
+            receiver_exists,
+            must_create,
+            value,
+            None,
+        )
     }
 
     /// Fetch and return code for the given code hash from the code DB.
@@ -474,6 +592,13 @@ impl<'a> CircuitInputStateRef<'a> {
         self.tx_ctx
             .caller_index()
             .map(|caller_idx| &self.tx.calls()[caller_idx])
+    }
+
+    /// Mutable reference to the current call's caller Call
+    pub fn caller_mut(&mut self) -> Result<&mut Call, Error> {
+        self.tx_ctx
+            .caller_index()
+            .map(|caller_idx| &mut self.tx.calls_mut()[caller_idx])
     }
 
     /// Reference to the current Call
@@ -568,7 +693,6 @@ impl<'a> CircuitInputStateRef<'a> {
         address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
     }
 
-    // TODO: Remove unwrap() and add err handling.
     /// Parse [`Call`] from a *CALL*/CREATE* step.
     pub fn parse_call(&mut self, step: &GethExecStep) -> Result<Call, Error> {
         let is_success = *self
@@ -587,7 +711,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 step.stack.nth_last(2)?,
             ),
             CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
-            CallKind::DelegateCall => (caller.caller_address, caller.address, Word::zero()),
+            CallKind::DelegateCall => (caller.caller_address, caller.address, caller.value),
             CallKind::StaticCall => (
                 caller.address,
                 step.stack.nth_last(1)?.to_address(),
@@ -641,6 +765,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call = Call {
             call_id: self.block_ctx.rwc.0,
             caller_id: caller.call_id,
+            last_callee_id: 0,
             kind,
             is_static: kind == CallKind::StaticCall || caller.is_static,
             is_root: false,
@@ -657,6 +782,8 @@ impl<'a> CircuitInputStateRef<'a> {
             call_data_length,
             return_data_offset,
             return_data_length,
+            last_callee_return_data_offset: 0,
+            last_callee_return_data_length: 0,
         };
 
         Ok(call)
@@ -706,20 +833,12 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::AccountDestructed, idx) => {
-                let operation = &self.block.container.account_destructed[*idx];
-                if operation.rw().is_write() && operation.reversible() {
-                    Some(OpEnum::AccountDestructed(operation.op().reverse()))
-                } else {
-                    None
-                }
-            }
             _ => None,
         }
     }
 
-    /// Apply op to state.
-    fn apply_op(&mut self, op: &OpEnum) {
+    /// Check and apply op to state.
+    fn check_apply_op(&mut self, op: &OpEnum) {
         match &op {
             OpEnum::Storage(op) => {
                 self.sdb.set_storage(&op.address, &op.key, &op.value);
@@ -742,20 +861,10 @@ impl<'a> CircuitInputStateRef<'a> {
                         .remove_account_storage_from_access_list(&(op.address, op.key));
                 }
             }
-            OpEnum::Account(op) => {
-                let (_, account) = self.sdb.get_account_mut(&op.address);
-                match op.field {
-                    AccountField::Nonce => account.nonce = op.value,
-                    AccountField::Balance => account.balance = op.value,
-                    AccountField::CodeHash => {
-                        account.code_hash = op.value.to_be_bytes().into();
-                    }
-                }
-            }
+            OpEnum::Account(op) => self.check_update_sdb_account(RW::WRITE, op),
             OpEnum::TxRefund(op) => {
                 self.sdb.set_refund(op.value);
             }
-            OpEnum::AccountDestructed(_) => unimplemented!(),
             _ => unreachable!(),
         };
     }
@@ -771,7 +880,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Apply reversions
         for (step_index, op_ref) in reversion_group.op_refs.iter().rev().copied() {
             if let Some(op) = self.get_rev_op_by_ref(&op_ref) {
-                self.apply_op(&op);
+                self.check_apply_op(&op);
                 let rev_op_ref = self.block.container.insert_op_enum(
                     self.block_ctx.rwc.inc_pre(),
                     RW::WRITE,
@@ -795,11 +904,43 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Handle a return step caused by any opcode that causes a return to the
     /// previous call context.
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
+        // handle return_data
+        let (return_data_offset, return_data_length) = {
+            if !self.call()?.is_root {
+                let (offset, length) = match step.op {
+                    OpcodeId::RETURN | OpcodeId::REVERT => {
+                        let offset = step.stack.nth_last(0)?.as_usize();
+                        let length = step.stack.nth_last(1)?.as_usize();
+                        // At the moment it conflicts with `call_ctx` and `caller_ctx`.
+                        let callee_memory = self.call_ctx()?.memory.clone();
+                        let caller_ctx = self.caller_ctx_mut()?;
+                        caller_ctx.return_data.resize(length, 0);
+                        if length != 0 {
+                            caller_ctx.return_data[0..length]
+                                .copy_from_slice(&callee_memory.0[offset..offset + length]);
+                        }
+                        (offset, length)
+                    }
+                    _ => {
+                        let caller_ctx = self.caller_ctx_mut()?;
+                        caller_ctx.return_data.truncate(0);
+                        (0, 0)
+                    }
+                };
+
+                (offset.try_into().unwrap(), length.try_into().unwrap())
+            } else {
+                (0, 0)
+            }
+        };
+
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
+        let call_success_create: bool =
+            call.is_create() && call.is_success && step.op == OpcodeId::RETURN;
 
         // Store deployed code if it's a successful create
-        if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+        if call_success_create {
             let offset = step.stack.nth_last(0)?;
             let length = step.stack.nth_last(1)?;
             let code = call_ctx
@@ -816,6 +957,27 @@ impl<'a> CircuitInputStateRef<'a> {
         // Handle reversion if this call doesn't end successfully
         if !call.is_success {
             self.handle_reversion();
+        }
+
+        // If current call has caller.
+        if let Ok(caller) = self.caller_mut() {
+            caller.last_callee_id = call.call_id;
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            if call_success_create {
+                caller.last_callee_return_data_length = 0u64;
+                caller.last_callee_return_data_offset = 0u64;
+            } else {
+                caller.last_callee_return_data_length = return_data_length;
+                caller.last_callee_return_data_offset = return_data_offset;
+            }
+        }
+
+        // If current call has caller_ctx (has caller)
+        if let Ok(caller_ctx) = self.caller_ctx_mut() {
+            // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+            if call_success_create {
+                caller_ctx.return_data.truncate(0);
+            }
         }
 
         self.tx_ctx.pop_call_ctx();
@@ -872,7 +1034,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let code_deposit_cost = if call.is_create() {
+        let code_deposit_cost = if call.is_create() && call.is_success {
             GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
         } else {
             0
@@ -906,15 +1068,24 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_context_read(exec_step, caller.call_id, field, value);
         }
 
+        // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                last_callee_return_data_offset,
+                if call.is_create() && call.is_success {
+                    U256::zero()
+                } else {
+                    last_callee_return_data_offset
+                },
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                last_callee_return_data_length,
+                if call.is_create() && call.is_success {
+                    U256::zero()
+                } else {
+                    last_callee_return_data_length
+                },
             ),
         ] {
             self.call_context_write(exec_step, caller.call_id, field, value);
@@ -924,8 +1095,14 @@ impl<'a> CircuitInputStateRef<'a> {
     }
 
     /// Push a copy event to the state.
-    pub fn push_copy(&mut self, copy: CopyEvent) {
-        self.block.add_copy_event(copy);
+    pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) {
+        step.copy_rw_counter_delta = event.rw_counter_delta();
+        self.block.add_copy_event(event);
+    }
+
+    /// Push a exponentiation event to the state.
+    pub fn push_exponentiation(&mut self, event: ExpEvent) {
+        self.block.add_exp_event(event)
     }
 
     pub(crate) fn get_step_err(
@@ -941,14 +1118,27 @@ impl<'a> CircuitInputStateRef<'a> {
             return Ok(Some(ExecError::InvalidOpcode));
         }
 
-        // When last step has opcodes that halt, there's no error.
-        if matches!(next_step, None)
-            && matches!(
+        let call = self.call()?;
+
+        if matches!(next_step, None) {
+            // enumerating call scope successful cases
+            // case 1: call with normal halt opcode termination
+            if matches!(
                 step.op,
-                OpcodeId::STOP | OpcodeId::RETURN | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
-            )
-        {
-            return Ok(None);
+                OpcodeId::STOP | OpcodeId::REVERT | OpcodeId::SELFDESTRUCT
+            ) {
+                return Ok(None);
+            }
+            // case 2: call is NOT Create (Create represented by empty tx.to) and halt by
+            // opcode::Return
+            if !call.is_create() && step.op == OpcodeId::RETURN {
+                return Ok(None);
+            }
+            // case 3 Create with successful RETURN
+            if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+                return Ok(None);
+            }
+            // more other case...
         }
 
         let next_depth = next_step.map(|s| s.depth).unwrap_or(0);
@@ -956,8 +1146,13 @@ impl<'a> CircuitInputStateRef<'a> {
             .map(|s| s.stack.last().unwrap_or_else(|_| Word::zero()))
             .unwrap_or_else(Word::zero);
 
-        let call = self.call()?;
         let call_ctx = self.call_ctx()?;
+        // get value first if call/create
+        let value = match step.op {
+            OpcodeId::CALL | OpcodeId::CALLCODE => step.stack.nth_last(2)?,
+            OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
+            _ => Word::zero(),
+        };
 
         // Return from a call with a failure
         if step.depth == next_depth + 1 && next_result.is_zero() {
@@ -980,6 +1175,10 @@ impl<'a> CircuitInputStateRef<'a> {
                     {
                         Some(ExecError::WriteProtection)
                     }
+                    OpcodeId::CALL if call.is_static && !value.is_zero() => {
+                        Some(ExecError::WriteProtection)
+                    }
+
                     OpcodeId::REVERT => None,
                     _ => {
                         return Err(Error::UnexpectedExecStepError(
@@ -990,7 +1189,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 });
             } else {
                 // Return from a {CREATE, CREATE2} with a failure, via RETURN
-                if !call.is_root && call.is_create() {
+                if call.is_create() {
                     let offset = step.stack.nth_last(0)?;
                     let length = step.stack.nth_last(1)?;
                     if length > Word::from(0x6000u64) {
@@ -1052,18 +1251,6 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(Some(ExecError::Depth));
             }
 
-            // Insufficient_balance
-            let value = match step.op {
-                OpcodeId::CALL | OpcodeId::CALLCODE => step.stack.nth_last(2)?,
-                OpcodeId::CREATE | OpcodeId::CREATE2 => step.stack.nth_last(0)?,
-                _ => Word::zero(),
-            };
-
-            // CALL with value
-            if matches!(step.op, OpcodeId::CALL) && !value.is_zero() && self.call()?.is_static {
-                return Ok(Some(ExecError::WriteProtection));
-            }
-
             let sender = self.call()?.address;
             let (found, account) = self.sdb.get_account(&sender);
             if !found {
@@ -1074,12 +1261,9 @@ impl<'a> CircuitInputStateRef<'a> {
             }
 
             // Address collision
-            if matches!(step.op, OpcodeId::CREATE | OpcodeId::CREATE2) {
-                let address = match step.op {
-                    OpcodeId::CREATE => self.create_address()?,
-                    OpcodeId::CREATE2 => self.create2_address(step)?,
-                    _ => unreachable!(),
-                };
+            if matches!(step.op, OpcodeId::CREATE2) {
+                let address = self.create2_address(step)?;
+
                 let (found, _) = self.sdb.get_account(&address);
                 if found {
                     return Ok(Some(ExecError::ContractAddressCollision));
@@ -1120,6 +1304,91 @@ impl<'a> CircuitInputStateRef<'a> {
             let minimal_length = max(args_minimal, ret_minimal);
             call_ctx.memory.extend_at_least(minimal_length);
         }
+        Ok(())
+    }
+
+    /// gen bus mapping operations for context restore purpose
+    pub(crate) fn gen_restore_context_ops(
+        &mut self,
+        exec_step: &mut ExecStep,
+        geth_steps: &[GethExecStep],
+    ) -> Result<(), Error> {
+        let geth_step = &geth_steps[0];
+        let call = self.call()?.clone();
+        if !call.is_success {
+            // add call failure ops for exception cases
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::IsSuccess,
+                0u64.into(),
+            );
+
+            // Even call.rw_counter_end_of_reversion is zero for now, it will set in
+            // set_value_ops_call_context_rwc_eor later
+            // if call fails, no matter root or internal, read RwCounterEndOfReversion for
+            // circuit constraint.
+            self.call_context_read(
+                exec_step,
+                call.call_id,
+                CallContextField::RwCounterEndOfReversion,
+                call.rw_counter_end_of_reversion.into(),
+            );
+
+            if call.is_root {
+                return Ok(());
+            }
+        }
+
+        let caller = self.caller()?.clone();
+        self.call_context_read(
+            exec_step,
+            call.call_id,
+            CallContextField::CallerId,
+            caller.call_id.into(),
+        );
+
+        let geth_step_next = &geth_steps[1];
+        let caller_ctx = self.caller_ctx()?;
+        let caller_gas_left = if call.is_success {
+            geth_step_next.gas.0 - geth_step.gas.0
+        } else {
+            geth_step_next.gas.0
+        };
+
+        for (field, value) in [
+            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsCreate,
+                (caller.is_create() as u64).into(),
+            ),
+            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
+            (
+                CallContextField::StackPointer,
+                geth_step_next.stack.stack_pointer().0.into(),
+            ),
+            (CallContextField::GasLeft, caller_gas_left.into()),
+            (
+                CallContextField::MemorySize,
+                caller_ctx.memory.word_size().into(),
+            ),
+            (
+                CallContextField::ReversibleWriteCounter,
+                self.caller_ctx()?.reversible_write_counter.into(),
+            ),
+        ] {
+            self.call_context_read(exec_step, caller.call_id, field, value);
+        }
+
+        for (field, value) in [
+            (CallContextField::LastCalleeId, call.call_id.into()),
+            (CallContextField::LastCalleeReturnDataOffset, 0.into()),
+            (CallContextField::LastCalleeReturnDataLength, 0.into()),
+        ] {
+            self.call_context_write(exec_step, caller.call_id, field, value);
+        }
+
         Ok(())
     }
 }

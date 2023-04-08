@@ -1,8 +1,7 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::CallContextField;
 use crate::{
-    operation::{StorageOp, TxAccessListAccountStorageOp, RW},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{CallContextField, StorageOp, TxAccessListAccountStorageOp, RW},
     Error,
 };
 use eth_types::{GethExecStep, ToWord, Word};
@@ -85,7 +84,6 @@ impl Opcode for Sload {
         state.stack_write(&mut exec_step, stack_position, value)?;
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
                 address: contract_addr,

@@ -33,7 +33,7 @@ impl<const N: usize> Config<N> {
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        _randomness: F, // kept for future use
+        _randomness: Value<F>, // kept for future use
         value: U256,
     ) -> Result<(), Error> {
         let bytes = value.to_le_bytes();
@@ -46,6 +46,18 @@ impl<const N: usize> Config<N> {
             )?;
         }
         Ok(())
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.bytes.iter().enumerate() {
+            annotations.push(format!("RLC_byte{}", i));
+        }
+        self.bytes
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
     }
 }
 
@@ -67,7 +79,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
         selector: Column<Fixed>,
         encoded: Column<Advice>,
         lookup: lookups::Config,
-        power_of_randomness: [Expression<F>; 31],
+        randomness: Expression<F>,
     ) -> Config<N> {
         let bytes = [0; N].map(|_| meta.advice_column());
 
@@ -81,7 +93,7 @@ impl<F: Field, const N: usize> Chip<F, N> {
             let selector = meta.query_fixed(selector, Rotation::cur());
             let encoded = meta.query_advice(encoded, Rotation::cur());
             let bytes = bytes.map(|c| meta.query_advice(c, Rotation::cur()));
-            vec![selector * (encoded - rlc::expr(&bytes, &power_of_randomness))]
+            vec![selector * (encoded - rlc::expr(&bytes, randomness))]
         });
 
         Config { bytes }

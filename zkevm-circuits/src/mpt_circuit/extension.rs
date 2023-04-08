@@ -1,5 +1,5 @@
 use eth_types::Field;
-use gadgets::util::Scalar;
+use gadgets::util::{Scalar, pow};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression, VirtualCells},
@@ -182,7 +182,7 @@ impl<F: Field> ExtensionGadget<F> {
         &self,
         region: &mut Region<'_, F>,
         mpt_config: &MPTConfig<F>,
-        _pv: &mut MPTState<F>,
+        pv: &mut MPTState<F>,
         offset: usize,
         key_data: &KeyDataWitness<F>,
         key_rlc: &mut F,
@@ -256,15 +256,12 @@ impl<F: Field> ExtensionGadget<F> {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
-            mpt_config.r,
+            pv.r,
         );
         *key_rlc = key_data.rlc + key_rlc_ext;
 
         // Key mult
-        let mut mult_key = 1.scalar();
-        for _ in 0..key_len_mult {
-            mult_key = mult_key * mpt_config.r;
-        }
+        let mult_key = pow::value(pv.r, key_len_mult);
         self.mult_key.assign(region, offset, mult_key)?;
         *key_mult = key_data.mult * mult_key;
 

@@ -9,12 +9,10 @@ pub mod opcode_ids;
 pub mod stack;
 pub mod storage;
 
-pub use {
-    memory::{Memory, MemoryAddress},
-    opcode_ids::OpcodeId,
-    stack::{Stack, StackAddress},
-    storage::Storage,
-};
+pub use memory::{Memory, MemoryAddress};
+pub use opcode_ids::OpcodeId;
+pub use stack::{Stack, StackAddress};
+pub use storage::Storage;
 
 /// Wrapper type over `usize` which represents the program counter of the Evm.
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
@@ -98,7 +96,7 @@ impl GasCost {
     pub const SHA3: Self = Self(30);
     /// Constant cost for SELFDESTRUCT
     pub const SELFDESTRUCT: Self = Self(5000);
-    /// Constant cost for CREATE
+    /// Constant cost for CREATE and CREATE2
     pub const CREATE: Self = Self(32000);
     /// Constant cost for copying every word
     pub const COPY: Self = Self(3);
@@ -111,6 +109,8 @@ impl GasCost {
     pub const COLD_SLOAD: Self = Self(2100);
     /// Constant cost for a cold account access
     pub const COLD_ACCOUNT_ACCESS: Self = Self(2600);
+    /// SSTORE reentrancy sentry
+    pub const SSTORE_SENTRY: Self = Self(2300);
     /// Constant cost for a storage set
     pub const SSTORE_SET: Self = Self(20000);
     /// Constant cost for a storage reset
@@ -134,6 +134,9 @@ impl GasCost {
     pub const MEMORY_EXPANSION_LINEAR_COEFF: Self = Self(3);
     /// Constant gas for LOG[0-4] op codes
     pub const LOG: Self = Self(375);
+    /// Times ceil exponent byte size for the EXP instruction, EIP-158 changed
+    /// it from 10 to 50.
+    pub const EXP_BYTE_TIMES: Self = Self(50);
 }
 
 impl GasCost {

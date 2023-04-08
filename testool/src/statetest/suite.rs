@@ -1,25 +1,30 @@
-use super::JsonStateTestBuilder;
-use super::Results;
-use super::{StateTest, StateTestConfig};
-use crate::compiler::Compiler;
-use crate::config::Config;
-use crate::statetest::results::{ResultInfo, ResultLevel};
-use crate::statetest::YamlStateTestBuilder;
-use anyhow::Result;
+use super::{executor::run_test, CircuitsConfig, JsonStateTestBuilder, Results, StateTest};
+use crate::{
+    compiler::Compiler,
+    config::{Config, TestSuite},
+    statetest::{
+        results::{ResultInfo, ResultLevel},
+        YamlStateTestBuilder,
+    },
+};
+use anyhow::{Context, Result};
 use rayon::prelude::*;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::{
+    panic::AssertUnwindSafe,
+    sync::{Arc, RwLock},
+};
 
 pub fn load_statetests_suite(
     path: &str,
     config: Config,
     mut compiler: Compiler,
 ) -> Result<Vec<StateTest>> {
-    let skip_paths: Vec<&String> = config.skip_path.iter().flat_map(|t| &t.paths).collect();
+    let skip_paths: Vec<&String> = config.skip_paths.iter().flat_map(|t| &t.paths).collect();
+    let skip_tests: Vec<&String> = config.skip_tests.iter().flat_map(|t| &t.tests).collect();
 
     let files = glob::glob(path)
-        .expect("Failed to read glob pattern")
-        .map(|f| f.unwrap())
+        .context("failed to read glob")?
+        .filter_map(|v| v.ok())
         .filter(|f| {
             !skip_paths
                 .iter()
@@ -35,13 +40,14 @@ pub fn load_statetests_suite(
             }
             let path = file.as_path().to_string_lossy();
             let src = std::fs::read_to_string(&file)?;
-            log::debug!("Reading file {:?}", file);
+            log::debug!(target: "testool", "Reading file {:?}", file);
             let mut tcs = match ext {
                 "yml" => YamlStateTestBuilder::new(&mut compiler).load_yaml(&path, &src)?,
                 "json" => JsonStateTestBuilder::new(&mut compiler).load_json(&path, &src)?,
                 _ => unreachable!(),
             };
 
+            tcs.retain(|v| !skip_tests.contains(&&v.id));
             tests.append(&mut tcs);
         }
     }
@@ -50,68 +56,85 @@ pub fn load_statetests_suite(
 
 pub fn run_statetests_suite(
     tcs: Vec<StateTest>,
-    config: StateTestConfig,
+    circuits_config: &CircuitsConfig,
+    suite: &TestSuite,
     results: &mut Results,
 ) -> Result<()> {
+    // Filter already cached entries
+    let all_test_count = tcs.len();
     let tcs: Vec<StateTest> = tcs
         .into_iter()
-        .filter(|t| !results.contains(&t.id))
+        .filter(|t| !results.contains(&format!("{}#{}", t.id, t.path)))
         .collect();
+
+    log::info!(
+        "{} test results cached, {} remaining",
+        all_test_count - tcs.len(),
+        tcs.len()
+    );
 
     let results = Arc::new(RwLock::from(results));
 
-    let skip_tests: Vec<&String> = config
-        .global
-        .skip_test
-        .iter()
-        .chain(config.global.ignore_test.iter())
-        .flat_map(|t| &t.ids)
-        .collect();
-
     // for each test
+    let test_count = tcs.len();
     tcs.into_par_iter().for_each(|ref tc| {
-        // Test result is cached? Ignore
-        if results.read().unwrap().contains(tc.id.as_str()) {
-            return;
-        }
-
-        // Test must be ignored config?
-        if skip_tests.contains(&&tc.id) {
+        let (test_id, path) = (tc.id.clone(), tc.path.clone());
+        if !suite.allowed(&test_id) {
             results
                 .write()
                 .unwrap()
-                .insert(
-                    tc.id.clone(),
-                    ResultInfo {
-                        level: ResultLevel::Ignored,
-                        details: "Ignored in config file".to_string(),
-                        path: tc.path.to_string(),
-                    },
-                )
+                .insert(ResultInfo {
+                    test_id,
+                    level: ResultLevel::Ignored,
+                    details: "Ignored in config file".to_string(),
+                    path,
+                })
                 .unwrap();
             return;
         }
 
         std::panic::set_hook(Box::new(|_info| {}));
 
-        log::debug!("running test {}/{}...", tc.path, tc.id);
-        let result = std::panic::catch_unwind(|| tc.clone().run(config.clone()));
+        log::debug!(
+            target : "testool",
+            "🐕 running test (done {}/{}) {}#{}...",
+            1 + results.read().unwrap().tests.len(),
+            test_count,
+            test_id,
+            path,
+        );
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            run_test(tc.clone(), suite.clone(), circuits_config.clone())
+        }));
 
         // handle panic
         let result = match result {
             Ok(res) => res,
-            Err(_) => {
+            Err(err) => {
+                let panic_err = if let Some(s) = err.downcast_ref::<String>() {
+                    s.to_string()
+                } else if let Some(s) = err.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unable to get panic info".into()
+                };
+
+                let level = if panic_err.contains("circuit was not satisfied") {
+                    ResultLevel::Fail
+                } else if panic_err.contains("evm_unimplemented") {
+                    ResultLevel::Ignored
+                } else {
+                    ResultLevel::Panic
+                };
                 results
                     .write()
                     .unwrap()
-                    .insert(
-                        tc.id.clone(),
-                        ResultInfo {
-                            level: ResultLevel::Panic,
-                            details: String::default(),
-                            path: tc.path.to_string(),
-                        },
-                    )
+                    .insert(ResultInfo {
+                        test_id,
+                        level,
+                        details: panic_err,
+                        path,
+                    })
                     .unwrap();
                 return;
             }
@@ -122,18 +145,16 @@ pub fn run_statetests_suite(
             results
                 .write()
                 .unwrap()
-                .insert(
-                    tc.id.clone(),
-                    ResultInfo {
-                        level: if err.is_skip() {
-                            ResultLevel::Ignored
-                        } else {
-                            ResultLevel::Fail
-                        },
-                        details: err.to_string(),
-                        path: tc.path.to_string(),
+                .insert(ResultInfo {
+                    test_id,
+                    level: if err.is_skip() {
+                        ResultLevel::Ignored
+                    } else {
+                        ResultLevel::Fail
                     },
-                )
+                    details: err.to_string(),
+                    path,
+                })
                 .unwrap();
             return;
         }
@@ -141,14 +162,12 @@ pub fn run_statetests_suite(
         results
             .write()
             .unwrap()
-            .insert(
-                tc.id.clone(),
-                ResultInfo {
-                    level: ResultLevel::Success,
-                    details: String::default(),
-                    path: tc.path.to_string(),
-                },
-            )
+            .insert(ResultInfo {
+                test_id,
+                level: ResultLevel::Success,
+                details: String::default(),
+                path,
+            })
             .unwrap();
     });
 

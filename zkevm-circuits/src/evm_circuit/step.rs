@@ -1,19 +1,19 @@
 use super::util::{CachedRegion, CellManager, CellType};
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_WIDTH},
-        util::{Cell, RandomLinearCombination},
-        witness::{Block, Call, ExecStep, Transaction},
+        param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
+        util::Cell,
+        witness::{Block, Call, ExecStep},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::iter;
+use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -79,17 +79,13 @@ pub enum ExecutionState {
     SWAP, // SWAP1, SWAP2, ..., SWAP16
     LOG,  // LOG0, LOG1, ..., LOG4
     CREATE,
-    CALL_STATICCALL,
-    CALLCODE,
-    RETURN,
-    DELEGATECALL,
+    CALL_OP,       // CALL, CALLCODE, DELEGATECALL, STATICCALL
+    RETURN_REVERT, // RETURN, REVERT
     CREATE2,
-    REVERT,
     SELFDESTRUCT,
     // Error cases
     ErrorInvalidOpcode,
-    ErrorStackOverflow,
-    ErrorStackUnderflow,
+    ErrorStack,
     ErrorWriteProtection,
     ErrorDepth,
     ErrorInsufficientBalance,
@@ -108,19 +104,21 @@ pub enum ExecutionState {
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
-    ErrorOutOfGasSLOAD,
-    ErrorOutOfGasSSTORE,
-    ErrorOutOfGasCALL,
-    ErrorOutOfGasCALLCODE,
-    ErrorOutOfGasDELEGATECALL,
+    ErrorOutOfGasCall,
+    ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE2,
-    ErrorOutOfGasSTATICCALL,
     ErrorOutOfGasSELFDESTRUCT,
 }
 
 impl Default for ExecutionState {
     fn default() -> Self {
         Self::STOP
+    }
+}
+
+impl Display for ExecutionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -133,16 +131,11 @@ impl ExecutionState {
         Self::iter().count()
     }
 
-    pub(crate) fn halts_in_success(&self) -> bool {
-        matches!(self, Self::STOP | Self::RETURN | Self::SELFDESTRUCT)
-    }
-
     pub(crate) fn halts_in_exception(&self) -> bool {
         matches!(
             self,
             Self::ErrorInvalidOpcode
-                | Self::ErrorStackOverflow
-                | Self::ErrorStackUnderflow
+                | Self::ErrorStack
                 | Self::ErrorWriteProtection
                 | Self::ErrorDepth
                 | Self::ErrorInsufficientBalance
@@ -161,22 +154,30 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
-                | Self::ErrorOutOfGasSLOAD
-                | Self::ErrorOutOfGasSSTORE
-                | Self::ErrorOutOfGasCALL
-                | Self::ErrorOutOfGasCALLCODE
-                | Self::ErrorOutOfGasDELEGATECALL
+                | Self::ErrorOutOfGasCall
+                | Self::ErrorOutOfGasSloadSstore
                 | Self::ErrorOutOfGasCREATE2
-                | Self::ErrorOutOfGasSTATICCALL
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
     }
 
     pub(crate) fn halts(&self) -> bool {
-        self.halts_in_success() || self.halts_in_exception() || matches!(self, Self::REVERT)
+        matches!(self, Self::STOP | Self::RETURN_REVERT | Self::SELFDESTRUCT)
+            || self.halts_in_exception()
     }
 
-    pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
+    pub(crate) fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
+        if matches!(self, Self::ErrorStack) {
+            return OpcodeId::valid_opcodes()
+                .into_iter()
+                .flat_map(|op| {
+                    op.invalid_stack_ptrs()
+                        .into_iter()
+                        .map(move |stack_ptr| ResponsibleOp::InvalidStackPtr(op, stack_ptr))
+                })
+                .collect();
+        }
+
         match self {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
@@ -307,14 +308,54 @@ impl ExecutionState {
                 OpcodeId::LOG4,
             ],
             Self::CREATE => vec![OpcodeId::CREATE],
-            Self::CALL_STATICCALL => vec![OpcodeId::CALL, OpcodeId::STATICCALL],
-            Self::CALLCODE => vec![OpcodeId::CALLCODE],
-            Self::RETURN => vec![OpcodeId::RETURN],
-            Self::DELEGATECALL => vec![OpcodeId::DELEGATECALL],
+            Self::CALL_OP => vec![
+                OpcodeId::CALL,
+                OpcodeId::CALLCODE,
+                OpcodeId::DELEGATECALL,
+                OpcodeId::STATICCALL,
+            ],
+            Self::RETURN_REVERT => vec![OpcodeId::RETURN, OpcodeId::REVERT],
             Self::CREATE2 => vec![OpcodeId::CREATE2],
-            Self::REVERT => vec![OpcodeId::REVERT],
             Self::SELFDESTRUCT => vec![OpcodeId::SELFDESTRUCT],
+            Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
+        }
+        .into_iter()
+        .map(Into::into)
+        .collect()
+    }
+
+    pub fn get_step_height_option(&self) -> Option<usize> {
+        EXECUTION_STATE_HEIGHT_MAP.get(self).copied()
+    }
+
+    pub fn get_step_height(&self) -> usize {
+        self.get_step_height_option()
+            .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+    }
+}
+
+/// Enum of Responsible opcode mapping to execution state.
+#[derive(Debug)]
+pub(crate) enum ResponsibleOp {
+    /// Raw opcode
+    Op(OpcodeId),
+    /// Corresponding to ExecutionState::ErrorStack
+    InvalidStackPtr(OpcodeId, u32),
+}
+
+/// Helper for easy transform from a raw OpcodeId to ResponsibleOp.
+impl From<OpcodeId> for ResponsibleOp {
+    fn from(opcode: OpcodeId) -> Self {
+        Self::Op(opcode)
+    }
+}
+
+impl ResponsibleOp {
+    pub(crate) fn opcode(&self) -> OpcodeId {
+        *match self {
+            ResponsibleOp::Op(opcode) => opcode,
+            ResponsibleOp::InvalidStackPtr(opcode, _) => opcode,
         }
     }
 }
@@ -334,8 +375,8 @@ pub(crate) struct DynamicSelectorHalf<F> {
 
 impl<F: Field> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
-        let target_pairs = cell_manager.query_cells(CellType::Storage, (count + 1) / 2);
-        let target_odd = cell_manager.query_cell(CellType::Storage);
+        let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
+        let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
         Self {
             count,
             target_pairs,
@@ -463,25 +504,31 @@ impl<F: Field> Step<F> {
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],
         offset: usize,
+        is_next: bool,
     ) -> Self {
-        let mut cell_manager = CellManager::new(meta, MAX_STEP_HEIGHT, &advices, offset);
+        let height = if is_next {
+            STEP_STATE_HEIGHT // Query only the state of the next step.
+        } else {
+            MAX_STEP_HEIGHT // Query the entire current step.
+        };
+        let mut cell_manager = CellManager::new(meta, height, &advices, offset);
         let state = {
             StepState {
                 execution_state: DynamicSelectorHalf::new(
                     &mut cell_manager,
                     ExecutionState::amount(),
                 ),
-                rw_counter: cell_manager.query_cell(CellType::Storage),
-                call_id: cell_manager.query_cell(CellType::Storage),
-                is_root: cell_manager.query_cell(CellType::Storage),
-                is_create: cell_manager.query_cell(CellType::Storage),
-                code_hash: cell_manager.query_cell(CellType::Storage),
-                program_counter: cell_manager.query_cell(CellType::Storage),
-                stack_pointer: cell_manager.query_cell(CellType::Storage),
-                gas_left: cell_manager.query_cell(CellType::Storage),
-                memory_word_size: cell_manager.query_cell(CellType::Storage),
-                reversible_write_counter: cell_manager.query_cell(CellType::Storage),
-                log_id: cell_manager.query_cell(CellType::Storage),
+                rw_counter: cell_manager.query_cell(CellType::StoragePhase1),
+                call_id: cell_manager.query_cell(CellType::StoragePhase1),
+                is_root: cell_manager.query_cell(CellType::StoragePhase1),
+                is_create: cell_manager.query_cell(CellType::StoragePhase1),
+                code_hash: cell_manager.query_cell(CellType::StoragePhase2),
+                program_counter: cell_manager.query_cell(CellType::StoragePhase1),
+                stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
+                gas_left: cell_manager.query_cell(CellType::StoragePhase1),
+                memory_word_size: cell_manager.query_cell(CellType::StoragePhase1),
+                reversible_write_counter: cell_manager.query_cell(CellType::StoragePhase1),
+                log_id: cell_manager.query_cell(CellType::StoragePhase1),
             }
         };
         Self {
@@ -503,8 +550,7 @@ impl<F: Field> Step<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
-        _: &Transaction,
+        _block: &Block<F>,
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
@@ -527,14 +573,9 @@ impl<F: Field> Step<F> {
             offset,
             Value::known(F::from(call.is_create as u64)),
         )?;
-        self.state.code_hash.assign(
-            region,
-            offset,
-            Value::known(RandomLinearCombination::random_linear_combine(
-                call.code_hash.to_le_bytes(),
-                block.randomness,
-            )),
-        )?;
+        self.state
+            .code_hash
+            .assign(region, offset, region.word_rlc(call.code_hash))?;
         self.state.program_counter.assign(
             region,
             offset,

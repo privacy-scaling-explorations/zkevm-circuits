@@ -14,7 +14,7 @@ members = [
 ]
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" } 
 
 # Definition of benchmarks profile to use.
 [profile.bench]
@@ -34,4 +34,4 @@ debug-assertions = true
 overflow-checks = true
 rpath = false
 lto = "thin"
-incremental = false
+incremental = true

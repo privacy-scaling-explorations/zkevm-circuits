@@ -1,7 +1,7 @@
 //! Utility traits, functions used in the crate.
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field,
+    Field, U256,
 };
 use halo2_proofs::plonk::Expression;
 
@@ -141,6 +141,50 @@ pub mod select {
     }
 }
 
+/// Returns the power of number using straigtforward multiplications
+pub mod pow {
+    use crate::util::Expr;
+    use eth_types::Field;
+    use halo2_proofs::plonk::Expression;
+
+    use super::Scalar;
+
+    /// Returns the `when_true` expression when the selector is true, else
+    /// returns the `when_false` expression.
+    pub fn expr<F: Field>(
+        value: Expression<F>,
+        exponent: usize,
+    ) -> Expression<F> {
+        let mut result = 1.expr();
+        for _ in 0..exponent {
+            result = result * value.expr();
+        }
+        result
+    }
+
+    /// Returns the `when_true` value when the selector is true, else returns
+    /// the `when_false` value.
+    pub fn value<F: Field>(value: F, exponent: usize) -> F {
+        let mut result = 1.scalar();
+        for _ in 0..exponent {
+            result = result * value;
+        }
+        result
+    }
+}
+
+/*impl<F: Field> Challenges<Expression<F>> {
+    /// Returns powers of randomness
+    fn powers_of<const S: usize>(base: Expression<F>) -> [Expression<F>; S] {
+        std::iter::successors(base.clone().into(), |power| {
+            (base.clone() * power.clone()).into()
+        })
+        .take(S)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
+    }*/
+
 /// Trait that implements functionality to get a scalar from
 /// commonly used types.
 pub trait Scalar<F: Field> {
@@ -262,4 +306,22 @@ pub fn expr_from_bytes<F: Field, E: Expr<F>>(bytes: &[E]) -> Expression<F> {
 /// Returns 2**by as FieldExt
 pub fn pow_of_two<F: Field>(by: usize) -> F {
     F::from(2).pow(&[by as u64, 0, 0, 0])
+}
+
+/// Returns tuple consists of low and high part of U256
+pub fn split_u256(value: &U256) -> (U256, U256) {
+    (
+        U256([value.0[0], value.0[1], 0, 0]),
+        U256([value.0[2], value.0[3], 0, 0]),
+    )
+}
+
+/// Split a U256 value into 4 64-bit limbs stored in U256 values.
+pub fn split_u256_limb64(value: &U256) -> [U256; 4] {
+    [
+        U256([value.0[0], 0, 0, 0]),
+        U256([value.0[1], 0, 0, 0]),
+        U256([value.0[2], 0, 0, 0]),
+        U256([value.0[3], 0, 0, 0]),
+    ]
 }

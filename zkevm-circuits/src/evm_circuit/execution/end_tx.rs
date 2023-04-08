@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::UpdateBalanceGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstraintBuilder, StepStateTransition,
+                Transition::{Delta, Same},
+            },
             math_gadget::{
                 AddWordsGadget, ConstantDivisionGadget, IsEqualGadget, MinMaxGadget,
                 MulWordByU64Gadget,
@@ -82,14 +85,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
-        let base_fee = cb.query_word();
+        let base_fee = cb.query_word_rlc();
         for (tag, value) in [
             (BlockContextFieldTag::Coinbase, coinbase.expr()),
             (BlockContextFieldTag::BaseFee, base_fee.expr()),
         ] {
             cb.block_lookup(tag.expr(), None, value);
         }
-        let effective_tip = cb.query_word();
+        let effective_tip = cb.query_word_rlc();
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
@@ -145,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             cb.next.execution_state_selector([ExecutionState::BeginTx]),
             |cb| {
                 cb.call_context_lookup(
-                    false.expr(),
+                    true.expr(),
                     Some(cb.next.state.rw_counter.expr()),
                     CallContextFieldTag::TxId,
                     tx_id.expr() + 1.expr(),
@@ -163,6 +166,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             |cb| {
                 cb.require_step_state_transition(StepStateTransition {
                     rw_counter: Delta(9.expr() - is_first_tx.expr()),
+                    // We propagate call_id so that EndBlock can get the last tx_id
+                    // in order to count processed txs.
+                    call_id: Same,
                     ..StepStateTransition::any()
                 });
             },
@@ -303,19 +309,19 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
-    use eth_types::{self, bytecode, geth_types::GethData};
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::circuit_input_builder::CircuitsParams;
+    use eth_types::{self, bytecode};
+
     use mock::{eth, test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
-    fn test_ok(block: GethData) {
-        let block_data = bus_mapping::mock::BlockData::new_from_geth_data(block);
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
-            .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-
-        assert_eq!(run_test_circuit(block), Ok(()));
+    fn test_ok<const NACC: usize, const NTX: usize>(ctx: TestContext<NACC, NTX>) {
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_txs: 5,
+                ..Default::default()
+            })
+            .run();
     }
 
     #[test]
@@ -356,8 +362,7 @@ mod test {
                 },
                 |block, _tx| block.number(0xcafeu64),
             )
-            .unwrap()
-            .into(),
+            .unwrap(),
         );
     }
 }

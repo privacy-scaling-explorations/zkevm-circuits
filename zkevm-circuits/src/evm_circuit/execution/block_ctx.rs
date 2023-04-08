@@ -14,8 +14,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -26,7 +25,7 @@ pub(crate) struct BlockCtxGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> BlockCtxGadget<F, N_BYTES> {
     fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
-        let value = cb.query_rlc();
+        let value = cb.query_word_rlc();
 
         // Push the const generic parameter N_BYTES value to the stack
         cb.stack_push(value.expr());
@@ -189,18 +188,15 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
     fn test_ok(bytecode: bytecode::Bytecode) {
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run()
     }
 
     #[test]

@@ -40,8 +40,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // In successful case the address must be in 5 bytes
-        let address = cb.query_rlc();
-        let value = cb.query_word();
+        let address = cb.query_word_rlc();
+        let value = cb.query_word_rlc();
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -49,18 +49,17 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
         // This is an MSTORE/MSTORE8
         let is_store = not::expr(is_mload.expr());
-        // This in an MSTORE/MLOAD
+        // This is an MSTORE/MLOAD
         let is_not_mstore8 = not::expr(is_mstore8.expr());
 
         // Calculate the next memory size and the gas cost for this memory
         // access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_word_size.expr(),
             [from_bytes::expr(&address.cells) + 1.expr() + (is_not_mstore8.clone() * 31.expr())],
         );
 
-        /* Stack operations */
+        // Stack operations
         // Pop the address from the stack
         cb.stack_pop(address.expr());
         // For MLOAD push the value to the stack
@@ -73,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         cb.condition(is_mstore8.expr(), |cb| {
             cb.memory_lookup(
-                is_store.clone(),
+                1.expr(),
                 from_bytes::expr(&address.cells),
                 value.cells[0].expr(),
                 None,
@@ -92,11 +91,10 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         });
 
         // State transition
-        // - `rw_counter` needs to be increased by 34 when is_not_mstore8, otherwise to
-        //   be increased by 31
+        // - `rw_counter` needs to be increased by 34 when is_not_mstore8, otherwise to be increased
+        //   by 31
         // - `program_counter` needs to be increased by 1
-        // - `stack_pointer` needs to be increased by 2 when is_store, otherwise to be
-        //   same
+        // - `stack_pointer` needs to be increased by 2 when is_store, otherwise to be same
         // - `memory_size` needs to be set to `next_memory_size`
         let gas_cost = OpcodeId::MLOAD.constant_gas_cost().expr() + memory_expansion.gas_cost();
         let step_state_transition = StepStateTransition {
@@ -176,13 +174,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::test::rand_word,
-        test_util::{run_test_circuits, BytecodeTestConfig},
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
+    use eth_types::{
+        bytecode,
+        evm_types::{GasCost, OpcodeId},
+        Word,
     };
-    use eth_types::bytecode;
-    use eth_types::evm_types::{GasCost, OpcodeId};
-    use eth_types::Word;
     use mock::test_ctx::{helpers::*, TestContext};
     use std::iter;
 
@@ -194,13 +191,8 @@ mod test {
             STOP
         };
 
-        let test_config = BytecodeTestConfig {
-            gas_limit: GasCost::TX.as_u64()
-                + OpcodeId::PUSH32.as_u64()
-                + OpcodeId::PUSH32.as_u64()
-                + gas_cost,
-            ..Default::default()
-        };
+        let gas_limit =
+            GasCost::TX.as_u64() + OpcodeId::PUSH32.as_u64() + OpcodeId::PUSH32.as_u64() + gas_cost;
 
         let ctx = TestContext::<2, 1>::new(
             None,
@@ -209,13 +201,13 @@ mod test {
                 txs[0]
                     .to(accs[0].address)
                     .from(accs[1].address)
-                    .gas(Word::from(test_config.gas_limit));
+                    .gas(Word::from(gas_limit));
             },
             |block, _tx| block.number(0xcafeu64),
         )
         .unwrap();
 
-        assert_eq!(run_test_circuits(ctx, Some(test_config)), Ok(()));
+        CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
     #[test]

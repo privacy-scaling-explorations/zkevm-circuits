@@ -5,7 +5,7 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
-use ethers_core::types::TransactionRequest;
+use ethers_core::types::{NameOrAddress, TransactionRequest};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -30,6 +30,16 @@ pub struct Account {
     /// Storage
     #[serde(serialize_with = "serde_account_storage")]
     pub storage: HashMap<Word, Word>,
+}
+
+impl Account {
+    /// Return if account is empty or not.
+    pub fn is_empty(&self) -> bool {
+        self.nonce.is_zero()
+            && self.balance.is_zero()
+            && self.code.is_empty()
+            && self.storage.is_empty()
+    }
 }
 
 fn serde_account_storage<S: Serializer>(
@@ -174,14 +184,16 @@ impl From<&crate::Transaction> for Transaction {
 
 impl From<&Transaction> for TransactionRequest {
     fn from(tx: &Transaction) -> TransactionRequest {
-        TransactionRequest::new()
-            .from(tx.from)
-            .to(tx.to.unwrap())
-            .nonce(tx.nonce)
-            .value(tx.value)
-            .data(tx.call_data.clone())
-            .gas(tx.gas_limit)
-            .gas_price(tx.gas_price)
+        TransactionRequest {
+            from: Some(tx.from),
+            to: tx.to.map(NameOrAddress::Address),
+            gas: Some(tx.gas_limit),
+            gas_price: Some(tx.gas_price),
+            value: Some(tx.value),
+            data: Some(tx.call_data.clone()),
+            nonce: Some(tx.nonce),
+            ..Default::default()
+        }
     }
 }
 
@@ -206,7 +218,10 @@ impl Transaction {
             .to_vec()
             .try_into()
             .expect("hash length isn't 32 bytes");
-        let v = (self.v - 35 - chain_id * 2) as u8;
+        let v = self
+            .v
+            .checked_sub(35 + chain_id * 2)
+            .ok_or(Error::Signature(libsecp256k1::Error::InvalidSignature))? as u8;
         let pk = recover_pk(v, &self.r, &self.s, &msg_hash)?;
         // msg_hash = msg_hash % q
         let msg_hash = BigUint::from_bytes_be(msg_hash.as_slice());

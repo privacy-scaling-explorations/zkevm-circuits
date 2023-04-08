@@ -13,7 +13,7 @@ use crate::{
     mpt_circuit::param::{
         COUNTER_WITNESS_LEN, HASH_WIDTH, IS_NON_EXISTING_STORAGE_POS, NOT_FIRST_LEVEL_POS,
     },
-    table::ProofType,
+    table::MPTProofType,
 };
 
 use super::helpers::Indexable;
@@ -93,7 +93,7 @@ pub struct ExtensionNode {
 
 #[derive(Clone, Debug)]
 pub struct StartNode {
-    pub(crate) proof_type: ProofType,
+    pub(crate) proof_type: MPTProofType,
 }
 
 #[derive(Clone, Debug)]
@@ -163,7 +163,7 @@ pub struct MptWitnessRow<F> {
     pub(crate) is_placeholder: [bool; 2],
     pub(crate) modified_index: usize,
     pub(crate) drifted_index: usize,
-    pub(crate) proof_type: ProofType,
+    pub(crate) proof_type: MPTProofType,
     pub(crate) address: Vec<u8>,
     _marker: PhantomData<F>,
 }
@@ -177,7 +177,7 @@ impl<F: Field> MptWitnessRow<F> {
             is_placeholder: [false; 2],
             modified_index: 0,
             drifted_index: 0,
-            proof_type: ProofType::Disabled,
+            proof_type: MPTProofType::Disabled,
             address: Vec::new(),
             _marker: PhantomData,
         }
@@ -253,25 +253,25 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
     {
         // Get the proof type directly
         if row.get_byte_rev(IS_STORAGE_MOD_POS) == 1 {
-            row.proof_type = ProofType::StorageChanged;
+            row.proof_type = MPTProofType::StorageChanged;
         }
         if row.get_byte_rev(IS_NONCE_MOD_POS) == 1 {
-            row.proof_type = ProofType::NonceChanged;
+            row.proof_type = MPTProofType::NonceChanged;
         }
         if row.get_byte_rev(IS_BALANCE_MOD_POS) == 1 {
-            row.proof_type = ProofType::BalanceChanged;
+            row.proof_type = MPTProofType::BalanceChanged;
         }
         if row.get_byte_rev(IS_CODEHASH_MOD_POS) == 1 {
-            row.proof_type = ProofType::CodeHashExists;
+            row.proof_type = MPTProofType::CodeHashExists;
         }
         if row.get_byte_rev(IS_ACCOUNT_DELETE_MOD_POS) == 1 {
-            row.proof_type = ProofType::AccountDestructed;
+            row.proof_type = MPTProofType::AccountDestructed;
         }
         if row.get_byte_rev(IS_NON_EXISTING_ACCOUNT_POS) == 1 {
-            row.proof_type = ProofType::AccountDoesNotExist;
+            row.proof_type = MPTProofType::AccountDoesNotExist;
         }
         if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
-            row.proof_type = ProofType::StorageDoesNotExist;
+            row.proof_type = MPTProofType::StorageDoesNotExist;
         }
 
         if row.get_type() == MptWitnessRowType::BranchChild {
@@ -660,7 +660,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
 
     // Dummy end state
     let start_node = StartNode {
-        proof_type: ProofType::Disabled,
+        proof_type: MPTProofType::Disabled,
     };
     let mut node = Node::default();
     node.start = Some(start_node);

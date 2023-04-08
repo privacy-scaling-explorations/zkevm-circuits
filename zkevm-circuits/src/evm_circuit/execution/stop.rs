@@ -34,7 +34,8 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::STOP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let code_length = cb.bytecode_length(cb.curr.state.code_hash.expr());
+        let code_length = cb.query_cell();
+        cb.bytecode_length(cb.curr.state.code_hash.expr(), code_length.expr());
         let is_out_of_range = IsZeroGadget::construct(
             cb,
             code_length.expr() - cb.curr.state.program_counter.expr(),
@@ -74,7 +75,15 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
         // When it's an internal call
         let restore_context = cb.condition(1.expr() - cb.curr.state.is_root.expr(), |cb| {
-            RestoreContextGadget::construct(cb, true.expr(), 0.expr(), 0.expr(), 0.expr(), 0.expr())
+            RestoreContextGadget::construct(
+                cb,
+                true.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            )
         });
 
         Self {
@@ -125,81 +134,74 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::{test::run_test_circuit, witness::block_convert};
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::{address, bytecode, Bytecode, Word};
+
     use itertools::Itertools;
     use mock::TestContext;
 
     fn test_ok(bytecode: Bytecode, is_root: bool) {
-        let block_data = if is_root {
-            bus_mapping::mock::BlockData::new_from_geth_data(
-                TestContext::<2, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(address!("0x0000000000000000000000000000000000000000"))
-                            .balance(Word::from(1u64 << 30));
-                        accs[1]
-                            .address(address!("0x0000000000000000000000000000000000000010"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .to(accs[1].address)
-                            .gas(Word::from(30000));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into(),
+        if is_root {
+            let ctx = TestContext::<2, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x0000000000000000000000000000000000000123"))
+                        .balance(Word::from(1u64 << 30));
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000010"))
+                        .balance(Word::from(1u64 << 20))
+                        .code(bytecode);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(Word::from(30000));
+                },
+                |block, _tx| block.number(0xcafeu64),
             )
-        } else {
-            bus_mapping::mock::BlockData::new_from_geth_data(
-                TestContext::<3, 1>::new(
-                    None,
-                    |accs| {
-                        accs[0]
-                            .address(address!("0x0000000000000000000000000000000000000000"))
-                            .balance(Word::from(1u64 << 30));
-                        accs[1]
-                            .address(address!("0x0000000000000000000000000000000000000010"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode! {
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH1(0)
-                                PUSH1(0x20)
-                                GAS
-                                CALL
-                                STOP
-                            });
-                        accs[2]
-                            .address(address!("0x0000000000000000000000000000000000000020"))
-                            .balance(Word::from(1u64 << 20))
-                            .code(bytecode);
-                    },
-                    |mut txs, accs| {
-                        txs[0]
-                            .from(accs[0].address)
-                            .to(accs[1].address)
-                            .gas(Word::from(30000));
-                    },
-                    |block, _tx| block.number(0xcafeu64),
-                )
-                .unwrap()
-                .into(),
-            )
-        };
-        let mut builder = block_data.new_circuit_input_builder();
-        builder
-            .handle_block(&block_data.eth_block, &block_data.geth_traces)
             .unwrap();
-        let block = block_convert(&builder.block, &builder.code_db);
-        assert_eq!(run_test_circuit(block), Ok(()));
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        } else {
+            let ctx = TestContext::<3, 1>::new(
+                None,
+                |accs| {
+                    accs[0]
+                        .address(address!("0x0000000000000000000000000000000000000123"))
+                        .balance(Word::from(1u64 << 30));
+                    accs[1]
+                        .address(address!("0x0000000000000000000000000000000000000010"))
+                        .balance(Word::from(1u64 << 20))
+                        .code(bytecode! {
+                            PUSH1(0)
+                            PUSH1(0)
+                            PUSH1(0)
+                            PUSH1(0)
+                            PUSH1(0)
+                            PUSH1(0x20)
+                            GAS
+                            CALL
+                            STOP
+                        });
+                    accs[2]
+                        .address(address!("0x0000000000000000000000000000000000000020"))
+                        .balance(Word::from(1u64 << 20))
+                        .code(bytecode);
+                },
+                |mut txs, accs| {
+                    txs[0]
+                        .from(accs[0].address)
+                        .to(accs[1].address)
+                        .gas(Word::from(30000));
+                },
+                |block, _tx| block.number(0xcafeu64),
+            )
+            .unwrap();
+
+            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+        };
     }
 
     #[test]

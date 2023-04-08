@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ORIGIN;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let origin = cb.query_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
+        let origin = cb.query_word_rlc::<N_BYTES_ACCOUNT_ADDRESS>();
 
         // Lookup in call_ctx the TxId
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -108,12 +108,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

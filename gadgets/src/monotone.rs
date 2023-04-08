@@ -2,8 +2,8 @@
 //! Monotone gadget helps to check if an advice column is monotonically
 //! increasing within a range. With strict enabled, it disallows equality of two
 //! cell.
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::{Chip, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
@@ -210,7 +210,11 @@ mod test {
                     vec![],
                 )
                 .unwrap();
-                assert_eq!(prover.verify(), result);
+                if result.is_err() {
+                    assert_eq!(prover.verify_par(), result)
+                } else {
+                    prover.assert_satisfied_par()
+                }
             }
         };
     }

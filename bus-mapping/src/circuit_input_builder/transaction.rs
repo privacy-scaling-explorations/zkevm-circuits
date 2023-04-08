@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::evm_types::Memory;
-use eth_types::Signature;
-use eth_types::{geth_types, Address, GethExecTrace, Word};
+use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -14,7 +12,7 @@ use crate::{
 
 use super::{call::ReversionGroup, Call, CallContext, CallKind, CodeSource, ExecStep};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// Context of a [`Transaction`] which can mutate in an [`ExecStep`].
 pub struct TransactionContext {
     /// Unique identifier of transaction of the block. The value is `index + 1`.
@@ -198,7 +196,7 @@ pub struct Transaction {
     /// Signature
     pub signature: Signature,
     /// Calls made in the transaction
-    calls: Vec<Call>,
+    pub(crate) calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
 }
@@ -222,6 +220,26 @@ impl From<&Transaction> for geth_types::Transaction {
 }
 
 impl Transaction {
+    /// Create a dummy Transaction with zero values
+    pub fn dummy() -> Self {
+        Self {
+            nonce: 0,
+            gas: 0,
+            gas_price: Word::zero(),
+            from: Address::zero(),
+            to: Address::zero(),
+            value: Word::zero(),
+            input: Vec::new(),
+            signature: Signature {
+                r: Word::zero(),
+                s: Word::zero(),
+                v: 0,
+            },
+            calls: Vec::new(),
+            steps: Vec::new(),
+        }
+    }
+
     /// Create a new Self.
     pub fn new(
         call_id: usize,

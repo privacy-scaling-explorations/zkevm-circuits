@@ -44,16 +44,16 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let n = cb.query_word();
-        let r = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let n = cb.query_word_rlc();
+        let r = cb.query_word_rlc();
 
-        let k = cb.query_word();
+        let k = cb.query_word_rlc();
 
-        let a_reduced = cb.query_word();
-        let d = cb.query_word();
-        let e = cb.query_word();
+        let a_reduced = cb.query_word_rlc();
+        let d = cb.query_word_rlc();
+        let e = cb.query_word_rlc();
 
         // 1.  k1 * n + a_reduced  == a
         let modword = ModGadget::construct(cb, [&a, &n, &a_reduced]);
@@ -120,8 +120,12 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         self.words[1].assign(region, offset, Some(b.to_le_bytes()))?;
         self.words[2].assign(region, offset, Some(n.to_le_bytes()))?;
         self.words[3].assign(region, offset, Some(r.to_le_bytes()))?;
-        // 1. Reduction of a mod n
-        let a_reduced = if n.is_zero() { U256::zero() } else { a % n };
+        // 1. quotient and reduction of a mod n
+        let (k1, a_reduced) = if n.is_zero() {
+            (U256::zero(), U256::zero())
+        } else {
+            a.div_mod(n)
+        };
 
         // 2. Compute r = a*b mod n
         let prod = a_reduced.full_mul(b);
@@ -130,25 +134,24 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         let d = U256::from_little_endian(&prod_bytes[32..64]);
         let e = U256::from_little_endian(&prod_bytes[0..32]);
 
-        let (r, k) = if n.is_zero() {
+        let (r, k2) = if n.is_zero() {
             (U256::zero(), U256::zero())
         } else {
             // k2 <= b , always fits in U256
             (r, U256::try_from(prod / n).unwrap())
         };
 
-        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
+        self.k.assign(region, offset, Some(k2.to_le_bytes()))?;
         self.a_reduced
             .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
         self.d.assign(region, offset, Some(d.to_le_bytes()))?;
         self.e.assign(region, offset, Some(e.to_le_bytes()))?;
 
-        self.modword
-            .assign(region, offset, a, n, a_reduced, block.randomness)?;
+        self.modword.assign(region, offset, a, n, a_reduced, k1)?;
         self.mul512_left
             .assign(region, offset, [a_reduced, b, d, e], None)?;
         self.mul512_right
-            .assign(region, offset, [k, n, d, e], Some(r))?;
+            .assign(region, offset, [k2, n, d, e], Some(r))?;
 
         self.lt.assign(region, offset, r, n)?;
 
@@ -160,12 +163,11 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
-    use eth_types::evm_types::Stack;
-    use eth_types::{bytecode, Word, U256};
+    use crate::test_util::CircuitTestBuilder;
+    use eth_types::{bytecode, evm_types::Stack, Word, U256};
     use mock::TestContext;
 
-    fn test(a: Word, b: Word, n: Word, r: Option<Word>) -> bool {
+    fn test(a: Word, b: Word, n: Word, r: Option<Word>, ok: bool) {
         let bytecode = bytecode! {
             PUSH32(n)
             PUSH32(b)
@@ -185,68 +187,85 @@ mod test {
                 .unwrap();
             last.stack = Stack::from_vec(vec![r]);
         }
-        run_test_circuits(ctx, None).is_ok()
+
+        let mut ctb = CircuitTestBuilder::new_from_test_ctx(ctx);
+        if !ok {
+            ctb = ctb.evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
+                assert!(prover
+                    .verify_at_rows_par(gate_rows.iter().cloned(), lookup_rows.iter().cloned())
+                    .is_err())
+            }));
+        };
+        ctb.run()
     }
 
-    fn test_u32(a: u32, b: u32, n: u32, r: Option<u32>) -> bool {
-        test(a.into(), b.into(), n.into(), r.map(Word::from))
+    fn test_ok_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
+        test(a.into(), b.into(), n.into(), r.map(Word::from), true)
+    }
+
+    fn test_ko_u32(a: u32, b: u32, n: u32, r: Option<u32>) {
+        test(a.into(), b.into(), n.into(), r.map(Word::from), false)
     }
 
     #[test]
     fn mulmod_simple() {
-        assert!(test_u32(7, 12, 10, None));
-        assert!(test_u32(7, 1, 10, None));
+        test_ok_u32(7, 12, 10, None);
+        test_ok_u32(7, 1, 10, None);
     }
 
     #[test]
     fn mulmod_edge() {
-        assert!(test(
+        test(
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
-            None
-        ));
-        assert!(test(
+            None,
+            true,
+        );
+        test(
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0x00000000000000000000000000000000000000000001", 16).unwrap(),
-            None
-        ));
-        assert!(test(
+            None,
+            true,
+        );
+        test(
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0x00000000000000000000000000000000000000000000", 16).unwrap(),
-            None
-        ));
-        assert!(test(
+            None,
+            true,
+        );
+        test(
             U256::from_str_radix("0xfffffffffffffffffffffffffffffffffffffffffffe", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
             U256::from_str_radix("0xffffffffffffffffffffffffffffffffffffffffffff", 16).unwrap(),
-            None
-        ));
+            None,
+            true,
+        );
     }
 
     #[test]
     fn mulmod_division_by_zero() {
-        assert!(test_u32(7, 1, 0, None));
+        test_ok_u32(7, 1, 0, None);
     }
 
     #[test]
     fn mulmod_bad_r_on_nonzero_n() {
-        assert!(test_u32(7, 18, 10, Some(6)));
-        assert!(!test_u32(7, 18, 10, Some(7)));
-        assert!(!test_u32(7, 18, 10, Some(5)));
+        test_ok_u32(7, 18, 10, Some(6));
+        test_ko_u32(7, 18, 10, Some(7));
+        test_ko_u32(7, 18, 10, Some(5));
     }
 
     #[test]
     fn mulmod_bad_r_on_zero_n() {
-        assert!(test_u32(2, 3, 0, Some(0)));
-        assert!(!test_u32(2, 3, 0, Some(1)));
+        test_ok_u32(2, 3, 0, Some(0));
+        test_ko_u32(2, 3, 0, Some(1));
     }
 
     #[test]
     fn mulmod_bad_r_bigger_n() {
-        assert!(test_u32(2, 3, 5, Some(1)));
-        assert!(!test_u32(2, 3, 5, Some(5)));
+        test_ok_u32(2, 3, 5, Some(1));
+        test_ko_u32(2, 3, 5, Some(5));
     }
 }

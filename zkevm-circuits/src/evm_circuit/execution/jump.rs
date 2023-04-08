@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMP;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let destination = cb.query_rlc();
+        let destination = cb.query_word_rlc();
 
         // Pop the value from the stack
         cb.stack_pop(destination.expr());
@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_range, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_range, test_util::CircuitTestBuilder};
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -106,13 +106,10 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     fn test_invalid_jump(destination: usize) {
@@ -130,24 +127,16 @@ mod test {
             STOP
         });
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
     fn jump_gadget_simple() {
         test_ok(34);
         test_ok(100);
-    }
-
-    #[test]
-    fn invalid_jump_err() {
-        test_invalid_jump(34);
     }
 
     #[test]

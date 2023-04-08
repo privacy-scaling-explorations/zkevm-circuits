@@ -1,8 +1,10 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
-use eth_types::{GethExecTrace, U256};
+use eth_types::{bytecode::OpcodeWithData, Bytecode, GethExecTrace, U256};
+use log::{error, info};
 use prettytable::Table;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum MainnetFork {
@@ -135,11 +137,62 @@ pub fn print_trace(trace: GethExecTrace) -> Result<()> {
         ]);
     }
 
-    println!("FAILED: {:?}", trace.failed);
-    println!("GAS: {:?}", trace.gas);
+    error!("FAILED: {:?}", trace.failed);
+    info!("GAS: {:?}", trace.gas);
     table.printstd();
 
     Ok(())
+}
+
+pub fn current_git_commit() -> Result<String> {
+    let output = Command::new("git")
+        .args(&["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let git_hash = String::from_utf8(output.stdout).unwrap();
+    let git_hash = git_hash[..7].to_string();
+    Ok(git_hash)
+}
+
+pub fn current_submodule_git_commit() -> Result<String> {
+    let git_cmd = Command::new("git")
+        .args(&["ls-tree", "HEAD"])
+        .stdout(Stdio::piped())
+        .output()?;
+
+    match String::from_utf8(git_cmd.stdout)?
+        .lines()
+        .filter_map(|l| l.strip_suffix("\ttests").and_then(|l| l.split(' ').nth(2)))
+        .next()
+    {
+        Some(git_hash) => Ok(git_hash.to_string()),
+        None => bail!("unknown submodule hash"),
+    }
+}
+
+pub fn bytecode_of(code: &str) -> anyhow::Result<Bytecode> {
+    let bytecode = if let Ok(bytes) = hex::decode(code) {
+        match Bytecode::try_from(bytes.clone()) {
+            Ok(bytecode) => {
+                for op in bytecode.iter() {
+                    info!("{}", op.to_string());
+                }
+                bytecode
+            }
+            Err(err) => {
+                error!("Failed to parse bytecode {:?}", err);
+                Bytecode::from_raw_unchecked(bytes)
+            }
+        }
+    } else {
+        let mut bytecode = Bytecode::default();
+        for op in code.split(',') {
+            let op = OpcodeWithData::from_str(op.trim()).unwrap();
+            bytecode.append_op(op);
+        }
+        bytecode
+    };
+    Ok(bytecode)
 }
 
 #[cfg(test)]

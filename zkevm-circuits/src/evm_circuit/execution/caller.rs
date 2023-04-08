@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLER;
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
-        let caller_address = cb.query_rlc();
+        let caller_address = cb.query_word_rlc();
 
         // Lookup rw_table -> call_context with caller address
         cb.call_context_lookup(
@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::test_util::run_test_circuits;
+    use crate::test_util::CircuitTestBuilder;
     use eth_types::bytecode;
     use mock::TestContext;
 
@@ -100,12 +100,9 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 }

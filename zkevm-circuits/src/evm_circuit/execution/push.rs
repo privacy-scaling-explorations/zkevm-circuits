@@ -30,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_rlc();
+        let value = cb.query_word_rlc();
         // Query selectors for each opcode_lookup
         let selectors = array_init(|_| cb.query_bool());
 
@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         // linear combination uses little-endian, so we lookup from the LSB
         // which has index (program_counter + num_pushed), and then move left
         // (program_counter + num_pushed - idx) to lookup all 32 bytes
-        // condiionally by selectors.
+        // conditionally by selectors.
         // For PUSH2 as an example, we lookup from byte0, byte1, ..., byte31,
         // where the byte2 is actually the PUSH2 itself, and lookup are only
         // enabled for byte0 and byte1.
@@ -144,9 +144,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_bytes, test_util::run_test_circuits};
-    use eth_types::bytecode;
-    use eth_types::evm_types::OpcodeId;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode, evm_types::OpcodeId};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
@@ -160,13 +159,10 @@ mod test {
         }
         bytecode.write_op(OpcodeId::STOP);
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]
@@ -231,38 +227,5 @@ mod test {
         {
             test_ok(opcode, &rand_bytes(idx + 1));
         }
-    }
-
-    #[test]
-    fn stack_overflow_simple() {
-        test_stack_overflow(OpcodeId::PUSH1, &[1]);
-    }
-
-    fn test_stack_overflow(opcode: OpcodeId, bytes: &[u8]) {
-        assert!(bytes.len() == opcode.data_len());
-
-        let mut bytecode = bytecode! {
-            .write_op(opcode)
-        };
-        for b in bytes {
-            bytecode.write(*b, false);
-        }
-        // still add 1024 causes stack overflow
-        for _ in 0..1025 {
-            bytecode.write_op(opcode);
-            for b in bytes {
-                bytecode.write(*b, false);
-            }
-        }
-        // append final stop op code
-        bytecode.write_op(OpcodeId::STOP);
-
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
     }
 }

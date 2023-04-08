@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::ConstraintBuilder,
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, MemoryAddress, Word,
+            select, sum, Cell, CellType, MemoryAddress,
         },
     },
     util::Expr,
@@ -75,8 +75,12 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: Cell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
+        debug_assert_eq!(
+            CellType::StoragePhase2,
+            cb.curr.cell_manager.columns()[memory_offset.cell_column_index].cell_type
+        );
         let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
-        let memory_offset_bytes = cb.query_rlc();
+        let memory_offset_bytes = cb.query_word_rlc();
 
         let has_length = 1.expr() - memory_length_is_zero.expr();
         cb.condition(has_length, |cb| {
@@ -101,7 +105,6 @@ impl<F: Field> MemoryAddressGadget<F> {
         offset: usize,
         memory_offset: U256,
         memory_length: U256,
-        randomness: F,
     ) -> Result<u64, Error> {
         let memory_offset_bytes = memory_offset.to_le_bytes();
         let memory_length_bytes = memory_length.to_le_bytes();
@@ -109,7 +112,7 @@ impl<F: Field> MemoryAddressGadget<F> {
         self.memory_offset.assign(
             region,
             offset,
-            Value::known(Word::random_linear_combine(memory_offset_bytes, randomness)),
+            region.word_rlc(U256::from_little_endian(&memory_offset_bytes)),
         )?;
         self.memory_offset_bytes.assign(
             region,
@@ -212,13 +215,8 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
     /// - `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
-    ///   256**MAX_QUAD_COST_IN_BYTES`
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        curr_memory_word_size: Expression<F>,
-        addresses: [Expression<F>; N],
-    ) -> Self {
+    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, addresses: [Expression<F>; N]) -> Self {
         // Calculate the memory size of the memory access
         // `address_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
         let memory_word_sizes =
@@ -227,6 +225,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
         // The memory size needs to be updated if this memory access
         // requires expanding the memory.
         // `next_memory_word_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
+        let curr_memory_word_size = cb.curr.state.memory_word_size.expr();
         let mut next_memory_word_size = curr_memory_word_size.clone();
         let max_memory_word_sizes = array_init(|idx| {
             let max_memory_word_size = MinMaxGadget::construct(
@@ -352,8 +351,7 @@ impl<F: Field, const GAS_COPY: GasCost> MemoryCopierGasGadget<F, GAS_COPY> {
     /// - `address < 32 * 256**MAX_MEMORY_SIZE_IN_BYTES`
     /// Output ranges:
     /// - `next_memory_size < 256**MAX_MEMORY_SIZE_IN_BYTES`
-    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES +
-    ///   256**MAX_QUAD_COST_IN_BYTES`
+    /// - `gas_cost <= GAS_MEM*256**MAX_MEMORY_SIZE_IN_BYTES + 256**MAX_QUAD_COST_IN_BYTES`
     pub(crate) fn construct(
         cb: &mut ConstraintBuilder<F>,
         num_bytes: Expression<F>,

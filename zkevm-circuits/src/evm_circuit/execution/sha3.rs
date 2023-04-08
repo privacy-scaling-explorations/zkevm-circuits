@@ -36,9 +36,9 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let offset = cb.query_cell();
-        let size = cb.query_rlc();
-        let sha3_rlc = cb.query_rlc();
+        let offset = cb.query_cell_phase2();
+        let size = cb.query_word_rlc();
+        let sha3_rlc = cb.query_word_rlc();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(size.expr());
@@ -47,7 +47,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let memory_address = MemoryAddressGadget::construct(cb, offset, size);
 
         let copy_rwc_inc = cb.query_cell();
-        let rlc_acc = cb.query_cell();
+        let rlc_acc = cb.query_cell_phase2();
+
         cb.condition(memory_address.has_length(), |cb| {
             cb.copy_table_lookup(
                 cb.curr.state.call_id.expr(),
@@ -62,17 +63,14 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 copy_rwc_inc.expr(),
             );
         });
+
         cb.condition(not::expr(memory_address.has_length()), |cb| {
             cb.require_zero("copy_rwc_inc == 0 for size = 0", copy_rwc_inc.expr());
             cb.require_zero("rlc_acc == 0 for size = 0", rlc_acc.expr());
         });
         cb.keccak_table_lookup(rlc_acc.expr(), memory_address.length(), sha3_rlc.expr());
 
-        let memory_expansion = MemoryExpansionGadget::construct(
-            cb,
-            cb.curr.state.memory_word_size.expr(),
-            [memory_address.address()],
-        );
+        let memory_expansion = MemoryExpansionGadget::construct(cb, [memory_address.address()]);
         let memory_copier_gas = MemoryCopierGasGadget::construct(
             cb,
             memory_address.length(),
@@ -116,9 +114,9 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let [memory_offset, size, sha3_output] =
             [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
                 .map(|idx| block.rws[idx].stack_value());
-        let memory_address =
-            self.memory_address
-                .assign(region, offset, memory_offset, size, block.randomness)?;
+        let memory_address = self
+            .memory_address
+            .assign(region, offset, memory_offset, size)?;
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
@@ -134,8 +132,12 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
             .map(|i| block.rws[step.rw_indices[i]].memory_value())
             .collect();
-        let rlc_acc = rlc::value(values.iter().rev(), block.randomness);
-        self.rlc_acc.assign(region, offset, Value::known(rlc_acc))?;
+
+        let rlc_acc = region
+            .challenges()
+            .keccak_input()
+            .map(|randomness| rlc::value(values.iter().rev(), randomness));
+        self.rlc_acc.assign(region, offset, rlc_acc)?;
 
         // Memory expansion and dynamic gas cost for reading it.
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(
@@ -157,20 +159,23 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
+    use crate::test_util::CircuitTestBuilder;
+    use bus_mapping::{
+        circuit_input_builder::CircuitsParams,
+        evm::{gen_sha3_code, MemoryKind},
+    };
     use mock::TestContext;
-
-    use crate::test_util::run_test_circuits;
 
     fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
         let (code, _) = gen_sha3_code(offset, size, mem_kind);
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
+        )
+        .params(CircuitsParams {
+            max_rws: 5500,
+            ..Default::default()
+        })
+        .run();
     }
 
     #[test]

@@ -4,6 +4,7 @@ use bus_mapping::{
     evm::OpcodeId,
     operation,
 };
+use eth_types::evm_unimplemented;
 
 use crate::{
     evm_circuit::{
@@ -20,6 +21,8 @@ pub struct ExecStep {
     pub call_index: usize,
     /// The indices in the RW trace incurred in this step
     pub rw_indices: Vec<(RwTableTag, usize)>,
+    /// Number of rw operations performed via a copy event in this step.
+    pub copy_rw_counter_delta: u64,
     /// The execution state for the step
     pub execution_state: ExecutionState,
     /// The Read/Write counter before the step
@@ -34,8 +37,10 @@ pub struct ExecStep {
     pub gas_cost: u64,
     /// The memory size in bytes
     pub memory_size: u64,
-    /// The counter for reversible writes
+    /// The counter for reversible writes at the beginning of the step
     pub reversible_write_counter: usize,
+    /// The number of reversible writes from this step
+    pub reversible_write_counter_delta: usize,
     /// The counter for log index within tx
     pub log_id: usize,
     /// The opcode corresponds to the step
@@ -57,8 +62,7 @@ impl From<&ExecError> for ExecutionState {
     fn from(error: &ExecError) -> Self {
         match error {
             ExecError::InvalidOpcode => ExecutionState::ErrorInvalidOpcode,
-            ExecError::StackOverflow => ExecutionState::ErrorStackOverflow,
-            ExecError::StackUnderflow => ExecutionState::ErrorStackUnderflow,
+            ExecError::StackOverflow | ExecError::StackUnderflow => ExecutionState::ErrorStack,
             ExecError::WriteProtection => ExecutionState::ErrorWriteProtection,
             ExecError::Depth => ExecutionState::ErrorDepth,
             ExecError::InsufficientBalance => ExecutionState::ErrorInsufficientBalance,
@@ -83,13 +87,9 @@ impl From<&ExecError> for ExecutionState {
                 OogError::Exp => ExecutionState::ErrorOutOfGasEXP,
                 OogError::Sha3 => ExecutionState::ErrorOutOfGasSHA3,
                 OogError::ExtCodeCopy => ExecutionState::ErrorOutOfGasEXTCODECOPY,
-                OogError::Sload => ExecutionState::ErrorOutOfGasSLOAD,
-                OogError::Sstore => ExecutionState::ErrorOutOfGasSSTORE,
-                OogError::Call => ExecutionState::ErrorOutOfGasCALL,
-                OogError::CallCode => ExecutionState::ErrorOutOfGasCALLCODE,
-                OogError::DelegateCall => ExecutionState::ErrorOutOfGasDELEGATECALL,
+                OogError::Call => ExecutionState::ErrorOutOfGasCall,
+                OogError::SloadSstore => ExecutionState::ErrorOutOfGasSloadSstore,
                 OogError::Create2 => ExecutionState::ErrorOutOfGasCREATE2,
-                OogError::StaticCall => ExecutionState::ErrorOutOfGasSTATICCALL,
                 OogError::SelfDestruct => ExecutionState::ErrorOutOfGasSELFDESTRUCT,
             },
         }
@@ -118,7 +118,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
 
                 macro_rules! dummy {
                     ($name:expr) => {{
-                        log::warn!("{:?} is implemented with DummyGadget", $name);
+                        evm_unimplemented!("{:?} is implemented with DummyGadget", $name);
                         $name
                     }};
                 }
@@ -127,6 +127,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::ADD | OpcodeId::SUB => ExecutionState::ADD_SUB,
                     OpcodeId::ADDMOD => ExecutionState::ADDMOD,
                     OpcodeId::ADDRESS => ExecutionState::ADDRESS,
+                    OpcodeId::BALANCE => ExecutionState::BALANCE,
                     OpcodeId::MUL | OpcodeId::DIV | OpcodeId::MOD => ExecutionState::MUL_DIV_MOD,
                     OpcodeId::MULMOD => ExecutionState::MULMOD,
                     OpcodeId::SDIV | OpcodeId::SMOD => ExecutionState::SDIV_SMOD,
@@ -138,6 +139,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::XOR => ExecutionState::BITWISE,
                     OpcodeId::OR => ExecutionState::BITWISE,
                     OpcodeId::NOT => ExecutionState::NOT,
+                    OpcodeId::EXP => ExecutionState::EXP,
                     OpcodeId::POP => ExecutionState::POP,
                     OpcodeId::PUSH32 => ExecutionState::PUSH,
                     OpcodeId::BYTE => ExecutionState::BYTE,
@@ -153,6 +155,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLER => ExecutionState::CALLER,
                     OpcodeId::CALLVALUE => ExecutionState::CALLVALUE,
                     OpcodeId::EXTCODEHASH => ExecutionState::EXTCODEHASH,
+                    OpcodeId::EXTCODESIZE => ExecutionState::EXTCODESIZE,
                     OpcodeId::BLOCKHASH => ExecutionState::BLOCKHASH,
                     OpcodeId::TIMESTAMP | OpcodeId::NUMBER | OpcodeId::GASLIMIT => {
                         ExecutionState::BLOCKCTXU64
@@ -160,6 +163,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::COINBASE => ExecutionState::BLOCKCTXU160,
                     OpcodeId::DIFFICULTY | OpcodeId::BASEFEE => ExecutionState::BLOCKCTXU256,
                     OpcodeId::GAS => ExecutionState::GAS,
+                    OpcodeId::SAR => ExecutionState::SAR,
                     OpcodeId::SELFBALANCE => ExecutionState::SELFBALANCE,
                     OpcodeId::SHA3 => ExecutionState::SHA3,
                     OpcodeId::SHL | OpcodeId::SHR => ExecutionState::SHL_SHR,
@@ -169,23 +173,20 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::CALLDATACOPY => ExecutionState::CALLDATACOPY,
                     OpcodeId::CHAINID => ExecutionState::CHAINID,
                     OpcodeId::ISZERO => ExecutionState::ISZERO,
-                    OpcodeId::CALL | OpcodeId::STATICCALL => ExecutionState::CALL_STATICCALL,
+                    OpcodeId::CALL
+                    | OpcodeId::CALLCODE
+                    | OpcodeId::DELEGATECALL
+                    | OpcodeId::STATICCALL => ExecutionState::CALL_OP,
                     OpcodeId::ORIGIN => ExecutionState::ORIGIN,
                     OpcodeId::CODECOPY => ExecutionState::CODECOPY,
                     OpcodeId::CALLDATALOAD => ExecutionState::CALLDATALOAD,
                     OpcodeId::CODESIZE => ExecutionState::CODESIZE,
-                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN,
+                    OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
+                    OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
+                    OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
                     // dummy ops
-                    OpcodeId::BALANCE => dummy!(ExecutionState::BALANCE),
-                    OpcodeId::EXP => dummy!(ExecutionState::EXP),
-                    OpcodeId::SAR => dummy!(ExecutionState::SAR),
-                    OpcodeId::EXTCODESIZE => dummy!(ExecutionState::EXTCODESIZE),
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
-                    OpcodeId::RETURNDATASIZE => dummy!(ExecutionState::RETURNDATASIZE),
-                    OpcodeId::RETURNDATACOPY => dummy!(ExecutionState::RETURNDATACOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
-                    OpcodeId::CALLCODE => dummy!(ExecutionState::CALLCODE),
-                    OpcodeId::DELEGATECALL => dummy!(ExecutionState::DELEGATECALL),
                     OpcodeId::CREATE2 => dummy!(ExecutionState::CREATE2),
                     OpcodeId::SELFDESTRUCT => dummy!(ExecutionState::SELFDESTRUCT),
                     _ => unimplemented!("unimplemented opcode {:?}", op),
@@ -193,6 +194,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
             }
             circuit_input_builder::ExecState::BeginTx => ExecutionState::BeginTx,
             circuit_input_builder::ExecState::EndTx => ExecutionState::EndTx,
+            circuit_input_builder::ExecState::EndBlock => ExecutionState::EndBlock,
         }
     }
 }
@@ -214,14 +216,15 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
                     }
                     operation::Target::TxRefund => RwTableTag::TxRefund,
                     operation::Target::Account => RwTableTag::Account,
-                    operation::Target::AccountDestructed => RwTableTag::AccountDestructed,
                     operation::Target::CallContext => RwTableTag::CallContext,
                     operation::Target::TxReceipt => RwTableTag::TxReceipt,
                     operation::Target::TxLog => RwTableTag::TxLog,
+                    operation::Target::Start => RwTableTag::Start,
                 };
                 (tag, x.as_usize())
             })
             .collect(),
+        copy_rw_counter_delta: step.copy_rw_counter_delta,
         execution_state: ExecutionState::from(step),
         rw_counter: usize::from(step.rwc),
         program_counter: usize::from(step.pc) as u64,
@@ -234,6 +237,7 @@ pub(super) fn step_convert(step: &circuit_input_builder::ExecStep) -> ExecStep {
         },
         memory_size: step.memory_size as u64,
         reversible_write_counter: step.reversible_write_counter,
+        reversible_write_counter_delta: step.reversible_write_counter_delta,
         log_id: step.log_id,
     }
 }

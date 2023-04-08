@@ -12,9 +12,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::evm_types::OpcodeId;
-use eth_types::Field;
-use eth_types::ToLittleEndian;
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -33,9 +31,9 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let a = cb.query_word();
-        let b = cb.query_word();
-        let c = cb.query_word();
+        let a = cb.query_word_rlc();
+        let b = cb.query_word_rlc();
+        let c = cb.query_word_rlc();
 
         cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
@@ -101,7 +99,7 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::test::rand_word, test_util::run_test_circuits};
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{bytecode, Word};
     use mock::TestContext;
 
@@ -121,13 +119,10 @@ mod test {
             STOP
         };
 
-        assert_eq!(
-            run_test_circuits(
-                TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
-                None
-            ),
-            Ok(())
-        );
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
     }
 
     #[test]

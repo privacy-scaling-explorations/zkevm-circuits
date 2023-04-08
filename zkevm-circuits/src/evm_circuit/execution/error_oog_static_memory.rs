@@ -45,7 +45,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         let opcode = cb.query_cell();
 
         // Query address by a full word
-        let address = cb.query_word();
+        let address = cb.query_word_rlc();
 
         // Check if this is an MSTORE8
         let is_mstore8 = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MSTORE8.expr());
@@ -54,7 +54,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         // Get the next memory size and the gas cost for this memory access
         let memory_expansion = MemoryExpansionGadget::construct(
             cb,
-            cb.curr.state.memory_word_size.expr(),
             [address_low::expr(&address) + 1.expr() + (is_not_mstore8 * 31.expr())],
         );
 
