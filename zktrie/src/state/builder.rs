@@ -103,6 +103,7 @@ impl CanRead for AccountData {
         rd.read_exact(&mut uint_buf)?;
         // check it is 0x05080000
         if uint_buf != [5, 8, 0, 0] {
+            log::error!("invalid AccountData flag {:?}", uint_buf);
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
 
@@ -123,9 +124,6 @@ impl CanRead for AccountData {
         let keccak_code_hash = H256::from(&byte32_buf);
         rd.read_exact(&mut byte32_buf)?; // poseidon hash of code
         let poseidon_code_hash = H256::from(&byte32_buf);
-
-        // rd.read_exact(&mut byte32_buf)?; // code size
-        // let code_size = U64::from_big_endian(&byte32_buf[24..]);
 
         Ok(AccountData {
             nonce: nonce.as_u64(),
@@ -153,6 +151,7 @@ impl CanRead for StorageData {
         rd.read_exact(&mut uint_buf)?;
         // check it is 0x01010000
         if uint_buf != [1, 1, 0, 0] {
+            log::error!("invalid StorageData flag {:?}", uint_buf);
             return Err(Error::new(ErrorKind::Other, "unexpected flags"));
         }
         let mut byte32_buf = [0; 32];

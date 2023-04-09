@@ -1076,7 +1076,7 @@ fn bad_initial_tx_receipt_value() {
     );
 }
 
-fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<Fr> {
+fn prover(rows: Vec<Rw>, overrides: HashMap<(AdviceColumn, isize), Fr>) -> MockProver<'static, Fr> {
     let updates = MptUpdates::mock_from(&rows);
     let circuit = StateCircuit::<Fr> {
         rows,

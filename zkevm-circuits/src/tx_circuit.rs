@@ -26,6 +26,7 @@ use gadgets::{
     is_equal::{IsEqualChip, IsEqualConfig, IsEqualInstruction},
     util::{and, not, select, sum, Expr},
 };
+use halo2_base::AssignedValue;
 #[cfg(feature = "enable-sign-verify")]
 use halo2_proofs::circuit::{Cell, RegionIndex};
 use halo2_proofs::{
@@ -1443,7 +1444,7 @@ impl<F: Field> TxCircuit<F> {
                     }
 
                     #[cfg(feature = "enable-sign-verify")]
-                    let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value().copied();
+                    let tx_sign_hash = assigned_sig_verif.msg_hash_rlc.value;
                     #[cfg(not(feature = "enable-sign-verify"))]
                     let tx_sign_hash = {
                         challenges.evm_word().map(|rand| {
@@ -1603,12 +1604,9 @@ impl<F: Field> TxCircuit<F> {
                             CallerAddress => {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
-                                    assigned_sig_verif.address.copy_advice(
-                                        || "sv_address == SignVerify.address",
-                                        &mut region,
-                                        config.sv_address,
-                                        offset - 1,
-                                    )?;
+                                    let address: AssignedValue<_> =
+                                        assigned_sig_verif.address.clone().into();
+                                    address.copy_advice(&mut region, config.sv_address, offset - 1);
                                 }
                                 #[cfg(not(feature = "enable-sign-verify"))]
                                 {
@@ -1629,7 +1627,7 @@ impl<F: Field> TxCircuit<F> {
                                 #[cfg(feature = "enable-sign-verify")]
                                 {
                                     region.constrain_equal(
-                                        assigned_sig_verif.msg_hash_rlc.cell(),
+                                        assigned_sig_verif.msg_hash_rlc.clone().cell,
                                         Cell {
                                             // FIXME
                                             region_index: RegionIndex(1),
@@ -1968,7 +1966,7 @@ mod tx_circuit_tests {
         max_calldata: usize,
     ) -> Result<(), Vec<VerifyFailure>> {
         let k = max(
-            18,
+            19,
             log2_ceil(TxCircuit::<F>::min_num_rows(max_txs, max_calldata)),
         );
         // SignVerifyChip -> ECDSAChip -> MainGate instance column
