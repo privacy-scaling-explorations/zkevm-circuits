@@ -1,18 +1,20 @@
-pub use super::circuit::BytecodeCircuit;
+pub use super::TxCircuit;
 
 use crate::{
-    bytecode_circuit::circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
-    table::{BytecodeTable, KeccakTable},
+    table::{KeccakTable, TxTable},
+    tx_circuit::{TxCircuitConfig, TxCircuitConfigArgs},
     util::{Challenges, SubCircuit, SubCircuitConfig},
 };
+use bus_mapping::circuit_input_builder::keccak_inputs_tx_circuit;
 use eth_types::Field;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use log::error;
 
-impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
-    type Config = (BytecodeCircuitConfig<F>, Challenges);
+impl<F: Field> Circuit<F> for TxCircuit<F> {
+    type Config = (TxCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -20,16 +22,16 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let bytecode_table = BytecodeTable::construct(meta);
+        let tx_table = TxTable::construct(meta);
         let keccak_table = KeccakTable::construct(meta);
         let challenges = Challenges::construct(meta);
 
         let config = {
             let challenges = challenges.exprs(meta);
-            BytecodeCircuitConfig::new(
+            TxCircuitConfig::new(
                 meta,
-                BytecodeCircuitConfigArgs {
-                    bytecode_table,
+                TxCircuitConfigArgs {
+                    tx_table,
                     keccak_table,
                     challenges,
                 },
@@ -48,10 +50,12 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
 
         config.keccak_table.dev_load(
             &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
+            &keccak_inputs_tx_circuit(&self.txs[..], self.chain_id).map_err(|e| {
+                error!("keccak_inputs_tx_circuit error: {:?}", e);
+                Error::Synthesis
+            })?,
             &challenges,
         )?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)?;
-        Ok(())
+        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
