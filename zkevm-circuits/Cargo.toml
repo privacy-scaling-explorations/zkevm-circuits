@@ -38,7 +38,8 @@ libsecp256k1 = "0.7"
 num-bigint = { version = "0.4" }
 subtle = "2.4"
 rand_chacha = "0.3"
-snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_02_02", default-features = false, features = ["loader_halo2", "system_halo2"] }
+snark-verifier = { git = "https://github.com/scroll-tech/snark-verifier", branch = "halo2-ecc-snark-verifier-0323" }
+snark-verifier-sdk = { git = "https://github.com/scroll-tech/snark-verifier", branch = "halo2-ecc-snark-verifier-0323", default-features=false, features = ["loader_halo2", "loader_evm", "halo2-pse"] }
 hex = "0.4.3"
 rayon = "1.5"
 once_cell = "1.17.0"

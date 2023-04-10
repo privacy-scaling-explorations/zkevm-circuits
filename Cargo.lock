@@ -1269,20 +1269,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ecc"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
-dependencies = [
- "group",
- "integer",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand",
- "subtle",
-]
-
-[[package]]
 name = "ecdsa"
 version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1365,6 +1351,19 @@ checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
 dependencies = [
  "atty",
  "humantime",
+ "log",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85cdab6a89accf66733ad5a1693a4dcced6aeff64602b634530dd73c1f3ee9f0"
+dependencies = [
+ "humantime",
+ "is-terminal",
  "log",
  "regex",
  "termcolor",
@@ -2669,20 +2668,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integer"
-version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_02_02#5905a20b62fcd9f6c269416a39c80de7ced8fb02"
-dependencies = [
- "group",
- "maingate",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rand",
- "subtle",
-]
-
-[[package]]
 name = "integration-tests"
 version = "0.1.0"
 dependencies = [
@@ -3139,6 +3124,27 @@ checksum = "0fac9e2da13b5eb447a6ce3d392f23a29d8694bff781bf03a16cd9ac8697593b"
 dependencies = [
  "hermit-abi 0.2.6",
  "libc",
+]
+
+[[package]]
+name = "num_enum"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f646caf906c20226733ed5b1374287eb97e3c2a5c227ce668c1f2ce20ae57c9"
+dependencies = [
+ "num_enum_derive",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcbff9bc912032c62bf65ef1d5aea88983b420f4f839db1e9b0c281a25c9c799"
+dependencies = [
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3949,6 +3955,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "revm"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73d84c8f9836efb0f5f5f8de4700a953c4e1f3119e5cfcb0aad8e5be73daf991"
+dependencies = [
+ "arrayref",
+ "auto_impl",
+ "bytes",
+ "hashbrown 0.13.2",
+ "num_enum",
+ "primitive-types 0.12.1",
+ "revm_precompiles",
+ "rlp",
+ "sha3 0.10.6",
+]
+
+[[package]]
+name = "revm_precompiles"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0353d456ef3e989dc9190f42c6020f09bc2025930c37895826029304413204b5"
+dependencies = [
+ "bytes",
+ "hashbrown 0.13.2",
+ "num",
+ "once_cell",
+ "primitive-types 0.12.1",
+ "ripemd",
+ "secp256k1",
+ "sha2 0.10.6",
+ "sha3 0.10.6",
+ "substrate-bn",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4480,11 +4521,12 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 [[package]]
 name = "snark-verifier"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2023_02_02#df03d898b841f71cbc36c2fb9fa07b8196f9623e"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323#a3d0a5ab48522bc533686da3ea8400282c91f536"
 dependencies = [
- "ecc",
- "halo2_proofs",
- "halo2curves",
+ "bytes",
+ "ethereum-types 0.14.1",
+ "halo2-base",
+ "halo2-ecc",
  "hex",
  "itertools",
  "lazy_static",
@@ -4493,6 +4535,34 @@ dependencies = [
  "num-traits",
  "poseidon",
  "rand",
+ "revm",
+ "rlp",
+ "rustc-hash",
+ "serde",
+ "sha3 0.10.6",
+]
+
+[[package]]
+name = "snark-verifier-sdk"
+version = "0.0.1"
+source = "git+https://github.com/scroll-tech/snark-verifier?branch=halo2-ecc-snark-verifier-0323#a3d0a5ab48522bc533686da3ea8400282c91f536"
+dependencies = [
+ "bincode",
+ "env_logger 0.10.0",
+ "ethereum-types 0.14.1",
+ "halo2-base",
+ "hex",
+ "itertools",
+ "lazy_static",
+ "log",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "snark-verifier",
 ]
 
 [[package]]
@@ -5450,6 +5520,7 @@ dependencies = [
  "serde_json",
  "sha3 0.10.6",
  "snark-verifier",
+ "snark-verifier-sdk",
  "strum",
  "strum_macros",
  "subtle",

@@ -27,7 +27,8 @@ pub mod mpt_circuit;
 pub mod pi_circuit;
 pub mod poseidon_circuit;
 pub mod rlp_circuit;
-pub mod root_circuit;
+// we don't use this for aggregation
+//pub mod root_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;

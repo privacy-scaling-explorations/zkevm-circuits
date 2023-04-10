@@ -94,6 +94,8 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
 };
+use itertools::Itertools;
+use snark_verifier_sdk::CircuitExt;
 
 use crate::{
     pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
@@ -590,6 +592,23 @@ impl<
         )?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
+    }
+}
+
+impl<
+        F: Field,
+        const MAX_TXS: usize,
+        const MAX_CALLDATA: usize,
+        const MAX_INNER_BLOCKS: usize,
+        const MOCK_RANDOMNESS: u64,
+    > CircuitExt<F> for SuperCircuit<F, MAX_TXS, MAX_CALLDATA, MAX_INNER_BLOCKS, MOCK_RANDOMNESS>
+{
+    fn num_instance(&self) -> Vec<usize> {
+        self.instances().iter().map(|l| l.len()).collect_vec()
+    }
+
+    fn instances(&self) -> Vec<Vec<F>> {
+        self.instance()
     }
 }
 
