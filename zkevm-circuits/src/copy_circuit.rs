@@ -40,6 +40,7 @@ use halo2_proofs::{
 };
 
 /// Encode the type `NumberOrHash` into a field element
+#[allow(clippy::needless_return)]
 pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
     match v {
         NumberOrHash::Number(n) => Value::known(F::from(*n as u64)),
@@ -52,7 +53,15 @@ pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) 
                 b.reverse();
                 b
             };
-            challenge.map(|challenge| rlc::value(&le_bytes, challenge))
+            #[cfg(feature = "scroll")]
+            {
+                // use poseidon codehash fr
+                return challenge.map(|_challenge| rlc::value(&le_bytes, 0x100u64.into()));
+            }
+            #[cfg(not(feature = "scroll"))]
+            {
+                return challenge.map(|challenge| rlc::value(&le_bytes, challenge));
+            }
         }
     }
 }
