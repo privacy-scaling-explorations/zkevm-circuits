@@ -24,7 +24,7 @@ use halo2_proofs::{
 ///   t2 = a0 * b2 + a2 * b0 + a1 * b1, contribute to above 128 bit
 ///   t3 = a0 * b3 + a3 * b0 + a2 * b1 + a1 * b2, contribute to above 192 bit
 ///
-/// so t0 ~ t1 include all contributions to the low 256-bit of product, with
+/// so t0 ~ t3 include all contributions to the low 256-bit of product, with
 /// a maximum 68-bit radix (the part higher than 256-bit), denoted as carry_hi
 /// Similarly, we define carry_lo as the radix of contributions to the low
 /// 128-bit of the product.
@@ -32,8 +32,8 @@ use halo2_proofs::{
 /// allocate 9 bytes for them each
 ///
 /// Finally we just prove:
-///   t0 + t1 * 2^64 = <low 128 bit of product> + carry_lo
-///   t2 + t3 * 2^64 + carry_lo = <high 128 bit of product> + carry_hi
+///   t0 + t1 * 2^64 = <low 128 bit of product> + carry_lo * 2^128
+///   t2 + t3 * 2^64 + carry_lo = <high 128 bit of product> + carry_hi * 2^128
 ///
 /// Last, we sum the parts that are higher than 256-bit in the multiplication
 /// into overflow
@@ -149,11 +149,9 @@ impl<F: Field> MulAddWordsGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
+    use super::{super::test_util::*, *};
     use eth_types::{ToScalar, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// MulAddGadgetContainer: require(a*b + c == d + carry*(2**256))

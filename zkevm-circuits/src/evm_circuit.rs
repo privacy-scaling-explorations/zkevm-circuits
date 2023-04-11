@@ -9,15 +9,21 @@ use halo2_proofs::{
 mod execution;
 pub mod param;
 pub(crate) mod step;
+pub mod table;
 pub(crate) mod util;
 
-pub mod table;
+#[cfg(any(feature = "test", test))]
+pub(crate) mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use self::EvmCircuit as TestEvmCircuit;
 
-use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
-};
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
 pub use crate::witness;
+use crate::{
+    table::{
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
+    },
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+};
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
 use execution::ExecutionConfig;
@@ -421,68 +427,36 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
     }
 }
 
-#[cfg(any(feature = "test", test))]
-pub mod test {
-    use super::*;
-    use crate::evm_circuit::witness::Block;
-
-    use eth_types::{Field, Word};
-    use rand::{
-        distributions::uniform::{SampleRange, SampleUniform},
-        random, thread_rng, Rng,
-    };
-
-    pub(crate) fn rand_range<T, R>(range: R) -> T
-    where
-        T: SampleUniform,
-        R: SampleRange<T>,
-    {
-        thread_rng().gen_range(range)
-    }
-
-    pub(crate) fn rand_bytes(n: usize) -> Vec<u8> {
-        (0..n).map(|_| random()).collect()
-    }
-
-    pub(crate) fn rand_bytes_array<const N: usize>() -> [u8; N] {
-        [(); N].map(|_| random())
-    }
-
-    pub(crate) fn rand_word() -> Word {
-        Word::from_big_endian(&rand_bytes_array::<32>())
-    }
-
-    impl<F: Field> EvmCircuit<F> {
-        pub fn get_test_cicuit_from_block(block: Block<F>) -> Self {
-            let fixed_table_tags = detect_fixed_table_tags(&block);
-            EvmCircuit::<F>::new_dev(block, fixed_table_tags)
-        }
-    }
-}
-
 #[cfg(test)]
 mod evm_circuit_stats {
-    use crate::evm_circuit::{
-        param::{
-            LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+    use crate::{
+        evm_circuit::{
+            param::{
+                LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
+            },
+            step::ExecutionState,
+            EvmCircuit,
         },
-        step::ExecutionState,
-        EvmCircuit,
+        stats::print_circuit_stats_by_states,
+        test_util::CircuitTestBuilder,
+        witness::block_convert,
     };
-    use crate::stats::print_circuit_stats_by_states;
-    use crate::test_util::CircuitTestBuilder;
-    use crate::witness::block_convert;
-    use bus_mapping::circuit_input_builder::CircuitsParams;
-    use bus_mapping::mock::BlockData;
+    use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
     use cli_table::{print_stdout, Cell, Style, Table};
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, evm_types::OpcodeId, ToWord};
-    use halo2_proofs::plonk::{Circuit, ConstraintSystem};
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, ToWord};
+    use halo2_proofs::{
+        dev::MockProver,
+        halo2curves::bn256::Fr,
+        plonk::{Circuit, ConstraintSystem},
+    };
     use itertools::Itertools;
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::test_ctx::helpers::tx_from_1_to_0;
-    use mock::{test_ctx::TestContext, MOCK_ACCOUNTS};
+    use mock::{
+        test_ctx::{
+            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+            TestContext,
+        },
+        MOCK_ACCOUNTS,
+    };
 
     #[test]
     pub fn empty_evm_circuit_no_padding() {

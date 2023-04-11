@@ -3,13 +3,23 @@ mod constraint_builder;
 mod lexicographic_ordering;
 mod lookups;
 mod multiple_precision_integer;
+mod param;
 mod random_linear_combination;
-#[cfg(test)]
-mod test;
 
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::StateCircuit as TestStateCircuit;
+
+use self::{
+    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
+    lexicographic_ordering::LimbIndex,
+};
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MptTable, ProofType, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -29,22 +39,12 @@ use halo2_proofs::{
 use lexicographic_ordering::Config as LexicographicOrderingConfig;
 use lookups::{Chip as LookupsChip, Config as LookupsConfig, Queries as LookupsQueries};
 use multiple_precision_integer::{Chip as MpiChip, Config as MpiConfig, Queries as MpiQueries};
+use param::*;
 use random_linear_combination::{Chip as RlcChip, Config as RlcConfig, Queries as RlcQueries};
-#[cfg(test)]
-use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use self::{
-    constraint_builder::{MptUpdateTableQueries, RwTableQueries},
-    lexicographic_ordering::LimbIndex,
-};
-
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
-
-const N_LIMBS_RW_COUNTER: usize = 2;
-const N_LIMBS_ACCOUNT_ADDRESS: usize = 10;
-const N_LIMBS_ID: usize = 2;
+use std::collections::HashMap;
 
 /// Config for StateCircuit
 #[derive(Clone)]
@@ -59,8 +59,8 @@ pub struct StateCircuitConfig<F> {
     // others, it is 0.
     initial_value: Column<Advice>,
     // For Rw::AccountStorage, identify non-existing if both committed value and
-    // new value are zero. Will do lookup for ProofType::StorageDoesNotExist if
-    // non-existing, otherwise do lookup for ProofType::StorageChanged.
+    // new value are zero. Will do lookup for MPTProofType::NonExistingStorageProof if
+    // non-existing, otherwise do lookup for MPTProofType::StorageMod.
     is_non_exist: BatchedIsZeroConfig,
     // Intermediary witness used to reduce mpt lookup expression degree
     mpt_proof_type: Column<Advice>,
@@ -320,9 +320,9 @@ impl<F: Field> StateCircuitConfig<F> {
                 F::from(match row {
                     Rw::AccountStorage { .. } => {
                         if pair[0].is_zero_vartime() && pair[1].is_zero_vartime() {
-                            ProofType::StorageDoesNotExist as u64
+                            MPTProofType::NonExistingStorageProof as u64
                         } else {
-                            ProofType::StorageChanged as u64
+                            MPTProofType::StorageMod as u64
                         }
                     }
                     Rw::Account { field_tag, .. } => {
@@ -330,7 +330,7 @@ impl<F: Field> StateCircuitConfig<F> {
                             && pair[1].is_zero_vartime()
                             && matches!(field_tag, AccountFieldTag::CodeHash)
                         {
-                            ProofType::AccountDoesNotExist as u64
+                            MPTProofType::NonExistingAccountProof as u64
                         } else {
                             *field_tag as u64
                         }
@@ -427,8 +427,8 @@ pub struct StateCircuit<F> {
     pub rows: Vec<Rw>,
     updates: MptUpdates,
     pub(crate) n_rows: usize,
-    #[cfg(test)]
-    overrides: HashMap<(test::AdviceColumn, isize), F>,
+    #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+    overrides: HashMap<(dev::AdviceColumn, isize), F>,
     _marker: PhantomData<F>,
 }
 
@@ -441,7 +441,7 @@ impl<F: Field> StateCircuit<F> {
             rows,
             updates,
             n_rows,
-            #[cfg(test)]
+            #[cfg(any(feature = "test", test, feature = "test-circuits"))]
             overrides: HashMap::new(),
             _marker: PhantomData::default(),
         }
@@ -494,7 +494,7 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
                     self.n_rows,
                     randomness,
                 )?;
-                #[cfg(test)]
+                #[cfg(any(feature = "test", test, feature = "test-circuits"))]
                 {
                     let padding_length = RwMap::padding_len(self.rows.len(), self.n_rows);
                     for ((column, row_offset), &f) in &self.overrides {
@@ -519,51 +519,6 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
     /// powers of randomness for instance columns
     fn instance(&self) -> Vec<Vec<F>> {
         vec![]
-    }
-}
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for StateCircuit<F>
-where
-    F: Field,
-{
-    type Config = (StateCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let rw_table = RwTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            StateCircuitConfig::new(
-                meta,
-                StateCircuitConfigArgs {
-                    rw_table,
-                    mpt_table,
-                    challenges,
-                },
-            )
-        };
-
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        config
-            .mpt_table
-            .load(&mut layouter, &self.updates, challenges.evm_word())?;
-        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
@@ -638,8 +593,10 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
 
 #[cfg(test)]
 mod state_circuit_stats {
-    use crate::evm_circuit::step::ExecutionState;
-    use crate::stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
+    use crate::{
+        evm_circuit::step::ExecutionState,
+        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
+    };
 
     /// Prints the stats of State circuit per execution state.  See
     /// `print_circuit_stats_by_states` for more details.

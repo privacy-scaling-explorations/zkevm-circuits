@@ -1,9 +1,11 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{AccountField, AccountOp, CallContextField, TxAccessListAccountOp},
+    state_db::CodeDB,
+    Error,
+};
 use eth_types::{evm_types::gas_utils::memory_expansion_gas_cost, GethExecStep, ToWord, Word};
-use keccak256::EMPTY_HASH;
 
 #[derive(Debug, Copy, Clone)]
 pub struct DummyCreate<const IS_CREATE2: bool>;
@@ -172,7 +174,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
-        if call.code_hash.to_fixed_bytes() == *EMPTY_HASH {
+        if call.code_hash == CodeDB::empty_code_hash() {
             // 1. Create with empty initcode.
             state.handle_return(geth_step)?;
             Ok(vec![exec_step])

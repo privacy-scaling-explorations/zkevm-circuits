@@ -145,8 +145,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
-    use eth_types::bytecode;
-    use eth_types::evm_types::OpcodeId;
+    use eth_types::{bytecode, evm_types::OpcodeId};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, bytes: &[u8]) {
