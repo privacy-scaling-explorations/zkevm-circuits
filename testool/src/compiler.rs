@@ -66,12 +66,6 @@ impl Cache {
     }
 }
 
-#[derive(Default)]
-pub struct Compiler {
-    cache: Option<Cache>,
-    compile: bool,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 struct CompilerInput {
     language: Language,
@@ -203,6 +197,12 @@ struct SourceLocation {
     end: i32,
     file: String,
     start: i32,
+}
+
+#[derive(Default)]
+pub struct Compiler {
+    cache: Option<Cache>,
+    compile: bool,
 }
 
 impl Compiler {
