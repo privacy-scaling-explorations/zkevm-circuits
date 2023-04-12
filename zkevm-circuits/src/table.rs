@@ -901,6 +901,8 @@ impl_expr!(BytecodeFieldTag);
 /// Table with Bytecode indexed by its Code Hash
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
+    /// Is Enabled
+    pub q_enable: Column<Fixed>,
     /// Code Hash
     pub code_hash: Column<Advice>,
     /// Tag
@@ -919,6 +921,7 @@ impl BytecodeTable {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
         let code_hash = meta.advice_column_in(SecondPhase);
         Self {
+            q_enable: meta.fixed_column(),
             code_hash,
             tag,
             index,
@@ -929,7 +932,7 @@ impl BytecodeTable {
 
     /// Assign the `BytecodeTable` from a list of bytecodes, following the same
     /// table layout that the Bytecode Circuit uses.
-    pub fn load<'a, F: Field>(
+    pub fn dev_load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
@@ -939,6 +942,13 @@ impl BytecodeTable {
             || "bytecode table",
             |mut region| {
                 let mut offset = 0;
+
+                region.assign_fixed(
+                    || "bytecode table all-zero row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in <BytecodeTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "bytecode table all-zero row",
@@ -953,6 +963,12 @@ impl BytecodeTable {
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
                 for bytecode in bytecodes.clone() {
                     for row in bytecode.table_assignments(challenges) {
+                        region.assign_fixed(
+                            || format!("bytecode table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),
@@ -973,6 +989,7 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.code_hash.into(),
             self.tag.into(),
             self.index.into(),
@@ -983,6 +1000,7 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("code_hash"),
             String::from("tag"),
             String::from("index"),
@@ -1123,7 +1141,9 @@ impl<F: Field> LookupTable<F> for BlockTable {
 #[derive(Clone, Debug)]
 pub struct KeccakTable {
     /// True when the row is enabled
-    pub is_enabled: Column<Advice>,
+    pub q_enable: Column<Fixed>,
+    /// True when the row is final
+    pub is_final: Column<Advice>,
     /// Byte array input as `RLC(reversed(input))`
     pub input_rlc: Column<Advice>, // RLC of input bytes
     /// Byte array input length
@@ -1135,7 +1155,8 @@ pub struct KeccakTable {
 impl<F: Field> LookupTable<F> for KeccakTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.is_enabled.into(),
+            self.q_enable.into(),
+            self.is_final.into(),
             self.input_rlc.into(),
             self.input_len.into(),
             self.output_rlc.into(),
@@ -1144,7 +1165,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("is_enabled"),
+            String::from("q_enable"),
+            String::from("is_final"),
             String::from("input_rlc"),
             String::from("input_len"),
             String::from("output_rlc"),
@@ -1156,7 +1178,8 @@ impl KeccakTable {
     /// Construct a new KeccakTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_enabled: meta.advice_column(),
+            q_enable: meta.fixed_column(),
+            is_final: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
             output_rlc: meta.advice_column_in(SecondPhase),
@@ -1164,6 +1187,7 @@ impl KeccakTable {
     }
 
     /// Generate the keccak table assignments from a byte array input.
+    /// Used only for dev_load
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
@@ -1191,6 +1215,8 @@ impl KeccakTable {
     }
 
     /// Assign a table row for keccak table
+    /// Used inside keccak circuit
+    /// q_enable assigned inside keccak circuit
     pub fn assign_row<F: Field>(
         &self,
         region: &mut Region<F>,
@@ -1219,6 +1245,12 @@ impl KeccakTable {
             |mut region| {
                 let mut offset = 0;
                 for column in <KeccakTable as LookupTable<F>>::advice_columns(self) {
+                    region.assign_fixed(
+                        || "keccak table all-zero row",
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
                     region.assign_advice(
                         || "keccak table all-zero row",
                         column,
@@ -1231,7 +1263,12 @@ impl KeccakTable {
                 let keccak_table_columns = <KeccakTable as LookupTable<F>>::advice_columns(self);
                 for input in inputs.clone() {
                     for row in Self::assignments(input, challenges) {
-                        // let mut column_index = 0;
+                        region.assign_fixed(
+                            || format!("keccak table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("keccak table row {}", offset),
