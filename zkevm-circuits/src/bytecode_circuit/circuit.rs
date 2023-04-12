@@ -28,9 +28,7 @@ use halo2_proofs::plonk::FirstPhase as SecondPhase;
 use halo2_proofs::plonk::SecondPhase;
 
 #[cfg(feature = "poseidon-codehash")]
-use super::circuit::to_poseidon_hash::{
-    ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD,
-};
+use super::circuit::to_poseidon_hash::{ToHashBlockCircuitConfig, HASHBLOCK_BYTES_IN_FIELD};
 
 #[cfg(feature = "poseidon-codehash")]
 /// alias for circuit config
