@@ -397,11 +397,8 @@ impl<F: Field> ConstraintBuilder<F> {
                 q.value_prev_column(),
             );
         });
-        // 7.3. First access for a set of all keys are 0 if READ
-        self.require_zero(
-            "first access for a set of all keys are 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
+        // 7.2. `initial value` is 0
+        self.require_zero("initial TxRefund value is 0", q.initial_value());
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {
