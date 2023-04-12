@@ -1,8 +1,5 @@
 use crate::{
-    evm_circuit::util::{
-        and, constraint_builder::BaseConstraintBuilder, math_gadget::IsZeroGadget, not, or, rlc,
-        select,
-    },
+    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
@@ -359,7 +356,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             ]))
         });
 
-        // bug 1 fix
         // When cur.tag == Byte and cur.index + 1 == cur.length ->
         // assert next.tag == Header
         meta.create_gate("cur.tag == Byte and cur.index + 1 == cur.length", |meta| {
@@ -516,7 +512,9 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     )?;
                 }
 
-                // Overwrite
+                // Overwrite the witness assignment by using the values in the `overwrite`
+                // parameter.  This is used to explicitly set intermediate witness values for
+                // negative tests.
                 let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
                 for (offset, row) in overwrite.rows.iter().enumerate() {
                     for (name, column, value) in [
@@ -686,7 +684,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             push_data_left_is_zero_chip,
             index_length_diff_is_zero_chip,
             offset,
-            offset <= last_row_offset, // bug 2 fix
+            offset <= last_row_offset,
             offset == last_row_offset,
             empty_hash,
             F::from(BytecodeFieldTag::Header as u64),
@@ -1216,6 +1214,8 @@ mod tests {
     use halo2_proofs::dev::MockProver;
 
     #[test]
+    #[should_panic]
+    #[allow(clippy::clone_on_copy)]
     fn bytecode_soundness_bug_1() {
         let k = 9;
         let bytecode = vec![1, 2, 3, 4];
