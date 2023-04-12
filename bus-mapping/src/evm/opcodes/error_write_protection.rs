@@ -57,9 +57,9 @@ impl Opcode for ErrorWriteProtection {
 
         state.call_context_read(
             &mut exec_step,
-            current_call.call_id,
+            current_call.call.id,
             CallContextField::IsStatic,
-            (current_call.is_static as u64).into(),
+            (current_call.call.is_static as u64).into(),
         );
 
         // `IsSuccess` call context operation is added in gen_restore_context_ops

@@ -41,10 +41,10 @@ impl Opcode for OOGCall {
             (CallContextField::TxId, tx_id.into()),
             (
                 CallContextField::IsStatic,
-                (current_call.is_static as u64).into(),
+                (current_call.call.is_static as u64).into(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, current_call.call_id, field, value);
+            state.call_context_read(&mut exec_step, current_call.call.id, field, value);
         }
 
         for i in 0..stack_input_num {

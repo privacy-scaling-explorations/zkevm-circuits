@@ -8,12 +8,12 @@ use crate::{
             math_gadget::{AddWordsGadget, PairSelectGadget},
             select, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 // AddGadget verifies ADD and SUB at the same time by an extra swap flag,
@@ -77,7 +77,7 @@ impl<F: Field> ExecutionGadget<F> for AddSubGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

@@ -11,12 +11,12 @@ use crate::{
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             sum, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian, U256, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// ShlShrGadget verifies opcode SHL and SHR.
@@ -156,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

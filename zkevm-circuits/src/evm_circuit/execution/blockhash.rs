@@ -10,13 +10,13 @@ use crate::{
             math_gadget::LtGadget,
             CachedRegion, Cell, RandomLinearCombination, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, ToScalar};
+use eth_types::{Field, ToLittleEndian, ToScalar, ZkEvmCall};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -97,7 +97,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

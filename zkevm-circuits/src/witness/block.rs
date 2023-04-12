@@ -8,20 +8,23 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word, ZkEvmBlock};
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
+use super::{step::step_convert, Bytecode, ExecStep, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
 /// data for witness generation.
 #[derive(Debug, Clone, Default)]
 pub struct Block<F> {
+    ///
+    pub block: ZkEvmBlock,
+    ///
+    pub txs: Vec<Transaction>,
+
     /// The randomness for random linear combination
     pub randomness: F,
-    /// Transactions in the block
-    pub txs: Vec<Transaction>,
     /// EndBlock step that is repeated after the last transaction and before
     /// reaching the last EVM row.
     pub end_block_not_last: ExecStep,
@@ -33,22 +36,18 @@ pub struct Block<F> {
     pub bytecodes: HashMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContext,
-    /// Copy events for the copy circuit's table.
-    pub copy_events: Vec<CopyEvent>,
-    /// Exponentiation traces for the exponentiation circuit's table.
-    pub exp_events: Vec<ExpEvent>,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
-    /// Circuit Setup Parameters
-    pub circuits_params: CircuitsParams,
-    /// Inputs to the SHA3 opcode
-    pub sha3_inputs: Vec<Vec<u8>>,
-    /// State root of the previous block
-    pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
-    /// Original Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
+
+    // TODO-KIMI: decouple these types and move to eth-types/
+    /// Copy events for the copy circuit's table.
+    pub copy_events: Vec<CopyEvent>,
+    /// Exponentiation traces for the exponentiation circuit's table.  
+    pub exp_events: Vec<ExpEvent>,
+    /// Circuit Setup Parameters
+    pub circuits_params: CircuitsParams,
 }
 
 impl<F: Field> Block<F> {
@@ -57,12 +56,13 @@ impl<F: Field> Block<F> {
     pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
-            for step in &tx.steps {
-                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
-                for rw_ref in &step.rw_indices {
-                    println!("  - {:?}", self.rws[*rw_ref]);
-                }
-            }
+            // TODO-KIMI : fix it!
+            // for step in &tx.tx.steps {
+            //     println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+            //     for rw_ref in &step.rw_indices {
+            //         println!("  - {:?}", self.rws[*rw_ref]);
+            //     }
+            // }
         }
     }
 }
@@ -94,7 +94,7 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+            self.txs.iter().map(|tx| 9 + tx.tx.call_data.len()).sum();
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
@@ -240,16 +240,15 @@ pub fn block_convert<F: Field>(
     let rws = RwMap::from(&block.container);
     rws.check_value();
     Ok(Block {
+        block: ZkEvmBlock {
+            sha3_inputs: block.sha3_inputs.clone(),
+            prev_state_root: block.prev_state_root,
+            eth_block: block.eth_block.clone(),
+        },
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
         rws,
-        txs: block
-            .txs()
-            .iter()
-            .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1))
-            .collect(),
         end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
         end_block_last: step_convert(&block.block_steps.end_block_last),
         bytecodes: code_db
@@ -262,11 +261,11 @@ pub fn block_convert<F: Field>(
             .collect(),
         copy_events: block.copy_events.clone(),
         exp_events: block.exp_events.clone(),
-        sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
-        prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        eth_block: block.eth_block.clone(),
+        // TODO-KIMI fix it.
+        // txs: block.txs(),
+        ..Default::default()
     })
 }

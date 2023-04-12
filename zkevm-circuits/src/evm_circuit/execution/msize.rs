@@ -8,12 +8,12 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -63,14 +63,14 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         offset: usize,
         _: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
         self.value.assign(
             region,
             offset,
-            Some((step.memory_size as u64).to_le_bytes()),
+            Some((step.step.memory_size as u64).to_le_bytes()),
         )?;
 
         Ok(())

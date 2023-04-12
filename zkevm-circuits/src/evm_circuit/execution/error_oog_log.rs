@@ -10,14 +10,14 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field,
+    Field, ZkEvmCall,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -100,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -130,8 +130,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(step.step.gas_left),
+            F::from(step.step.gas_cost),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;

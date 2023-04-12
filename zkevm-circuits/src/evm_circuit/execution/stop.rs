@@ -11,13 +11,13 @@ use crate::{
             math_gadget::IsZeroGadget,
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -100,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let code = block
@@ -116,7 +116,7 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         self.is_out_of_range.assign(
             region,
             offset,
-            F::from(code.bytes.len() as u64) - F::from(step.program_counter),
+            F::from(code.bytes.len() as u64) - F::from(step.step.program_counter),
         )?;
 
         let opcode = step.opcode.unwrap();

@@ -13,14 +13,14 @@ use crate::{
             math_gadget::{LtGadget, PairSelectGadget},
             or, select, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToScalar, U256,
+    Field, ToScalar, ZkEvmCall, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -156,7 +156,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -179,7 +179,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         log::debug!(
             "ErrorOutOfGasSloadSstore: is_sstore = {}, gas_left = {}, gas_cost = {}, gas_sentry = {}",
             is_sstore,
-            step.gas_left,
+            step.step.gas_left,
             gas_cost,
             if is_sstore { GasCost::SSTORE_SENTRY.0 } else { 0 },
         );
@@ -187,7 +187,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
         self.is_static
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.callee_address.assign(
@@ -222,13 +222,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.step.gas_left)),
             Value::known(F::from(gas_cost)),
         )?;
         self.insufficient_gas_sentry.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.step.gas_left)),
             Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
 

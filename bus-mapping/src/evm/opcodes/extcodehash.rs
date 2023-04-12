@@ -31,14 +31,14 @@ impl Opcode for Extcodehash {
             (CallContextField::TxId, U256::from(state.tx_ctx.id())),
             (
                 CallContextField::RwCounterEndOfReversion,
-                U256::from(state.call()?.rw_counter_end_of_reversion as u64),
+                U256::from(state.call()?.call.rw_counter_end_of_reversion as u64),
             ),
             (
                 CallContextField::IsPersistent,
-                U256::from(state.call()?.is_persistent as u64),
+                U256::from(state.call()?.call.is_persistent as u64),
             ),
         ] {
-            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            state.call_context_read(&mut exec_step, state.call()?.call.id, field, value);
         }
 
         // Update transaction access list for external_address

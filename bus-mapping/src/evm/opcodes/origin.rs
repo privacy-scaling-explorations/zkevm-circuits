@@ -23,7 +23,7 @@ impl Opcode for Origin {
         // CallContext read of the TxId
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::TxId,
             tx_id.into(),
         );

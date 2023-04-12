@@ -55,10 +55,20 @@ pub struct BlockSteps {
 /// Circuit Input related to a block.
 #[derive(Debug)]
 pub struct Block {
+    // pub block: ZkEvmBlock,
+    /// Transactions in the block
+    pub txs: Vec<Transaction>,
+    /// Inputs to the SHA3 opcode
+    pub sha3_inputs: Vec<Vec<u8>>,
+    /// State root of the previous block
+    pub prev_state_root: Word, // TODO: Make this H256
+    /// Original Block from geth
+    pub eth_block: ethers_core::types::Block<ethers_core::types::Transaction>,
+
     /// chain id
     pub chain_id: Word,
     /// history hashes contains most recent 256 block hashes in history, where
-    /// the lastest one is at history_hashes[history_hashes.len() - 1].
+    /// the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// coinbase
     pub coinbase: Address,
@@ -72,25 +82,20 @@ pub struct Block {
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
-    /// State root of the previous block
-    pub prev_state_root: Word,
     /// Container of operations done in this block.
     pub container: OperationContainer,
-    /// Transactions contained in the block
-    pub txs: Vec<Transaction>,
     /// Block-wise steps
     pub block_steps: BlockSteps,
-    /// Copy events in this block.
-    pub copy_events: Vec<CopyEvent>,
-    /// Inputs to the SHA3 opcode
-    pub sha3_inputs: Vec<Vec<u8>>,
-    /// Exponentiation events in the block.
-    pub exp_events: Vec<ExpEvent>,
+    // pub exp_events: Vec<ExpEvent>,
     code: HashMap<Hash, Vec<u8>>,
-    /// Circuits Setup Paramteres
+
+    // TODO-KIMI: decouple these types and move to eth-types/
+    /// Copy events for the copy circuit's table.
+    pub copy_events: Vec<CopyEvent>,
+    /// Exponentiation traces for the exponentiation circuit's table.  
+    pub exp_events: Vec<ExpEvent>,
+    /// Circuit Setup Parameters
     pub circuits_params: CircuitsParams,
-    /// Original block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 impl Block {
@@ -110,6 +115,10 @@ impl Block {
         }
 
         Ok(Self {
+            txs: Vec::new(),
+            sha3_inputs: Vec::new(),
+            prev_state_root,
+            eth_block: eth_block.clone(),
             chain_id,
             history_hashes,
             coinbase: eth_block
@@ -124,9 +133,7 @@ impl Block {
             timestamp: eth_block.timestamp,
             difficulty: eth_block.difficulty,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
-            prev_state_root,
             container: OperationContainer::new(),
-            txs: Vec::new(),
             block_steps: BlockSteps {
                 end_block_not_last: ExecStep {
                     exec_state: ExecState::EndBlock,
@@ -140,9 +147,8 @@ impl Block {
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             code: HashMap::new(),
-            sha3_inputs: Vec::new(),
+
             circuits_params,
-            eth_block: eth_block.clone(),
         })
     }
 

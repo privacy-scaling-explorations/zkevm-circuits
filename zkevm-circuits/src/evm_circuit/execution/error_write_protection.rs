@@ -6,12 +6,12 @@ use crate::{
             common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
             math_gadget::IsZeroGadget, sum, CachedRegion, Cell, Word as RLCWord,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ZkEvmCall, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -95,7 +95,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();

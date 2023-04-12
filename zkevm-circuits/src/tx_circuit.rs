@@ -12,7 +12,8 @@ use crate::{
     witness,
 };
 use eth_types::{
-    geth_types::Transaction, sign_types::SignData, Address, Field, ToLittleEndian, ToScalar,
+    geth_types::Transaction, sign_types::SignData, Address, Bytes, Field, ToLittleEndian, ToScalar,
+    Word,
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
@@ -330,11 +331,25 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.context.chain_id.as_u64(),
+            // TODO-KIMI fix it
             block
-                .eth_block
-                .transactions
+                .txs
                 .iter()
-                .map(|tx| tx.into())
+                .map(|tx| Transaction {
+                    from: tx.tx.caller_address,
+                    to: Some(tx.tx.callee_address),
+                    nonce: Word::from(tx.tx.nonce),
+                    value: tx.tx.value,
+                    gas_price: tx.tx.gas_price,
+                    call_data: Bytes::from(tx.tx.call_data.clone()),
+                    ..Default::default() /* gas_fee_cap: (),
+                                          * gas_tip_cap: (),
+                                          * gas_limit: (),
+                                          * access_list: (),
+                                          * v: (),
+                                          * r: (),
+                                          * s: (), */
+                })
                 .collect(),
         )
     }
@@ -344,7 +359,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         (
             Self::min_num_rows(
                 block.txs.len(),
-                block.txs.iter().map(|tx| tx.call_data.len()).sum(),
+                block.txs.iter().map(|tx| tx.tx.call_data.len()).sum(),
             ),
             Self::min_num_rows(
                 block.circuits_params.max_txs,
@@ -517,7 +532,8 @@ mod tx_circuit_tests {
 
         let mut tx = mock::CORRECT_MOCK_TXS[0].clone();
         // This address doesn't correspond to the account that signed this tx.
-        tx.from = AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
+        tx.tx.caller_address =
+            AddrOrWallet::from(address!("0x1230000000000000000000000000000000000456"));
 
         assert!(run::<Fr>(
             vec![tx.into()],

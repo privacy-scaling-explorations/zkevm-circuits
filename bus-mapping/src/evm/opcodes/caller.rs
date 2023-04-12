@@ -23,7 +23,7 @@ impl Opcode for Caller {
         // CallContext read of the caller_address
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CallerAddress,
             value,
         );

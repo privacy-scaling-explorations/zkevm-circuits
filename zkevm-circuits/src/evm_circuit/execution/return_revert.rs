@@ -13,13 +13,13 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
-use eth_types::{Field, ToScalar, U256};
+use eth_types::{Field, ToScalar, U256, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -239,7 +239,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.opcode.assign(

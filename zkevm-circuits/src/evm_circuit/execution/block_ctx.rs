@@ -8,13 +8,13 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -83,7 +83,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.value_u64
@@ -124,7 +124,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.value_u160
@@ -169,7 +169,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.value_u256

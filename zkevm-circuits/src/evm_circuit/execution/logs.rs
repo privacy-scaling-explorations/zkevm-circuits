@@ -12,7 +12,7 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
             not, sum, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
     util::{build_tx_log_expression, Expr},
@@ -21,7 +21,7 @@ use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToScalar, U256,
+    Field, ToScalar, ZkEvmCall, U256,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -189,7 +189,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -244,7 +244,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.is_persistent
             .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
         // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
         // log writes when `is_persistent` is true.
         self.copy_rwc_inc.assign(

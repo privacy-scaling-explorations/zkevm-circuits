@@ -18,7 +18,7 @@ impl Opcode for Log {
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
         let mut exec_step = gen_log_step(state, geth_step)?;
-        if state.call()?.is_persistent {
+        if state.call()?.call.is_persistent {
             let copy_event = gen_copy_event(state, geth_step, &mut exec_step)?;
             state.push_copy(&mut exec_step, copy_event);
             state.tx_ctx.log_id += 1;
@@ -48,7 +48,7 @@ fn gen_log_step(
     let mstart = geth_step.stack.nth_last(0)?;
     let msize = geth_step.stack.nth_last(1)?;
 
-    let call_id = state.call()?.call_id;
+    let call_id = state.call()?.call.id;
     let mut stack_index = 0;
     state.stack_read(
         &mut exec_step,
@@ -73,29 +73,29 @@ fn gen_log_step(
         &mut exec_step,
         call_id,
         CallContextField::IsStatic,
-        Word::from(state.call()?.is_static as u8),
+        Word::from(state.call()?.call.is_static as u8),
     );
     state.call_context_read(
         &mut exec_step,
         call_id,
         CallContextField::CalleeAddress,
-        state.call()?.address.to_word(),
+        state.call()?.call.callee_address.to_word(),
     );
     state.call_context_read(
         &mut exec_step,
         call_id,
         CallContextField::IsPersistent,
-        Word::from(state.call()?.is_persistent as u8),
+        Word::from(state.call()?.call.is_persistent as u8),
     );
 
-    if state.call()?.is_persistent {
+    if state.call()?.call.is_persistent {
         state.tx_log_write(
             &mut exec_step,
             state.tx_ctx.id(),
             state.tx_ctx.log_id + 1,
             TxLogField::Address,
             0,
-            state.call()?.address.to_word(),
+            state.call()?.call.callee_address.to_word(),
         )?;
     }
 
@@ -114,7 +114,7 @@ fn gen_log_step(
         )?;
         stack_index += 1;
 
-        if state.call()?.is_persistent {
+        if state.call()?.call.is_persistent {
             state.tx_log_write(
                 &mut exec_step,
                 state.tx_ctx.id(),
@@ -171,7 +171,10 @@ fn gen_copy_event(
 ) -> Result<CopyEvent, Error> {
     let rw_counter_start = state.block_ctx.rwc;
 
-    assert!(state.call()?.is_persistent, "Error: Call is not persistent");
+    assert!(
+        state.call()?.call.is_persistent,
+        "Error: Call is not persistent"
+    );
     let memory_start = geth_step.stack.nth_last(0)?.as_u64();
     let msize = geth_step.stack.nth_last(1)?.as_usize();
 
@@ -181,7 +184,7 @@ fn gen_copy_event(
 
     Ok(CopyEvent {
         src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(state.call()?.call_id),
+        src_id: NumberOrHash::Number(state.call()?.call.id),
         src_addr,
         src_addr_end,
         dst_type: CopyDataType::TxLog,
@@ -290,8 +293,8 @@ mod log_tests {
             .handle_block(&block.eth_block, &block.geth_traces)
             .unwrap();
 
-        let is_persistent = builder.block.txs()[0].calls()[0].is_persistent;
-        let callee_address = builder.block.txs()[0].to;
+        let is_persistent = builder.block.txs()[0].calls()[0].call.is_persistent;
+        let callee_address = builder.block.txs()[0].tx.callee_address;
 
         let step = builder.block.txs()[0]
             .steps()
@@ -299,7 +302,7 @@ mod log_tests {
             .find(|step| step.exec_state == ExecState::Op(cur_op_code))
             .unwrap();
 
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call.id;
 
         assert_eq!(
             [0, 1]
@@ -369,7 +372,7 @@ mod log_tests {
                     RW::WRITE,
                     &TxLogOp {
                         tx_id: 1,
-                        log_id: step.log_id + 1,
+                        log_id: step.step.log_id + 1,
                         field: TxLogField::Address,
                         index: 0,
                         value: callee_address.to_word(),
@@ -383,7 +386,7 @@ mod log_tests {
         for (idx, topic) in topics.iter().rev().enumerate() {
             log_topic_ops.push((
                 RW::WRITE,
-                TxLogOp::new(1, step.log_id + 1, TxLogField::Topic, idx, *topic),
+                TxLogOp::new(1, step.step.log_id + 1, TxLogField::Topic, idx, *topic),
             ));
         }
         assert_eq!(
@@ -414,7 +417,7 @@ mod log_tests {
                         RW::WRITE,
                         TxLogOp::new(
                             1,
-                            step.log_id + 1, // because it is in next CopyToLog step
+                            step.step.log_id + 1, // because it is in next CopyToLog step
                             TxLogField::Data,
                             idx - mstart,
                             Word::from(memory_data[mstart + idx]),
@@ -446,7 +449,7 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::TxLog);
         assert_eq!(copy_events[0].dst_id, NumberOrHash::Number(1)); // tx_id
         assert_eq!(copy_events[0].dst_addr as usize, 0);
-        assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
+        assert_eq!(copy_events[0].log_id, Some(step.step.log_id as u64 + 1));
 
         for (idx, (byte, is_code)) in copy_events[0].bytes.iter().enumerate() {
             assert_eq!(Some(byte), memory_data.get(mstart + idx));

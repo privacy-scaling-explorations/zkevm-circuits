@@ -1,5 +1,5 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -16,7 +16,7 @@ use crate::{
             memory_gadget::BufferReaderGadget,
             not, CachedRegion, Cell, MemoryAddress,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
@@ -171,7 +171,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -193,7 +193,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // assign to the buffer reader gadget.
         let (calldata_length, calldata_offset, src_id) = if call.is_root {
-            (tx.call_data_length as u64, 0u64, tx.id as u64)
+            (tx.call_data_length as u64, 0u64, tx.tx.id as u64)
         } else {
             (
                 call.call_data_length,
@@ -218,7 +218,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             if call.is_root {
                 // fetch from tx call data
                 if src_addr + i < tx.call_data_length {
-                    *byte = tx.call_data[src_addr + i];
+                    *byte = tx.tx.call_data[src_addr + i];
                 }
             } else {
                 // fetch from memory

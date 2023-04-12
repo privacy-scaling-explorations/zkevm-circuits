@@ -9,13 +9,13 @@ use crate::{
             math_gadget::{ByteSizeGadget, LtGadget},
             CachedRegion, Cell, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian,
+    Field, ToLittleEndian, ZkEvmCall,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -94,7 +94,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -102,8 +102,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
 
         log::debug!(
             "ErrorOutOfGasEXP: gas_left = {}, gas_cost = {}",
-            step.gas_left,
-            step.gas_cost,
+            step.step.gas_left,
+            step.step.gas_cost,
         );
 
         self.opcode
@@ -115,8 +115,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGExpGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
-            Value::known(F::from(step.gas_cost)),
+            Value::known(F::from(step.step.gas_left)),
+            Value::known(F::from(step.step.gas_cost)),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 4)?;

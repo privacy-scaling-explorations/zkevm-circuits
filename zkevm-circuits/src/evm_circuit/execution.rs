@@ -15,12 +15,12 @@ use crate::{
             constraint_builder::{BaseConstraintBuilder, ConstraintBuilder},
             rlc, CellType,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::LookupTable,
     util::{query_expression, Challenges, Expr},
 };
-use eth_types::{evm_unimplemented, Field};
+use eth_types::{evm_unimplemented, Field, ZkEvmCall};
 use gadgets::util::not;
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -188,7 +188,7 @@ pub(crate) trait ExecutionGadget<F: FieldExt> {
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error>;
 }
@@ -902,7 +902,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .txs
                     .last()
                     .map(|tx| tx.calls[0].clone())
-                    .unwrap_or_else(Call::default);
+                    .unwrap_or_else(ZkEvmCall::default);
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
                 // Collect all steps
@@ -912,7 +912,7 @@ impl<F: Field> ExecutionConfig<F> {
                     .flat_map(|tx| {
                         tx.steps
                             .iter()
-                            .map(move |step| (tx, &tx.calls[step.call_index], step))
+                            .map(move |step| (tx, &tx.calls[step.step.call_index], step))
                     })
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();
@@ -1065,7 +1065,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset_end: usize,
         block: &Block<F>,
         transaction: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
         height: usize,
         challenges: &Challenges<Value<F>>,
@@ -1103,10 +1103,10 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
         height: usize,
-        next: Option<(&Transaction, &Call, &ExecStep)>,
+        next: Option<(&Transaction, &ZkEvmCall, &ExecStep)>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         if !matches!(step.execution_state, ExecutionState::EndBlock) {
@@ -1153,7 +1153,7 @@ impl<F: Field> ExecutionConfig<F> {
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.step
@@ -1396,12 +1396,14 @@ impl<F: Field> ExecutionConfig<F> {
         // Check that the number of rw operations generated from the bus-mapping
         // correspond to the number of assigned rw lookups by the EVM Circuit
         // plus the number of rw lookups done by the copy circuit.
-        if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
+        if step.rw_indices.len()
+            != assigned_rw_values.len() + step.step.copy_rw_counter_delta as usize
+        {
             log::error!(
                 "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
                 step.rw_indices.len(),
                 assigned_rw_values.len(),
-                step.copy_rw_counter_delta,
+                step.step.copy_rw_counter_delta,
                 step
             );
         }
@@ -1414,10 +1416,10 @@ impl<F: Field> ExecutionConfig<F> {
                 false
             };
             assert!(
-                rev_count <= step.reversible_write_counter_delta,
+                rev_count <= step.step.reversible_write_counter_delta,
                 "Assigned {} reversions, but step only has {}",
                 rev_count,
-                step.reversible_write_counter_delta
+                step.step.reversible_write_counter_delta
             );
             // In the EVM Circuit, reversion rw lookups are assigned after their
             // corresponding rw lookup, but in the bus-mapping they are

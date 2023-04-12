@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use eth_types::{evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word};
+use eth_types::{
+    evm_types::Memory, geth_types, Address, GethExecTrace, Signature, Word, ZkEvmCall,
+    ZkEvmTransaction,
+};
 use ethers_core::utils::get_contract_address;
 
 use crate::{
@@ -179,38 +182,26 @@ impl TransactionContext {
 #[derive(Debug, Clone)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
-    /// Nonce
-    pub nonce: u64,
-    /// Gas
-    pub gas: u64,
-    /// Gas price
-    pub gas_price: Word,
-    /// From / Caller Address
-    pub from: Address,
-    /// To / Callee Address
-    pub to: Address,
-    /// Value
-    pub value: Word,
-    /// Input / Call Data
-    pub input: Vec<u8>,
-    /// Signature
-    pub signature: Signature,
+    /// Transaction
+    pub tx: ZkEvmTransaction,
     /// Calls made in the transaction
     pub(crate) calls: Vec<Call>,
     /// Execution steps
     steps: Vec<ExecStep>,
+    /// Signature
+    pub signature: Signature,
 }
 
 impl From<&Transaction> for geth_types::Transaction {
     fn from(tx: &Transaction) -> geth_types::Transaction {
         geth_types::Transaction {
-            from: tx.from,
-            to: Some(tx.to),
-            nonce: Word::from(tx.nonce),
-            gas_limit: Word::from(tx.gas),
-            value: tx.value,
-            gas_price: tx.gas_price,
-            call_data: tx.input.clone().into(),
+            from: tx.tx.callee_address,
+            to: Some(tx.tx.callee_address),
+            nonce: Word::from(tx.tx.nonce),
+            gas_limit: Word::from(tx.tx.gas),
+            value: tx.tx.value,
+            gas_price: tx.tx.gas_price,
+            call_data: tx.tx.call_data.clone().into(),
             v: tx.signature.v,
             r: tx.signature.r,
             s: tx.signature.s,
@@ -223,20 +214,23 @@ impl Transaction {
     /// Create a dummy Transaction with zero values
     pub fn dummy() -> Self {
         Self {
-            nonce: 0,
-            gas: 0,
-            gas_price: Word::zero(),
-            from: Address::zero(),
-            to: Address::zero(),
-            value: Word::zero(),
-            input: Vec::new(),
+            tx: ZkEvmTransaction {
+                id: 0,
+                nonce: 0,
+                gas: 0,
+                gas_price: Word::zero(),
+                caller_address: Address::zero(),
+                callee_address: Address::zero(),
+                value: Word::zero(),
+                call_data: Vec::new(),
+            },
+            calls: Vec::new(),
+            steps: Vec::new(),
             signature: Signature {
                 r: Word::zero(),
                 s: Word::zero(),
                 v: 0,
             },
-            calls: Vec::new(),
-            steps: Vec::new(),
         }
     }
 
@@ -261,50 +255,59 @@ impl Transaction {
             }
             let code_hash = account.code_hash;
             Call {
-                call_id,
-                kind: CallKind::Call,
-                is_root: true,
-                is_persistent: is_success,
-                is_success,
-                caller_address: eth_tx.from,
-                address,
+                call: ZkEvmCall {
+                    id: call_id,
+                    is_root: true,
+                    is_persistent: is_success,
+                    is_success,
+                    caller_address: eth_tx.from,
+                    callee_address: address,
+                    code_hash: Word::from(code_hash.0),
+                    depth: 1,
+                    value: eth_tx.value,
+                    call_data_length: eth_tx.input.as_ref().len() as u64,
+                    ..Default::default()
+                },
                 code_source: CodeSource::Address(address),
-                code_hash,
-                depth: 1,
-                value: eth_tx.value,
-                call_data_length: eth_tx.input.as_ref().len() as u64,
+                kind: CallKind::Call,
                 ..Default::default()
             }
         } else {
             // Contract creation
             let code_hash = code_db.insert(eth_tx.input.to_vec());
             Call {
-                call_id,
+                call: ZkEvmCall {
+                    id: call_id,
+                    is_root: true,
+                    is_persistent: is_success,
+                    is_success,
+                    caller_address: eth_tx.from,
+                    callee_address: get_contract_address(eth_tx.from, eth_tx.nonce),
+                    code_hash: Word::from(code_hash.0),
+                    value: eth_tx.value,
+                    call_data_length: eth_tx.input.len().try_into().unwrap(),
+                    depth: 1,
+                    ..Default::default()
+                },
                 kind: CallKind::Create,
-                is_root: true,
-                is_persistent: is_success,
-                is_success,
-                caller_address: eth_tx.from,
-                address: get_contract_address(eth_tx.from, eth_tx.nonce),
                 code_source: CodeSource::Tx,
-                code_hash,
-                depth: 1,
-                value: eth_tx.value,
-                call_data_length: eth_tx.input.len().try_into().unwrap(),
                 ..Default::default()
             }
         };
 
         Ok(Self {
-            nonce: eth_tx.nonce.as_u64(),
-            gas: eth_tx.gas.as_u64(),
-            gas_price: eth_tx.gas_price.unwrap_or_default(),
-            from: eth_tx.from,
-            to: eth_tx
-                .to
-                .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
-            value: eth_tx.value,
-            input: eth_tx.input.to_vec(),
+            tx: ZkEvmTransaction {
+                id: 0,
+                nonce: eth_tx.nonce.as_u64(),
+                gas: eth_tx.gas.as_u64(),
+                gas_price: eth_tx.gas_price.unwrap_or_default(),
+                caller_address: eth_tx.from,
+                callee_address: eth_tx
+                    .to
+                    .unwrap_or_else(|| get_contract_address(eth_tx.from, eth_tx.nonce)),
+                value: eth_tx.value,
+                call_data: eth_tx.input.to_vec(),
+            },
             calls: vec![call],
             steps: Vec::new(),
             signature: Signature {
@@ -317,7 +320,7 @@ impl Transaction {
 
     /// Whether this [`Transaction`] is a create one
     pub fn is_create(&self) -> bool {
-        self.calls[0].is_create()
+        self.calls[0].call.is_create
     }
 
     /// Return the list of execution steps of this transaction.

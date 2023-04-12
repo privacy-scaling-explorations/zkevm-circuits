@@ -8,13 +8,13 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, Cell, RandomLinearCombination,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -69,14 +69,14 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let origin = block.rws[step.rw_indices[1]].stack_value();
 
         // Assing TxId.
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
 
         // Assign Origin addr RLC.
         self.origin.assign(

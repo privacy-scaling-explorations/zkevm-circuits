@@ -14,13 +14,13 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             CachedRegion, Cell, MemoryAddress,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall};
 use gadgets::util::not;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -170,7 +170,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        _call: &Call,
+        _call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

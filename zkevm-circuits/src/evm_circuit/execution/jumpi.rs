@@ -13,11 +13,11 @@ use crate::{
             math_gadget::IsZeroGadget,
             select, CachedRegion, Cell, RandomLinearCombination,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

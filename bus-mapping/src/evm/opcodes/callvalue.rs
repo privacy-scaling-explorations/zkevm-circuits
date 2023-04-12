@@ -23,7 +23,7 @@ impl Opcode for Callvalue {
         // CallContext read of the call_value
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::Value,
             value,
         );

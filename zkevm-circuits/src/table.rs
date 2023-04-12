@@ -12,7 +12,7 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
+use eth_types::{Field, ToLittleEndian, ToScalar, Word, ZkEvmTransaction, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -163,7 +163,7 @@ impl TxTable {
             txs.len(),
             max_txs
         );
-        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        let sum_txs_calldata = txs.iter().map(|tx| tx.tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
             "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
@@ -220,7 +220,10 @@ impl TxTable {
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs: Vec<_> = (txs.len()..max_txs)
                     .map(|i| Transaction {
-                        id: i + 1,
+                        tx: ZkEvmTransaction {
+                            id: i + 1,
+                            ..Default::default()
+                        },
                         ..Default::default()
                     })
                     .collect();

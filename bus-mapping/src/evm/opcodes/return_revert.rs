@@ -35,44 +35,50 @@ impl Opcode for ReturnRevert {
         let call = state.call()?.clone();
         state.call_context_read(
             &mut exec_step,
-            call.call_id,
+            call.call.id,
             CallContextField::IsSuccess,
-            call.is_success.to_word(),
+            call.call.is_success.to_word(),
         );
 
         let offset = offset.as_usize();
         let length = length.as_usize();
 
         // Case A in the spec.
-        if call.is_create() && call.is_success && length > 0 {
+        if call.call.is_create && call.call.is_success && length > 0 {
             // Note: handle_return updates state.code_db. All we need to do here is push the
             // copy event.
             let code_hash = handle_create(
                 state,
                 &mut exec_step,
                 Source {
-                    id: call.call_id,
+                    id: call.call.id,
                     offset,
                     length,
                 },
             )?;
 
             for (field, value) in [
-                (CallContextField::CallerId, call.caller_id.to_word()),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (CallContextField::CallerId, call.call.caller_id.to_word()),
+                (
+                    CallContextField::CalleeAddress,
+                    call.call.callee_address.to_word(),
+                ),
                 (
                     CallContextField::RwCounterEndOfReversion,
-                    call.rw_counter_end_of_reversion.to_word(),
+                    call.call.rw_counter_end_of_reversion.to_word(),
                 ),
-                (CallContextField::IsPersistent, call.is_persistent.to_word()),
+                (
+                    CallContextField::IsPersistent,
+                    call.call.is_persistent.to_word(),
+                ),
             ] {
-                state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+                state.call_context_read(&mut exec_step, state.call()?.call.id, field, value);
             }
 
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
-                    address: state.call()?.address,
+                    address: state.call()?.call.callee_address,
                     field: AccountField::CodeHash,
                     value: code_hash.to_word(),
                     value_prev: CodeDB::empty_code_hash().to_word(),
@@ -81,36 +87,42 @@ impl Opcode for ReturnRevert {
         }
 
         // Case B in the specs.
-        if call.is_root {
+        if call.call.is_root {
             state.call_context_read(
                 &mut exec_step,
-                call.call_id,
+                call.call.id,
                 CallContextField::IsPersistent,
-                call.is_persistent.to_word(),
+                call.call.is_persistent.to_word(),
             );
         }
 
         // Case C in the specs.
-        if !call.is_root {
+        if !call.call.is_root {
             state.handle_restore_context(steps, &mut exec_step)?;
         }
 
         // Case D in the specs.
-        if !call.is_root && !call.is_create() {
+        if !call.call.is_root && !call.call.is_create {
             for (field, value) in [
-                (CallContextField::ReturnDataOffset, call.return_data_offset),
-                (CallContextField::ReturnDataLength, call.return_data_length),
+                (
+                    CallContextField::ReturnDataOffset,
+                    call.call.return_data_offset,
+                ),
+                (
+                    CallContextField::ReturnDataLength,
+                    call.call.return_data_length,
+                ),
             ] {
-                state.call_context_read(&mut exec_step, call.call_id, field, value.into());
+                state.call_context_read(&mut exec_step, call.call.id, field, value.into());
             }
 
-            let return_data_length = usize::try_from(call.return_data_length).unwrap();
+            let return_data_length = usize::try_from(call.call.return_data_length).unwrap();
             let copy_length = std::cmp::min(return_data_length, length);
             if copy_length > 0 {
                 // reconstruction
                 let callee_memory = state.call_ctx()?.memory.clone();
                 let caller_ctx = state.caller_ctx_mut()?;
-                let return_offset = call.return_data_offset.try_into().unwrap();
+                let return_offset = call.call.return_data_offset.try_into().unwrap();
 
                 caller_ctx.memory.0[return_offset..return_offset + copy_length]
                     .copy_from_slice(&callee_memory.0[offset..offset + copy_length]);
@@ -119,12 +131,12 @@ impl Opcode for ReturnRevert {
                     state,
                     &mut exec_step,
                     Source {
-                        id: call.call_id,
+                        id: call.call.id,
                         offset,
                         length,
                     },
                     Destination {
-                        id: call.caller_id,
+                        id: call.call.caller_id,
                         offset: return_offset,
                         length: return_data_length,
                     },

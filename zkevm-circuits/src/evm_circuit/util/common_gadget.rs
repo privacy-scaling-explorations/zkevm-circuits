@@ -20,9 +20,9 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
-    witness::{Block, Call, ExecStep},
+    witness::{Block, ExecStep},
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall, U256};
 use gadgets::util::{select, sum};
 use halo2_proofs::{
     circuit::Value,
@@ -82,7 +82,7 @@ impl<F: Field> SameContextGadget<F> {
         self.sufficient_gas_left.assign(
             region,
             offset,
-            F::from((step.gas_left - step.gas_cost) as u64),
+            F::from((step.step.gas_left - step.step.gas_cost) as u64),
         )?;
 
         Ok(())
@@ -215,7 +215,7 @@ impl<F: Field> RestoreContextGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<(), Error> {
@@ -1023,7 +1023,7 @@ impl<F: Field> CommonErrorGadget<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         block: &Block<F>,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<u64, Error> {

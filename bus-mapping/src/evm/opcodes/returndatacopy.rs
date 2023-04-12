@@ -60,7 +60,7 @@ fn gen_returndatacopy_step(
     )?;
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
 
-    let call_id = state.call()?.call_id;
+    let call_id = state.call()?.call.id;
     let call_ctx = state.call_ctx()?;
     let return_data = call_ctx.return_data.clone();
     let last_callee_id = state.call()?.last_callee_id;
@@ -150,7 +150,7 @@ fn gen_copy_event(
         CopyDataType::Memory,
         CopyDataType::Memory,
         NumberOrHash::Number(state.call()?.last_callee_id),
-        NumberOrHash::Number(state.call()?.call_id),
+        NumberOrHash::Number(state.call()?.call.id),
     );
 
     Ok(CopyEvent {

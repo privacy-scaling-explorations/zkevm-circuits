@@ -28,14 +28,14 @@ impl Opcode for Extcodesize {
             (CallContextField::TxId, state.tx_ctx.id().to_word()),
             (
                 CallContextField::RwCounterEndOfReversion,
-                state.call()?.rw_counter_end_of_reversion.to_word(),
+                state.call()?.call.rw_counter_end_of_reversion.to_word(),
             ),
             (
                 CallContextField::IsPersistent,
-                state.call()?.is_persistent.to_word(),
+                state.call()?.call.is_persistent.to_word(),
             ),
         ] {
-            state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+            state.call_context_read(&mut exec_step, state.call()?.call.id, field, value);
         }
 
         // Update transaction access list for account address.

@@ -17,12 +17,12 @@ impl Opcode for Selfbalance {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
         let self_balance = geth_steps[1].stack.last()?;
-        let callee_address = state.call()?.address;
+        let callee_address = state.call()?.call.callee_address;
 
         // CallContext read of the callee_address
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CalleeAddress,
             callee_address.to_word(),
         );

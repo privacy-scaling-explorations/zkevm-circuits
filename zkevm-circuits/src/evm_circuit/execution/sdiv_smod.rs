@@ -8,12 +8,12 @@ use crate::{
             math_gadget::{AbsWordGadget, IsZeroGadget, LtGadget, LtWordGadget, MulAddWordsGadget},
             select, sum, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall, U256};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -143,7 +143,7 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

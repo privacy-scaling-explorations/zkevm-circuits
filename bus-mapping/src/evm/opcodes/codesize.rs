@@ -3,7 +3,7 @@ use crate::{
     Error,
 };
 
-use eth_types::GethExecStep;
+use eth_types::{GethExecStep, ToBigEndian, H256};
 
 use super::Opcode;
 
@@ -18,8 +18,9 @@ impl Opcode for Codesize {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let code_hash = state.call()?.code_hash;
-        let code = state.code(code_hash)?;
+        let code_hash = state.call()?.call.code_hash;
+        // TODO-KIMI, be or le?
+        let code = state.code(H256::from(code_hash.to_be_bytes()))?;
         let codesize = code.len();
 
         debug_assert_eq!(codesize, geth_steps[1].stack.last()?.as_usize());

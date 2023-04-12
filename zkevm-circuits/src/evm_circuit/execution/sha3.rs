@@ -1,5 +1,5 @@
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall};
 use gadgets::util::{not, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -12,7 +12,7 @@ use crate::evm_circuit::{
         memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
         rlc, CachedRegion, Cell, Word,
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, ExecStep, Transaction},
 };
 
 use super::ExecutionGadget;
@@ -106,7 +106,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        _call: &Call,
+        _call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

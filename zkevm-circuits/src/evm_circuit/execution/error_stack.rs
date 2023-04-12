@@ -7,11 +7,11 @@ use crate::{
             common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion,
             Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -54,7 +54,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorStackGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();

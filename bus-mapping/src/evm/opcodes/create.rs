@@ -52,7 +52,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         state.stack_write(
             &mut exec_step,
             geth_step.stack.nth_last_filled(n_pop - 1),
-            if call.is_success {
+            if call.call.is_success {
                 address.to_word()
             } else {
                 Word::zero()
@@ -80,11 +80,11 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         )?;
 
         // Increase caller's nonce
-        let nonce_prev = state.sdb.get_nonce(&call.caller_address);
+        let nonce_prev = state.sdb.get_nonce(&call.call.caller_address);
         state.push_op_reversible(
             &mut exec_step,
             AccountOp {
-                address: call.caller_address,
+                address: call.call.caller_address,
                 field: AccountField::Nonce,
                 value: (nonce_prev + 1).into(),
                 value_prev: nonce_prev.into(),
@@ -92,12 +92,14 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         )?;
 
         // Add callee into access list
-        let is_warm = state.sdb.check_account_in_access_list(&call.address);
+        let is_warm = state
+            .sdb
+            .check_account_in_access_list(&call.call.callee_address);
         state.push_op_reversible(
             &mut exec_step,
             TxAccessListAccountOp {
                 tx_id,
-                address: call.address,
+                address: call.call.callee_address,
                 is_warm: true,
                 is_warm_prev: is_warm,
             },
@@ -107,20 +109,20 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
 
         state.transfer(
             &mut exec_step,
-            call.caller_address,
-            call.address,
+            call.call.caller_address,
+            call.call.callee_address,
             true,
             true,
-            call.value,
+            call.call.value,
         )?;
 
         // Increase callee's nonce
-        let nonce_prev = state.sdb.get_nonce(&call.address);
+        let nonce_prev = state.sdb.get_nonce(&call.call.callee_address);
         debug_assert!(nonce_prev == 0);
         state.push_op_reversible(
             &mut exec_step,
             AccountOp {
-                address: call.address,
+                address: call.call.callee_address,
                 field: AccountField::Nonce,
                 value: 1.into(),
                 value_prev: 0.into(),
@@ -147,34 +149,43 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
             (CallContextField::MemorySize, next_memory_word_size.into()),
             (
                 CallContextField::ReversibleWriteCounter,
-                // +3 is because we do some transfers after pushing the call. can be just push the
-                // call later?
-                (exec_step.reversible_write_counter + 3).into(),
+                // +3 is because we do some transfers after pushing the call.call. can be just push
+                // the call later?
+                (exec_step.step.reversible_write_counter + 3).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, current_call.call_id, field, value);
+            state.call_context_write(&mut exec_step, current_call.call.id, field, value);
         }
 
         for (field, value) in [
-            (CallContextField::CallerId, current_call.call_id.into()),
-            (CallContextField::IsSuccess, call.is_success.to_word()),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (CallContextField::CallerId, current_call.call.id.into()),
+            (CallContextField::IsSuccess, call.call.is_success.to_word()),
+            (
+                CallContextField::IsPersistent,
+                call.call.is_persistent.to_word(),
+            ),
             (CallContextField::TxId, state.tx_ctx.id().into()),
             (
                 CallContextField::CallerAddress,
-                current_call.address.to_word(),
+                current_call.call.callee_address.to_word(),
             ),
-            (CallContextField::CalleeAddress, call.address.to_word()),
+            (
+                CallContextField::CalleeAddress,
+                call.call.callee_address.to_word(),
+            ),
             (
                 CallContextField::RwCounterEndOfReversion,
-                call.rw_counter_end_of_reversion.to_word(),
+                call.call.rw_counter_end_of_reversion.to_word(),
             ),
-            (CallContextField::IsPersistent, call.is_persistent.to_word()),
+            (
+                CallContextField::IsPersistent,
+                call.call.is_persistent.to_word(),
+            ),
         ] {
-            state.call_context_write(&mut exec_step, call.call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call.id, field, value);
         }
 
-        if call.code_hash == CodeDB::empty_code_hash() {
+        if call.call.code_hash == CodeDB::empty_code_hash().to_word() {
             // 1. Create with empty initcode.
             state.handle_return(geth_step)?;
             Ok(vec![exec_step])

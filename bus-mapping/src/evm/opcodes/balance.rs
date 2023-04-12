@@ -26,21 +26,21 @@ impl Opcode for Balance {
         // from call context.
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::TxId,
             U256::from(state.tx_ctx.id()),
         );
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::RwCounterEndOfReversion,
-            U256::from(state.call()?.rw_counter_end_of_reversion as u64),
+            U256::from(state.call()?.call.rw_counter_end_of_reversion as u64),
         );
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::IsPersistent,
-            U256::from(state.call()?.is_persistent as u64),
+            U256::from(state.call()?.call.is_persistent as u64),
         );
 
         // Update transaction access list for account address.
@@ -179,7 +179,7 @@ mod balance_tests {
 
         let tx_id = 1;
         let transaction = &builder.block.txs()[tx_id - 1];
-        let call_id = transaction.calls()[0].call_id;
+        let call_id = transaction.calls()[0].call.id;
 
         let indices = transaction
             .steps()

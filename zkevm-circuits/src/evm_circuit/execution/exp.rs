@@ -1,5 +1,5 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall, U256};
 use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -12,7 +12,7 @@ use crate::evm_circuit::{
         math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
         CachedRegion, Cell, Word,
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, ExecStep, Transaction},
 };
 
 use super::ExecutionGadget;
@@ -219,7 +219,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        _call: &Call,
+        _call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

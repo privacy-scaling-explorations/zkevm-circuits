@@ -23,46 +23,46 @@ impl Opcode for Calldataload {
         let offset = geth_step.stack.nth_last(0)?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(0), offset)?;
 
-        let is_root = state.call()?.is_root;
+        let is_root = state.call()?.call.is_root;
         if is_root {
             state.call_context_read(
                 &mut exec_step,
-                state.call()?.call_id,
+                state.call()?.call.id,
                 CallContextField::TxId,
                 state.tx_ctx.id().into(),
             );
             state.call_context_read(
                 &mut exec_step,
-                state.call()?.call_id,
+                state.call()?.call.id,
                 CallContextField::CallDataLength,
-                state.call()?.call_data_length.into(),
+                state.call()?.call.call_data_length.into(),
             );
         } else {
             state.call_context_read(
                 &mut exec_step,
-                state.call()?.call_id,
+                state.call()?.call.id,
                 CallContextField::CallerId,
-                state.call()?.caller_id.into(),
+                state.call()?.call.caller_id.into(),
             );
             state.call_context_read(
                 &mut exec_step,
-                state.call()?.call_id,
+                state.call()?.call.id,
                 CallContextField::CallDataLength,
-                state.call()?.call_data_length.into(),
+                state.call()?.call.call_data_length.into(),
             );
             state.call_context_read(
                 &mut exec_step,
-                state.call()?.call_id,
+                state.call()?.call.id,
                 CallContextField::CallDataOffset,
-                state.call()?.call_data_offset.into(),
+                state.call()?.call.call_data_offset.into(),
             );
         }
 
-        let call = state.call()?.clone();
+        let call = state.call()?.call.clone();
         let (src_addr, src_addr_end, caller_id, call_data) = (
             call.call_data_offset as usize + offset.as_usize(),
             call.call_data_offset as usize + call.call_data_length as usize,
-            call.caller_id,
+            call.id,
             state.call_ctx()?.call_data.to_vec(),
         );
         let calldata_word = (0..32)
@@ -184,8 +184,10 @@ mod calldataload_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATALOAD))
             .unwrap();
 
-        let call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
-        let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
+        let call_id = builder.block.txs()[0].calls()[step.step.call_index].call.id;
+        let caller_id = builder.block.txs()[0].calls()[step.step.call_index]
+            .call
+            .caller_id;
 
         // 1 stack read, 3 call context reads, 32 memory reads and 1 stack write.
         assert_eq!(step.bus_mapping_instance.len(), 37);
@@ -295,7 +297,7 @@ mod calldataload_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATALOAD))
             .unwrap();
 
-        let call_id = builder.block.txs()[0].calls()[0].call_id;
+        let call_id = builder.block.txs()[0].calls()[0].call.id;
 
         // 1 stack read, 2 call context reads and 1 stack write.
         assert_eq!(step.bus_mapping_instance.len(), 4);

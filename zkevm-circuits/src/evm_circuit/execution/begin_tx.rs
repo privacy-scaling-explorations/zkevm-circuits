@@ -17,12 +17,12 @@ use crate::{
             },
             not, or, select, CachedRegion, Cell, StepRws, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall};
 use ethers_core::utils::{get_contract_address, keccak256};
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -296,7 +296,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         // TODO: 2. Handle call to precompiled contracts.
 
-        // 3. Call to account with empty code.
+        // 3. ZkEvmCall to account with empty code.
         cb.condition(
             and::expr([not::expr(tx_is_create.expr()), no_callee_code.clone()]),
             |cb| {
@@ -329,7 +329,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             },
         );
 
-        // 4. Call to account with non-empty code.
+        // 4. ZkEvmCall to account with non-empty code.
         cb.condition(
             and::expr([not::expr(tx_is_create.expr()), not::expr(no_callee_code)]),
             |cb| {
@@ -424,47 +424,49 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_fee = tx.gas_price * tx.gas;
+        let gas_fee = tx.tx.gas_price * tx.tx.gas;
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
         let mut callee_code_hash = zero;
-        if !is_precompiled(&tx.callee_address) && !tx.is_create {
+        if !is_precompiled(&tx.tx.callee_address) && !tx.is_create {
             callee_code_hash = rws.next().account_value_pair().1;
         }
         let callee_exists =
-            is_precompiled(&tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
+            is_precompiled(&tx.tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
         let caller_balance_sub_fee_pair = rws.next().account_value_pair();
         let must_create = tx.is_create;
-        if (!callee_exists && !tx.value.is_zero()) || must_create {
+        if (!callee_exists && !tx.tx.value.is_zero()) || must_create {
             callee_code_hash = rws.next().account_value_pair().1;
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
-        if !tx.value.is_zero() {
+        if !tx.tx.value.is_zero() {
             caller_balance_sub_value_pair = rws.next().account_value_pair();
             callee_balance_pair = rws.next().account_value_pair();
         };
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
         self.tx_nonce
-            .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.nonce)))?;
         self.tx_gas
-            .assign(region, offset, Value::known(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.gas)))?;
         self.tx_gas_price
-            .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
+            .assign(region, offset, Some(tx.tx.gas_price.to_le_bytes()))?;
         self.mul_gas_fee_by_gas
-            .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
+            .assign(region, offset, tx.tx.gas_price, tx.tx.gas, gas_fee)?;
         let caller_address = tx
+            .tx
             .caller_address
             .to_scalar()
             .expect("unexpected Address -> Scalar conversion failure");
         let callee_address = tx
+            .tx
             .callee_address
             .to_scalar()
             .expect("unexpected Address -> Scalar conversion failure");
@@ -479,9 +481,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             offset,
             Value::known(
                 if tx.is_create {
-                    get_contract_address(tx.caller_address, tx.nonce)
+                    get_contract_address(tx.tx.caller_address, tx.tx.nonce)
                 } else {
-                    tx.callee_address
+                    tx.tx.callee_address
                 }
                 .to_scalar()
                 .expect("unexpected Address -> Scalar conversion failure"),
@@ -511,14 +513,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.is_persistent,
         )?;
         self.sufficient_gas_left
-            .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
+            .assign(region, offset, F::from(tx.tx.gas - step.step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
             caller_balance_sub_fee_pair,
             caller_balance_sub_value_pair,
             callee_balance_pair,
-            tx.value,
+            tx.tx.value,
             gas_fee,
         )?;
         self.phase2_code_hash
@@ -535,8 +537,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let untrimmed_contract_addr = {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
-            stream.append(&tx.caller_address);
-            stream.append(&eth_types::U256::from(tx.nonce));
+            stream.append(&tx.tx.caller_address);
+            stream.append(&eth_types::U256::from(tx.tx.nonce));
             let rlp_encoding = stream.out().to_vec();
             keccak256(&rlp_encoding)
         };
@@ -551,8 +553,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.create.assign(
             region,
             offset,
-            tx.caller_address,
-            tx.nonce,
+            tx.tx.caller_address,
+            tx.tx.nonce,
             Some(callee_code_hash),
             None,
         )?;

@@ -7,13 +7,13 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -69,13 +69,13 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let gas_price = block.rws[step.rw_indices[1]].stack_value();
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
 
         self.gas_price
             .assign(region, offset, region.word_rlc(gas_price))?;

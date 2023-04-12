@@ -3,11 +3,12 @@ use crate::{
     evm_circuit::{
         param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::Cell,
-        witness::{Block, Call, ExecStep},
+        witness::{Block, ExecStep},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
+use eth_types::ZkEvmCall;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Value,
@@ -551,7 +552,7 @@ impl<F: FieldExt> Step<F> {
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         _block: &Block<F>,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.state
@@ -560,7 +561,7 @@ impl<F: FieldExt> Step<F> {
         self.state.rw_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.rw_counter as u64)),
+            Value::known(F::from(step.step.rw_counter as u64)),
         )?;
         self.state
             .call_id
@@ -579,16 +580,16 @@ impl<F: FieldExt> Step<F> {
         self.state.program_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.program_counter as u64)),
+            Value::known(F::from(step.step.program_counter as u64)),
         )?;
         self.state.stack_pointer.assign(
             region,
             offset,
-            Value::known(F::from(step.stack_pointer as u64)),
+            Value::known(F::from(step.step.stack_pointer as u64)),
         )?;
         self.state
             .gas_left
-            .assign(region, offset, Value::known(F::from(step.gas_left)))?;
+            .assign(region, offset, Value::known(F::from(step.step.gas_left)))?;
         self.state.memory_word_size.assign(
             region,
             offset,
@@ -597,11 +598,13 @@ impl<F: FieldExt> Step<F> {
         self.state.reversible_write_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.reversible_write_counter as u64)),
+            Value::known(F::from(step.step.reversible_write_counter as u64)),
         )?;
-        self.state
-            .log_id
-            .assign(region, offset, Value::known(F::from(step.log_id as u64)))?;
+        self.state.log_id.assign(
+            region,
+            offset,
+            Value::known(F::from(step.step.log_id as u64)),
+        )?;
         Ok(())
     }
 }

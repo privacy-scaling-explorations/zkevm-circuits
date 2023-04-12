@@ -24,8 +24,8 @@ impl Opcode for OOGSloadSstore {
         let mut exec_step = state.new_step(geth_step)?;
         exec_step.error = Some(ExecError::OutOfGas(OogError::SloadSstore));
 
-        let call_id = state.call()?.call_id;
-        let callee_address = state.call()?.address;
+        let call_id = state.call()?.call.id;
+        let callee_address = state.call()?.call.callee_address;
         let tx_id = state.tx_ctx.id();
 
         state.call_context_read(
@@ -39,7 +39,7 @@ impl Opcode for OOGSloadSstore {
             &mut exec_step,
             call_id,
             CallContextField::IsStatic,
-            (state.call()?.is_static as u8).into(),
+            (state.call()?.call.is_static as u8).into(),
         );
 
         state.call_context_read(

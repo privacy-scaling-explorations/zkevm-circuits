@@ -11,13 +11,13 @@ use crate::{
             },
             not, CachedRegion, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256, U512};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall, U256, U512};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -141,7 +141,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

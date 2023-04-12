@@ -1143,9 +1143,9 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let public_data = PublicData {
             chain_id: block.context.chain_id,
             history_hashes: block.context.history_hashes.clone(),
-            transactions: block.eth_block.transactions.clone(),
-            state_root: block.eth_block.state_root,
-            prev_state_root: H256::from_uint(&block.prev_state_root),
+            transactions: block.block.eth_block.transactions.clone(),
+            state_root: block.block.eth_block.state_root,
+            prev_state_root: H256::from_uint(&block.block.prev_state_root),
             block_constants: BlockConstants {
                 coinbase: block.context.coinbase,
                 timestamp: block.context.timestamp,
@@ -1175,7 +1175,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let row_num = |tx_num, calldata_len| {
             BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * tx_num + 1) + calldata_len
         };
-        let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
+        let calldata_len = block.txs.iter().map(|tx| tx.tx.call_data.len()).sum();
         (
             row_num(block.txs.len(), calldata_len),
             row_num(

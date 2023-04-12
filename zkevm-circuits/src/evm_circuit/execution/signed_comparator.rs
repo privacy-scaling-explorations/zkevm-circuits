@@ -9,11 +9,11 @@ use crate::{
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
             select, CachedRegion, Cell, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget that implements the ExecutionGadget trait to handle the Opcodes SLT
@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         offset: usize,
         block: &Block<F>,
         _transaction: &Transaction,
-        _call: &Call,
+        _call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

@@ -41,7 +41,7 @@ impl Opcode for ErrorReturnDataOutOfBound {
         )?;
         state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
 
-        let call_id = state.call()?.call_id;
+        let call_id = state.call()?.call.id;
         let call_ctx = state.call_ctx()?;
         let return_data = &call_ctx.return_data;
         let last_callee_return_data_length = state.call()?.last_callee_return_data_length;

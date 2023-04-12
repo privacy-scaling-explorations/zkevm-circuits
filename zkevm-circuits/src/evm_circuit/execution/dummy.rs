@@ -5,11 +5,11 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{constraint_builder::ConstraintBuilder, CachedRegion, Word},
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{Field, ToLittleEndian};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -48,7 +48,7 @@ impl<F: Field, const N_POP: usize, const N_PUSH: usize, const S: ExecutionState>
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         // this happens if some opcodes are in the

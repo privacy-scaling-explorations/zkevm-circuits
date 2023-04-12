@@ -21,40 +21,40 @@ impl Opcode for Sstore {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let contract_addr = state.call()?.address;
+        let contract_addr = state.call()?.call.callee_address;
 
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::TxId,
             Word::from(state.tx_ctx.id()),
         );
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::IsStatic,
-            Word::from(state.call()?.is_static as u8),
+            Word::from(state.call()?.call.is_static as u8),
         );
 
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::RwCounterEndOfReversion,
-            Word::from(state.call()?.rw_counter_end_of_reversion),
+            Word::from(state.call()?.call.rw_counter_end_of_reversion),
         );
 
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::IsPersistent,
-            Word::from(state.call()?.is_persistent as u8),
+            Word::from(state.call()?.call.is_persistent as u8),
         );
 
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CalleeAddress,
-            state.call()?.address.to_word(),
+            state.call()?.call.callee_address.to_word(),
         );
 
         let key = geth_step.stack.nth_last(0)?;
@@ -77,7 +77,7 @@ impl Opcode for Sstore {
         state.push_op_reversible(
             &mut exec_step,
             StorageOp::new(
-                state.call()?.address,
+                state.call()?.call.callee_address,
                 key,
                 value,
                 value_prev,
@@ -90,7 +90,7 @@ impl Opcode for Sstore {
             &mut exec_step,
             TxAccessListAccountStorageOp {
                 tx_id: state.tx_ctx.id(),
-                address: state.call()?.address,
+                address: state.call()?.call.callee_address,
                 key,
                 is_warm: true,
                 is_warm_prev: is_warm,

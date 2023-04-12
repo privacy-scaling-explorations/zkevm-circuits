@@ -1,26 +1,25 @@
 //! Types needed for Transaction
 
-/// Transaction in a witness block
-// pub mod ZkEvmTransaction {
-use ethers_core::types::transaction::response;
-
-use crate::geth_types::{ZkEvmCall, ZkEvmExecStep};
+use super::{Address, Word};
 
 /// Transaction in a witness block
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ZkEvmTransaction {
-    /// Original tx definition from geth
-    pub eth_tx: response::Transaction,
-
-    /// Whether it's a create transaction
-    pub is_create: bool,
-    /// The call data length
-    pub call_data_length: usize,
-    /// The gas cost for transaction call data
-    pub call_data_gas_cost: u64,
-    /// The calls made in the transaction
-    pub calls: Vec<ZkEvmCall::Call>,
-    /// The steps executioned in the transaction
-    pub steps: Vec<ZkEvmExecStep::ExecStep>,
+    /// The transaction identifier in the block
+    pub id: usize,
+    /// The sender account nonce of the transaction
+    pub nonce: u64,
+    /// The gas limit of the transaction
+    pub gas: u64,
+    /// The gas price
+    pub gas_price: Word,
+    /// The caller address
+    pub caller_address: Address,
+    /// The callee address
+    pub callee_address: Address,
+    /// The ether amount of the transaction
+    pub value: Word,
+    /// The call data
+    pub call_data: Vec<u8>,
 }
 // }

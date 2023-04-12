@@ -2,7 +2,7 @@ use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
 use eth_types::{
     evm_types::{Memory, OpcodeId},
-    Address, Hash, Word,
+    ZkEvmCall,
 };
 
 /// Type of a *CALL*/CREATE* Function.
@@ -53,55 +53,59 @@ impl TryFrom<OpcodeId> for CallKind {
 /// Circuit Input related to an Ethereum Call
 #[derive(Clone, Debug, Default)]
 pub struct Call {
-    /// Unique call identifier within the Block.
-    pub call_id: usize,
-    /// Caller's id.
-    pub caller_id: usize,
+    /// Call
+    pub call: ZkEvmCall,
     /// Last Callee's id.
     pub last_callee_id: usize,
-    /// Type of call
-    pub kind: CallKind,
-    /// This call is being executed without write access (STATIC)
-    pub is_static: bool,
-    /// This call generated implicity by a Transaction.
-    pub is_root: bool,
-    /// This call is persistent or call stack reverts at some point
-    pub is_persistent: bool,
-    /// This call ends successfully or not
-    pub is_success: bool,
-    /// This rw_counter at the end of reversion
-    pub rw_counter_end_of_reversion: usize,
-    /// Address of caller
-    pub caller_address: Address,
-    /// Address where this call is being executed
-    pub address: Address,
     /// Code Source
     pub code_source: CodeSource,
-    /// Code Hash
-    pub code_hash: Hash,
-    /// Depth
-    pub depth: usize,
-    /// Value
-    pub value: Word,
-    /// Call data offset
-    pub call_data_offset: u64,
-    /// Call data length
-    pub call_data_length: u64,
-    /// Return data offset
-    pub return_data_offset: u64,
-    /// Return data length
-    pub return_data_length: u64,
     /// last callee's return data offset
     pub last_callee_return_data_offset: u64,
     /// last callee's return data length
     pub last_callee_return_data_length: u64,
+
+    // / Unique call identifier within the Block.
+    // pub call_id: usize,
+    // / Caller's id.
+    // pub caller_id: usize,
+    /// Type of call
+    pub kind: CallKind,
+    // / This call is being executed without write access (STATIC)
+    // pub is_static: bool,
+    // / This call generated implicity by a Transaction.
+    // pub is_root: bool,
+    // / This call is persistent or call stack reverts at some point
+    // pub is_persistent: bool,
+    // / This call ends successfully or not
+    // pub is_success: bool,
+    // / This rw_counter at the end of reversion
+    // pub rw_counter_end_of_reversion: usize,
+    // / Address of caller
+    // pub caller_address: Address,
+    // / Address where this call is being executed
+    // pub address: Address,
+
+    // / Code Hash
+    // pub code_hash: Hash,
+    // / Depth
+    // pub depth: usize,
+    // / Value
+    // pub value: Word,
+    // / Call data offset
+    // pub call_data_offset: u64,
+    // / Call data length
+    // pub call_data_length: u64,
+    // / Return data offset
+    // pub return_data_offset: u64,
+    // /// Return data length
+    // pub return_data_length: u64,
 }
 
 impl Call {
     /// This call is root call with tx.to == null, or op == CREATE or op ==
     /// CREATE2
     pub fn is_create(&self) -> bool {
-        self.kind.is_create()
+        self.call.is_create
     }
 
     /// This call is call with op DELEGATECALL

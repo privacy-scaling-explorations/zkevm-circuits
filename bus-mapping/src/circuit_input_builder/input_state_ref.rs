@@ -18,9 +18,10 @@ use crate::{
 };
 use eth_types::{
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
-    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
+    Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, ZkEvmCall, ZkEvmExecStep, H256,
+    U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address};
 use std::cmp::max;
@@ -59,9 +60,12 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Create a new BeginTx step
     pub fn new_begin_tx_step(&self) -> ExecStep {
         ExecStep {
+            step: ZkEvmExecStep {
+                gas_left: self.tx.tx.gas,
+                rw_counter: self.block_ctx.rwc.0,
+                ..Default::default()
+            },
             exec_state: ExecState::BeginTx,
-            gas_left: Gas(self.tx.gas),
-            rwc: self.block_ctx.rwc,
             ..Default::default()
         }
     }
@@ -74,21 +78,24 @@ impl<'a> CircuitInputStateRef<'a> {
             .last()
             .expect("steps should have at least one BeginTx step");
         ExecStep {
+            step: ZkEvmExecStep {
+                gas_left: if prev_step.error.is_none() {
+                    prev_step.step.gas_left - prev_step.step.gas_cost
+                } else {
+                    // consume all remaining gas when non revert err happens
+                    0
+                },
+                // For tx without code execution
+                reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
+                    call_ctx.reversible_write_counter
+                } else {
+                    0
+                },
+                log_id: self.tx_ctx.log_id,
+                rw_counter: self.block_ctx.rwc.0,
+                ..Default::default()
+            },
             exec_state: ExecState::EndTx,
-            gas_left: if prev_step.error.is_none() {
-                Gas(prev_step.gas_left.0 - prev_step.gas_cost.0)
-            } else {
-                // consume all remaining gas when non revert err happens
-                Gas(0)
-            },
-            rwc: self.block_ctx.rwc,
-            // For tx without code execution
-            reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
-                call_ctx.reversible_write_counter
-            } else {
-                0
-            },
-            log_id: self.tx_ctx.log_id,
             ..Default::default()
         }
     }
@@ -176,10 +183,10 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // Increase reversible_write_counter
         self.call_ctx_mut()?.reversible_write_counter += 1;
-        step.reversible_write_counter_delta += 1;
+        step.step.reversible_write_counter_delta += 1;
 
         // Add the operation into reversible_ops if this call is not persistent
-        if !self.call()?.is_persistent {
+        if !self.call()?.call.is_persistent {
             self.tx_ctx
                 .reversion_groups
                 .last_mut()
@@ -203,7 +210,7 @@ impl<'a> CircuitInputStateRef<'a> {
         address: MemoryAddress,
         value: u8,
     ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
+        let call_id = self.call()?.call.id;
         self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
         Ok(())
     }
@@ -220,7 +227,7 @@ impl<'a> CircuitInputStateRef<'a> {
         address: MemoryAddress,
         value: u8,
     ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
+        let call_id = self.call()?.call.id;
         self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
         Ok(())
     }
@@ -237,7 +244,7 @@ impl<'a> CircuitInputStateRef<'a> {
         address: StackAddress,
         value: Word,
     ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
+        let call_id = self.call()?.call.id;
         self.push_op(step, RW::WRITE, StackOp::new(call_id, address, value));
         Ok(())
     }
@@ -254,7 +261,7 @@ impl<'a> CircuitInputStateRef<'a> {
         address: StackAddress,
         value: Word,
     ) -> Result<(), Error> {
-        let call_id = self.call()?.call_id;
+        let call_id = self.call()?.call.id;
         self.push_op(step, RW::READ, StackOp::new(call_id, address, value));
         Ok(())
     }
@@ -646,14 +653,15 @@ impl<'a> CircuitInputStateRef<'a> {
         let current_call = self.call_ctx().expect("current call not found");
         let call_data = match call.kind {
             CallKind::Call | CallKind::CallCode | CallKind::DelegateCall | CallKind::StaticCall => {
-                current_call
-                    .memory
-                    .read_chunk(call.call_data_offset.into(), call.call_data_length.into())
+                current_call.memory.read_chunk(
+                    call.call.call_data_offset.into(),
+                    call.call.call_data_length.into(),
+                )
             }
             CallKind::Create | CallKind::Create2 => Vec::new(),
         };
 
-        let call_id = call.call_id;
+        let call_id = call.call.id;
         let call_idx = self.tx.calls().len();
 
         self.tx_ctx.push_call_ctx(call_idx, call_data);
@@ -667,7 +675,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// Return the contract address of a CREATE step.  This is calculated by
     /// inspecting the current address and its nonce from the StateDB.
     pub(crate) fn create_address(&self) -> Result<Address, Error> {
-        let sender = self.call()?.address;
+        let sender = self.call()?.call.callee_address;
         let (found, account) = self.sdb.get_account(&sender);
         if !found {
             return Err(Error::AccountNotFound(sender));
@@ -682,7 +690,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call_ctx = self.call_ctx()?;
         let init_code = get_create_init_code(call_ctx, step)?.to_vec();
         Ok(get_create2_address(
-            self.call()?.address,
+            self.call()?.call.callee_address,
             salt.to_be_bytes().to_vec(),
             init_code,
         ))
@@ -706,20 +714,32 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let (caller_address, address, value) = match kind {
             CallKind::Call => (
-                caller.address,
+                caller.call.callee_address,
                 step.stack.nth_last(1)?.to_address(),
                 step.stack.nth_last(2)?,
             ),
-            CallKind::CallCode => (caller.address, caller.address, step.stack.nth_last(2)?),
-            CallKind::DelegateCall => (caller.caller_address, caller.address, caller.value),
+            CallKind::CallCode => (
+                caller.call.callee_address,
+                caller.call.callee_address,
+                step.stack.nth_last(2)?,
+            ),
+            CallKind::DelegateCall => (
+                caller.call.caller_address,
+                caller.call.callee_address,
+                caller.call.value,
+            ),
             CallKind::StaticCall => (
-                caller.address,
+                caller.call.callee_address,
                 step.stack.nth_last(1)?.to_address(),
                 Word::zero(),
             ),
-            CallKind::Create => (caller.address, self.create_address()?, step.stack.last()?),
+            CallKind::Create => (
+                caller.call.callee_address,
+                self.create_address()?,
+                step.stack.last()?,
+            ),
             CallKind::Create2 => (
-                caller.address,
+                caller.call.callee_address,
                 self.create2_address(step)?,
                 step.stack.last()?,
             ),
@@ -763,25 +783,28 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let caller = self.call()?;
         let call = Call {
-            call_id: self.block_ctx.rwc.0,
-            caller_id: caller.call_id,
-            last_callee_id: 0,
+            call: ZkEvmCall {
+                id: self.block_ctx.rwc.0,
+                caller_id: caller.call.caller_id,
+                is_create: kind == CallKind::Create || kind == CallKind::Create2,
+                is_static: kind == CallKind::StaticCall || caller.call.is_static,
+                is_root: false,
+                is_persistent: caller.call.is_persistent && is_success,
+                is_success,
+                rw_counter_end_of_reversion: 0,
+                caller_address,
+                callee_address: address,
+                code_hash: Word::from(code_hash.0),
+                depth: caller.call.depth + 1,
+                value,
+                call_data_offset,
+                call_data_length,
+                return_data_offset,
+                return_data_length,
+            },
             kind,
-            is_static: kind == CallKind::StaticCall || caller.is_static,
-            is_root: false,
-            is_persistent: caller.is_persistent && is_success,
-            is_success,
-            rw_counter_end_of_reversion: 0,
-            caller_address,
-            address,
             code_source,
-            code_hash,
-            depth: caller.depth + 1,
-            value,
-            call_data_offset,
-            call_data_length,
-            return_data_offset,
-            return_data_length,
+            last_callee_id: 0,
             last_callee_return_data_offset: 0,
             last_callee_return_data_length: 0,
         };
@@ -896,8 +919,9 @@ impl<'a> CircuitInputStateRef<'a> {
         // Set calls' `rw_counter_end_of_reversion`
         let rwc = self.block_ctx.rwc.0 - 1;
         for (call_idx, reversible_write_counter_offset) in reversion_group.calls {
-            self.tx.calls_mut()[call_idx].rw_counter_end_of_reversion =
-                rwc - reversible_write_counter_offset;
+            self.tx.calls_mut()[call_idx]
+                .call
+                .rw_counter_end_of_reversion = rwc - reversible_write_counter_offset;
         }
     }
 
@@ -906,7 +930,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn handle_return(&mut self, step: &GethExecStep) -> Result<(), Error> {
         // handle return_data
         let (return_data_offset, return_data_length) = {
-            if !self.call()?.is_root {
+            if !self.call()?.call.is_root {
                 let (offset, length) = match step.op {
                     OpcodeId::RETURN | OpcodeId::REVERT => {
                         let offset = step.stack.nth_last(0)?.as_usize();
@@ -937,7 +961,7 @@ impl<'a> CircuitInputStateRef<'a> {
         let call = self.call()?.clone();
         let call_ctx = self.call_ctx()?;
         let call_success_create: bool =
-            call.is_create() && call.is_success && step.op == OpcodeId::RETURN;
+            call.is_create() && call.call.is_success && step.op == OpcodeId::RETURN;
 
         // Store deployed code if it's a successful create
         if call_success_create {
@@ -947,21 +971,21 @@ impl<'a> CircuitInputStateRef<'a> {
                 .memory
                 .read_chunk(offset.low_u64().into(), length.low_u64().into());
             let code_hash = self.code_db.insert(code);
-            let (found, callee_account) = self.sdb.get_account_mut(&call.address);
+            let (found, callee_account) = self.sdb.get_account_mut(&call.call.callee_address);
             if !found {
-                return Err(Error::AccountNotFound(call.address));
+                return Err(Error::AccountNotFound(call.call.callee_address));
             }
             callee_account.code_hash = code_hash;
         }
 
         // Handle reversion if this call doesn't end successfully
-        if !call.is_success {
+        if !call.call.is_success {
             self.handle_reversion();
         }
 
         // If current call has caller.
         if let Ok(caller) = self.caller_mut() {
-            caller.last_callee_id = call.call_id;
+            caller.last_callee_id = call.call.id;
             // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
             if call_success_create {
                 caller.last_callee_return_data_length = 0u64;
@@ -997,9 +1021,9 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller = self.caller()?.clone();
         self.call_context_read(
             exec_step,
-            call.call_id,
+            call.call.id,
             CallContextField::CallerId,
-            caller.call_id.into(),
+            caller.call.id.into(),
         );
 
         let geth_step = &steps[0];
@@ -1021,7 +1045,7 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => unreachable!(),
         };
 
-        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        let curr_memory_word_size = (exec_step.step.memory_size as u64) / 32;
         let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
             std::cmp::max(
                 (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
@@ -1034,7 +1058,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
         let memory_expansion_gas_cost =
             memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let code_deposit_cost = if call.is_create() && call.is_success {
+        let code_deposit_cost = if call.is_create() && call.call.is_success {
             GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
         } else {
             0
@@ -1044,12 +1068,15 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller_gas_left = geth_step_next.gas.0 - gas_refund;
 
         for (field, value) in [
-            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsRoot,
+                (caller.call.is_root as u64).into(),
+            ),
             (
                 CallContextField::IsCreate,
                 (caller.is_create() as u64).into(),
             ),
-            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::CodeHash, caller.call.code_hash),
             (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
             (
                 CallContextField::StackPointer,
@@ -1065,15 +1092,15 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.caller_ctx()?.reversible_write_counter.into(),
             ),
         ] {
-            self.call_context_read(exec_step, caller.call_id, field, value);
+            self.call_context_read(exec_step, caller.call.id, field, value);
         }
 
         // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
         for (field, value) in [
-            (CallContextField::LastCalleeId, call.call_id.into()),
+            (CallContextField::LastCalleeId, call.call.id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                if call.is_create() && call.is_success {
+                if call.is_create() && call.call.is_success {
                     U256::zero()
                 } else {
                     last_callee_return_data_offset
@@ -1081,14 +1108,14 @@ impl<'a> CircuitInputStateRef<'a> {
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                if call.is_create() && call.is_success {
+                if call.is_create() && call.call.is_success {
                     U256::zero()
                 } else {
                     last_callee_return_data_length
                 },
             ),
         ] {
-            self.call_context_write(exec_step, caller.call_id, field, value);
+            self.call_context_write(exec_step, caller.call.id, field, value);
         }
 
         Ok(())
@@ -1096,7 +1123,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a copy event to the state.
     pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) {
-        step.copy_rw_counter_delta = event.rw_counter_delta();
+        step.step.copy_rw_counter_delta = event.rw_counter_delta();
         self.block.add_copy_event(event);
     }
 
@@ -1135,7 +1162,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(None);
             }
             // case 3 Create with successful RETURN
-            if call.is_create() && call.is_success && step.op == OpcodeId::RETURN {
+            if call.is_create() && call.call.is_success && step.op == OpcodeId::RETURN {
                 return Ok(None);
             }
             // more other case...
@@ -1171,11 +1198,11 @@ impl<'a> CircuitInputStateRef<'a> {
                     | OpcodeId::LOG2
                     | OpcodeId::LOG3
                     | OpcodeId::LOG4
-                        if call.is_static =>
+                        if call.call.is_static =>
                     {
                         Some(ExecError::WriteProtection)
                     }
-                    OpcodeId::CALL if call.is_static && !value.is_zero() => {
+                    OpcodeId::CALL if call.call.is_static && !value.is_zero() => {
                         Some(ExecError::WriteProtection)
                     }
 
@@ -1251,7 +1278,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 return Ok(Some(ExecError::Depth));
             }
 
-            let sender = self.call()?.address;
+            let sender = self.call()?.call.callee_address;
             let (found, account) = self.sdb.get_account(&sender);
             if !found {
                 return Err(Error::AccountNotFound(sender));
@@ -1315,11 +1342,11 @@ impl<'a> CircuitInputStateRef<'a> {
     ) -> Result<(), Error> {
         let geth_step = &geth_steps[0];
         let call = self.call()?.clone();
-        if !call.is_success {
+        if !call.call.is_success {
             // add call failure ops for exception cases
             self.call_context_read(
                 exec_step,
-                call.call_id,
+                call.call.id,
                 CallContextField::IsSuccess,
                 0u64.into(),
             );
@@ -1330,12 +1357,12 @@ impl<'a> CircuitInputStateRef<'a> {
             // circuit constraint.
             self.call_context_read(
                 exec_step,
-                call.call_id,
+                call.call.id,
                 CallContextField::RwCounterEndOfReversion,
-                call.rw_counter_end_of_reversion.into(),
+                call.call.rw_counter_end_of_reversion.into(),
             );
 
-            if call.is_root {
+            if call.call.is_root {
                 return Ok(());
             }
         }
@@ -1343,26 +1370,29 @@ impl<'a> CircuitInputStateRef<'a> {
         let caller = self.caller()?.clone();
         self.call_context_read(
             exec_step,
-            call.call_id,
+            call.call.id,
             CallContextField::CallerId,
-            caller.call_id.into(),
+            caller.call.id.into(),
         );
 
         let geth_step_next = &geth_steps[1];
         let caller_ctx = self.caller_ctx()?;
-        let caller_gas_left = if call.is_success {
+        let caller_gas_left = if call.call.is_success {
             geth_step_next.gas.0 - geth_step.gas.0
         } else {
             geth_step_next.gas.0
         };
 
         for (field, value) in [
-            (CallContextField::IsRoot, (caller.is_root as u64).into()),
+            (
+                CallContextField::IsRoot,
+                (caller.call.is_root as u64).into(),
+            ),
             (
                 CallContextField::IsCreate,
                 (caller.is_create() as u64).into(),
             ),
-            (CallContextField::CodeHash, caller.code_hash.to_word()),
+            (CallContextField::CodeHash, caller.call.code_hash),
             (CallContextField::ProgramCounter, geth_step_next.pc.0.into()),
             (
                 CallContextField::StackPointer,
@@ -1378,15 +1408,15 @@ impl<'a> CircuitInputStateRef<'a> {
                 self.caller_ctx()?.reversible_write_counter.into(),
             ),
         ] {
-            self.call_context_read(exec_step, caller.call_id, field, value);
+            self.call_context_read(exec_step, caller.call.id, field, value);
         }
 
         for (field, value) in [
-            (CallContextField::LastCalleeId, call.call_id.into()),
+            (CallContextField::LastCalleeId, call.call.id.into()),
             (CallContextField::LastCalleeReturnDataOffset, 0.into()),
             (CallContextField::LastCalleeReturnDataLength, 0.into()),
         ] {
-            self.call_context_write(exec_step, caller.call_id, field, value);
+            self.call_context_write(exec_step, caller.call.id, field, value);
         }
 
         Ok(())

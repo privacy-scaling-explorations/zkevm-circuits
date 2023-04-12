@@ -39,9 +39,9 @@ impl Opcode for ErrorOOGLog {
         // read static call property
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::IsStatic,
-            Word::from(state.call()?.is_static as u8),
+            Word::from(state.call()?.call.is_static as u8),
         );
         // common error handling
         state.gen_restore_context_ops(&mut exec_step, geth_steps)?;

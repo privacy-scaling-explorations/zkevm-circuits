@@ -12,10 +12,10 @@ use crate::{
     },
     table::CallContextFieldTag,
     util::Expr,
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, U256};
+use eth_types::{Field, ZkEvmCall, U256};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget to implement the corresponding out of gas errors for
@@ -117,7 +117,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -212,7 +212,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         self.insufficient_gas.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.step.gas_left)),
             Value::known(F::from(gas_cost)),
         )?;
 

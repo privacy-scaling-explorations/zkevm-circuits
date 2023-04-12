@@ -3,7 +3,7 @@
 use super::{MOCK_ACCOUNTS, MOCK_CHAIN_ID, MOCK_GASPRICE};
 use eth_types::{
     geth_types::Transaction as GethTransaction, word, AccessList, Address, Bytes, Hash,
-    Transaction, Word, U64,
+    Transaction, Word, ZkEvmTransaction, U256, U64,
 };
 use ethers_core::{
     rand::{CryptoRng, RngCore},
@@ -118,17 +118,10 @@ impl AddrOrWallet {
 /// It contains all the builder-pattern methods required to be able to specify
 /// any of it's details.
 pub struct MockTransaction {
+    pub tx: ZkEvmTransaction,
     pub hash: Option<Hash>,
-    pub nonce: Word,
     pub block_hash: Hash,
     pub block_number: U64,
-    pub transaction_index: U64,
-    pub from: AddrOrWallet,
-    pub to: Option<AddrOrWallet>,
-    pub value: Word,
-    pub gas_price: Word,
-    pub gas: Word,
-    pub input: Bytes,
     pub v: Option<U64>,
     pub r: Option<Word>,
     pub s: Option<Word>,
@@ -142,17 +135,19 @@ pub struct MockTransaction {
 impl Default for MockTransaction {
     fn default() -> Self {
         MockTransaction {
+            tx: ZkEvmTransaction {
+                id: 0,
+                nonce: 0u64,
+                caller_address: MOCK_ACCOUNTS[0],
+                callee_address: Address::zero(),
+                value: Word::zero(),
+                gas_price: *MOCK_GASPRICE,
+                gas: 1_000_000u64,
+                call_data: Vec::new(),
+            },
             hash: None,
-            nonce: Word::zero(),
             block_hash: Hash::zero(),
             block_number: U64::zero(),
-            transaction_index: U64::zero(),
-            from: AddrOrWallet::Addr(MOCK_ACCOUNTS[0]),
-            to: None,
-            value: Word::zero(),
-            gas_price: *MOCK_GASPRICE,
-            gas: Word::from(1_000_000u64),
-            input: Bytes::default(),
             v: None,
             r: None,
             s: None,
@@ -169,16 +164,16 @@ impl From<MockTransaction> for Transaction {
     fn from(mock: MockTransaction) -> Self {
         Transaction {
             hash: mock.hash.unwrap_or_default(),
-            nonce: mock.nonce,
+            nonce: U256::from(mock.tx.nonce),
             block_hash: Some(mock.block_hash),
             block_number: Some(mock.block_number),
-            transaction_index: Some(mock.transaction_index),
-            from: mock.from.address(),
-            to: mock.to.map(|addr| addr.address()),
-            value: mock.value,
-            gas_price: Some(mock.gas_price),
-            gas: mock.gas,
-            input: mock.input,
+            transaction_index: Some(mock.tx.id.into()),
+            from: mock.tx.caller_address,
+            to: Some(mock.tx.callee_address),
+            value: mock.tx.value,
+            gas_price: Some(mock.tx.gas_price),
+            gas: U256::from(mock.tx.gas),
+            input: mock.tx.call_data.into(),
             v: mock.v.unwrap_or_default(),
             r: mock.r.unwrap_or_default(),
             s: mock.s.unwrap_or_default(),
@@ -208,7 +203,7 @@ impl MockTransaction {
 
     /// Set nonce field for the MockTransaction.
     pub fn nonce(&mut self, nonce: Word) -> &mut Self {
-        self.nonce = nonce;
+        self.tx.nonce = nonce.as_u64();
         self
     }
 
@@ -226,43 +221,43 @@ impl MockTransaction {
 
     /// Set transaction_idx field for the MockTransaction.
     pub fn transaction_idx(&mut self, transaction_idx: u64) -> &mut Self {
-        self.transaction_index = U64::from(transaction_idx);
+        self.tx.id = transaction_idx as usize;
         self
     }
 
     /// Set from field for the MockTransaction.
     pub fn from<T: Into<AddrOrWallet>>(&mut self, from: T) -> &mut Self {
-        self.from = from.into();
+        self.tx.caller_address = from.into().address();
         self
     }
 
     /// Set to field for the MockTransaction.
     pub fn to<T: Into<AddrOrWallet>>(&mut self, to: T) -> &mut Self {
-        self.to = Some(to.into());
+        self.tx.callee_address = to.into().address();
         self
     }
 
     /// Set value field for the MockTransaction.
     pub fn value(&mut self, value: Word) -> &mut Self {
-        self.value = value;
+        self.tx.value = value;
         self
     }
 
     /// Set gas_price field for the MockTransaction.
     pub fn gas_price(&mut self, gas_price: Word) -> &mut Self {
-        self.gas_price = gas_price;
+        self.tx.gas_price = gas_price;
         self
     }
 
     /// Set gas field for the MockTransaction.
     pub fn gas(&mut self, gas: Word) -> &mut Self {
-        self.gas = gas;
+        self.tx.gas = gas.as_u64();
         self
     }
 
     /// Set input field for the MockTransaction.
     pub fn input(&mut self, input: Bytes) -> &mut Self {
-        self.input = input;
+        self.tx.call_data = input.to_vec();
         self
     }
 
@@ -308,21 +303,20 @@ impl MockTransaction {
     /// by value.
     pub fn build(&mut self) -> Self {
         let tx = TransactionRequest::new()
-            .from(self.from.address())
-            .to(self.to.clone().unwrap_or_default().address())
-            .nonce(self.nonce)
-            .value(self.value)
-            .data(self.input.clone())
-            .gas(self.gas)
-            .gas_price(self.gas_price)
+            .from(self.tx.caller_address)
+            .to(self.tx.callee_address.clone())
+            .nonce(self.tx.nonce)
+            .value(self.tx.value)
+            .data(self.tx.call_data.clone())
+            .gas(self.tx.gas)
+            .gas_price(self.tx.gas_price)
             .chain_id(self.chain_id.low_u64());
 
         match (self.v, self.r, self.s) {
             (None, None, None) => {
                 // Compute sig params and set them in case we have a wallet as `from` attr.
-                if self.from.is_wallet() && self.hash.is_none() {
-                    let sig = self
-                        .from
+                if AddrOrWallet::from(self.tx.caller_address).is_wallet() && self.hash.is_none() {
+                    let sig = AddrOrWallet::from(self.tx.caller_address)
                         .as_wallet()
                         .with_chain_id(self.chain_id.low_u64())
                         .sign_transaction_sync(&tx.into());

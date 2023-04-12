@@ -7,12 +7,12 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
     util::Expr,
 };
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -114,11 +114,11 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_empty_block
-            .assign(region, offset, F::from(step.rw_counter as u64 - 1))?;
+            .assign(region, offset, F::from(step.step.rw_counter as u64 - 1))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 

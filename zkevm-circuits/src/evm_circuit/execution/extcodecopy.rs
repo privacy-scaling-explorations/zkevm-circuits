@@ -11,12 +11,12 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, MemoryAddress, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
 };
 use bus_mapping::circuit_input_builder::CopyDataType;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -153,7 +153,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         offset: usize,
         block: &Block<F>,
         transaction: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -175,8 +175,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             ),
         )?;
 
-        self.tx_id
-            .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
+        self.tx_id.assign(
+            region,
+            offset,
+            Value::known(F::from(transaction.tx.id as u64)),
+        )?;
         self.reversion_info.assign(
             region,
             offset,

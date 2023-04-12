@@ -9,11 +9,11 @@ use crate::{
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             CachedRegion, Cell, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -128,8 +128,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
-        self.insufficient_gas
-            .assign(region, offset, F::from(step.gas_cost - step.gas_left))?;
+        self.insufficient_gas.assign(
+            region,
+            offset,
+            F::from(step.step.gas_cost - step.step.gas_left),
+        )?;
 
         Ok(())
     }

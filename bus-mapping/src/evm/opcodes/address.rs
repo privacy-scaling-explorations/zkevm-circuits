@@ -23,7 +23,7 @@ impl Opcode for Address {
         // Read the callee address in call context.
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CalleeAddress,
             address,
         );
@@ -84,7 +84,7 @@ mod address_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::ADDRESS))
             .unwrap();
 
-        let call_id = builder.block.txs()[0].calls()[0].call_id;
+        let call_id = builder.block.txs()[0].calls()[0].call.id;
         let address = block.eth_block.transactions[0].to.unwrap().to_word();
         assert_eq!(
             {

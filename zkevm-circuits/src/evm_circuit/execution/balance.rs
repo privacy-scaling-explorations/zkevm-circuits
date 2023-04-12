@@ -12,12 +12,12 @@ use crate::{
             math_gadget::IsZeroGadget,
             not, select, CachedRegion, Cell, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -103,7 +103,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -113,7 +113,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             .assign(region, offset, Some(address.to_le_bytes()))?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
 
         self.reversion_info.assign(
             region,

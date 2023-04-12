@@ -13,13 +13,13 @@ use crate::{
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
             not, select, CachedRegion, Cell, MemoryAddress,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::cmp::min;
@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let call_data_offset = cb.query_cell();
 
         // Lookup the calldata_length and caller_address in Tx context table or
-        // Call context table
+        // ZkEvmCall context table
         cb.condition(cb.curr.state.is_root.expr(), |cb| {
             cb.call_context_lookup(false.expr(), None, CallContextFieldTag::TxId, src_id.expr());
             cb.call_context_lookup(
@@ -164,7 +164,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -184,14 +184,18 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     .unwrap(),
             ),
         )?;
-        let src_id = if call.is_root { tx.id } else { call.caller_id };
+        let src_id = if call.is_root {
+            tx.tx.id
+        } else {
+            call.caller_id
+        };
         self.src_id.assign(
             region,
             offset,
             Value::known(F::from(u64::try_from(src_id).unwrap())),
         )?;
 
-        // Call data length and call data offset
+        // ZkEvmCall data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
             (tx.call_data_length as u64, 0_u64)
         } else {

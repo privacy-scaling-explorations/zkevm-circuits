@@ -73,14 +73,14 @@ fn gen_extcodecopy_step(
         (CallContextField::TxId, U256::from(state.tx_ctx.id())),
         (
             CallContextField::RwCounterEndOfReversion,
-            U256::from(state.call()?.rw_counter_end_of_reversion as u64),
+            U256::from(state.call()?.call.rw_counter_end_of_reversion as u64),
         ),
         (
             CallContextField::IsPersistent,
-            U256::from(state.call()?.is_persistent as u64),
+            U256::from(state.call()?.call.is_persistent as u64),
         ),
     ] {
-        state.call_context_read(&mut exec_step, state.call()?.call_id, field, value);
+        state.call_context_read(&mut exec_step, state.call()?.call.id, field, value);
     }
 
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
@@ -177,7 +177,7 @@ fn gen_copy_event(
         src_id: NumberOrHash::Hash(code_hash),
         dst_addr: memory_offset,
         dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(state.call()?.call_id),
+        dst_id: NumberOrHash::Number(state.call()?.call.id),
         log_id: None,
         rw_counter_start,
         bytes: copy_steps,
@@ -266,7 +266,7 @@ mod extcodecopy_tests {
 
         let tx_id = 1;
         let transaction = &builder.block.txs()[tx_id - 1];
-        let call_id = transaction.calls()[0].call_id;
+        let call_id = transaction.calls()[0].call.id;
 
         let indices = transaction
             .steps()
@@ -412,7 +412,7 @@ mod extcodecopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODECOPY))
             .unwrap();
 
-        let expected_call_id = transaction.calls()[step.call_index].call_id;
+        let expected_call_id = transaction.calls()[step.step.call_index].call_id;
 
         assert_eq!(
             (0..copy_size)

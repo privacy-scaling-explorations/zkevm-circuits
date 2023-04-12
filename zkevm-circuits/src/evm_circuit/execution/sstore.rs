@@ -11,13 +11,13 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             not, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
 
-use eth_types::{evm_types::GasCost, Field, ToScalar};
+use eth_types::{evm_types::GasCost, Field, ToScalar, ZkEvmCall};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -158,13 +158,13 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
         self.is_static
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.reversion_info.assign(
@@ -208,7 +208,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             region,
             offset,
             Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.step.gas_left)),
         )?;
 
         self.gas_cost

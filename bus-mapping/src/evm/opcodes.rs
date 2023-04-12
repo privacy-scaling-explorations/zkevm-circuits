@@ -332,7 +332,7 @@ pub fn gen_associated_ops(
             return fn_gen_error_ops(state, geth_steps);
         } else {
             // For exceptions that already enter next call context, but fail immediately
-            // (e.g. Depth, InsufficientBalance), we still need to parse the call.
+            // (e.g. Depth, InsufficientBalance), we still need to parse the call.call.
             if geth_step.op.is_call_or_create() {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
@@ -358,19 +358,19 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
         (CallContextField::TxId, state.tx_ctx.id().into()),
         (
             CallContextField::RwCounterEndOfReversion,
-            call.rw_counter_end_of_reversion.into(),
+            call.call.rw_counter_end_of_reversion.into(),
         ),
         (
             CallContextField::IsPersistent,
-            (call.is_persistent as usize).into(),
+            (call.call.is_persistent as usize).into(),
         ),
-        (CallContextField::IsSuccess, call.is_success.to_word()),
+        (CallContextField::IsSuccess, call.call.is_success.to_word()),
     ] {
-        state.call_context_write(&mut exec_step, call.call_id, field, value);
+        state.call_context_write(&mut exec_step, call.call.id, field, value);
     }
 
     // Increase caller's nonce
-    let caller_address = call.caller_address;
+    let caller_address = call.call.caller_address;
     let nonce_prev = state.sdb.get_account(&caller_address).1.nonce;
     state.account_write(
         &mut exec_step,
@@ -381,7 +381,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     )?;
 
     // Add caller and callee into access list
-    for address in [call.caller_address, call.address] {
+    for address in [call.call.caller_address, call.call.callee_address] {
         let is_warm_prev = !state.sdb.add_account_to_access_list(address);
         state.tx_accesslist_account_write(
             &mut exec_step,
@@ -395,7 +395,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // Calculate intrinsic gas cost
     let call_data_gas_cost = state
         .tx
-        .input
+        .tx
+        .call_data
         .iter()
         .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 });
     let intrinsic_gas_cost = if state.tx.is_create() {
@@ -403,23 +404,23 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     } else {
         GasCost::TX.as_u64()
     } + call_data_gas_cost;
-    exec_step.gas_cost = GasCost(intrinsic_gas_cost);
+    exec_step.step.gas_cost = intrinsic_gas_cost;
 
     // Get code_hash of callee
-    let (_, callee_account) = state.sdb.get_account(&call.address);
+    let (_, callee_account) = state.sdb.get_account(&call.call.callee_address);
     let callee_exists = !callee_account.is_empty();
     let (callee_code_hash, is_empty_code_hash) = if callee_exists {
         (
-            call.code_hash.to_word(),
-            call.code_hash == CodeDB::empty_code_hash(),
+            call.call.code_hash,
+            call.call.code_hash == CodeDB::empty_code_hash().to_word(),
         )
     } else {
         (Word::zero(), true)
     };
-    if !state.is_precompiled(&call.address) && !call.is_create() {
+    if !state.is_precompiled(&call.call.callee_address) && !call.is_create() {
         state.account_read(
             &mut exec_step,
-            call.address,
+            call.call.callee_address,
             AccountField::CodeHash,
             callee_code_hash,
         );
@@ -428,12 +429,12 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
     // Transfer with fee
     state.transfer_with_fee(
         &mut exec_step,
-        call.caller_address,
-        call.address,
+        call.call.caller_address,
+        call.call.callee_address,
         callee_exists,
-        call.is_create(),
-        call.value,
-        Some(state.tx.gas_price * state.tx.gas),
+        call.call.is_create,
+        call.call.value,
+        Some(state.tx.tx.gas_price * state.tx.tx.gas),
     )?;
 
     // In case of contract creation we wish to verify the correctness of the
@@ -456,8 +457,8 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
     // There are 4 branches from here.
     match (
-        call.is_create(),
-        state.is_precompiled(&call.address),
+        call.call.is_create,
+        state.is_precompiled(&call.call.callee_address),
         is_empty_code_hash,
     ) {
         // 1. Creation transaction.
@@ -465,17 +466,17 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
             state.push_op_reversible(
                 &mut exec_step,
                 AccountOp {
-                    address: call.address,
+                    address: call.call.callee_address,
                     field: AccountField::Nonce,
                     value: 1.into(),
                     value_prev: 0.into(),
                 },
             )?;
             for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
+                (CallContextField::Depth, call.call.depth.into()),
                 (
                     CallContextField::CallerAddress,
-                    call.caller_address.to_word(),
+                    call.call.caller_address.to_word(),
                 ),
                 (
                     CallContextField::CalleeAddress,
@@ -483,22 +484,25 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 ),
                 (
                     CallContextField::CallDataOffset,
-                    call.call_data_offset.into(),
+                    call.call.call_data_offset.into(),
                 ),
                 (
                     CallContextField::CallDataLength,
-                    state.tx.input.len().into(),
+                    state.tx.tx.call_data.len().into(),
                 ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::Value, call.call.value),
+                (
+                    CallContextField::IsStatic,
+                    (call.call.is_static as usize).into(),
+                ),
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
                 (CallContextField::IsRoot, 1.into()),
                 (CallContextField::IsCreate, 1.into()),
-                (CallContextField::CodeHash, call.code_hash.to_word()),
+                (CallContextField::CodeHash, call.call.code_hash),
             ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call.id, field, value);
             }
             Ok(exec_step)
         }
@@ -515,22 +519,28 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
 
             // 4. Call to account with non-empty code.
             for (field, value) in [
-                (CallContextField::Depth, call.depth.into()),
+                (CallContextField::Depth, call.call.depth.into()),
                 (
                     CallContextField::CallerAddress,
-                    call.caller_address.to_word(),
+                    call.call.caller_address.to_word(),
                 ),
-                (CallContextField::CalleeAddress, call.address.to_word()),
+                (
+                    CallContextField::CalleeAddress,
+                    call.call.callee_address.to_word(),
+                ),
                 (
                     CallContextField::CallDataOffset,
-                    call.call_data_offset.into(),
+                    call.call.call_data_offset.into(),
                 ),
                 (
                     CallContextField::CallDataLength,
-                    call.call_data_length.into(),
+                    call.call.call_data_length.into(),
                 ),
-                (CallContextField::Value, call.value),
-                (CallContextField::IsStatic, (call.is_static as usize).into()),
+                (CallContextField::Value, call.call.value),
+                (
+                    CallContextField::IsStatic,
+                    (call.call.is_static as usize).into(),
+                ),
                 (CallContextField::LastCalleeId, 0.into()),
                 (CallContextField::LastCalleeReturnDataOffset, 0.into()),
                 (CallContextField::LastCalleeReturnDataLength, 0.into()),
@@ -538,7 +548,7 @@ pub fn gen_begin_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Er
                 (CallContextField::IsCreate, 0.into()),
                 (CallContextField::CodeHash, callee_code_hash),
             ] {
-                state.call_context_write(&mut exec_step, call.call_id, field, value);
+                state.call_context_write(&mut exec_step, call.call.id, field, value);
             }
 
             Ok(exec_step)
@@ -552,15 +562,15 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
 
     state.call_context_read(
         &mut exec_step,
-        call.call_id,
+        call.call.id,
         CallContextField::TxId,
         state.tx_ctx.id().into(),
     );
     state.call_context_read(
         &mut exec_step,
-        call.call_id,
+        call.call.id,
         CallContextField::IsPersistent,
-        Word::from(call.is_persistent as u8),
+        Word::from(call.call.is_persistent as u8),
     );
 
     let refund = state.sdb.refund();
@@ -574,31 +584,31 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         },
     );
 
-    let effective_refund =
-        refund.min((state.tx.gas - exec_step.gas_left.0) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
-    let (found, caller_account) = state.sdb.get_account(&call.caller_address);
+    let effective_refund = refund
+        .min((state.tx.tx.gas - exec_step.step.gas_left) / MAX_REFUND_QUOTIENT_OF_GAS_USED as u64);
+    let (found, caller_account) = state.sdb.get_account(&call.call.caller_address);
     if !found {
-        return Err(Error::AccountNotFound(call.caller_address));
+        return Err(Error::AccountNotFound(call.call.caller_address));
     }
     let caller_balance_prev = caller_account.balance;
     let caller_balance =
-        caller_balance_prev + state.tx.gas_price * (exec_step.gas_left.0 + effective_refund);
+        caller_balance_prev + state.tx.tx.gas_price * (exec_step.step.gas_left + effective_refund);
     state.account_write(
         &mut exec_step,
-        call.caller_address,
+        call.call.caller_address,
         AccountField::Balance,
         caller_balance,
         caller_balance_prev,
     )?;
 
-    let effective_tip = state.tx.gas_price - state.block.base_fee;
+    let effective_tip = state.tx.tx.gas_price - state.block.base_fee;
     let (found, coinbase_account) = state.sdb.get_account(&state.block.coinbase);
     if !found {
         return Err(Error::AccountNotFound(state.block.coinbase));
     }
     let coinbase_balance_prev = coinbase_account.balance;
     let coinbase_balance =
-        coinbase_balance_prev + effective_tip * (state.tx.gas - exec_step.gas_left.0);
+        coinbase_balance_prev + effective_tip * (state.tx.tx.gas - exec_step.step.gas_left);
     state.account_write(
         &mut exec_step,
         state.block.coinbase,
@@ -612,10 +622,10 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         &mut exec_step,
         state.tx_ctx.id(),
         TxReceiptField::PostStateOrStatus,
-        call.is_persistent as u64,
+        call.call.is_persistent as u64,
     )?;
 
-    let log_id = exec_step.log_id;
+    let log_id = exec_step.step.log_id;
     state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
@@ -633,7 +643,7 @@ pub fn gen_end_tx_ops(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         )?;
     }
 
-    state.block_ctx.cumulative_gas_used += state.tx.gas - exec_step.gas_left.0;
+    state.block_ctx.cumulative_gas_used += state.tx.tx.gas - exec_step.step.gas_left;
     state.tx_receipt_write(
         &mut exec_step,
         state.tx_ctx.id(),
@@ -670,7 +680,7 @@ fn dummy_gen_selfdestruct_ops(
 ) -> Result<Vec<ExecStep>, Error> {
     let geth_step = &geth_steps[0];
     let mut exec_step = state.new_step(geth_step)?;
-    let sender = state.call()?.address;
+    let sender = state.call()?.call.callee_address;
     let receiver = geth_step.stack.last()?.to_address();
 
     let is_warm = state.sdb.check_account_in_access_list(&receiver);
@@ -697,7 +707,7 @@ fn dummy_gen_selfdestruct_ops(
     // exists.
     state.transfer(&mut exec_step, sender, receiver, true, false, value)?;
 
-    if state.call()?.is_persistent {
+    if state.call()?.call.is_persistent {
         state.sdb.destruct_account(sender);
     }
 

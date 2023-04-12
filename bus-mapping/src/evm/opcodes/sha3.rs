@@ -61,7 +61,7 @@ impl Opcode for Sha3 {
         }
         state.block.sha3_inputs.push(memory);
 
-        let call_id = state.call()?.call_id;
+        let call_id = state.call()?.call.id;
         state.push_copy(
             &mut exec_step,
             CopyEvent {
@@ -209,7 +209,7 @@ pub mod sha3_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::SHA3))
             .unwrap();
 
-        let call_id = builder.block.txs()[0].calls()[0].call_id;
+        let call_id = builder.block.txs()[0].calls()[0].call.id;
 
         // stack read and write.
         assert_eq!(

@@ -8,11 +8,11 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field};
+use eth_types::{evm_types::OpcodeId, Field, ZkEvmCall};
 use halo2_proofs::plonk::Error;
 
 #[derive(Clone, Debug)]
@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
         offset: usize,
         _block: &Block<F>,
         _transaction: &Transaction,
-        _call: &Call,
+        _call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
@@ -74,7 +74,8 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
             region,
             offset,
             Some(
-                step.gas_left
+                step.step
+                    .gas_left
                     .saturating_sub(OpcodeId::GAS.constant_gas_cost().as_u64())
                     .to_le_bytes(),
             ),

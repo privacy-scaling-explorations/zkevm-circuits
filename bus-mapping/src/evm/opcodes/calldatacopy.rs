@@ -55,37 +55,37 @@ fn gen_calldatacopy_step(
     )?;
     state.stack_read(&mut exec_step, geth_step.stack.nth_last_filled(2), length)?;
 
-    if state.call()?.is_root {
+    if state.call()?.call.is_root {
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::TxId,
             state.tx_ctx.id().into(),
         );
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CallDataLength,
-            state.call()?.call_data_length.into(),
+            state.call()?.call.call_data_length.into(),
         );
     } else {
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CallerId,
-            state.call()?.caller_id.into(),
+            state.call()?.call.caller_id.into(),
         );
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CallDataLength,
-            state.call()?.call_data_length.into(),
+            state.call()?.call.call_data_length.into(),
         );
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::CallDataOffset,
-            state.call()?.call_data_offset.into(),
+            state.call()?.call.call_data_offset.into(),
         );
     };
 
@@ -106,12 +106,12 @@ fn gen_copy_steps(
         let addr = src_addr + idx;
         let value = if addr < src_addr_end {
             let byte =
-                state.call_ctx()?.call_data[(addr - state.call()?.call_data_offset) as usize];
+                state.call_ctx()?.call_data[(addr - state.call()?.call.call_data_offset) as usize];
             if !is_root {
                 state.push_op(
                     exec_step,
                     RW::READ,
-                    MemoryOp::new(state.call()?.caller_id, addr.into(), byte),
+                    MemoryOp::new(state.call()?.call.caller_id, addr.into(), byte),
                 );
             }
             byte
@@ -134,8 +134,8 @@ fn gen_copy_event(
     let data_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
-    let call_data_offset = state.call()?.call_data_offset;
-    let call_data_length = state.call()?.call_data_length;
+    let call_data_offset = state.call()?.call.call_data_offset;
+    let call_data_length = state.call()?.call.call_data_length;
     let (src_addr, src_addr_end) = (
         call_data_offset + data_offset,
         call_data_offset + call_data_length,
@@ -149,13 +149,13 @@ fn gen_copy_event(
         memory_offset,
         src_addr_end,
         length,
-        state.call()?.is_root,
+        state.call()?.call.is_root,
     )?;
 
-    let (src_type, src_id) = if state.call()?.is_root {
+    let (src_type, src_id) = if state.call()?.call.is_root {
         (CopyDataType::TxCalldata, state.tx_ctx.id())
     } else {
-        (CopyDataType::Memory, state.call()?.caller_id)
+        (CopyDataType::Memory, state.call()?.call.caller_id)
     };
 
     Ok(CopyEvent {
@@ -164,7 +164,7 @@ fn gen_copy_event(
         src_addr,
         src_addr_end,
         dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(state.call()?.call_id),
+        dst_id: NumberOrHash::Number(state.call()?.call.id),
         dst_addr: memory_offset,
         log_id: None,
         rw_counter_start,
@@ -259,8 +259,10 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+        let caller_id = builder.block.txs()[0].calls()[step.step.call_index]
+            .call
+            .caller_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call.id;
 
         // 3 stack reads + 3 call context reads.
         assert_eq!(step.bus_mapping_instance.len(), 6);
@@ -485,7 +487,7 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call.id;
         assert_eq!(step.bus_mapping_instance.len(), 5);
 
         assert_eq!(
@@ -517,7 +519,7 @@ mod calldatacopy_tests {
                 (
                     RW::READ,
                     &CallContextOp {
-                        call_id: builder.block.txs()[0].calls()[0].call_id,
+                        call_id: builder.block.txs()[0].calls()[0].call.id,
                         field: CallContextField::TxId,
                         value: Word::from(1),
                     }
@@ -525,7 +527,7 @@ mod calldatacopy_tests {
                 (
                     RW::READ,
                     &CallContextOp {
-                        call_id: builder.block.txs()[0].calls()[0].call_id,
+                        call_id: builder.block.txs()[0].calls()[0].call.id,
                         field: CallContextField::CallDataLength,
                         value: calldata_len.into(),
                     },

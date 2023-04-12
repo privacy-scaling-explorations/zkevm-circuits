@@ -5,9 +5,9 @@ use crate::evm_circuit::{
     util::{
         common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    witness::{Block, ExecStep, Transaction},
 };
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use gadgets::util::Expr;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -52,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = F::from(step.opcode.unwrap().as_u64());

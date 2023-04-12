@@ -9,12 +9,12 @@ use crate::{
             math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
             sum, CachedRegion,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256};
+use eth_types::{Field, ToLittleEndian, ZkEvmCall, U256};
 use halo2_proofs::plonk::Error;
 
 /// MulModGadget verifies opcode MULMOD
@@ -108,7 +108,7 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        _: &Call,
+        _: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

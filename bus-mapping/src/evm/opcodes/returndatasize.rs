@@ -21,7 +21,7 @@ impl Opcode for Returndatasize {
         let value = geth_steps[1].stack.last()?;
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::LastCalleeReturnDataLength,
             value,
         );

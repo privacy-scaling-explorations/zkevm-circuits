@@ -15,14 +15,14 @@ use crate::{
             },
             CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     table::{
         BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
     },
     util::Expr,
 };
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
+use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -199,18 +199,18 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         offset: usize,
         block: &Block<F>,
         tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_used = tx.gas - step.gas_left;
+        let gas_used = tx.tx.gas - step.step.gas_left;
         let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
             [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.id as u64)))?;
         self.tx_gas
-            .assign(region, offset, Value::known(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.gas)))?;
         let (max_refund, _) = self.max_refund.assign(region, offset, gas_used as u128)?;
         self.refund
             .assign(region, offset, Value::known(F::from(refund)))?;
@@ -221,19 +221,20 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
         let effective_refund = refund.min(max_refund as u64);
-        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left);
+        let gas_fee_refund = tx.tx.gas_price * (effective_refund + step.step.gas_left);
         self.mul_gas_price_by_refund.assign(
             region,
             offset,
-            tx.gas_price,
-            effective_refund + step.gas_left,
+            tx.tx.gas_price,
+            effective_refund + step.step.gas_left,
             gas_fee_refund,
         )?;
         self.tx_caller_address.assign(
             region,
             offset,
             Value::known(
-                tx.caller_address
+                tx.tx
+                    .caller_address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
@@ -245,12 +246,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             vec![gas_fee_refund],
             caller_balance,
         )?;
-        let effective_tip = tx.gas_price - block.context.base_fee;
+        let effective_tip = tx.tx.gas_price - block.context.base_fee;
         self.sub_gas_price_by_base_fee.assign(
             region,
             offset,
             [effective_tip, block.context.base_fee],
-            tx.gas_price,
+            tx.tx.gas_price,
         )?;
         self.mul_effective_tip_by_gas_used.assign(
             region,
@@ -278,14 +279,14 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             coinbase_balance,
         )?;
 
-        let current_cumulative_gas_used: u64 = if tx.id == 1 {
+        let current_cumulative_gas_used: u64 = if tx.tx.id == 1 {
             0
         } else {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
                 RwTableTag::TxReceipt,
-                (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
+                (tx.tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()
         };
@@ -296,7 +297,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
-            .assign(region, offset, F::from(tx.id as u64), F::one())?;
+            .assign(region, offset, F::from(tx.tx.id as u64), F::one())?;
         self.is_persistent.assign(
             region,
             offset,

@@ -20,8 +20,8 @@ impl Opcode for Sload {
         let geth_step = &geth_steps[0];
         let mut exec_step = state.new_step(geth_step)?;
 
-        let call_id = state.call()?.call_id;
-        let contract_addr = state.call()?.address;
+        let call_id = state.call()?.call.id;
+        let contract_addr = state.call()?.call.callee_address;
 
         state.call_context_read(
             &mut exec_step,
@@ -34,14 +34,14 @@ impl Opcode for Sload {
             &mut exec_step,
             call_id,
             CallContextField::RwCounterEndOfReversion,
-            Word::from(state.call()?.rw_counter_end_of_reversion),
+            Word::from(state.call()?.call.rw_counter_end_of_reversion),
         );
 
         state.call_context_read(
             &mut exec_step,
             call_id,
             CallContextField::IsPersistent,
-            Word::from(state.call()?.is_persistent as u8),
+            Word::from(state.call()?.call.is_persistent as u8),
         );
 
         state.call_context_read(

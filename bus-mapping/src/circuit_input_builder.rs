@@ -185,6 +185,7 @@ impl<'a> CircuitInputBuilder {
                     .get(&op.call_id)
                     .expect("call_id not found in call_map");
                 op.value = self.block.txs[*tx_idx].calls()[*call_idx]
+                    .call
                     .rw_counter_end_of_reversion
                     .into();
             }
@@ -212,14 +213,14 @@ impl<'a> CircuitInputBuilder {
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
-        end_block_not_last.rwc = self.block_ctx.rwc;
-        end_block_last.rwc = self.block_ctx.rwc;
+        end_block_not_last.step.rw_counter = self.block_ctx.rwc.0;
+        end_block_last.step.rw_counter = self.block_ctx.rwc.0;
 
         let mut dummy_tx = Transaction::dummy();
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
-        if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call_id) {
+        if let Some(call_id) = state.block.txs.last().map(|tx| tx.calls[0].call.id) {
             state.call_context_read(
                 &mut end_block_last,
                 call_id,

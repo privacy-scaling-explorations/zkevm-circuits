@@ -7,11 +7,11 @@ use crate::{
             common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
             math_gadget::LtGadget, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -60,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         offset: usize,
         block: &Block<F>,
         _tx: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -69,14 +69,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         // Inputs/Outputs
         self.gas_required
-            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
+            .assign(region, offset, Value::known(F::from(step.step.gas_cost)))?;
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(step.step.gas_left),
+            F::from(step.step.gas_cost),
         )?;
 
         self.common_error_gadget

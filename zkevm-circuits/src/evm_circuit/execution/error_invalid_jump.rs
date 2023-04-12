@@ -11,11 +11,11 @@ use crate::{
             math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
             select, sum, CachedRegion, Cell, Word,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, ZkEvmCall, U256};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -127,7 +127,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -305,7 +305,7 @@ mod test {
             OpcodeId::REVERT
         };
 
-        // Call twice for testing both cold and warm access
+        // ZkEvmCall twice for testing both cold and warm access
         let mut bytecode = bytecode! {
             PUSH32(Word::from(stack.rd_length))
             PUSH32(Word::from(stack.rd_offset))

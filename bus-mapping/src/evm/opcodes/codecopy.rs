@@ -4,7 +4,7 @@ use crate::{
     },
     Error,
 };
-use eth_types::{Bytecode, GethExecStep};
+use eth_types::{Bytecode, GethExecStep, ToBigEndian, H256};
 
 use super::Opcode;
 
@@ -25,8 +25,8 @@ impl Opcode for Codecopy {
         let code_offset = geth_step.stack.nth_last(1)?.as_u64();
         let length = geth_step.stack.nth_last(2)?.as_u64();
 
-        let code_hash = state.call()?.code_hash;
-        let code = state.code(code_hash)?;
+        let code_hash = state.call()?.call.code_hash;
+        let code = state.code(H256::from(code_hash.to_be_bytes()))?;
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
@@ -93,8 +93,8 @@ fn gen_copy_event(
     let code_offset = geth_step.stack.nth_last(1)?.as_u64();
     let length = geth_step.stack.nth_last(2)?.as_u64();
 
-    let code_hash = state.call()?.code_hash;
-    let bytecode: Bytecode = state.code(code_hash)?.into();
+    let code_hash = state.call()?.call.code_hash;
+    let bytecode: Bytecode = state.code(H256::from(code_hash.to_be_bytes()))?.into();
     let src_addr_end = bytecode.to_vec().len() as u64;
 
     let mut exec_step = state.new_step(geth_step)?;
@@ -109,11 +109,12 @@ fn gen_copy_event(
 
     Ok(CopyEvent {
         src_type: CopyDataType::Bytecode,
-        src_id: NumberOrHash::Hash(code_hash),
+        // TODO-KIMI, be or le?
+        src_id: NumberOrHash::Hash(H256::from(code_hash.to_be_bytes())),
         src_addr: code_offset,
         src_addr_end,
         dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(state.call()?.call_id),
+        dst_id: NumberOrHash::Number(state.call()?.call.id),
         dst_addr: dst_offset,
         log_id: None,
         rw_counter_start,

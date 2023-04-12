@@ -1,6 +1,6 @@
 use array_init::array_init;
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ZkEvmCall};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
             from_bytes, CachedRegion, Cell,
         },
-        witness::{Block, Call, ExecStep, Transaction},
+        witness::{Block, ExecStep, Transaction},
     },
     util::Expr,
 };
@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for CodesizeGadget<F> {
         offset: usize,
         block: &Block<F>,
         _transaction: &Transaction,
-        _call: &Call,
+        _call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;

@@ -25,7 +25,7 @@ impl Opcode for GasPrice {
         // CallContext read of the TxId
         state.call_context_read(
             &mut exec_step,
-            state.call()?.call_id,
+            state.call()?.call.id,
             CallContextField::TxId,
             tx_id.into(),
         );
@@ -99,7 +99,7 @@ mod gasprice_tests {
             )
         );
 
-        let call_id = builder.block.txs()[0].calls()[0].call_id;
+        let call_id = builder.block.txs()[0].calls()[0].call.id;
 
         assert_eq!(
             {

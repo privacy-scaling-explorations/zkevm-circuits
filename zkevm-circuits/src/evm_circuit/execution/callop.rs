@@ -14,12 +14,14 @@ use crate::evm_circuit::{
 };
 
 use crate::{
-    evm_circuit::witness::{Block, Call, ExecStep, Transaction},
+    evm_circuit::witness::{Block, ExecStep, Transaction},
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToLittleEndian, ToScalar, ZkEvmCall, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -45,7 +47,7 @@ pub(crate) struct CallOpGadget<F> {
     is_warm_prev: Cell<F>,
     callee_reversion_info: ReversionInfo<F>,
     transfer: TransferGadget<F>,
-    // current handling Call* opcode's caller balance
+    // current handling ZkEvmCall* opcode's caller balance
     caller_balance_word: Word<F>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
@@ -432,7 +434,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         offset: usize,
         block: &Block<F>,
         _: &Transaction,
-        call: &Call,
+        call: &ZkEvmCall,
         step: &ExecStep,
     ) -> Result<(), Error> {
         let opcode = step.opcode.unwrap();
@@ -611,7 +613,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             has_value,
             !callee_exists,
         )?;
-        let gas_available = step.gas_left - gas_cost;
+        let gas_available = step.step.gas_left - gas_cost;
 
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;
@@ -776,7 +778,7 @@ mod test {
             OpcodeId::REVERT
         };
 
-        // Call twice for testing both cold and warm access
+        // ZkEvmCall twice for testing both cold and warm access
         let mut bytecode = bytecode! {
             PUSH32(Word::from(stack.rd_length))
             PUSH32(Word::from(stack.rd_offset))
