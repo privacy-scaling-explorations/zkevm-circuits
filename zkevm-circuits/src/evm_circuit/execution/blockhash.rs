@@ -102,7 +102,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let block_number = block.rws[step.rw_indices[0]].stack_value();
+        let block_number = block.rws[step.step.rw_indices[0]].stack_value();
         self.block_number.assign(
             region,
             offset,
@@ -129,7 +129,11 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         self.block_hash.assign(
             region,
             offset,
-            Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
+            Some(
+                block.rws[step.step.rw_indices[1]]
+                    .stack_value()
+                    .to_le_bytes(),
+            ),
         )?;
 
         self.block_lt

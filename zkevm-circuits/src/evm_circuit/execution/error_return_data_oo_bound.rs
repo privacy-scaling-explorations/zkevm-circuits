@@ -123,13 +123,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let [dest_offset, data_offset, size] =
-            [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
+            [0, 1, 2].map(|i| block.rws[step.step.rw_indices[i as usize]].stack_value());
 
         self.memory_offset
             .assign(region, offset, Value::known(F::from(dest_offset.as_u64())))?;
@@ -138,7 +138,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
         self.sum
             .assign(region, offset, [data_offset, size], remainder_end)?;
 
-        let return_data_length = block.rws[step.rw_indices[3]].call_context_value();
+        let return_data_length = block.rws[step.step.rw_indices[3]].call_context_value();
         self.return_data_length.assign(
             region,
             offset,

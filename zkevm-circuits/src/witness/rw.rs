@@ -1,14 +1,16 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
+use bus_mapping::operation::{
+    self, AccountField, CallContextField, RwTableTag, TxLogField, TxReceiptField,
+};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
 use crate::{
     evm_circuit::util::rlc,
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
     util::build_tx_log_address,
 };
 

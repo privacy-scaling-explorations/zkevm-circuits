@@ -10,6 +10,7 @@ mod random_linear_combination;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+use bus_mapping::operation::RwTableTag;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
 
@@ -19,7 +20,7 @@ use self::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -622,7 +623,7 @@ mod state_circuit_stats {
             |block, _, step_index| {
                 let step = &block.txs[0].steps()[step_index];
                 let step_next = &block.txs[0].steps()[step_index + 1];
-                step_next.rwc.0 - step.rwc.0
+                step_next.step.rw_counter - step.step.rw_counter
             },
         );
     }

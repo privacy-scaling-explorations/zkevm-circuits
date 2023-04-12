@@ -237,3 +237,4 @@ pub mod operation;
 pub mod rpc;
 pub mod state_db;
 pub use error::Error;
+pub mod geth_types;

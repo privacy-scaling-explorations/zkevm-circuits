@@ -160,7 +160,11 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
+        let indices = [
+            step.step.rw_indices[0],
+            step.step.rw_indices[1],
+            step.step.rw_indices[2],
+        ];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
         let shf0 = u64::from(pop1.to_le_bytes()[0]);
         let shf_lt256 = pop1
@@ -177,7 +181,7 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
             U256::from(0)
         };
 
-        let (quotient, remainder, dividend) = match step.opcode.unwrap() {
+        let (quotient, remainder, dividend) = match step.step.opcode.unwrap() {
             OpcodeId::SHL => (pop2, U256::from(0), push),
             OpcodeId::SHR => (push, pop2 - push * divisor, pop2),
             _ => unreachable!(),

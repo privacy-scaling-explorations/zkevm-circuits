@@ -56,7 +56,7 @@ impl CircuitInputBuilderTx {
         let prev_log_id = if tx.is_steps_empty() {
             0
         } else {
-            tx.last_step().log_id
+            tx.last_step().step.log_id
         };
 
         let call_ctx = tx_ctx.call_ctx().unwrap();

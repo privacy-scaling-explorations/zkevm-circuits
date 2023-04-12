@@ -98,16 +98,19 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
         let is_call = opcode == OpcodeId::CALL;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         let [mut gas, mut code_address, mut value] = [U256::zero(), U256::zero(), U256::zero()];
 
         if is_call {
-            [gas, code_address, value] =
-                [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                    .map(|idx| block.rws[idx].stack_value());
+            [gas, code_address, value] = [
+                step.step.rw_indices[0],
+                step.step.rw_indices[1],
+                step.step.rw_indices[2],
+            ]
+            .map(|idx| block.rws[idx].stack_value());
         }
 
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;

@@ -4,7 +4,6 @@ use crate::{
     copy_circuit::util::number_or_hash_to_field,
     evm_circuit::util::rlc,
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
-    impl_expr,
     util::{build_tx_log_address, Challenges},
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
@@ -15,6 +14,7 @@ use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    impl_expr,
     util::{split_u256, split_u256_limb64},
 };
 use halo2_proofs::{
@@ -282,7 +282,7 @@ impl<F: Field> LookupTable<F> for TxTable {
 
 /// Tag to identify the operation type in a RwTable row
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
-pub enum RwTableTag {
+pub enum RwTableTag2 {
     /// Start (used for padding)
     Start = 1,
     /// Stack operation
@@ -306,24 +306,24 @@ pub enum RwTableTag {
     /// Tx Receipt operation
     TxReceipt,
 }
-impl_expr!(RwTableTag);
+impl_expr!(RwTableTag2);
 
-impl RwTableTag {
+impl RwTableTag2 {
     /// Returns true if the RwTable operation is reversible
     pub fn is_reversible(self) -> bool {
         matches!(
             self,
-            RwTableTag::TxAccessListAccount
-                | RwTableTag::TxAccessListAccountStorage
-                | RwTableTag::TxRefund
-                | RwTableTag::Account
-                | RwTableTag::AccountStorage
+            RwTableTag2::TxAccessListAccount
+                | RwTableTag2::TxAccessListAccountStorage
+                | RwTableTag2::TxRefund
+                | RwTableTag2::Account
+                | RwTableTag2::AccountStorage
         )
     }
 }
 
-impl From<RwTableTag> for usize {
-    fn from(t: RwTableTag) -> Self {
+impl From<RwTableTag2> for usize {
+    fn from(t: RwTableTag2) -> Self {
         t as usize
     }
 }

@@ -148,7 +148,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // get stack values
         let [mut r, n, b, a] = [3, 2, 1, 0]
-            .map(|idx| step.rw_indices[idx])
+            .map(|idx| step.step.rw_indices[idx])
             .map(|idx| block.rws[idx].stack_value());
 
         // assing a,b & n stack values

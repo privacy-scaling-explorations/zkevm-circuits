@@ -87,8 +87,12 @@ impl<F: Field> ExecutionGadget<F> for BitwiseGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [a, b, c] = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-            .map(|idx| block.rws[idx].stack_value());
+        let [a, b, c] = [
+            step.step.rw_indices[0],
+            step.step.rw_indices[1],
+            step.step.rw_indices[2],
+        ]
+        .map(|idx| block.rws[idx].stack_value());
         self.a.assign(region, offset, Some(a.to_le_bytes()))?;
         self.b.assign(region, offset, Some(b.to_le_bytes()))?;
         self.c.assign(region, offset, Some(c.to_le_bytes()))?;

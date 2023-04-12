@@ -115,7 +115,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
 
         // EQ op check
         self.is_eq.assign(
@@ -134,12 +134,12 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
         )?;
 
         let indices = if is_gt == F::one() {
-            [step.rw_indices[1], step.rw_indices[0]]
+            [step.step.rw_indices[1], step.step.rw_indices[0]]
         } else {
-            [step.rw_indices[0], step.rw_indices[1]]
+            [step.step.rw_indices[0], step.step.rw_indices[1]]
         };
         let [a, b] = indices.map(|idx| block.rws[idx].stack_value().to_le_bytes());
-        let result = block.rws[step.rw_indices[2]].stack_value();
+        let result = block.rws[step.step.rw_indices[2]].stack_value();
 
         // `a[0..16] <= b[0..16]`
         self.comparison_lo.assign(

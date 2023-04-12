@@ -159,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [external_address, memory_offset, data_offset, memory_length] =
-            [0, 1, 2, 3].map(|idx| block.rws[step.rw_indices[idx]].stack_value());
+            [0, 1, 2, 3].map(|idx| block.rws[step.step.rw_indices[idx]].stack_value());
         self.external_address_word
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
         let memory_address =
@@ -184,11 +184,11 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             call.is_persistent,
         )?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
+        let (_, is_warm) = block.rws[step.step.rw_indices[7]].tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
-        let code_hash = block.rws[step.rw_indices[8]].account_value_pair().0;
+        let code_hash = block.rws[step.step.rw_indices[8]].account_value_pair().0;
         self.code_hash
             .assign(region, offset, region.word_rlc(code_hash))?;
 

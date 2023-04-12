@@ -130,7 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // If exponent > 1, i.e. exponent != 0 && exponent != 1:
         // We do two lookups to the exponentiation table. If exponent == 2, there is
         // only a single step in the exponentiation by squaring trace. In this
-        // case, is_first == is_last == true for that step.
+        // case, is_first == is_last == true for that step.step.
         let single_step = cb.query_cell();
         cb.condition(
             and::expr([
@@ -224,9 +224,12 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [base, exponent, exponentiation] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+        let [base, exponent, exponentiation] = [
+            step.step.rw_indices[0],
+            step.step.rw_indices[1],
+            step.step.rw_indices[2],
+        ]
+        .map(|idx| block.rws[idx].stack_value());
 
         self.base.assign(region, offset, Some(base.to_le_bytes()))?;
         self.exponent

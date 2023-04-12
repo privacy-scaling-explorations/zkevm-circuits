@@ -149,7 +149,7 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
                 CallContextField::ReversibleWriteCounter,
                 // +3 is because we do some transfers after pushing the call. can be just push the
                 // call later?
-                (exec_step.reversible_write_counter + 3).into(),
+                (exec_step.step.reversible_write_counter + 3).into(),
             ),
         ] {
             state.call_context_write(&mut exec_step, current_call.call_id, field, value);

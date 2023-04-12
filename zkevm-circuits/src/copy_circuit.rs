@@ -10,7 +10,10 @@ mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::{
+    circuit_input_builder::{CopyDataType, CopyEvent},
+    operation::RwTableTag,
+};
 use eth_types::{Field, Word};
 
 use gadgets::{
@@ -29,8 +32,8 @@ use std::{collections::HashMap, marker::PhantomData};
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
     table::{
-        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
-        TxContextFieldTag, TxTable,
+        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, TxContextFieldTag,
+        TxTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,

@@ -69,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataSizeGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let return_data_size = block.rws[step.rw_indices[1]].stack_value();
+        let return_data_size = block.rws[step.step.rw_indices[1]].stack_value();
         self.return_data_size.assign(
             region,
             offset,

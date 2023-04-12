@@ -89,9 +89,9 @@ mod codesize_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CODESIZE))
             .unwrap();
 
-        assert_eq!(step.bus_mapping_instance.len(), 1);
+        assert_eq!(step.step.rw_indices.len(), 1);
 
-        let op = &builder.block.container.stack[step.bus_mapping_instance[0].as_usize()];
+        let op = &builder.block.container.stack[step.step.rw_indices[0].1];
         assert_eq!(op.rw(), RW::WRITE);
         assert_eq!(
             op.op(),

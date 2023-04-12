@@ -184,8 +184,7 @@ mod sstore_tests {
 
         assert_eq!(
             [0, 1, 2, 3, 4]
-                .map(|idx| &builder.block.container.call_context
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -221,7 +220,7 @@ mod sstore_tests {
 
         assert_eq!(
             [5, 6]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -235,7 +234,7 @@ mod sstore_tests {
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[7].as_usize()];
+        let storage_op = &builder.block.container.storage[step.step.rw_indices[7].1];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (
@@ -250,7 +249,7 @@ mod sstore_tests {
                 )
             )
         );
-        let refund_op = &builder.block.container.tx_refund[step.bus_mapping_instance[9].as_usize()];
+        let refund_op = &builder.block.container.tx_refund[step.step.rw_indices[9].1];
         assert_eq!(
             (refund_op.rw(), refund_op.op()),
             (

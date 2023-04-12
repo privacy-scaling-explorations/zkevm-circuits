@@ -89,8 +89,7 @@ mod caller_tests {
         let caller_address = block.eth_block.transactions[0].from.to_word();
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.call_context[step.bus_mapping_instance[0].as_usize()];
+                let operation = &builder.block.container.call_context[step.step.rw_indices[0].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -104,8 +103,7 @@ mod caller_tests {
         );
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.stack[step.bus_mapping_instance[1].as_usize()];
+                let operation = &builder.block.container.stack[step.step.rw_indices[1].1];
                 (operation.rw(), operation.op())
             },
             (

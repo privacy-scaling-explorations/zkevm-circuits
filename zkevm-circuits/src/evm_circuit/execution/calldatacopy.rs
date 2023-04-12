@@ -169,9 +169,12 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_offset, data_offset, length] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+        let [memory_offset, data_offset, length] = [
+            step.step.rw_indices[0],
+            step.step.rw_indices[1],
+            step.step.rw_indices[2],
+        ]
+        .map(|idx| block.rws[idx].stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, length)?;

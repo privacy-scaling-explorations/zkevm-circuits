@@ -93,19 +93,14 @@ mod stackonlyop_tests {
 
         assert_eq!(
             (0..N_POP)
-                .map(|idx| {
-                    &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()]
-                })
+                .map(|idx| { &builder.block.container.stack[step.step.rw_indices[idx].1] })
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             pops.into_iter().map(|pop| (RW::READ, pop)).collect_vec()
         );
         assert_eq!(
             (0..N_PUSH)
-                .map(|idx| {
-                    &builder.block.container.stack
-                        [step.bus_mapping_instance[N_POP + idx].as_usize()]
-                })
+                .map(|idx| { &builder.block.container.stack[step.step.rw_indices[N_POP + idx].1] })
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             pushes

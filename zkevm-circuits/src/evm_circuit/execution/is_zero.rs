@@ -64,7 +64,7 @@ impl<F: Field> ExecutionGadget<F> for IsZeroGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.rws[step.step.rw_indices[0]].stack_value();
         let value = region.word_rlc(value);
         self.value.assign(region, offset, value)?;
         self.is_zero.assign_value(region, offset, value)?;

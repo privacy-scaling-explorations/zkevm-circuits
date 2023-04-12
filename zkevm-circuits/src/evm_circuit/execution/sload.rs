@@ -118,18 +118,18 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
             ),
         )?;
 
-        let [key, value] =
-            [step.rw_indices[4], step.rw_indices[6]].map(|idx| block.rws[idx].stack_value());
+        let [key, value] = [step.step.rw_indices[4], step.step.rw_indices[6]]
+            .map(|idx| block.rws[idx].stack_value());
         self.phase2_key
             .assign(region, offset, region.word_rlc(key))?;
         self.phase2_value
             .assign(region, offset, region.word_rlc(value))?;
 
-        let (_, committed_value) = block.rws[step.rw_indices[5]].aux_pair();
+        let (_, committed_value) = block.rws[step.step.rw_indices[5]].aux_pair();
         self.phase2_committed_value
             .assign(region, offset, region.word_rlc(committed_value))?;
 
-        let (_, is_warm) = block.rws[step.rw_indices[7]].tx_access_list_value_pair();
+        let (_, is_warm) = block.rws[step.step.rw_indices[7]].tx_access_list_value_pair();
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 

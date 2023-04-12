@@ -7,9 +7,10 @@ use crate::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
-    table::{AccountFieldTag, MPTProofType, RwTableTag},
+    table::{AccountFieldTag, MPTProofType},
     util::Expr,
 };
+use bus_mapping::operation::RwTableTag;
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;

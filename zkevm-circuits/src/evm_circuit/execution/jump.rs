@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for JumpGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let destination = block.rws[step.rw_indices[0]].stack_value();
+        let destination = block.rws[step.step.rw_indices[0]].stack_value();
         self.destination.assign(
             region,
             offset,

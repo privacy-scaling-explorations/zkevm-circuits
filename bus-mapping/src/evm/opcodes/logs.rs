@@ -299,20 +299,28 @@ mod log_tests {
             .find(|step| step.exec_state == ExecState::Op(cur_op_code))
             .unwrap();
 
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call_id;
 
         assert_eq!(
             [0, 1]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from((1022 - topic_count) as u32), Word::from(mstart))
+                    &StackOp::new(
+                        1,
+                        StackAddress::from((1022 - topic_count) as u32),
+                        Word::from(mstart)
+                    )
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(1, StackAddress::from((1023 - topic_count) as u32), Word::from(msize))
+                    &StackOp::new(
+                        1,
+                        StackAddress::from((1023 - topic_count) as u32),
+                        Word::from(msize)
+                    )
                 )
             ]
         );
@@ -320,8 +328,7 @@ mod log_tests {
         // assert call context is right
         assert_eq!(
             [2, 3, 4, 5]
-                .map(|idx| &builder.block.container.call_context
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -362,14 +369,13 @@ mod log_tests {
         // TODO: handle is_persistent = false conditions
         if is_persistent {
             assert_eq!(
-                [6].map(|idx| &builder.block.container.tx_log
-                    [step.bus_mapping_instance[idx].as_usize()])
+                [6].map(|idx| &builder.block.container.tx_log[step.step.rw_indices[idx].1])
                     .map(|operation| (operation.rw(), operation.op())),
                 [(
                     RW::WRITE,
                     &TxLogOp {
                         tx_id: 1,
-                        log_id: step.log_id + 1,
+                        log_id: step.step.log_id + 1,
                         field: TxLogField::Address,
                         index: 0,
                         value: callee_address.to_word(),
@@ -383,7 +389,7 @@ mod log_tests {
         for (idx, topic) in topics.iter().rev().enumerate() {
             log_topic_ops.push((
                 RW::WRITE,
-                TxLogOp::new(1, step.log_id + 1, TxLogField::Topic, idx, *topic),
+                TxLogOp::new(1, step.step.log_id + 1, TxLogField::Topic, idx, *topic),
             ));
         }
         assert_eq!(
@@ -414,7 +420,7 @@ mod log_tests {
                         RW::WRITE,
                         TxLogOp::new(
                             1,
-                            step.log_id + 1, // because it is in next CopyToLog step
+                            step.step.log_id + 1, // because it is in next CopyToLog step
                             TxLogField::Data,
                             idx - mstart,
                             Word::from(memory_data[mstart + idx]),
@@ -446,7 +452,7 @@ mod log_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::TxLog);
         assert_eq!(copy_events[0].dst_id, NumberOrHash::Number(1)); // tx_id
         assert_eq!(copy_events[0].dst_addr as usize, 0);
-        assert_eq!(copy_events[0].log_id, Some(step.log_id as u64 + 1));
+        assert_eq!(copy_events[0].log_id, Some(step.step.log_id as u64 + 1));
 
         for (idx, (byte, is_code)) in copy_events[0].bytes.iter().enumerate() {
             assert_eq!(Some(byte), memory_data.get(mstart + idx));

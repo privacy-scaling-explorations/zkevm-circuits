@@ -5,11 +5,10 @@ use crate::{
         },
         table::Table,
     },
-    table::RwTableTag,
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use bus_mapping::state_db::CodeDB;
+use bus_mapping::{operation::RwTableTag, state_db::CodeDB};
 use eth_types::{Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
@@ -630,11 +629,11 @@ pub(crate) struct StepRws<'a> {
 }
 
 impl<'a> StepRws<'a> {
-    /// Create a new StateRws by taking the reference to a block and the step.
+    /// Create a new StateRws by taking the reference to a block and the step.step.
     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
-            rw_indices: &step.rw_indices,
+            rw_indices: &step.step.rw_indices,
             offset: 0,
         }
     }
@@ -642,7 +641,7 @@ impl<'a> StepRws<'a> {
     pub(crate) fn offset_add(&mut self, offset: usize) {
         self.offset = offset
     }
-    /// Return the next rw operation from the step.
+    /// Return the next rw operation from the step.step.
     pub(crate) fn next(&mut self) -> Rw {
         let rw = self.rws[self.rw_indices[self.offset]];
         self.offset += 1;

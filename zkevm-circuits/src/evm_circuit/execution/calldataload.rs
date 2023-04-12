@@ -178,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         // set the value for bytes offset in calldata. This is where we start
         // reading bytes from.
-        let data_offset = block.rws[step.rw_indices[0]].stack_value();
+        let data_offset = block.rws[step.step.rw_indices[0]].stack_value();
 
         // assign the calldata start and end cells.
         self.offset.assign(
@@ -223,7 +223,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             } else {
                 // fetch from memory
                 if src_addr + i < (call.call_data_offset + call.call_data_length) as usize {
-                    *byte = block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
+                    *byte = block.rws[step.step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]]
+                        .memory_value();
                 }
             }
         }

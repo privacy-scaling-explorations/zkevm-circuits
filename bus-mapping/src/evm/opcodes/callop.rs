@@ -177,8 +177,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         // Calculate next_memory_word_size and callee_gas_left manually in case
         // there isn't next geth_step (e.g. callee doesn't have code).
-        debug_assert_eq!(exec_step.memory_size % 32, 0);
-        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        debug_assert_eq!(exec_step.step.memory_size % 32, 0);
+        let curr_memory_word_size = (exec_step.step.memory_size as u64) / 32;
         let next_memory_word_size = [
             curr_memory_word_size,
             (call.call_data_offset + call.call_data_length + 31) / 32,
@@ -250,7 +250,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     (CallContextField::MemorySize, next_memory_word_size.into()),
                     (
                         CallContextField::ReversibleWriteCounter,
-                        (exec_step.reversible_write_counter + 1).into(),
+                        (exec_step.step.reversible_write_counter + 1).into(),
                     ),
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);

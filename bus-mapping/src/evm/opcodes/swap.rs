@@ -91,8 +91,7 @@ mod swap_tests {
 
             assert_eq!(
                 [0, 1, 2, 3]
-                    .map(|idx| &builder.block.container.stack
-                        [step.bus_mapping_instance[idx].as_usize()])
+                    .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                     .map(|operation| (operation.rw(), operation.op())),
                 [
                     (RW::READ, &StackOp::new(1, b_pos, b_val)),

@@ -130,17 +130,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
         let is_jumpi = opcode == OpcodeId::JUMPI;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let dest = block.rws[step.rw_indices[0]].stack_value();
+        let dest = block.rws[step.step.rw_indices[0]].stack_value();
         self.dest_word
             .assign(region, offset, Some(dest.to_le_bytes()))?;
 
         let condition = if is_jumpi {
-            block.rws[step.rw_indices[1]].stack_value()
+            block.rws[step.step.rw_indices[1]].stack_value()
         } else {
             U256::zero()
         };

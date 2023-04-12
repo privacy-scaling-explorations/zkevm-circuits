@@ -63,7 +63,7 @@ impl<F: Field> ExecutionGadget<F> for ChainIdGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let chain_id = block.rws[step.rw_indices[0]].stack_value();
+        let chain_id = block.rws[step.step.rw_indices[0]].stack_value();
 
         self.chain_id
             .assign(region, offset, region.word_rlc(chain_id))?;

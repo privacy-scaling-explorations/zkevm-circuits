@@ -74,8 +74,8 @@ impl<F: Field> ExecutionGadget<F> for NotGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [input, output] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [input, output] = [step.step.rw_indices[0], step.step.rw_indices[1]]
+            .map(|idx| block.rws[idx].stack_value());
         self.input
             .assign(region, offset, Some(input.to_le_bytes()))?;
         self.output

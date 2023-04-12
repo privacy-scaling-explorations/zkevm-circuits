@@ -14,11 +14,11 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
+    table::{CallContextFieldTag, TxLogFieldTag},
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
-use bus_mapping::circuit_input_builder::CopyDataType;
+use bus_mapping::{circuit_input_builder::CopyDataType, operation::RwTableTag};
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
     Field, ToScalar, U256,
@@ -194,8 +194,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_start, msize] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [memory_start, msize] = [step.step.rw_indices[0], step.step.rw_indices[1]]
+            .map(|idx| block.rws[idx].stack_value());
 
         let memory_address = self
             .memory_address
@@ -205,13 +205,13 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
         let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
         let is_persistent = call.is_persistent as u64;
         let mut topic_stack_entry = if topic_count > 0 {
-            step.rw_indices[6 + call.is_persistent as usize]
+            step.step.rw_indices[6 + call.is_persistent as usize]
         } else {
             // if topic_count == 0, this value will be no used anymore
             (RwTableTag::Stack, 0usize)

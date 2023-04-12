@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 pub use super::{dev::*, *};
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
     util::SubCircuit,
     witness::{MptUpdates, Rw, RwMap},
 };

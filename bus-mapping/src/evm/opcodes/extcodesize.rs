@@ -174,10 +174,11 @@ mod extcodesize_tests {
             .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODESIZE))
             .last()
             .unwrap()
-            .bus_mapping_instance
+            .step
+            .rw_indices
             .clone();
         let container = builder.block.container;
-        let operation = &container.stack[indices[0].as_usize()];
+        let operation = &container.stack[indices[0].1];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
@@ -188,7 +189,7 @@ mod extcodesize_tests {
             }
         );
 
-        let operation = &container.call_context[indices[1].as_usize()];
+        let operation = &container.call_context[indices[1].1];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
@@ -199,7 +200,7 @@ mod extcodesize_tests {
             }
         );
 
-        let operation = &container.call_context[indices[2].as_usize()];
+        let operation = &container.call_context[indices[2].1];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
@@ -210,7 +211,7 @@ mod extcodesize_tests {
             }
         );
 
-        let operation = &container.call_context[indices[3].as_usize()];
+        let operation = &container.call_context[indices[3].1];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
@@ -221,7 +222,7 @@ mod extcodesize_tests {
             }
         );
 
-        let operation = &container.tx_access_list_account[indices[4].as_usize()];
+        let operation = &container.tx_access_list_account[indices[4].1];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),
@@ -234,7 +235,7 @@ mod extcodesize_tests {
         );
 
         let code_hash = CodeDB::hash(&account.code).to_word();
-        let operation = &container.account[indices[5].as_usize()];
+        let operation = &container.account[indices[5].1];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(
             operation.op(),
@@ -246,7 +247,7 @@ mod extcodesize_tests {
             }
         );
 
-        let operation = &container.stack[indices[6].as_usize()];
+        let operation = &container.stack[indices[6].1];
         assert_eq!(operation.rw(), RW::WRITE);
         assert_eq!(
             operation.op(),

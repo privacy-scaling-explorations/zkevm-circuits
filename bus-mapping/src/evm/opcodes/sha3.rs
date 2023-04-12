@@ -214,7 +214,7 @@ pub mod sha3_tests {
         // stack read and write.
         assert_eq!(
             [0, 1, 2]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|op| (op.rw(), op.op())),
             [
                 (

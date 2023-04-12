@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for GasPriceGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_price = block.rws[step.rw_indices[1]].stack_value();
+        let gas_price = block.rws[step.step.rw_indices[1]].stack_value();
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;

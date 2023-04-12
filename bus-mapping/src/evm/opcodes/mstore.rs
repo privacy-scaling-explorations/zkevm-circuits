@@ -128,7 +128,7 @@ mod mstore_tests {
 
         assert_eq!(
             [0, 1]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -144,8 +144,7 @@ mod mstore_tests {
 
         assert_eq!(
             (2..34)
-                .map(|idx| &builder.block.container.memory
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.memory[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             Word::from(0x1234u64)
@@ -193,7 +192,7 @@ mod mstore_tests {
 
         assert_eq!(
             [0, 1]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -207,7 +206,7 @@ mod mstore_tests {
             ]
         );
 
-        let memory_op = &builder.block.container.memory[step.bus_mapping_instance[2].as_usize()];
+        let memory_op = &builder.block.container.memory[step.step.rw_indices[2].1];
         assert_eq!(
             (memory_op.rw(), memory_op.op()),
             (RW::WRITE, &MemoryOp::new(1, MemoryAddress(0x100), 0x34))

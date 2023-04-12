@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for MsizeGadget<F> {
         self.value.assign(
             region,
             offset,
-            Some((step.memory_size as u64).to_le_bytes()),
+            Some((step.step.memory_size as u64).to_le_bytes()),
         )?;
 
         Ok(())

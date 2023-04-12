@@ -55,7 +55,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = F::from(step.opcode.unwrap().as_u64());
+        let opcode = F::from(step.step.opcode.unwrap().as_u64());
         self.opcode.assign(region, offset, Value::known(opcode))?;
 
         self.common_error_gadget

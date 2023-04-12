@@ -274,12 +274,13 @@ mod extcodecopy_tests {
             .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODECOPY))
             .last()
             .unwrap()
-            .bus_mapping_instance
+            .step
+            .rw_indices
             .clone();
         let container = &builder.block.container;
         assert_eq!(
             {
-                let operation = &container.stack[indices[0].as_usize()];
+                let operation = &container.stack[indices[0].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -293,7 +294,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[1].as_usize()];
+                let operation = &container.stack[indices[1].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -307,7 +308,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[2].as_usize()];
+                let operation = &container.stack[indices[2].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -321,7 +322,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[3].as_usize()];
+                let operation = &container.stack[indices[3].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -335,7 +336,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.call_context[indices[4].as_usize()];
+                let operation = &container.call_context[indices[4].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -349,7 +350,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.call_context[indices[5].as_usize()];
+                let operation = &container.call_context[indices[5].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -363,7 +364,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.call_context[indices[6].as_usize()];
+                let operation = &container.call_context[indices[6].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -377,7 +378,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.tx_access_list_account[indices[7].as_usize()];
+                let operation = &container.tx_access_list_account[indices[7].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -392,7 +393,7 @@ mod extcodecopy_tests {
         );
         assert_eq!(
             {
-                let operation = &container.account[indices[8].as_usize()];
+                let operation = &container.account[indices[8].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -412,7 +413,7 @@ mod extcodecopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODECOPY))
             .unwrap();
 
-        let expected_call_id = transaction.calls()[step.call_index].call_id;
+        let expected_call_id = transaction.calls()[step.step.call_index].call_id;
 
         assert_eq!(
             (0..copy_size)

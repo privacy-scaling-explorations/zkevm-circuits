@@ -176,11 +176,11 @@ mod codecopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CODECOPY))
             .unwrap();
 
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call_id;
 
         assert_eq!(
             [0, 1, 2]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|op| (op.rw(), op.op())),
             [
                 (

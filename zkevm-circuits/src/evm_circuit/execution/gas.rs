@@ -74,7 +74,8 @@ impl<F: Field> ExecutionGadget<F> for GasGadget<F> {
             region,
             offset,
             Some(
-                step.gas_left
+                step.step
+                    .gas_left
                     .saturating_sub(OpcodeId::GAS.constant_gas_cost().as_u64())
                     .to_le_bytes(),
             ),
@@ -143,7 +144,7 @@ mod test {
                 // the circuit verification fails for this scenario.
                 assert_eq!(block.txs.len(), 1);
                 assert_eq!(block.txs[0].steps.len(), 4);
-                block.txs[0].steps[2].gas_left -= 1;
+                block.txs[0].steps[2].step.gas_left -= 1;
             }))
             .evm_checks(Box::new(|prover, gate_rows, lookup_rows| {
                 assert!(prover

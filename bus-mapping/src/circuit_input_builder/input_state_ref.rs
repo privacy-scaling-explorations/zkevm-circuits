@@ -8,17 +8,18 @@ use super::{
 use crate::{
     error::{get_step_reported_error, ExecError},
     exec_trace::OperationRef,
+    geth_types::ZkEvmExecStep,
     operation::{
         AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        RW,
+        RwTableTag, StackOp, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField,
+        TxReceiptOp, RW,
     },
     state_db::{CodeDB, StateDB},
     Error,
 };
 use eth_types::{
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+        gas_utils::memory_expansion_gas_cost, GasCost, MemoryAddress, OpcodeId, StackAddress,
     },
     Address, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
@@ -60,8 +61,11 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn new_begin_tx_step(&self) -> ExecStep {
         ExecStep {
             exec_state: ExecState::BeginTx,
-            gas_left: Gas(self.tx.gas),
-            rwc: self.block_ctx.rwc,
+            step: ZkEvmExecStep {
+                gas_left: self.tx.gas,
+                rw_counter: self.block_ctx.rwc.0,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -75,20 +79,23 @@ impl<'a> CircuitInputStateRef<'a> {
             .expect("steps should have at least one BeginTx step");
         ExecStep {
             exec_state: ExecState::EndTx,
-            gas_left: if prev_step.error.is_none() {
-                Gas(prev_step.gas_left.0 - prev_step.gas_cost.0)
-            } else {
-                // consume all remaining gas when non revert err happens
-                Gas(0)
+            step: ZkEvmExecStep {
+                gas_left: if prev_step.error.is_none() {
+                    prev_step.step.gas_left - prev_step.step.gas_cost
+                } else {
+                    // consume all remaining gas when non revert err happens
+                    0
+                },
+                rw_counter: self.block_ctx.rwc.0,
+                // For tx without code execution
+                reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
+                    call_ctx.reversible_write_counter
+                } else {
+                    0
+                },
+                log_id: self.tx_ctx.log_id,
+                ..Default::default()
             },
-            rwc: self.block_ctx.rwc,
-            // For tx without code execution
-            reversible_write_counter: if let Some(call_ctx) = self.tx_ctx.calls().last() {
-                call_ctx.reversible_write_counter
-            } else {
-                0
-            },
-            log_id: self.tx_ctx.log_id,
             ..Default::default()
         }
     }
@@ -107,7 +114,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.block
                 .container
                 .insert(Operation::new(self.block_ctx.rwc.inc_pre(), rw, op));
-        step.bus_mapping_instance.push(op_ref);
+        step.step.rw_indices.push((op_ref.0, op_ref.1));
     }
 
     /// Push a read type [`CallContextOp`] into the
@@ -172,11 +179,11 @@ impl<'a> CircuitInputStateRef<'a> {
             RW::WRITE,
             op,
         ));
-        step.bus_mapping_instance.push(op_ref);
+        step.step.rw_indices.push((op_ref.0, op_ref.1));
 
         // Increase reversible_write_counter
         self.call_ctx_mut()?.reversible_write_counter += 1;
-        step.reversible_write_counter_delta += 1;
+        step.step.reversible_write_counter_delta += 1;
 
         // Add the operation into reversible_ops if this call is not persistent
         if !self.call()?.is_persistent {
@@ -793,7 +800,7 @@ impl<'a> CircuitInputStateRef<'a> {
     /// was reversible.
     fn get_rev_op_by_ref(&self, op_ref: &OperationRef) -> Option<OpEnum> {
         match op_ref {
-            OperationRef(Target::Storage, idx) => {
+            OperationRef(RwTableTag::AccountStorage, idx) => {
                 let operation = &self.block.container.storage[*idx];
                 if operation.rw().is_write() && operation.reversible() {
                     Some(OpEnum::Storage(operation.op().reverse()))
@@ -801,7 +808,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::TxAccessListAccount, idx) => {
+            OperationRef(RwTableTag::TxAccessListAccount, idx) => {
                 let operation = &self.block.container.tx_access_list_account[*idx];
                 if operation.rw().is_write() && operation.reversible() {
                     Some(OpEnum::TxAccessListAccount(operation.op().reverse()))
@@ -809,7 +816,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::TxAccessListAccountStorage, idx) => {
+            OperationRef(RwTableTag::TxAccessListAccountStorage, idx) => {
                 let operation = &self.block.container.tx_access_list_account_storage[*idx];
                 if operation.rw().is_write() && operation.reversible() {
                     Some(OpEnum::TxAccessListAccountStorage(operation.op().reverse()))
@@ -817,7 +824,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::TxRefund, idx) => {
+            OperationRef(RwTableTag::TxRefund, idx) => {
                 let operation = &self.block.container.tx_refund[*idx];
                 if operation.rw().is_write() && operation.reversible() {
                     Some(OpEnum::TxRefund(operation.op().reverse()))
@@ -825,7 +832,7 @@ impl<'a> CircuitInputStateRef<'a> {
                     None
                 }
             }
-            OperationRef(Target::Account, idx) => {
+            OperationRef(RwTableTag::Account, idx) => {
                 let operation = &self.block.container.account[*idx];
                 if operation.rw().is_write() && operation.reversible() {
                     Some(OpEnum::Account(operation.op().reverse()))
@@ -888,8 +895,9 @@ impl<'a> CircuitInputStateRef<'a> {
                     op,
                 );
                 self.tx.steps_mut()[step_index]
-                    .bus_mapping_instance
-                    .push(rev_op_ref);
+                    .step
+                    .rw_indices
+                    .push((rev_op_ref.0, rev_op_ref.1));
             }
         }
 
@@ -1021,7 +1029,7 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => unreachable!(),
         };
 
-        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+        let curr_memory_word_size = (exec_step.step.memory_size as u64) / 32;
         let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
             std::cmp::max(
                 (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
@@ -1096,7 +1104,7 @@ impl<'a> CircuitInputStateRef<'a> {
 
     /// Push a copy event to the state.
     pub fn push_copy(&mut self, step: &mut ExecStep, event: CopyEvent) {
-        step.copy_rw_counter_delta = event.rw_counter_delta();
+        step.step.copy_rw_counter_delta = event.rw_counter_delta();
         self.block.add_copy_event(event);
     }
 

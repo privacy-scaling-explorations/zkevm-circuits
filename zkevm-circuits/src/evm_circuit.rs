@@ -273,7 +273,7 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
     let need_bitwise_lookup = block.txs.iter().any(|tx| {
         tx.steps.iter().any(|step| {
             matches!(
-                step.opcode,
+                step.step.opcode,
                 Some(OpcodeId::AND)
                     | Some(OpcodeId::OR)
                     | Some(OpcodeId::XOR)

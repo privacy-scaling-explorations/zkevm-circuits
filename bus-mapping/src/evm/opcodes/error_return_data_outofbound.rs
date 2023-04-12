@@ -142,7 +142,7 @@ mod tests {
         assert_eq!(step.error, Some(ExecError::ReturnDataOutOfBounds));
 
         let container = builder.block.container.clone();
-        let operation = &container.stack[step.bus_mapping_instance[0].as_usize()];
+        let operation = &container.stack[step.step.rw_indices[0].1];
         assert_eq!(operation.rw(), RW::READ);
     }
 }

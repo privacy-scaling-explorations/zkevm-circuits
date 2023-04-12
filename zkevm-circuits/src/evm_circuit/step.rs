@@ -466,7 +466,7 @@ pub(crate) struct StepState<F> {
     /// The Read/Write counter
     pub(crate) rw_counter: Cell<F>,
     /// The unique identifier of call in the whole proof, using the
-    /// `rw_counter` at the call step.
+    /// `rw_counter` at the call step.step.
     pub(crate) call_id: Cell<F>,
     /// Whether the call is root call
     pub(crate) is_root: Cell<F>,
@@ -507,9 +507,9 @@ impl<F: FieldExt> Step<F> {
         is_next: bool,
     ) -> Self {
         let height = if is_next {
-            STEP_STATE_HEIGHT // Query only the state of the next step.
+            STEP_STATE_HEIGHT // Query only the state of the next step.step.
         } else {
-            MAX_STEP_HEIGHT // Query the entire current step.
+            MAX_STEP_HEIGHT // Query the entire current step.step.
         };
         let mut cell_manager = CellManager::new(meta, height, &advices, offset);
         let state = {
@@ -560,7 +560,7 @@ impl<F: FieldExt> Step<F> {
         self.state.rw_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.rw_counter as u64)),
+            Value::known(F::from(step.step.rw_counter as u64)),
         )?;
         self.state
             .call_id
@@ -579,16 +579,16 @@ impl<F: FieldExt> Step<F> {
         self.state.program_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.program_counter as u64)),
+            Value::known(F::from(step.step.program_counter as u64)),
         )?;
         self.state.stack_pointer.assign(
             region,
             offset,
-            Value::known(F::from(step.stack_pointer as u64)),
+            Value::known(F::from(step.step.stack_pointer as u64)),
         )?;
         self.state
             .gas_left
-            .assign(region, offset, Value::known(F::from(step.gas_left)))?;
+            .assign(region, offset, Value::known(F::from(step.step.gas_left)))?;
         self.state.memory_word_size.assign(
             region,
             offset,
@@ -597,11 +597,13 @@ impl<F: FieldExt> Step<F> {
         self.state.reversible_write_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.reversible_write_counter as u64)),
+            Value::known(F::from(step.step.reversible_write_counter as u64)),
         )?;
-        self.state
-            .log_id
-            .assign(region, offset, Value::known(F::from(step.log_id as u64)))?;
+        self.state.log_id.assign(
+            region,
+            offset,
+            Value::known(F::from(step.step.log_id as u64)),
+        )?;
         Ok(())
     }
 }

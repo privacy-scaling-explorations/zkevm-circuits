@@ -153,7 +153,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
 
         // SLT opcode is the default check in the SCMP gadget. Swap rw for SGT.
         self.is_sgt.assign(
@@ -163,9 +163,9 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
             F::from(OpcodeId::SGT.as_u8() as u64),
         )?;
         let indices = if opcode == OpcodeId::SGT {
-            [step.rw_indices[1], step.rw_indices[0]]
+            [step.step.rw_indices[1], step.step.rw_indices[0]]
         } else {
-            [step.rw_indices[0], step.rw_indices[1]]
+            [step.step.rw_indices[0], step.step.rw_indices[1]]
         };
         let [a, b] = indices.map(|idx| block.rws[idx].stack_value());
         let a_le_bytes = a.to_le_bytes();

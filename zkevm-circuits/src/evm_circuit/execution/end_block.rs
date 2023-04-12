@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
             cb.require_equal("total_txs is 0 in empty block", total_txs.expr(), 0.expr());
         });
         cb.condition(not::expr(is_empty_block.expr()), |cb| {
-            // 1b. total_txs matches the tx_id that corresponds to the final step.
+            // 1b. total_txs matches the tx_id that corresponds to the final step.step.
             cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
         });
 
@@ -118,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_empty_block
-            .assign(region, offset, F::from(step.rw_counter as u64 - 1))?;
+            .assign(region, offset, F::from(step.step.rw_counter as u64 - 1))?;
         let max_rws = F::from(block.circuits_params.max_rws as u64);
         let max_rws_assigned = self.max_rws.assign(region, offset, Value::known(max_rws))?;
 
@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         let max_txs_assigned = self.max_txs.assign(region, offset, Value::known(max_txs))?;
         // When rw_indices is not empty, we're at the last row (at a fixed offset),
         // where we need to access the max_rws and max_txs constant.
-        if !step.rw_indices.is_empty() {
+        if !step.step.rw_indices.is_empty() {
             region.constrain_constant(max_rws_assigned, max_rws)?;
             region.constrain_constant(max_txs_assigned, max_txs)?;
         }

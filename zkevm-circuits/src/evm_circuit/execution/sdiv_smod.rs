@@ -147,14 +147,18 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
+        let indices = [
+            step.step.rw_indices[0],
+            step.step.rw_indices[1],
+            step.step.rw_indices[2],
+        ];
         let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
         let pop1_abs = get_abs(pop1);
         let pop2_abs = get_abs(pop2);
         let push_abs = get_abs(push);
         let is_pop1_neg = is_neg(pop1);
         let is_pop2_neg = is_neg(pop2);
-        let (quotient, divisor, remainder, dividend) = match step.opcode.unwrap() {
+        let (quotient, divisor, remainder, dividend) = match step.step.opcode.unwrap() {
             OpcodeId::SDIV => (
                 push,
                 pop2,

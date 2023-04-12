@@ -263,7 +263,11 @@ impl<F: Field> ExecutionGadget<F> for SarGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
+        let indices = [
+            step.step.rw_indices[0],
+            step.step.rw_indices[1],
+            step.step.rw_indices[2],
+        ];
         let [shift, a, b] = indices.map(|idx| block.rws[idx].stack_value());
 
         self.shift

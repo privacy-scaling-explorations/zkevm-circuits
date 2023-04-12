@@ -187,12 +187,13 @@ mod extcodehash_tests {
             .filter(|step| step.exec_state == ExecState::Op(OpcodeId::EXTCODEHASH))
             .last()
             .unwrap()
-            .bus_mapping_instance
+            .step
+            .rw_indices
             .clone();
         let container = builder.block.container;
         assert_eq!(
             {
-                let operation = &container.stack[indices[0].as_usize()];
+                let operation = &container.stack[indices[0].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -206,7 +207,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.call_context[indices[1].as_usize()];
+                let operation = &container.call_context[indices[1].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -220,7 +221,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.call_context[indices[2].as_usize()];
+                let operation = &container.call_context[indices[2].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -234,7 +235,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.call_context[indices[3].as_usize()];
+                let operation = &container.call_context[indices[3].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -248,7 +249,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.tx_access_list_account[indices[4].as_usize()];
+                let operation = &container.tx_access_list_account[indices[4].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -263,7 +264,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.account[indices[5].as_usize()];
+                let operation = &container.account[indices[5].1];
                 (operation.rw(), operation.op())
             },
             (
@@ -278,7 +279,7 @@ mod extcodehash_tests {
         );
         assert_eq!(
             {
-                let operation = &container.stack[indices[6].as_usize()];
+                let operation = &container.stack[indices[6].1];
                 (operation.rw(), operation.op())
             },
             (

@@ -109,7 +109,7 @@ mod mload_tests {
 
         assert_eq!(
             [0, 1]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -125,8 +125,7 @@ mod mload_tests {
 
         assert_eq!(
             (2..34)
-                .map(|idx| &builder.block.container.memory
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.memory[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
             Word::from(0x80)

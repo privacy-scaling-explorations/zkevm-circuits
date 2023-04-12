@@ -90,7 +90,7 @@ mod gasprice_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::GASPRICE))
             .unwrap();
 
-        let op_gasprice = &builder.block.container.stack[step.bus_mapping_instance[1].as_usize()];
+        let op_gasprice = &builder.block.container.stack[step.step.rw_indices[1].1];
         assert_eq!(
             (op_gasprice.rw(), op_gasprice.op()),
             (
@@ -103,8 +103,7 @@ mod gasprice_tests {
 
         assert_eq!(
             {
-                let operation =
-                    &builder.block.container.call_context[step.bus_mapping_instance[0].as_usize()];
+                let operation = &builder.block.container.call_context[step.step.rw_indices[0].1];
                 (operation.rw(), operation.op())
             },
             (

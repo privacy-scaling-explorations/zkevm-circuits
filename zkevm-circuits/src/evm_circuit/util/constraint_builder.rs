@@ -6,12 +6,12 @@ use crate::{
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-        TxLogFieldTag, TxReceiptFieldTag,
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
+        TxReceiptFieldTag,
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
-use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
+use bus_mapping::{operation::RwTableTag, state_db::EMPTY_CODE_HASH_LE};
 use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{

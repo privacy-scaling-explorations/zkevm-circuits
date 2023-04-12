@@ -158,7 +158,7 @@ mod sload_tests {
 
         assert_eq!(
             [4, 6]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -167,12 +167,16 @@ mod sload_tests {
                 ),
                 (
                     RW::WRITE,
-                    &StackOp::new(1, StackAddress::from(1023), Word::from(expected_loaded_value))
+                    &StackOp::new(
+                        1,
+                        StackAddress::from(1023),
+                        Word::from(expected_loaded_value)
+                    )
                 )
             ]
         );
 
-        let storage_op = &builder.block.container.storage[step.bus_mapping_instance[5].as_usize()];
+        let storage_op = &builder.block.container.storage[step.step.rw_indices[5].1];
         assert_eq!(
             (storage_op.rw(), storage_op.op()),
             (
@@ -188,8 +192,8 @@ mod sload_tests {
             )
         );
 
-        let access_list_op = &builder.block.container.tx_access_list_account_storage
-            [step.bus_mapping_instance[7].as_usize()];
+        let access_list_op =
+            &builder.block.container.tx_access_list_account_storage[step.step.rw_indices[7].1];
         assert_eq!(
             (access_list_op.rw(), access_list_op.op()),
             (

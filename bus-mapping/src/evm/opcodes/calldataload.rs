@@ -184,16 +184,16 @@ mod calldataload_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATALOAD))
             .unwrap();
 
-        let call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
-        let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
+        let call_id = builder.block.txs()[0].calls()[step.step.call_index].call_id;
+        let caller_id = builder.block.txs()[0].calls()[step.step.call_index].caller_id;
 
         // 1 stack read, 3 call context reads, 32 memory reads and 1 stack write.
-        assert_eq!(step.bus_mapping_instance.len(), 37);
+        assert_eq!(step.step.rw_indices.len(), 37);
 
         // stack read and write.
         assert_eq!(
             [0, 36]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|op| (op.rw(), op.op())),
             [
                 (
@@ -210,8 +210,7 @@ mod calldataload_tests {
         // call context reads.
         assert_eq!(
             [1, 2, 3]
-                .map(|idx| &builder.block.container.call_context
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context[step.step.rw_indices[idx].1])
                 .map(|op| (op.rw(), op.op())),
             [
                 (
@@ -244,8 +243,7 @@ mod calldataload_tests {
         // 32 memory reads from caller memory
         assert_eq!(
             (0..32)
-                .map(|idx| &builder.block.container.memory
-                    [step.bus_mapping_instance[4 + idx].as_usize()])
+                .map(|idx| &builder.block.container.memory[step.step.rw_indices[4 + idx].1])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
             (0..32)
@@ -298,12 +296,12 @@ mod calldataload_tests {
         let call_id = builder.block.txs()[0].calls()[0].call_id;
 
         // 1 stack read, 2 call context reads and 1 stack write.
-        assert_eq!(step.bus_mapping_instance.len(), 4);
+        assert_eq!(step.step.rw_indices.len(), 4);
 
         // stack read and write.
         assert_eq!(
             [0, 3]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|op| (op.rw(), op.op())),
             [
                 (
@@ -320,8 +318,7 @@ mod calldataload_tests {
         // call context reads.
         assert_eq!(
             [1, 2]
-                .map(|idx| &builder.block.container.call_context
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context[step.step.rw_indices[idx].1])
                 .map(|op| (op.rw(), op.op())),
             [
                 (

@@ -1,6 +1,6 @@
 use super::{
-    AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
+    AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, RwTableTag, StackOp,
+    StartOp, StorageOp, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
     TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
@@ -96,11 +96,11 @@ impl OperationContainer {
         match op_enum {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, rw, op));
-                OperationRef::from((Target::Memory, self.memory.len() - 1))
+                OperationRef::from((RwTableTag::Memory, self.memory.len() - 1))
             }
             OpEnum::Stack(op) => {
                 self.stack.push(Operation::new(rwc, rw, op));
-                OperationRef::from((Target::Stack, self.stack.len() - 1))
+                OperationRef::from((RwTableTag::Stack, self.stack.len() - 1))
             }
             OpEnum::Storage(op) => {
                 self.storage.push(if reversible {
@@ -108,7 +108,7 @@ impl OperationContainer {
                 } else {
                     Operation::new(rwc, rw, op)
                 });
-                OperationRef::from((Target::Storage, self.storage.len() - 1))
+                OperationRef::from((RwTableTag::AccountStorage, self.storage.len() - 1))
             }
             OpEnum::TxAccessListAccount(op) => {
                 self.tx_access_list_account.push(if reversible {
@@ -117,7 +117,7 @@ impl OperationContainer {
                     Operation::new(rwc, rw, op)
                 });
                 OperationRef::from((
-                    Target::TxAccessListAccount,
+                    RwTableTag::TxAccessListAccount,
                     self.tx_access_list_account.len() - 1,
                 ))
             }
@@ -128,7 +128,7 @@ impl OperationContainer {
                     Operation::new(rwc, rw, op)
                 });
                 OperationRef::from((
-                    Target::TxAccessListAccountStorage,
+                    RwTableTag::TxAccessListAccountStorage,
                     self.tx_access_list_account_storage.len() - 1,
                 ))
             }
@@ -138,7 +138,7 @@ impl OperationContainer {
                 } else {
                     Operation::new(rwc, rw, op)
                 });
-                OperationRef::from((Target::TxRefund, self.tx_refund.len() - 1))
+                OperationRef::from((RwTableTag::TxRefund, self.tx_refund.len() - 1))
             }
             OpEnum::Account(op) => {
                 self.account.push(if reversible {
@@ -146,23 +146,23 @@ impl OperationContainer {
                 } else {
                     Operation::new(rwc, rw, op)
                 });
-                OperationRef::from((Target::Account, self.account.len() - 1))
+                OperationRef::from((RwTableTag::Account, self.account.len() - 1))
             }
             OpEnum::CallContext(op) => {
                 self.call_context.push(Operation::new(rwc, rw, op));
-                OperationRef::from((Target::CallContext, self.call_context.len() - 1))
+                OperationRef::from((RwTableTag::CallContext, self.call_context.len() - 1))
             }
             OpEnum::TxReceipt(op) => {
                 self.tx_receipt.push(Operation::new(rwc, rw, op));
-                OperationRef::from((Target::TxReceipt, self.tx_receipt.len() - 1))
+                OperationRef::from((RwTableTag::TxReceipt, self.tx_receipt.len() - 1))
             }
             OpEnum::TxLog(op) => {
                 self.tx_log.push(Operation::new(rwc, rw, op));
-                OperationRef::from((Target::TxLog, self.tx_log.len() - 1))
+                OperationRef::from((RwTableTag::TxLog, self.tx_log.len() - 1))
             }
             OpEnum::Start(op) => {
                 self.start.push(Operation::new(rwc, rw, op));
-                OperationRef::from((Target::Start, self.start.len() - 1))
+                OperationRef::from((RwTableTag::Start, self.start.len() - 1))
             }
         }
     }
@@ -229,8 +229,11 @@ mod container_test {
         assert_eq!(operation_container.sorted_stack()[0], stack_operation);
         assert_eq!(operation_container.sorted_memory()[0], memory_operation);
         assert_eq!(operation_container.sorted_storage()[0], storage_operation);
-        assert_eq!(stack_ref, OperationRef::from((Target::Stack, 0)));
-        assert_eq!(memory_ref, OperationRef::from((Target::Memory, 0)));
-        assert_eq!(storage_ref, OperationRef::from((Target::Storage, 0)));
+        assert_eq!(stack_ref, OperationRef::from((RwTableTag::Stack, 0)));
+        assert_eq!(memory_ref, OperationRef::from((RwTableTag::Memory, 0)));
+        assert_eq!(
+            storage_ref,
+            OperationRef::from((RwTableTag::AccountStorage, 0))
+        );
     }
 }

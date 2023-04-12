@@ -259,29 +259,41 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        let caller_id = builder.block.txs()[0].calls()[step.call_index].caller_id;
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
+        let caller_id = builder.block.txs()[0].calls()[step.step.call_index].caller_id;
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call_id;
 
         // 3 stack reads + 3 call context reads.
-        assert_eq!(step.bus_mapping_instance.len(), 6);
+        assert_eq!(step.step.rw_indices.len(), 6);
 
         // 3 stack reads.
         assert_eq!(
             [0, 1, 2]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
                     RW::READ,
-                    &StackOp::new(expected_call_id, StackAddress::from(1021), Word::from(dst_offset))
+                    &StackOp::new(
+                        expected_call_id,
+                        StackAddress::from(1021),
+                        Word::from(dst_offset)
+                    )
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(expected_call_id, StackAddress::from(1022), Word::from(offset))
+                    &StackOp::new(
+                        expected_call_id,
+                        StackAddress::from(1022),
+                        Word::from(offset)
+                    )
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(expected_call_id, StackAddress::from(1023), Word::from(copy_size))
+                    &StackOp::new(
+                        expected_call_id,
+                        StackAddress::from(1023),
+                        Word::from(copy_size)
+                    )
                 ),
             ]
         );
@@ -289,8 +301,7 @@ mod calldatacopy_tests {
         // 3 call context reads.
         assert_eq!(
             [3, 4, 5]
-                .map(|idx| &builder.block.container.call_context
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -485,12 +496,12 @@ mod calldatacopy_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::CALLDATACOPY))
             .unwrap();
 
-        let expected_call_id = builder.block.txs()[0].calls()[step.call_index].call_id;
-        assert_eq!(step.bus_mapping_instance.len(), 5);
+        let expected_call_id = builder.block.txs()[0].calls()[step.step.call_index].call_id;
+        assert_eq!(step.step.rw_indices.len(), 5);
 
         assert_eq!(
             [0, 1, 2]
-                .map(|idx| &builder.block.container.stack[step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.stack[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (
@@ -510,8 +521,7 @@ mod calldatacopy_tests {
 
         assert_eq!(
             [3, 4]
-                .map(|idx| &builder.block.container.call_context
-                    [step.bus_mapping_instance[idx].as_usize()])
+                .map(|idx| &builder.block.container.call_context[step.step.rw_indices[idx].1])
                 .map(|operation| (operation.rw(), operation.op())),
             [
                 (

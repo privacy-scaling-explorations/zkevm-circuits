@@ -103,12 +103,12 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.step.opcode.unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        let [memory_start, msize] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [memory_start, msize] = [step.step.rw_indices[0], step.step.rw_indices[1]]
+            .map(|idx| block.rws[idx].stack_value());
 
         let memory_address = self
             .memory_address
@@ -130,8 +130,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGLogGadget<F> {
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(step.step.gas_left),
+            F::from(step.step.gas_cost),
         )?;
         self.common_error_gadget
             .assign(region, offset, block, call, step, 5)?;

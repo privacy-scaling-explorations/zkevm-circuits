@@ -212,8 +212,8 @@ impl<'a> CircuitInputBuilder {
         let max_rws = self.block.circuits_params.max_rws;
         let mut end_block_not_last = self.block.block_steps.end_block_not_last.clone();
         let mut end_block_last = self.block.block_steps.end_block_last.clone();
-        end_block_not_last.rwc = self.block_ctx.rwc;
-        end_block_last.rwc = self.block_ctx.rwc;
+        end_block_not_last.step.rw_counter = self.block_ctx.rwc.0;
+        end_block_last.step.rw_counter = self.block_ctx.rwc.0;
 
         let mut dummy_tx = Transaction::dummy();
         let mut dummy_tx_ctx = TransactionContext::default();
@@ -230,7 +230,7 @@ impl<'a> CircuitInputBuilder {
 
         let mut push_op = |step: &mut ExecStep, rwc: RWCounter, rw: RW, op: StartOp| {
             let op_ref = state.block.container.insert(Operation::new(rwc, rw, op));
-            step.bus_mapping_instance.push(op_ref);
+            step.step.rw_indices.push((op_ref.0, op_ref.1));
         };
 
         let total_rws = state.block_ctx.rwc.0 - 1;

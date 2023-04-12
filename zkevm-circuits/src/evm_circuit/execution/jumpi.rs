@@ -92,8 +92,8 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [destination, condition] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
+        let [destination, condition] = [step.step.rw_indices[0], step.step.rw_indices[1]]
+            .map(|idx| block.rws[idx].stack_value());
         let condition = region.word_rlc(condition);
 
         self.destination.assign(

@@ -6,6 +6,10 @@ pub(crate) mod container;
 
 pub use container::OperationContainer;
 pub use eth_types::evm_types::{MemoryAddress, StackAddress};
+use gadgets::impl_expr;
+use halo2_proofs::plonk::Expression;
+
+use strum::EnumIter;
 
 use core::{cmp::Ordering, fmt, fmt::Debug};
 use eth_types::{Address, Word};
@@ -81,9 +85,9 @@ impl RWCounter {
     }
 }
 
-/// Enum used to differenciate between EVM Stack, Memory and Storage operations.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum Target {
+/// Enum used to differentiate between EVM Stack, Memory and Storage operations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
+pub enum RwTableTag {
     /// Start is a padding operation.
     Start,
     /// Means the target of the operation is the Memory.
@@ -91,7 +95,7 @@ pub enum Target {
     /// Means the target of the operation is the Stack.
     Stack,
     /// Means the target of the operation is the Storage.
-    Storage,
+    AccountStorage,
     /// Means the target of the operation is the TxAccessListAccount.
     TxAccessListAccount,
     /// Means the target of the operation is the TxAccessListAccountStorage.
@@ -108,6 +112,27 @@ pub enum Target {
     TxLog,
 }
 
+impl_expr!(RwTableTag);
+
+impl RwTableTag {
+    /// Returns true if the RwTable operation is reversible
+    pub fn is_reversible(self) -> bool {
+        matches!(
+            self,
+            RwTableTag::TxAccessListAccount
+                | RwTableTag::TxAccessListAccountStorage
+                | RwTableTag::TxRefund
+                | RwTableTag::Account
+                | RwTableTag::AccountStorage
+        )
+    }
+}
+
+impl From<RwTableTag> for usize {
+    fn from(t: RwTableTag) -> Self {
+        t as usize
+    }
+}
 /// Trait used for Operation Kinds.
 
 pub trait Op: Clone + Eq + Ord {
@@ -152,9 +177,9 @@ impl MemoryOp {
         }
     }
 
-    /// Returns the [`Target`] (operation type) of this operation.
-    pub const fn target(&self) -> Target {
-        Target::Memory
+    /// Returns the [`RwTableTag`] (operation type) of this operation.
+    pub const fn target(&self) -> RwTableTag {
+        RwTableTag::Memory
     }
 
     /// Returns the call id associated to this Operation.
@@ -229,9 +254,9 @@ impl StackOp {
         }
     }
 
-    /// Returns the [`Target`] (operation type) of this operation.
-    pub const fn target(&self) -> Target {
-        Target::Stack
+    /// Returns the [`RwTableTag`] (operation type) of this operation.
+    pub const fn target(&self) -> RwTableTag {
+        RwTableTag::Stack
     }
 
     /// Returns the call id associated to this Operation.
@@ -323,9 +348,9 @@ impl StorageOp {
         }
     }
 
-    /// Returns the [`Target`] (operation type) of this operation.
-    pub const fn target(&self) -> Target {
-        Target::Storage
+    /// Returns the [`RwTableTag`] (operation type) of this operation.
+    pub const fn target(&self) -> RwTableTag {
+        RwTableTag::AccountStorage
     }
 
     /// Returns the [`Address`] corresponding to this storage operation.
@@ -712,9 +737,9 @@ impl CallContextOp {
         }
     }
 
-    /// Returns the [`Target`] (operation type) of this operation.
-    pub const fn target(&self) -> Target {
-        Target::CallContext
+    /// Returns the [`RwTableTag`] (operation type) of this operation.
+    pub const fn target(&self) -> RwTableTag {
+        RwTableTag::CallContext
     }
 
     /// Returns the call id associated to this Operation.
@@ -1006,15 +1031,15 @@ impl<T: Op> Operation<T> {
         &mut self.op
     }
 
-    // /// Matches over an `Operation` returning the [`Target`] of the iternal
+    // /// Matches over an `Operation` returning the [`RwTableTag`] of the iternal
     // op /// it stores inside.
-    // pub const fn target(&self) -> Target {
+    // pub const fn target(&self) -> RwTableTag {
     //     self.op.target()
     // }
     //     match self {
-    //         Operation::Memory(_) => Target::Memory,
-    //         Operation::Stack(_) => Target::Stack,
-    //         Operation::Storage(_) => Target::Storage,
+    //         Operation::Memory(_) => RwTableTag::Memory,
+    //         Operation::Stack(_) => RwTableTag::Stack,
+    //         Operation::Storage(_) => RwTableTag::Storage,
     //     }
     // }
 

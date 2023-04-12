@@ -40,7 +40,7 @@ mod number_tests {
             .find(|step| step.exec_state == ExecState::Op(OpcodeId::NUMBER))
             .unwrap();
 
-        let op_number = &builder.block.container.stack[step.bus_mapping_instance[0].as_usize()];
+        let op_number = &builder.block.container.stack[step.step.rw_indices[0].1];
 
         assert_eq!(
             (op_number.rw(), op_number.op()),
