@@ -274,37 +274,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             row.proof_type = ProofType::StorageDoesNotExist;
         }
 
-        if row.get_type() == MptWitnessRowType::BranchChild {
-            //println!("- {:?}", row.bytes);
-            let mut child_s_bytes = row.bytes[0..34].to_owned();
-            if child_s_bytes[1] == 160 {
-                child_s_bytes[0] = 0;
-                child_s_bytes.rotate_left(1);
-            } else {
-                child_s_bytes[0] = 0;
-                child_s_bytes[1] = 0;
-                child_s_bytes.rotate_left(2);
-            };
-
-            let mut child_c_bytes = row.bytes[34..68].to_owned();
-            if child_c_bytes[1] == 160 {
-                child_c_bytes[0] = 0;
-                child_c_bytes.rotate_left(1);
-            } else {
-                child_c_bytes[0] = 0;
-                child_c_bytes[1] = 0;
-                child_c_bytes.rotate_left(2);
-            };
-
-            row.bytes = [
-                child_s_bytes.clone(),
-                child_c_bytes.clone(),
-                row.bytes[68..].to_owned(),
-            ]
-            .concat();
-            //println!("+ {:?}", row.bytes);
-        }
-
         if row.get_type() == MptWitnessRowType::ExtensionNodeS
             || row.get_type() == MptWitnessRowType::ExtensionNodeC
         {
