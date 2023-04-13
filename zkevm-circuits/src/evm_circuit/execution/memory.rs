@@ -11,24 +11,33 @@ use crate::{
             },
             from_bytes,
             math_gadget::IsEqualGadget,
-            memory_gadget::MemoryExpansionGadget,
-            not, CachedRegion, MemoryAddress, Word,
+            memory_gadget::{MemoryExpansionGadget, MemoryWordAddress},
+            not, CachedRegion, MemoryAddress, Word, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{plonk::Error, circuit::Value};
+
+// TODO: 
+// change MemoryAddress(slot + offset), 
+// MemoryExpansionGadget if needed.
 
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryGadget<F> {
     same_context: SameContextGadget<F>,
-    address: MemoryAddress<F>,
-    value: Word<F>,
+    //address: MemoryAddress<F>,
+    address: MemoryWordAddress<F>,
+    // consider move to MemoryWordAddress ?
+    value_left: Word<F>,
+    value_right: Word<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     is_mload: IsEqualGadget<F>,
     is_mstore8: IsEqualGadget<F>,
+    // TODO: add mask
+    // mask: [Cell<F>, 5]
 }
 
 impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
@@ -38,10 +47,13 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-
+     
         // In successful case the address must be in 5 bytes
         let address = cb.query_word_rlc();
-        let value = cb.query_word_rlc();
+        let address_word = MemoryWordAddress::construct(cb, address.clone());
+        let value_left = cb.query_word_rlc();
+        let value_right = cb.query_word_rlc();
+
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -67,27 +79,44 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         cb.stack_lookup(
             is_mload.expr(),
             cb.stack_pointer_offset().expr() - is_mload.expr(),
-            value.expr(),
+            value_left.expr(),
         );
 
+        let addr_left =  address_word.addr_left();
+        let addr_right = address_word.addr_right();
+
+        // TODO: replace with value_left = instruction.memory_lookup(RW.Write, addr_left)
         cb.condition(is_mstore8.expr(), |cb| {
-            cb.memory_lookup(
+            // cb.memory_lookup(
+            //     1.expr(),
+            //     from_bytes::expr(&address.cells),
+            //     value.cells[0].expr(),
+            //     None,
+            // );
+            cb.memory_lookup_word(
                 1.expr(),
                 from_bytes::expr(&address.cells),
-                value.cells[0].expr(),
+                value_left.expr(),
                 None,
             );
         });
 
+        // TODO:
+        //  value_left = instruction.memory_lookup(
+        //    RW.Write if is_store == FQ(1) else RW.Read, addr_left
+        // )
+        // value_right = instruction.memory_lookup(
+        //    RW.Write if is_store == FQ(1) else RW.Read, addr_right
+        // )
         cb.condition(is_not_mstore8, |cb| {
-            for idx in 0..32 {
-                cb.memory_lookup(
-                    is_store.clone(),
-                    from_bytes::expr(&address.cells) + idx.expr(),
-                    value.cells[31 - idx].expr(),
-                    None,
-                );
-            }
+            // for idx in 0..32 {
+                // cb.memory_lookup(
+                //     is_store.clone(),
+                //     from_bytes::expr(&address.cells) + idx.expr(),
+                //     value.cells[31 - idx].expr(),
+                //     None,
+                // );
+           //  }
         });
 
         // State transition
@@ -98,6 +127,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         // - `memory_size` needs to be set to `next_memory_size`
         let gas_cost = OpcodeId::MLOAD.constant_gas_cost().expr() + memory_expansion.gas_cost();
         let step_state_transition = StepStateTransition {
+            //TODO: update rw_counter
             rw_counter: Delta(34.expr() - is_mstore8.expr() * 31.expr()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(is_store * 2.expr()),
@@ -109,8 +139,9 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         Self {
             same_context,
-            address,
-            value,
+            address: address_word,
+            value_left,
+            value_right,
             memory_expansion,
             is_mload,
             is_mstore8,
@@ -142,8 +173,9 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
                     .unwrap(),
             ),
         )?;
-        self.value
+        self.value_left
             .assign(region, offset, Some(value.to_le_bytes()))?;
+        // TODO: assign value_right
 
         // Check if this is an MLOAD
         self.is_mload.assign(

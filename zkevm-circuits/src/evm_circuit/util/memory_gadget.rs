@@ -397,6 +397,71 @@ impl<F: Field> MemoryWordSizeGadget<F> {
     }
 }
 
+
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryWordAddress<F> {
+    // normal RLC randomness address 
+    address: MemoryAddress<F>,
+    // shift 
+    shift: Cell<F>,
+    // slot
+    slot: Cell<F>,
+}
+
+impl<F: Field> MemoryWordAddress<F> {
+
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, address_rlc : MemoryAddress<F>
+        ) -> Self {
+        let shift = cb.query_cell();
+        let slot = cb.query_cell();
+
+        // TODO: constrain shift & slot
+        // shift = address_rlc.intvalue % 32
+        // slot = address_rlc.intvalue - shift
+
+        Self {
+            address: address_rlc,
+            shift: shift,
+            slot: slot,
+        }
+    }
+
+    pub(crate) fn shift(&self) -> Expression<F> {
+        self.shift.expr()
+    }
+
+    // also seen as addr_left
+    pub(crate) fn addr_left(&self) -> Expression<F> {
+        self.slot.expr()
+    }
+
+    // also seen as addr_left
+    pub(crate) fn addr_right(&self) -> Expression<F> {
+        self.slot.expr() + 32.expr()
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        bytes: Option<[u8; N_BYTES_MEMORY_ADDRESS]>,
+    ) -> Result<u64, Error> {
+        // calculate bytes value to u64 and get shift, slot
+        // make sure bytes order is correct
+       let address_u64 =  U256::from_little_endian(&bytes.unwrap()).as_u64();
+       let shift = address_u64 % 32;
+       let slot = address_u64 - shift;
+
+       self.shift
+           .assign(region, offset, Value::known(F::from(shift)))?;
+       self.slot
+           .assign(region, offset, Value::known(F::from(slot)))?;
+       self.address.assign(region, offset, bytes);
+       Ok(1u64)
+    }
+}
+
+
 /// Returns (new memory size, memory gas cost) for a memory access.
 /// If the memory needs to be expanded this will result in an extra gas cost.
 /// This gas cost is the difference between the next and current memory costs:

@@ -1216,6 +1216,30 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         );
     }
 
+    pub(crate) fn memory_lookup_word(
+        &mut self,
+        is_write: Expression<F>,
+        memory_address: Expression<F>, // slot 
+        value: Expression<F>,
+        call_id: Option<Expression<F>>,
+    ) {
+        self.rw_lookup(
+            "Memory lookup",
+            is_write,
+            RwTableTag::Memory,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                memory_address,
+                0.expr(),
+                0.expr(),
+                value,
+                0.expr(),
+                0.expr(),
+                0.expr(),
+            ),
+        );
+    }
+
     pub(crate) fn tx_log_lookup(
         &mut self,
         tx_id: Expression<F>,

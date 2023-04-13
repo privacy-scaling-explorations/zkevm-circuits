@@ -30,7 +30,8 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
 
         // First mem write -> 32 MemoryOp generated.
         let offset_addr: MemoryAddress = offset.try_into()?;
-
+        // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
+        
         match IS_MSTORE8 {
             true => {
                 // stack write operation for mstore8
