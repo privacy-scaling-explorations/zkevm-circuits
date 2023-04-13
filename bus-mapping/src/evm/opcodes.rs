@@ -370,8 +370,7 @@ pub fn gen_associated_steps(
     let fn_gen_associated_steps = match execution_step {
         ExecState::BeginTx | ExecState::EndTx => BeginEndTx::gen_associated_steps,
         _ => {
-            evm_unimplemented!("unsupported execution step {:?}", execution_step);
-            Dummy::gen_associated_steps
+            unreachable!()
         }
     };
 
