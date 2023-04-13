@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
-    error::{ExecError, OogError},
+    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation::{
         AccountField, AccountOp, CallContextField, TxAccessListAccountOp, TxReceiptField,
@@ -77,7 +77,7 @@ use callop::CallOpcode;
 use callvalue::Callvalue;
 use codecopy::Codecopy;
 use codesize::Codesize;
-use create::DummyCreate;
+use create::Create;
 use dup::Dup;
 use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
@@ -247,18 +247,12 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::LOG4 => Log::gen_associated_ops,
         OpcodeId::CALL | OpcodeId::CALLCODE => CallOpcode::<7>::gen_associated_ops,
         OpcodeId::DELEGATECALL | OpcodeId::STATICCALL => CallOpcode::<6>::gen_associated_ops,
+        OpcodeId::CREATE => Create::<false>::gen_associated_ops,
+        OpcodeId::CREATE2 => Create::<true>::gen_associated_ops,
         OpcodeId::RETURN | OpcodeId::REVERT => ReturnRevert::gen_associated_ops,
         OpcodeId::SELFDESTRUCT => {
             evm_unimplemented!("Using dummy gen_selfdestruct_ops for opcode SELFDESTRUCT");
             DummySelfDestruct::gen_associated_ops
-        }
-        OpcodeId::CREATE => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::<false>::gen_associated_ops
-        }
-        OpcodeId::CREATE2 => {
-            evm_unimplemented!("Using dummy gen_create_ops for opcode {:?}", opcode_id);
-            DummyCreate::<true>::gen_associated_ops
         }
         _ => {
             evm_unimplemented!("Using dummy gen_associated_ops for opcode {:?}", opcode_id);
@@ -279,7 +273,25 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
         // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
-        ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
+        ExecError::InsufficientBalance(InsufficientBalanceError::Call) => {
+            Some(CallOpcode::<7>::gen_associated_ops)
+        }
+        // create & create2 can encounter insufficient balance.
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create) => {
+            Some(Create::<false>::gen_associated_ops)
+        }
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create2) => {
+            Some(Create::<true>::gen_associated_ops)
+        }
+        // only create2 may cause ContractAddressCollision error, so use Create::<true>.
+        ExecError::ContractAddressCollision => Some(Create::<true>::gen_associated_ops),
+        // create & create2 can encounter nonce uint overflow.
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create) => {
+            Some(Create::<false>::gen_associated_ops)
+        }
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create2) => {
+            Some(Create::<true>::gen_associated_ops)
+        }
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
 

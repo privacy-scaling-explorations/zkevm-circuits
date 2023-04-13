@@ -378,7 +378,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // If receiver doesn't exist, create it
         cb.condition(
             or::expr([
-                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.clone()),
+                not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
                 must_create.clone(),
             ]),
             |cb| {
@@ -423,7 +423,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         1.expr() +
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
             self.must_create.clone()]
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
@@ -435,7 +435,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         // NOTE: Write Account (sender) Balance (Not Reversible tx fee)
         // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
         or::expr([
-            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.clone()),
+            not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()),
             self.must_create.clone()]
         ) * 1.expr() +
         // +1 Write Account (sender) Balance
@@ -489,6 +489,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 pub(crate) struct TransferGadget<F> {
     sender: UpdateBalanceGadget<F, 2, false>,
     receiver: UpdateBalanceGadget<F, 2, true>,
+    receiver_exists: Expression<F>,
     pub(crate) value_is_zero: IsZeroGadget<F>,
 }
 
@@ -504,7 +505,7 @@ impl<F: Field> TransferGadget<F> {
         let value_is_zero = IsZeroGadget::construct(cb, value.expr());
         // If receiver doesn't exist, create it
         cb.condition(
-            not::expr(value_is_zero.expr()) * not::expr(receiver_exists),
+            not::expr(value_is_zero.expr()) * not::expr(receiver_exists.expr()),
             |cb| {
                 cb.account_write(
                     receiver_address.clone(),
@@ -535,6 +536,7 @@ impl<F: Field> TransferGadget<F> {
         Self {
             sender,
             receiver,
+            receiver_exists,
             value_is_zero,
         }
     }
@@ -545,6 +547,14 @@ impl<F: Field> TransferGadget<F> {
 
     pub(crate) fn receiver(&self) -> &UpdateBalanceGadget<F, 2, true> {
         &self.receiver
+    }
+
+    pub(crate) fn reversible_w_delta(&self) -> Expression<F> {
+        // +1 Write Account (receiver) CodeHash (account creation via code_hash update)
+        not::expr(self.value_is_zero.expr()) * not::expr(self.receiver_exists.expr()) * 1.expr() +
+        // +1 Write Account (sender) Balance
+        // +1 Write Account (receiver) Balance
+        not::expr(self.value_is_zero.expr()) * 2.expr()
     }
 
     pub(crate) fn assign(
