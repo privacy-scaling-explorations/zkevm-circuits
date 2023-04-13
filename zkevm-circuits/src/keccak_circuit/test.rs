@@ -1,6 +1,12 @@
-use crate::keccak_circuit::KeccakCircuit;
+#![allow(unused_imports)]
+use super::*;
 use eth_types::Field;
-use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner},
+    dev::MockProver,
+    halo2curves::bn256::Fr,
+    plonk::{Circuit, ConstraintSystem, Error},
+};
 use log::error;
 use std::iter::zip;
 
@@ -23,7 +29,7 @@ fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
 
 #[test]
 fn packed_multi_keccak_simple() {
-    let k = 11;
+    let k = 15;
     let inputs = vec![
         vec![],
         (0u8..1).collect::<Vec<_>>(),
@@ -36,7 +42,7 @@ fn packed_multi_keccak_simple() {
 
 #[test]
 fn variadic_size_check() {
-    let k = 11;
+    let k = 14;
     let num_rows = 2usize.pow(k);
     // Empty
     let inputs = vec![];
