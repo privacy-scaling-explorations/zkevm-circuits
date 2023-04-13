@@ -39,7 +39,7 @@ snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-
     "loader_halo2",
     "system_halo2",
 ] }
-chiquito = { git = "https://github.com/leolara/chiquito", tag = "v2023_04_04" }
+chiquito = { git = "https://github.com/leolara/chiquito", tag = "v2023_04_13_2" }
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }

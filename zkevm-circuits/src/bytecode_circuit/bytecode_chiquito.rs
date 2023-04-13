@@ -2,18 +2,16 @@ use std::cell::RefCell;
 
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use chiquito::{
-    ast::{query::Queriable, Expr, ToExpr, ToField},
+    ast::{ToExpr, ToField},
     compiler::{
-        cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Circuit,
-        Compiler, WitnessGenContext,
+        cell_manager::SingleRowCellManager, step_selector::TwoStepsSelectorBuilder, Compiler,
     },
-    dsl::{circuit, StepTypeContext},
+    dsl::circuit,
+    ir::Circuit,
+    stdlib::IsZero,
 };
 use eth_types::Field;
-use halo2_proofs::{
-    halo2curves::FieldExt,
-    plonk::{Column, Fixed},
-};
+use halo2_proofs::plonk::{Column, Fixed};
 
 use crate::bytecode_circuit::bytecode_unroller::unroll;
 
@@ -22,38 +20,6 @@ use super::{
     wit_gen::BytecodeWitnessGen,
 };
 
-struct IsZero<F> {
-    value_inv: Queriable<F>,
-    is_zero_expression: Expr<F>,
-}
-
-impl<F: FieldExt> IsZero<F> {
-    pub fn setup<V: Into<Expr<F>>, StepArgs>(
-        ctx: &mut StepTypeContext<F, StepArgs>,
-        value: V,
-        value_inv: Queriable<F>,
-    ) -> IsZero<F> {
-        let value: Expr<F> = value.into();
-        let is_zero_expression = 1.expr() - (value.clone() * value_inv);
-
-        ctx.constr("isZero", value * is_zero_expression.clone());
-
-        IsZero {
-            value_inv,
-            is_zero_expression,
-        }
-    }
-
-    pub fn is_zero(&self) -> Expr<F> {
-        self.is_zero_expression.clone()
-    }
-}
-
-impl<F: Field> IsZero<F> {
-    pub fn wg(&self, ctx: &mut dyn WitnessGenContext<F>, value: F) {
-        ctx.assign(self.value_inv, value.invert().unwrap_or(F::zero()));
-    }
-}
 pub fn bytecode_circuit<F: Field>(
     BytecodeCircuitConfigArgs {
         bytecode_table,
@@ -63,7 +29,7 @@ pub fn bytecode_circuit<F: Field>(
     push_data_table_value: Column<Fixed>,
     push_data_table_size: Column<Fixed>,
 ) -> Circuit<F, WitnessInput<F>, RefCell<BytecodeWitnessGen<F>>> {
-    let mut bytecode_circuit = circuit::<F, WitnessInput<F>, RefCell<BytecodeWitnessGen<F>>, _>(
+    let bytecode_circuit = circuit::<F, WitnessInput<F>, RefCell<BytecodeWitnessGen<F>>, _>(
         "bytecode circuit",
         |ctx| {
             use chiquito::dsl::cb::*;
@@ -97,31 +63,23 @@ pub fn bytecode_circuit<F: Field>(
             ctx.pragma_last_step(header);
 
             ctx.step_type_def(header, move |ctx| {
-                ctx.constr("index == 0", eq(index, 0));
-                ctx.constr("value == length", eq(value, length));
+                ctx.constr(isz(index));
+                ctx.constr(eq(value, length));
 
-                ctx.transition_to("cur.length == 0", header, eq(length, 0));
+                ctx.transition(if_next_step(header, isz(length)));
 
                 let empty_hash = rlc(
                     &EMPTY_CODE_HASH_LE.map(|v| (v as u64).expr()),
                     challenges.evm_word(),
                 );
 
-                ctx.transition_to("cur.hash == EMPTY_HASH", header, eq(hash, empty_hash));
+                ctx.transition(if_next_step(header, eq(hash, empty_hash)));
 
-                ctx.transition_to(
-                    "next.length == cur.length",
-                    byte_step,
-                    eq(length, length.next()),
-                );
-                ctx.transition_to("next.index == 0", byte_step, eq(index.next(), 0));
-                ctx.transition_to("next.is_code == 1", byte_step, eq(is_code.next(), 1));
-                ctx.transition_to("next.hash == cur.hash", byte_step, eq(hash, hash.next()));
-                ctx.transition_to(
-                    "next.value_rlc == next.value",
-                    byte_step,
-                    eq(value_rlc.next(), value.next()),
-                );
+                ctx.transition(if_next_step(byte_step, eq(length, length.next())));
+                ctx.transition(if_next_step(byte_step, isz(index.next())));
+                ctx.transition(if_next_step(byte_step, eq(is_code.next(), 1)));
+                ctx.transition(if_next_step(byte_step, eq(hash, hash.next())));
+                ctx.transition(if_next_step(byte_step, eq(value_rlc.next(), value.next())));
 
                 ctx.wg(move |ctx, wit| {
                     let wit = wit.borrow();
@@ -138,14 +96,13 @@ pub fn bytecode_circuit<F: Field>(
             });
 
             ctx.step_type_def(byte_step, move |ctx| {
-                let push_data_size = ctx.signal("push_data_size");
-                let push_data_left_inv = ctx.signal("push_data_left_inv");
+                let push_data_size = ctx.internal("push_data_size");
+                let push_data_left_inv = ctx.internal("push_data_left_inv");
 
                 let push_data_left_is_zero =
                     IsZero::setup(ctx, push_data_left, push_data_left_inv);
 
                 ctx.constr(
-                    "is_code == push_data_left_is_zero.is_zero",
                     eq(is_code, push_data_left_is_zero.is_zero()),
                 );
 
@@ -153,33 +110,40 @@ pub fn bytecode_circuit<F: Field>(
                     "lookup((value, push_data_size_table.value)(push_data_size, push_data_size_table.push_data_size))",
                     vec![(value.expr(), push_data_table_value.expr()), (push_data_size.expr(), push_data_table_size.expr())]);
 
-                ctx.transition_to(
-                    "next.length == cur.length",
-                    byte_step,
-                    eq(length, length.next()),
+                ctx.transition(
+                    if_next_step(byte_step,
+                        eq(length, length.next())
+                    )
                 );
-                ctx.transition_to(
-                    "next.index == cur.index + 1",
-                    byte_step,
-                    eq(index + 1, index.next()),
+                ctx.transition(
+                    if_next_step(byte_step,
+                        eq(index + 1, index.next())
+                    )
                 );
-                ctx.transition_to("next.hash == cur.hash", byte_step, eq(hash, hash.next()));
-                ctx.transition_to(
-                    "next.value_rlc == cur.value_rlc * randomness + next.value",
-                    byte_step,
-                    eq(value_rlc.next(), (value_rlc * challenges.keccak_input()) + value.next()),
+                ctx.transition(
+                    if_next_step(byte_step,
+                        eq(hash, hash.next())
+                    )
+                );
+                ctx.transition(
+                    if_next_step(byte_step,
+                        eq(value_rlc.next(), (value_rlc * challenges.keccak_input()) + value.next())
+                    )
+                );
+                ctx.transition(
+                    if_next_step(byte_step,
+                        eq(
+                            push_data_left.next(),
+                            select(is_code, push_data_size, push_data_left - 1),
+                        )
+                    )
                 );
 
-                ctx.transition_to(
-                    "next.push_data_left == cur.is_code ? cur.push_data_size : cur.push_data_left - 1",
-                    byte_step,
-                    eq(
-                        push_data_left.next(),
-                        select(is_code, push_data_size, push_data_left - 1),
-                    ),
+                ctx.transition(
+                    if_next_step(header,
+                        eq(index + 1, length)
+                    )
                 );
-
-                ctx.transition_to("cur.index + 1 == cur.length", header, eq(index + 1, length));
 
                 ctx.lookup(
                     "if header.next() then keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
@@ -241,7 +205,13 @@ pub fn bytecode_circuit<F: Field>(
         },
     );
 
-    let compiler = Compiler::new(SingleRowCellManager {}, SimpleStepSelectorBuilder {});
+    let compiler = Compiler::new(
+        SingleRowCellManager::default(),
+        TwoStepsSelectorBuilder {
+            halo2_column: Some(bytecode_table.tag),
+            hint_one: Some("byte".to_string()),
+        },
+    );
 
-    compiler.compile(&mut bytecode_circuit)
+    compiler.compile(&bytecode_circuit)
 }

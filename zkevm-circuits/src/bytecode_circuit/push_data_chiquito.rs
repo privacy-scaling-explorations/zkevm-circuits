@@ -1,10 +1,10 @@
 use chiquito::{
     ast::ToField,
     compiler::{
-        cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Circuit,
-        Compiler,
+        cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Compiler,
     },
     dsl::circuit,
+    ir::Circuit,
 };
 use eth_types::Field;
 use halo2_proofs::plonk::{Column, Fixed};
@@ -15,7 +15,7 @@ pub fn push_data_table_circuit<F: Field>(
     push_data_value: Column<Fixed>,
     push_data_size: Column<Fixed>,
 ) -> Circuit<F, (), ()> {
-    let mut push_data_table_circuit = circuit::<F, (), (), _>("push_table", |ctx| {
+    let push_data_table_circuit = circuit::<F, (), (), _>("push_table", |ctx| {
         let push_data_value = ctx.import_halo2_fixed("push_data_value", push_data_value);
         let push_data_size = ctx.import_halo2_fixed("push_data_size", push_data_size);
 
@@ -28,7 +28,10 @@ pub fn push_data_table_circuit<F: Field>(
         });
     });
 
-    let compiler = Compiler::new(SingleRowCellManager {}, SimpleStepSelectorBuilder {});
+    let compiler = Compiler::new(
+        SingleRowCellManager::default(),
+        SimpleStepSelectorBuilder {},
+    );
 
-    compiler.compile(&mut push_data_table_circuit)
+    compiler.compile(&push_data_table_circuit)
 }
