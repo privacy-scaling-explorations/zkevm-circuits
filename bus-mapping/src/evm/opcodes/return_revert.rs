@@ -92,7 +92,7 @@ impl Opcode for ReturnRevert {
 
         // Case C in the specs.
         if !call.is_root {
-            state.handle_restore_context(steps, &mut exec_step)?;
+            state.handle_restore_context(&mut exec_step, steps)?;
         }
 
         // Case D in the specs.
@@ -132,7 +132,7 @@ impl Opcode for ReturnRevert {
             }
         }
 
-        state.handle_return(step)?;
+        state.handle_return(&mut exec_step, steps, false)?;
         Ok(vec![exec_step])
     }
 }
