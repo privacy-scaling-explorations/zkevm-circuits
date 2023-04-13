@@ -23,8 +23,7 @@ impl TxExecSteps for BeginEndTx {
             ExecState::BeginTx => gen_begin_tx_steps(state),
             ExecState::EndTx => gen_end_tx_steps(state),
             _ => {
-                evm_unimplemented!("unsupported tx execution step {:?}", execution_step);
-                Ok(state.new_begin_tx_step())
+                unreachable!()
             }
         }
     }
