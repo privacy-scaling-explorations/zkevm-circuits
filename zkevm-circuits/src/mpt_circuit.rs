@@ -534,7 +534,6 @@ mod tests {
     fn test_mpt() {
         // for debugging:
         let path = "src/mpt_circuit/tests";
-        // let path = "tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)

@@ -246,7 +246,7 @@ impl<F: Field> MptWitnessRow<F> {
 // TODO(Brecht): Do all of this on the MPT proof generation side
 pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> {
     let mut key_rlp_bytes = Vec::new();
-    for (_, row) in witness
+    for (ind, row) in witness
         .iter_mut()
         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
         .enumerate()
@@ -272,28 +272,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
         }
         if row.get_byte_rev(IS_NON_EXISTING_STORAGE_POS) == 1 {
             row.proof_type = ProofType::StorageDoesNotExist;
-        }
-
-        if row.get_type() == MptWitnessRowType::ExtensionNodeS
-            || row.get_type() == MptWitnessRowType::ExtensionNodeC
-        {
-            //println!("- {:?}", row.bytes);
-            let mut value_bytes = row.bytes[34..68].to_owned();
-            if value_bytes[1] == 160 {
-                value_bytes[0] = 0;
-                value_bytes.rotate_left(1);
-            } else {
-                value_bytes[0] = 0;
-                value_bytes[1] = 0;
-                value_bytes.rotate_left(2);
-            };
-            row.bytes = [
-                row.bytes[0..34].to_owned(),
-                value_bytes.clone(),
-                row.bytes[68..].to_owned(),
-            ]
-            .concat();
-            //println!("+ {:?}", row.bytes);
         }
 
         // Separate the list rlp bytes from the key bytes
