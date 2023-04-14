@@ -1,9 +1,8 @@
 use super::{cell_manager::*, param::*, util::*};
-use crate::evm_circuit::util::rlc;
-use crate::util::Challenges;
+use crate::{evm_circuit::util::rlc, util::Challenges};
 use eth_types::Field;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Error, Expression},
 };
@@ -12,7 +11,7 @@ use std::{env::var, vec};
 
 pub(crate) fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
-        .unwrap_or_else(|_| "5".to_string())
+        .unwrap_or_else(|_| "12".to_string())
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize")
 }
@@ -105,8 +104,7 @@ impl<F: FieldExt> KeccakRegion<F> {
 /// Recombines parts back together
 pub(crate) mod decode {
     use super::{Part, PartValue};
-    use crate::keccak_circuit::param::BIT_COUNT;
-    use crate::util::Expr;
+    use crate::{keccak_circuit::param::BIT_COUNT, util::Expr};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
@@ -126,8 +124,11 @@ pub(crate) mod decode {
 /// Splits a word into parts
 pub(crate) mod split {
     use super::{decode, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, pack_part, unpack, WordParts};
-    use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
+    use crate::{
+        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        keccak_circuit::util::{pack, pack_part, unpack, WordParts},
+        util::Expr,
+    };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
@@ -139,10 +140,9 @@ pub(crate) mod split {
         input: Expression<F>,
         rot: usize,
         target_part_size: usize,
-        normalize: bool,
     ) -> Vec<Part<F>> {
         let mut parts = Vec::new();
-        let word = WordParts::new(target_part_size, rot, normalize);
+        let word = WordParts::new(target_part_size, rot, false);
         for word_part in word.parts {
             let cell = cell_manager.query_cell(meta);
             parts.push(Part {
@@ -162,12 +162,11 @@ pub(crate) mod split {
         input: F,
         rot: usize,
         target_part_size: usize,
-        normalize: bool,
     ) -> Vec<PartValue<F>> {
         let input_bits = unpack(input);
         debug_assert_eq!(pack::<F>(&input_bits), input);
         let mut parts = Vec::new();
-        let word = WordParts::new(target_part_size, rot, normalize);
+        let word = WordParts::new(target_part_size, rot, false);
         for word_part in word.parts {
             let value = pack_part(&input_bits, &word_part);
             let cell = cell_manager.query_cell_value();
@@ -188,9 +187,14 @@ pub(crate) mod split {
 // table layout in `output_cells` regardless of rotation.
 pub(crate) mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::param::BIT_COUNT;
-    use crate::keccak_circuit::util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts};
-    use crate::{evm_circuit::util::constraint_builder::BaseConstraintBuilder, util::Expr};
+    use crate::{
+        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        keccak_circuit::{
+            param::BIT_COUNT,
+            util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts},
+        },
+        util::Expr,
+    };
     use eth_types::Field;
     use halo2_proofs::plonk::{ConstraintSystem, Expression};
 
@@ -203,11 +207,10 @@ pub(crate) mod split_uniform {
         input: Expression<F>,
         rot: usize,
         target_part_size: usize,
-        normalize: bool,
     ) -> Vec<Part<F>> {
         let mut input_parts = Vec::new();
         let mut output_parts = Vec::new();
-        let word = WordParts::new(target_part_size, rot, normalize);
+        let word = WordParts::new(target_part_size, rot, true);
 
         let word = rotate(word.parts, rot, target_part_size);
 
@@ -278,14 +281,13 @@ pub(crate) mod split_uniform {
         input: F,
         rot: usize,
         target_part_size: usize,
-        normalize: bool,
     ) -> Vec<PartValue<F>> {
         let input_bits = unpack(input);
         debug_assert_eq!(pack::<F>(&input_bits), input);
 
         let mut input_parts = Vec::new();
         let mut output_parts = Vec::new();
-        let word = WordParts::new(target_part_size, rot, normalize);
+        let word = WordParts::new(target_part_size, rot, true);
 
         let word = rotate(word.parts, rot, target_part_size);
 
@@ -356,8 +358,7 @@ pub(crate) mod split_uniform {
 pub(crate) mod transform {
     use super::{transform_to, CellManager, KeccakRegion, Part, PartValue};
     use eth_types::Field;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::plonk::TableColumn;
+    use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(
@@ -411,11 +412,12 @@ pub(crate) mod transform {
 // Transfroms values to cells
 pub(crate) mod transform_to {
     use super::{Cell, KeccakRegion, Part, PartValue};
-    use crate::keccak_circuit::util::{pack, to_bytes, unpack};
-    use crate::util::Expr;
+    use crate::{
+        keccak_circuit::util::{pack, to_bytes, unpack},
+        util::Expr,
+    };
     use eth_types::Field;
-    use halo2_proofs::plonk::ConstraintSystem;
-    use halo2_proofs::plonk::TableColumn;
+    use halo2_proofs::plonk::{ConstraintSystem, TableColumn};
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn expr<F: Field>(
@@ -551,8 +553,7 @@ pub(crate) fn keccak<F: Field>(
             cell_manager.start_region();
             let part_size = get_num_bits_per_absorb_lookup();
             let input = absorb_row.from + absorb_row.absorb;
-            let absorb_fat =
-                split::value(&mut cell_manager, &mut region, input, 0, part_size, false);
+            let absorb_fat = split::value(&mut cell_manager, &mut region, input, 0, part_size);
             cell_manager.start_region();
             let _absorb_result = transform::value(
                 &mut cell_manager,
@@ -567,23 +568,15 @@ pub(crate) fn keccak<F: Field>(
             cell_manager.start_region();
             // Unpack a single word into bytes (for the absorption)
             // Potential optimization: could do multiple bytes per lookup
-            let packed = split::value(
-                &mut cell_manager,
-                &mut region,
-                absorb_row.absorb,
-                0,
-                8,
-                false,
-            );
+            let packed = split::value(&mut cell_manager, &mut region, absorb_row.absorb, 0, 8);
             cell_manager.start_region();
             let input_bytes =
                 transform::value(&mut cell_manager, &mut region, packed, false, |v| *v, true);
             cell_manager.start_region();
             let mut is_paddings = Vec::new();
-            let mut data_rlcs = Vec::new();
+            let mut data_rlcs = vec![Value::known(F::zero()); get_num_rows_per_round()];
             for _ in input_bytes.iter() {
                 is_paddings.push(cell_manager.query_cell_value());
-                data_rlcs.push(cell_manager.query_cell_value());
             }
             if round < NUM_WORDS_TO_ABSORB {
                 let mut paddings = Vec::new();
@@ -599,17 +592,20 @@ pub(crate) fn keccak<F: Field>(
                     is_padding.assign(&mut region, 0, if padding { F::one() } else { F::zero() });
                 }
 
-                data_rlcs[0].assign_value(&mut region, 0, data_rlc);
+                data_rlcs[NUM_BYTES_PER_WORD] = data_rlc; // Start at 0 or forward the previous value.
                 for (idx, (byte, padding)) in input_bytes.iter().zip(paddings.iter()).enumerate() {
                     if !*padding {
                         let byte_value = Value::known(byte.value);
                         data_rlc = data_rlc * challenges.keccak_input() + byte_value;
                     }
-                    if idx < data_rlcs.len() - 1 {
-                        data_rlcs[idx + 1].assign_value(&mut region, 0, data_rlc);
-                    }
+                    data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)] = data_rlc; // data_rlc_after_this_byte
                 }
+            } else {
+                // In rounds without inputs, forward the previous value.
+                data_rlcs[0] = data_rlc;
             }
+            // Other positions of data_rlcs are not constrained and we leave them at 0.
+
             cell_manager.start_region();
 
             if round != NUM_ROUNDS {
@@ -618,8 +614,7 @@ pub(crate) fn keccak<F: Field>(
                 let mut bcf = Vec::new();
                 for s in &s {
                     let c = s[0] + s[1] + s[2] + s[3] + s[4];
-                    let bc_fat =
-                        split::value(&mut cell_manager, &mut region, c, 1, part_size, false);
+                    let bc_fat = split::value(&mut cell_manager, &mut region, c, 1, part_size);
                     bcf.push(bc_fat);
                 }
                 cell_manager.start_region();
@@ -681,7 +676,6 @@ pub(crate) fn keccak<F: Field>(
                             s[i][j],
                             RHO_MATRIX[i][j],
                             part_size,
-                            true,
                         );
 
                         let s_parts = transform_to::value(
@@ -732,7 +726,7 @@ pub(crate) fn keccak<F: Field>(
                 let part_size = get_num_bits_per_absorb_lookup();
                 let input = s[0][0] + pack_u64::<F>(ROUND_CST[round]);
                 let iota_parts =
-                    split::value::<F>(&mut cell_manager, &mut region, input, 0, part_size, false);
+                    split::value::<F>(&mut cell_manager, &mut region, input, 0, part_size);
                 cell_manager.start_region();
                 s[0][0] = decode::value(transform::value(
                     &mut cell_manager,
@@ -763,7 +757,7 @@ pub(crate) fn keccak<F: Field>(
             // The words to squeeze out
             hash_words = s.into_iter().take(4).map(|a| a[0]).take(4).collect();
             round_lengths.push(length);
-            round_data_rlcs.push(data_rlc);
+            round_data_rlcs.push(data_rlcs);
 
             cell_managers.push(cell_manager);
             regions.push(region);
@@ -780,7 +774,7 @@ pub(crate) fn keccak<F: Field>(
             squeeze_packed.assign(region, 0, *word);
 
             cell_manager.start_region();
-            let packed = split::value(cell_manager, region, *word, 0, 8, false);
+            let packed = split::value(cell_manager, region, *word, 0, 8);
             cell_manager.start_region();
             transform::value(cell_manager, region, packed, false, |v| *v, true);
         }
@@ -798,7 +792,7 @@ pub(crate) fn keccak<F: Field>(
                     round_cst,
                     is_final: is_final_block && round == NUM_ROUNDS && row_idx == 0,
                     length: round_lengths[round],
-                    data_rlc: round_data_rlcs[round],
+                    data_rlc: round_data_rlcs[round][row_idx],
                     hash_rlc,
                     cell_values: regions[round].rows[row_idx].clone(),
                 });

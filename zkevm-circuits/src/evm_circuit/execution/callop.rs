@@ -1,24 +1,26 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_GAS;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::{CommonCallGadget, TransferGadget};
-use crate::evm_circuit::util::constraint_builder::Transition::{Delta, To};
-use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+use crate::evm_circuit::{
+    execution::ExecutionGadget,
+    param::N_BYTES_GAS,
+    step::ExecutionState,
+    util::{
+        common_gadget::{CommonCallGadget, TransferGadget},
+        constraint_builder::{
+            ConstraintBuilder, ReversionInfo, StepStateTransition,
+            Transition::{Delta, To},
+        },
+        math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtWordGadget, MinMaxGadget},
+        not, or, select, CachedRegion, Cell, Word,
+    },
 };
-use crate::evm_circuit::util::math_gadget::{
-    ConstantDivisionGadget, IsZeroGadget, LtWordGadget, MinMaxGadget,
-};
-use crate::evm_circuit::util::{not, or, select, CachedRegion, Cell, Word};
 
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
+use crate::{
+    evm_circuit::witness::{Block, Call, ExecStep, Transaction},
+    table::{AccountFieldTag, CallContextFieldTag},
+    util::Expr,
+};
 use bus_mapping::evm::OpcodeId;
-use eth_types::evm_types::GAS_STIPEND_CALL_WITH_VALUE;
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToLittleEndian, ToScalar, U256};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -629,9 +631,9 @@ mod test {
     use super::*;
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, ToWord, Word};
+    use eth_types::{
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, ToWord, Word,
+    };
 
     use itertools::Itertools;
     use mock::TestContext;
