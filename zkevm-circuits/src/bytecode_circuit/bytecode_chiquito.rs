@@ -42,7 +42,7 @@ pub fn bytecode_circuit<F: Field>(
             let hash = ctx.import_halo2_advice("hash", bytecode_table.code_hash);
             let is_code = ctx.import_halo2_advice("is_code", bytecode_table.is_code);
             let value = ctx.import_halo2_advice("value", bytecode_table.value);
-            let tag = ctx.import_halo2_advice("tag", bytecode_table.tag);
+            let _tag = ctx.import_halo2_advice("tag", bytecode_table.tag); // imported for step selector
 
             let push_data_table_value =
                 ctx.import_halo2_fixed("push_data_value", push_data_table_value);
@@ -84,7 +84,6 @@ pub fn bytecode_circuit<F: Field>(
                 ctx.wg(move |ctx, wit| {
                     let wit = wit.borrow();
 
-                    ctx.assign(tag, 0.field());
                     ctx.assign(index, 0.field());
                     ctx.assign(length, wit.length.field());
                     ctx.assign(value, wit.length.field());
@@ -158,7 +157,6 @@ pub fn bytecode_circuit<F: Field>(
                 ctx.wg(move |ctx, wit| {
                     let wit = wit.borrow();
 
-                    ctx.assign(tag, 1.field());
                     ctx.assign(index, wit.index());
                     ctx.assign(length, wit.length.field());
                     ctx.assign(value, wit.value());
