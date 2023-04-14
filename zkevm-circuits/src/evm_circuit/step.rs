@@ -138,8 +138,6 @@ impl ExecutionState {
             Self::ErrorInvalidOpcode
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
-                | Self::ErrorDepth
-                | Self::ErrorContractAddressCollision
                 | Self::ErrorInvalidCreationCode
                 | Self::ErrorInvalidJump
                 | Self::ErrorReturnDataOutOfBound
