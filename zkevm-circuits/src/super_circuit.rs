@@ -85,16 +85,16 @@ use std::array;
 /// Configuration of the Super Circuit
 #[derive(Clone)]
 pub struct SuperCircuitConfig<F: Field> {
-    block_table: BlockTable,
-    mpt_table: MptTable,
-    evm_circuit: EvmCircuitConfig<F>,
-    state_circuit: StateCircuitConfig<F>,
-    tx_circuit: TxCircuitConfig<F>,
-    bytecode_circuit: BytecodeCircuitConfig<F>,
-    copy_circuit: CopyCircuitConfig<F>,
-    keccak_circuit: KeccakCircuitConfig<F>,
-    pi_circuit: PiCircuitConfig<F>,
-    exp_circuit: ExpCircuitConfig<F>,
+    block_table: Option<BlockTable>,
+    mpt_table: Option<MptTable>,
+    evm_circuit: Option<EvmCircuitConfig<F>>,
+    state_circuit: Option<StateCircuitConfig<F>>,
+    tx_circuit: Option<TxCircuitConfig<F>>,
+    bytecode_circuit: Option<BytecodeCircuitConfig<F>>,
+    copy_circuit: Option<CopyCircuitConfig<F>>,
+    keccak_circuit: Option<KeccakCircuitConfig<F>>,
+    pi_circuit: Option<PiCircuitConfig<F>>,
+    exp_circuit: Option<ExpCircuitConfig<F>>,
 }
 
 /// Circuit configuration arguments
@@ -105,6 +105,8 @@ pub struct SuperCircuitConfigArgs {
     pub max_calldata: usize,
     /// Mock randomness
     pub mock_randomness: u64,
+    /// Configuration flags
+    pub flags: SuperCircuitFlag,
 }
 
 impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
@@ -117,17 +119,88 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             max_txs,
             max_calldata,
             mock_randomness,
+            flags,
         }: Self::ConfigArgs,
     ) -> Self {
-        let tx_table = TxTable::construct(meta);
-        let rw_table = RwTable::construct(meta);
-        let mpt_table = MptTable::construct(meta);
-        let bytecode_table = BytecodeTable::construct(meta);
-        let block_table = BlockTable::construct(meta);
-        let q_copy_table = meta.fixed_column();
-        let copy_table = CopyTable::construct(meta, q_copy_table);
-        let exp_table = ExpTable::construct(meta);
-        let keccak_table = KeccakTable::construct(meta);
+        let tx_table = {
+            if is_enabled(
+                flags,
+                SUPER_CIRCUIT_FLAG_PI
+                    | SUPER_CIRCUIT_FLAG_TX
+                    | SUPER_CIRCUIT_FLAG_COPY
+                    | SUPER_CIRCUIT_FLAG_EVM,
+            ) {
+                Some(TxTable::construct(meta))
+            } else {
+                None
+            }
+        };
+        let rw_table = {
+            if is_enabled(
+                flags,
+                SUPER_CIRCUIT_FLAG_COPY | SUPER_CIRCUIT_FLAG_STATE | SUPER_CIRCUIT_FLAG_EVM,
+            ) {
+                Some(RwTable::construct(meta))
+            } else {
+                None
+            }
+        };
+        let mpt_table = {
+            if is_enabled(
+                flags,
+                SUPER_CIRCUIT_FLAG_MPT_TABLE | SUPER_CIRCUIT_FLAG_STATE,
+            ) {
+                Some(MptTable::construct(meta))
+            } else {
+                None
+            }
+        };
+        let bytecode_table = {
+            if is_enabled(
+                flags,
+                SUPER_CIRCUIT_FLAG_BYTECODE | SUPER_CIRCUIT_FLAG_COPY | SUPER_CIRCUIT_FLAG_EVM,
+            ) {
+                Some(BytecodeTable::construct(meta))
+            } else {
+                None
+            }
+        };
+        let block_table = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_PI | SUPER_CIRCUIT_FLAG_EVM) {
+                Some(BlockTable::construct(meta))
+            } else {
+                None
+            }
+        };
+        let (q_copy_table, copy_table) = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_COPY | SUPER_CIRCUIT_FLAG_EVM) {
+                let q_copy_table = meta.fixed_column();
+                let copy_table = CopyTable::construct(meta, q_copy_table);
+                (Some(q_copy_table), Some(copy_table))
+            } else {
+                (None, None)
+            }
+        };
+        let exp_table = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_EXP | SUPER_CIRCUIT_FLAG_EVM) {
+                Some(ExpTable::construct(meta))
+            } else {
+                None
+            }
+        };
+        let keccak_table = {
+            if is_enabled(
+                flags,
+                SUPER_CIRCUIT_FLAG_KECCAK
+                    | SUPER_CIRCUIT_FLAG_TX
+                    | SUPER_CIRCUIT_FLAG_BYTECODE
+                    | SUPER_CIRCUIT_FLAG_EVM,
+            ) {
+                Some(KeccakTable::construct(meta))
+            } else {
+                None
+            }
+        };
 
         // Use a mock randomness instead of the randomness derived from the challange
         // (either from mock or real prover) to help debugging assignments.
@@ -141,72 +214,126 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
             power_of_randomness[0].clone(),
         );
 
-        let keccak_circuit = KeccakCircuitConfig::new(
-            meta,
-            KeccakCircuitConfigArgs {
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
+        let keccak_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_KECCAK) {
+                Some(KeccakCircuitConfig::new(
+                    meta,
+                    KeccakCircuitConfigArgs {
+                        keccak_table: keccak_table.clone().unwrap(),
+                        challenges: challenges.clone(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
 
-        let pi_circuit = PiCircuitConfig::new(
-            meta,
-            PiCircuitConfigArgs {
-                max_txs,
-                max_calldata,
-                block_table: block_table.clone(),
-                tx_table: tx_table.clone(),
-            },
-        );
-        let tx_circuit = TxCircuitConfig::new(
-            meta,
-            TxCircuitConfigArgs {
-                tx_table: tx_table.clone(),
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-        let bytecode_circuit = BytecodeCircuitConfig::new(
-            meta,
-            BytecodeCircuitConfigArgs {
-                bytecode_table: bytecode_table.clone(),
-                keccak_table: keccak_table.clone(),
-                challenges: challenges.clone(),
-            },
-        );
-        let copy_circuit = CopyCircuitConfig::new(
-            meta,
-            CopyCircuitConfigArgs {
-                tx_table: tx_table.clone(),
-                rw_table,
-                bytecode_table: bytecode_table.clone(),
-                copy_table,
-                q_enable: q_copy_table,
-                challenges: challenges.clone(),
-            },
-        );
-        let state_circuit = StateCircuitConfig::new(
-            meta,
-            StateCircuitConfigArgs {
-                rw_table,
-                mpt_table,
-                challenges: challenges.clone(),
-            },
-        );
-        let exp_circuit = ExpCircuitConfig::new(meta, exp_table);
-        let evm_circuit = EvmCircuitConfig::new(
-            meta,
-            EvmCircuitConfigArgs {
-                challenges,
-                tx_table,
-                rw_table,
-                bytecode_table,
-                block_table: block_table.clone(),
-                copy_table,
-                keccak_table,
-                exp_table,
-            },
-        );
+        let pi_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_PI) {
+                Some(PiCircuitConfig::new(
+                    meta,
+                    PiCircuitConfigArgs {
+                        max_txs,
+                        max_calldata,
+                        block_table: block_table.clone().unwrap(),
+                        tx_table: tx_table.clone().unwrap(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
+
+        let tx_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_TX) {
+                Some(TxCircuitConfig::new(
+                    meta,
+                    TxCircuitConfigArgs {
+                        tx_table: tx_table.clone().unwrap(),
+                        keccak_table: keccak_table.clone().unwrap(),
+                        challenges: challenges.clone(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
+
+        let bytecode_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_BYTECODE) {
+                Some(BytecodeCircuitConfig::new(
+                    meta,
+                    BytecodeCircuitConfigArgs {
+                        bytecode_table: bytecode_table.clone().unwrap(),
+                        keccak_table: keccak_table.clone().unwrap(),
+                        challenges: challenges.clone(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
+
+        let copy_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_COPY) {
+                Some(CopyCircuitConfig::new(
+                    meta,
+                    CopyCircuitConfigArgs {
+                        tx_table: tx_table.clone().unwrap(),
+                        rw_table: rw_table.unwrap(),
+                        bytecode_table: bytecode_table.clone().unwrap(),
+                        copy_table: copy_table.unwrap(),
+                        q_enable: q_copy_table.unwrap(),
+                        challenges: challenges.clone(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
+
+        let state_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_STATE) {
+                Some(StateCircuitConfig::new(
+                    meta,
+                    StateCircuitConfigArgs {
+                        rw_table: rw_table.unwrap(),
+                        mpt_table: mpt_table.unwrap(),
+                        challenges: challenges.clone(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
+
+        let exp_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_EXP) {
+                Some(ExpCircuitConfig::new(meta, exp_table.unwrap()))
+            } else {
+                None
+            }
+        };
+
+        let evm_circuit = {
+            if is_enabled(flags, SUPER_CIRCUIT_FLAG_EVM) {
+                Some(EvmCircuitConfig::new(
+                    meta,
+                    EvmCircuitConfigArgs {
+                        challenges,
+                        tx_table: tx_table.unwrap(),
+                        rw_table: rw_table.unwrap(),
+                        bytecode_table: bytecode_table.unwrap(),
+                        block_table: block_table.clone().unwrap(),
+                        copy_table: copy_table.unwrap(),
+                        keccak_table: keccak_table.unwrap(),
+                        exp_table: exp_table.unwrap(),
+                    },
+                ))
+            } else {
+                None
+            }
+        };
 
         Self {
             block_table,
@@ -426,37 +553,37 @@ impl<
         challenges: &Challenges<Value<F>>,
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_KECCAK) {
+        if let Some(circuit_config) = &config.keccak_circuit {
             self.keccak_circuit
-                .synthesize_sub(&config.keccak_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_BYTECODE) {
+        if let Some(circuit_config) = &config.bytecode_circuit {
             self.bytecode_circuit
-                .synthesize_sub(&config.bytecode_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_TX) {
+        if let Some(circuit_config) = &config.tx_circuit {
             self.tx_circuit
-                .synthesize_sub(&config.tx_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_STATE) {
+        if let Some(circuit_config) = &config.state_circuit {
             self.state_circuit
-                .synthesize_sub(&config.state_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_COPY) {
+        if let Some(circuit_config) = &config.copy_circuit {
             self.copy_circuit
-                .synthesize_sub(&config.copy_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EXP) {
+        if let Some(circuit_config) = &config.exp_circuit {
             self.exp_circuit
-                .synthesize_sub(&config.exp_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_EVM) {
+        if let Some(circuit_config) = &config.evm_circuit {
             self.evm_circuit
-                .synthesize_sub(&config.evm_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_PI) {
+        if let Some(circuit_config) = &config.pi_circuit {
             self.pi_circuit
-                .synthesize_sub(&config.pi_circuit, challenges, layouter)?;
+                .synthesize_sub(circuit_config, challenges, layouter)?;
         }
         Ok(())
     }
@@ -484,6 +611,7 @@ impl<
                 max_txs: MAX_TXS,
                 max_calldata: MAX_CALLDATA,
                 mock_randomness: MOCK_RANDOMNESS,
+                flags: FLAGS,
             },
         )
     }
@@ -501,16 +629,16 @@ impl<
         );
         let rws = &self.state_circuit.rows;
 
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_BLOCK_TABLE) {
-            config.block_table.load(
+        if let Some(block_table) = &config.block_table {
+            block_table.load(
                 &mut layouter,
                 &block.context,
                 Value::known(block.randomness),
             )?;
         }
 
-        if is_enabled(FLAGS, SUPER_CIRCUIT_FLAG_MPT_TABLE) {
-            config.mpt_table.load(
+        if let Some(mpt_table) = &config.mpt_table {
+            mpt_table.load(
                 &mut layouter,
                 &MptUpdates::mock_from(rws),
                 Value::known(block.randomness),
