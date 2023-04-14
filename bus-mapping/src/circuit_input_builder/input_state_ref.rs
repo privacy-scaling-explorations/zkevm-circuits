@@ -1124,14 +1124,12 @@ impl<'a> CircuitInputStateRef<'a> {
         steps: &[GethExecStep],
     ) -> Result<(), Error> {
         let call = self.call()?.clone();
-
-        if call.is_root {
-            return Ok(());
-        }
         let geth_step = steps
             .get(0)
             .ok_or(Error::InternalError("invalid index 0"))?;
-        let is_return_revert = geth_step.op == OpcodeId::REVERT || geth_step.op == OpcodeId::RETURN;
+        let is_return_revert = (geth_step.op == OpcodeId::REVERT
+            || geth_step.op == OpcodeId::RETURN)
+            && exec_step.error.is_none();
 
         if !is_return_revert && !call.is_success {
             // add call failure ops for exception cases
@@ -1185,33 +1183,31 @@ impl<'a> CircuitInputStateRef<'a> {
             _ => [Word::zero(), Word::zero()],
         };
 
-        let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
-        let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
-            std::cmp::max(
-                (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
-                    / 32,
-                curr_memory_word_size,
-            )
-        } else {
-            curr_memory_word_size
-        };
-
-        let memory_expansion_gas_cost =
-            memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
-        let code_deposit_cost = if call.is_create() && call.is_success {
-            GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
-        } else {
+        let gas_refund = if exec_step.error.is_some() {
             0
-        };
-        let gas_refund = geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost;
-
-        // revert also make call.is_success = false, check for only RETURN in create for
-        // oog code store. maybe better check here.
-        let caller_gas_left = if call.is_success || geth_step.op != OpcodeId::RETURN {
-            geth_step_next.gas.0 - gas_refund
         } else {
-            geth_step_next.gas.0
+            let curr_memory_word_size = (exec_step.memory_size as u64) / 32;
+            let next_memory_word_size = if !last_callee_return_data_length.is_zero() {
+                std::cmp::max(
+                    (last_callee_return_data_offset + last_callee_return_data_length + 31).as_u64()
+                        / 32,
+                    curr_memory_word_size,
+                )
+            } else {
+                curr_memory_word_size
+            };
+
+            let memory_expansion_gas_cost =
+                memory_expansion_gas_cost(curr_memory_word_size, next_memory_word_size);
+            let code_deposit_cost = if call.is_create() && call.is_success {
+                GasCost::CODE_DEPOSIT_BYTE_COST.as_u64() * last_callee_return_data_length.as_u64()
+            } else {
+                0
+            };
+            geth_step.gas.0 - memory_expansion_gas_cost - code_deposit_cost
         };
+
+        let caller_gas_left = geth_step_next.gas.0 - gas_refund;
 
         for (field, value) in [
             (CallContextField::IsRoot, (caller.is_root as u64).into()),
@@ -1239,11 +1235,13 @@ impl<'a> CircuitInputStateRef<'a> {
         }
 
         // EIP-211: CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
+        let discard_return_data =
+            call.is_create() && geth_step.op == OpcodeId::RETURN || exec_step.error.is_some();
         for (field, value) in [
             (CallContextField::LastCalleeId, call.call_id.into()),
             (
                 CallContextField::LastCalleeReturnDataOffset,
-                if call.is_create() && geth_step.op == OpcodeId::RETURN {
+                if discard_return_data {
                     U256::zero()
                 } else {
                     last_callee_return_data_offset
@@ -1251,7 +1249,7 @@ impl<'a> CircuitInputStateRef<'a> {
             ),
             (
                 CallContextField::LastCalleeReturnDataLength,
-                if call.is_create() && geth_step.op == OpcodeId::RETURN {
+                if discard_return_data {
                     U256::zero()
                 } else {
                     last_callee_return_data_length

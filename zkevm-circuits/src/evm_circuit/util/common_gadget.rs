@@ -223,13 +223,29 @@ impl<F: Field> RestoreContextGadget<F> {
         step: &ExecStep,
         rw_offset: usize,
     ) -> Result<(), Error> {
+        let field_tags = [
+            CallContextFieldTag::CallerId,
+            CallContextFieldTag::IsRoot,
+            CallContextFieldTag::IsCreate,
+            CallContextFieldTag::CodeHash,
+            CallContextFieldTag::ProgramCounter,
+            CallContextFieldTag::StackPointer,
+            CallContextFieldTag::GasLeft,
+            CallContextFieldTag::MemorySize,
+            CallContextFieldTag::ReversibleWriteCounter,
+        ];
         let [caller_id, caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             if call.is_root {
                 [U256::zero(); 9]
             } else {
-                [0, 1, 2, 3, 4, 5, 6, 7, 8]
-                    .map(|i| step.rw_indices[i + rw_offset])
-                    .map(|idx| block.rws[idx].call_context_value())
+                field_tags
+                    .zip([0, 1, 2, 3, 4, 5, 6, 7, 8])
+                    .map(|(field_tag, i)| {
+                        let idx = step.rw_indices[i + rw_offset];
+                        let rw = block.rws[idx];
+                        debug_assert_eq!(rw.field_tag(), Some(field_tag as u64));
+                        rw.call_context_value()
+                    })
             };
 
         for (cell, value) in [

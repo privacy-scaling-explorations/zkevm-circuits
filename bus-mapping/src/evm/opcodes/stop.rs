@@ -33,7 +33,6 @@ impl Opcode for Stop {
         );
 
         state.handle_return(&mut exec_step, geth_steps, !call.is_root)?;
-        state.caller_ctx_mut()?.return_data = vec![];
 
         Ok(vec![exec_step])
     }
