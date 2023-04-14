@@ -360,12 +360,8 @@ fn tracer_err_address_collision() {
     // that outputs the same, which will lead to the same new
     // contract address.
     let code_creator = bytecode! {
-        PUSH1(0x00) // value
-        PUSH1(0x00) // offset
-        MSTORE
-        PUSH1(0x01) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(0x00, 0x00)
+        .return_bytecode(0x00, 0x01)
     };
 
     // code_a calls code_b which executes code_creator in CREATE2
@@ -492,12 +488,8 @@ fn tracer_create_collision_free() {
     // that outputs not the same, which will lead to the different new
     // contract address.
     let code_creator = bytecode! {
-        PUSH1(0x00) // value
-        PUSH1(0x00) // offset
-        MSTORE
-        PUSH1(0x01) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(0x00, 0x00)
+        .return_bytecode(0x00, 0x01)
     };
 
     // code_a calls code_b which executes code_creator in CREATE2
@@ -638,12 +630,8 @@ fn tracer_err_code_store_out_of_gas() {
     // exhaust the gas to store the code.
     let code_len = 0x100;
     let code_creator = bytecode! {
-        PUSH1(Word::zero()) // value
-        PUSH32(code_len) // offset
-        MSTORE
-        PUSH32(code_len) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(code_len, Word::zero())
+        .return_bytecode(0x00, code_len)
     };
 
     // code_a calls code_b which executes code_creator in CREATE
@@ -735,12 +723,8 @@ fn tracer_err_code_store_out_of_gas_tx_deploy() {
     // exhaust the gas to store the code.
     let code_len = 0x100;
     let code_creator = bytecode! {
-        PUSH1(Word::zero()) // value
-        PUSH32(code_len) // offset
-        MSTORE
-        PUSH32(code_len) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(code_len, Word::zero())
+        .return_bytecode(0x00, code_len)
     };
 
     // Get the execution steps from the external tracer
@@ -800,12 +784,8 @@ fn tracer_err_invalid_code() {
     // code_creator outputs byte array that starts with 0xef, which is
     // invalid code.
     let code_creator = bytecode! {
-        PUSH32(word!("0xef00000000000000000000000000000000000000000000000000000000000000")) // value
-        PUSH1(0x00) // offset
-        MSTORE
-        PUSH1(0x01) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(0x00, word!("0xef00000000000000000000000000000000000000000000000000000000000000"))
+        .return_bytecode(0x00, 0x01)
     };
 
     // code_a calls code_b which executes code_creator in CREATE
@@ -906,12 +886,8 @@ fn tracer_err_max_code_size_exceeded() {
     // trigger the max code size limit.
     let code_len = 0x6000 + 1;
     let code_creator = bytecode! {
-        PUSH1(Word::zero()) // value
-        PUSH32(code_len) // offset
-        MSTORE
-        PUSH32(code_len) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(code_len, Word::zero())
+        .return_bytecode(0x00, code_len)
     };
 
     // code_a calls code_b which executes code_creator in CREATE
@@ -1003,12 +979,8 @@ fn tracer_err_max_code_size_exceeded_tx_deploy() {
     // trigger the max code size limit.
     let code_len = 0x6000 + 1;
     let code_creator = bytecode! {
-        PUSH1(Word::zero()) // value
-        PUSH32(code_len) // offset
-        MSTORE
-        PUSH32(code_len) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(code_len, Word::zero())
+        .return_bytecode(0x00, code_len)
     };
 
     // Get the execution steps from the external tracer
@@ -1056,9 +1028,7 @@ fn tracer_err_max_code_size_exceeded_tx_deploy() {
 fn tracer_create_stop() {
     // code_creator doesn't output anything because it stops.
     let code_creator = bytecode! {
-        PUSH32(word!("0xef00000000000000000000000000000000000000000000000000000000000000")) // value
-        PUSH1(0x00) // offset
-        MSTORE
+        .mstore(0x00, word!("0xef00000000000000000000000000000000000000000000000000000000000000"))
         PUSH1(0x01) // length
         PUSH1(0x00) // offset
         STOP
@@ -1457,12 +1427,8 @@ fn tracer_err_return_data_out_of_bounds() {
         PUSH2(0xaa)
     };
     let code_b = bytecode! {
-        PUSH2(0x42) // value
-        PUSH2(0x00) // offset
-        MSTORE
-        PUSH1(0x01) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(0x00, 0x42)
+        .return_bytecode(0x00, 0x01)
     };
     // Get the execution steps from the external tracer
     let block: GethData = TestContext::<3, 2>::new_with_logger_config(
@@ -1516,9 +1482,7 @@ fn tracer_err_gas_uint_overflow() {
     // MSTORE a value at an offset so high that the gast cost is big enough
     // to overflow an uint64
     let code = bytecode! {
-        PUSH32(0x42) // value
-        PUSH32(0x100_0000_0000_0000_0000_u128) // offset
-        MSTORE
+        .mstore(0x100_0000_0000_0000_0000_u128, 0x42)
     };
     let block: GethData = TestContext::<2, 1>::new_with_logger_config(
         None,
@@ -1795,12 +1759,8 @@ fn tracer_err_stack_underflow() {
 fn create2_address() {
     // code_creator outputs 0x6050.
     let code_creator = bytecode! {
-        PUSH32(word!("0x6050000000000000000000000000000000000000000000000000000000000000")) // value
-        PUSH1(0x00) // offset
-        MSTORE
-        PUSH1(0x02) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(0x00, word!("0x6050000000000000000000000000000000000000000000000000000000000000"))
+        .return_bytecode(0x00, 0x02)
     };
 
     // code_a calls code_b which executes code_creator in CREATE
@@ -1897,12 +1857,8 @@ fn create2_address() {
 fn create_address() {
     // code_creator outputs 0x6050.
     let code_creator = bytecode! {
-        PUSH32(word!("0x6050000000000000000000000000000000000000000000000000000000000000")) // value
-        PUSH1(0x00) // offset
-        MSTORE
-        PUSH1(0x02) // length
-        PUSH1(0x00) // offset
-        RETURN
+        .mstore(0x00, word!("0x6050000000000000000000000000000000000000000000000000000000000000"))
+        .return_bytecode(0x00, 0x02)
     };
 
     // code_a calls code_b which executes code_creator in CREATE
@@ -2027,9 +1983,7 @@ fn test_gen_access_trace() {
         PUSH2(0xaa)
     };
     let code_b = bytecode! {
-        PUSH32(word!("0x1234567890000000000000000000abcdef000000000000000000112233445566")) // value
-        PUSH1(0x01) // offset
-        MSTORE
+        .mstore(0x01, word!("0x1234567890000000000000000000abcdef000000000000000000112233445566"))
         PUSH1(0x01) // value
         PUSH1(0x02) // key
         SSTORE

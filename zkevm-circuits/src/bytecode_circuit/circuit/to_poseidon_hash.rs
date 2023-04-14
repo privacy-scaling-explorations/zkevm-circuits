@@ -382,9 +382,10 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         layouter: &mut impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-        self.assign_internal(layouter, size, witness, challenges, true)
+        self.assign_internal(layouter, size, witness, overwrite, challenges, true)
     }
 
     pub(crate) fn assign_internal(
@@ -392,12 +393,15 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
         layouter: &mut impl Layouter<F>,
         size: usize,
         witness: &[UnrolledBytecode<F>],
+        overwrite: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
         fail_fast: bool,
     ) -> Result<(), Error> {
         let base_conf = &self.base_conf;
         let push_data_left_is_zero_chip =
             IsZeroChip::construct(base_conf.push_data_left_is_zero.clone());
+        let index_length_diff_is_zero_chip =
+            IsZeroChip::construct(base_conf.index_length_diff_is_zero.clone());
 
         // Subtract the unusable rows from the size
         assert!(size > base_conf.minimum_rows);
@@ -424,6 +428,7 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                         bytecode,
                         challenges,
                         &push_data_left_is_zero_chip,
+                        &index_length_diff_is_zero_chip,
                         empty_hash,
                         &mut offset,
                         last_row_offset,
@@ -452,12 +457,16 @@ impl<F: Field, const BYTES_IN_FIELD: usize> ToHashBlockCircuitConfig<F, BYTES_IN
                     base_conf.set_padding_row(
                         &mut region,
                         &push_data_left_is_zero_chip,
+                        &index_length_diff_is_zero_chip,
                         empty_hash,
                         idx,
                         last_row_offset,
                     )?;
                     self.set_header_row(&mut region, 0, idx)?;
                 }
+
+                base_conf.assign_overwrite(&mut region, overwrite, challenges)?;
+
                 Ok(())
             },
         )

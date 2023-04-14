@@ -306,7 +306,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
 
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
                 // debug_assert_eq!(real_cost, gas_cost + contract_gas_cost);
@@ -330,7 +330,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 // FIXME
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
@@ -428,7 +428,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }

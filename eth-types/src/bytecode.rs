@@ -1,6 +1,6 @@
 //! EVM byte code generator
 
-use crate::{evm_types::OpcodeId, Bytes, Word};
+use crate::{evm_types::OpcodeId, Bytes, ToWord, Word};
 use std::{collections::HashMap, str::FromStr};
 
 /// Error type for Bytecode related failures
@@ -95,8 +95,9 @@ impl Bytecode {
     }
 
     /// Push
-    pub fn push(&mut self, n: u8, value: Word) -> &mut Self {
+    pub fn push<T: ToWord>(&mut self, n: u8, value: T) -> &mut Self {
         debug_assert!((1..=32).contains(&n), "invalid push");
+        let value = value.to_word();
 
         // Write the op code
         self.write_op((OpcodeId::push_n(n)).expect("valid push size"));
@@ -150,15 +151,15 @@ impl Bytecode {
 
     /// Call a contract
     #[allow(clippy::too_many_arguments)]
-    pub fn call(
+    pub fn call<T: ToWord, U: ToWord, V: ToWord, W: ToWord, X: ToWord, Y: ToWord, Z: ToWord>(
         &mut self,
-        gas: Word,
-        address: Word,
-        value: Word,
-        mem_in: Word,
-        mem_in_size: Word,
-        mem_out: Word,
-        mem_out_size: Word,
+        gas: T,
+        address: U,
+        value: V,
+        mem_in: W,
+        mem_in_size: X,
+        mem_out: Y,
+        mem_out_size: Z,
     ) -> &mut Self {
         self.append(&crate::bytecode! {
             PUSH32(mem_out_size)
@@ -173,7 +174,52 @@ impl Bytecode {
         self
     }
 
-    /// Generate the disassembly
+    /// Balance
+    pub fn balance<T: ToWord>(&mut self, address: T) -> &mut Self {
+        self.append(&crate::bytecode! {
+            PUSH20(address)
+            BALANCE
+        });
+        self
+    }
+
+    /// mstore
+    pub fn mstore<T: ToWord, U: ToWord>(&mut self, offset: T, value: U) -> &mut Self {
+        self.append(&crate::bytecode! {
+            PUSH32(value)
+            PUSH32(offset)
+            MSTORE
+        });
+        self
+    }
+
+    /// calldatacopy
+    pub fn calldatacopy<T: ToWord, U: ToWord, V: ToWord>(
+        &mut self,
+        dst_offset: T,
+        offset: U,
+        size: V,
+    ) -> &mut Self {
+        self.append(&crate::bytecode! {
+            PUSH32(size)
+            PUSH32(offset)
+            PUSH32(dst_offset)
+            CALLDATACOPY
+        });
+        self
+    }
+
+    /// return
+    pub fn return_bytecode<T: ToWord, U: ToWord>(&mut self, offset: T, size: U) -> &mut Self {
+        self.append(&crate::bytecode! {
+            PUSH32(size)
+            PUSH32(offset)
+            RETURN
+        });
+        self
+    }
+
+    /// Generate the diassembly
     pub fn disasm(&self) -> String {
         let mut asm = String::new();
         for op in self.iter() {
@@ -335,7 +381,7 @@ macro_rules! bytecode_internal {
     ($code:ident, $x:ident ($v:expr) $($rest:tt)*) => {{
         debug_assert!($crate::evm_types::OpcodeId::$x.is_push(), "invalid push");
         let n = $crate::evm_types::OpcodeId::$x.postfix().expect("opcode with postfix");
-        $code.push(n, $v.into());
+        $code.push(n, $v);
         $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Default opcode without any inputs
@@ -350,8 +396,8 @@ macro_rules! bytecode_internal {
         $crate::bytecode_internal!($code, $($rest)*);
     }};
     // Function calls
-    ($code:ident, .$function:ident ($($args:expr),*) $($rest:tt)*) => {{
-        $code.$function($($args.into(),)*);
+    ($code:ident, .$function:ident ($($args:expr),* $(,)?) $($rest:tt)*) => {{
+        $code.$function($($args,)*);
         $crate::bytecode_internal!($code, $($rest)*);
     }};
 }
