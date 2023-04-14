@@ -541,8 +541,8 @@ impl<
         let (rows_without_padding, rows_with_padding): (Vec<usize>, Vec<usize>) =
             rows.into_iter().unzip();
         (
-            itertools::max(rows_without_padding).unwrap(),
-            itertools::max(rows_with_padding).unwrap(),
+            itertools::max(rows_without_padding).unwrap_or_default(),
+            itertools::max(rows_with_padding).unwrap_or_default(),
         )
     }
 

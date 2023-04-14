@@ -3,6 +3,7 @@ use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use log::error;
 use mock::{TestContext, MOCK_CHAIN_ID};
+use paste::paste;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use std::collections::HashMap;
@@ -186,3 +187,58 @@ fn serial_test_super_circuit_2tx_2max_tx() {
     };
     test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
 }
+
+macro_rules! test_config_flag {
+    ($flag:expr, $min_k:expr) => {
+        paste! {
+            #[ignore]
+            #[test]
+            fn [<serial_test_ $flag:lower>]() {
+                let block: GethData = TestContext::<0, 0>::new(
+                    None,
+                    |_accs| {},
+                    |_txs, _accs| {},
+                    |block, _txs| block.number(0xcafeu64),
+                )
+                .unwrap().into();
+                const MAX_TXS: usize = 1;
+                const MAX_CALLDATA: usize = 1;
+                let circuits_params = CircuitsParams {
+                    max_txs: MAX_TXS,
+                    max_calldata: MAX_CALLDATA,
+                    max_rws: 32,
+                    max_copy_rows: 10,
+                    max_exp_steps: 10,
+                    max_bytecode: 10,
+                    max_evm_rows: 10,
+                    max_keccak_rows: 1000,
+                };
+                let (k, circuit, instance, _) = SuperCircuit::<
+                    Fr,
+                    MAX_TXS,
+                    MAX_CALLDATA,
+                    TEST_MOCK_RANDOMNESS,
+                    $flag,
+                    >::build(block, circuits_params).unwrap();
+                // TODO: `k` is incorrect. `NotEnoughRowsAvailable`
+                MockProver::run(std::cmp::max($min_k, k), &circuit, instance)
+                    .unwrap()
+                    .assert_satisfied_par();
+            }
+        }
+    };
+}
+
+// cargo test serial_test_super_circuit_flag_none -- --ignored
+test_config_flag!(SUPER_CIRCUIT_FLAG_NONE, 0);
+test_config_flag!(SUPER_CIRCUIT_FLAG_BLOCK_TABLE, 0);
+test_config_flag!(SUPER_CIRCUIT_FLAG_MPT_TABLE, 0);
+test_config_flag!(SUPER_CIRCUIT_FLAG_PI, 17);
+test_config_flag!(SUPER_CIRCUIT_FLAG_TX, 0);
+test_config_flag!(SUPER_CIRCUIT_FLAG_COPY, 0);
+test_config_flag!(SUPER_CIRCUIT_FLAG_EVM, 18);
+test_config_flag!(SUPER_CIRCUIT_FLAG_STATE, 17);
+test_config_flag!(SUPER_CIRCUIT_FLAG_BYTECODE, 10);
+test_config_flag!(SUPER_CIRCUIT_FLAG_EXP, 0);
+test_config_flag!(SUPER_CIRCUIT_FLAG_KECCAK, 9);
+test_config_flag!(SUPER_CIRCUIT_FLAG_DEFAULT, 0);

@@ -5023,6 +5023,7 @@ dependencies = [
  "mock",
  "num",
  "num-bigint",
+ "paste",
  "pretty_assertions",
  "rand",
  "rand_chacha",
