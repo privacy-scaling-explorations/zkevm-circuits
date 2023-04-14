@@ -53,9 +53,6 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
 
         let callee_account = &state.sdb.get_account(&address).1.clone();
         let callee_exists = !callee_account.is_empty();
-        if !callee_exists && callee.value.is_zero() {
-            state.sdb.get_account_mut(&address).1.storage.clear();
-        }
 
         state.stack_write(
             &mut exec_step,
@@ -67,10 +64,10 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             },
         )?;
 
-        let (initialization_code, keccak_code_hash, code_hash) = if length > 0 {
+        let (initialization_code, code_hash) = if length > 0 {
             handle_copy(state, &mut exec_step, state.call()?.call_id, offset, length)?
         } else {
-            (vec![], H256(keccak256([])), CodeDB::empty_code_hash())
+            (vec![], CodeDB::empty_code_hash())
         };
 
         let tx_id = state.tx_ctx.id();
@@ -269,7 +266,7 @@ impl<const IS_CREATE2: bool> Opcode for Create<IS_CREATE2> {
             std::iter::once(0xffu8)
                 .chain(caller.address.to_fixed_bytes())
                 .chain(salt.to_be_bytes())
-                .chain(keccak_code_hash.to_fixed_bytes())
+                .chain(code_hash.to_fixed_bytes())
                 .collect::<Vec<_>>()
         } else {
             let mut stream = rlp::RlpStream::new();
@@ -308,9 +305,8 @@ fn handle_copy(
     callee_id: usize,
     offset: usize,
     length: usize,
-) -> Result<(Vec<u8>, H256, H256), Error> {
+) -> Result<(Vec<u8>, H256), Error> {
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
-    let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
     let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
         .code
@@ -344,7 +340,7 @@ fn handle_copy(
         },
     );
 
-    Ok((initialization_bytes, keccak_code_hash, code_hash))
+    Ok((initialization_bytes, code_hash))
 }
 
 #[cfg(test)]
