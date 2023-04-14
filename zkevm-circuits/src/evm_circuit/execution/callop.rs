@@ -175,16 +175,20 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
-            TransferGadget::construct(
-                cb,
-                caller_address.expr(),
-                callee_address.expr(),
-                not::expr(call_gadget.callee_not_exists.expr()),
-                call_gadget.value.clone(),
-                &mut callee_reversion_info,
-            )
-        });
+        let transfer = cb.condition(
+            is_call.expr() * not::expr(is_insufficient_balance.expr()),
+            |cb| {
+                TransferGadget::construct(
+                    cb,
+                    caller_address.expr(),
+                    callee_address.expr(),
+                    not::expr(call_gadget.callee_not_exists.expr()),
+                    0.expr(),
+                    call_gadget.value.clone(),
+                    &mut callee_reversion_info,
+                )
+            },
+        );
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
