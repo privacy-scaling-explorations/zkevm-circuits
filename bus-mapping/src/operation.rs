@@ -128,7 +128,7 @@ pub struct MemoryOp {
     /// Memory Address
     pub address: MemoryAddress,
     /// Value
-    pub value: u8,
+    pub value: Word,
 }
 
 impl fmt::Debug for MemoryOp {
@@ -144,7 +144,7 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
+    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryOp {
         MemoryOp {
             call_id,
             address,
@@ -168,7 +168,7 @@ impl MemoryOp {
     }
 
     /// Returns the bytes read or written by this operation.
-    pub fn value(&self) -> u8 {
+    pub fn value(&self) -> Word {
         self.value
     }
 }
@@ -195,6 +195,87 @@ impl Ord for MemoryOp {
     }
 }
 
+// new Memory ops for word value
+/// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the memory implied
+/// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
+/// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
+#[derive(Clone, PartialEq, Eq)]
+pub struct MemoryWordOp {
+    /// Call ID
+    pub call_id: usize,
+    /// Memory Address
+    pub address: MemoryAddress,
+    /// Value
+    pub value: Word,
+}
+
+impl fmt::Debug for MemoryWordOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MemoryWordOp { ")?;
+        f.write_fmt(format_args!(
+            "call_id: {:?}, addr: {:?}, value: 0x{:?}",
+            self.call_id, self.address, self.value
+        ))?;
+        f.write_str(" }")
+    }
+}
+
+impl MemoryWordOp {
+    /// Create a new instance of a `MemoryOp` from it's components.
+    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryWordOp {
+        MemoryWordOp {
+            call_id,
+            address,
+            value,
+        }
+    }
+
+    /// Returns the [`Target`] (operation type) of this operation.
+    pub const fn target(&self) -> Target {
+        Target::Memory
+    }
+
+    /// Returns the call id associated to this Operation.
+    pub const fn call_id(&self) -> usize {
+        self.call_id
+    }
+
+    /// Returns the [`MemoryAddress`] associated to this Operation.
+    pub const fn address(&self) -> &MemoryAddress {
+        &self.address
+    }
+
+    /// Returns the bytes read or written by this operation.
+    pub fn value(&self) -> Word {
+        self.value
+    }
+}
+
+impl Op for MemoryWordOp {
+    fn into_enum(self) -> OpEnum {
+        OpEnum::MemoryWord(self)
+    }
+
+    fn reverse(&self) -> Self {
+        unreachable!("MemoryOp can't be reverted")
+    }
+}
+
+impl PartialOrd for MemoryWordOp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MemoryWordOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (&self.call_id, &self.address).cmp(&(&other.call_id, &other.address))
+    }
+}
+
+// end 
+
+
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
 /// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
 /// the [`ExecStep`](crate::circuit_input_builder::ExecStep).
@@ -207,6 +288,8 @@ pub struct StackOp {
     /// Value
     pub value: Word,
 }
+
+
 
 impl fmt::Debug for StackOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -910,6 +993,8 @@ pub enum OpEnum {
     Stack(StackOp),
     /// Memory
     Memory(MemoryOp),
+    /// Memory word
+    MemoryWord(MemoryWordOp),
     /// Storage
     Storage(StorageOp),
     /// TxAccessListAccount

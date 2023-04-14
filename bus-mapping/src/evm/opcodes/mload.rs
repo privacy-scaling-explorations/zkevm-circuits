@@ -35,7 +35,7 @@ impl Opcode for Mload {
         let mem_read_value = geth_steps[1].stack.last()?;
 
         // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
-
+        
         // First stack write
         //
         state.stack_write(&mut exec_step, stack_position, mem_read_value)?;

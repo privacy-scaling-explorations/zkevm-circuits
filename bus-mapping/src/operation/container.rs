@@ -1,7 +1,7 @@
 use super::{
     AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
     StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
-    TxRefundOp, RW,
+    TxRefundOp, RW, MemoryWordOp,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;
@@ -24,6 +24,8 @@ use itertools::Itertools;
 pub struct OperationContainer {
     /// Operations of MemoryOp
     pub memory: Vec<Operation<MemoryOp>>,
+    /// Operations of MemoryOp
+    pub memory_word: Vec<Operation<MemoryWordOp>>,
     /// Operations of StackOp
     pub stack: Vec<Operation<StackOp>>,
     /// Operations of StorageOp
@@ -58,6 +60,7 @@ impl OperationContainer {
     pub fn new() -> Self {
         Self {
             memory: Vec::new(),
+            memory_word: Vec::new(),
             stack: Vec::new(),
             storage: Vec::new(),
             tx_access_list_account: Vec::new(),
@@ -97,6 +100,11 @@ impl OperationContainer {
             OpEnum::Memory(op) => {
                 self.memory.push(Operation::new(rwc, rw, op));
                 OperationRef::from((Target::Memory, self.memory.len() - 1))
+            }
+            OpEnum::MemoryWord(op) => {
+                self.memory_word.push(Operation::new(rwc, rw, op));
+                //TODO: use new Target type i.e. MemoryWord
+                OperationRef::from((Target::Memory, self.memory_word.len() - 1))
             }
             OpEnum::Stack(op) => {
                 self.stack.push(Operation::new(rwc, rw, op));

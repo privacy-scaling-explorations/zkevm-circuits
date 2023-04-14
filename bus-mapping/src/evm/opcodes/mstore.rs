@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
-use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, ToLittleEndian};
+use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, ToLittleEndian, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MSTORE`](crate::evm::OpcodeId::MSTORE)
@@ -32,13 +32,31 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let offset_addr: MemoryAddress = offset.try_into()?;
         // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
         
+        //let call_ctx = state.call_ctx_mut()?;
+        let mut memory = state.call_ctx_mut()?.memory.clone();
+        let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1 } else { 32 };
+        println!("IS_MSTORE8 {}", IS_MSTORE8);
+        
+        memory.extend_at_least(minimal_length);
+
+        let shift= offset.as_u64() % 32;
+        let slot = offset.as_u64() - shift;
+
+
+        let mut slot_bytes: [u8; 32] = [0; 32];
+        slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize+ 32)]);
+
+        let addr_left_Word = Word::from_little_endian(&slot_bytes);
+        // address = 100, slot = 96 shift = 4
+        // value = address + 32 = 132
+        // left word = slot ( 96...96+32 bytes) slot = 128...128+32 word(fill 0)
         match IS_MSTORE8 {
             true => {
-                // stack write operation for mstore8
-                state.memory_write(
+                // memory write operation for mstore8
+                state.memory_write_word(
                     &mut exec_step,
-                    offset_addr,
-                    *value.to_le_bytes().first().unwrap(),
+                    slot.into(),
+                    addr_left_Word,
                 )?;
             }
             false => {
@@ -55,8 +73,6 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let value = geth_step.stack.nth_last(1)?;
         let offset_addr: MemoryAddress = offset.try_into()?;
 
-        let call_ctx = state.call_ctx_mut()?;
-        let memory = &mut call_ctx.memory;
         let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1 } else { 32 };
         memory.extend_at_least(minimal_length);
 
