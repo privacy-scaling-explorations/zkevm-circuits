@@ -245,7 +245,6 @@ impl<F: Field> MptWitnessRow<F> {
 
 // TODO(Brecht): Do all of this on the MPT proof generation side
 pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> {
-    let mut key_rlp_bytes = Vec::new();
     for (ind, row) in witness
         .iter_mut()
         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
@@ -291,15 +290,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 36
             };
             let mut key_bytes = row.bytes[0..len].to_owned();
-
-            // Currently the list rlp bytes are dropped for non-key row, restore them here
-            if key_bytes[0] < RLP_LIST_SHORT && row.get_type() != MptWitnessRowType::ExtensionNodeS
-            {
-                for idx in 0..key_rlp_bytes.len() {
-                    key_bytes[idx] = key_rlp_bytes[idx];
-                }
-            }
-
+            
             const RLP_LIST_LONG_1: u8 = RLP_LIST_LONG + 1;
             const RLP_LIST_LONG_2: u8 = RLP_LIST_LONG + 2;
             let mut is_short = false;
@@ -336,12 +327,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             }
             key_bytes.rotate_left(num_rlp_bytes);
             row.bytes = [key_bytes.clone(), row.bytes[len..].to_owned()].concat();
-
-            if row.get_type() == MptWitnessRowType::AccountLeafKeyS
-                || row.get_type() == MptWitnessRowType::StorageLeafSKey
-            {
-                key_rlp_bytes = row.rlp_bytes.clone();
-            }
 
             //println!("list : {:?}", row.rlp_bytes);
             //println!("key  : {:?}", row.bytes);
