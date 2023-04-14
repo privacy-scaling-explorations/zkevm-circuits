@@ -264,6 +264,7 @@ impl<F: Field, const IS_CREATE2: bool, const S: ExecutionState> ExecutionGadget<
                     create.caller_address(),
                     new_address.clone(),
                     0.expr(),
+                    1.expr(),
                     value.clone(),
                     &mut callee_reversion_info,
                 );

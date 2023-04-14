@@ -625,10 +625,8 @@ mod test {
             PUSH1(0) // dest offset
             RETURNDATACOPY
         });
-
-        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
-            .unwrap()
-            .into();
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone()).unwrap();
+        let block: GethData = test_ctx.clone().into();
 
         // collect return opcode, retrieve next step, assure both contract create
         // successfully
@@ -659,7 +657,6 @@ mod test {
             .iter()
             .for_each(|size| assert_eq!(size, &Word::zero()));
 
-        let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
-        CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
+        CircuitTestBuilder::new_from_test_ctx(test_ctx).run();
     }
 }
