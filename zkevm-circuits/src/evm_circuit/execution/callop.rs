@@ -176,6 +176,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                     caller_address.expr(),
                     callee_address.expr(),
                     not::expr(call_gadget.callee_not_exists.expr()),
+                    0.expr(),
                     call_gadget.value.clone(),
                     &mut callee_reversion_info,
                 )

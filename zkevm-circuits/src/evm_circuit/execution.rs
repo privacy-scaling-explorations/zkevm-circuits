@@ -56,6 +56,7 @@ mod chainid;
 mod codecopy;
 mod codesize;
 mod comparator;
+mod create;
 mod dummy;
 mod dup;
 mod end_block;
@@ -127,6 +128,7 @@ use chainid::ChainIdGadget;
 use codecopy::CodeCopyGadget;
 use codesize::CodesizeGadget;
 use comparator::ComparatorGadget;
+use create::CreateGadget;
 use dummy::DummyGadget;
 use dup::DupGadget;
 use end_block::EndBlockGadget;
@@ -265,8 +267,8 @@ pub(crate) struct ExecutionConfig<F> {
     shl_shr_gadget: Box<ShlShrGadget<F>>,
     returndatasize_gadget: Box<ReturnDataSizeGadget<F>>,
     returndatacopy_gadget: Box<ReturnDataCopyGadget<F>>,
-    create_gadget: Box<DummyGadget<F, 3, 1, { ExecutionState::CREATE }>>,
-    create2_gadget: Box<DummyGadget<F, 4, 1, { ExecutionState::CREATE2 }>>,
+    create_gadget: Box<CreateGadget<F, false, { ExecutionState::CREATE }>>,
+    create2_gadget: Box<CreateGadget<F, true, { ExecutionState::CREATE2 }>>,
     selfdestruct_gadget: Box<DummyGadget<F, 1, 0, { ExecutionState::SELFDESTRUCT }>>,
     signed_comparator_gadget: Box<SignedComparatorGadget<F>>,
     signextend_gadget: Box<SignextendGadget<F>>,
