@@ -1,7 +1,7 @@
 //! Definition of each opcode of the EVM.
 use crate::{
-    circuit_input_builder::{CircuitInputStateRef, ExecState, ExecStep},
-    error::{ExecError, OogError},
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    error::{ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
     operation::TxAccessListAccountOp,
     Error,
@@ -286,8 +286,25 @@ fn fn_gen_error_state_associated_ops(
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
-        // call & callcode can encounter InsufficientBalance error, Use pop-7 generic CallOpcode
-        ExecError::InsufficientBalance => Some(CallOpcode::<7>::gen_associated_ops),
+        ExecError::InsufficientBalance(InsufficientBalanceError::Call) => {
+            Some(CallOpcode::<7>::gen_associated_ops)
+        }
+        // create & create2 can encounter insufficient balance.
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create) => {
+            Some(DummyCreate::<false>::gen_associated_ops)
+        }
+        ExecError::InsufficientBalance(InsufficientBalanceError::Create2) => {
+            Some(DummyCreate::<true>::gen_associated_ops)
+        }
+        // only create2 may cause ContractAddressCollision error, so use DummyCreate::<true>.
+        ExecError::ContractAddressCollision => Some(DummyCreate::<true>::gen_associated_ops),
+        // create & create2 can encounter nonce uint overflow.
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create) => {
+            Some(DummyCreate::<false>::gen_associated_ops)
+        }
+        ExecError::NonceUintOverflow(NonceUintOverflowError::Create2) => {
+            Some(DummyCreate::<true>::gen_associated_ops)
+        }
         ExecError::WriteProtection => Some(ErrorWriteProtection::gen_associated_ops),
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
         ExecError::Depth => {
