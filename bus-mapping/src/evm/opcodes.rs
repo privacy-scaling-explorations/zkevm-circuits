@@ -43,6 +43,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod push0;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
@@ -208,6 +209,7 @@ fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
         OpcodeId::MSIZE => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::GAS => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::JUMPDEST => Dummy::gen_associated_ops,
+        OpcodeId::PUSH0 => StackOnlyOpcode::<0, 1>::gen_associated_ops,
         OpcodeId::DUP1 => Dup::<1>::gen_associated_ops,
         OpcodeId::DUP2 => Dup::<2>::gen_associated_ops,
         OpcodeId::DUP3 => Dup::<3>::gen_associated_ops,
