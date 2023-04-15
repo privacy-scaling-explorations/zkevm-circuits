@@ -184,6 +184,7 @@ impl From<&circuit_input_builder::ExecStep> for ExecutionState {
                     OpcodeId::RETURN | OpcodeId::REVERT => ExecutionState::RETURN_REVERT,
                     OpcodeId::RETURNDATASIZE => ExecutionState::RETURNDATASIZE,
                     OpcodeId::RETURNDATACOPY => ExecutionState::RETURNDATACOPY,
+                    OpcodeId::PUSH0 => ExecutionState::PUSH0,
                     // dummy ops
                     OpcodeId::EXTCODECOPY => dummy!(ExecutionState::EXTCODECOPY),
                     OpcodeId::CREATE => dummy!(ExecutionState::CREATE),
