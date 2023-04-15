@@ -96,6 +96,11 @@ impl Bytecode {
 
     /// Push
     pub fn push<T: ToWord>(&mut self, n: u8, value: T) -> &mut Self {
+        if n == 0 {
+            self.write_op(OpcodeId::PUSH0);
+            return self;
+        }
+
         debug_assert!((1..=32).contains(&n), "invalid push");
         let value = value.to_word();
 
@@ -285,6 +290,10 @@ impl FromStr for OpcodeWithData {
         if let Some(push) = op.strip_prefix("PUSH") {
             let n_value: Vec<_> = push.splitn(3, ['(', ')']).collect();
             let n = n_value[0].parse::<u8>().map_err(|_| err())?;
+            if n == 0 {
+                // Handle special case here to keep parser simple
+                return Ok(OpcodeWithData::Opcode(OpcodeId::PUSH0));
+            }
             if n < 1 || n > 32 {
                 return Err(err());
             }
@@ -417,6 +426,8 @@ mod tests {
             PUSH32(0x432)
             MUL
             CALLVALUE
+            PUSH0
+            POP
             CALLER
             POP
             POP
@@ -432,6 +443,7 @@ mod tests {
             PUSH1(5)
             PUSH2(0xa)
             MUL
+            PUSH0
             STOP
         };
         let mut code2 = Bytecode::default();
