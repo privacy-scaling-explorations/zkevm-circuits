@@ -119,6 +119,7 @@ func (a *Asm) JumpI(label ...string) *Asm    { return a.jump(vm.JUMPI, label...)
 func (a *Asm) PC() *Asm                      { return a.appendByte(vm.PC) }
 func (a *Asm) MSize() *Asm                   { return a.appendByte(vm.MSIZE) }
 func (a *Asm) Gas() *Asm                     { return a.appendByte(vm.GAS) }
+func (a *Asm) Push0() *Asm                   { return a.appendByte(vm.PUSH0) }
 func (a *Asm) JumpDest(label ...string) *Asm { return a.jumpDest(label...) }
 
 // 0x60 range
