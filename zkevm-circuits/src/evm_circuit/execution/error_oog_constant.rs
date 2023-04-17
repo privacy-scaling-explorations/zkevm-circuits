@@ -96,7 +96,8 @@ mod test {
     };
 
     use mock::{
-        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOCK_ACCOUNTS, MockTransaction,
+        eth, gwei, test_ctx::helpers::account_0_code_account_1_no_code, MockTransaction,
+        TestContext, MOCK_ACCOUNTS,
     };
 
     fn gas(call_data: &[u8]) -> Word {
