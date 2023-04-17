@@ -351,23 +351,6 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             .concat();
         }
 
-        // Shift the value bytes to the start of the row
-        if row.get_type() == MptWitnessRowType::AccountLeafRootCodehashS
-            || row.get_type() == MptWitnessRowType::AccountLeafRootCodehashC
-        {
-            let storage_root = row.bytes[1..34].to_owned();
-            let codehash = row.bytes[35..68].to_owned();
-
-            row.bytes = [
-                storage_root,
-                vec![0; 1],
-                codehash,
-                vec![0; 1],
-                row.bytes[68..].to_owned(),
-            ]
-            .concat();
-        }
-
         if row.get_type() == MptWitnessRowType::InitBranch {
             // Extract the RLP bytes
             row.rlp_bytes = [row.bytes[4..7].to_owned(), row.bytes[7..10].to_owned()].concat();
