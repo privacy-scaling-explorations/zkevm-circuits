@@ -216,10 +216,27 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        value: Word,
+        value: u8,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
         self.push_op(step, RW::READ, MemoryOp::new(call_id, address, value));
+        Ok(())
+    }
+
+    /// Push a read type [`MemoryOp`] into the
+    /// [`OperationContainer`](crate::operation::OperationContainer) with the
+    /// next [`RWCounter`](crate::operation::RWCounter) and `call_id`, and then
+    /// adds a reference to the stored operation ([`OperationRef`]) inside
+    /// the bus-mapping instance of the current [`ExecStep`].  Then increase
+    /// the `block_ctx` [`RWCounter`](crate::operation::RWCounter) by one.
+    pub fn memory_read_word(
+        &mut self,
+        step: &mut ExecStep,
+        address: MemoryAddress,
+        value: Word,
+    ) -> Result<(), Error> {
+        let call_id = self.call()?.call_id;
+        self.push_op(step, RW::READ, MemoryWordOp::new(call_id, address, value));
         Ok(())
     }
 
@@ -233,7 +250,7 @@ impl<'a> CircuitInputStateRef<'a> {
         &mut self,
         step: &mut ExecStep,
         address: MemoryAddress,
-        value: Word,
+        value: u8,
     ) -> Result<(), Error> {
         let call_id = self.call()?.call_id;
         self.push_op(step, RW::WRITE, MemoryOp::new(call_id, address, value));
@@ -1605,6 +1622,7 @@ impl<'a> CircuitInputStateRef<'a> {
                 (0, false)
             };
             copy_steps.push(step);
+            //TODO: change value to Word
             self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
         }
 

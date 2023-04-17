@@ -3,7 +3,7 @@ use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     Error,
 };
-use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian};
+use eth_types::{evm_types::MemoryAddress, GethExecStep, ToBigEndian, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the [`OpcodeId::MLOAD`](crate::evm::OpcodeId::MLOAD)
@@ -35,25 +35,38 @@ impl Opcode for Mload {
         let mem_read_value = geth_steps[1].stack.last()?;
 
         // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
+        let mut memory = state.call_ctx_mut()?.memory.clone();
+        let offset = stack_value_read.as_u64();
+        // expand to offset + 64 to enusre addr_right_Word without out of boundary
+        let minimal_length = offset + 64;
         
+        memory.extend_at_least(minimal_length as usize);
+
+        let shift= offset % 32;
+        let slot = offset - shift;
+
+        let mut slot_bytes: [u8; 32] = [0; 32];
+        slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
+
+        let addr_left_Word = Word::from_little_endian(&slot_bytes);
+        // TODO: edge case: if shift = 0, skip to read right word
+        let mut word_right_bytes: [u8; 32] = [0; 32];
+        slot_bytes.clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
+
+        
+        let addr_right_Word = Word::from_little_endian(&word_right_bytes);
+
         // First stack write
         //
         state.stack_write(&mut exec_step, stack_position, mem_read_value)?;
 
         // First mem read -> 32 MemoryOp generated.
-        for byte in mem_read_value.to_be_bytes() {
-            state.memory_read(&mut exec_step, mem_read_addr, byte)?;
-
-            // Update mem_read_addr to next byte's one
-            mem_read_addr += MemoryAddress::from(1);
-        }
+        state.memory_read_word(&mut exec_step, slot.into(), addr_left_Word)?;
+        state.memory_read_word(&mut exec_step, (slot + 32).into(), addr_right_Word)?;
 
         // reconstruction
-        let offset = geth_step.stack.nth_last(0)?;
-        let offset_addr: MemoryAddress = offset.try_into()?;
 
-        let minimal_length = offset_addr.0 + 32;
-        state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
+         state.call_ctx_mut()?.memory.extend_at_least(minimal_length as usize);
 
         Ok(vec![exec_step])
     }
@@ -65,7 +78,7 @@ mod mload_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryOp, StackOp, RW},
+        operation::{MemoryOp, MemoryWordOp, StackOp, RW},
     };
     use eth_types::{
         bytecode,
@@ -124,18 +137,25 @@ mod mload_tests {
             ]
         );
 
+        let shift =  0x40 % 32;
+        let slot = 0x40 - shift;
+        let memory_words = &builder.block.container.memory_word;
         assert_eq!(
-            (2..34)
-                .map(|idx| &builder.block.container.memory
+            (2..3)
+                .map(|idx| &builder.block.container.memory_word
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
-            Word::from(0x80)
-                .to_be_bytes()
-                .into_iter()
-                .enumerate()
-                .map(|(idx, byte)| (RW::READ, MemoryOp::new(1, MemoryAddress(idx + 0x40), byte)))
-                .collect_vec()
+                vec![(
+                    RW::WRITE,
+                    MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
+                ), 
+                // (
+                //     RW::WRITE,
+                //     MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                // ),
+                ]
         )
+    
     }
 }

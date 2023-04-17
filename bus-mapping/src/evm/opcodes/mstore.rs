@@ -1,3 +1,5 @@
+use std::mem;
+
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
@@ -32,21 +34,54 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let offset_addr: MemoryAddress = offset.try_into()?;
         // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
         
-        //let call_ctx = state.call_ctx_mut()?;
         let mut memory = state.call_ctx_mut()?.memory.clone();
-        let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1 } else { 32 };
-        println!("IS_MSTORE8 {}", IS_MSTORE8);
+        // expand memory size + 64 as slot 
+        let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1  } else { 64 /* 32 */ };
+        println!("minimal_length {} , IS_MSTORE8 {}, memory_length {}", minimal_length, IS_MSTORE8, memory.0.len());
         
         memory.extend_at_least(minimal_length);
 
-        let shift= offset.as_u64() % 32;
-        let slot = offset.as_u64() - shift;
+        let offset_u64 = offset.as_u64();
+        let shift= offset_u64 % 32;
+        let slot = offset_u64 - shift;
+        println!("shift {}, slot {}", shift, slot);
+        // reconstruct memory with value  
+        match IS_MSTORE8 {
+            true => {
+                //let bytes=  *value.to_le_bytes().to_vec();
+                let val = *value.to_le_bytes().first().unwrap();
+                let word_v8= Word::from(val as u64);
+                memory.0[offset_u64 as usize] = val;
+            }
+            false => {
+                let bytes = value.to_be_bytes();
+                memory[offset_u64 as usize..offset_u64 as usize + 32].copy_from_slice(&bytes);
+            }
+        }
 
-
+        // after memory construction, we can get slot_Word(left_Word), right_word to fill buss mapping. 
         let mut slot_bytes: [u8; 32] = [0; 32];
-        slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize+ 32)]);
+        let mut addr_left_Word = Word::zero();
 
-        let addr_left_Word = Word::from_little_endian(&slot_bytes);
+        if IS_MSTORE8 {
+            let byte = *value.to_le_bytes().first().unwrap();
+            addr_left_Word = Word::from(byte as u64);
+        }else {
+            slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
+            Word::from_big_endian(&slot_bytes);
+        }
+
+        // TODO: edge case: if shift = 0, no need to right word
+        let mut word_right_bytes: [u8; 32] = [0; 32];
+        let cur_memory_size = memory.0.len();
+        // when is_msotre8, skip word_right as mstore8 only affect one word.
+        if !IS_MSTORE8 { 
+            slot_bytes.clone_from_slice(&memory.0[(slot as usize + 32)..cur_memory_size]);
+        }
+      
+        // construct right word
+        let addr_right_Word = Word::from_big_endian(&word_right_bytes);
+
         // address = 100, slot = 96 shift = 4
         // value = address + 32 = 132
         // left word = slot ( 96...96+32 bytes) slot = 128...128+32 word(fill 0)
@@ -60,11 +95,18 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
                 )?;
             }
             false => {
-                // stack write each byte for mstore
-                let bytes = value.to_be_bytes();
-                for (i, byte) in bytes.iter().enumerate() {
-                    state.memory_write(&mut exec_step, offset_addr.map(|a| a + i), *byte)?;
-                }
+                // lookup left word
+                state.memory_write_word(
+                    &mut exec_step,
+                    slot.into(),
+                    addr_left_Word,
+                )?;
+                // look up right word
+                state.memory_write_word(
+                    &mut exec_step,
+                    (slot + 32).into(),
+                    addr_right_Word,
+                )?;
             }
         }
 
@@ -74,18 +116,18 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let offset_addr: MemoryAddress = offset.try_into()?;
 
         let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1 } else { 32 };
-        memory.extend_at_least(minimal_length);
+        state.call_ctx_mut()?.memory.extend_at_least(minimal_length);
 
         let mem_starts = offset_addr.0;
 
         match IS_MSTORE8 {
             true => {
                 let val = *value.to_le_bytes().first().unwrap();
-                memory.0[mem_starts] = val;
+                state.call_ctx_mut()?.memory.0[mem_starts] = val;
             }
             false => {
                 let bytes = value.to_be_bytes();
-                memory[mem_starts..mem_starts + 32].copy_from_slice(&bytes);
+                state.call_ctx_mut()?.memory[mem_starts..mem_starts + 32].copy_from_slice(&bytes);
             }
         }
 
@@ -99,13 +141,13 @@ mod mstore_tests {
     use crate::{
         circuit_input_builder::ExecState,
         mock::BlockData,
-        operation::{MemoryOp, StackOp, RW},
+        operation::{MemoryOp, StackOp, RW, MemoryWordOp},
     };
     use eth_types::{
         bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        Word,
+        Word, U256,
     };
     use itertools::Itertools;
     use mock::test_ctx::{helpers::*, TestContext};
@@ -159,21 +201,23 @@ mod mstore_tests {
             ]
         );
 
+        let shift =  0x100 % 32;
+        let slot = 0x100 - shift;
         assert_eq!(
-            (2..34)
-                .map(|idx| &builder.block.container.memory
+            (2..4)
+                .map(|idx| &builder.block.container.memory_word
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
-            Word::from(0x1234u64)
-                .to_be_bytes()
-                .into_iter()
-                .enumerate()
-                .map(|(idx, byte)| (
+                vec![(
                     RW::WRITE,
-                    MemoryOp::new(1, MemoryAddress(idx + 0x100), byte)
-                ))
-                .collect_vec()
+                    MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x1234u64))
+                ), 
+                (
+                    RW::WRITE,
+                    MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                ),
+                ]
         )
     }
 
@@ -224,10 +268,12 @@ mod mstore_tests {
             ]
         );
 
-        let memory_op = &builder.block.container.memory[step.bus_mapping_instance[2].as_usize()];
+        let shift =  0x100 % 32;
+        let slot = 0x100 - shift;
+        let memory_word_op = &builder.block.container.memory_word[step.bus_mapping_instance[2].as_usize()];
         assert_eq!(
-            (memory_op.rw(), memory_op.op()),
-            (RW::WRITE, &MemoryOp::new(1, MemoryAddress(0x100), 0x34))
+            (memory_word_op.rw(), memory_word_op.op()),
+            (RW::WRITE, &MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x34)))
         )
     }
 }

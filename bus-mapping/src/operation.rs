@@ -128,7 +128,7 @@ pub struct MemoryOp {
     /// Memory Address
     pub address: MemoryAddress,
     /// Value
-    pub value: Word,
+    pub value: u8,
 }
 
 impl fmt::Debug for MemoryOp {
@@ -144,7 +144,7 @@ impl fmt::Debug for MemoryOp {
 
 impl MemoryOp {
     /// Create a new instance of a `MemoryOp` from it's components.
-    pub fn new(call_id: usize, address: MemoryAddress, value: Word) -> MemoryOp {
+    pub fn new(call_id: usize, address: MemoryAddress, value: u8) -> MemoryOp {
         MemoryOp {
             call_id,
             address,
@@ -168,7 +168,7 @@ impl MemoryOp {
     }
 
     /// Returns the bytes read or written by this operation.
-    pub fn value(&self) -> Word {
+    pub fn value(&self) -> u8 {
         self.value
     }
 }

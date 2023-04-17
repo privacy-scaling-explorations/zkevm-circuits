@@ -141,8 +141,8 @@ impl Bytecode {
     /// Setup state
     pub fn setup_state(&mut self) -> &mut Self {
         self.append(&crate::bytecode! {
-            PUSH1(0x80u64)
-            PUSH1(0x40u64)
+            PUSH1(0x80u64) // value
+            PUSH1(0x40u64) // offset
             MSTORE
         });
         self
