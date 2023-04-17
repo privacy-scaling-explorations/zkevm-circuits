@@ -136,16 +136,6 @@ impl Opcode for Dummy {
     }
 }
 
-#[allow(unused_variables)]
-impl TxExecSteps for Dummy {
-    fn gen_associated_steps(
-        state: &mut CircuitInputStateRef,
-        execution_step: ExecState,
-    ) -> Result<ExecStep, Error> {
-        Ok(state.new_begin_tx_step())
-    }
-}
-
 type FnGenAssociatedOps = fn(
     state: &mut CircuitInputStateRef,
     geth_steps: &[GethExecStep],
