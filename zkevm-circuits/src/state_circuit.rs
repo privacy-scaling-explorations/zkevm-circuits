@@ -107,13 +107,13 @@ impl<F: Field> SubCircuitConfig<F> for StateCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
-        let selector = meta.fixed_column();
+        let selector = rw_table.q_enable;
         log::debug!("state circuit selector {:?}", selector);
         let lookups = LookupsChip::configure(meta);
         let power_of_randomness: [Expression<F>; 31] = challenges.evm_word_powers_of_randomness();
 
         let rw_counter = MpiChip::configure(meta, selector, rw_table.rw_counter, lookups);
-        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag));
+        let tag = BinaryNumberChip::configure(meta, selector, Some(rw_table.tag.into()));
         let id = MpiChip::configure(meta, selector, rw_table.id, lookups);
         let address = MpiChip::configure(meta, selector, rw_table.address, lookups);
 
@@ -596,7 +596,6 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
     let first_different_limb = c.lexicographic_ordering.first_different_limb;
     let final_bits_sum = meta.query_advice(first_different_limb.bits[3], Rotation::cur())
         + meta.query_advice(first_different_limb.bits[4], Rotation::cur());
-    let mpt_update_table_expressions = c.mpt_table.table_exprs(meta);
 
     Queries {
         selector: meta.query_fixed(c.selector, Rotation::cur()),
@@ -616,15 +615,15 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
             value_prev: meta.query_advice(c.rw_table.value, Rotation::prev()),
             value_prev_column: meta.query_advice(c.rw_table.value_prev, Rotation::cur()),
         },
-        // TODO: clean this up
         mpt_update_table: MptUpdateTableQueries {
-            address: mpt_update_table_expressions[0].clone(),
-            storage_key: mpt_update_table_expressions[1].clone(),
-            proof_type: mpt_update_table_expressions[2].clone(),
-            new_root: mpt_update_table_expressions[3].clone(),
-            old_root: mpt_update_table_expressions[4].clone(),
-            new_value: mpt_update_table_expressions[5].clone(),
-            old_value: mpt_update_table_expressions[6].clone(),
+            q_enable: meta.query_fixed(c.mpt_table.q_enable, Rotation::cur()),
+            address: meta.query_advice(c.mpt_table.address, Rotation::cur()),
+            storage_key: meta.query_advice(c.mpt_table.storage_key, Rotation::cur()),
+            proof_type: meta.query_advice(c.mpt_table.proof_type, Rotation::cur()),
+            new_root: meta.query_advice(c.mpt_table.new_root, Rotation::cur()),
+            old_root: meta.query_advice(c.mpt_table.old_root, Rotation::cur()),
+            new_value: meta.query_advice(c.mpt_table.new_value, Rotation::cur()),
+            old_value: meta.query_advice(c.mpt_table.old_value, Rotation::cur()),
         },
         lexicographic_ordering_selector: meta
             .query_fixed(c.lexicographic_ordering.selector, Rotation::cur()),

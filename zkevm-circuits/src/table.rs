@@ -162,6 +162,8 @@ pub type TxContextFieldTag = TxFieldTag;
 /// Table that contains the fields of all Transactions in a block
 #[derive(Clone, Debug)]
 pub struct TxTable {
+    /// q_enable
+    pub q_enable: Column<Fixed>,
     /// Tx ID
     pub tx_id: Column<Advice>,
     /// Tag (TxContextFieldTag)
@@ -176,6 +178,7 @@ impl TxTable {
     /// Construct a new TxTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
@@ -211,6 +214,7 @@ impl TxTable {
         fn assign_row<F: Field>(
             region: &mut Region<'_, F>,
             offset: usize,
+            q_enable: Column<Fixed>,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
             row: &[Value<F>; 4],
@@ -224,6 +228,12 @@ impl TxTable {
                     || row[if index > 0 { index + 1 } else { index }],
                 )?;
             }
+            region.assign_fixed(
+                || format!("tx table q_enable row {}", offset),
+                q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
             region.assign_fixed(
                 || format!("tx table {} row {}", msg, offset),
                 *tag,
@@ -241,6 +251,7 @@ impl TxTable {
                 assign_row(
                     &mut region,
                     offset,
+                    self.q_enable,
                     &advice_columns,
                     &self.tag,
                     &[(); 4].map(|_| Value::known(F::zero())),
@@ -269,14 +280,35 @@ impl TxTable {
                     let tx_data = tx.table_assignments_fixed(*challenges);
                     let tx_calldata = tx.table_assignments_dyn(*challenges);
                     for row in tx_data {
-                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                        assign_row(
+                            &mut region,
+                            offset,
+                            self.q_enable,
+                            &advice_columns,
+                            &self.tag,
+                            &row,
+                            "",
+                        )?;
                         offset += 1;
                     }
                     calldata_assignments.extend(tx_calldata.iter());
                 }
                 // Assign Tx calldata
-                for row in calldata_assignments.into_iter() {
-                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                let dummy_row = [Value::known(F::zero()); 4];
+                for row in calldata_assignments
+                    .into_iter()
+                    .chain(repeat(dummy_row))
+                    .take(max_calldata)
+                {
+                    assign_row(
+                        &mut region,
+                        offset,
+                        self.q_enable,
+                        &advice_columns,
+                        &self.tag,
+                        &row,
+                        "",
+                    )?;
                     offset += 1;
                 }
                 Ok(())
@@ -288,6 +320,7 @@ impl TxTable {
 impl<F: Field> LookupTable<F> for TxTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
@@ -297,6 +330,7 @@ impl<F: Field> LookupTable<F> for TxTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("tx_id"),
             String::from("tag"),
             String::from("index"),
@@ -306,6 +340,7 @@ impl<F: Field> LookupTable<F> for TxTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
@@ -467,6 +502,8 @@ impl_expr!(CallContextFieldTag);
 /// traces of the EVM state operations.
 #[derive(Clone, Copy, Debug)]
 pub struct RwTable {
+    /// Is enable
+    pub q_enable: Column<Fixed>,
     /// Read Write Counter
     pub rw_counter: Column<Advice>,
     /// Is Write
@@ -494,6 +531,7 @@ pub struct RwTable {
 impl<F: Field> LookupTable<F> for RwTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.rw_counter.into(),
             self.is_write.into(),
             self.tag.into(),
@@ -510,6 +548,7 @@ impl<F: Field> LookupTable<F> for RwTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("rw_counter"),
             String::from("is_write"),
             String::from("tag"),
@@ -528,6 +567,7 @@ impl RwTable {
     /// Construct a new RwTable
     pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             rw_counter: meta.advice_column(),
             is_write: meta.advice_column(),
             tag: meta.advice_column(),
@@ -549,6 +589,12 @@ impl RwTable {
         offset: usize,
         row: &RwRow<Value<F>>,
     ) -> Result<(), Error> {
+        region.assign_fixed(
+            || "assign rw row on rw table",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
         for (column, value) in [
             (self.rw_counter, row.rw_counter),
             (self.is_write, row.is_write),
@@ -634,15 +680,42 @@ impl From<AccountFieldTag> for MPTProofType {
 
 /// The MptTable shared between MPT Circuit and State Circuit
 #[derive(Clone, Copy, Debug)]
-pub struct MptTable(pub [Column<Advice>; 7]);
+pub struct MptTable {
+    /// q_enable
+    pub q_enable: Column<Fixed>,
+    /// Address
+    pub address: Column<Advice>,
+    /// Storage key
+    pub storage_key: Column<Advice>,
+    /// Proof type
+    pub proof_type: Column<Advice>,
+    /// New root
+    pub new_root: Column<Advice>,
+    /// Old root
+    pub old_root: Column<Advice>,
+    /// New value
+    pub new_value: Column<Advice>,
+    /// Old value
+    pub old_value: Column<Advice>,
+}
 
 impl<F: Field> LookupTable<F> for MptTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        self.0.iter().map(|&col| col.into()).collect()
+        vec![
+            self.q_enable.into(),
+            self.address.into(),
+            self.storage_key.into(),
+            self.proof_type.into(),
+            self.new_root.into(),
+            self.old_root.into(),
+            self.new_value.into(),
+            self.old_value.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("address"),
             String::from("storage_key"),
             String::from("proof_type"),
@@ -657,15 +730,16 @@ impl<F: Field> LookupTable<F> for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([
-            meta.advice_column(),               // Address
-            meta.advice_column_in(SecondPhase), // Storage key
-            meta.advice_column(),               // Proof type
-            meta.advice_column_in(SecondPhase), // New root
-            meta.advice_column_in(SecondPhase), // Old root
-            meta.advice_column_in(SecondPhase), // New value
-            meta.advice_column_in(SecondPhase), // Old value
-        ])
+        Self {
+            q_enable: meta.fixed_column(),
+            address: meta.advice_column(),
+            storage_key: meta.advice_column_in(SecondPhase),
+            proof_type: meta.advice_column(),
+            new_root: meta.advice_column_in(SecondPhase),
+            old_root: meta.advice_column_in(SecondPhase),
+            new_value: meta.advice_column_in(SecondPhase),
+            old_value: meta.advice_column_in(SecondPhase),
+        }
     }
 
     pub(crate) fn assign<F: Field>(
@@ -674,7 +748,14 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row.values()) {
+        region.assign_fixed(
+            || "assign mpt table row value",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
+        let mpt_table_columns = <MptTable as LookupTable<F>>::advice_columns(self);
+        for (column, value) in mpt_table_columns.iter().zip_eq(row.values()) {
             region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
         }
         Ok(())
@@ -710,15 +791,36 @@ impl MptTable {
 /// the 5 cols represent [index(final hash of inputs), input0, input1, control,
 /// heading mark]
 #[derive(Clone, Copy, Debug)]
-pub struct PoseidonTable(pub [Column<Advice>; 5]);
+pub struct PoseidonTable {
+    /// Is Enabled
+    pub q_enable: Column<Fixed>,
+    /// Hash id
+    pub hash_id: Column<Advice>,
+    /// input0
+    pub input0: Column<Advice>,
+    /// input1
+    pub input1: Column<Advice>,
+    /// control
+    pub control: Column<Advice>,
+    /// heading_mark
+    pub heading_mark: Column<Advice>,
+}
 
 impl<F: Field> LookupTable<F> for PoseidonTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        self.0.iter().map(|c| Column::<Any>::from(*c)).collect()
+        vec![
+            self.q_enable.into(),
+            self.hash_id.into(),
+            self.input0.into(),
+            self.input1.into(),
+            self.control.into(),
+            self.heading_mark.into(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("hash_id"),
             String::from("input0"),
             String::from("input1"),
@@ -737,18 +839,26 @@ impl PoseidonTable {
 
     /// Construct a new PoseidonTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([
-            meta.advice_column_in(SecondPhase),
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-            meta.advice_column(),
-        ])
+        Self {
+            q_enable: meta.fixed_column(),
+            hash_id: meta.advice_column_in(SecondPhase),
+            input0: meta.advice_column(),
+            input1: meta.advice_column(),
+            control: meta.advice_column(),
+            heading_mark: meta.advice_column(),
+        }
     }
 
     /// Construct a new PoseidonTable for dev (no secondphase, mpt only)
     pub(crate) fn dev_construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self([0; 5].map(|_| meta.advice_column()))
+        Self {
+            q_enable: meta.fixed_column(),
+            hash_id: meta.advice_column(),
+            input0: meta.advice_column(),
+            input1: meta.advice_column(),
+            control: meta.advice_column(),
+            heading_mark: meta.advice_column(),
+        }
     }
 
     pub(crate) fn assign<F: Field>(
@@ -757,19 +867,32 @@ impl PoseidonTable {
         offset: usize,
         row: &[Value<F>],
     ) -> Result<(), Error> {
-        for (column, value) in self.0.iter().zip_eq(row) {
-            region.assign_advice(|| "assign mpt table row value", *column, offset, || *value)?;
+        region.assign_fixed(
+            || "assign poseidon table row value",
+            self.q_enable,
+            offset,
+            || Value::known(F::one()),
+        )?;
+        let poseidon_table_columns = <PoseidonTable as LookupTable<F>>::advice_columns(self);
+        for (column, value) in poseidon_table_columns.iter().zip_eq(row) {
+            region.assign_advice(
+                || "assign poseidon table row value",
+                *column,
+                offset,
+                || *value,
+            )?;
         }
         Ok(())
     }
 
+    // Is this method used anyhwhere?
     pub(crate) fn load<'d, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         hashes: impl Iterator<Item = &'d [Value<F>]> + Clone,
     ) -> Result<(), Error> {
         layouter.assign_region(
-            || "mpt table",
+            || "poseidon table",
             |mut region| self.load_with_region(&mut region, hashes.clone()),
         )
     }
@@ -779,7 +902,7 @@ impl PoseidonTable {
         region: &mut Region<'_, F>,
         hashes: impl Iterator<Item = &'d [Value<F>]>,
     ) -> Result<(), Error> {
-        self.assign(region, 0, [Value::known(F::zero()); 7].as_slice())?;
+        self.assign(region, 0, [Value::known(F::zero()); 5].as_slice())?;
         for (offset, row) in hashes.enumerate() {
             self.assign(region, offset + 1, row)?;
         }
@@ -805,6 +928,13 @@ impl PoseidonTable {
                 let mut offset = 0;
                 let poseidon_table_columns =
                     <PoseidonTable as LookupTable<F>>::advice_columns(self);
+
+                region.assign_fixed(
+                    || "poseidon table all-zero row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in poseidon_table_columns.iter().copied() {
                     region.assign_advice(
                         || "poseidon table all-zero row",
@@ -816,6 +946,12 @@ impl PoseidonTable {
                 offset += 1;
                 let nil_hash =
                     Value::known(CodeDB::empty_code_hash().to_word().to_scalar().unwrap());
+                region.assign_fixed(
+                    || "poseidon table nil input row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for (column, value) in poseidon_table_columns
                     .iter()
                     .copied()
@@ -850,6 +986,12 @@ impl PoseidonTable {
                         let control_len_as_flag =
                             F::from_u128(HASHABLE_DOMAIN_SPEC * control_len as u128);
 
+                        region.assign_fixed(
+                            || format!("poseidon table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (column, value) in poseidon_table_columns.iter().zip_eq(
                             once(ref_hash)
                                 .chain(row.map(Value::known))
@@ -1052,7 +1194,7 @@ impl From<BlockContextFieldTag> for usize {
 #[derive(Clone, Debug)]
 pub struct BlockTable {
     /// Tag
-    pub tag: Column<Advice>,
+    pub tag: Column<Fixed>,
     /// Index
     pub index: Column<Advice>,
     /// Value
@@ -1063,14 +1205,14 @@ impl BlockTable {
     /// Construct a new BlockTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            tag: meta.advice_column(),
+            tag: meta.fixed_column(),
             index: meta.advice_column(),
             value: meta.advice_column_in(SecondPhase),
         }
     }
 
     /// Assign the `BlockTable` from a `BlockContext`.
-    pub fn load<F: Field>(
+    pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         block_ctxs: &BlockContexts,
@@ -1105,12 +1247,18 @@ impl BlockTable {
                         .count();
                     cum_num_txs += num_txs;
                     for row in block_ctx.table_assignments(num_txs, cum_num_txs, challenges) {
-                        for (column, value) in block_table_columns.iter().zip_eq(row) {
+                        region.assign_fixed(
+                            || format!("block table row {}", offset),
+                            self.tag,
+                            offset,
+                            || row[0],
+                        )?;
+                        for (column, value) in block_table_columns.iter().zip_eq(&row[1..]) {
                             region.assign_advice(
                                 || format!("block table row {}", offset),
                                 *column,
                                 offset,
-                                || value,
+                                || *value,
                             )?;
                         }
                         offset += 1;
@@ -1305,6 +1453,8 @@ impl KeccakTable {
 /// TxLogs and TxCallData.
 #[derive(Clone, Copy, Debug)]
 pub struct CopyTable {
+    /// Is enable
+    pub q_enable: Column<Fixed>,
     /// Whether the row is the first read-write pair for a copy event.
     pub is_first: Column<Advice>,
     /// The relevant ID for the read-write row, represented as a random linear
@@ -1343,6 +1493,7 @@ impl CopyTable {
     /// Construct a new CopyTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>, q_enable: Column<Fixed>) -> Self {
         Self {
+            q_enable,
             is_first: meta.advice_column(),
             id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
@@ -1499,7 +1650,7 @@ impl CopyTable {
     }
 
     /// Assign the `CopyTable` from a `Block`.
-    pub fn load<F: Field>(
+    pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
@@ -1509,6 +1660,12 @@ impl CopyTable {
             || "copy table",
             |mut region| {
                 let mut offset = 0;
+                region.assign_fixed(
+                    || "copy table all-zero row",
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in <CopyTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || "copy table all-zero row",
@@ -1523,6 +1680,12 @@ impl CopyTable {
                 let copy_table_columns = <CopyTable as LookupTable<F>>::advice_columns(self);
                 for copy_event in block.copy_events.iter() {
                     for (tag, row, _) in Self::assignments(copy_event, *challenges) {
+                        region.assign_fixed(
+                            || format!("q_enable at row: {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, (value, label)) in copy_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("{} at row: {}", label, offset),
@@ -1545,6 +1708,7 @@ impl CopyTable {
 impl<F: Field> LookupTable<F> for CopyTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.is_first.into(),
             self.id.into(),
             self.addr.into(),
@@ -1558,6 +1722,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("is_first"),
             String::from("id"),
             String::from("addr"),
@@ -1571,6 +1736,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_advice(self.is_first, Rotation::cur()),
             meta.query_advice(self.id, Rotation::cur()), // src_id
             self.tag.value(Rotation::cur())(meta),       // src_tag
@@ -1590,6 +1756,8 @@ impl<F: Field> LookupTable<F> for CopyTable {
 /// Lookup table within the Exponentiation circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
+    /// Whether the row is enabled.
+    pub q_enable: Column<Fixed>,
     /// Whether the row is the start of a step.
     pub is_step: Column<Fixed>,
     /// An identifier for every exponentiation trace, at the moment this is the
@@ -1611,6 +1779,7 @@ impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             is_step: meta.fixed_column(),
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
@@ -1694,7 +1863,7 @@ impl ExpTable {
     }
 
     /// Assign witness data from a block to the exponentiation table.
-    pub fn load<F: Field>(
+    pub fn dev_load<F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
         block: &Block<F>,
@@ -1706,6 +1875,12 @@ impl ExpTable {
                 let exp_table_columns = <ExpTable as LookupTable<F>>::advice_columns(self);
                 for exp_event in block.exp_events.iter() {
                     for row in Self::assignments::<F>(exp_event) {
+                        region.assign_fixed(
+                            || format!("exponentiation table row {}", offset),
+                            self.q_enable,
+                            offset,
+                            || Value::known(F::one()),
+                        )?;
                         for (&column, value) in exp_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
                                 || format!("exponentiation table row {}", offset),
@@ -1731,6 +1906,12 @@ impl ExpTable {
 
                 // pad an empty row
                 let row = [F::from_u128(0); 5];
+                region.assign_fixed(
+                    || format!("exponentiation table row {}", offset),
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),
@@ -1749,6 +1930,7 @@ impl ExpTable {
 impl<F: Field> LookupTable<F> for ExpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.is_step.into(),
             self.identifier.into(),
             self.is_last.into(),
@@ -1760,6 +1942,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("is_step"),
             String::from("identifier"),
             String::from("is_last"),
@@ -1771,6 +1954,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
+            meta.query_fixed(self.q_enable, Rotation::cur()),
             meta.query_fixed(self.is_step, Rotation::cur()),
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
@@ -1789,6 +1973,8 @@ impl<F: Field> LookupTable<F> for ExpTable {
 /// Lookup table embedded in the RLP circuit.
 #[derive(Clone, Copy, Debug)]
 pub struct RlpTable {
+    /// Is enabled
+    pub q_enable: Column<Fixed>,
     /// Transaction ID of the transaction. This is not the transaction hash, but
     /// an incremental ID starting from 1 to indicate the position of the
     /// transaction within the L2 block.
@@ -1813,6 +1999,7 @@ pub struct RlpTable {
 impl<F: Field> LookupTable<F> for RlpTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
+            self.q_enable.into(),
             self.tx_id.into(),
             self.tag.into(),
             self.tag_rindex.into(),
@@ -1824,6 +2011,7 @@ impl<F: Field> LookupTable<F> for RlpTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
+            String::from("q_enable"),
             String::from("tx_id"),
             String::from("tag"),
             String::from("tag_rindex"),
@@ -1838,6 +2026,7 @@ impl RlpTable {
     /// Construct the RLP table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
+            q_enable: meta.fixed_column(),
             tx_id: meta.advice_column(),
             tag: meta.advice_column(),
             tag_rindex: meta.advice_column(),
@@ -1887,6 +2076,12 @@ impl RlpTable {
             || "rlp table",
             |mut region| {
                 let mut offset = 0;
+                region.assign_fixed(
+                    || format!("empty row: {}", offset),
+                    self.q_enable,
+                    offset,
+                    || Value::known(F::one()),
+                )?;
                 for column in <RlpTable as LookupTable<F>>::advice_columns(self) {
                     region.assign_advice(
                         || format!("empty row: {}", offset),
@@ -1898,6 +2093,12 @@ impl RlpTable {
 
                 for row in Self::dev_assignments(txs.clone(), challenges) {
                     offset += 1;
+                    region.assign_fixed(
+                        || format!("row: {}", offset),
+                        self.q_enable,
+                        offset,
+                        || Value::known(F::one()),
+                    )?;
                     for (column, value) in <RlpTable as LookupTable<F>>::advice_columns(self)
                         .iter()
                         .zip(row)

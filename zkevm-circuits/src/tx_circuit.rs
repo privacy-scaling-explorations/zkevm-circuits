@@ -14,7 +14,6 @@ use crate::tx_circuit::sign_verify::pub_key_hash_to_address;
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::TxCircuit as TestTxCircuit;
-use itertools::Itertools;
 
 use crate::{
     evm_circuit::util::constraint_builder::BaseConstraintBuilder,
@@ -183,7 +182,7 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
             challenges: _,
         }: Self::ConfigArgs,
     ) -> Self {
-        let q_enable = meta.fixed_column();
+        let q_enable = tx_table.q_enable;
         let tag = BinaryNumberChip::configure(meta, q_enable, None);
         let rlp_tag = meta.fixed_column();
         let u16_table = meta.lookup_table_column();
@@ -585,28 +584,26 @@ impl<F: Field> SubCircuitConfig<F> for TxCircuitConfig<F> {
                     meta.query_fixed(q_enable, Rotation::cur()),
                     meta.query_advice(is_create, Rotation::cur()),
                 ]);
-
-                vec![
+                let lookup_inputs = [
+                    1.expr(),
                     meta.query_advice(tx_table.tx_id, Rotation::cur()),
                     RlpTxTag::To.expr(),
                     1.expr(), // tag_rindex == 1
                     RlpDataType::TxHash.expr(),
                     meta.query_advice(tx_table.value, Rotation::cur()), // tag_length == 1
-                ]
-                .into_iter()
-                .zip(
-                    vec![
-                        rlp_table.tx_id,
-                        rlp_table.tag,
-                        rlp_table.tag_rindex,
-                        rlp_table.data_type,
-                        rlp_table.tag_length_eq_one,
-                    ]
-                    .into_iter()
-                    .map(|column| meta.query_advice(column, Rotation::cur())),
-                )
-                .map(|(arg, table)| (enable.clone() * arg, table))
-                .collect()
+                ];
+                let lookup_table = [
+                    meta.query_fixed(rlp_table.q_enable, Rotation::cur()),
+                    meta.query_advice(rlp_table.tx_id, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_rindex, Rotation::cur()),
+                    meta.query_advice(rlp_table.data_type, Rotation::cur()),
+                    meta.query_advice(rlp_table.tag_length_eq_one, Rotation::cur()),
+                ];
+                lookup_inputs
+                    .zip(lookup_table)
+                    .map(|(arg, table)| (enable.clone() * arg, table))
+                    .into()
             },
         );
         #[cfg(feature = "reject-eip2718")]
@@ -714,13 +711,6 @@ impl<F: Field> TxCircuitConfig<F> {
         is_padding_tx: bool,
         cum_num_txs: usize,
     ) -> Result<(), Error> {
-        region.assign_fixed(
-            || "q_enable",
-            self.q_enable,
-            *offset,
-            || Value::known(F::one()),
-        )?;
-
         let tag_chip = BinaryNumberChip::construct(self.tag);
         tag_chip.assign(region, *offset, &tag)?;
 
@@ -912,12 +902,6 @@ impl<F: Field> TxCircuitConfig<F> {
 
         for offset in start..end {
             region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                offset,
-                || Value::known(F::one()),
-            )?;
-            region.assign_fixed(
                 || "rlp_tag",
                 self.rlp_tag,
                 offset,
@@ -974,12 +958,6 @@ impl<F: Field> TxCircuitConfig<F> {
         end: usize,
     ) -> Result<(), Error> {
         for offset in start..end {
-            region.assign_fixed(
-                || "q_enable",
-                self.q_enable,
-                offset,
-                || Value::known(F::zero()),
-            )?;
             region.assign_fixed(
                 || "tag",
                 self.tx_table.tag,
@@ -1099,6 +1077,7 @@ impl<F: Field> TxCircuitConfig<F> {
             let rlp_tag = meta.query_fixed(rlp_tag, Rotation::cur());
 
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 rlp_tag,
                 1.expr(), // tag_rindex == 1
@@ -1123,6 +1102,7 @@ impl<F: Field> TxCircuitConfig<F> {
             ]);
 
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 rlp_tag,
                 1.expr(), // tag_rindex == 1
@@ -1165,6 +1145,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
             ]);
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 RlpTxTag::Data.expr(),
                 meta.query_advice(calldata_length, Rotation::cur())
@@ -1188,6 +1169,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 ),
             ]);
             vec![
+                1.expr(),
                 meta.query_advice(tx_table.tx_id, Rotation::cur()),
                 RlpTxTag::Data.expr(),
                 meta.query_advice(calldata_length, Rotation::cur())
@@ -1221,7 +1203,7 @@ impl<F: Field> TxCircuitConfig<F> {
                 meta.query_advice(tx_table.value, Rotation(2)),      // output_rlc
             ]
             .into_iter()
-            .zip_eq(keccak_table.table_exprs(meta).into_iter())
+            .zip(keccak_table.table_exprs(meta).into_iter())
             .map(|(arg, table)| (enable.clone() * arg, table))
             .collect()
         });
@@ -1355,7 +1337,7 @@ impl<F: Field> TxCircuit<F> {
                     }))
                     .enumerate()
                 {
-                    region.assign_advice(
+                    region.assign_fixed(
                         || "block_table.tag",
                         config.block_table.tag,
                         offset,
@@ -1389,7 +1371,7 @@ impl<F: Field> TxCircuit<F> {
         padding_txs: &[Transaction],
     ) -> Result<(), Error> {
         let last_off = layouter.assign_region(
-            || "tx table",
+            || "tx table aux",
             |mut region| {
                 let mut offset = 0;
                 #[cfg(feature = "enable-sign-verify")]

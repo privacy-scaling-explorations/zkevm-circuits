@@ -438,12 +438,14 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
             .dev_load(&mut layouter, block.bytecodes.values(), &challenges)?;
         config
             .block_table
-            .load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
-        config.copy_table.load(&mut layouter, block, &challenges)?;
+            .dev_load(&mut layouter, &block.context, &block.txs, 1, &challenges)?;
+        config
+            .copy_table
+            .dev_load(&mut layouter, block, &challenges)?;
         config
             .keccak_table
             .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
-        config.exp_table.load(&mut layouter, block)?;
+        config.exp_table.dev_load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

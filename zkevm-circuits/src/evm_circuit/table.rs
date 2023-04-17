@@ -311,7 +311,13 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
+            } => vec![
+                1.expr(),
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.clone(),
+            ],
             Self::Rw {
                 counter,
                 is_write,
@@ -319,6 +325,7 @@ impl<F: Field> Lookup<F> {
                 values,
             } => {
                 vec![
+                    1.expr(),
                     counter.clone(),
                     is_write.clone(),
                     tag.clone(),
@@ -369,6 +376,7 @@ impl<F: Field> Lookup<F> {
                 rw_counter,
                 rwc_inc,
             } => vec![
+                1.expr(),
                 is_first.clone(),
                 src_id.clone(),
                 src_tag.clone(),
@@ -400,6 +408,7 @@ impl<F: Field> Lookup<F> {
                 exponent_lo_hi,
                 exponentiation_lo_hi,
             } => vec![
+                1.expr(), // q_enable
                 1.expr(), // is_step
                 identifier.clone(),
                 is_last.clone(),
