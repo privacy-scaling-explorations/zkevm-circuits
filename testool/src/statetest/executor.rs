@@ -40,15 +40,22 @@ pub enum StateTestError {
     SkipTestMaxGasLimit(u64),
     #[error("SkipTestMaxSteps({0})")]
     SkipTestMaxSteps(usize),
+    #[error("SkipTestSelfDestruct")]
+    SkipTestSelfDestruct,
     #[error("Exception(expected:{expected:?}, found:{found:?})")]
     Exception { expected: bool, found: String },
 }
 
 impl StateTestError {
     pub fn is_skip(&self) -> bool {
+        // Avoid lint `variant is never constructed` if no feature skip-self-destruct.
+        let _ = StateTestError::SkipTestSelfDestruct;
+
         matches!(
             self,
-            StateTestError::SkipTestMaxSteps(_) | StateTestError::SkipTestMaxGasLimit(_)
+            StateTestError::SkipTestMaxSteps(_)
+                | StateTestError::SkipTestMaxGasLimit(_)
+                | StateTestError::SkipTestSelfDestruct
         )
     }
 }
@@ -75,7 +82,7 @@ fn check_post(
         }
 
         if expected.nonce.map(|v| v == actual.nonce) == Some(false) {
-            log::trace!(
+            log::error!(
                 "nonce mismatch, expected {:?} actual {:?}",
                 expected,
                 actual
@@ -146,7 +153,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
         let address = Address::from(addr_bytes);
         let acc = eth_types::geth_types::Account {
             // balance: 1.into(),
-            nonce: 1.into(),
+            // nonce: 1.into(),
             address,
             ..Default::default()
         };
@@ -229,6 +236,15 @@ pub fn run_test(
             })
         }
     };
+
+    #[cfg(feature = "skip-self-destruct")]
+    if geth_traces.iter().any(|gt| {
+        gt.struct_logs
+            .iter()
+            .any(|sl| sl.op == eth_types::evm_types::OpcodeId::SELFDESTRUCT)
+    }) {
+        return Err(StateTestError::SkipTestSelfDestruct);
+    }
 
     if geth_traces[0].struct_logs.len() as u64 > suite.max_steps {
         return Err(StateTestError::SkipTestMaxSteps(
