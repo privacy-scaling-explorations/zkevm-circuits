@@ -68,7 +68,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             addr_left_Word = Word::from(byte as u64);
         }else {
             slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
-            Word::from_big_endian(&slot_bytes);
+            addr_left_Word = Word::from_big_endian(&slot_bytes);
         }
 
         // TODO: edge case: if shift = 0, no need to right word
@@ -131,6 +131,7 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
             }
         }
 
+        println!("after mstore memory length {}", state.call_ctx_mut()?.memory.0.len());
         Ok(vec![exec_step])
     }
 }

@@ -357,7 +357,6 @@ pub fn gen_associated_ops(
     geth_steps: &[GethExecStep],
 ) -> Result<Vec<ExecStep>, Error> {
     let memory_enabled = !geth_steps.iter().all(|s| s.memory.is_empty());
-    println!("memory_enabled is {}", memory_enabled);
 
     if memory_enabled {
         let check_level = if *CHECK_MEM_STRICT { 2 } else { 0 }; // 0: no check, 1: check and log error and fix, 2: check and assert_eq

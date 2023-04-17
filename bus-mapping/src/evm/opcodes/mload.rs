@@ -36,20 +36,25 @@ impl Opcode for Mload {
 
         // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
         let mut memory = state.call_ctx_mut()?.memory.clone();
+        println!("before mload memory length is {}", memory.0.len());
+
         let offset = stack_value_read.as_u64();
         // expand to offset + 64 to enusre addr_right_Word without out of boundary
         let minimal_length = offset + 64;
+
         
         memory.extend_at_least(minimal_length as usize);
 
         let shift= offset % 32;
         let slot = offset - shift;
+        println!("minimal_length {} , slot {},  shift {}, memory_length {}", minimal_length, slot, shift, memory.0.len());
+
 
         let mut slot_bytes: [u8; 32] = [0; 32];
         slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
 
-        let addr_left_Word = Word::from_little_endian(&slot_bytes);
-        // TODO: edge case: if shift = 0, skip to read right word
+        let addr_left_Word = Word::from_big_endian(&slot_bytes);
+        // TODO: edge case: if shift = 0, skip to read right word ?
         let mut word_right_bytes: [u8; 32] = [0; 32];
         slot_bytes.clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
 
@@ -65,7 +70,6 @@ impl Opcode for Mload {
         state.memory_read_word(&mut exec_step, (slot + 32).into(), addr_right_Word)?;
 
         // reconstruction
-
          state.call_ctx_mut()?.memory.extend_at_least(minimal_length as usize);
 
         Ok(vec![exec_step])
@@ -141,19 +145,19 @@ mod mload_tests {
         let slot = 0x40 - shift;
         let memory_words = &builder.block.container.memory_word;
         assert_eq!(
-            (2..3)
+            (2..4)
                 .map(|idx| &builder.block.container.memory_word
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
                 vec![(
-                    RW::WRITE,
+                    RW::READ,
                     MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
                 ), 
-                // (
-                //     RW::WRITE,
-                //     MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
-                // ),
+                (
+                    RW::READ,
+                    MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
+                ),
                 ]
         )
     
