@@ -430,7 +430,7 @@ impl<F: Field> MemoryWordAddress<F> {
         self.shift.expr()
     }
 
-    // also seen as addr_left
+    // slot_addr also seen as addr_left
     pub(crate) fn addr_left(&self) -> Expression<F> {
         self.slot.expr()
     }
@@ -456,7 +456,7 @@ impl<F: Field> MemoryWordAddress<F> {
            .assign(region, offset, Value::known(F::from(shift)))?;
        self.slot
            .assign(region, offset, Value::known(F::from(slot)))?;
-       self.address.assign(region, offset, bytes);
+       self.address.assign(region, offset, bytes)?;
        Ok(1u64)
     }
 }

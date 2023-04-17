@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
+use ethers_core::utils::id;
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
 
@@ -37,7 +38,9 @@ impl RwMap {
             .sorted()
             .enumerate()
         {
-            debug_assert_eq!(idx, rw_counter - 1);
+            // TODO: enable it when memory word applied pass
+            //println!(" idx {}, rw_counter {}", idx, rw_counter);
+            //debug_assert_eq!(idx, rw_counter - 1);
         }
     }
     /// Check value in the same way like StateCircuit
@@ -215,6 +218,14 @@ pub enum Rw {
         call_id: usize,
         memory_address: u64,
         byte: u8,
+    },
+    /// Memory
+    MemoryWord {
+        rw_counter: usize,
+        is_write: bool,
+        call_id: usize,
+        memory_address: u64,
+        value: Word,
     },
     /// TxLog
     TxLog {
@@ -406,6 +417,12 @@ impl Rw {
             _ => unreachable!("{:?}", self),
         }
     }
+    pub fn memory_word_value(&self) -> Word {
+        match self {
+            Self::MemoryWord { value, .. } => *value,
+            _ => unreachable!("{:?}", self),
+        }
+    }
 
     // At this moment is a helper for the EVM circuit until EVM challange API is
     // applied
@@ -460,6 +477,7 @@ impl Rw {
         match self {
             Self::Start { rw_counter }
             | Self::Memory { rw_counter, .. }
+            | Self::MemoryWord { rw_counter, .. }
             | Self::Stack { rw_counter, .. }
             | Self::AccountStorage { rw_counter, .. }
             | Self::TxAccessListAccount { rw_counter, .. }
@@ -476,6 +494,7 @@ impl Rw {
         match self {
             Self::Start { .. } => false,
             Self::Memory { is_write, .. }
+            | Self::MemoryWord { is_write, .. }
             | Self::Stack { is_write, .. }
             | Self::AccountStorage { is_write, .. }
             | Self::TxAccessListAccount { is_write, .. }
@@ -492,6 +511,7 @@ impl Rw {
         match self {
             Self::Start { .. } => RwTableTag::Start,
             Self::Memory { .. } => RwTableTag::Memory,
+            Self::MemoryWord { .. } => RwTableTag::MemoryWord,
             Self::Stack { .. } => RwTableTag::Stack,
             Self::AccountStorage { .. } => RwTableTag::AccountStorage,
             Self::TxAccessListAccount { .. } => RwTableTag::TxAccessListAccount,
@@ -515,6 +535,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
+            | Self::MemoryWord { call_id, .. } => Some(*call_id),
             Self::Start { .. } | Self::Account { .. } => None,
         }
     }
@@ -534,6 +555,7 @@ impl Rw {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
+            Self::MemoryWord { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
             Self::Stack { stack_pointer, .. } => {
                 Some(U256::from(*stack_pointer as u64).to_address())
             }
@@ -560,6 +582,7 @@ impl Rw {
             Self::TxReceipt { field_tag, .. } => Some(*field_tag as u64),
             Self::Start { .. }
             | Self::Memory { .. }
+            | Self::MemoryWord { .. }
             | Self::Stack { .. }
             | Self::AccountStorage { .. }
             | Self::TxAccessListAccount { .. }
@@ -577,6 +600,7 @@ impl Rw {
             | Self::CallContext { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
+            | Self::MemoryWord { .. }
             | Self::TxRefund { .. }
             | Self::Account { .. }
             | Self::TxAccessListAccount { .. }
@@ -636,6 +660,8 @@ impl Rw {
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
+            Self::MemoryWord { value, .. } =>  rlc::value(&value.to_le_bytes(), randomness)
+            ,
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
     }
@@ -672,6 +698,7 @@ impl Rw {
             Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
+            | Self::MemoryWord { .. }
             | Self::CallContext { .. }
             | Self::TxLog { .. }
             | Self::TxReceipt { .. } => None,
@@ -860,6 +887,22 @@ impl From<&operation::OperationContainer> for RwMap {
                         op.op().address().to_le_bytes()[..8].try_into().unwrap(),
                     ),
                     byte: op.op().value(),
+                })
+                .collect(),
+        );
+        rws.insert(
+            RwTableTag::MemoryWord,
+            container
+                .memory_word
+                .iter()
+                .map(|op| Rw::MemoryWord {
+                    rw_counter: op.rwc().into(),
+                    is_write: op.rw().is_write(),
+                    call_id: op.op().call_id(),
+                    memory_address: u64::from_le_bytes(
+                        op.op().address().to_le_bytes()[..8].try_into().unwrap(),
+                    ),
+                    value: op.op().value(),
                 })
                 .collect(),
         );

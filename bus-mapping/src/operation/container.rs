@@ -104,7 +104,7 @@ impl OperationContainer {
             OpEnum::MemoryWord(op) => {
                 self.memory_word.push(Operation::new(rwc, rw, op));
                 //TODO: use new Target type i.e. MemoryWord
-                OperationRef::from((Target::Memory, self.memory_word.len() - 1))
+                OperationRef::from((Target::MemoryWord, self.memory_word.len() - 1))
             }
             OpEnum::Stack(op) => {
                 self.stack.push(Operation::new(rwc, rw, op));

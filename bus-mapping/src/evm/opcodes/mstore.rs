@@ -37,7 +37,8 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let mut memory = state.call_ctx_mut()?.memory.clone();
         // expand memory size + 64 as slot 
         let minimal_length = offset_addr.0 + if IS_MSTORE8 { 1  } else { 64 /* 32 */ };
-        println!("minimal_length {} , IS_MSTORE8 {}, memory_length {}", minimal_length, IS_MSTORE8, memory.0.len());
+        println!("minimal_length {} , IS_MSTORE8 {}, memory_length {}, value {}", minimal_length, IS_MSTORE8, memory.0.len(),
+        value);
         
         memory.extend_at_least(minimal_length);
 
@@ -75,9 +76,6 @@ impl<const IS_MSTORE8: bool> Opcode for Mstore<IS_MSTORE8> {
         let mut word_right_bytes: [u8; 32] = [0; 32];
         let cur_memory_size = memory.0.len();
         // when is_msotre8, skip word_right as mstore8 only affect one word.
-        if !IS_MSTORE8 { 
-            slot_bytes.clone_from_slice(&memory.0[(slot as usize + 32)..cur_memory_size]);
-        }
       
         // construct right word
         let addr_right_Word = Word::from_big_endian(&word_right_bytes);

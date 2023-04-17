@@ -88,6 +88,8 @@ pub enum Target {
     Start,
     /// Means the target of the operation is the Memory.
     Memory,
+    /// Means the target of the operation is the MemoryWord.
+    MemoryWord,
     /// Means the target of the operation is the Stack.
     Stack,
     /// Means the target of the operation is the Storage.

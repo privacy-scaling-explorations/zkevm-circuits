@@ -323,6 +323,8 @@ pub enum RwTableTag {
     Stack,
     /// Memory operation
     Memory,
+    /// Memory word operation
+    MemoryWord,
     /// Account Storage operation
     AccountStorage,
     /// Tx Access List Account operation

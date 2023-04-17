@@ -1224,9 +1224,9 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
     ) {
         self.rw_lookup(
-            "Memory lookup",
+            "Memory word lookup",
             is_write,
-            RwTableTag::Memory,
+            RwTableTag::MemoryWord,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
                 memory_address,
