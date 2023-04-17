@@ -334,17 +334,19 @@ pub fn gen_associated_ops(
         if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
             return fn_gen_error_ops(state, geth_steps);
         } else {
+            // For exceptions that fail to enter next call context, we need
+            // to restore call context of current caller
+            let mut need_restore = true;
+
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
             if geth_step.op.is_call_or_create() {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
-            // For exceptions that fail to enter next call context, we need
-            // to restore call context of current caller
-            } else {
-                state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+                need_restore = false;
             }
-            state.handle_return(geth_step)?;
+
+            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
             return Ok(vec![exec_step]);
         }
     }
@@ -704,6 +706,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(geth_step)?;
+    state.handle_return(&mut exec_step, geth_steps, false)?;
     Ok(vec![exec_step])
 }
