@@ -281,3 +281,37 @@ fn bytecode_invalid_is_code() {
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
 }
+
+#[test]
+#[should_panic]
+#[allow(clippy::clone_on_copy)]
+fn bytecode_soundness_bug_1() {
+    let k = 9;
+    let bytecode = vec![1, 2, 3, 4];
+    let bytecode_len = bytecode.len();
+    let unrolled = unroll(bytecode);
+    let unrolled_len = unrolled.rows.len();
+    let code_hash = unrolled.rows[0].code_hash.clone();
+    let mut index = bytecode_len as u64;
+    let size = 100;
+    let minimum_rows = 8;
+
+    let mut overwrite = unrolled.clone();
+    for i in 0..size - minimum_rows + 3 {
+        if i >= unrolled_len {
+            overwrite.rows.push(BytecodeRow {
+                code_hash: code_hash.clone(),
+                tag: Fr::one(),
+                index: Fr::from(index),
+                is_code: Fr::one(),
+                value: Fr::from((i % 10 + 1) as u64),
+            });
+            index += 1;
+        }
+    }
+    let mut circuit = BytecodeCircuit::<Fr>::new(vec![unrolled], size);
+    circuit.overwrite = overwrite;
+
+    let prover = MockProver::<Fr>::run(k, &circuit, Vec::new()).unwrap();
+    prover.assert_satisfied_par();
+}
