@@ -70,7 +70,8 @@ impl Opcode for Mload {
         state.memory_read_word(&mut exec_step, (slot + 32).into(), addr_right_Word)?;
 
         // reconstruction
-         state.call_ctx_mut()?.memory.extend_at_least(minimal_length as usize);
+        // "minimal_length - 32" subtract 32 as actual expansion size
+         state.call_ctx_mut()?.memory.extend_at_least((minimal_length - 32) as usize);
 
         Ok(vec![exec_step])
     }

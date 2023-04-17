@@ -18,7 +18,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
+use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
 use halo2_proofs::{plonk::Error, circuit::Value};
 
 // TODO: 
@@ -97,7 +97,6 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             );
         });
 
-        // TODO:
         //  value_left = instruction.memory_lookup(
         //    RW.Write if is_store == FQ(1) else RW.Read, addr_left
         // )
@@ -206,14 +205,18 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
         )?;
 
         // assign value_left value_right word
-        let [value_left, value_right] = //block.rws[idx].memory_word_value());
-        [step.rw_indices[2], step.rw_indices[3]].map(|idx| block.rws[idx].memory_word_value());
+        let value_left = block.rws[step.rw_indices[2]].memory_word_value();
+        let value_right = if is_mstore8 == F::one() { 
+            U256::zero() //Word::from(0x00u64)
+          } else {
+            block.rws[step.rw_indices[3]].memory_word_value()
+        };
+
         self.value_left.assign(region, offset, Some(
             value_left.to_le_bytes()
         ))?;
        
         self.value_right.assign(region, offset, Some(value_right.to_le_bytes()))?;
-
         Ok(())
     }
 }
@@ -266,24 +269,24 @@ mod test {
             Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
             3074206,
         );
-        // test_ok(
-        //     OpcodeId::MLOAD,
-        //     Word::from(0x12FFFF),
-        //     Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-        //     3074206,
-        // );
-        // test_ok(
-        //     OpcodeId::MLOAD,
-        //     Word::from(0x12FFFF) + 16,
-        //     Word::from_big_endian(&(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>()),
-        //     3074361,
-        // );
-        // test_ok(
-        //     OpcodeId::MSTORE8,
-        //     Word::from(0x12FFFF),
-        //     Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
-        //     3074051,
-        // );
+        test_ok(
+            OpcodeId::MLOAD,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            3074206,
+        );
+        test_ok(
+            OpcodeId::MLOAD,
+            Word::from(0x12FFFF) + 16,
+            Word::from_big_endian(&(17..33).chain(iter::repeat(0).take(16)).collect::<Vec<_>>()),
+            3074361,
+        );
+        test_ok(
+            OpcodeId::MSTORE8,
+            Word::from(0x12FFFF),
+            Word::from_big_endian(&(1..33).collect::<Vec<_>>()),
+            3074051,
+        );
     }
 
     #[test]
