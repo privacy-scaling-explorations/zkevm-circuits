@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, math_gadget::*, sum, CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        math_gadget::*,
+        sum, CachedRegion,
     },
     util::Expr,
 };

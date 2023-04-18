@@ -1360,7 +1360,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         ret
     }
 
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+    /*pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         let constraint = self.split_expression(
             name,
             constraint * self.condition_expr(),
@@ -1369,7 +1369,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         self.validate_degree(constraint.degree(), name);
         self.push_constraint(name, constraint);
-    }
+    }*/
 
     /// TODO: Doc
     fn constraint_at_location<R>(

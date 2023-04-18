@@ -1,6 +1,10 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, from_bytes, math_gadget::*, CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        from_bytes,
+        math_gadget::*,
+        CachedRegion,
     },
     util::Expr,
 };
