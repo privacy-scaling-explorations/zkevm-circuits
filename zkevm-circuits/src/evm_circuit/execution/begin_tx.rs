@@ -563,11 +563,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use std::vec;
+
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
-    use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
@@ -623,19 +625,20 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // TODO: Use `mock` crate.
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            value,
-            gas: gas(&calldata),
-            gas_price: Some(gas_price),
-            input: calldata.into(),
-            ..Default::default()
-        }
+
+        let mock_transaction = MockTransaction::default()
+            .from(from)
+            .to(to)
+            .value(value)
+            .gas(gas(&calldata))
+            .gas_price(gas_price)
+            .input(calldata.into())
+            .build();
+
+        eth_types::Transaction::from(mock_transaction)
     }
 
     #[test]
