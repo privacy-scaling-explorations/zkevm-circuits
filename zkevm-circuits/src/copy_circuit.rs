@@ -513,6 +513,8 @@ impl<F: Field> CopyCircuitConfig<F> {
         let tag_chip = BinaryNumberChip::construct(self.copy_table.tag);
         let lt_chip = LtChip::construct(self.addr_lt_addr_end);
 
+        lt_chip.load(layouter)?;
+
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
