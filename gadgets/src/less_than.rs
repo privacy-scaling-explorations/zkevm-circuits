@@ -34,7 +34,6 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the lt outcome. If lhs < rhs then lt == 1, otherwise lt == 0.
     pub lt: Column<Advice>,
     /// Denotes the bytes representation of the difference between lhs and rhs.
-    /// Note that the range of each byte is not checked by this config.
     pub diff: [Column<Advice>; N_BYTES],
     /// Denotes the range within which each byte should lie.
     pub u8: Column<Fixed>,
