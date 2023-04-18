@@ -1,3 +1,5 @@
+use std::mem;
+
 use crate::{
     circuit_input_builder::{CircuitInputStateRef, ExecStep},
     operation::{CallContextField, MemoryOp, MemoryWordOp, RW},
@@ -91,6 +93,7 @@ impl Opcode for Calldataload {
                 let mut slot_bytes: [u8; 32] = [0; 32];
                 // pick up caller's memory
                 let mut memory = state.caller_ctx_mut()?.memory.clone();
+                println!("calldatload memory {:?}", memory);
                 // expand to offset + 64 to enusre addr_right_Word without out of boundary
                 let minimal_length = offset + 64;
 
@@ -101,7 +104,8 @@ impl Opcode for Calldataload {
                 let addr_left_Word = Word::from_big_endian(&slot_bytes);
                 // TODO: edge case: if shift = 0, skip to read right word ?
                 let mut word_right_bytes: [u8; 32] = [0; 32];
-                word_right_bytes.clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
+                word_right_bytes
+                    .clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
 
                 let addr_right_Word = Word::from_little_endian(&word_right_bytes);
 
@@ -173,6 +177,7 @@ mod calldataload_tests {
         if memory_a.len() < call_data_length {
             memory_a.resize(call_data_length, 0);
         }
+
         let code_a = bytecode! {
             // populate memory in A's context.
             PUSH32(Word::from_big_endian(&pushdata))
@@ -282,32 +287,42 @@ mod calldataload_tests {
         let minimal_length = offset + 64;
         let mut slot_bytes: [u8; 32] = [0; 32];
         let mut right_word_bytes: [u8; 32] = [0; 32];
+        // let mut memory_bytes: [u8; 32] = [0; 32];
+        let mut memory_bytes = vec![];
+        memory_bytes.resize(32 - pushdata.len(), 0);
+        let mut pushdata_mut = pushdata.clone();
+        memory_bytes.append(&mut pushdata_mut);
 
-        if memory_a.len() < minimal_length {
-            memory_a.resize(minimal_length, 0);
+        if memory_bytes.len() < slot + minimal_length {
+            memory_bytes.resize(slot + minimal_length, 0);
         }
+        println!("calldatload memory_bytes {:?}", memory_bytes);
 
-        slot_bytes.clone_from_slice(&memory_a[slot.. slot+32]);
+        //memory_a.reverse();
+        slot_bytes.clone_from_slice(&memory_bytes[slot..slot + 32]);
+        right_word_bytes.clone_from_slice(&memory_bytes[slot + 32..slot + 64]);
 
-        let addr_left_Word = Word::zero();
-        let addr_right_Word = Word::zero();
-        
+        let addr_left_Word = Word::from_big_endian(&slot_bytes);
+        let addr_right_Word = Word::from_big_endian(&right_word_bytes);
+
         // 2 memory word reads from caller memory
-        // assert_eq!(
-        //     (0..1)
-        //         .map(|idx| &builder.block.container.memory_word
-        //             [step.bus_mapping_instance[4 + idx].as_usize()])
-        //         .map(|op| (op.rw(), op.op().clone()))
-        //         .collect::<Vec<(RW, MemoryWordOp)>>(),
-        //    vec![(
-        //     RW::READ,
-        //     MemoryWordOp::new(
-        //         caller_id,
-        //         slot.into(),
-        //         memory_a[offset + idx],
-        //     ),
-        // )]
-        // );
+        assert_eq!(
+            (0..2)
+                .map(|idx| &builder.block.container.memory_word
+                    [step.bus_mapping_instance[4 + idx].as_usize()])
+                .map(|op| (op.rw(), op.op().clone()))
+                .collect::<Vec<(RW, MemoryWordOp)>>(),
+            vec![
+                (
+                    RW::READ,
+                    MemoryWordOp::new(caller_id, slot.into(), addr_left_Word,),
+                ),
+                (
+                    RW::READ,
+                    MemoryWordOp::new(caller_id, (slot + 32).into(), addr_right_Word,),
+                ),
+            ]
+        );
     }
 
     fn test_root_ok(offset: u64, calldata: Vec<u8>, calldata_word: Word) {
