@@ -1,7 +1,6 @@
 use super::{
     lookups::Queries as LookupsQueries, multiple_precision_integer::Queries as MpiQueries,
-    random_linear_combination::Queries as RlcQueries, N_LIMBS_ACCOUNT_ADDRESS, N_LIMBS_ID,
-    N_LIMBS_RW_COUNTER,
+    param::*, random_linear_combination::Queries as RlcQueries,
 };
 use crate::{
     evm_circuit::{
@@ -400,11 +399,6 @@ impl<F: Field> ConstraintBuilder<F> {
         });
         // 7.2. `initial value` is 0
         self.require_zero("initial TxRefund value is 0", q.initial_value());
-        // 7.3. First access for a set of all keys are 0 if READ
-        self.require_zero(
-            "first access for a set of all keys are 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
     }
 
     fn build_account_constraints(&mut self, q: &Queries<F>) {

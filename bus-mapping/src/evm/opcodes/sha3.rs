@@ -139,7 +139,7 @@ pub mod sha3_tests {
             };
             memory.extend_from_slice(&mem_value);
             code.push(32, Word::from_big_endian(&mem_value));
-            code.push(32, (32 * i).into());
+            code.push(32, 32 * i);
             code.write_op(OpcodeId::MSTORE);
         }
         // append SHA3 related opcodes at the tail end.

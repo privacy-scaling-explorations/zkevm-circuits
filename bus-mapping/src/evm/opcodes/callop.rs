@@ -229,7 +229,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
@@ -306,7 +306,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }
