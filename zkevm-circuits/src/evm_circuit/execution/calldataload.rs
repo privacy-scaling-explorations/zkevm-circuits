@@ -286,7 +286,7 @@ mod test {
         }
     }
 
-    fn test_root_ok(offset: usize) {
+    fn test_root_ok(offset: Word) {
         let bytecode = test_bytecode(offset);
 
         CircuitTestBuilder::new_from_test_ctx(

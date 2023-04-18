@@ -311,7 +311,7 @@ mod test {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            .calldatacopy(dst_offset, offset, length)
+            .calldatacopy(dst_offset, data_offset, length)
             STOP
         };
 
