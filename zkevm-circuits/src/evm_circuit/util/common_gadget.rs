@@ -386,7 +386,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -510,7 +510,7 @@ impl<F: Field> TransferGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -665,7 +665,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             phase2_callee_code_hash.expr(),
         );
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
 
         Self {
@@ -733,12 +733,12 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         if IS_SUCCESS_CALL {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
-            self.gas_is_u64.assign(
-                region,
-                offset,
-                sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
-            )?;
         }
+        self.gas_is_u64.assign(
+            region,
+            offset,
+            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
+        )?;
         let cd_address = self
             .cd_address
             .assign(region, offset, cd_offset, cd_length)?;
@@ -760,7 +760,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             region,
             offset,
             phase2_callee_code_hash,
-            region.empty_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, phase2_callee_code_hash)?;

@@ -85,13 +85,10 @@ impl<F: Field> CmpWordsGadget<F> {
 
 #[cfg(test)]
 mod tests {
+    use super::{test_util::*, *};
     use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
-
-    use super::test_util::*;
-    use super::*;
     use eth_types::Word;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)

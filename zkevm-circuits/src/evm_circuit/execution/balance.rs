@@ -1,21 +1,25 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::N_BYTES_ACCOUNT_ADDRESS;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::SameContextGadget;
-use crate::evm_circuit::util::constraint_builder::Transition::Delta;
-use crate::evm_circuit::util::constraint_builder::{
-    ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
+use crate::{
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::N_BYTES_ACCOUNT_ADDRESS,
+        step::ExecutionState,
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstrainBuilderCommon, ConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
+            },
+            from_bytes,
+            math_gadget::IsZeroGadget,
+            not, select, CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
+    table::{AccountFieldTag, CallContextFieldTag},
+    util::Expr,
 };
-use crate::evm_circuit::util::{
-    from_bytes, math_gadget::IsZeroGadget, not, select, CachedRegion, Cell, Word,
-};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
-use eth_types::evm_types::GasCost;
-use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct BalanceGadget<F> {
@@ -142,12 +146,10 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, Address, Bytecode, ToWord, Word, U256};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{address, bytecode, geth_types::Account, Address, Bytecode, Word, U256};
     use lazy_static::lazy_static;
-    use mock::TestContext;
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     lazy_static! {
         static ref TEST_ADDRESS: Address = address!("0xaabbccddee000000000000000000000000000000");
@@ -201,14 +203,12 @@ mod test {
         let mut code = Bytecode::default();
         if is_warm {
             code.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
+                .balance(address)
                 POP
             });
         }
         code.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
+            .balance(address)
             STOP
         });
 
@@ -254,35 +254,24 @@ mod test {
         let mut code_b = Bytecode::default();
         if is_warm {
             code_b.append(&bytecode! {
-                PUSH20(address.to_word())
-                BALANCE
+                .balance(address)
                 POP
             });
         }
         code_b.append(&bytecode! {
-            PUSH20(address.to_word())
-            BALANCE
+            .balance(address)
             STOP
         });
 
         // code A calls code B.
         let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata,
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<4, 1>::new(
             None,

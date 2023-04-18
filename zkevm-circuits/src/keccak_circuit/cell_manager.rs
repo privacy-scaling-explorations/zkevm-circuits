@@ -1,13 +1,13 @@
 use crate::keccak_circuit::util::extract_field;
-use crate::keccak_circuit::KeccakRegion;
 use gadgets::util::Expr;
-use halo2_proofs::arithmetic::FieldExt;
-use halo2_proofs::plonk::VirtualCells;
 use halo2_proofs::{
+    arithmetic::FieldExt,
     circuit::Value,
-    plonk::{Advice, Column, ConstraintSystem, Expression},
+    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
     poly::Rotation,
 };
+
+use super::keccak_packed_multi::KeccakRegion;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {

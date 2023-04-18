@@ -1,14 +1,15 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::table::{FixedTableTag, Lookup};
-use crate::evm_circuit::util::common_gadget::CommonErrorGadget;
-use crate::evm_circuit::util::constraint_builder::ConstraintBuilder;
-use crate::evm_circuit::util::{CachedRegion, Cell};
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
+use crate::evm_circuit::{
+    execution::ExecutionGadget,
+    step::ExecutionState,
+    table::{FixedTableTag, Lookup},
+    util::{
+        common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder, CachedRegion, Cell,
+    },
+    witness::{Block, Call, ExecStep, Transaction},
+};
 use eth_types::Field;
 use gadgets::util::Expr;
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for invalid opcodes. It verifies by a fixed lookup for
 /// ResponsibleOpcode.
@@ -65,12 +66,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidOpcodeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
-    use eth_types::bytecode::Bytecode;
-    use eth_types::{bytecode, ToWord, Word};
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use eth_types::{bytecode::Bytecode, Word};
     use lazy_static::lazy_static;
-    use mock::TestContext;
+    use mock::{generate_mock_call_bytecode, MockCallBytecodeParams, TestContext};
 
     lazy_static! {
         static ref TESTING_INVALID_CODES: [Vec<u8>; 6] = [
@@ -121,23 +120,13 @@ mod test {
         });
 
         // code A calls code B.
-        let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,

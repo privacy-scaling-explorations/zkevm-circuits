@@ -15,8 +15,10 @@ use crate::{
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::Field;
-use eth_types::{evm_types::GasCost, evm_types::OpcodeId};
+use eth_types::{
+    evm_types::{GasCost, OpcodeId},
+    Field,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]

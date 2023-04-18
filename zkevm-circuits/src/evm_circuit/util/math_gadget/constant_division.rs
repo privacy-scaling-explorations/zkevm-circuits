@@ -99,11 +99,9 @@ impl<F: Field, const N_BYTES: usize> ConstantDivisionGadget<F, N_BYTES> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
     use eth_types::*;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// ConstantDivisionTestContainer:

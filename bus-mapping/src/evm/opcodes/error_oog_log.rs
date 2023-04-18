@@ -1,7 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::{Opcode, OpcodeId};
-use crate::operation::CallContextField;
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::{Opcode, OpcodeId},
+    operation::CallContextField,
+    Error,
+};
 use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]
@@ -41,9 +43,8 @@ impl Opcode for ErrorOOGLog {
             CallContextField::IsStatic,
             Word::from(state.call()?.is_static as u8),
         );
-        // common error handling
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
+
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

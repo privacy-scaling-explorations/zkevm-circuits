@@ -11,6 +11,7 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
 use gadgets::util::not;
 use halo2_proofs::{
@@ -20,7 +21,6 @@ use halo2_proofs::{
         Expression::{self, Constant},
     },
 };
-use keccak256::EMPTY_HASH_LE;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -453,8 +453,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
-    pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
-        self.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()))
+    pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
+        self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -1359,17 +1359,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         self.in_next_step = false;
         ret
     }
-
-    /*pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = self.split_expression(
-            name,
-            constraint * self.condition_expr(),
-            MAX_DEGREE - IMPLICIT_DEGREE,
-        );
-
-        self.validate_degree(constraint.degree(), name);
-        self.push_constraint(name, constraint);
-    }*/
 
     /// TODO: Doc
     fn constraint_at_location<R>(

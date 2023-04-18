@@ -1,6 +1,8 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::{Opcode, OpcodeId};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::{Opcode, OpcodeId},
+    Error,
+};
 use eth_types::{GethExecStep, Word};
 
 #[derive(Debug, Copy, Clone)]
@@ -38,10 +40,9 @@ impl Opcode for InvalidJump {
                 condition,
             )?;
         }
-        // `IsSuccess` call context operation is added in gen_restore_context_ops
 
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
+        // `IsSuccess` call context operation is added in handle_return
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

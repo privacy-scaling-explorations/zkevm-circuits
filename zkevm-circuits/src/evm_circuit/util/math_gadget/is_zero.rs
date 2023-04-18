@@ -67,14 +67,15 @@ impl<F: Field> IsZeroGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
-    use super::*;
-    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
-    use crate::evm_circuit::util::Cell;
-    use crate::util::Expr;
+    use crate::{
+        evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell},
+        util::Expr,
+    };
+
+    use super::{super::test_util::*, *};
+
     use eth_types::{ToScalar, Word};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// IsZeroGadgetTestContainer: require(n != 0)

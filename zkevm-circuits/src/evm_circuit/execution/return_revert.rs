@@ -18,9 +18,8 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Field, ToScalar, U256};
-use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -124,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     address.expr(),
                     AccountFieldTag::CodeHash,
                     code_hash.expr(),
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     Some(&mut reversion_info),
                 );
 
@@ -277,7 +276,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
-            let mut code_hash = keccak256(&values);
+            let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
             code_hash.reverse();
             self.code_hash.assign(
                 region,
@@ -341,10 +340,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::test_util::CircuitTestBuilder;
-    use eth_types::geth_types::GethData;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
-        Word, U256,
+        address, bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+        Address, Bytecode, ToWord, Word, U256,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
