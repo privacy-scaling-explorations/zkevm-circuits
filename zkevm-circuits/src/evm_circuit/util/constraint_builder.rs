@@ -1191,7 +1191,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     // Memory
-
     pub(crate) fn memory_lookup(
         &mut self,
         is_write: Expression<F>,
@@ -1219,7 +1218,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     pub(crate) fn memory_lookup_word(
         &mut self,
         is_write: Expression<F>,
-        memory_address: Expression<F>, // slot 
+        memory_address: Expression<F>, // slot
         value: Expression<F>,
         call_id: Option<Expression<F>>,
     ) {

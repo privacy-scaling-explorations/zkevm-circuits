@@ -5,7 +5,7 @@ use crate::{
     operation::CallContextField,
     Error,
 };
-use eth_types::{GethExecStep, U256};
+use eth_types::{GethExecStep, Word, U256};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ErrorCreationCode;
@@ -39,7 +39,32 @@ impl Opcode for ErrorCreationCode {
         let byte = state.call_ctx()?.memory.0[offset.as_usize()];
         assert!(byte == 0xef);
 
-        state.memory_read(&mut exec_step, offset.try_into()?, byte)?;
+        let mut memory = state.call_ctx_mut()?.memory.clone();
+        println!("before mload memory length is {}", memory.0.len());
+
+        let offset = offset.as_u64();
+        // expand to offset + 32 as need one word at least.
+        let minimal_length = offset + 32;
+
+        memory.extend_at_least(minimal_length as usize);
+
+        let shift = offset % 32;
+        let slot = offset - shift;
+        println!(
+            "minimal_length {} , slot {},  shift {}, memory_length {}",
+            minimal_length,
+            slot,
+            shift,
+            memory.0.len()
+        );
+
+        let mut slot_bytes: [u8; 32] = [0; 32];
+        slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
+
+        let addr_left_Word = Word::from_big_endian(&slot_bytes);
+
+        //state.memory_read(&mut exec_step, offset.try_into()?, byte)?;
+        state.memory_read_word(&mut exec_step, slot.into(), addr_left_Word)?;
 
         // common error handling
         state.call_context_read(

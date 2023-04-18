@@ -12,17 +12,17 @@ use crate::{
             from_bytes,
             math_gadget::IsEqualGadget,
             memory_gadget::{MemoryExpansionGadget, MemoryWordAddress},
-            not, CachedRegion, MemoryAddress, Word, Cell,
+            not, CachedRegion, Cell, MemoryAddress, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     util::Expr,
 };
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian, U256};
-use halo2_proofs::{plonk::Error, circuit::Value};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
-// TODO: 
-// change MemoryAddress(slot + offset), 
+// TODO:
+// change MemoryAddress(slot + offset),
 // MemoryExpansionGadget if needed.
 
 #[derive(Clone, Debug)]
@@ -48,14 +48,13 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
     fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
-     
+
         // In successful case the address must be in 5 bytes
         let address = cb.query_word_rlc();
         let address_word = MemoryWordAddress::construct(cb, address.clone());
         let value = cb.query_word_rlc();
         let value_left = cb.query_word_rlc();
         let value_right = cb.query_word_rlc();
-
 
         // Check if this is an MLOAD
         let is_mload = IsEqualGadget::construct(cb, opcode.expr(), OpcodeId::MLOAD.expr());
@@ -84,17 +83,12 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
-        let addr_left =  address_word.addr_left();
+        let addr_left = address_word.addr_left();
         let addr_right = address_word.addr_right();
 
         // TODO: replace with value_left = instruction.memory_lookup(RW.Write, addr_left)
         cb.condition(is_mstore8.expr(), |cb| {
-            cb.memory_lookup_word(
-                1.expr(),
-                address_word.addr_left(),
-                value_left.expr(),
-                None,
-            );
+            cb.memory_lookup_word(1.expr(), address_word.addr_left(), value_left.expr(), None);
         });
 
         //  value_left = instruction.memory_lookup(
@@ -174,8 +168,8 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             ),
         )?;
         self.value
-        .assign(region, offset, Some(value.to_le_bytes()))?;
-    
+            .assign(region, offset, Some(value.to_le_bytes()))?;
+
         // TODO: assign value_right
         let address_u64 = address.as_u64();
         let shift = address_u64 % 32;
@@ -206,24 +200,29 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
         // assign value_left value_right word
         let value_left = block.rws[step.rw_indices[2]].memory_word_value();
-        let value_right = if is_mstore8 == F::one() { 
+        let value_right = if is_mstore8 == F::one() {
             U256::zero() //Word::from(0x00u64)
-          } else {
+        } else {
             block.rws[step.rw_indices[3]].memory_word_value()
         };
 
-        self.value_left.assign(region, offset, Some(
-            value_left.to_le_bytes()
-        ))?;
-       
-        self.value_right.assign(region, offset, Some(value_right.to_le_bytes()))?;
+        self.value_left
+            .assign(region, offset, Some(value_left.to_le_bytes()))?;
+
+        self.value_right
+            .assign(region, offset, Some(value_right.to_le_bytes()))?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{evm_circuit::{test::rand_word, execution::error_write_protection::ErrorWriteProtectionGadget}, test_util::CircuitTestBuilder};
+    use crate::{
+        evm_circuit::{
+            execution::error_write_protection::ErrorWriteProtectionGadget, test::rand_word,
+        },
+        test_util::CircuitTestBuilder,
+    };
     use eth_types::{
         bytecode,
         evm_types::{GasCost, OpcodeId},

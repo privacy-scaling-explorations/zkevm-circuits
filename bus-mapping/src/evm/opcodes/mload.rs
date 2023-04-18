@@ -34,7 +34,8 @@ impl Opcode for Mload {
         // 0.
         let mem_read_value = geth_steps[1].stack.last()?;
 
-        // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one word at slot. 
+        // TODO: get two memory words (slot, slot + 32) at address if offset != 0, otherwise get one
+        // word at slot.
         let mut memory = state.call_ctx_mut()?.memory.clone();
         println!("before mload memory length is {}", memory.0.len());
 
@@ -42,13 +43,17 @@ impl Opcode for Mload {
         // expand to offset + 64 to enusre addr_right_Word without out of boundary
         let minimal_length = offset + 64;
 
-        
         memory.extend_at_least(minimal_length as usize);
 
-        let shift= offset % 32;
+        let shift = offset % 32;
         let slot = offset - shift;
-        println!("minimal_length {} , slot {},  shift {}, memory_length {}", minimal_length, slot, shift, memory.0.len());
-
+        println!(
+            "minimal_length {} , slot {},  shift {}, memory_length {}",
+            minimal_length,
+            slot,
+            shift,
+            memory.0.len()
+        );
 
         let mut slot_bytes: [u8; 32] = [0; 32];
         slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);
@@ -58,7 +63,6 @@ impl Opcode for Mload {
         let mut word_right_bytes: [u8; 32] = [0; 32];
         slot_bytes.clone_from_slice(&memory.0[(slot + 32) as usize..(slot + 64) as usize]);
 
-        
         let addr_right_Word = Word::from_little_endian(&word_right_bytes);
 
         // First stack write
@@ -71,7 +75,10 @@ impl Opcode for Mload {
 
         // reconstruction
         // "minimal_length - 32" subtract 32 as actual expansion size
-         state.call_ctx_mut()?.memory.extend_at_least((minimal_length - 32) as usize);
+        state
+            .call_ctx_mut()?
+            .memory
+            .extend_at_least((minimal_length - 32) as usize);
 
         Ok(vec![exec_step])
     }
@@ -142,7 +149,7 @@ mod mload_tests {
             ]
         );
 
-        let shift =  0x40 % 32;
+        let shift = 0x40 % 32;
         let slot = 0x40 - shift;
         let memory_words = &builder.block.container.memory_word;
         assert_eq!(
@@ -151,16 +158,16 @@ mod mload_tests {
                     [step.bus_mapping_instance[idx].as_usize()])
                 .map(|operation| (operation.rw(), operation.op().clone()))
                 .collect_vec(),
-                vec![(
+            vec![
+                (
                     RW::READ,
                     MemoryWordOp::new(1, MemoryAddress(slot), Word::from(0x80u64))
-                ), 
+                ),
                 (
                     RW::READ,
                     MemoryWordOp::new(1, MemoryAddress(slot + 32), Word::from(0x00))
                 ),
-                ]
+            ]
         )
-    
     }
 }

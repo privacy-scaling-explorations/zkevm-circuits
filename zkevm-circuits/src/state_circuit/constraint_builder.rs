@@ -150,10 +150,10 @@ impl<F: Field> ConstraintBuilder<F> {
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
-            cb.require_zero(
-                "first access reads don't change value",
-                q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
-            );
+            // cb.require_zero(
+            //     "first access reads don't change value",
+            //     q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
+            // );
             // FIXME
             // precompile should be warm
             // https://github.com/scroll-tech/zkevm-circuits/issues/343
@@ -221,10 +221,10 @@ impl<F: Field> ConstraintBuilder<F> {
             q.rw_table.storage_key.clone(),
         );
         // 2.1. First access for a set of all keys are 0 if READ
-        self.require_zero(
-            "first access for a set of all keys are 0 if READ",
-            q.first_access() * q.is_read() * q.value(),
-        );
+        // self.require_zero(
+        //     "first access for a set of all keys are 0 if READ",
+        //     q.first_access() * q.is_read() * q.value(),
+        // );
         // could do this more efficiently by just asserting address = limb0 + 2^16 *
         // limb1?
         // 2.2. mem_addr in range

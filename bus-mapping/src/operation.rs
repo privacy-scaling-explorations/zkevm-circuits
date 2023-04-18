@@ -275,8 +275,7 @@ impl Ord for MemoryWordOp {
     }
 }
 
-// end 
-
+// end
 
 /// Represents a [`READ`](RW::READ)/[`WRITE`](RW::WRITE) into the stack implied
 /// by an specific [`OpcodeId`](eth_types::evm_types::opcode_ids::OpcodeId) of
@@ -290,8 +289,6 @@ pub struct StackOp {
     /// Value
     pub value: Word,
 }
-
-
 
 impl fmt::Debug for StackOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

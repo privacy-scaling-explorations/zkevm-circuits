@@ -9,9 +9,9 @@ use crate::{
     error::{get_step_reported_error, ExecError, InsufficientBalanceError, NonceUintOverflowError},
     exec_trace::OperationRef,
     operation::{
-        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, Op, OpEnum, Operation,
-        StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp, TxReceiptField, TxReceiptOp,
-        RW, MemoryWordOp,
+        AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, MemoryWordOp, Op,
+        OpEnum, Operation, StackOp, Target, TxAccessListAccountOp, TxLogField, TxLogOp,
+        TxReceiptField, TxReceiptOp, RW,
     },
     precompile::is_precompiled,
     state_db::{CodeDB, StateDB},
@@ -273,7 +273,6 @@ impl<'a> CircuitInputStateRef<'a> {
         self.push_op(step, RW::WRITE, MemoryWordOp::new(call_id, address, value));
         Ok(())
     }
-
 
     /// Push a write type [`StackOp`] into the
     /// [`OperationContainer`](crate::operation::OperationContainer) with the

@@ -1,7 +1,7 @@
 use super::{
-    AccountOp, CallContextOp, MemoryOp, Op, OpEnum, Operation, RWCounter, StackOp, StartOp,
-    StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp, TxReceiptOp,
-    TxRefundOp, RW, MemoryWordOp,
+    AccountOp, CallContextOp, MemoryOp, MemoryWordOp, Op, OpEnum, Operation, RWCounter, StackOp,
+    StartOp, StorageOp, Target, TxAccessListAccountOp, TxAccessListAccountStorageOp, TxLogOp,
+    TxReceiptOp, TxRefundOp, RW,
 };
 use crate::exec_trace::OperationRef;
 use itertools::Itertools;

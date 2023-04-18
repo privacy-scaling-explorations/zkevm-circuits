@@ -38,9 +38,8 @@ impl RwMap {
             .sorted()
             .enumerate()
         {
-            // TODO: enable it when memory word applied pass
             //println!(" idx {}, rw_counter {}", idx, rw_counter);
-            //debug_assert_eq!(idx, rw_counter - 1);
+            debug_assert_eq!(idx, rw_counter - 1);
         }
     }
     /// Check value in the same way like StateCircuit
@@ -535,7 +534,7 @@ impl Rw {
             Self::CallContext { call_id, .. }
             | Self::Stack { call_id, .. }
             | Self::Memory { call_id, .. } => Some(*call_id),
-            | Self::MemoryWord { call_id, .. } => Some(*call_id),
+            Self::MemoryWord { call_id, .. } => Some(*call_id),
             Self::Start { .. } | Self::Account { .. } => None,
         }
     }
@@ -555,7 +554,9 @@ impl Rw {
                 account_address, ..
             } => Some(*account_address),
             Self::Memory { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
-            Self::MemoryWord { memory_address, .. } => Some(U256::from(*memory_address).to_address()),
+            Self::MemoryWord { memory_address, .. } => {
+                Some(U256::from(*memory_address).to_address())
+            }
             Self::Stack { stack_pointer, .. } => {
                 Some(U256::from(*stack_pointer as u64).to_address())
             }
@@ -660,8 +661,7 @@ impl Rw {
             Self::TxAccessListAccount { is_warm, .. }
             | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
             Self::Memory { byte, .. } => F::from(u64::from(*byte)),
-            Self::MemoryWord { value, .. } =>  rlc::value(&value.to_le_bytes(), randomness)
-            ,
+            Self::MemoryWord { value, .. } => rlc::value(&value.to_le_bytes(), randomness),
             Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
         }
     }
