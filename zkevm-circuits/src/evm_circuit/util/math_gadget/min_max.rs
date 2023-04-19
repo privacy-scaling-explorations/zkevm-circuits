@@ -69,8 +69,7 @@ impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::Cell;
-    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
     use eth_types::{ToScalar, Word};
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 

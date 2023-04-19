@@ -3,12 +3,13 @@ use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
 use gadgets::util::{and, not, split_u256, sum, Expr};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
-use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use crate::evm_circuit::{
     step::ExecutionState,
     util::{
         common_gadget::SameContextGadget,
-        constraint_builder::{ConstraintBuilder, StepStateTransition, Transition},
+        constraint_builder::{
+            ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition,
+        },
         from_bytes,
         math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
         CachedRegion, Cell, Word,

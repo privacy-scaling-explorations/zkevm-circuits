@@ -50,9 +50,8 @@ impl<F: Field, const N_BYTES: usize> ComparisonGadget<F, N_BYTES> {
 
 #[cfg(test)]
 mod tests {
-    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::Cell;
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Cell};
     use eth_types::*;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
