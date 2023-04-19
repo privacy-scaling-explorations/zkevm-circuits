@@ -105,6 +105,9 @@ impl<F: Field> ConstraintBuilder<F> {
         self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
             cb.build_memory_constraints(q)
         });
+        self.condition(q.tag_matches(RwTableTag::MemoryWord), |cb| {
+            cb.build_memory_word_constraints(q)
+        });
         self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
             cb.build_stack_constraints(q)
         });
@@ -177,11 +180,11 @@ impl<F: Field> ConstraintBuilder<F> {
 
         // When all the keys in the current row and previous row are equal.
         self.condition(q.not_first_access.clone(), |cb| {
-            // TODO: update it later
-            // cb.require_zero(
-            //     "non-first access reads don't change value",
-            //     q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
-            // );
+            // TODO: this causes evm_circuit::execution::callop::test::test_precompiled_call failure
+            cb.require_zero(
+                "non-first access reads don't change value",
+                q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
+            );
             cb.require_zero(
                 "initial value doesn't change in an access group",
                 q.initial_value.clone() - q.initial_value_prev(),
@@ -228,8 +231,6 @@ impl<F: Field> ConstraintBuilder<F> {
         //     "first access for a set of all keys are 0 if READ",
         //     q.first_access() * q.is_read() * q.value(),
         // );
-        // could do this more efficiently by just asserting address = limb0 + 2^16 *
-        // limb1?
         // 2.2. mem_addr in range
         for limb in &q.address.limbs[2..] {
             self.require_zero("memory address fits into 2 limbs", limb.clone());
@@ -239,6 +240,42 @@ impl<F: Field> ConstraintBuilder<F> {
             "memory value is a byte",
             vec![(q.rw_table.value.clone(), q.lookups.u8.clone())],
         );
+        // 2.4. Start initial value is 0
+        self.require_zero("initial Memory value is 0", q.initial_value());
+        // 2.5. state root does not change
+        self.require_equal(
+            "state_root is unchanged for Memory",
+            q.state_root(),
+            q.state_root_prev(),
+        );
+        self.require_equal(
+            "value_prev column equals initial_value for Memory",
+            q.value_prev_column(),
+            q.initial_value(),
+        );
+    }
+
+    fn build_memory_word_constraints(&mut self, q: &Queries<F>) {
+        // 2.0. Unused keys are 0
+        self.require_zero("field_tag is 0 for Memory", q.field_tag());
+        self.require_zero(
+            "storage_key is 0 for Memory",
+            q.rw_table.storage_key.clone(),
+        );
+        // TODO: update it later
+        // 2.1. First access for a set of all keys are 0 if READ
+        // self.require_zero(
+        //     "first access for a set of all keys are 0 if READ",
+        //     q.first_access() * q.is_read() * q.value(),
+        // );
+        // could do this more efficiently by just asserting address = limb0 + 2^16 *
+        // limb1?
+        // 2.2. mem_addr in range
+        for limb in &q.address.limbs[2..] {
+            self.require_zero("memory address fits into 2 limbs", limb.clone());
+        }
+        // 2.3. value is a word
+
         // 2.4. Start initial value is 0
         self.require_zero("initial Memory value is 0", q.initial_value());
         // 2.5. state root does not change
@@ -634,6 +671,10 @@ impl<F: Field> Queries<F> {
 
     fn address_change(&self) -> Expression<F> {
         self.rw_table.address.clone() - self.rw_table.prev_address.clone()
+    }
+
+    fn address_not_change(&self) -> Expression<F> {
+        not::expr(self.address_change())
     }
 
     fn rw_counter_change(&self) -> Expression<F> {

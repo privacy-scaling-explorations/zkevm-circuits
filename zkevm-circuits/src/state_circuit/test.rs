@@ -723,6 +723,7 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
 
 #[test]
 fn read_inconsistency() {
+    // TODO: memory word checking read_inconsistency
     let rows = vec![
         Rw::Memory {
             rw_counter: 10,
