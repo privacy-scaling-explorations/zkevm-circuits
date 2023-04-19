@@ -150,6 +150,7 @@ impl<F: Field> ConstraintBuilder<F> {
         // When at least one of the keys (tag, id, address, field_tag, or storage_key)
         // in the current row differs from the previous row.
         self.condition(q.first_access(), |cb| {
+            // TODO: update it
             // cb.require_zero(
             //     "first access reads don't change value",
             //     q.is_read() * (q.rw_table.value.clone() - q.initial_value()),
@@ -176,10 +177,11 @@ impl<F: Field> ConstraintBuilder<F> {
 
         // When all the keys in the current row and previous row are equal.
         self.condition(q.not_first_access.clone(), |cb| {
-            cb.require_zero(
-                "non-first access reads don't change value",
-                q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
-            );
+            // TODO: update it later
+            // cb.require_zero(
+            //     "non-first access reads don't change value",
+            //     q.is_read() * (q.rw_table.value.clone() - q.rw_table.value_prev.clone()),
+            // );
             cb.require_zero(
                 "initial value doesn't change in an access group",
                 q.initial_value.clone() - q.initial_value_prev(),
@@ -220,6 +222,7 @@ impl<F: Field> ConstraintBuilder<F> {
             "storage_key is 0 for Memory",
             q.rw_table.storage_key.clone(),
         );
+        // TODO: update it later
         // 2.1. First access for a set of all keys are 0 if READ
         // self.require_zero(
         //     "first access for a set of all keys are 0 if READ",

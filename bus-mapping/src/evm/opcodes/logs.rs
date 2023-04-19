@@ -370,7 +370,7 @@ mod log_tests {
         let mut log_data_ops = Vec::with_capacity(msize);
         assert_eq!(
             // skip first 32 writes of MSTORE ops
-            (mstart + 64..(mstart + 64 + msize))
+            (mstart..(mstart + 0 + msize))
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),

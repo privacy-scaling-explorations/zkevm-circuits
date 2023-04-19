@@ -214,12 +214,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        evm_circuit::{
-            execution::error_write_protection::ErrorWriteProtectionGadget, test::rand_word,
-        },
-        test_util::CircuitTestBuilder,
-    };
+    use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
     use eth_types::{
         bytecode,
         evm_types::{GasCost, OpcodeId},

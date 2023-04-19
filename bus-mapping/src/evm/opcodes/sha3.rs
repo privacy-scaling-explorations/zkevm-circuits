@@ -239,7 +239,7 @@ pub mod sha3_tests {
         // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
         // skip them.
         assert_eq!(
-            (memory_len..(memory_len + size))
+            (0..size)
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),

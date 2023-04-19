@@ -301,12 +301,9 @@ mod calldatacopy_tests {
         //
         // 2. Following that, we should have tuples of (RW::READ and RW::WRITE) where
         // the caller memory is read and the current call's memory is written to.
+        assert_eq!(builder.block.container.memory.len(), 2 * copy_size);
         assert_eq!(
-            builder.block.container.memory.len(),
-            call_data_length + 2 * copy_size
-        );
-        assert_eq!(
-            (call_data_length..(call_data_length + (2 * copy_size)))
+            (0..2 * copy_size)
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
