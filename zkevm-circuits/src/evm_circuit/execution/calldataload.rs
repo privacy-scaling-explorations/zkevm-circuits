@@ -1,9 +1,10 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian, U256};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
 };
+use num::ToPrimitive;
 
 use crate::{
     evm_circuit::{
@@ -13,8 +14,8 @@ use crate::{
             and,
             common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
-            memory_gadget::BufferReaderGadget,
-            not, select, CachedRegion, Cell,
+            memory_gadget::{BufferReaderGadget, MemoryWordAddress},
+            not, select, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -47,6 +48,11 @@ pub(crate) struct CallDataLoadGadget<F> {
     /// Gadget to read from tx calldata, which we validate against the word
     /// pushed to stack.
     buffer_reader: BufferReaderGadget<F, N_BYTES_WORD, N_BYTES_MEMORY_ADDRESS>,
+    // read two memory words
+    // memory_address: MemoryWordAddress<F>,
+    slot: Cell<F>,
+    value_left: Word<F>,
+    value_right: Word<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
@@ -60,6 +66,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         let src_id = cb.query_cell();
         let call_data_length = cb.query_cell();
         let call_data_offset = cb.query_cell();
+        let slot = cb.query_cell();
+        let value_left = cb.query_word_rlc();
+        let value_right = cb.query_word_rlc();
 
         let data_offset = WordByteCapGadget::construct(cb, call_data_length.expr());
         cb.stack_pop(data_offset.original_word());
@@ -144,25 +153,33 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                         );
                     },
                 );
-                // For an internal call, the call data comes from memory.
-                cb.condition(
-                    and::expr([
-                        data_offset.within_range(),
-                        buffer_reader.read_flag(idx),
-                        not::expr(cb.curr.state.is_root.expr()),
-                    ]),
-                    |cb| {
-                        cb.memory_lookup(
-                            0.expr(),
-                            src_addr.expr() + idx.expr(),
-                            buffer_reader.byte(idx),
-                            Some(src_id.expr()),
-                        );
-                    },
-                );
+
                 buffer_reader.byte(idx)
             })
             .collect();
+
+        // For an internal call, the call data comes from memory，read memory word
+        // TODO: unify slot within MemoryWordAddress type
+        cb.condition(
+            and::expr([
+                data_offset.within_range(),
+                not::expr(cb.curr.state.is_root.expr()),
+            ]),
+            |cb| {
+                cb.memory_lookup_word(
+                    0.expr(),
+                    slot.expr(),
+                    value_left.expr(),
+                    Some(src_id.expr()),
+                );
+                cb.memory_lookup_word(
+                    0.expr(),
+                    slot.expr() + 32.expr(),
+                    value_right.expr(),
+                    Some(src_id.expr()),
+                );
+            },
+        );
 
         // Since the stack items are in little endian form, we reverse the bytes
         // here.
@@ -196,6 +213,9 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             call_data_offset,
             data_offset,
             buffer_reader,
+            slot,
+            value_left,
+            value_right,
         }
     }
 
@@ -239,7 +259,30 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .unwrap_or(src_addr_end)
             .min(src_addr_end);
 
+        let shift = src_addr % 32;
+        let slot = src_addr - shift;
+        let mut value_left = U256::zero();
+        let mut value_right = U256::zero();
+
+        self.slot
+            .assign(region, offset, Value::known(F::from(slot)))?;
+        if !call.is_root && offset_within_range {
+            // assign value_left, value_right word
+            value_left = block.rws[step.rw_indices[4]].memory_word_value();
+            value_right = block.rws[step.rw_indices[5]].memory_word_value();
+            self.value_left
+                .assign(region, offset, Some(value_left.to_le_bytes()))?;
+            self.value_right
+                .assign(region, offset, Some(value_right.to_le_bytes()))?;
+        }
+
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
+        // prepare to fetch from memory bytes
+        let mut value_left_bytes = value_left.to_le_bytes();
+        value_left_bytes.reverse();
+        let mut value_right_bytes = value_left.to_le_bytes();
+        value_right_bytes.reverse();
+
         if offset_within_range {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
@@ -252,12 +295,17 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                     if src_addr.checked_add(i as u64).unwrap()
                         < call.call_data_offset + call.call_data_length
                     {
-                        *byte =
-                            block.rws[step.rw_indices[OFFSET_RW_MEMORY_INDICES + i]].memory_value();
+                        if i.checked_add(shift.try_into().unwrap()).unwrap() < 32 {
+                            *byte = value_left_bytes[i + shift as usize];
+                        } else {
+                            // across to value_right
+                            *byte = value_right_bytes[i + shift as usize - 32];
+                        }
                     }
                 }
             }
         }
+        println!("assign calldata_bytes {:?}", calldata_bytes);
 
         self.buffer_reader.assign(
             region,

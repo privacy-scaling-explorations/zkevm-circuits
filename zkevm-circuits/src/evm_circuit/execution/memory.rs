@@ -83,9 +83,6 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             value.expr(),
         );
 
-        let addr_left = address_word.addr_left();
-        let addr_right = address_word.addr_right();
-
         // TODO: replace with value_left = instruction.memory_lookup(RW.Write, addr_left)
         cb.condition(is_mstore8.expr(), |cb| {
             cb.memory_lookup_word(1.expr(), address_word.addr_left(), value_left.expr(), None);

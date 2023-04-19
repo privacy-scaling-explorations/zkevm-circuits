@@ -93,7 +93,7 @@ impl Opcode for Calldataload {
                 let mut slot_bytes: [u8; 32] = [0; 32];
                 // pick up caller's memory
                 let mut memory = state.caller_ctx_mut()?.memory.clone();
-                println!("calldatload memory {:?}", memory);
+                println!("calldatload caller memory {:?}", memory);
                 // expand to offset + 64 to enusre addr_right_Word without out of boundary
                 let minimal_length = offset + 64;
 
@@ -109,7 +109,6 @@ impl Opcode for Calldataload {
 
                 let addr_right_Word = Word::from_little_endian(&word_right_bytes);
 
-                //state.memory_read_word(&mut exec_step, slot.into(), value)
                 state.push_op(
                     &mut exec_step,
                     RW::READ,

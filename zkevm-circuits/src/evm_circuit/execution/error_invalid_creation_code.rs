@@ -52,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidCreationCodeGadget<F> {
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
 
         let address_word = MemoryWordAddress::construct(cb, offset.clone());
-        // lookup memory for first byte
+        // lookup memory for first word
         cb.memory_lookup_word(0.expr(), address_word.addr_left(), value_left.expr(), None);
         // let first_byte = value_left.cells[address_word.shift()];
         // constrain first byte is 0xef
