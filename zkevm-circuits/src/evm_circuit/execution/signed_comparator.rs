@@ -230,7 +230,7 @@ mod test {
             bytecode.push(32, a);
             bytecode.write_op(opcode);
         }
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
