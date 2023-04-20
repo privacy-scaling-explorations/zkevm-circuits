@@ -4,10 +4,15 @@ mod cell_manager;
 pub mod keccak_packed_multi;
 mod param;
 mod table;
-#[cfg(test)]
-mod test;
 /// Util
 mod util;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::KeccakCircuit as TestKeccakCircuit;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
@@ -27,9 +32,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use log::info;
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
@@ -76,7 +78,6 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             get_num_rows_per_round() > NUM_BYTES_PER_WORD,
             "KeccakCircuit requires KECCAK_ROWS>=9"
         );
-
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
@@ -172,8 +173,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         total_lookup_counter += lookup_counter;
 
         // Process inputs.
-        // "Absorb" happens at the first round. However, the input is witnessed and processed
-        // over the first 17 rounds. Each round converts a word into 8 bytes.
+        // "Absorb" happens at the first round. However, the input is witnessed and
+        // processed over the first 17 rounds. Each round converts a word into 8
+        // bytes.
         cell_manager.start_region();
         let mut lookup_counter = 0;
         // Potential optimization: could do multiple bytes per lookup
@@ -738,10 +740,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                                 .map(|is_padding| not::expr(is_padding.expr())),
                         ),
                 );
-
                 let mut new_data_rlc = data_rlcs[NUM_BYTES_PER_WORD].expr();
 
-                // At the start of a hash, start at 0. Otherwise, continue from the previous value.
+                // At the start of a hash, start at 0. Otherwise, continue from the previous
+                // value.
                 let data_rlc_zero_or_prev =
                     data_rlc_prev.clone() * not::expr(start_new_hash_prev.expr());
                 cb.require_equal(
@@ -750,8 +752,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                     new_data_rlc.clone(),
                 );
 
-                // Add the word `input_bytes` to `data_rlc`. It has a variable length represented by
-                // `is_paddings`, which requires intermediate cells to keep the degree low.
+                // Add the word `input_bytes` to `data_rlc`. It has a variable length
+                // represented by `is_paddings`, which requires intermediate
+                // cells to keep the degree low.
                 for (idx, (byte, is_padding)) in
                     input_bytes.iter().zip(is_paddings.iter()).enumerate()
                 {
@@ -768,8 +771,9 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                     );
                     new_data_rlc = data_rlc_after_this_byte;
                 }
-                // At this point, `data_rlcs[0]` includes the new input word. It will be copied into
-                // the next round, or it is the final `input_rlc` in the lookup table.
+                // At this point, `data_rlcs[0]` includes the new input word. It
+                // will be copied into the next round, or it is
+                // the final `input_rlc` in the lookup table.
             });
             // Keep length/data_rlc the same on rows where we don't absorb data
             cb.condition(
@@ -1000,42 +1004,6 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
         config.load_aux_tables(layouter)?;
         let witness = self.generate_witness(*challenges);
         config.assign(layouter, witness.as_slice())
-    }
-}
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for KeccakCircuit<F> {
-    type Config = (KeccakCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            KeccakCircuitConfig::new(
-                meta,
-                KeccakCircuitConfigArgs {
-                    keccak_table,
-                    challenges,
-                },
-            )
-        };
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 

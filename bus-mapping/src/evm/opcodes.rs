@@ -58,6 +58,7 @@ mod error_invalid_jump;
 mod error_oog_call;
 mod error_oog_exp;
 mod error_oog_log;
+mod error_oog_memory_copy;
 mod error_oog_sload_sstore;
 mod error_return_data_outofbound;
 mod error_simple;
@@ -83,6 +84,7 @@ use error_invalid_jump::InvalidJump;
 use error_oog_call::OOGCall;
 use error_oog_exp::OOGExp;
 use error_oog_log::ErrorOOGLog;
+use error_oog_memory_copy::OOGMemoryCopy;
 use error_oog_sload_sstore::OOGSloadSstore;
 use error_return_data_outofbound::ErrorReturnDataOutOfBound;
 use error_simple::ErrorSimple;
@@ -275,6 +277,7 @@ fn fn_gen_error_state_associated_ops(error: &ExecError) -> Option<FnGenAssociate
         ExecError::OutOfGas(OogError::Constant) => Some(ErrorSimple::gen_associated_ops),
         ExecError::OutOfGas(OogError::Exp) => Some(OOGExp::gen_associated_ops),
         ExecError::OutOfGas(OogError::Log) => Some(ErrorOOGLog::gen_associated_ops),
+        ExecError::OutOfGas(OogError::MemoryCopy) => Some(OOGMemoryCopy::gen_associated_ops),
         ExecError::OutOfGas(OogError::SloadSstore) => Some(OOGSloadSstore::gen_associated_ops),
         ExecError::StackOverflow => Some(ErrorSimple::gen_associated_ops),
         ExecError::StackUnderflow => Some(ErrorSimple::gen_associated_ops),
@@ -331,17 +334,19 @@ pub fn gen_associated_ops(
         if let Some(fn_gen_error_ops) = fn_gen_error_state_associated_ops(&exec_error) {
             return fn_gen_error_ops(state, geth_steps);
         } else {
+            // For exceptions that fail to enter next call context, we need
+            // to restore call context of current caller
+            let mut need_restore = true;
+
             // For exceptions that already enter next call context, but fail immediately
             // (e.g. Depth, InsufficientBalance), we still need to parse the call.
             if geth_step.op.is_call_or_create() {
                 let call = state.parse_call(geth_step)?;
                 state.push_call(call);
-            // For exceptions that fail to enter next call context, we need
-            // to restore call context of current caller
-            } else {
-                state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
+                need_restore = false;
             }
-            state.handle_return(geth_step)?;
+
+            state.handle_return(&mut exec_step, geth_steps, need_restore)?;
             return Ok(vec![exec_step]);
         }
     }
@@ -701,6 +706,6 @@ fn dummy_gen_selfdestruct_ops(
         state.sdb.destruct_account(sender);
     }
 
-    state.handle_return(geth_step)?;
+    state.handle_return(&mut exec_step, geth_steps, false)?;
     Ok(vec![exec_step])
 }
