@@ -14,17 +14,18 @@ use crate::{
         TxReceiptField, TxReceiptOp, RW,
     },
     precompile::is_precompiled,
-    state_db::{CodeDB, StateDB},
+    state_db::{self, CodeDB, StateDB},
     Error,
 };
 use eth_types::{
     evm_types::{
-        gas_utils::memory_expansion_gas_cost, Gas, GasCost, MemoryAddress, OpcodeId, StackAddress,
+        gas_utils::memory_expansion_gas_cost, Gas, GasCost, Memory, MemoryAddress, OpcodeId,
+        StackAddress,
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
-use std::cmp::max;
+use std::{cmp::max, mem};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -1610,15 +1611,15 @@ impl<'a> CircuitInputStateRef<'a> {
         dst_addr: u64,
         src_addr_end: u64,
         bytes_left: u64,
-    ) -> Result<Vec<(u8, bool)>, Error> {
+    ) -> Result<Vec<(u8, bool, bool)>, Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         for idx in 0..bytes_left {
             let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
             let step = if addr < src_addr_end {
                 let code = bytecode.code.get(addr as usize).unwrap();
-                (code.value, code.is_code)
+                (code.value, code.is_code, false)
             } else {
-                (0, false)
+                (0, false, false)
             };
             copy_steps.push(step);
             //TODO: change value to Word
@@ -1632,30 +1633,40 @@ impl<'a> CircuitInputStateRef<'a> {
     pub(crate) fn gen_copy_steps_for_call_data(
         &mut self,
         exec_step: &mut ExecStep,
-        src_addr: u64,
-        dst_addr: u64,
-        src_addr_end: u64,
+        src_addr: u64,     // for internal call, it is memory slot
+        dst_addr: u64,     // end memory slot
+        src_addr_end: u64, // for internal call, it is memory slot
         bytes_left: u64,
-    ) -> Result<Vec<(u8, bool)>, Error> {
+    ) -> Result<Vec<(u8, bool, bool)>, Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        println!("calldata : {:?}", self.call_ctx()?.call_data);
+        let is_root = self.call()?.is_root;
+
+        let mut memory = if !is_root {
+            self.caller_ctx_mut()?.memory.clone()
+        } else {
+            Memory::new()
+        };
+
+        memory.extend_at_least(dst_addr as usize + 32);
+
         for idx in 0..bytes_left {
             let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let value = if addr < src_addr_end {
-                let byte =
-                    self.call_ctx()?.call_data[(addr - self.call()?.call_data_offset) as usize];
-                if !self.call()?.is_root {
-                    self.push_op(
-                        exec_step,
-                        RW::READ,
-                        MemoryOp::new(self.call()?.caller_id, addr.into(), byte),
-                    );
+            let value = if is_root {
+                if addr < src_addr_end {
+                    self.call_ctx()?.call_data[(addr - self.call()?.call_data_offset) as usize]
+                } else {
+                    0
                 }
-                byte
             } else {
-                0
+                // fecth caller's memory bytes from [src_addr--src_addr_end]
+                // may need to expand it
+                memory.0[(src_addr + idx) as usize]
             };
-            copy_steps.push((value, false));
-            self.memory_write(exec_step, (dst_addr + idx).into(), value)?;
+
+            // todo: add mask flag for actual copy bytes instead of padding slot bytes.
+            // tuple is (value, is_code, mask)
+            copy_steps.push((value, false, false));
         }
 
         Ok(copy_steps)
@@ -1666,7 +1677,7 @@ impl<'a> CircuitInputStateRef<'a> {
         exec_step: &mut ExecStep,
         src_addr: u64,
         bytes_left: u64,
-    ) -> Result<Vec<(u8, bool)>, Error> {
+    ) -> Result<Vec<(u8, bool, bool)>, Error> {
         // Get memory data
         let mem = self
             .call_ctx()?
@@ -1680,7 +1691,7 @@ impl<'a> CircuitInputStateRef<'a> {
             // Read memory
             self.memory_read(exec_step, (addr as usize).into(), *byte)?;
 
-            copy_steps.push((*byte, false));
+            copy_steps.push((*byte, false, false));
 
             // Write log
             self.tx_log_write(

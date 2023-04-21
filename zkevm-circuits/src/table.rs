@@ -1331,7 +1331,7 @@ impl CopyTable {
             let values = copy_event
                 .bytes
                 .iter()
-                .map(|(value, _)| *value)
+                .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
             challenges
                 .keccak_input()
@@ -1341,7 +1341,7 @@ impl CopyTable {
         for (step_idx, (is_read_step, copy_step)) in copy_event
             .bytes
             .iter()
-            .flat_map(|(value, is_code)| {
+            .flat_map(|(value, is_code, _)| {
                 let read_step = CopyStep {
                     value: *value,
                     is_code: if copy_event.src_type == CopyDataType::Bytecode {

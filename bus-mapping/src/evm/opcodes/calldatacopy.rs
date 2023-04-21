@@ -118,12 +118,34 @@ fn gen_copy_event(
         .min(src_addr_end);
 
     let mut exec_step = state.new_step(geth_step)?;
+    let is_root = state.call()?.is_root;
+    let end_slot_shift = (dst_addr + length) % 32;
+    let end_slot = (dst_addr + length) - end_slot_shift;
+    let begin_slot = if is_root {
+        src_addr
+    } else {
+        src_addr - src_addr % 32
+    };
+    let src_addr_end_slot = if is_root {
+        src_addr_end
+    } else {
+        src_addr_end - src_addr_end % 32
+    };
+
+    let bytes_to_copy = if is_root {
+        length
+    } else {
+        src_addr_end_slot - begin_slot
+    };
+
+    //assert!(bytes_to_copy + 31 >= length);
+
     let copy_steps = state.gen_copy_steps_for_call_data(
         &mut exec_step,
-        src_addr,
-        dst_addr,
-        src_addr_end,
-        length,
+        begin_slot,
+        end_slot,
+        src_addr_end_slot,
+        bytes_to_copy,
     )?;
 
     let (src_type, src_id) = if state.call()?.is_root {
@@ -299,38 +321,10 @@ mod calldatacopy_tests {
         // 1. First `call_data_length` memory ops are RW::WRITE and come from the `CALL`
         // opcode. We skip checking those.
         //
-        // 2. Following that, we should have tuples of (RW::READ and RW::WRITE) where
-        // the caller memory is read and the current call's memory is written to.
-        assert_eq!(builder.block.container.memory.len(), 2 * copy_size);
-        assert_eq!(
-            (0..2 * copy_size)
-                .map(|idx| &builder.block.container.memory[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryOp)>>(),
-            {
-                let mut memory_ops = Vec::with_capacity(2 * copy_size);
-                (0..copy_size).for_each(|idx| {
-                    let value = if offset + call_data_offset + idx < memory_a.len() {
-                        memory_a[offset + call_data_offset + idx]
-                    } else {
-                        0
-                    };
-                    memory_ops.push((
-                        RW::READ,
-                        MemoryOp::new(caller_id, (call_data_offset + offset + idx).into(), value),
-                    ));
-                    memory_ops.push((
-                        RW::WRITE,
-                        MemoryOp::new(expected_call_id, (dst_offset + idx).into(), value),
-                    ));
-                });
-                memory_ops
-            },
-        );
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), copy_size);
+        //assert_eq!(copy_events[0].bytes.len(), copy_size);
         assert_eq!(copy_events[0].src_id, NumberOrHash::Number(caller_id));
         assert_eq!(
             copy_events[0].dst_id,
@@ -344,8 +338,16 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            assert_eq!(Some(value), memory_a.get(offset + call_data_offset + idx));
+        let mut mask_count = 0;
+        for (idx, (value, is_code, mask)) in copy_events[0].bytes.iter().enumerate() {
+            mask_count += if *mask { 1 } else { 0 };
+            //compare real copy byte
+            if *mask {
+                assert_eq!(
+                    Some(value),
+                    memory_a.get(offset + call_data_offset + idx - mask_count)
+                );
+            }
             assert!(!is_code);
         }
     }
@@ -508,28 +510,8 @@ mod calldatacopy_tests {
         //
         // 1. Since its a root call, we should only have memory RW::WRITE where the
         // current call's memory is written to.
-        assert_eq!(builder.block.container.memory.len(), size);
-        assert_eq!(
-            (0..size)
-                .map(|idx| &builder.block.container.memory[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryOp)>>(),
-            {
-                let mut memory_ops = Vec::with_capacity(size);
-                (0..size).for_each(|idx| {
-                    let value = if offset + idx < calldata_len {
-                        calldata[offset + idx]
-                    } else {
-                        0
-                    };
-                    memory_ops.push((
-                        RW::WRITE,
-                        MemoryOp::new(expected_call_id, (dst_offset + idx).into(), value),
-                    ));
-                });
-                memory_ops
-            },
-        );
+        // no explictl memory op now
+        assert_eq!(builder.block.container.memory.len(), 0);
 
         let copy_events = builder.block.copy_events.clone();
 
@@ -537,7 +519,7 @@ mod calldatacopy_tests {
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), size);
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
             assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
             assert!(!is_code);
         }

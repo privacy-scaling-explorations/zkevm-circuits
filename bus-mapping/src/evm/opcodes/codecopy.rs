@@ -231,7 +231,7 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
             let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
             assert_eq!(*value, bytecode_element.value);
             assert_eq!(*is_code, bytecode_element.is_code);

@@ -184,11 +184,11 @@ fn handle_copy(
     let copy_length = std::cmp::min(source.length, destination.length);
     let bytes: Vec<_> = state.call_ctx()?.memory.0[source.offset..source.offset + copy_length]
         .iter()
-        .map(|byte| (*byte, false))
+        .map(|byte| (*byte, false, false))
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _is_code)) in bytes.iter().enumerate() {
+    for (i, (byte, is_code, _)) in bytes.iter().enumerate() {
         state.push_op(
             step,
             RW::READ,
@@ -239,11 +239,11 @@ fn handle_create(
     let bytes: Vec<_> = Bytecode::from(values)
         .code
         .iter()
-        .map(|element| (element.value, element.is_code))
+        .map(|element| (element.value, element.is_code, false))
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _)) in bytes.iter().enumerate() {
+    for (i, (byte, _, _)) in bytes.iter().enumerate() {
         state.push_op(
             step,
             RW::READ,

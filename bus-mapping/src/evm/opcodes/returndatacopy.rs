@@ -95,7 +95,7 @@ fn gen_copy_steps(
     dst_addr: u64,
     src_addr_end: u64,
     bytes_left: u64,
-) -> Result<Vec<(u8, bool)>, Error> {
+) -> Result<Vec<(u8, bool, bool)>, Error> {
     let mut copy_steps = Vec::with_capacity(bytes_left as usize);
     let src_addr_base = state.call()?.last_callee_return_data_offset;
     for idx in 0..bytes_left {
@@ -113,7 +113,7 @@ fn gen_copy_steps(
         );
 
         // Write
-        copy_steps.push((value, false));
+        copy_steps.push((value, false, false));
         state.memory_write(exec_step, (dst_addr + idx).into(), value)?;
     }
     Ok(copy_steps)

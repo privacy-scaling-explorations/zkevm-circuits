@@ -96,7 +96,6 @@ impl Opcode for Calldataload {
                 println!("calldatload caller memory {:?}", memory);
                 // expand to offset + 64 to enusre addr_right_Word without out of boundary
                 let minimal_length = offset + 64;
-
                 memory.extend_at_least(minimal_length as usize);
 
                 slot_bytes.clone_from_slice(&memory.0[(slot as usize)..(slot as usize + 32)]);

@@ -239,8 +239,8 @@ pub struct CopyEvent {
     pub log_id: Option<u64>,
     /// Value of rw counter at start of this copy event
     pub rw_counter_start: RWCounter,
-    /// Represents the list of (bytes, is_code) copied during this copy event
-    pub bytes: Vec<(u8, bool)>,
+    /// Represents the list of (bytes, is_code, mask) copied during this copy event
+    pub bytes: Vec<(u8, bool, bool)>,
 }
 
 impl CopyEvent {

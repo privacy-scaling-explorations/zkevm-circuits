@@ -315,11 +315,11 @@ fn handle_copy(
     let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
         .code
         .iter()
-        .map(|element| (element.value, element.is_code))
+        .map(|element| (element.value, element.is_code, false))
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _)) in bytes.iter().enumerate() {
+    for (i, (byte, _, _)) in bytes.iter().enumerate() {
         // this could be a memory read, if this happens before we push the new call?
         state.push_op(
             step,

@@ -972,9 +972,9 @@ mod tests {
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
         let length = 0x0fffusize;
         let code = bytecode! {
-            PUSH32(Word::from(length))
-            PUSH32(Word::from(0x00))
-            PUSH32(Word::from(0x00))
+            PUSH32(Word::from(length)) //length
+            PUSH32(Word::from(0x00))  //dataOffset
+            PUSH32(Word::from(0x00))  //memOffset
             CALLDATACOPY
             STOP
         };
