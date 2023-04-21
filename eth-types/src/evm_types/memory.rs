@@ -336,7 +336,7 @@ impl Memory {
             self.extend_at_least(minimal_length);
 
             let mem_starts = dst_offset as usize;
-            let mem_ends = mem_starts + length as usize;
+            let mem_ends = mem_starts + length;
             let dst_slice = &mut self.0[mem_starts..mem_ends];
             dst_slice.fill(0);
             let data_starts = data_offset as usize;
