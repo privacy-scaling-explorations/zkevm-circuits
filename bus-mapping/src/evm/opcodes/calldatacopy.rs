@@ -202,7 +202,7 @@ mod calldatacopy_tests {
         let offset = 0x00usize;
         let copy_size = 0x10usize;
         let code_b = bytecode! {
-            .calldatacopy(dst_offset, offset, copy_size)
+            .op_calldatacopy(dst_offset, offset, copy_size)
             STOP
         };
 
@@ -378,7 +378,7 @@ mod calldatacopy_tests {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            .calldatacopy(0x00usize, 0x00usize, 0x50usize)
+            .op_calldatacopy(0x00usize, 0x00usize, 0x50usize)
             STOP
         };
 
@@ -428,7 +428,7 @@ mod calldatacopy_tests {
         let calldata = vec![1, 3, 5, 7, 9, 2, 4, 6, 8];
         let calldata_len = calldata.len();
         let code = bytecode! {
-            .calldatacopy(dst_offset, offset, size)
+            .op_calldatacopy(dst_offset, offset, size)
             STOP
         };
 

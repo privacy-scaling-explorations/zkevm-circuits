@@ -36,11 +36,9 @@ fn gen_code_single(base: Word, exponent: Word) -> Bytecode {
 fn gen_code_multiple(args: Vec<(Word, Word)>) -> Bytecode {
     let mut code = Bytecode::default();
     for (base, exponent) in args.into_iter() {
-        code.push(32, exponent);
-        code.push(32, base);
-        code.write_op(OpcodeId::EXP);
+        code.op_exp(base, exponent);
     }
-    code.write_op(OpcodeId::STOP);
+    code.op_stop();
     code
 }
 

@@ -203,12 +203,12 @@ mod test {
         let mut code = Bytecode::default();
         if is_warm {
             code.append(&bytecode! {
-                .balance(address)
+                .op_balance(address)
                 POP
             });
         }
         code.append(&bytecode! {
-            .balance(address)
+            .op_balance(address)
             STOP
         });
 
@@ -254,12 +254,12 @@ mod test {
         let mut code_b = Bytecode::default();
         if is_warm {
             code_b.append(&bytecode! {
-                .balance(address)
+                .op_balance(address)
                 POP
             });
         }
         code_b.append(&bytecode! {
-            .balance(address)
+            .op_balance(address)
             STOP
         });
 

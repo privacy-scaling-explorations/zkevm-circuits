@@ -273,7 +273,7 @@ mod test {
             .write_op(opcode)
             PUSH1(0)
             PUSH1(0)
-            .write_op(OpcodeId::REVERT)
+            REVERT
         });
 
         bytecode
