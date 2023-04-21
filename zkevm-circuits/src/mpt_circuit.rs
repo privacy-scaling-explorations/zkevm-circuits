@@ -18,7 +18,8 @@ mod param;
 mod rlp_gadgets;
 mod start;
 mod storage_leaf;
-mod witness_row;
+/// MPT witness row
+pub mod witness_row;
 
 use self::{
     account_leaf::AccountLeafConfig,
@@ -478,11 +479,15 @@ impl<F: Field> MPTConfig<F> {
     }
 }
 
+/// MPT Circuit for proving the storage modification is valid.
 #[derive(Default)]
-struct MPTCircuit<F> {
-    nodes: Vec<Node>,
-    keccak_data: Vec<Vec<u8>>,
-    randomness: F,
+pub struct MPTCircuit<F> {
+    /// MPT nodes
+    pub nodes: Vec<Node>,
+    /// MPT keccak data
+    pub keccak_data: Vec<Vec<u8>>,
+    /// MPT randomness
+    pub randomness: F,
 }
 
 impl<F: Field> Circuit<F> for MPTCircuit<F> {
@@ -532,7 +537,6 @@ mod tests {
 
     #[test]
     fn test_mpt() {
-        // for debugging:
         let path = "src/mpt_circuit/tests";
         let files = fs::read_dir(path).unwrap();
         files

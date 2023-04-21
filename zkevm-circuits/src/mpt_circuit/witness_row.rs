@@ -79,6 +79,7 @@ pub(crate) enum StartRowType {
     Count,
 }
 
+/// MPT branch node
 #[derive(Clone, Debug)]
 pub struct BranchNode {
     pub(crate) modified_index: usize,
@@ -86,16 +87,19 @@ pub struct BranchNode {
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
 }
 
+/// MPT extension node
 #[derive(Clone, Debug)]
 pub struct ExtensionNode {
     pub(crate) list_rlp_bytes: Vec<u8>,
 }
 
+/// MPT start node
 #[derive(Clone, Debug)]
 pub struct StartNode {
     pub(crate) proof_type: ProofType,
 }
 
+/// MPT extension branch node
 #[derive(Clone, Debug)]
 pub struct ExtensionBranchNode {
     pub(crate) is_extension: bool,
@@ -104,6 +108,7 @@ pub struct ExtensionBranchNode {
     pub(crate) branch: BranchNode,
 }
 
+/// MPT account node
 #[derive(Clone, Debug)]
 pub struct AccountNode {
     pub(crate) address: Vec<u8>,
@@ -114,6 +119,7 @@ pub struct AccountNode {
     pub(crate) wrong_rlp_bytes: Vec<u8>,
 }
 
+/// MPT storage node
 #[derive(Clone, Debug)]
 pub struct StorageNode {
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
@@ -122,13 +128,15 @@ pub struct StorageNode {
     pub(crate) wrong_rlp_bytes: Vec<u8>,
 }
 
+/// MPT node
 #[derive(Clone, Debug, Default)]
 pub struct Node {
     pub(crate) start: Option<StartNode>,
     pub(crate) extension_branch: Option<ExtensionBranchNode>,
     pub(crate) account: Option<AccountNode>,
     pub(crate) storage: Option<StorageNode>,
-    pub(crate) values: Vec<Vec<u8>>,
+    /// MPT node values
+    pub values: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
@@ -155,6 +163,7 @@ pub(crate) enum MptWitnessRowType {
     StorageNonExisting = 19,
 }
 
+/// MPT witness row
 #[derive(Clone, Debug)]
 pub struct MptWitnessRow<F> {
     pub(crate) bytes: Vec<u8>,
@@ -169,6 +178,7 @@ pub struct MptWitnessRow<F> {
 }
 
 impl<F: Field> MptWitnessRow<F> {
+    /// New MPT witness row
     pub fn new(bytes: Vec<u8>) -> Self {
         Self {
             bytes,
@@ -244,8 +254,9 @@ impl<F: Field> MptWitnessRow<F> {
 }
 
 // TODO(Brecht): Do all of this on the MPT proof generation side
-pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> {
-    for (ind, row) in witness
+/// MPT prepare witness
+pub fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> {
+    for (_, row) in witness
         .iter_mut()
         .filter(|r| r.get_type() != MptWitnessRowType::HashToBeComputed)
         .enumerate()

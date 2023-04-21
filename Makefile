@@ -43,6 +43,9 @@ packed_keccak_bench: ## Run Packed Keccak Circuit benchmarks
 packed_multi_keccak_bench: ## Run Packed Multi Keccak Circuit benchmarks
 	@cargo test --profile bench bench_packed_multi_keccak_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
+mpt_bench: ## Run MPT Circuit benchmarks
+	@cargo test --profile bench bench_mpt_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
+
 bytecode_bench: ## Run Bytecode Circuit benchmarks
 	@cargo test --profile bench bench_bytecode_circuit_prover -p circuit-benchmarks --features benches  -- --nocapture
 
