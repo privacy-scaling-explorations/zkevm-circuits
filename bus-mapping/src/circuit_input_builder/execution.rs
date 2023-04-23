@@ -201,6 +201,8 @@ impl_expr!(CopyDataType);
 pub struct CopyStep {
     /// Byte value copied in this step.
     pub value: u8,
+    /// mask indicates
+    pub mask: bool,
     /// Optional field which is enabled only for the source being `bytecode`,
     /// and represents whether or not the byte is an opcode.
     pub is_code: Option<bool>,

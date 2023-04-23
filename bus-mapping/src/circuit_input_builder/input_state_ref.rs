@@ -1645,10 +1645,12 @@ impl<'a> CircuitInputStateRef<'a> {
         let mut memory = if !is_root {
             self.caller_ctx_mut()?.memory.clone()
         } else {
+            // virtual memory to holds bytes from calldata
             Memory::new()
         };
 
         memory.extend_at_least(dst_addr as usize + 32);
+        let mut dest_slot = dst_addr;
 
         for idx in 0..bytes_left {
             let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
@@ -1662,11 +1664,28 @@ impl<'a> CircuitInputStateRef<'a> {
                 // fecth caller's memory bytes from [src_addr--src_addr_end]
                 // may need to expand it
                 memory.0[(src_addr + idx) as usize]
+                //todo: memory word reads
+                // self.push_op(
+                //    exec_step,
+                //    RW::READ,
+                //   MemoryOp::new(self.call()?.caller_id, addr.into(), byte),
             };
+
+            memory[idx] = value;
 
             // todo: add mask flag for actual copy bytes instead of padding slot bytes.
             // tuple is (value, is_code, mask)
             copy_steps.push((value, false, false));
+            // memory word writes
+            if idx % 32 == 0 {
+                let mut slot_bytes: [u8; 32] = [0; 32];
+                slot_bytes
+                    .clone_from_slice(&memory.0[(dest_slot as usize)..(dest_slot as usize + 32)]);
+
+                let dest_word = Word::from_big_endian(&slot_bytes);
+                self.memory_read_word(exec_step, dest_slot.into(), dest_word)?;
+                dest_slot = dest_slot + 32;
+            }
         }
 
         Ok(copy_steps)

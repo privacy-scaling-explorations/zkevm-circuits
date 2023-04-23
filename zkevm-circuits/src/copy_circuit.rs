@@ -76,6 +76,9 @@ pub struct CopyCircuitConfig<F> {
     pub is_last: Column<Advice>,
     /// The value copied in this copy step.
     pub value: Column<Advice>,
+    /// The word value for memory lookup.
+    pub value_wrod_rlc: Column<Advice>,
+
     /// Random linear combination accumulator value.
     pub value_acc: Column<Advice>,
     /// Whether the row is padding.
@@ -136,6 +139,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
         let value = meta.advice_column_in(SecondPhase);
+        let value_wrod_rlc = meta.advice_column_in(SecondPhase);
+
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
@@ -448,6 +453,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             q_step,
             is_last,
             value,
+            value_wrod_rlc,
             value_acc,
             is_pad,
             is_code,
@@ -513,6 +519,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             for (column, &(value, label)) in [
                 self.is_last,
                 self.value,
+                self.value_wrod_rlc,
                 self.value_acc,
                 self.is_pad,
                 self.is_code,
@@ -571,6 +578,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             |mut region| {
                 region.name_column(|| "is_last", self.is_last);
                 region.name_column(|| "value", self.value);
+                region.name_column(|| "value_wrod_rlc", self.value_wrod_rlc);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
 
@@ -970,7 +978,9 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
-        let length = 0x0fffusize;
+        // let length = 0x0fffusize;
+        let length = 0x0fusize;
+
         let code = bytecode! {
             PUSH32(Word::from(length)) //length
             PUSH32(Word::from(0x00))  //dataOffset

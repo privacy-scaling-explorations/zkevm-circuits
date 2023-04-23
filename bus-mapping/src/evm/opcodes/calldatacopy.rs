@@ -120,6 +120,7 @@ fn gen_copy_event(
     let mut exec_step = state.new_step(geth_step)?;
     let is_root = state.call()?.is_root;
     let end_slot_shift = (dst_addr + length) % 32;
+    // dest memory slot
     let end_slot = (dst_addr + length) - end_slot_shift;
     let begin_slot = if is_root {
         src_addr
@@ -138,14 +139,12 @@ fn gen_copy_event(
         src_addr_end_slot - begin_slot
     };
 
-    //assert!(bytes_to_copy + 31 >= length);
-
     let copy_steps = state.gen_copy_steps_for_call_data(
         &mut exec_step,
-        begin_slot,
-        end_slot,
-        src_addr_end_slot,
-        bytes_to_copy,
+        src_addr,
+        dst_addr,
+        src_addr_end,
+        length,
     )?;
 
     let (src_type, src_id) = if state.call()?.is_root {
