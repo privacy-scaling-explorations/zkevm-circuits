@@ -4,7 +4,7 @@ use chiquito::backend::halo2::{chiquito2Halo2, ChiquitoHalo2};
 
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{Layouter, Value},
     plonk::{ConstraintSystem, Error, Expression},
 };
 
