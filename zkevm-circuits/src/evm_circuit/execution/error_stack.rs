@@ -131,7 +131,7 @@ mod test {
             }
         }
         // append final stop op code
-        bytecode.write_op(OpcodeId::STOP);
+        bytecode.op_stop();
 
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
