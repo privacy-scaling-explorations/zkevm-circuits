@@ -7,7 +7,7 @@ use crate::{
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use log::error;
+use log::{error, trace};
 
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
@@ -139,14 +139,14 @@ fn bytecode_simple() {
 #[test]
 fn bytecode_full() {
     let k = 9;
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 8])], true);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 11])], true);
 }
 
 #[test]
 fn bytecode_last_row_with_byte() {
     let k = 9;
     // Last row must be a padding row, so we have one row less for actual bytecode
-    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 7])], false);
+    test_bytecode_circuit_unrolled::<Fr>(k, vec![unroll(vec![7u8; 2usize.pow(k) - 10])], false);
 }
 
 /// Tests a circuit with incomplete bytecode
@@ -163,11 +163,12 @@ fn bytecode_push() {
     test_bytecode_circuit_unrolled::<Fr>(
         k,
         vec![
-            unroll(vec![]),
-            unroll(vec![OpcodeId::PUSH32.as_u8()]),
-            unroll(vec![OpcodeId::PUSH32.as_u8(), OpcodeId::ADD.as_u8()]),
-            unroll(vec![OpcodeId::ADD.as_u8(), OpcodeId::PUSH32.as_u8()]),
+            unroll(vec![]),                                                // 0
+            unroll(vec![OpcodeId::PUSH32.as_u8()]),                        // 1
+            unroll(vec![OpcodeId::PUSH32.as_u8(), OpcodeId::ADD.as_u8()]), // 3
+            unroll(vec![OpcodeId::ADD.as_u8(), OpcodeId::PUSH32.as_u8()]), // 6
             unroll(vec![
+                // 9
                 OpcodeId::ADD.as_u8(),
                 OpcodeId::PUSH32.as_u8(),
                 OpcodeId::ADD.as_u8(),
@@ -188,7 +189,7 @@ fn bytecode_invalid_hash_data() {
     {
         let mut invalid = unrolled;
         invalid.rows[0].code_hash += Word::one();
-        log::trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
+        trace!("bytecode_invalid_hash_data: Change the code_hash on the first position");
         test_bytecode_circuit_unrolled::<Fr>(k, vec![invalid], false);
     }
     // TODO: other rows code_hash are ignored by the witness generation, to
