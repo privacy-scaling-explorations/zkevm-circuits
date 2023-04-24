@@ -1633,40 +1633,55 @@ impl<'a> CircuitInputStateRef<'a> {
     pub(crate) fn gen_copy_steps_for_call_data(
         &mut self,
         exec_step: &mut ExecStep,
-        src_addr: u64,     // for internal call, it is memory slot
-        dst_addr: u64,     // end memory slot
-        src_addr_end: u64, // for internal call, it is memory slot
-        bytes_left: u64,
+        src_addr: u64,
+        dst_addr: u64,     // memory dest starting addr
+        src_addr_end: u64, // for internal call, memory dest ending addr
+        bytes_left: u64,   // number of bytes to copy, with padding
     ) -> Result<Vec<(u8, bool, bool)>, Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         println!("calldata : {:?}", self.call_ctx()?.call_data);
         let is_root = self.call()?.is_root;
-
+        let dst_end_slot_shift = (dst_addr + bytes_left) % 32;
+        // dest memory slot
+        let mut dst_end_slot = (dst_addr + bytes_left) - dst_end_slot_shift;
+        let mut dst_begin_slot = dst_addr - dst_addr % 32;
         let mut memory = if !is_root {
             self.caller_ctx_mut()?.memory.clone()
         } else {
-            Memory::new()
+            // self.call_ctx_mut()?.memory already contains calldata
+            self.call_ctx_mut()?.memory.clone()
         };
 
-        memory.extend_at_least(dst_addr as usize + 32);
+        memory.extend_at_least(dst_end_slot_shift as usize + 32);
+        // collect all bytes to calldata with padding word
+        let calldata_slot_bytes =
+            memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
-        for idx in 0..bytes_left {
-            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let value = if is_root {
-                if addr < src_addr_end {
-                    self.call_ctx()?.call_data[(addr - self.call()?.call_data_offset) as usize]
-                } else {
-                    0
-                }
+        for idx in 0..calldata_slot_bytes.len() {
+            let value = memory.0[dst_begin_slot as usize + idx];
+            if idx as u64 + dst_begin_slot < dst_addr {
+                // front mask byte
+                copy_steps.push((value, false, true));
+            } else if idx as u64 + dst_begin_slot > dst_addr + bytes_left {
+                // back mask byte
+                copy_steps.push((value, false, true));
             } else {
-                // fecth caller's memory bytes from [src_addr--src_addr_end]
-                // may need to expand it
-                memory.0[(src_addr + idx) as usize]
-            };
+                // real copy byte
+                copy_steps.push((value, false, false));
+            }
+            //todo: memory word reads if it is an internal call
+            // self.push_op(
+            //    exec_step,
+            //    RW::READ,
+            //   MemoryOp::new(self.call()?.caller_id, addr.into(), byte)
+        }
 
-            // todo: add mask flag for actual copy bytes instead of padding slot bytes.
-            // tuple is (value, is_code, mask)
-            copy_steps.push((value, false, false));
+        // memory word writes
+        for chunk in calldata_slot_bytes.chunks(32) {
+            println!("{:?}", chunk);
+            let dest_word = Word::from_big_endian(&chunk);
+            self.memory_read_word(exec_step, dst_begin_slot.into(), dest_word)?;
+            dst_begin_slot = dst_begin_slot + 32;
         }
 
         Ok(copy_steps)

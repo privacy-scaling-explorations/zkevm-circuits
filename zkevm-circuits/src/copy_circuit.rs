@@ -15,7 +15,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, io::copy, marker::PhantomData};
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -76,6 +76,9 @@ pub struct CopyCircuitConfig<F> {
     pub is_last: Column<Advice>,
     /// The value copied in this copy step.
     pub value: Column<Advice>,
+    /// The word value for memory lookup.
+    pub value_wrod_rlc: Column<Advice>,
+
     /// Random linear combination accumulator value.
     pub value_acc: Column<Advice>,
     /// Whether the row is padding.
@@ -136,10 +139,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let q_step = meta.complex_selector();
         let is_last = meta.advice_column();
         let value = meta.advice_column_in(SecondPhase);
+        let value_wrod_rlc = meta.advice_column_in(SecondPhase);
+
         let value_acc = meta.advice_column_in(SecondPhase);
         let is_code = meta.advice_column();
         let is_pad = meta.advice_column();
         let is_first = copy_table.is_first;
+        let is_mask = copy_table.mask;
         let id = copy_table.id;
         let addr = copy_table.addr;
         let src_addr_end = copy_table.src_addr_end;
@@ -366,6 +372,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             ]))
         });
 
+        // TODO: memory word lookup
         meta.lookup_any("Memory lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
@@ -431,7 +438,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
+                * not::expr(meta.query_advice(is_pad, Rotation::cur()))
+                * not::expr(meta.query_advice(is_mask, Rotation::cur()));
+
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 TxContextFieldTag::CallData.expr(),
@@ -448,6 +457,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             q_step,
             is_last,
             value,
+            value_wrod_rlc,
             value_acc,
             is_pad,
             is_code,
@@ -513,6 +523,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             for (column, &(value, label)) in [
                 self.is_last,
                 self.value,
+                self.value_wrod_rlc,
                 self.value_acc,
                 self.is_pad,
                 self.is_code,
@@ -571,6 +582,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             |mut region| {
                 region.name_column(|| "is_last", self.is_last);
                 region.name_column(|| "value", self.value);
+                region.name_column(|| "value_wrod_rlc", self.value_wrod_rlc);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
 
@@ -970,7 +982,9 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn gen_calldatacopy_data() -> CircuitInputBuilder {
-        let length = 0x0fffusize;
+        // let length = 0x0fffusize;
+        let length = 0x0fusize;
+
         let code = bytecode! {
             PUSH32(Word::from(length)) //length
             PUSH32(Word::from(0x00))  //dataOffset
