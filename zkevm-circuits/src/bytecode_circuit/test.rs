@@ -297,6 +297,7 @@ fn bytecode_soundness_bug_1() {
     let size = 100;
     let minimum_rows = 8;
 
+    let overwrite_len = unrolled.bytes.len();
     let mut overwrite = unrolled.clone();
     for i in 0..size - minimum_rows + 3 {
         if i >= unrolled_len {
@@ -310,8 +311,8 @@ fn bytecode_soundness_bug_1() {
             index += 1;
         }
     }
-    let mut circuit = BytecodeCircuit::<Fr>::new(vec![unrolled], size);
-    circuit.overwrite = overwrite;
+    let mut circuit = BytecodeCircuit::<Fr>::new(vec![overwrite], size);
+    circuit.overwrite_len = overwrite_len;
 
     let prover = MockProver::<Fr>::run(k, &circuit, Vec::new()).unwrap();
     prover.assert_satisfied_par();

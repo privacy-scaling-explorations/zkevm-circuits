@@ -20,7 +20,7 @@ use super::{
     wit_gen::BytecodeWitnessGen,
 };
 
-pub fn bytecode_circuit<F: Field>(
+pub fn bytecode_circuit<F: Field + From<u64>>(
     BytecodeCircuitConfigArgs {
         bytecode_table,
         keccak_table,
@@ -97,9 +97,12 @@ pub fn bytecode_circuit<F: Field>(
             ctx.step_type_def(byte_step, move |ctx| {
                 let push_data_size = ctx.internal("push_data_size");
                 let push_data_left_inv = ctx.internal("push_data_left_inv");
+                let index_length_diff_inv = ctx.internal("index_length_diff_inv");
 
                 let push_data_left_is_zero =
                     IsZero::setup(ctx, push_data_left, push_data_left_inv);
+
+                let index_length_diff_is_zero = IsZero::<F>::setup(ctx, index + 1 - length,  index_length_diff_inv);
 
                 ctx.constr(
                     eq(is_code, push_data_left_is_zero.is_zero()),
@@ -144,6 +147,8 @@ pub fn bytecode_circuit<F: Field>(
                     )
                 );
 
+                ctx.transition(select(index_length_diff_is_zero.is_zero(), next_step_must_be(header), 0)); // zero is the valid constraint
+
                 ctx.lookup(
                     "if header.next() then keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
                     vec![
@@ -168,38 +173,49 @@ pub fn bytecode_circuit<F: Field>(
                     ctx.assign(push_data_size, wit.push_data_size.field());
                     ctx.assign(push_data_left, wit.push_data_left.field());
                     push_data_left_is_zero.wg(ctx, wit.push_data_left.field());
+                    index_length_diff_is_zero.wg(ctx, wit.index() + <i32 as chiquito::ast::ToField<F>>::field(&1) - <usize as chiquito::ast::ToField<F>>::field(&wit.length));
                 });
             });
 
-            ctx.trace(move |ctx, (bytecodes, challenges, last_row_offset)| {
-                ctx.set_height(last_row_offset + 1);
+            ctx.trace(
+                move |ctx, (bytecodes, challenges, last_row_offset, overwrite_len)| {
+                    ctx.set_height(last_row_offset + 1);
 
-                let mut offset = 0;
-                for bytecode in bytecodes.iter() {
-                    let wit = RefCell::new(BytecodeWitnessGen::new(bytecode, &challenges));
+                    let mut offset = 0;
+                    for bytecode in bytecodes.iter() {
+                        let wit = if overwrite_len == 0 {
+                            RefCell::new(BytecodeWitnessGen::new(bytecode, &challenges))
+                        } else {
+                            RefCell::new(BytecodeWitnessGen::new_overwrite_len(
+                                bytecode,
+                                &challenges,
+                                overwrite_len,
+                            ))
+                        };
 
-                    println!("start wit gen");
+                        println!("start wit gen");
 
-                    if offset < last_row_offset - 1 {
+                        if offset < last_row_offset - 1 {
+                            ctx.add(&header, wit.clone());
+                            offset += 1;
+                        }
+
+                        while wit.borrow_mut().has_more() && offset < last_row_offset - 1 {
+                            wit.borrow_mut().next_row();
+                            ctx.add(&byte_step, wit.clone());
+                            offset += 1;
+                        }
+                    }
+
+                    // padding
+                    let wit = RefCell::new(BytecodeWitnessGen::new(&unroll(vec![]), &challenges));
+
+                    while offset <= last_row_offset {
                         ctx.add(&header, wit.clone());
                         offset += 1;
                     }
-
-                    while wit.borrow_mut().has_more() && offset < last_row_offset - 1 {
-                        wit.borrow_mut().next_row();
-                        ctx.add(&byte_step, wit.clone());
-                        offset += 1;
-                    }
-                }
-
-                // padding
-                let wit = RefCell::new(BytecodeWitnessGen::new(&unroll(vec![]), &challenges));
-
-                while offset <= last_row_offset {
-                    ctx.add(&header, wit.clone());
-                    offset += 1;
-                }
-            })
+                },
+            )
         },
     );
 

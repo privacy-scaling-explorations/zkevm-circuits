@@ -23,10 +23,7 @@ pub struct BytecodeWitnessGen<F: Field> {
 }
 
 impl<F: Field> BytecodeWitnessGen<F> {
-    pub fn new(
-        bytecode: &UnrolledBytecode<F>,
-        challenges: &Challenges<Value<F>>,
-    ) -> BytecodeWitnessGen<F> {
+    pub fn new(bytecode: &UnrolledBytecode<F>, challenges: &Challenges<Value<F>>) -> Self {
         BytecodeWitnessGen {
             bytecode: bytecode.clone(),
             challenges: *challenges,
@@ -35,6 +32,26 @@ impl<F: Field> BytecodeWitnessGen<F> {
             next_push_data_left: 0,
             push_data_size: 0,
             length: bytecode.bytes.len(),
+            value_rlc: challenges.keccak_input().map(|_| F::zero()),
+            code_hash: challenges
+                .evm_word()
+                .map(|challenge| rlc::value(&bytecode.rows[0].code_hash.to_le_bytes(), challenge)),
+        }
+    }
+
+    pub fn new_overwrite_len(
+        bytecode: &UnrolledBytecode<F>,
+        challenges: &Challenges<Value<F>>,
+        overwrite_len: usize,
+    ) -> Self {
+        BytecodeWitnessGen {
+            bytecode: bytecode.clone(),
+            challenges: *challenges,
+            idx: 1,
+            push_data_left: 0,
+            next_push_data_left: 0,
+            push_data_size: 0,
+            length: overwrite_len,
             value_rlc: challenges.keccak_input().map(|_| F::zero()),
             code_hash: challenges
                 .evm_word()
@@ -68,7 +85,7 @@ impl<F: Field> BytecodeWitnessGen<F> {
     }
 
     pub fn has_more(&self) -> bool {
-        self.length > self.idx - 1
+        self.bytecode.rows.len() > self.idx
     }
 
     pub fn index(&self) -> F {

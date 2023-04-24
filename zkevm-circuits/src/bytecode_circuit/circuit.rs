@@ -22,7 +22,7 @@ use super::{
 };
 
 /// WitnessInput
-pub type WitnessInput<F> = (Vec<UnrolledBytecode<F>>, Challenges<Value<F>>, usize);
+pub type WitnessInput<F> = (Vec<UnrolledBytecode<F>>, Challenges<Value<F>>, usize, usize);
 
 /// BytecodeCircuitConfig
 #[derive(Clone, Debug)]
@@ -79,7 +79,7 @@ pub struct BytecodeCircuit<F: Field> {
     /// Circuit size
     pub size: usize,
     /// Overwrite
-    pub overwrite: UnrolledBytecode<F>,
+    pub overwrite_len: usize,
 }
 
 impl<F: Field> BytecodeCircuit<F> {
@@ -88,7 +88,20 @@ impl<F: Field> BytecodeCircuit<F> {
         BytecodeCircuit {
             bytecodes,
             size,
-            overwrite: Default::default(),
+            overwrite_len: 0,
+        }
+    }
+
+    /// new BytecodeCircuitTester overwritting the length
+    pub fn new_overwrite_len(
+        bytecodes: Vec<UnrolledBytecode<F>>,
+        size: usize,
+        overwrite_len: usize,
+    ) -> Self {
+        BytecodeCircuit {
+            bytecodes,
+            size,
+            overwrite_len,
         }
     }
 
@@ -131,6 +144,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
                 self.bytecodes.clone(),
                 *challenges,
                 self.size - (config.minimum_rows + 1),
+                self.overwrite_len,
             ),
         );
 
