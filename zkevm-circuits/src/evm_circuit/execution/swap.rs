@@ -94,7 +94,7 @@ mod test {
             PUSH32(lhs)
         };
         for _ in 0..n - 1 {
-            bytecode.write_op(OpcodeId::DUP1);
+            bytecode.op_dup1();
         }
         bytecode.append(&bytecode! {
             PUSH32(rhs)
