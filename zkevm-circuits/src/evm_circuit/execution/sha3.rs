@@ -150,7 +150,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             region,
             offset,
             size.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())

@@ -295,7 +295,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             .collect::<Result<Vec<_>, _>>()?;
 
         // Calculate the next memory size
-        let mut next_memory_word_size = curr_memory_word_size as u64;
+        let mut next_memory_word_size = curr_memory_word_size;
         for (max_memory_word_sizes, memory_word_size) in self
             .max_memory_word_sizes
             .iter()
@@ -304,7 +304,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
             let (_, max) = max_memory_word_sizes.assign(
                 region,
                 offset,
-                F::from(next_memory_word_size as u64),
+                F::from(next_memory_word_size),
                 F::from(*memory_word_size),
             )?;
             next_memory_word_size = max.get_lower_128() as u64;
@@ -324,7 +324,7 @@ impl<F: Field, const N: usize, const N_BYTES_MEMORY_WORD_SIZE: usize>
 
         // Calculate the gas cost for the expansian
         let memory_cost = GasCost::MEMORY_EXPANSION_LINEAR_COEFF.as_u64()
-            * (next_memory_word_size - curr_memory_word_size as u64)
+            * (next_memory_word_size - curr_memory_word_size)
             + (next_quad_memory_cost - curr_quad_memory_cost) as u64;
 
         // Return the new memory size and the memory expansion gas cost

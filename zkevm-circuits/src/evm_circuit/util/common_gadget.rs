@@ -82,7 +82,7 @@ impl<F: Field> SameContextGadget<F> {
         self.sufficient_gas_left.assign(
             region,
             offset,
-            F::from((step.gas_left - step.gas_cost) as u64),
+            F::from(step.gas_left - step.gas_cost),
         )?;
 
         Ok(())

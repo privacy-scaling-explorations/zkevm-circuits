@@ -61,7 +61,7 @@ impl<F: FieldExt> Cell<F> {
     pub(crate) fn assign(&self, region: &mut KeccakRegion<F>, offset: i32, value: F) {
         region.assign(
             self.column_idx,
-            ((offset as i32) + self.rotation) as usize,
+            (offset + self.rotation) as usize,
             value,
         );
     }
@@ -75,7 +75,7 @@ impl<F: FieldExt> Cell<F> {
 
         region.assign(
             self.column_idx,
-            ((offset as i32) + self.rotation) as usize,
+            (offset + self.rotation) as usize,
             value_f,
         );
     }
