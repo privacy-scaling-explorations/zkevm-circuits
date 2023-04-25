@@ -113,7 +113,7 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
                     .add(value, push_data_table_value)
                     .add(push_data_size, push_data_table_size)
                 );
-
+                
                 ctx.transition(
                     if_next_step(byte_step,
                         eq(length, length.next())
