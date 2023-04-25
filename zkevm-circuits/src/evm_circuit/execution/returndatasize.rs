@@ -94,8 +94,8 @@ mod test {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
         let code_b = bytecode! {
-            .mstore(0, Word::from_big_endian(&rand_bytes(32)))
-            .return_bytecode(return_data_offset, return_data_size)
+            .op_mstore(0, Word::from_big_endian(&rand_bytes(32)))
+            .op_return(return_data_offset, return_data_size)
             STOP
         };
 

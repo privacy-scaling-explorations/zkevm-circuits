@@ -204,7 +204,7 @@ mod test {
 
         if is_root {
             code_b.append(&bytecode! {
-                .return_bytecode(return_data_offset, return_data_size)
+                .op_return(return_data_offset, return_data_size)
                 STOP
             });
         } else {
@@ -214,7 +214,7 @@ mod test {
                 PUSH32(dest_offset) // memory offset
                 RETURNDATACOPY
                 // end for internal
-                .return_bytecode(return_data_offset, return_data_size)
+                .op_return(return_data_offset, return_data_size)
                 STOP
             });
         }
@@ -242,7 +242,7 @@ mod test {
             });
         } else {
             code_a.append(&bytecode! {
-                .return_bytecode(return_data_offset, return_data_size)
+                .op_return(return_data_offset, return_data_size)
             });
         }
 
