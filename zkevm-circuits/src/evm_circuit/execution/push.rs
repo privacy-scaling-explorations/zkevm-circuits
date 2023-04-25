@@ -5,7 +5,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
             },
             sum, CachedRegion, Cell, Word,
         },
@@ -29,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PUSH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let value = cb.query_word_rlc();

@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Same,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition::Same,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             not, CachedRegion, Cell,
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EndBlock;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let max_txs = cb.query_copy_cell();
         let max_rws = cb.query_copy_cell();
         let total_txs = cb.query_cell();

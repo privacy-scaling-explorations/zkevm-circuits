@@ -6,7 +6,8 @@ use crate::{
             self,
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
             },
             math_gadget::{IsZeroGadget, LtWordGadget, MulAddWordsGadget},
             select, sum, CachedRegion,
@@ -42,7 +43,7 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::MUL_DIV_MOD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let is_mul = (OpcodeId::DIV.expr() - opcode.expr())

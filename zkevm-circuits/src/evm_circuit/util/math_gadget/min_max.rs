@@ -1,5 +1,6 @@
 use crate::evm_circuit::util::{
-    constraint_builder::ConstraintBuilder, math_gadget::*, select, transpose_val_ret, CachedRegion,
+    constraint_builder::EVMConstraintBuilder, math_gadget::*, select, transpose_val_ret,
+    CachedRegion,
 };
 use eth_types::Field;
 use halo2_proofs::{
@@ -18,7 +19,7 @@ pub struct MinMaxGadget<F, const N_BYTES: usize> {
 
 impl<F: Field, const N_BYTES: usize> MinMaxGadget<F, N_BYTES> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -84,7 +85,7 @@ mod tests {
     impl<F: Field, const N_BYTES: usize, const MIN_IS_A: bool> MathGadgetContainer<F>
         for MinMaxTestContainer<F, N_BYTES, MIN_IS_A>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_cell();
             let b = cb.query_cell();
             let minmax_gadget = MinMaxGadget::<F, N_BYTES>::construct(cb, a.expr(), b.expr());

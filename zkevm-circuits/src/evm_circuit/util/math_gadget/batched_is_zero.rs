@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         transpose_val_ret, CachedRegion, Cell, CellType,
     },
     util::Expr,
@@ -18,7 +18,7 @@ pub struct BatchedIsZeroGadget<F, const N: usize> {
 }
 
 impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, values: [Expression<F>; N]) -> Self {
         let max_values_phase = values
             .iter()
             .map(CellType::expr_phase)
@@ -98,7 +98,7 @@ mod tests {
     }
 
     impl<F: Field, const N: usize> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F, N> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let nums = [(); N].map(|_| cb.query_cell());
             let z_gadget = BatchedIsZeroGadget::<F, N>::construct(
                 cb,

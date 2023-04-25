@@ -1,7 +1,7 @@
 use crate::evm_circuit::{
     step::ExecutionState,
     table::Table,
-    util::{constraint_builder::ConstraintBuilder, CellType},
+    util::{constraint_builder::EVMConstraintBuilder, CellType},
 };
 use halo2_proofs::arithmetic::FieldExt;
 use itertools::Itertools;
@@ -23,7 +23,7 @@ impl Instrument {
     pub(crate) fn on_gadget_built<'a, F: FieldExt>(
         &mut self,
         execution_state: ExecutionState,
-        cb: &ConstraintBuilder<'a, F>,
+        cb: &EVMConstraintBuilder<'a, F>,
     ) {
         let sizes = cb
             .curr

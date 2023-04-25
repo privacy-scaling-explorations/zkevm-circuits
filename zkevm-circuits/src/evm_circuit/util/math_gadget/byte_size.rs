@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::{
         param::N_BYTES_WORD,
         util::{
-            constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             sum, CachedRegion, Cell,
         },
     },
@@ -28,7 +28,7 @@ pub(crate) struct ByteSizeGadget<F> {
 
 impl<F: Field> ByteSizeGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         values: [Expression<F>; N_BYTES_WORD],
     ) -> Self {
         let most_significant_nonzero_byte_index = [(); N_BYTES_WORD + 1].map(|()| cb.query_bool());
@@ -126,7 +126,7 @@ mod tests {
     }
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let value_rlc = cb.query_word_rlc();
             let bytesize_gadget = ByteSizeGadget::<F>::construct(
                 cb,

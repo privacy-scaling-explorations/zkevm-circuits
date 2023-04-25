@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::util::{
         self,
-        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         from_bytes, pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
     util::Expr,
@@ -23,7 +23,7 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
     AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         addends: [util::Word<F>; N_ADDENDS],
         sum: util::Word<F>,
     ) -> Self {
@@ -168,7 +168,7 @@ mod tests {
     impl<F: Field, const N_ADDENDS: usize, const CARRY_HI: u64, const CHECK_OVERFLOW: bool>
         MathGadgetContainer<F> for AddWordsTestContainer<F, N_ADDENDS, CARRY_HI, CHECK_OVERFLOW>
     {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let addends = [(); N_ADDENDS].map(|_| cb.query_word_rlc());
             let sum = cb.query_word_rlc();
             let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct(

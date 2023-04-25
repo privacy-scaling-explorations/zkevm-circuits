@@ -9,7 +9,7 @@ use crate::evm_circuit::{
     util::{
         common_gadget::SameContextGadget,
         constraint_builder::{
-            ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition,
+            ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
         },
         memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
         rlc, CachedRegion, Cell, Word,
@@ -35,7 +35,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 
     const NAME: &'static str = "SHA3";
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let offset = cb.query_cell_phase2();

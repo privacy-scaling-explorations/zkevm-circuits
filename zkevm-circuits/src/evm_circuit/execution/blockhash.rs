@@ -6,7 +6,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
             },
             from_bytes,
             math_gadget::LtGadget,
@@ -37,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let block_number = cb.query_word_rlc();
         cb.stack_pop(block_number.expr());
 

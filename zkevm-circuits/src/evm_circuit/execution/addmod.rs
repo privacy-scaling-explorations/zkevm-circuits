@@ -5,7 +5,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
             },
             math_gadget::{
                 AddWordsGadget, CmpWordsGadget, IsZeroGadget, MulAddWords512Gadget,
@@ -51,7 +52,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDMOD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // values got from stack (original r is modified if n==0)

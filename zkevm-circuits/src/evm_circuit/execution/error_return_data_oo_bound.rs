@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::CommonErrorGadget,
-            constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             from_bytes,
             math_gadget::{AddWordsGadget, IsZeroGadget, LtGadget},
             not, or, sum, CachedRegion, Cell,
@@ -38,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorReturnDataOutOfBoundGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorReturnDataOutOfBound;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         let memory_offset = cb.query_cell();
         let data_offset = cb.query_word_rlc();

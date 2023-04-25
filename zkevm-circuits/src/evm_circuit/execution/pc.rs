@@ -6,7 +6,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
             },
             from_bytes, CachedRegion, RandomLinearCombination,
         },
@@ -29,7 +30,7 @@ impl<F: Field> ExecutionGadget<F> for PcGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::PC;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let value = cb.query_word_rlc();
 
         // program_counter is limited to 64 bits so we only consider 8 bytes

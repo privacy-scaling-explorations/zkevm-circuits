@@ -7,7 +7,8 @@ use crate::{
             and,
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
             },
             math_gadget::{IsEqualGadget, IsZeroGadget},
             rlc, select, sum, CachedRegion, Cell, Word,
@@ -37,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SIGNEXTEND;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let index = cb.query_word_rlc();
         let value = cb.query_word_rlc();
         let sign_byte = cb.query_cell();

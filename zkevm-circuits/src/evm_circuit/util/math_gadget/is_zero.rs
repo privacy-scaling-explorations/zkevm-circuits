@@ -1,6 +1,6 @@
 use crate::{
     evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, ConstraintBuilder},
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         transpose_val_ret, CachedRegion, Cell, CellType,
     },
     util::Expr,
@@ -19,7 +19,7 @@ pub struct IsZeroGadget<F> {
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, value: Expression<F>) -> Self {
         let inverse = cb.query_cell_with_type(CellType::storage_for_expr(&value));
 
         let is_zero = 1.expr() - (value.clone() * inverse.expr());
@@ -85,7 +85,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for IsZeroGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let n = cb.query_cell();
             let z_gadget = IsZeroGadget::<F>::construct(cb, n.expr());
             cb.require_equal("Input is zero", z_gadget.expr(), 1.expr());

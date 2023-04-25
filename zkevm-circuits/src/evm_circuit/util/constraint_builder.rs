@@ -264,7 +264,7 @@ pub(crate) struct Constraints<F> {
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
 
-pub(crate) struct ConstraintBuilder<'a, F> {
+pub(crate) struct EVMConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
@@ -281,7 +281,7 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
-impl<'a, F: Field> ConstrainBuilderCommon<F> for ConstraintBuilder<'a, F> {
+impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
     fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
         let constraint = self.split_expression(
             name,
@@ -294,7 +294,7 @@ impl<'a, F: Field> ConstrainBuilderCommon<F> for ConstraintBuilder<'a, F> {
     }
 }
 
-impl<'a, F: Field> ConstraintBuilder<'a, F> {
+impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,

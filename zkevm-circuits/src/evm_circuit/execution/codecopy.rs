@@ -9,7 +9,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstrainBuilderCommon, ConstraintBuilder, StepStateTransition, Transition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CODECOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Query elements to be popped from the stack.
