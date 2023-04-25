@@ -298,7 +298,7 @@ fn bytecode_soundness_bug_1() {
     let minimum_rows = 8;
 
     let overwrite_len = unrolled.bytes.len();
-    let mut overwrite = unrolled.clone();
+    let mut overwrite = unrolled;
     for i in 0..size - minimum_rows + 3 {
         if i >= unrolled_len {
             overwrite.rows.push(BytecodeRow {
