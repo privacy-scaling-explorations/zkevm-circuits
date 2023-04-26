@@ -19,7 +19,7 @@ pub use KeccakCircuitConfig as KeccakConfig;
 
 use self::{
     cell_manager::*,
-    keccak_packed_multi::{multi_keccak, KeccakRow},
+    keccak_packed_multi::{keccak_unusable_rows, multi_keccak, KeccakRow},
     param::*,
     table::*,
     util::*,
