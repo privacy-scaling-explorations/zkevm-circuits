@@ -110,8 +110,8 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
 
                 ctx.add_lookup(
                     lookup()
-                    .add(value, push_data_table_value)
-                    .add(push_data_size, push_data_table_size)
+                        .add(value, push_data_table_value)
+                        .add(push_data_size, push_data_table_size)
                 );
                 
                 ctx.transition(
@@ -153,11 +153,11 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
 
                 ctx.add_lookup(
                     lookup()
-                    .add(1, keccak_is_enabled)
-                    .add(value_rlc, keccak_value_rlc)
-                    .add(length, keccak_length)
-                    .add(hash, keccak_hash)
-                    .enable(header.next())
+                        .add(1, keccak_is_enabled)
+                        .add(value_rlc, keccak_value_rlc)
+                        .add(length, keccak_length)
+                        .add(hash, keccak_hash)
+                        .enable(header.next())
                 );
 
                 ctx.wg(move |ctx, wit| {
