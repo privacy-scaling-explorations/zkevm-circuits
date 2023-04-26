@@ -88,7 +88,7 @@ impl<F: Field> StepStateTransition<F> {
 
 /// ReversionInfo counts `rw_counter` of reversion for gadgets, by tracking how
 /// many reversions that have been used. Gadgets should call
-/// [`ConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
+/// [`EVMConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
 /// `reversible_write_counter` initialized at current tracking one if no
 /// `call_id` is specified, then pass it as mutable reference when doing state
 /// write.
