@@ -1,5 +1,5 @@
 use ethers_core::types::Signature;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[cfg(any(feature = "test", test))]
 use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
@@ -46,7 +46,7 @@ pub struct Block<F> {
     /// Read write events in the RwTable
     pub rws: RwMap,
     /// Bytecode used in the block
-    pub bytecodes: HashMap<Word, Bytecode>,
+    pub bytecodes: BTreeMap<Word, Bytecode>,
     /// The block context
     pub context: BlockContexts,
     /// The init state of mpt
