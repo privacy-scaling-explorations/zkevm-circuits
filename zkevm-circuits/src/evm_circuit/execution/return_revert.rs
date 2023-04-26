@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
@@ -18,9 +18,8 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Field, ToScalar, U256};
-use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -52,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURN_REVERT;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -124,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     address.expr(),
                     AccountFieldTag::CodeHash,
                     code_hash.expr(),
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     Some(&mut reversion_info),
                 );
 
@@ -277,7 +276,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
-            let mut code_hash = keccak256(&values);
+            let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
             code_hash.reverse();
             self.code_hash.assign(
                 region,
@@ -603,9 +602,7 @@ mod test {
             .chain(0u8..((32 - initializer.len() % 32) as u8))
             .collect();
         for (index, word) in code_creator.chunks(32).enumerate() {
-            bytecode.push(32, Word::from_big_endian(word));
-            bytecode.push(32, Word::from(index * 32));
-            bytecode.write_op(OpcodeId::MSTORE);
+            bytecode.op_mstore(index * 32, Word::from_big_endian(word));
         }
         bytecode.append(&bytecode! {
             PUSH3(0x123456) // salt

@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
@@ -46,7 +46,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let mstart = cb.query_cell_phase2();
         let msize = cb.query_word_rlc();
 
@@ -358,7 +358,7 @@ mod test {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
         if is_persistent {
-            code.write_op(OpcodeId::STOP);
+            code.op_stop();
         } else {
             // make current call failed with false persistent
             code.write_op(OpcodeId::INVALID(0xfe));
@@ -415,7 +415,7 @@ mod test {
         code.push(32, Word::from(mstart));
         code.write_op(cur_op_code);
 
-        code.write_op(OpcodeId::STOP);
+        code.op_stop();
         code_prepare.append(&code);
 
         CircuitTestBuilder::new_from_test_ctx(
@@ -430,9 +430,7 @@ mod test {
         // prepare memory data
         let mut code = Bytecode::default();
         for (i, d) in data.chunks(32).enumerate() {
-            code.push(32, Word::from_big_endian(d));
-            code.push(32, Word::from(offset + i * 32));
-            code.write_op(OpcodeId::MSTORE);
+            code.op_mstore(offset + i * 32, Word::from_big_endian(d));
         }
         code
     }

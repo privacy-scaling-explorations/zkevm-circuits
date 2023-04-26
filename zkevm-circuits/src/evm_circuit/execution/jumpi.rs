@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::JUMPI;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let destination = cb.query_word_rlc();
         let phase2_condition = cb.query_cell_phase2();
 

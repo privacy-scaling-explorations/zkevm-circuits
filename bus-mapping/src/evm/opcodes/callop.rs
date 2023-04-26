@@ -2,6 +2,7 @@ use super::Opcode;
 use crate::{
     circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    state_db::CodeDB,
     Error,
 };
 use eth_types::{
@@ -11,7 +12,6 @@ use eth_types::{
     },
     evm_unimplemented, GethExecStep, ToWord, Word,
 };
-use keccak256::EMPTY_HASH;
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the `OpcodeId::CALL`, `OpcodeId::CALLCODE`,
@@ -101,7 +101,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
         let (callee_code_hash_word, is_empty_code_hash) = if callee_exists {
             (
                 callee_code_hash.to_word(),
-                callee_code_hash.to_fixed_bytes() == *EMPTY_HASH,
+                callee_code_hash == CodeDB::empty_code_hash(),
             )
         } else {
             (Word::zero(), true)
@@ -229,7 +229,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
             }
             // 3. Call to account with non-empty code.
@@ -306,7 +306,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
-                state.handle_return(geth_step)?;
+                state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
             } //
         }

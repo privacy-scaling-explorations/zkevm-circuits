@@ -7,7 +7,7 @@ use crate::{
             and,
             common_gadget::TransferWithGasFeeGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             is_precompiled,
@@ -58,7 +58,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BeginTx;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         // Use rw_counter of the step which triggers next call as its call_id.
         let call_id = cb.curr.state.rw_counter.clone();
 
@@ -161,7 +161,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_code_hash.expr(), cb.empty_code_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_code_hash.expr());
         // no_callee_code is true when the account exists and has empty
         // code hash, or when the account doesn't exist (which we encode with
@@ -527,7 +527,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             region.word_rlc(callee_code_hash),
-            region.empty_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, region.word_rlc(callee_code_hash))?;
@@ -563,11 +563,13 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
 #[cfg(test)]
 mod test {
+    use std::vec;
+
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::evm::OpcodeId;
     use eth_types::{self, bytecode, evm_types::GasCost, word, Bytecode, Word};
 
-    use mock::{eth, gwei, TestContext, MOCK_ACCOUNTS};
+    use mock::{eth, gwei, MockTransaction, TestContext, MOCK_ACCOUNTS};
 
     fn gas(call_data: &[u8]) -> Word {
         Word::from(
@@ -623,19 +625,20 @@ mod test {
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
     }
 
-    // TODO: Use `mock` crate.
     fn mock_tx(value: Word, gas_price: Word, calldata: Vec<u8>) -> eth_types::Transaction {
         let from = MOCK_ACCOUNTS[1];
         let to = MOCK_ACCOUNTS[0];
-        eth_types::Transaction {
-            from,
-            to: Some(to),
-            value,
-            gas: gas(&calldata),
-            gas_price: Some(gas_price),
-            input: calldata.into(),
-            ..Default::default()
-        }
+
+        let mock_transaction = MockTransaction::default()
+            .from(from)
+            .to(to)
+            .value(value)
+            .gas(gas(&calldata))
+            .gas_price(gas_price)
+            .input(calldata.into())
+            .build();
+
+        eth_types::Transaction::from(mock_transaction)
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::{CommonCallGadget, CommonErrorGadget},
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::{IsZeroGadget, LtGadget},
             CachedRegion, Cell,
         },
@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasCall;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
@@ -249,7 +249,7 @@ mod test {
 
     #[derive(Clone, Copy, Debug, Default)]
     struct Stack {
-        gas: u64,
+        gas: Word,
         value: Word,
         cd_offset: u64,
         cd_length: u64,
@@ -269,11 +269,11 @@ mod test {
         }
         bytecode.append(&bytecode! {
             PUSH32(address.to_word())
-            PUSH32(Word::from(stack.gas))
+            PUSH32(stack.gas)
             .write_op(opcode)
             PUSH1(0)
             PUSH1(0)
-            .write_op(OpcodeId::REVERT)
+            REVERT
         });
 
         bytecode
@@ -335,9 +335,9 @@ mod test {
     }
 
     #[test]
-    fn call_with_oog_root() {
+    fn test_oog_call_root() {
         let stack = Stack {
-            gas: 100,
+            gas: 100.into(),
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -355,9 +355,9 @@ mod test {
     }
 
     #[test]
-    fn call_with_oog_internal() {
+    fn test_oog_call_internal() {
         let caller_stack = Stack {
-            gas: 100,
+            gas: 100.into(),
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -365,7 +365,7 @@ mod test {
             ..Default::default()
         };
         let callee_stack = Stack {
-            gas: 21,
+            gas: 21.into(),
             cd_offset: 64,
             cd_length: 320,
             rd_offset: 0,
@@ -382,5 +382,23 @@ mod test {
             ));
             test_oog(&caller, &callee, false);
         }
+    }
+
+    #[test]
+    fn test_oog_call_with_overflow_gas() {
+        let stack = Stack {
+            gas: Word::MAX,
+            cd_offset: 64,
+            cd_length: 320,
+            rd_offset: 0,
+            rd_length: 32,
+            ..Default::default()
+        };
+        let callee = callee(bytecode! {
+            PUSH32(Word::from(0))
+            PUSH32(Word::from(0))
+            STOP
+        });
+        test_oog(&caller(OpcodeId::CALL, stack), &callee, true);
     }
 }

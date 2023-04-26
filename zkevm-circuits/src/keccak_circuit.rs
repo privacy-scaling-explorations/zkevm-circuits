@@ -4,17 +4,33 @@ mod cell_manager;
 pub mod keccak_packed_multi;
 mod param;
 mod table;
-#[cfg(test)]
-mod test;
 /// Util
 mod util;
+
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::KeccakCircuit as TestKeccakCircuit;
 
 use std::marker::PhantomData;
 pub use KeccakCircuitConfig as KeccakConfig;
 
-use self::{cell_manager::*, keccak_packed_multi::*, param::*, table::*, util::*};
+use self::{
+    cell_manager::*,
+    keccak_packed_multi::{multi_keccak, KeccakRow},
+    param::*,
+    table::*,
+    util::*,
+};
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+    keccak_circuit::keccak_packed_multi::{
+        decode, get_num_bits_per_absorb_lookup, get_num_bits_per_base_chi_lookup,
+        get_num_bits_per_rho_pi_lookup, get_num_bits_per_theta_c_lookup, get_num_rows_per_round,
+        split, split_uniform, transform, transform_to, Part,
+    },
     table::{KeccakTable, LookupTable},
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -27,9 +43,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use log::info;
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// KeccakConfig
 #[derive(Clone, Debug)]
@@ -72,6 +85,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             challenges,
         }: Self::ConfigArgs,
     ) -> Self {
+        assert!(
+            get_num_rows_per_round() > NUM_BYTES_PER_WORD,
+            "KeccakCircuit requires KECCAK_ROWS>=9"
+        );
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_round = meta.fixed_column();
@@ -166,17 +183,24 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         info!("Columns: {}", cell_manager.get_width());
         total_lookup_counter += lookup_counter;
 
-        // Squeeze
-        // The squeezing happening at the end of the 24 rounds is done spread out
-        // over those 24 rounds. In a single round (in 4 of the 24 rounds) a
-        // single word is converted to bytes.
+        // Process inputs.
+        // "Absorb" happens at the first round. However, the input is witnessed and
+        // processed over the first 17 rounds. Each round converts a word into 8
+        // bytes.
         cell_manager.start_region();
         let mut lookup_counter = 0;
         // Potential optimization: could do multiple bytes per lookup
-        let packed_parts = split::expr(meta, &mut cell_manager, &mut cb, absorb_data.expr(), 0, 8);
+        let packed_parts = split::expr(
+            meta,
+            &mut cell_manager,
+            &mut cb,
+            absorb_data.expr(),
+            0,
+            NUM_BYTES_PER_WORD,
+        );
         cell_manager.start_region();
         let input_bytes = transform::expr(
-            "squeeze unpack",
+            "input unpack",
             meta,
             &mut cell_manager,
             &mut lookup_counter,
@@ -193,10 +217,8 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
         // Padding data
         cell_manager.start_region();
         let mut is_paddings = Vec::new();
-        let mut data_rlcs = Vec::new();
         for _ in input_bytes.iter() {
             is_paddings.push(cell_manager.query_cell(meta));
-            data_rlcs.push(cell_manager.query_cell(meta));
         }
         info!("- Post padding:");
         info!("Lookups: {}", lookup_counter);
@@ -711,7 +733,10 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
             let length = meta.query_advice(length, Rotation::cur());
             let data_rlc_prev =
                 meta.query_advice(data_rlc, Rotation(-(get_num_rows_per_round() as i32)));
-            let data_rlc = meta.query_advice(data_rlc, Rotation::cur());
+            let data_rlcs: Vec<_> = (0..NUM_BYTES_PER_WORD + 1)
+                .map(|i| meta.query_advice(data_rlc, Rotation(i as i32)))
+                .collect();
+            assert_eq!(data_rlcs.len(), input_bytes.len() + 1);
 
             // Update the length/data_rlc on rows where we absorb data
             cb.condition(q_padding.expr(), |cb| {
@@ -726,11 +751,21 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                                 .map(|is_padding| not::expr(is_padding.expr())),
                         ),
                 );
-                // Use intermediate cells to keep the degree low
-                let mut new_data_rlc =
+                let mut new_data_rlc = data_rlcs[NUM_BYTES_PER_WORD].expr();
+
+                // At the start of a hash, start at 0. Otherwise, continue from the previous
+                // value.
+                let data_rlc_zero_or_prev =
                     data_rlc_prev.clone() * not::expr(start_new_hash_prev.expr());
-                cb.require_equal("initial data rlc", data_rlcs[0].expr(), new_data_rlc);
-                new_data_rlc = data_rlcs[0].expr();
+                cb.require_equal(
+                    "initial data rlc",
+                    data_rlc_zero_or_prev,
+                    new_data_rlc.clone(),
+                );
+
+                // Add the word `input_bytes` to `data_rlc`. It has a variable length
+                // represented by `is_paddings`, which requires intermediate
+                // cells to keep the degree low.
                 for (idx, (byte, is_padding)) in
                     input_bytes.iter().zip(is_paddings.iter()).enumerate()
                 {
@@ -739,16 +774,17 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                         new_data_rlc.clone(),
                         new_data_rlc.clone() * challenges.keccak_input() + byte.expr.clone(),
                     );
-                    if idx < data_rlcs.len() - 1 {
-                        cb.require_equal(
-                            "intermediate data rlc",
-                            data_rlcs[idx + 1].expr(),
-                            new_data_rlc,
-                        );
-                        new_data_rlc = data_rlcs[idx + 1].expr();
-                    }
+                    let data_rlc_after_this_byte = data_rlcs[NUM_BYTES_PER_WORD - (idx + 1)].expr();
+                    cb.require_equal(
+                        "intermediate data rlc",
+                        data_rlc_after_this_byte.clone(),
+                        new_data_rlc,
+                    );
+                    new_data_rlc = data_rlc_after_this_byte;
                 }
-                cb.require_equal("update data rlc", data_rlc.clone(), new_data_rlc);
+                // At this point, `data_rlcs[0]` includes the new input word. It
+                // will be copied into the next round, or it is
+                // the final `input_rlc` in the lookup table.
             });
             // Keep length/data_rlc the same on rows where we don't absorb data
             cb.condition(
@@ -761,7 +797,7 @@ impl<F: Field> SubCircuitConfig<F> for KeccakCircuitConfig<F> {
                     cb.require_equal("length equality check", length.clone(), length_prev.clone());
                     cb.require_equal(
                         "data_rlc equality check",
-                        data_rlc.clone(),
+                        data_rlcs[0].clone(),
                         data_rlc_prev.clone(),
                     );
                 },
@@ -979,42 +1015,6 @@ impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
         config.load_aux_tables(layouter)?;
         let witness = self.generate_witness(*challenges);
         config.assign(layouter, witness.as_slice())
-    }
-}
-
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-impl<F: Field> Circuit<F> for KeccakCircuit<F> {
-    type Config = (KeccakCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let keccak_table = KeccakTable::construct(meta);
-        let challenges = Challenges::construct(meta);
-
-        let config = {
-            let challenges = challenges.exprs(meta);
-            KeccakCircuitConfig::new(
-                meta,
-                KeccakCircuitConfigArgs {
-                    keccak_table,
-                    challenges,
-                },
-            )
-        };
-        (config, challenges)
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        self.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 

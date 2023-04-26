@@ -1,4 +1,5 @@
 use super::{
+    constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
@@ -11,7 +12,7 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
@@ -40,7 +41,7 @@ pub(crate) struct SameContextGadget<F> {
 
 impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
@@ -79,11 +80,8 @@ impl<F: Field> SameContextGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
 
         Ok(())
     }
@@ -105,7 +103,7 @@ pub(crate) struct RestoreContextGadget<F> {
 
 impl<F: Field> RestoreContextGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         is_success: Expression<F>,
         // Expression for the number of rw lookups that occur after this gadget is constructed.
         subsequent_rw_lookups: Expression<F>,
@@ -268,7 +266,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     UpdateBalanceGadget<F, N_ADDENDS, INCREASE>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         address: Expression<F>,
         updates: Vec<Word<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
@@ -363,7 +361,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
@@ -385,7 +383,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -494,7 +492,7 @@ pub(crate) struct TransferGadget<F> {
 
 impl<F: Field> TransferGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
@@ -509,7 +507,7 @@ impl<F: Field> TransferGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     0.expr(),
                     Some(reversion_info),
                 );
@@ -597,7 +595,7 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
 
 impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
@@ -664,7 +662,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             phase2_callee_code_hash.expr(),
         );
         let is_empty_code_hash =
-            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_hash_rlc());
+            IsEqualGadget::construct(cb, phase2_callee_code_hash.expr(), cb.empty_code_hash_rlc());
         let callee_not_exists = IsZeroGadget::construct(cb, phase2_callee_code_hash.expr());
 
         Self {
@@ -732,12 +730,12 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         if IS_SUCCESS_CALL {
             self.is_success
                 .assign(region, offset, Value::known(F::from(is_success.low_u64())))?;
-            self.gas_is_u64.assign(
-                region,
-                offset,
-                sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
-            )?;
         }
+        self.gas_is_u64.assign(
+            region,
+            offset,
+            sum::value(&gas.to_le_bytes()[N_BYTES_GAS..]),
+        )?;
         let cd_address = self
             .cd_address
             .assign(region, offset, cd_offset, cd_length)?;
@@ -759,7 +757,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             region,
             offset,
             phase2_callee_code_hash,
-            region.empty_hash_rlc(),
+            region.empty_code_hash_rlc(),
         )?;
         self.callee_not_exists
             .assign_value(region, offset, phase2_callee_code_hash)?;
@@ -801,7 +799,7 @@ pub(crate) struct SloadGasGadget<F> {
 }
 
 impl<F: Field> SloadGasGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+    pub(crate) fn construct(_cb: &mut EVMConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -831,7 +829,7 @@ pub(crate) struct SstoreGasGadget<F> {
 
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value: Cell<F>,
         value_prev: Cell<F>,
         original_value: Cell<F>,
@@ -952,7 +950,7 @@ pub(crate) struct CommonErrorGadget<F> {
 
 impl<F: Field> CommonErrorGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {
@@ -966,7 +964,7 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 
     pub(crate) fn construct_with_lastcallee_return_data(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
         return_data_offset: Expression<F>,

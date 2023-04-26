@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -42,7 +42,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATACOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let memory_offset = cb.query_cell_phase2();
@@ -240,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             region,
             offset,
             length.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())
@@ -251,10 +251,14 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::{helpers::*, TestContext};
+    use eth_types::{bytecode, Word};
+    use mock::{
+        generate_mock_call_bytecode,
+        test_ctx::{helpers::*, TestContext},
+        MockCallBytecodeParams,
+    };
 
-    fn test_ok_root(
+    fn test_root_ok(
         call_data_length: usize,
         memory_offset: usize,
         data_offset: usize,
@@ -292,7 +296,7 @@ mod test {
             .run();
     }
 
-    fn test_ok_internal(
+    fn test_internal_ok(
         call_data_offset: usize,
         call_data_length: usize,
         dst_offset: usize,
@@ -303,31 +307,17 @@ mod test {
 
         // code B gets called by code A, so the call is an internal call.
         let code_b = bytecode! {
-            PUSH32(length)  // size
-            PUSH32(offset)     // offset
-            PUSH32(dst_offset) // dst_offset
-            CALLDATACOPY
+            .op_calldatacopy(dst_offset, offset, length)
             STOP
         };
 
-        // code A calls code B.
-        let pushdata = rand_bytes(8);
-        let code_a = bytecode! {
-            // populate memory in A's context.
-            PUSH8(Word::from_big_endian(&pushdata))
-            PUSH1(0x00) // offset
-            MSTORE
-            // call ADDR_B.
-            PUSH1(0x00) // retLength
-            PUSH1(0x00) // retOffset
-            PUSH32(call_data_length) // argsLength
-            PUSH32(call_data_offset) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
-            STOP
-        };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            pushdata: rand_bytes(32),
+            call_data_length,
+            call_data_offset,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -350,25 +340,25 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_simple() {
-        test_ok_root(0x40, 0x40, 0x00, 10);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 10);
+        test_root_ok(0x40, 0x40, 0x00, 10);
+        test_internal_ok(0x40, 0x40, 0xA0, 0x10, 10);
     }
 
     #[test]
     fn calldatacopy_gadget_large() {
-        test_ok_root(0x204, 0x103, 0x102, 0x101);
-        test_ok_internal(0x30, 0x204, 0x103, 0x102, 0x101);
+        test_root_ok(0x204, 0x103, 0x102, 0x101);
+        test_internal_ok(0x30, 0x204, 0x103, 0x102, 0x101);
     }
 
     #[test]
     fn calldatacopy_gadget_out_of_bound() {
-        test_ok_root(0x40, 0x40, 0x20, 40);
-        test_ok_internal(0x40, 0x20, 0xA0, 0x28, 10);
+        test_root_ok(0x40, 0x40, 0x20, 40);
+        test_internal_ok(0x40, 0x20, 0xA0, 0x28, 10);
     }
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(0x40, 0x40, 0x00, 0);
-        test_ok_internal(0x40, 0x40, 0xA0, 0x10, 0);
+        test_root_ok(0x40, 0x40, 0x00, 0);
+        test_internal_ok(0x40, 0x40, 0xA0, 0x10, 0);
     }
 }

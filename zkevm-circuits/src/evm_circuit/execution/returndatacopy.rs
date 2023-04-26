@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             from_bytes,
@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURNDATACOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let dest_offset = cb.query_cell_phase2();
@@ -269,8 +269,8 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
 mod test {
     use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::{bytecode, ToWord, Word};
-    use mock::test_ctx::TestContext;
+    use eth_types::{bytecode, Word};
+    use mock::{generate_mock_call_bytecode, test_ctx::TestContext, MockCallBytecodeParams};
 
     fn test_ok_internal(
         return_data_offset: usize,
@@ -281,37 +281,28 @@ mod test {
     ) {
         let (addr_a, addr_b) = (mock::MOCK_ACCOUNTS[0], mock::MOCK_ACCOUNTS[1]);
 
-        let pushdata = rand_bytes(32);
         let return_offset =
             std::cmp::max((return_data_offset + return_data_size) as i64 - 32, 0) as usize;
         let code_b = bytecode! {
-            PUSH32(Word::from_big_endian(&pushdata))
-            PUSH32(return_offset)
-            MSTORE
-
-            PUSH32(return_data_size)
-            PUSH32(return_data_offset)
-            RETURN
+            .op_mstore(return_offset, Word::from_big_endian(&rand_bytes(32)))
+            .op_return(return_data_offset, return_data_size)
             STOP
         };
 
         // code A calls code B.
-        let code_a = bytecode! {
-            // call ADDR_B.
-            PUSH32(return_data_size) // retLength
-            PUSH32(return_data_offset) // retOffset
-            PUSH1(0x00) // argsLength
-            PUSH1(0x00) // argsOffset
-            PUSH1(0x00) // value
-            PUSH32(addr_b.to_word()) // addr
-            PUSH32(0x1_0000) // gas
-            CALL
+        let instruction = bytecode! {
             PUSH32(size) // size
             PUSH32(offset) // offset
             PUSH32(dest_offset) // dest_offset
             RETURNDATACOPY
-            STOP
         };
+        let code_a = generate_mock_call_bytecode(MockCallBytecodeParams {
+            address: addr_b,
+            return_data_offset,
+            return_data_size,
+            instructions_after_call: instruction,
+            ..MockCallBytecodeParams::default()
+        });
 
         let ctx = TestContext::<3, 1>::new(
             None,
@@ -373,17 +364,4 @@ mod test {
         // rlc value matters only if length > 255, i.e., size.cells.len() > 1
         test_ok_internal(0x200, 0x200, 0x200, 0x00, 0x150);
     }
-
-    // TODO: Add negative cases for out-of-bound and out-of-gas
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_bound() {
-    //     test_ok_internal(0x00, 0x10, 0x20, 0x10, 0x10);
-    // }
-
-    // #[test]
-    // #[should_panic]
-    // fn returndatacopy_gadget_out_of_gas() {
-    //     test_ok_internal(0x00, 0x10, 0x2000000, 0x00, 0x10);
-    // }
 }

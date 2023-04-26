@@ -4,12 +4,14 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_U64},
         step::ExecutionState,
         util::{
-            common_gadget::CommonErrorGadget, constraint_builder::ConstraintBuilder,
-            math_gadget::LtGadget, memory_gadget::MemoryAddressGadget, CachedRegion, Cell,
+            common_gadget::CommonErrorGadget,
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::LtGadget,
+            memory_gadget::MemoryAddressGadget,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::CallContextFieldTag,
     util::Expr,
 };
 
@@ -36,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorCodeStore;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let offset = cb.query_cell_phase2();
@@ -47,9 +49,6 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         let memory_address = MemoryAddressGadget::construct(cb, offset, length);
 
         cb.require_true("is_create is true", cb.curr.state.is_create.expr());
-
-        // constrain in non static call
-        cb.call_context_lookup(false.expr(), None, CallContextFieldTag::IsStatic, 0.expr());
 
         // constrain code store gas > gas left, that is GasCost::CODE_DEPOSIT_BYTE_COST
         // * length > gas left
@@ -73,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         let common_error_gadget = CommonErrorGadget::construct_with_lastcallee_return_data(
             cb,
             opcode.expr(),
-            5.expr(),
+            4.expr(),
             memory_address.offset(),
             memory_address.length(),
         );
@@ -119,7 +118,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorCodeStoreGadget<F> {
         )?;
 
         self.common_error_gadget
-            .assign(region, offset, block, call, step, 5)?;
+            .assign(region, offset, block, call, step, 4)?;
         Ok(())
     }
 }
@@ -285,7 +284,6 @@ mod test {
             |mut txs, _accs| {
                 txs[0]
                     .from(MOCK_ACCOUNTS[0])
-                    //.gas(53424u64.into())
                     .gas(53446u64.into())
                     .value(eth(2))
                     .input(code.into());

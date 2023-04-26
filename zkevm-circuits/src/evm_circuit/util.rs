@@ -9,7 +9,8 @@ use crate::{
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
-use eth_types::{Address, ToLittleEndian, U256};
+use bus_mapping::state_db::CodeDB;
+use eth_types::{Address, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{AssignedCell, Region, Value},
@@ -17,7 +18,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use itertools::Itertools;
-use keccak256::EMPTY_HASH_LE;
 use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
@@ -195,8 +195,8 @@ impl<'r, 'b, F: FieldExt> CachedRegion<'r, 'b, F> {
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
     }
-    pub fn empty_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(U256::from_little_endian(&*EMPTY_HASH_LE))
+    pub fn empty_code_hash_rlc(&self) -> Value<F> {
+        self.word_rlc(CodeDB::empty_code_hash().to_word())
     }
 
     /// Constrains a cell to have a constant value.
@@ -289,7 +289,7 @@ impl CellType {
     }
 
     /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
+    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
@@ -299,7 +299,7 @@ impl CellType {
 
     /// Return the storage cell of the expression
     pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+        Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
 
