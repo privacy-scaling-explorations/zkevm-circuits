@@ -15,9 +15,11 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
-    mpt_circuit::{helpers::nibble_rlc, param::HASH_WIDTH},
-    mpt_circuit::{helpers::Indexable, param::RLP_NIL},
-    mpt_circuit::{MPTConfig, MPTState},
+    mpt_circuit::{
+        helpers::{nibble_rlc, Indexable},
+        param::{HASH_WIDTH, RLP_NIL},
+        MPTConfig, MPTState,
+    },
 };
 
 #[derive(Clone, Debug)]

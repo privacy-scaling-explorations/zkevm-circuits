@@ -1,6 +1,8 @@
 //! Table definitions used cross-circuits
 
 use crate::{
+    circuit,
+    circuit_tools::constraint_builder::ConstraintBuilder,
     copy_circuit::number_or_hash_to_field,
     evm_circuit::util::rlc,
     exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
@@ -8,7 +10,7 @@ use crate::{
     util::{build_tx_log_address, Challenges},
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
-    }, circuit_tools::constraint_builder::ConstraintBuilder, circuit,
+    },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
@@ -620,7 +622,10 @@ impl<F: Field> LookupTable<F> for MptTable {
             self.value,
             self.root_prev,
             self.root,
-        ].into_iter().map(|col| col.into()).collect::<Vec<Column<Any>>>()
+        ]
+        .into_iter()
+        .map(|col| col.into())
+        .collect::<Vec<Column<Any>>>()
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -639,7 +644,8 @@ impl<F: Field> LookupTable<F> for MptTable {
 impl MptTable {
     /// Construct a new MptTable
     pub(crate) fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        // TODO(Brecht): everything except address and proof type needs to be advice_column_in(SecondPhase)
+        // TODO(Brecht): everything except address and proof type needs to be
+        // advice_column_in(SecondPhase)
         Self {
             address_rlc: meta.advice_column(),
             proof_type: meta.advice_column(),
@@ -680,7 +686,10 @@ impl MptTable {
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {
-        for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self).iter().zip_eq(row.values()) {
+        for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
+            .iter()
+            .zip_eq(row.values())
+        {
             region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
         }
         Ok(())
@@ -962,17 +971,31 @@ impl KeccakTable {
     pub fn assignments<F: Field>(
         input: &[u8],
         challenges: &Challenges<Value<F>>,
+        is_big_endian: bool,
     ) -> Vec<[Value<F>; 4]> {
+        let bytes = if is_big_endian {
+            input.iter().cloned().rev().collect::<Vec<u8>>()
+        } else {
+            input.to_owned()
+        };
         let input_rlc = challenges
             .keccak_input()
-            .map(|challenge| rlc::value(input.iter().rev(), challenge));
+            .map(|challenge| rlc::value(&bytes, challenge));
         let input_len = F::from(input.len() as u64);
         let mut keccak = Keccak::default();
         keccak.update(input);
         let output = keccak.digest();
+        // println!("keccak hash bytes: {:?}",
+        // Word::from_big_endian(output.as_slice()).to_le_bytes());
         let output_rlc = challenges.evm_word().map(|challenge| {
+            // println!("keccak output challenge: {:?}", challenge);
             rlc::value(
-                &Word::from_big_endian(output.as_slice()).to_le_bytes(),
+                &if is_big_endian {
+                    Word::from_big_endian(output.as_slice())
+                } else {
+                    Word::from_little_endian(output.as_slice())
+                }
+                .to_le_bytes(),
                 challenge,
             )
         });
@@ -1008,6 +1031,7 @@ impl KeccakTable {
         layouter: &mut impl Layouter<F>,
         inputs: impl IntoIterator<Item = &'a Vec<u8>> + Clone,
         challenges: &Challenges<Value<F>>,
+        is_big_endian: bool,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "keccak table",
@@ -1025,7 +1049,7 @@ impl KeccakTable {
 
                 let keccak_table_columns = <KeccakTable as LookupTable<F>>::advice_columns(self);
                 for input in inputs.clone() {
-                    for row in Self::assignments(input, challenges) {
+                    for row in Self::assignments(input, challenges, is_big_endian) {
                         // let mut column_index = 0;
                         for (&column, value) in keccak_table_columns.iter().zip_eq(row) {
                             region.assign_advice(
@@ -1034,7 +1058,7 @@ impl KeccakTable {
                                 offset,
                                 || value,
                             )?;
-                            println!("keccak: {:?}", value);
+                            // println!("keccak: {:?}", value);
                         }
                         offset += 1;
                     }

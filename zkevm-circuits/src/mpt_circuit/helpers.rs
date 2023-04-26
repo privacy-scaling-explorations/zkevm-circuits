@@ -16,7 +16,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use gadgets::util::{or, Scalar, pow};
+use gadgets::util::{or, pow, Scalar};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression, VirtualCells},
@@ -757,8 +757,7 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
-    use crate::circuit_tools::constraint_builder::ConstraintBuilder;
-    use crate::{_cb, circuit};
+    use crate::{_cb, circuit, circuit_tools::constraint_builder::ConstraintBuilder};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
@@ -1101,7 +1100,8 @@ impl<F: Field> MainRLPGadget<F> {
         self.len
             .assign(region, offset, rlp_witness.len().scalar())?;
 
-        self.mult_diff.assign(region, offset, pow::value(r, rlp_witness.num_bytes()))?;
+        self.mult_diff
+            .assign(region, offset, pow::value(r, rlp_witness.num_bytes()))?;
 
         self.rlc_content
             .assign(region, offset, rlp_witness.rlc_content(r))?;

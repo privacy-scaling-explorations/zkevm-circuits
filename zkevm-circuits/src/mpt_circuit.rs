@@ -1,6 +1,9 @@
 //! The MPT circuit implementation.
 use eth_types::Field;
-use gadgets::{impl_expr, util::{Scalar, Expr}};
+use gadgets::{
+    impl_expr,
+    util::{Expr, Scalar},
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -27,17 +30,16 @@ use self::{
 };
 use crate::{
     assign, assignf, circuit,
-    circuit_tools::{cell_manager::CellManager, memory::Memory},
+    circuit_tools::{
+        cell_manager::CellManager, constraint_builder::ConstraintBuilder, memory::Memory,
+    },
     mpt_circuit::{
-        helpers::{main_memory, parent_memory, MPTConstraintBuilder},
+        helpers::{main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    table::{KeccakTable, MptTable, MPTProofType, LookupTable},
-    util::{Challenges},
-};
-use crate::{
-    circuit_tools::constraint_builder::ConstraintBuilder, mpt_circuit::helpers::MainRLPGadget,
+    table::{KeccakTable, LookupTable, MPTProofType, MptTable},
+    util::Challenges,
 };
 use extension_branch::ExtensionBranchConfig;
 use param::HASH_WIDTH;
@@ -268,7 +270,7 @@ impl<F: Field> MPTConfig<F> {
             cb.base.generate_lookups(
                 meta,
                 &[
-                    vec!["fixed".to_string()/*, "keccak".to_string()*/],
+                    vec!["fixed".to_string() /* , "keccak".to_string() */],
                     ctx.memory.tags(),
                 ]
                 .concat(),
@@ -290,7 +292,7 @@ impl<F: Field> MPTConfig<F> {
         println!("num lookups: {}", meta.lookups().len());
         println!("num advices: {}", meta.num_advice_columns());
         println!("num fixed: {}", meta.num_fixed_columns());
-        //cb.base.print_stats();
+        // cb.base.print_stats();
 
         MPTConfig {
             q_enable,
@@ -347,7 +349,7 @@ impl<F: Field> MPTConfig<F> {
 
                     // Assign nodes
                     if node.start.is_some() {
-                        //println!("{}: start", offset);
+                        // println!("{}: start", offset);
                         assign!(region, (self.state_machine.is_start, offset) => true.scalar())?;
                         self.state_machine.start_config.assign(
                             &mut region,
@@ -358,7 +360,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.extension_branch.is_some() {
-                        //println!("{}: branch", offset);
+                        // println!("{}: branch", offset);
                         assign!(region, (self.state_machine.is_branch, offset) => true.scalar())?;
                         self.state_machine.branch_config.assign(
                             &mut region,
@@ -369,7 +371,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.storage.is_some() {
-                        //println!("{}: storage", offset);
+                        // println!("{}: storage", offset);
                         assign!(region, (self.state_machine.is_storage, offset) => true.scalar())?;
                         self.state_machine.storage_config.assign(
                             &mut region,
@@ -380,7 +382,7 @@ impl<F: Field> MPTConfig<F> {
                             &rlp_values,
                         )?;
                     } else if node.account.is_some() {
-                        //println!("{}: account", offset);
+                        // println!("{}: account", offset);
                         assign!(region, (self.state_machine.is_account, offset) => true.scalar())?;
                         self.state_machine.account_config.assign(
                             &mut region,
@@ -418,7 +420,6 @@ impl<F: Field> MPTConfig<F> {
         layouter: &mut impl Layouter<F>,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
-
         let mut r = F::zero();
         challenges.keccak_input().map(|v| r = v);
 
@@ -502,8 +503,8 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        //let challenges = Challenges::construct(meta);
-        //let challenges_expr = challenges.exprs(meta);
+        // let challenges = Challenges::construct(meta);
+        // let challenges_expr = challenges.exprs(meta);
 
         let r = 2u64;
         let challenges = Challenges::mock(
@@ -511,21 +512,20 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
             Value::known(F::from(r)),
             Value::known(F::from(r)),
         );
-        let challenges_expr = Challenges::mock(
-            r.expr(),
-            r.expr(),
-            r.expr(),
-        );
+        let challenges_expr = Challenges::mock(r.expr(), r.expr(), r.expr());
 
         let keccak_table = KeccakTable::construct(meta);
-        //let randomness: F = 123456789.scalar();
+        // let randomness: F = 123456789.scalar();
         // Use a mock randomness instead of the randomness derived from the challange
         // (either from mock or real prover) to help debugging assignments.
-        //let power_of_randomness: [Expression<F>; HASH_WIDTH] = array::from_fn(|i| {
+        // let power_of_randomness: [Expression<F>; HASH_WIDTH] = array::from_fn(|i| {
         //    Expression::Constant(randomness.pow(&[1 + i as u64, 0, 0, 0]))
         //});
         let challenges = Challenges::construct(meta);
-        (MPTConfig::configure(meta, challenges_expr, keccak_table), challenges)
+        (
+            MPTConfig::configure(meta, challenges_expr, keccak_table),
+            challenges,
+        )
     }
 
     fn synthesize(
@@ -533,21 +533,17 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         (config, challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        //let challenges = challenges.values(&mut layouter);
+        // let challenges = challenges.values(&mut layouter);
 
         let r = self.randomness;
-        let challenges = Challenges::mock(
-            Value::known(r),
-            Value::known(r),
-            Value::known(r),
-        );
+        let challenges = Challenges::mock(Value::known(r), Value::known(r), Value::known(r));
 
         config.load_fixed_table(&mut layouter, &challenges)?;
         config.assign(&mut layouter, &self.nodes, &challenges)?;
 
         config
             .keccak_table
-            .dev_load(&mut layouter, &self.keccak_data, &challenges)?;
+            .dev_load(&mut layouter, &self.keccak_data, &challenges, false)?;
 
         Ok(())
     }
@@ -559,10 +555,7 @@ mod tests {
 
     use super::*;
 
-    use halo2_proofs::{
-        dev::MockProver,
-        halo2curves::bn256::Fr,
-    };
+    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 
     use std::fs;
 
@@ -615,8 +608,8 @@ mod tests {
                 // let prover = MockProver::run(9, &circuit, vec![pub_root]).unwrap();
                 let prover = MockProver::run(14 /* 9 */, &circuit, vec![]).unwrap();
                 assert_eq!(prover.verify_at_rows(0..num_rows, 0..num_rows,), Ok(()));
-                //assert_eq!(prover.verify_par(), Ok(()));
-                //prover.assert_satisfied();
+                // assert_eq!(prover.verify_par(), Ok(()));
+                // prover.assert_satisfied();
             });
     }
 }

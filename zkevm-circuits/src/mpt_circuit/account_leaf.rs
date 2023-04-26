@@ -1,5 +1,5 @@
 use eth_types::Field;
-use gadgets::util::{Scalar, pow};
+use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
     circuit::{Region, Value},
     plonk::{Error, VirtualCells},
@@ -7,36 +7,29 @@ use halo2_proofs::{
 };
 
 use super::{
-    helpers::ParentDataWitness,
+    helpers::{KeyDataWitness, ListKeyGadget, MainData, ParentDataWitness},
+    param::HASH_WIDTH,
     rlp_gadgets::RLPItemWitness,
     witness_row::{AccountRowType, Node},
 };
-use super::{
-    helpers::{KeyDataWitness, ListKeyGadget, MainData},
-    param::HASH_WIDTH,
-};
 use crate::{
     circuit,
-    circuit_tools::cell_manager::Cell,
-    circuit_tools::constraint_builder::RLCable,
-    mpt_circuit::MPTContext,
+    circuit_tools::{
+        cell_manager::Cell,
+        constraint_builder::{RLCChainable, RLCable, RLCableValue},
+        gadgets::IsEqualGadget,
+    },
     mpt_circuit::{
         helpers::{
-            key_memory, num_nibbles, parent_memory, KeyData, MPTConstraintBuilder, ParentData,
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, Indexable,
+            IsEmptyTreeGadget, KeyData, MPTConstraintBuilder, ParentData, WrongGadget,
         },
         param::{KEY_LEN_IN_NIBBLES, RLP_LIST_LONG, RLP_LONG},
+        MPTConfig, MPTContext, MPTState,
     },
-    mpt_circuit::{MPTConfig, MPTState},
+    table::MPTProofType,
+    witness::MptUpdateRow,
 };
-use crate::{
-    circuit_tools::constraint_builder::RLCChainable,
-    mpt_circuit::helpers::{DriftedGadget, WrongGadget},
-};
-use crate::{
-    circuit_tools::{constraint_builder::RLCableValue, gadgets::IsEqualGadget},
-    mpt_circuit::helpers::{main_memory, Indexable, IsEmptyTreeGadget},
-};
-use crate::{table::MPTProofType, witness::MptUpdateRow};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AccountLeafConfig<F> {
@@ -155,16 +148,18 @@ impl<F: Field> AccountLeafConfig<F> {
                 // Calculate the leaf RLC
                 let value_rlp_bytes = config.value_rlp_bytes[is_s.idx()].to_expr_vec();
                 let value_list_rlp_bytes = config.value_list_rlp_bytes[is_s.idx()].to_expr_vec();
-                leaf_no_key_rlc[is_s.idx()] = (value_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2)).rlc_chain(
-                    (value_list_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2)).rlc_chain(
-                        (nonce_rlp_rlc.expr(), nonce_items[is_s.idx()].mult()).rlc_chain(
-                            (balance_rlp_rlc.expr(), balance_items[is_s.idx()].mult()).rlc_chain(
-                                (storage_rlp_rlc.expr(), pow::expr(r.expr(), 33))
-                                    .rlc_chain(codehash_rlp_rlc.expr()),
+                leaf_no_key_rlc[is_s.idx()] = (value_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2))
+                    .rlc_chain(
+                        (value_list_rlp_bytes.rlc(&r), pow::expr(r.expr(), 2)).rlc_chain(
+                            (nonce_rlp_rlc.expr(), nonce_items[is_s.idx()].mult()).rlc_chain(
+                                (balance_rlp_rlc.expr(), balance_items[is_s.idx()].mult())
+                                    .rlc_chain(
+                                        (storage_rlp_rlc.expr(), pow::expr(r.expr(), 33))
+                                            .rlc_chain(codehash_rlp_rlc.expr()),
+                                    ),
                             ),
                         ),
-                    ),
-                );
+                    );
                 let leaf_rlc =
                     (rlp_key.rlc(&r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
 

@@ -1,13 +1,18 @@
-use super::helpers::Indexable;
-use super::rlp_gadgets::RLPItemWitness;
-use super::witness_row::{Node, StartRowType};
-use crate::circuit_tools::cell_manager::Cell;
-use crate::mpt_circuit::helpers::{main_memory, MainData};
+use super::{
+    helpers::Indexable,
+    rlp_gadgets::RLPItemWitness,
+    witness_row::{Node, StartRowType},
+};
 use crate::{
     circuit,
-    mpt_circuit::helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
-    mpt_circuit::MPTContext,
-    mpt_circuit::{MPTConfig, MPTState},
+    circuit_tools::cell_manager::Cell,
+    mpt_circuit::{
+        helpers::{
+            key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
+            ParentData,
+        },
+        MPTConfig, MPTContext, MPTState,
+    },
 };
 use eth_types::Field;
 use gadgets::util::Scalar;
@@ -97,7 +102,7 @@ impl<F: Field> StartConfig<F> {
         let mut root = vec![0.scalar(); 2];
         for is_s in [true, false] {
             root[is_s.idx()] = rlp_values[is_s.idx()].rlc_content(pv.r);
-            println!("root {}: {:?}", is_s, root[is_s.idx()]);
+            // println!("root {}: {:?}", is_s, root[is_s.idx()]);
         }
 
         MainData::witness_store(

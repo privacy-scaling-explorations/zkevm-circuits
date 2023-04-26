@@ -782,6 +782,7 @@ mod sign_verify_tests {
                 &mut layouter,
                 &keccak_inputs_sign_verify(&self.signatures),
                 &challenges,
+                true,
             )?;
             config.sign_verify.load_range(&mut layouter)?;
             Ok(())

@@ -18,6 +18,7 @@
 #![deny(clippy::debug_assert_with_mut_call)]
 
 pub mod bytecode_circuit;
+pub mod circuit_tools;
 pub mod copy_circuit;
 pub mod evm_circuit;
 pub mod exp_circuit;
@@ -28,7 +29,6 @@ pub mod root_circuit;
 pub mod state_circuit;
 pub mod super_circuit;
 pub mod table;
-pub mod circuit_tools;
 
 #[cfg(any(feature = "test", test))]
 pub mod test_util;

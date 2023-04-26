@@ -430,6 +430,7 @@ impl<F: Field> Circuit<F> for TxCircuit<F> {
                 Error::Synthesis
             })?,
             &challenges,
+            true,
         )?;
         self.synthesize_sub(&config, &challenges, &mut layouter)
     }

@@ -1,5 +1,5 @@
 use eth_types::Field;
-use gadgets::util::{Scalar, pow};
+use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression, VirtualCells},
@@ -14,12 +14,13 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
-    mpt_circuit::{helpers::num_nibbles, param::HASH_WIDTH},
     mpt_circuit::{
-        helpers::{ext_key_rlc_calc_value, ext_key_rlc_expr, Indexable, KeyData, ParentData},
-        FixedTableTag,
+        helpers::{
+            ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
+        },
+        param::HASH_WIDTH,
+        FixedTableTag, MPTConfig, MPTState,
     },
-    mpt_circuit::{MPTConfig, MPTState},
 };
 
 #[derive(Clone, Debug)]

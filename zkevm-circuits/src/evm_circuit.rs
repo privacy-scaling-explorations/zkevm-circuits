@@ -416,7 +416,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         config.copy_table.load(&mut layouter, block, &challenges)?;
         config
             .keccak_table
-            .dev_load(&mut layouter, &block.sha3_inputs, &challenges)?;
+            .dev_load(&mut layouter, &block.sha3_inputs, &challenges, true)?;
         config.exp_table.load(&mut layouter, block)?;
 
         self.synthesize_sub(&config, &challenges, &mut layouter)

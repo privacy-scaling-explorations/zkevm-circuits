@@ -151,10 +151,7 @@ pub mod pow {
 
     /// Returns the `when_true` expression when the selector is true, else
     /// returns the `when_false` expression.
-    pub fn expr<F: Field>(
-        value: Expression<F>,
-        exponent: usize,
-    ) -> Expression<F> {
+    pub fn expr<F: Field>(value: Expression<F>, exponent: usize) -> Expression<F> {
         let mut result = 1.expr();
         for _ in 0..exponent {
             result = result * value.expr();
@@ -172,18 +169,6 @@ pub mod pow {
         result
     }
 }
-
-/*impl<F: Field> Challenges<Expression<F>> {
-    /// Returns powers of randomness
-    fn powers_of<const S: usize>(base: Expression<F>) -> [Expression<F>; S] {
-        std::iter::successors(base.clone().into(), |power| {
-            (base.clone() * power.clone()).into()
-        })
-        .take(S)
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap()
-    }*/
 
 /// Trait that implements functionality to get a scalar from
 /// commonly used types.

@@ -6,25 +6,23 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::mpt_circuit::helpers::{num_nibbles, IsEmptyTreeGadget};
-use crate::table::MPTProofType;
 use crate::{
     circuit,
-    mpt_circuit::MPTContext,
-    mpt_circuit::{
-        helpers::{key_memory, parent_memory, KeyData, MPTConstraintBuilder, ParentData},
-        param::KEY_LEN_IN_NIBBLES,
+    circuit_tools::{
+        cell_manager::Cell,
+        constraint_builder::RLCChainable,
+        gadgets::{IsEqualGadget, LtGadget},
     },
-    mpt_circuit::{MPTConfig, MPTState},
-};
-use crate::{
-    circuit_tools::cell_manager::Cell,
-    mpt_circuit::helpers::{DriftedGadget, ParentDataWitness},
-};
-use crate::{circuit_tools::gadgets::LtGadget, witness::MptUpdateRow};
-use crate::{
-    circuit_tools::{constraint_builder::RLCChainable, gadgets::IsEqualGadget},
-    mpt_circuit::helpers::{main_memory, MainData},
+    mpt_circuit::{
+        helpers::{
+            key_memory, main_memory, num_nibbles, parent_memory, DriftedGadget, IsEmptyTreeGadget,
+            KeyData, MPTConstraintBuilder, MainData, ParentData, ParentDataWitness,
+        },
+        param::KEY_LEN_IN_NIBBLES,
+        MPTConfig, MPTContext, MPTState,
+    },
+    table::MPTProofType,
+    witness::MptUpdateRow,
 };
 
 use super::{

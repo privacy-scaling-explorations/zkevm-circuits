@@ -9,7 +9,7 @@ use crate::{
     util::Expr,
 };
 use eth_types::Field;
-use gadgets::util::{not, Scalar, pow};
+use gadgets::util::{not, pow, Scalar};
 use halo2_proofs::{
     circuit::Region,
     plonk::{Error, Expression},

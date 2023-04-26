@@ -19,8 +19,8 @@ use crate::{
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,
+        MPTConfig, MPTState,
     },
-    mpt_circuit::{MPTConfig, MPTState},
 };
 
 #[derive(Clone, Debug, Default)]
