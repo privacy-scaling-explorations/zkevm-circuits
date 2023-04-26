@@ -1401,7 +1401,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             &mut region,
                             offset,
                             i + 1,
-                            tx_id_next as usize,
+                            tx_id_next,
                             index,
                             F::from(*byte as u64),
                             is_final,

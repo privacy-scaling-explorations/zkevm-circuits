@@ -5,7 +5,8 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition,
             },
             from_bytes,
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
@@ -43,7 +44,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODECOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let external_address_word = cb.query_word_rlc();
@@ -226,7 +227,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             region,
             offset,
             memory_length.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())

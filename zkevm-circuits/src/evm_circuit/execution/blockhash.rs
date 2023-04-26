@@ -5,7 +5,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes,
             math_gadget::LtGadget,
             CachedRegion, Cell, RandomLinearCombination, Word,
@@ -35,7 +38,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::BLOCKHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let block_number = cb.query_word_rlc();
         cb.stack_pop(block_number.expr());
 

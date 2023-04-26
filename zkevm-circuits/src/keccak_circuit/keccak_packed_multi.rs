@@ -133,7 +133,7 @@ pub(crate) mod decode {
 pub(crate) mod split {
     use super::{decode, CellManager, KeccakRegion, Part, PartValue};
     use crate::{
-        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         keccak_circuit::util::{pack, pack_part, unpack, WordParts},
         util::Expr,
     };
@@ -196,7 +196,7 @@ pub(crate) mod split {
 pub(crate) mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
     use crate::{
-        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         keccak_circuit::{
             param::BIT_COUNT,
             util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts},
