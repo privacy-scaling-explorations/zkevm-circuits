@@ -301,7 +301,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Init Code's keccak hash word RLC.
-    pub(crate) fn keccak_code_hash_word_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn keccak_code_hash_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.word_rlc::<N_BYTES_WORD>(
             self.keccak_code_hash
                 .iter()
@@ -313,7 +313,10 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Init Code's keccak hash keccak RLC.
-    pub(crate) fn keccak_code_hash_keccak_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn keccak_code_hash_keccak_rlc(
+        &self,
+        cb: &EVMConstraintBuilder<F>,
+    ) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
             self.keccak_code_hash
                 .iter()
@@ -325,7 +328,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Salt EVM word RLC.
-    pub(crate) fn salt_word_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn salt_word_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.word_rlc::<N_BYTES_WORD>(
             self.salt
                 .iter()
@@ -337,7 +340,7 @@ impl<F: Field, const IS_CREATE2: bool> ContractCreateGadget<F, IS_CREATE2> {
     }
 
     /// Salt keccak RLC.
-    pub(crate) fn salt_keccak_rlc(&self, cb: &ConstraintBuilder<F>) -> Expression<F> {
+    pub(crate) fn salt_keccak_rlc(&self, cb: &EVMConstraintBuilder<F>) -> Expression<F> {
         cb.keccak_rlc::<N_BYTES_WORD>(
             self.salt
                 .iter()

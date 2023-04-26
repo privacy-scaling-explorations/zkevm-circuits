@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, WordByteRangeGadget},
             constraint_builder::{
-                EVMConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::IsZeroGadget,

@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, EVMConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, Same},
             },
             math_gadget::{IsEqualGadget, LtGadget},

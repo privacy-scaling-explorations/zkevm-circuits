@@ -16,7 +16,7 @@ mod test;
 pub use dev::TxCircuit as TestTxCircuit;
 
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{BlockTable, KeccakTable, LookupTable, RlpTable, TxFieldTag, TxTable},
     util::{keccak, random_linear_combine_word as rlc, SubCircuit, SubCircuitConfig},
     witness,

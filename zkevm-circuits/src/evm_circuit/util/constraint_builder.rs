@@ -108,7 +108,7 @@ pub(crate) struct ReversionInfo<F> {
 
 impl<F: Field> ReversionInfo<F> {
     pub(crate) fn from_caller(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         caller: &mut ReversionInfo<F>,
         callee_is_success: Expression<F>,
     ) -> Self {

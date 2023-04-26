@@ -1015,7 +1015,7 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 
     pub(crate) fn construct_with_lastcallee_return_data(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
         return_data_offset: Expression<F>,
@@ -1114,7 +1114,7 @@ pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
 }
 
 impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, cap: Expression<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
         let word = WordByteRangeGadget::construct(cb);
         let value = select::expr(word.within_range(), word.valid_value(), cap.expr());
         let lt_cap = LtGadget::construct(cb, value, cap);
@@ -1175,7 +1175,7 @@ pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
 }
 
 impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         debug_assert!(VALID_BYTES < 32);
 
         let original = cb.query_word_rlc();

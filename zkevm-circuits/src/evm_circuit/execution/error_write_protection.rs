@@ -6,7 +6,7 @@ use crate::{
             common_gadget::CommonErrorGadget,
             constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
             math_gadget::IsZeroGadget,
-            sum, CachedRegion, Cell, Word as RLCWord,
+            CachedRegion, Cell, Word as RLCWord,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

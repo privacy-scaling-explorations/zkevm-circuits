@@ -67,7 +67,7 @@ pub(crate) mod address_high {
 
 /// Memory address trait to adapt for right and Uint overflow cases.
 pub(crate) trait CommonMemoryAddressGadget<F: FieldExt> {
-    fn construct_self(cb: &mut ConstraintBuilder<F>) -> Self;
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self;
 
     /// Return the memory address (offset + length).
     fn assign(
@@ -104,7 +104,7 @@ pub(crate) struct MemoryAddressGadget<F> {
 }
 
 impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
-    fn construct_self(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let offset = cb.query_cell_phase2();
         let length = cb.query_word_rlc();
         Self::construct(cb, offset, length)
@@ -173,7 +173,7 @@ impl<F: Field> CommonMemoryAddressGadget<F> for MemoryAddressGadget<F> {
 
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         memory_offset: Cell<F>,
         memory_length: MemoryAddress<F>,
     ) -> Self {
@@ -226,7 +226,7 @@ pub(crate) struct MemoryExpandedAddressGadget<F> {
 }
 
 impl<F: Field> CommonMemoryAddressGadget<F> for MemoryExpandedAddressGadget<F> {
-    fn construct_self(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn construct_self(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let offset = cb.query_word_rlc();
         let length = cb.query_word_rlc();
         let sum = cb.query_word_rlc();
