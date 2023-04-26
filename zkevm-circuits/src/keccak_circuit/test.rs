@@ -25,7 +25,7 @@ fn serial_keccak_circuit_unusable_rows() {
             unusable_rows::<Fr, KeccakCircuit::<Fr>>(),
         )
     }
-    std::env::set_var("KECCAK_ROWS", "12");
+    std::env::set_var("KECCAK_ROWS", format!("{DEFAULT_KECCAK_ROWS}"));
 }
 
 fn verify<F: Field>(k: u32, inputs: Vec<Vec<u8>>, success: bool) {
