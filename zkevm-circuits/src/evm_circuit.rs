@@ -19,6 +19,7 @@ pub use self::EvmCircuit as TestEvmCircuit;
 
 pub use crate::witness;
 use crate::{
+    evm_circuit::param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT},
     table::{
         BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, LookupTable, RwTable, TxTable,
     },
@@ -234,9 +235,9 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
     type Config = EvmCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
-        // Most columns are queried at 22 (MAX_STEP_HEIGHT + STEP_STATE_HEIGHT)
-        // distinct rotations, so returns 25 unsuable rows.
-        25
+        // Most columns are queried at MAX_STEP_HEIGHT + STEP_STATE_HEIGHT distinct rotations, so
+        // returns (MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3) unusable rows.
+        MAX_STEP_HEIGHT + STEP_STATE_HEIGHT + 3
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {

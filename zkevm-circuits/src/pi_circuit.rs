@@ -1147,7 +1147,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN)
         // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + max_txs * TX_LEN + 1)
         // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + 2 * (max_txs * TX_LEN + 1))
-        // so returns 7 unsuable rows.
+        // so returns 7 unusable rows.
         7
     }
 

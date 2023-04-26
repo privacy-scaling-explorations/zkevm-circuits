@@ -504,7 +504,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         // - Rotation(8)
         // - Rotation(9)
         // - Rotation(10)
-        // Also column col2 and col3 of are queried at 8 distince rotations at
+        // Also column col2 and col3 of are queried at 8 distinct rotations at
         // - Rotation(0)
         // - Rotation(1)
         // - Rotation(2)
@@ -513,7 +513,7 @@ impl<F: Field> SubCircuit<F> for ExpCircuit<F> {
         // - Rotation(5)
         // - Rotation(6)
         // - Rotation(9)
-        // so returns 11 unsuable rows.
+        // so returns 11 unusable rows.
         11
     }
 

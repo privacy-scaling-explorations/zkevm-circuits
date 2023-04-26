@@ -223,13 +223,16 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
 /// - 3 comes from minimum number of distinct queries to permutation argument witness column
 /// - 1 comes from queries at x_3 during multiopen
 /// - 1 comes as slight defense against off-by-one errors
-/// - 1 comes from reservation for last row of permutation argument witness column
+/// - 1 comes from reservation for last row for grand-product boundray check, hence not copy-able or
+///   lookup-able. Note this 1 is not considered in [`ConstraintSystem::blinding_factors`], so below
+///   we need to add an extra 1.
 ///
 /// For circuit with column queried at more than 3 distinct rotation, we can
 /// calculate the unusable rows as (x - 3) + 6 where x is the number of distinct
-/// qureies.
+/// rotation.
 pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
     let mut cs = ConstraintSystem::default();
     C::configure(&mut cs);
-    cs.blinding_factors() + 1 // +1 for l_last
+
+    cs.blinding_factors() + 1
 }
