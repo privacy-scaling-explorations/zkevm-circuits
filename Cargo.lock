@@ -510,7 +510,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "chiquito"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/chiquito?tag=v2023_04_24#975d09576b1a27cc2171701e169720c9a76ec04f"
+source = "git+https://github.com/privacy-scaling-explorations/chiquito?tag=v2023_04_24_2#c5097d09d012c89664914ff74475a3385002e203"
 dependencies = [
  "halo2_proofs 0.2.0",
 ]

@@ -108,10 +108,12 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
                     eq(is_code, push_data_left_is_zero.is_zero()),
                 );
 
-                ctx.lookup(
-                    "lookup((value, push_data_size_table.value)(push_data_size, push_data_size_table.push_data_size))",
-                    vec![(value.expr(), push_data_table_value.expr()), (push_data_size.expr(), push_data_table_size.expr())]);
-
+                ctx.add_lookup(
+                    lookup()
+                        .add(value, push_data_table_value)
+                        .add(push_data_size, push_data_table_size)
+                );
+                
                 ctx.transition(
                     if_next_step(byte_step,
                         eq(length, length.next())
@@ -149,14 +151,13 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
 
                 ctx.transition(select(index_length_diff_is_zero.is_zero(), next_step_must_be(header), 0)); // zero is the valid constraint
 
-                ctx.lookup(
-                    "if header.next() then keccak256_table_lookup(cur.value_rlc, cur.length, cur.hash)",
-                    vec![
-                        (header.next().expr(), keccak_is_enabled.expr()),
-                        (header.next() * value_rlc, keccak_value_rlc.expr()),
-                        (header.next() * length, keccak_length.expr()),
-                        (header.next() * hash, keccak_hash.expr()),
-                    ],
+                ctx.add_lookup(
+                    lookup()
+                        .add(1, keccak_is_enabled)
+                        .add(value_rlc, keccak_value_rlc)
+                        .add(length, keccak_length)
+                        .add(hash, keccak_hash)
+                        .enable(header.next())
                 );
 
                 ctx.wg(move |ctx, wit| {
