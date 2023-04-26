@@ -27,7 +27,7 @@ use itertools::Itertools;
 use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,

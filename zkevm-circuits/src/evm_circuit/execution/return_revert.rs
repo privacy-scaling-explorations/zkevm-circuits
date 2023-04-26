@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURN_REVERT;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
