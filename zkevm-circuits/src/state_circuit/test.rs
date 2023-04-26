@@ -382,7 +382,7 @@ fn address_limb_mismatch() {
         value: U256::zero(),
         value_prev: U256::zero(),
     }];
-    let overrides = HashMap::from([((AdviceColumn::AddressLimb0, 0), Fr::zero())]);
+    let overrides = HashMap::from([((AdviceColumn::AddressLimb0, 0), Fr::ZERO)]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -401,7 +401,7 @@ fn address_limb_out_of_range() {
     }];
     let overrides = HashMap::from([
         ((AdviceColumn::AddressLimb0, 0), Fr::from(1 << 16)),
-        ((AdviceColumn::AddressLimb1, 0), Fr::zero()),
+        ((AdviceColumn::AddressLimb1, 0), Fr::ZERO),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -421,7 +421,7 @@ fn storage_key_mismatch() {
         tx_id: 4,
         committed_value: U256::from(34),
     }];
-    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::one())]);
+    let overrides = HashMap::from([((AdviceColumn::StorageKeyByte1, 0), Fr::ONE)]);
 
     let result = verify_with_overrides(rows, overrides);
 
@@ -442,7 +442,7 @@ fn storage_key_byte_out_of_range() {
     }];
     let overrides = HashMap::from([
         ((AdviceColumn::StorageKeyByte0, 0), Fr::from(0xcafeu64)),
-        ((AdviceColumn::StorageKeyByte1, 0), Fr::zero()),
+        ((AdviceColumn::StorageKeyByte1, 0), Fr::ZERO),
     ]);
 
     // This will trigger two errors: an RLC encoding error and the "fit into u8", we
@@ -656,8 +656,8 @@ fn lexicographic_ordering_previous_limb_differences_nonzero() {
     // limb difference between the two rows here is still 1, so no additional
     // overrides are needed.
     let overrides = HashMap::from([
-        ((AdviceColumn::LimbIndexBit1, 1), Fr::one()),
-        ((AdviceColumn::LimbIndexBit2, 1), Fr::one()),
+        ((AdviceColumn::LimbIndexBit1, 1), Fr::ONE),
+        ((AdviceColumn::LimbIndexBit2, 1), Fr::ONE),
     ]);
 
     let result = verify_with_overrides(rows, overrides);
@@ -706,7 +706,7 @@ fn skipped_start_rw_counter() {
             // The original assignment is 1 << 16.
             Fr::from((1 << 16) + 1),
         ),
-        ((AdviceColumn::RwCounterLimb0, -1), Fr::one()),
+        ((AdviceColumn::RwCounterLimb0, -1), Fr::ONE),
     ]);
 
     let result = prover(vec![], overrides).verify_at_rows(N_ROWS - 1..N_ROWS, N_ROWS - 1..N_ROWS);
@@ -740,7 +740,7 @@ fn bad_initial_memory_value() {
     let overrides = HashMap::from([
         ((AdviceColumn::Value, 0), v),
         ((AdviceColumn::ValuePrev, 0), v),
-        ((AdviceColumn::IsZero, 0), Fr::zero()),
+        ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
     ]);
@@ -829,9 +829,7 @@ fn invalid_tags() {
         if tags.contains(&i) {
             continue;
         }
-        let bits: [Fr; 4] = i
-            .as_bits()
-            .map(|bit| if bit { Fr::one() } else { Fr::zero() });
+        let bits: [Fr; 4] = i.as_bits().map(|bit| if bit { Fr::ONE } else { Fr::ZERO });
         let overrides = HashMap::from([
             ((AdviceColumn::TagBit0, first_row_offset), bits[0]),
             ((AdviceColumn::TagBit1, first_row_offset), bits[1]),
@@ -903,7 +901,7 @@ fn bad_initial_tx_refund_value() {
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
         ((AdviceColumn::Value, 0), v),
         ((AdviceColumn::ValuePrev, 0), v),
-        ((AdviceColumn::IsZero, 0), Fr::zero()),
+        ((AdviceColumn::IsZero, 0), Fr::ZERO),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
     ]);

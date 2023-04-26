@@ -127,7 +127,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodesizeGadget<F> {
 
         let (_, is_warm) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
         self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm)))?;
+            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
         let code_hash = block.rws[step.rw_indices[5]].account_value_pair().0;
         self.code_hash

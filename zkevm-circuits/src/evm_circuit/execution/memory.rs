@@ -165,7 +165,7 @@ impl<F: Field> ExecutionGadget<F> for MemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address.as_u64() + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [address.as_u64() + if is_mstore8 == F::ONE { 1 } else { 32 }],
         )?;
 
         Ok(())

@@ -122,8 +122,10 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
             region,
             offset,
             step.memory_word_size(),
-            [address_low::value(address.to_le_bytes())
-                + if is_mstore8 == F::one() { 1 } else { 32 }],
+            [
+                address_low::value(address.to_le_bytes())
+                    + if is_mstore8 == F::ONE { 1 } else { 32 },
+            ],
         )?;
 
         // Gas insufficient check

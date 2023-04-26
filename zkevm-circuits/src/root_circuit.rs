@@ -1,6 +1,7 @@
 //! The Root circuit implementation.
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::Field,
+    arithmetic::Field as Halo2Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
     halo2curves::serde::SerdeObject,
     plonk::{Circuit, ConstraintSystem, Error},
@@ -39,6 +40,7 @@ impl<'a, M: MultiMillerLoop> RootCircuit<'a, M>
 where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
+    M::Scalar: Field,
 {
     /// Create a `RootCircuit` with accumulator computed given a `SuperCircuit`
     /// proof and its instance. Returns `None` if given proof is invalid.
@@ -50,7 +52,7 @@ where
     ) -> Result<Self, snark_verifier::Error> {
         let num_instances = super_circuit_protocol.num_instance.iter().sum::<usize>() + 4 * LIMBS;
         let instance = {
-            let mut instance = Ok(vec![M::Scalar::zero(); num_instances]);
+            let mut instance = Ok(vec![M::Scalar::ZERO; num_instances]);
             super_circuit_instances
                 .as_ref()
                 .zip(super_circuit_proof.as_ref())
@@ -102,7 +104,10 @@ where
     }
 }
 
-impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
+impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M>
+where
+    M::Scalar: Field,
+{
     type Config = AggregationConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -110,7 +115,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for RootCircuit<'a, M> {
         Self {
             svk: self.svk,
             snark: self.snark.without_witnesses(),
-            instance: vec![M::Scalar::zero(); self.instance.len()],
+            instance: vec![M::Scalar::ZERO; self.instance.len()],
         }
     }
 

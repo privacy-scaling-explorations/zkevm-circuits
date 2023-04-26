@@ -132,7 +132,7 @@ impl<F: Field> SubCircuitConfig<F> for SuperCircuitConfig<F> {
         // Use a mock randomness instead of the randomness derived from the challange
         // (either from mock or real prover) to help debugging assignments.
         let power_of_randomness: [Expression<F>; 31] = array::from_fn(|i| {
-            Expression::Constant(F::from(mock_randomness).pow(&[1 + i as u64, 0, 0, 0]))
+            Expression::Constant(F::from(mock_randomness).pow([1 + i as u64, 0, 0, 0]))
         });
 
         let challenges = Challenges::mock(

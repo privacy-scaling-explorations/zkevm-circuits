@@ -296,7 +296,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             Value::known(F::from(current_cumulative_gas_used)),
         )?;
         self.is_first_tx
-            .assign(region, offset, F::from(tx.id as u64), F::one())?;
+            .assign(region, offset, F::from(tx.id as u64), F::ONE)?;
         self.is_persistent.assign(
             region,
             offset,

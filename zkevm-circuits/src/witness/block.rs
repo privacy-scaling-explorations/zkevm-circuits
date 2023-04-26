@@ -158,39 +158,39 @@ impl BlockContext {
             vec![
                 [
                     Value::known(F::from(BlockContextFieldTag::Coinbase as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(self.coinbase.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Timestamp as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(self.timestamp.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Number as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(self.number.to_scalar().unwrap()),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::Difficulty as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     randomness
                         .map(|randomness| rlc::value(&self.difficulty.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::GasLimit as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     Value::known(F::from(self.gas_limit)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::BaseFee as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     randomness
                         .map(|randomness| rlc::value(&self.base_fee.to_le_bytes(), randomness)),
                 ],
                 [
                     Value::known(F::from(BlockContextFieldTag::ChainId as u64)),
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                     randomness
                         .map(|randomness| rlc::value(&self.chain_id.to_le_bytes(), randomness)),
                 ],

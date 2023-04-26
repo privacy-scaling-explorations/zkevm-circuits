@@ -221,10 +221,10 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             let mut topic = region.word_rlc(U256::zero());
             if i < topic_count {
                 topic = region.word_rlc(block.rws[topic_stack_entry].stack_value());
-                self.topic_selectors[i].assign(region, offset, Value::known(F::one()))?;
+                self.topic_selectors[i].assign(region, offset, Value::known(F::ONE))?;
                 topic_stack_entry.1 += 1;
             } else {
-                self.topic_selectors[i].assign(region, offset, Value::known(F::zero()))?;
+                self.topic_selectors[i].assign(region, offset, Value::known(F::ZERO))?;
             }
             self.phase2_topics[i].assign(region, offset, topic)?;
         }

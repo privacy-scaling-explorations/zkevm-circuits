@@ -206,7 +206,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
         self.a_lt_b.assign(
             region,
             offset,
-            Value::known(if a < b { F::one() } else { F::zero() }),
+            Value::known(if a < b { F::ONE } else { F::ZERO }),
         )?;
 
         self.a.assign(region, offset, Some(a_le_bytes))?;

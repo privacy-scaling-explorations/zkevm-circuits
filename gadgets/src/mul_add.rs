@@ -241,7 +241,7 @@ impl<F: Field> MulAddChip<F> {
             || format!("unused col: {}", offset),
             self.config.col4,
             offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
 
         // b limbs.
@@ -266,7 +266,7 @@ impl<F: Field> MulAddChip<F> {
             || format!("unused col {}", offset + 1),
             self.config.col4,
             offset + 1,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
 
         // c_lo, c_hi, d_lo, d_hi.
@@ -298,7 +298,7 @@ impl<F: Field> MulAddChip<F> {
             || format!("unused col: {}", offset + 2),
             self.config.col4,
             offset + 2,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
 
         // carry_lo.
@@ -328,7 +328,7 @@ impl<F: Field> MulAddChip<F> {
             || format!("unused col: {}", offset + 4),
             self.config.col4,
             offset + 4,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
 
         // carry_hi.
@@ -358,7 +358,7 @@ impl<F: Field> MulAddChip<F> {
             || format!("unused col: {}", offset + 6),
             self.config.col4,
             offset + 6,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
 
         Ok(())

@@ -437,7 +437,7 @@ mod test {
                 .assign(region, offset, Value::known(F::from(input_len)))?;
             if IS_CREATE2 {
                 for c in self.create_input_rlc_expected.iter() {
-                    c.assign(region, offset, Value::known(F::zero()))?;
+                    c.assign(region, offset, Value::known(F::ZERO))?;
                 }
                 for (c, v) in self.create2_input_rlc_expected.iter().zip(
                     [
@@ -459,7 +459,7 @@ mod test {
                     c.assign(region, offset, Value::known(F::from(v as u64)))?;
                 }
                 for c in self.create2_input_rlc_expected.iter() {
-                    c.assign(region, offset, Value::known(F::zero()))?;
+                    c.assign(region, offset, Value::known(F::ZERO))?;
                 }
             }
 

@@ -133,7 +133,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
             F::from(OpcodeId::GT.as_u8() as u64),
         )?;
 
-        let indices = if is_gt == F::one() {
+        let indices = if is_gt == F::ONE {
             [step.rw_indices[1], step.rw_indices[0]]
         } else {
             [step.rw_indices[0], step.rw_indices[1]]

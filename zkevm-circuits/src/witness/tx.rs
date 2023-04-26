@@ -48,19 +48,19 @@ impl Transaction {
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Nonce as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(F::from(self.nonce)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Gas as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(F::from(self.gas)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::GasPrice as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 challenges
                     .evm_word()
                     .map(|challenge| rlc::value(&self.gas_price.to_le_bytes(), challenge)),
@@ -68,25 +68,25 @@ impl Transaction {
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallerAddress as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(self.caller_address.to_scalar().unwrap()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CalleeAddress as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(self.callee_address.to_scalar().unwrap()),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::IsCreate as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(F::from(self.is_create as u64)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::Value as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 challenges
                     .evm_word()
                     .map(|challenge| rlc::value(&self.value.to_le_bytes(), challenge)),
@@ -94,13 +94,13 @@ impl Transaction {
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataLength as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(F::from(self.call_data_length as u64)),
             ],
             [
                 Value::known(F::from(self.id as u64)),
                 Value::known(F::from(TxContextFieldTag::CallDataGasCost as u64)),
-                Value::known(F::zero()),
+                Value::known(F::ZERO),
                 Value::known(F::from(self.call_data_gas_cost)),
             ],
         ];

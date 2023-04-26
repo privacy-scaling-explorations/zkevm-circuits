@@ -17,9 +17,10 @@ use eth_types::{
     Field,
 };
 use halo2_proofs::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::CurveAffine,
     circuit::{AssignedCell, Cell, Layouter, Value},
     halo2curves::{
+        ff::PrimeField,
         group::{Curve, Group},
         secp256k1,
         secp256k1::Secp256k1Affine,
@@ -314,7 +315,7 @@ pub(crate) struct AssignedSignatureVerify<F: Field> {
 // Return an array of bytes that corresponds to the little endian representation
 // of the integer, adding the constraints to verify the correctness of the
 // conversion (byte range check included).
-fn integer_to_bytes_le<F: Field, FE: FieldExt>(
+fn integer_to_bytes_le<F: Field, FE: PrimeField>(
     ctx: &mut RegionCtx<'_, F>,
     range_chip: &RangeChip<F>,
     int: &AssignedInteger<FE, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -426,15 +427,15 @@ impl<F: Field> SignVerifyChip<F> {
         challenge: Value<F>,
         inputs_le: impl IntoIterator<Item = Term<F>>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        let zero = chips.main_gate.assign_constant(ctx, F::zero())?;
+        let zero = chips.main_gate.assign_constant(ctx, F::ZERO)?;
         let columns = config.main_gate_config.advices();
         let inputs_le = inputs_le.into_iter().collect_vec();
-        let inputs_be = iter::repeat_with(|| Term::assigned(zero.cell(), Value::known(F::zero())))
+        let inputs_be = iter::repeat_with(|| Term::assigned(zero.cell(), Value::known(F::ZERO)))
             .take(Integer::next_multiple_of(&inputs_le.len(), &columns.len()) - inputs_le.len())
             .chain(inputs_le.into_iter().rev())
             .collect_vec();
 
-        let mut rlc = Value::known(F::zero());
+        let mut rlc = Value::known(F::ZERO);
         for (chunk_idx, chunk) in inputs_be.chunks_exact(columns.len()).enumerate() {
             ctx.enable(q_rlc)?;
             let assigned_rlc = ctx.assign_advice(|| "{name}_rlc[{chunk_idx}]", config.rlc, rlc)?;
@@ -450,9 +451,7 @@ impl<F: Field> SignVerifyChip<F> {
             }
             rlc = iter::once(rlc)
                 .chain(chunk.iter().map(|term| term.value()))
-                .fold(Value::known(F::zero()), |acc, input| {
-                    acc * challenge + input
-                });
+                .fold(Value::known(F::ZERO), |acc, input| acc * challenge + input);
             ctx.next();
         }
 
@@ -519,17 +518,15 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 2. Verify that the first 20 bytes of the
         // pub_key_hash equal the address
         let (address, pk_hash_lo) = {
-            let powers_of_256 =
-                iter::successors(Some(F::one()), |coeff| Some(F::from(256) * coeff))
-                    .take(20)
-                    .collect_vec();
+            let powers_of_256 = iter::successors(Some(F::ONE), |coeff| Some(F::from(256) * coeff))
+                .take(20)
+                .collect_vec();
             let terms = pk_hash[12..]
                 .iter()
                 .zip(powers_of_256.into_iter().rev())
                 .map(|(byte, coeff)| maingate::Term::Unassigned(*byte, coeff))
                 .collect_vec();
-            let (address, pk_hash_lo) =
-                main_gate.decompose(ctx, &terms, F::zero(), |_, _| Ok(()))?;
+            let (address, pk_hash_lo) = main_gate.decompose(ctx, &terms, F::ZERO, |_, _| Ok(()))?;
 
             (
                 address,
@@ -545,7 +542,7 @@ impl<F: Field> SignVerifyChip<F> {
         // Ref. spec SignVerifyChip 3. Verify that the signed message in the ecdsa_chip
         // with RLC encoding corresponds to msg_hash_rlc
         let msg_hash_rlc = {
-            let zero = main_gate.assign_constant(ctx, F::zero())?;
+            let zero = main_gate.assign_constant(ctx, F::ZERO)?;
             let assigned_msg_hash_le = assigned_ecdsa
                 .msg_hash_le
                 .iter()
@@ -700,7 +697,7 @@ impl<F: Field> SignVerifyChip<F> {
 fn pub_key_hash_to_address<F: Field>(pk_hash: &[u8]) -> F {
     pk_hash[32 - 20..]
         .iter()
-        .fold(F::zero(), |acc, b| acc * F::from(256) + F::from(*b as u64))
+        .fold(F::ZERO, |acc, b| acc * F::from(256) + F::from(*b as u64))
 }
 
 #[cfg(test)]

@@ -8,9 +8,8 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::ToWord;
+use eth_types::{Field, ToWord};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
@@ -371,7 +370,7 @@ pub(crate) struct DynamicSelectorHalf<F> {
     pub(crate) target_pairs: Vec<Cell<F>>,
 }
 
-impl<F: FieldExt> DynamicSelectorHalf<F> {
+impl<F: Field> DynamicSelectorHalf<F> {
     pub(crate) fn new(cell_manager: &mut CellManager<F>, count: usize) -> Self {
         let target_pairs = cell_manager.query_cells(CellType::StoragePhase1, (count + 1) / 2);
         let target_odd = cell_manager.query_cell(CellType::StoragePhase1);
@@ -440,17 +439,13 @@ impl<F: FieldExt> DynamicSelectorHalf<F> {
         self.target_odd.assign(
             region,
             offset,
-            Value::known(if odd { F::one() } else { F::zero() }),
+            Value::known(if odd { F::ONE } else { F::ZERO }),
         )?;
         for (index, cell) in self.target_pairs.iter().enumerate() {
             cell.assign(
                 region,
                 offset,
-                Value::known(if index == pair_index {
-                    F::one()
-                } else {
-                    F::zero()
-                }),
+                Value::known(if index == pair_index { F::ONE } else { F::ZERO }),
             )?;
         }
         Ok(())
@@ -497,7 +492,7 @@ pub(crate) struct Step<F> {
     pub(crate) cell_manager: CellManager<F>,
 }
 
-impl<F: FieldExt> Step<F> {
+impl<F: Field> Step<F> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; STEP_WIDTH],

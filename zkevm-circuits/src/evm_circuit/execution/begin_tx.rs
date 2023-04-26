@@ -490,7 +490,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.is_caller_callee_equal.assign(
             region,
             offset,
-            Value::known(F::from(caller_address == callee_address)),
+            Value::known(F::from((caller_address == callee_address) as u64)),
         )?;
         self.tx_is_create
             .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
