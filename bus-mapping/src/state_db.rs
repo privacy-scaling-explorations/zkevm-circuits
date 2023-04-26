@@ -43,7 +43,7 @@ impl CodeDB {
 
     /// Compute hash of given code.
     pub fn hash(code: &[u8]) -> Hash {
-        H256(keccak256(&code))
+        H256(keccak256(code))
     }
 
     /// Code hash of empty code.

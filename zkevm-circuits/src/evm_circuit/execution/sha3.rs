@@ -148,12 +148,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             step.memory_word_size(),
             [memory_address],
         )?;
-        self.memory_copier_gas.assign(
-            region,
-            offset,
-            size.as_u64(),
-            memory_expansion_gas_cost as u64,
-        )?;
+        self.memory_copier_gas
+            .assign(region, offset, size.as_u64(), memory_expansion_gas_cost)?;
 
         Ok(())
     }

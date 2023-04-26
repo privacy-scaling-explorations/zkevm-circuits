@@ -240,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             region,
             offset,
             length.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())

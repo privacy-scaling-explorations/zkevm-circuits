@@ -25,7 +25,7 @@ impl<F: Field, const N: usize> BatchedIsZeroGadget<F, N> {
             .max()
             .expect("BatchedIsZeroGadget needs at least one expression");
 
-        let cell_type = CellType::storage_for_phase::<F>(max_values_phase);
+        let cell_type = CellType::storage_for_phase(max_values_phase);
         let is_zero = cb.query_bool_with_type(cell_type);
         let nonempty_witness = cb.query_cell_with_type(cell_type);
 
