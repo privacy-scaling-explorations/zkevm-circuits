@@ -1,4 +1,5 @@
 use super::{
+    constraint_builder::ConstrainBuilderCommon,
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
     memory_gadget::{CommonMemoryAddressGadget, MemoryExpansionGadget},
@@ -11,7 +12,7 @@ use crate::{
         table::{FixedTableTag, Lookup},
         util::{
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
@@ -40,7 +41,7 @@ pub(crate) struct SameContextGadget<F> {
 
 impl<F: Field> SameContextGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Cell<F>,
         step_state_transition: StepStateTransition<F>,
     ) -> Self {
@@ -79,11 +80,8 @@ impl<F: Field> SameContextGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
 
         Ok(())
     }
@@ -106,7 +104,7 @@ pub(crate) struct RestoreContextGadget<F> {
 impl<F: Field> RestoreContextGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         is_success: Expression<F>,
         // Expression for the number of rw lookups that occur after this gadget is constructed.
         subsequent_rw_lookups: Expression<F>,
@@ -288,7 +286,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     UpdateBalanceGadget<F, N_ADDENDS, INCREASE>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         address: Expression<F>,
         updates: Vec<Word<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
@@ -383,7 +381,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
 impl<F: Field> TransferWithGasFeeGadget<F> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
@@ -516,7 +514,7 @@ pub(crate) struct TransferGadget<F> {
 
 impl<F: Field> TransferGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         sender_address: Expression<F>,
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
@@ -651,7 +649,7 @@ impl<F: Field, MemAddrGadget: CommonMemoryAddressGadget<F>, const IS_SUCCESS_CAL
     CommonCallGadget<F, MemAddrGadget, IS_SUCCESS_CALL>
 {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,
         is_callcode: Expression<F>,
         is_delegatecall: Expression<F>,
@@ -852,7 +850,7 @@ pub(crate) struct SloadGasGadget<F> {
 }
 
 impl<F: Field> SloadGasGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
+    pub(crate) fn construct(_cb: &mut EVMConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
         let gas_cost = select::expr(
             is_warm.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -882,7 +880,7 @@ pub(crate) struct SstoreGasGadget<F> {
 
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         value: Cell<F>,
         value_prev: Cell<F>,
         original_value: Cell<F>,
@@ -1003,7 +1001,7 @@ pub(crate) struct CommonErrorGadget<F> {
 
 impl<F: Field> CommonErrorGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         opcode: Expression<F>,
         rw_counter_delta: Expression<F>,
     ) -> Self {

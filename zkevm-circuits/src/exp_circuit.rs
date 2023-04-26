@@ -25,6 +25,8 @@ use halo2_proofs::{
     plonk::{Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
+
+use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
 use param::*;
 use std::{marker::PhantomData, ops::Add};
 

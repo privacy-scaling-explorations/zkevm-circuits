@@ -1,5 +1,9 @@
 use crate::{
-    evm_circuit::util::{and, constraint_builder::BaseConstraintBuilder, not, or, rlc, select},
+    evm_circuit::util::{
+        and,
+        constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
+        not, or, rlc, select,
+    },
     table::{BytecodeFieldTag, BytecodeTable, KeccakTable, LookupTable},
     util::{get_push_size, Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness,
@@ -681,7 +685,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                     push_data_left,
                     value_rlc,
                     length,
-                    F::from(push_data_size as u64),
+                    F::from(push_data_size),
                 )?;
                 /*
                 trace!(
