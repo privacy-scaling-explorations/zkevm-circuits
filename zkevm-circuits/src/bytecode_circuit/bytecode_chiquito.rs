@@ -99,57 +99,43 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
                 let push_data_left_inv = ctx.internal("push_data_left_inv");
                 let index_length_diff_inv = ctx.internal("index_length_diff_inv");
 
-                let push_data_left_is_zero =
-                    IsZero::setup(ctx, push_data_left, push_data_left_inv);
+                let push_data_left_is_zero = IsZero::setup(ctx, push_data_left, push_data_left_inv);
 
-                let index_length_diff_is_zero = IsZero::<F>::setup(ctx, index + 1 - length,  index_length_diff_inv);
+                let index_length_diff_is_zero =
+                    IsZero::<F>::setup(ctx, index + 1 - length, index_length_diff_inv);
 
-                ctx.constr(
-                    eq(is_code, push_data_left_is_zero.is_zero()),
-                );
+                ctx.constr(eq(is_code, push_data_left_is_zero.is_zero()));
 
                 ctx.add_lookup(
                     lookup()
                         .add(value, push_data_table_value)
-                        .add(push_data_size, push_data_table_size)
-                );
-                
-                ctx.transition(
-                    if_next_step(byte_step,
-                        eq(length, length.next())
-                    )
-                );
-                ctx.transition(
-                    if_next_step(byte_step,
-                        eq(index + 1, index.next())
-                    )
-                );
-                ctx.transition(
-                    if_next_step(byte_step,
-                        eq(hash, hash.next())
-                    )
-                );
-                ctx.transition(
-                    if_next_step(byte_step,
-                        eq(value_rlc.next(), (value_rlc * challenges.keccak_input()) + value.next())
-                    )
-                );
-                ctx.transition(
-                    if_next_step(byte_step,
-                        eq(
-                            push_data_left.next(),
-                            select(is_code, push_data_size, push_data_left - 1),
-                        )
-                    )
+                        .add(push_data_size, push_data_table_size),
                 );
 
-                ctx.transition(
-                    if_next_step(header,
-                        eq(index + 1, length)
-                    )
-                );
+                ctx.transition(if_next_step(byte_step, eq(length, length.next())));
+                ctx.transition(if_next_step(byte_step, eq(index + 1, index.next())));
+                ctx.transition(if_next_step(byte_step, eq(hash, hash.next())));
+                ctx.transition(if_next_step(
+                    byte_step,
+                    eq(
+                        value_rlc.next(),
+                        (value_rlc * challenges.keccak_input()) + value.next(),
+                    ),
+                ));
+                ctx.transition(if_next_step(
+                    byte_step,
+                    eq(
+                        push_data_left.next(),
+                        select(is_code, push_data_size, push_data_left - 1),
+                    ),
+                ));
 
-                ctx.transition(select(index_length_diff_is_zero.is_zero(), next_step_must_be(header), 0)); // zero is the valid constraint
+                ctx.transition(if_next_step(header, eq(index + 1, length)));
+
+                ctx.transition(when(
+                    index_length_diff_is_zero.is_zero(),
+                    next_step_must_be(header),
+                ));
 
                 ctx.add_lookup(
                     lookup()
@@ -157,7 +143,7 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
                         .add(value_rlc, keccak_value_rlc)
                         .add(length, keccak_length)
                         .add(hash, keccak_hash)
-                        .enable(header.next())
+                        .enable(header.next()),
                 );
 
                 ctx.wg(move |ctx, wit| {
@@ -174,7 +160,11 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
                     ctx.assign(push_data_size, wit.push_data_size.field());
                     ctx.assign(push_data_left, wit.push_data_left.field());
                     push_data_left_is_zero.wg(ctx, wit.push_data_left.field());
-                    index_length_diff_is_zero.wg(ctx, wit.index() + <i32 as chiquito::ast::ToField<F>>::field(&1) - <usize as chiquito::ast::ToField<F>>::field(&wit.length));
+                    index_length_diff_is_zero.wg(
+                        ctx,
+                        wit.index() + <i32 as chiquito::ast::ToField<F>>::field(&1)
+                            - <usize as chiquito::ast::ToField<F>>::field(&wit.length),
+                    );
                 });
             });
 
