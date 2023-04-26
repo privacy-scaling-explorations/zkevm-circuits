@@ -79,11 +79,8 @@ impl<F: Field> SameContextGadget<F> {
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
-        self.sufficient_gas_left.assign(
-            region,
-            offset,
-            F::from((step.gas_left - step.gas_cost) as u64),
-        )?;
+        self.sufficient_gas_left
+            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
 
         Ok(())
     }

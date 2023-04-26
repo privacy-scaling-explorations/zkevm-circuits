@@ -20,10 +20,10 @@ pub(crate) struct Instrument {
 impl Instrument {
     /// Collects `CellManager` stats from a compiled EVMCircuit in order to
     /// extract metrics.
-    pub(crate) fn on_gadget_built<'a, F: FieldExt>(
+    pub(crate) fn on_gadget_built<F: FieldExt>(
         &mut self,
         execution_state: ExecutionState,
-        cb: &ConstraintBuilder<'a, F>,
+        cb: &ConstraintBuilder<'_, F>,
     ) {
         let sizes = cb
             .curr
