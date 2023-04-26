@@ -13,7 +13,9 @@ use crate::{
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
-use eth_types::{Field, ToLittleEndian, ToScalar, ToWord, Word, U256};
+use eth_types::{
+    evm_types::MAX_EXPANDED_MEMORY_ADDRESS, Field, ToLittleEndian, ToScalar, ToWord, Word, U256,
+};
 use gadgets::{
     binary_number::{BinaryNumberChip, BinaryNumberConfig},
     util::{split_u256, split_u256_limb64},
@@ -1281,17 +1283,17 @@ pub struct CopyTable {
     /// The source/destination address for this copy step.  Can be memory
     /// address, byte index in the bytecode, tx call data, and tx log data.
     pub addr: Column<Advice>,
+    /// address for slot memory src or dest, review if can reuse `addr` .
+    // pub addr_slot: Column<Advice>,
     /// The end of the source buffer for the copy event.  Any data read from an
     /// address greater than or equal to this value will be 0.
     pub src_addr_end: Column<Advice>,
     /// The number of bytes left to be copied.
     pub bytes_left: Column<Advice>,
-    /// The index of a word [0..31].
-    pub word_index: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
     pub value_wrod_rlc: Column<Advice>,
     /// mask indicates the byte is actual coped or padding to memory word
-    pub mask: Column<Advice>,
+    //pub mask: Column<Advice>,
     /// An accumulator value in the RLC representation. This is used for
     /// specific purposes, for instance, when `tag == CopyDataType::RlcAcc`.
     /// Having an additional column for the `rlc_acc` simplifies the lookup
@@ -1308,7 +1310,7 @@ pub struct CopyTable {
 }
 
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
-type CopyCircuitRow<F> = [(Value<F>, &'static str); 8];
+type CopyCircuitRow<F> = [(Value<F>, &'static str); 9];
 
 impl CopyTable {
     /// Construct a new CopyTable
@@ -1318,11 +1320,12 @@ impl CopyTable {
             id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
+            //addr_slot: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
-            word_index: meta.advice_column(),
+            //word_index: meta.advice_column(),
             value_wrod_rlc: meta.advice_column(),
-            mask: meta.advice_column(),
+            //mask: meta.advice_column(),
             rlc_acc: meta.advice_column_in(SecondPhase),
             rw_counter: meta.advice_column(),
             rwc_inc_left: meta.advice_column(),
@@ -1349,8 +1352,13 @@ impl CopyTable {
         };
 
         let mut value_word_rlc = Value::known(F::zero());
-        let mut word_index = 0;
         let mut value_acc = Value::known(F::zero());
+        let mut addr_slot = if copy_event.dst_type == CopyDataType::Memory {
+            (copy_event.dst_addr - copy_event.dst_addr % 32) as u64
+        } else {
+            0u64
+        };
+
         for (step_idx, (is_read_step, copy_step)) in copy_event
             .bytes
             .iter()
@@ -1389,6 +1397,7 @@ impl CopyTable {
             let is_mask = Value::known(if copy_step.mask { F::one() } else { F::zero() });
             // assume copy events bytes is already word aligned for copy steps.
             let word_index = Value::known(F::from((step_idx % 32) as u64));
+            addr_slot += step_idx as u64;
 
             // TODO: enable other copy type, now work for internal calldatacopy
             if is_read_step && copy_event.dst_type == CopyDataType::Memory {
@@ -1436,7 +1445,7 @@ impl CopyTable {
                 Value::known(F::from(copy_step_addr))
             };
 
-            // bytes_left
+            // bytes_left (final padding word length )
             let bytes_left = u64::try_from(copy_event.bytes.len() * 2 - step_idx).unwrap() / 2;
             // value
             let value = Value::known(F::from(copy_step.value as u64));
@@ -1488,8 +1497,9 @@ impl CopyTable {
                     (value_acc, "value_acc"),
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
-                    (is_mask, "is_mask"),
+                    (is_mask, "mask"),
                     (word_index, "word_index"),
+                    (Value::known(F::from(addr_slot)), "addr_slot"),
                 ],
             ));
         }
@@ -1549,7 +1559,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
-            self.mask.into(),
+            //self.mask.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
             self.rwc_inc_left.into(),
@@ -1581,7 +1591,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
-            meta.query_advice(self.mask, Rotation::cur()), // length
+            //meta.query_advice(self.mask, Rotation::cur()), // length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left
