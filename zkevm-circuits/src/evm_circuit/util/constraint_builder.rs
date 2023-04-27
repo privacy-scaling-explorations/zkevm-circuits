@@ -11,8 +11,9 @@ use crate::{
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
+use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
-use gadgets::util::{and, not};
+use gadgets::util::not;
 use halo2_proofs::{
     circuit::Value,
     plonk::{
@@ -20,7 +21,6 @@ use halo2_proofs::{
         Expression::{self, Constant},
     },
 };
-use keccak256::EMPTY_HASH_LE;
 
 use super::{rlc, CachedRegion, CellType, StoredExpression};
 
@@ -88,7 +88,7 @@ impl<F: Field> StepStateTransition<F> {
 
 /// ReversionInfo counts `rw_counter` of reversion for gadgets, by tracking how
 /// many reversions that have been used. Gadgets should call
-/// [`ConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
+/// [`EVMConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
 /// `reversible_write_counter` initialized at current tracking one if no
 /// `call_id` is specified, then pass it as mutable reference when doing state
 /// write.
@@ -113,11 +113,13 @@ impl<F: Field> ReversionInfo<F> {
     }
 
     /// Returns `rw_counter_end_of_reversion - reversible_write_counter` and
-    /// increases `reversible_write_counter` by `1`.
-    pub(crate) fn rw_counter_of_reversion(&mut self) -> Expression<F> {
+    /// increases `reversible_write_counter` by `1` when `inc_selector` is
+    /// enabled.
+    pub(crate) fn rw_counter_of_reversion(&mut self, inc_selector: Expression<F>) -> Expression<F> {
         let rw_counter_of_reversion =
-            self.rw_counter_end_of_reversion.expr() - self.reversible_write_counter.expr();
-        self.reversible_write_counter = self.reversible_write_counter.clone() + 1.expr();
+            self.rw_counter_end_of_reversion.expr() - self.reversible_write_counter.clone();
+        self.reversible_write_counter =
+            self.reversible_write_counter.clone() + inc_selector * 1.expr();
         rw_counter_of_reversion
     }
 
@@ -139,40 +141,22 @@ impl<F: Field> ReversionInfo<F> {
     }
 }
 
-#[derive(Default)]
-pub struct BaseConstraintBuilder<F> {
-    pub constraints: Vec<(&'static str, Expression<F>)>,
-    pub max_degree: usize,
-    pub condition: Option<Expression<F>>,
-}
+pub(crate) trait ConstrainBuilderCommon<F: Field> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>);
 
-impl<F: Field> BaseConstraintBuilder<F> {
-    pub(crate) fn new(max_degree: usize) -> Self {
-        BaseConstraintBuilder {
-            constraints: Vec::new(),
-            max_degree,
-            condition: None,
-        }
-    }
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
+    fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
     }
 
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
+    fn require_equal(&mut self, name: &'static str, lhs: Expression<F>, rhs: Expression<F>) {
         self.add_constraint(name, lhs - rhs);
     }
 
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
+    fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
-    pub(crate) fn require_in_set(
+    fn require_in_set(
         &mut self,
         name: &'static str,
         value: Expression<F>,
@@ -183,6 +167,40 @@ impl<F: Field> BaseConstraintBuilder<F> {
             set.iter()
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
+    }
+
+    fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct BaseConstraintBuilder<F> {
+    pub constraints: Vec<(&'static str, Expression<F>)>,
+    pub max_degree: usize,
+    pub condition: Option<Expression<F>>,
+}
+
+impl<F: Field> ConstrainBuilderCommon<F> for BaseConstraintBuilder<F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
+    }
+}
+
+impl<F: Field> BaseConstraintBuilder<F> {
+    pub(crate) fn new(max_degree: usize) -> Self {
+        BaseConstraintBuilder {
+            constraints: Vec::new(),
+            max_degree,
+            condition: None,
+        }
     }
 
     pub(crate) fn condition<R>(
@@ -198,21 +216,6 @@ impl<F: Field> BaseConstraintBuilder<F> {
         let ret = constraint(self);
         self.condition = None;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-        self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -261,7 +264,7 @@ pub(crate) struct Constraints<F> {
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
 
-pub(crate) struct ConstraintBuilder<'a, F> {
+pub(crate) struct EVMConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
@@ -273,12 +276,25 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stack_pointer_offset: Expression<F>,
     log_id_offset: usize,
     in_next_step: bool,
-    condition: Option<Expression<F>>,
+    conditions: Vec<Expression<F>>,
     constraints_location: ConstraintLocation,
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
-impl<'a, F: Field> ConstraintBuilder<'a, F> {
+impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = self.split_expression(
+            name,
+            constraint * self.condition_expr(),
+            MAX_DEGREE - IMPLICIT_DEGREE,
+        );
+
+        self.validate_degree(constraint.degree(), name);
+        self.push_constraint(name, constraint);
+    }
+}
+
+impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
@@ -302,7 +318,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             stack_pointer_offset: 0.expr(),
             log_id_offset: 0,
             in_next_step: false,
-            condition: None,
+            conditions: Vec::new(),
             constraints_location: ConstraintLocation::Step,
             stored_expressions: Vec::new(),
         }
@@ -328,6 +344,15 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             self.stored_expressions,
             self.curr.cell_manager.get_height(),
         )
+    }
+
+    fn condition_expr_opt(&self) -> Option<Expression<F>> {
+        let mut iter = self.conditions.iter();
+        let first = match iter.next() {
+            Some(e) => e,
+            None => return None,
+        };
+        Some(iter.fold(first.clone(), |acc, e| acc * e.clone()))
     }
 
     pub(crate) fn challenges(&self) -> &Challenges<Expression<F>> {
@@ -376,6 +401,10 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     }
 
+    pub(crate) fn query_keccak_rlc<const N: usize>(&mut self) -> RandomLinearCombination<F, N> {
+        RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.keccak_input())
+    }
+
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.query_bytes_dyn(N).try_into().unwrap()
     }
@@ -420,40 +449,12 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         rlc::expr(&bytes, self.challenges.evm_word())
     }
 
-    pub(crate) fn empty_hash_rlc(&self) -> Expression<F> {
-        self.word_rlc((*EMPTY_HASH_LE).map(|byte| byte.expr()))
+    pub(crate) fn keccak_rlc<const N: usize>(&self, bytes: [Expression<F>; N]) -> Expression<F> {
+        rlc::expr(&bytes, self.challenges.keccak_input())
     }
 
-    // Common
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.add_constraint(name, constraint);
-    }
-
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
-        self.add_constraint(name, lhs - rhs);
-    }
-
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
-        self.add_constraint(name, value.clone() * (1.expr() - value));
-    }
-
-    pub(crate) fn require_in_set(
-        &mut self,
-        name: &'static str,
-        value: Expression<F>,
-        set: Vec<Expression<F>>,
-    ) {
-        self.add_constraint(
-            name,
-            set.iter()
-                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
-        );
+    pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
+        self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -517,6 +518,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             16 => ("Range16", FixedTableTag::Range16),
             32 => ("Range32", FixedTableTag::Range32),
             64 => ("Range64", FixedTableTag::Range64),
+            128 => ("Range128", FixedTableTag::Range128),
             256 => ("Range256", FixedTableTag::Range256),
             512 => ("Range512", FixedTableTag::Range512),
             1024 => ("Range1024", FixedTableTag::Range1024),
@@ -538,22 +540,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
             Lookup::Fixed {
                 tag: FixedTableTag::ConstantGasCost.expr(),
                 values: [opcode, gas, 0.expr()],
-            },
-        );
-    }
-
-    // look up opcode's min and max stack pointer
-    pub(crate) fn opcode_stack_lookup(
-        &mut self,
-        opcode: Expression<F>,
-        min_stack: Expression<F>,
-        max_stack: Expression<F>,
-    ) {
-        self.add_lookup(
-            "op code stack info",
-            Lookup::Fixed {
-                tag: FixedTableTag::OpcodeStack.expr(),
-                values: [opcode, min_stack, max_stack],
             },
         );
     }
@@ -725,7 +711,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         // Manually constant folding is used here, since halo2 cannot do this
         // automatically. Better error message will be printed during circuit
         // debugging.
-        self.rw_counter_offset = match &self.condition {
+        self.rw_counter_offset = match self.condition_expr_opt() {
             None => {
                 if let Constant(v) = self.rw_counter_offset {
                     Constant(v + F::from(1u64))
@@ -733,7 +719,7 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                     self.rw_counter_offset.clone() + 1i32.expr()
                 }
             }
-            Some(c) => self.rw_counter_offset.clone() + c.clone(),
+            Some(c) => self.rw_counter_offset.clone() + c,
         };
     }
 
@@ -753,31 +739,21 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
         // Revert if is_persistent is 0
         if let Some(reversion_info) = reversion_info {
-            // To allow conditional reversible writes, we extract the pre-existing condition
-            // here if it exists, and then reset it afterwards.
-            let condition = self.condition.clone();
-            self.condition = None;
-            self.condition(
-                and::expr(&[
-                    condition.clone().unwrap_or_else(|| 1.expr()),
-                    not::expr(reversion_info.is_persistent()),
-                ]),
-                |cb| {
-                    let name = format!("{} with reversion", name);
-                    cb.rw_lookup_with_counter(
-                        &name,
-                        reversion_info.rw_counter_of_reversion(),
-                        true.expr(),
-                        tag,
-                        RwValues {
-                            value_prev: values.value,
-                            value: values.value_prev,
-                            ..values
-                        },
-                    )
-                },
-            );
-            self.condition = condition;
+            let reversible_write_counter_inc_selector = self.condition_expr();
+            self.condition(not::expr(reversion_info.is_persistent()), |cb| {
+                let name = format!("{} with reversion", name);
+                cb.rw_lookup_with_counter(
+                    &name,
+                    reversion_info.rw_counter_of_reversion(reversible_write_counter_inc_selector),
+                    true.expr(),
+                    tag,
+                    RwValues {
+                        value_prev: values.value,
+                        value: values.value_prev,
+                        ..values
+                    },
+                )
+            });
         }
     }
 
@@ -854,6 +830,30 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
                 0.expr(),
             ),
             reversion_info,
+        );
+    }
+
+    pub(crate) fn account_storage_access_list_read(
+        &mut self,
+        tx_id: Expression<F>,
+        account_address: Expression<F>,
+        storage_key: Expression<F>,
+        value: Expression<F>,
+    ) {
+        self.rw_lookup(
+            "TxAccessListAccountStorage read",
+            false.expr(),
+            RwTableTag::TxAccessListAccountStorage,
+            RwValues::new(
+                tx_id,
+                account_address,
+                0.expr(),
+                storage_key,
+                value.clone(),
+                value,
+                0.expr(),
+                0.expr(),
+            ),
         );
     }
 
@@ -1328,13 +1328,9 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         condition: Expression<F>,
         constraint: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        debug_assert!(
-            self.condition.is_none(),
-            "Nested condition is not supported"
-        );
-        self.condition = Some(condition);
+        self.conditions.push(condition);
         let ret = constraint(self);
-        self.condition = None;
+        self.conditions.pop();
         ret
     }
 
@@ -1362,23 +1358,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         self.in_next_step = false;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = self.split_expression(
-            name,
-            constraint * self.condition_expr(),
-            MAX_DEGREE - IMPLICIT_DEGREE,
-        );
-
-        self.validate_degree(constraint.degree(), name);
-        self.push_constraint(name, constraint);
     }
 
     /// TODO: Doc
@@ -1423,8 +1402,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn add_lookup(&mut self, name: &str, lookup: Lookup<F>) {
-        let lookup = match &self.condition {
-            Some(condition) => lookup.conditional(condition.clone()),
+        let lookup = match self.condition_expr_opt() {
+            Some(condition) => lookup.conditional(condition),
             None => lookup,
         };
         let compressed_expr = self.split_expression(
@@ -1536,8 +1515,8 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
     }
 
     fn condition_expr(&self) -> Expression<F> {
-        match &self.condition {
-            Some(condition) => condition.clone(),
+        match self.condition_expr_opt() {
+            Some(condition) => condition,
             None => 1.expr(),
         }
     }

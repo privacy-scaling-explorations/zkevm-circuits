@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::RestoreContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::{Delta, To},
             },
             math_gadget::{IsZeroGadget, MinMaxGadget},
@@ -18,9 +18,8 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, state_db::CodeDB};
 use eth_types::{Field, ToScalar, U256};
-use ethers_core::utils::keccak256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -52,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::RETURN_REVERT;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
 
@@ -73,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         // There are 4 cases non-mutually exclusive, A to D, to handle, depending on if
         // the call is, or is not, a create, root, or successful. See the specs at
-        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN.md
+        // https://github.com/privacy-scaling-explorations/zkevm-specs/blob/master/specs/opcode/F3RETURN_FDREVERT.md
         // for more details.
         let is_create = cb.curr.state.is_create.expr();
         let is_root = cb.curr.state.is_root.expr();
@@ -124,7 +123,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
                     address.expr(),
                     AccountFieldTag::CodeHash,
                     code_hash.expr(),
-                    cb.empty_hash_rlc(),
+                    cb.empty_code_hash_rlc(),
                     Some(&mut reversion_info),
                 );
 
@@ -160,7 +159,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             RestoreContextGadget::construct(
                 cb,
                 is_success.expr(),
-                not::expr(is_create.clone()) * (5.expr() + copy_rw_increase.expr()),
+                not::expr(is_create.clone()) * (2.expr() + copy_rw_increase.expr()),
                 range.offset(),
                 range.length(),
                 memory_expansion.gas_cost(),
@@ -277,7 +276,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
-            let mut code_hash = keccak256(&values);
+            let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
             code_hash.reverse();
             self.code_hash.assign(
                 region,
@@ -342,8 +341,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, Bytecode, ToWord,
-        Word,
+        address, bytecode,
+        evm_types::OpcodeId,
+        geth_types::{Account, GethData},
+        Address, Bytecode, ToWord, Word, U256,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
@@ -570,5 +571,85 @@ mod test {
         .unwrap();
 
         CircuitTestBuilder::new_from_test_ctx(ctx).run();
+    }
+
+    #[test]
+    // test CREATE/CREATE2 returndatasize both 0 for successful case
+    fn test_return_nonroot_create_returndatasize() {
+        let initializer = callee_bytecode(true, 0, 10).code();
+
+        let mut bytecode = bytecode! {
+             // CREATE + RETURNDATASIZE + RETURNDATACOPY logic
+            PUSH32(Word::from_big_endian(&initializer))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1(initializer.len())        // size
+            PUSH1(32 - initializer.len())   // offset
+            PUSH1(0)                        // value
+            CREATE
+            RETURNDATASIZE
+            PUSH1(0) // offset
+            PUSH1(0) // dest offset
+            RETURNDATACOPY // test return data copy
+        };
+
+        // CREATE2 logic
+        let code_creator: Vec<u8> = initializer
+            .to_vec()
+            .iter()
+            .cloned()
+            .chain(0u8..((32 - initializer.len() % 32) as u8))
+            .collect();
+        for (index, word) in code_creator.chunks(32).enumerate() {
+            bytecode.op_mstore(index * 32, Word::from_big_endian(word));
+        }
+        bytecode.append(&bytecode! {
+            PUSH3(0x123456) // salt
+            PUSH1(initializer.len()) // length
+            PUSH1(0) // offset
+            PUSH1(0) // value
+            CREATE2
+            RETURNDATASIZE
+            PUSH1(0) // offset
+            PUSH1(0) // dest offset
+            RETURNDATACOPY
+        });
+
+        let block: GethData = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode.clone())
+            .unwrap()
+            .into();
+
+        // collect return opcode, retrieve next step, assure both contract create
+        // successfully
+        let created_contract_addr = block.geth_traces[0]
+            .struct_logs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.op == OpcodeId::RETURN)
+            .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
+            .flat_map(|s| s.stack.nth_last(0)) // contract addr on stack top
+            .collect_vec();
+        assert!(created_contract_addr.len() == 2); // both contract addr exist
+        created_contract_addr
+            .iter()
+            .for_each(|addr| assert!(addr > &U256::zero()));
+
+        // collect return opcode, retrieve next step, assure both returndata size is 0
+        let return_data_size = block.geth_traces[0]
+            .struct_logs
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.op == OpcodeId::RETURNDATASIZE)
+            .flat_map(|(index, _)| block.geth_traces[0].struct_logs.get(index + 1))
+            .flat_map(|s| s.stack.nth_last(0)) // returndata size on stack top
+            .collect_vec();
+        assert!(return_data_size.len() == 2);
+        return_data_size
+            .iter()
+            .for_each(|size| assert_eq!(size, &Word::zero()));
+
+        let text_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap();
+        CircuitTestBuilder::new_from_test_ctx(text_ctx).run();
     }
 }

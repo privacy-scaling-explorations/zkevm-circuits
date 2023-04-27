@@ -1,10 +1,18 @@
 //! The Copy circuit implements constraints and lookups for read-write steps for
 //! copied bytes while execution opcodes such as CALLDATACOPY, CODECOPY, LOGS,
 //! etc.
+pub(crate) mod util;
 
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use eth_types::Field;
-use eth_types::Word;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::CopyCircuit as TestCopyCircuit;
+
+use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use eth_types::{Field, Word};
+
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
@@ -12,44 +20,22 @@ use gadgets::{
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
-    plonk::{
-        Advice, Challenge, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase,
-        Selector,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, SecondPhase, Selector},
     poly::Rotation,
 };
 use itertools::Itertools;
-use std::collections::HashMap;
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
-use crate::witness::{Bytecode, RwMap, Transaction};
 use crate::{
-    evm_circuit::util::{constraint_builder::BaseConstraintBuilder, rlc},
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
+    witness::{Bytecode, RwMap, Transaction},
 };
-
-/// Encode the type `NumberOrHash` into a field element
-pub fn number_or_hash_to_field<F: Field>(v: &NumberOrHash, challenge: Value<F>) -> Value<F> {
-    match v {
-        NumberOrHash::Number(n) => Value::known(F::from(*n as u64)),
-        NumberOrHash::Hash(h) => {
-            // since code hash in the bytecode table is represented in
-            // the little-endian form, we reverse the big-endian bytes
-            // of H256.
-            let le_bytes = {
-                let mut b = h.to_fixed_bytes();
-                b.reverse();
-                b
-            };
-            challenge.map(|challenge| rlc::value(&le_bytes, challenge))
-        }
-    }
-}
 
 /// The rw table shared between evm circuit and state circuit
 #[derive(Clone, Debug)]
@@ -130,6 +116,12 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         let rw_counter = copy_table.rw_counter;
         let rwc_inc_left = copy_table.rwc_inc_left;
         let tag = copy_table.tag;
+
+        // annotate table columns
+        tx_table.annotate_columns(meta);
+        rw_table.annotate_columns(meta);
+        bytecode_table.annotate_columns(meta);
+        copy_table.annotate_columns(meta);
 
         let addr_lt_addr_end = LtChip::configure(
             meta,
@@ -483,7 +475,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 )?;
             }
 
-            //tag
+            // tag
             tag_chip.assign(region, *offset, tag)?;
 
             // lt chip
@@ -524,6 +516,11 @@ impl<F: Field> CopyCircuitConfig<F> {
         layouter.assign_region(
             || "assign copy table",
             |mut region| {
+                region.name_column(|| "is_last", self.is_last);
+                region.name_column(|| "value", self.value);
+                region.name_column(|| "is_code", self.is_code);
+                region.name_column(|| "is_pad", self.is_pad);
+
                 let mut offset = 0;
                 for copy_event in copy_events.iter() {
                     self.assign_copy_event(
@@ -670,6 +667,8 @@ impl<F: Field> CopyCircuitConfig<F> {
 pub struct ExternalData {
     /// TxCircuit -> max_txs
     pub max_txs: usize,
+    /// TxCircuit -> max_calldata
+    pub max_calldata: usize,
     /// TxCircuit -> txs
     pub txs: Vec<Transaction>,
     /// StateCircuit -> max_rws
@@ -732,12 +731,19 @@ impl<F: Field> CopyCircuit<F> {
 impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),
             block.circuits_params.max_copy_rows,
             ExternalData {
                 max_txs: block.circuits_params.max_txs,
+                max_calldata: block.circuits_params.max_calldata,
                 txs: block.txs.clone(),
                 max_rws: block.circuits_params.max_rws,
                 rws: block.rws.clone(),
@@ -770,402 +776,44 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     }
 }
 
-/// Dev helpers
-#[cfg(any(feature = "test", test))]
-pub mod dev {
-    use super::*;
-    use eth_types::Field;
-    #[cfg(test)]
-    use halo2_proofs::dev::{MockProver, VerifyFailure};
-    use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
-        plonk::{Circuit, ConstraintSystem},
-    };
-
-    #[cfg(test)]
-    use crate::witness::Block;
-
-    use crate::{
-        table::{BytecodeTable, RwTable, TxTable},
-        util::Challenges,
-    };
-
-    impl<F: Field> Circuit<F> for CopyCircuit<F> {
-        type Config = (CopyCircuitConfig<F>, Challenges<Challenge>);
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let tx_table = TxTable::construct(meta);
-            let rw_table = RwTable::construct(meta);
-            let bytecode_table = BytecodeTable::construct(meta);
-            let q_enable = meta.fixed_column();
-            let copy_table = CopyTable::construct(meta, q_enable);
-            let challenges = Challenges::construct(meta);
-            let challenge_exprs = challenges.exprs(meta);
-
-            (
-                CopyCircuitConfig::new(
-                    meta,
-                    CopyCircuitConfigArgs {
-                        tx_table,
-                        rw_table,
-                        bytecode_table,
-                        copy_table,
-                        q_enable,
-                        challenges: challenge_exprs,
-                    },
-                ),
-                challenges,
-            )
-        }
-
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), halo2_proofs::plonk::Error> {
-            let challenge_values = config.1.values(&mut layouter);
-
-            config.0.tx_table.load(
-                &mut layouter,
-                &self.external_data.txs,
-                self.external_data.max_txs,
-                &challenge_values,
-            )?;
-
-            config.0.rw_table.load(
-                &mut layouter,
-                &self.external_data.rws.table_assignments(),
-                self.external_data.max_rws,
-                challenge_values.evm_word(),
-            )?;
-
-            config.0.bytecode_table.load(
-                &mut layouter,
-                self.external_data.bytecodes.values(),
-                &challenge_values,
-            )?;
-            self.synthesize_sub(&config.0, &challenge_values, &mut layouter)
-        }
-    }
-
-    /// Test copy circuit from copy events and test data
-    #[cfg(test)]
-    pub fn test_copy_circuit<F: Field>(
-        k: u32,
-        copy_events: Vec<CopyEvent>,
-        max_copy_rows: usize,
-        external_data: ExternalData,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        let circuit =
-            CopyCircuit::<F>::new_with_external_data(copy_events, max_copy_rows, external_data);
-
-        let prover = MockProver::<F>::run(k, &circuit, vec![]).unwrap();
-        prover.verify_par()
-    }
-
-    /// Test copy circuit with the provided block witness
-    #[cfg(test)]
-    pub fn test_copy_circuit_from_block<F: Field>(
-        k: u32,
-        block: Block<F>,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        test_copy_circuit::<F>(
-            k,
-            block.copy_events,
-            block.circuits_params.max_copy_rows,
-            ExternalData {
-                max_txs: block.circuits_params.max_txs,
-                txs: block.txs,
-                max_rws: block.circuits_params.max_rws,
-                rws: block.rws,
-                bytecodes: block.bytecodes,
-            },
-        )
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::dev::test_copy_circuit_from_block;
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::evm_circuit::witness::block_convert;
-    use bus_mapping::evm::{gen_sha3_code, MemoryKind};
-    use bus_mapping::{
-        circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-        mock::BlockData,
+mod copy_circuit_stats {
+    use crate::{
+        evm_circuit::step::ExecutionState,
+        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
     };
-    use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
-    use halo2_proofs::dev::VerifyFailure;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::{TestContext, MOCK_ACCOUNTS};
-    use pretty_assertions::assert_eq;
 
-    fn gen_calldatacopy_data() -> CircuitInputBuilder {
-        let length = 0x0fffusize;
-        let code = bytecode! {
-            PUSH32(Word::from(length))
-            PUSH32(Word::from(0x00))
-            PUSH32(Word::from(0x00))
-            CALLDATACOPY
-            STOP
-        };
-        let calldata = rand_bytes(length);
-        let test_ctx = TestContext::<2, 1>::new(
-            None,
-            account_0_code_account_1_no_code(code),
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[1].address)
-                    .to(accs[0].address)
-                    .input(calldata.into());
+    /// Prints the stats of Copy circuit per execution state.  See
+    /// `print_circuit_stats_by_states` for more details.
+    ///
+    /// Run with:
+    /// `cargo test -p zkevm-circuits --release --all-features
+    /// get_evm_states_stats -- --nocapture --ignored`
+    #[ignore]
+    #[test]
+    fn get_copy_states_stats() {
+        print_circuit_stats_by_states(
+            |state| {
+                // TODO: Enable CREATE/CREATE2 once they are supported
+                matches!(
+                    state,
+                    ExecutionState::RETURNDATACOPY
+                        | ExecutionState::CODECOPY
+                        | ExecutionState::LOG
+                        | ExecutionState::CALLDATACOPY
+                        | ExecutionState::EXTCODECOPY
+                        | ExecutionState::RETURN_REVERT
+                )
             },
-            |block, _txs| block.number(0xcafeu64),
-        )
-        .unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            CircuitsParams {
-                max_rws: 8192,
-                max_copy_rows: 8192 + 2,
-                ..Default::default()
+            bytecode_prefix_op_big_rws,
+            |block, _, _| {
+                assert!(block.copy_events.len() <= 1);
+                block
+                    .copy_events
+                    .iter()
+                    .map(|c| c.bytes.len() * 2)
+                    .sum::<usize>()
             },
-        )
-        .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
-    }
-
-    fn gen_codecopy_data() -> CircuitInputBuilder {
-        let code = bytecode! {
-            PUSH32(Word::from(0x20))
-            PUSH32(Word::from(0x00))
-            PUSH32(Word::from(0x00))
-            CODECOPY
-            STOP
-        };
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
-    }
-
-    fn gen_extcodecopy_data() -> CircuitInputBuilder {
-        let external_address = MOCK_ACCOUNTS[0];
-        let code = bytecode! {
-            PUSH1(0x30usize)
-            PUSH1(0x0usize)
-            PUSH1(0x0usize)
-            PUSH20(external_address.to_word())
-            EXTCODECOPY
-            STOP
-        };
-        let code_ext = rand_bytes(0x0fffusize);
-        let test_ctx = TestContext::<3, 1>::new(
-            None,
-            |accs| {
-                accs[0].address(MOCK_ACCOUNTS[1]).code(code.clone());
-
-                accs[1].address(external_address).code(code_ext.clone());
-
-                accs[2]
-                    .address(MOCK_ACCOUNTS[2])
-                    .balance(Word::from(1u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0].to(accs[0].address).from(accs[2].address);
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
-    }
-
-    fn gen_sha3_data() -> CircuitInputBuilder {
-        let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data_with_params(
-            block.clone(),
-            CircuitsParams {
-                max_rws: 2000,
-                max_copy_rows: 0x200 * 2 + 2,
-                ..Default::default()
-            },
-        )
-        .new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
-    }
-
-    fn gen_tx_log_data() -> CircuitInputBuilder {
-        let code = bytecode! {
-            PUSH32(200)         // value
-            PUSH32(0)           // offset
-            MSTORE
-            PUSH32(Word::MAX)   // topic
-            PUSH1(32)           // length
-            PUSH1(0)            // offset
-            LOG1
-            STOP
-        };
-        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
-        let block: GethData = test_ctx.into();
-        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
-        builder
-            .handle_block(&block.eth_block, &block.geth_traces)
-            .unwrap();
-        builder
-    }
-
-    #[test]
-    fn copy_circuit_valid_calldatacopy() {
-        let builder = gen_calldatacopy_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
-    }
-
-    #[test]
-    fn copy_circuit_valid_codecopy() {
-        let builder = gen_codecopy_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
-    }
-
-    #[test]
-    fn copy_circuit_valid_extcodecopy() {
-        let builder = gen_extcodecopy_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
-    }
-
-    #[test]
-    fn copy_circuit_valid_sha3() {
-        let builder = gen_sha3_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit_from_block(14, block), Ok(()));
-    }
-
-    #[test]
-    fn copy_circuit_valid_tx_log() {
-        let builder = gen_tx_log_data();
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
-    }
-
-    #[test]
-    fn copy_circuit_invalid_calldatacopy() {
-        let mut builder = gen_calldatacopy_data();
-
-        // modify first byte of first copy event
-        builder.block.copy_events[0].bytes[0].0 =
-            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
-
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        assert_error_matches(
-            test_copy_circuit_from_block(14, block),
-            vec!["Memory lookup", "Tx calldata lookup"],
         );
-    }
-
-    #[test]
-    fn copy_circuit_invalid_codecopy() {
-        let mut builder = gen_codecopy_data();
-
-        // modify first byte of first copy event
-        builder.block.copy_events[0].bytes[0].0 =
-            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
-
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        assert_error_matches(
-            test_copy_circuit_from_block(10, block),
-            vec!["Memory lookup", "Bytecode lookup"],
-        );
-    }
-
-    #[test]
-    fn copy_circuit_invalid_extcodecopy() {
-        let mut builder = gen_extcodecopy_data();
-
-        // modify first byte of first copy event
-        builder.block.copy_events[0].bytes[0].0 =
-            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
-
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        assert_error_matches(
-            test_copy_circuit_from_block(14, block),
-            vec!["Memory lookup", "Bytecode lookup"],
-        );
-    }
-
-    #[test]
-    fn copy_circuit_invalid_sha3() {
-        let mut builder = gen_sha3_data();
-
-        // modify first byte of first copy event
-        builder.block.copy_events[0].bytes[0].0 =
-            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
-
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        assert_error_matches(
-            test_copy_circuit_from_block(14, block),
-            vec!["Memory lookup"],
-        );
-    }
-
-    #[test]
-    fn copy_circuit_invalid_tx_log() {
-        let mut builder = gen_tx_log_data();
-
-        // modify first byte of first copy event
-        builder.block.copy_events[0].bytes[0].0 =
-            builder.block.copy_events[0].bytes[0].0.wrapping_add(1);
-
-        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
-
-        assert_error_matches(
-            test_copy_circuit_from_block(10, block),
-            vec!["Memory lookup", "TxLog lookup"],
-        );
-    }
-
-    fn assert_error_matches(result: Result<(), Vec<VerifyFailure>>, names: Vec<&str>) {
-        let errors = result.expect_err("result is not an error");
-        assert_eq!(errors.len(), names.len(), "{:?}", errors);
-        for i in 0..names.len() {
-            match &errors[i] {
-                VerifyFailure::Lookup {
-                    name: lookup_name, ..
-                } => {
-                    assert_eq!(lookup_name, &names[i])
-                }
-                VerifyFailure::ConstraintNotSatisfied { .. } => panic!(),
-                VerifyFailure::CellNotAssigned { .. } => panic!(),
-                VerifyFailure::ConstraintPoisoned { .. } => panic!(),
-                VerifyFailure::Permutation { .. } => panic!(),
-            }
-        }
     }
 }

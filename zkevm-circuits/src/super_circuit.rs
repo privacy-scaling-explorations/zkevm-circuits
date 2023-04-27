@@ -1,10 +1,9 @@
 //! The Super Circuit is a circuit that contains all the circuits of the
 //! zkEVM in order to achieve two things:
-//! - Check the correct integration between circuits via the shared lookup
-//!   tables, to verify that the table layouts match.
-//! - Allow having a single circuit setup for which a proof can be generated
-//!   that would be verified under a single aggregation circuit for the first
-//!   milestone.
+//! - Check the correct integration between circuits via the shared lookup tables, to verify that
+//!   the table layouts match.
+//! - Allow having a single circuit setup for which a proof can be generated that would be verified
+//!   under a single aggregation circuit for the first milestone.
 //!
 //! The current implementation contains the following circuits:
 //!
@@ -51,27 +50,31 @@
 //!   - [x] Tx Circuit
 //!   - [ ] MPT Circuit
 
-use crate::bytecode_circuit::circuit::{
-    BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
+#[cfg(any(feature = "test", test))]
+pub(crate) mod test;
+
+use crate::{
+    bytecode_circuit::circuit::{
+        BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs,
+    },
+    copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs},
+    evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs},
+    exp_circuit::{ExpCircuit, ExpCircuitConfig},
+    keccak_circuit::{KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs},
+    pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs},
+    state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs},
+    table::{
+        BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
+    },
+    tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs},
+    util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig},
+    witness::{block_convert, Block, MptUpdates},
 };
-use crate::copy_circuit::{CopyCircuit, CopyCircuitConfig, CopyCircuitConfigArgs};
-use crate::evm_circuit::{EvmCircuit, EvmCircuitConfig, EvmCircuitConfigArgs};
-use crate::exp_circuit::{ExpCircuit, ExpCircuitConfig};
-use crate::keccak_circuit::keccak_packed_multi::{
-    KeccakCircuit, KeccakCircuitConfig, KeccakCircuitConfigArgs,
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
 };
-use crate::pi_circuit::{PiCircuit, PiCircuitConfig, PiCircuitConfigArgs};
-use crate::state_circuit::{StateCircuit, StateCircuitConfig, StateCircuitConfigArgs};
-use crate::table::{
-    BlockTable, BytecodeTable, CopyTable, ExpTable, KeccakTable, MptTable, RwTable, TxTable,
-};
-use crate::tx_circuit::{TxCircuit, TxCircuitConfig, TxCircuitConfigArgs};
-use crate::util::{log2_ceil, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness::{block_convert, Block, MptUpdates};
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
-use eth_types::geth_types::GethData;
-use eth_types::Field;
+use eth_types::{geth_types::GethData, Field};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Circuit, ConstraintSystem, Error, Expression},
@@ -267,6 +270,20 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
 {
     type Config = SuperCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        itertools::max([
+            EvmCircuit::<F>::unusable_rows(),
+            StateCircuit::<F>::unusable_rows(),
+            TxCircuit::<F>::unusable_rows(),
+            PiCircuit::<F>::unusable_rows(),
+            BytecodeCircuit::<F>::unusable_rows(),
+            CopyCircuit::<F>::unusable_rows(),
+            ExpCircuit::<F>::unusable_rows(),
+            KeccakCircuit::<F>::unusable_rows(),
+        ])
+        .unwrap()
+    }
+
     fn new_from_block(block: &Block<F>) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
@@ -438,9 +455,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
 
-        const NUM_BLINDING_ROWS: usize = 64;
         let (_, rows_needed) = Self::min_num_rows_block(&block);
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);
 
         let circuit =
@@ -448,190 +464,5 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
 
         let instance = circuit.instance();
         Ok((k, circuit, instance))
-    }
-}
-
-#[cfg(test)]
-pub(crate) mod super_circuit_tests {
-    use super::*;
-    use ethers_signers::{LocalWallet, Signer};
-    use halo2_proofs::dev::MockProver;
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use log::error;
-    use mock::{TestContext, MOCK_CHAIN_ID};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
-    use std::collections::HashMap;
-
-    use eth_types::{address, bytecode, geth_types::GethData, Word};
-
-    #[test]
-    fn super_circuit_degree() {
-        let mut cs = ConstraintSystem::<Fr>::default();
-        SuperCircuit::<_, 1, 32, 0x100>::configure(&mut cs);
-        log::info!("super circuit degree: {}", cs.degree());
-        log::info!("super circuit minimum_rows: {}", cs.minimum_rows());
-        assert!(cs.degree() <= 9);
-    }
-
-    fn test_super_circuit<
-        const MAX_TXS: usize,
-        const MAX_CALLDATA: usize,
-        const MOCK_RANDOMNESS: u64,
-    >(
-        block: GethData,
-        circuits_params: CircuitsParams,
-    ) {
-        let (k, circuit, instance, _) =
-            SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, MOCK_RANDOMNESS>::build(
-                block,
-                circuits_params,
-            )
-            .unwrap();
-        let prover = MockProver::run(k, &circuit, instance).unwrap();
-        let res = prover.verify_par();
-        if let Err(err) = res {
-            error!("Verification failures: {:#?}", err);
-            panic!("Failed verification");
-        }
-    }
-
-    pub(crate) fn block_1tx() -> GethData {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-
-        let chain_id = (*MOCK_CHAIN_ID).as_u64();
-
-        let bytecode = bytecode! {
-            GAS
-            STOP
-        };
-
-        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-
-        let addr_a = wallet_a.address();
-        let addr_b = address!("0x000000000000000000000000000000000000BBBB");
-
-        let mut wallets = HashMap::new();
-        wallets.insert(wallet_a.address(), wallet_a);
-
-        let mut block: GethData = TestContext::<2, 1>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(addr_b)
-                    .balance(Word::from(1u64 << 20))
-                    .code(bytecode);
-                accs[1].address(addr_a).balance(Word::from(1u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[1].address)
-                    .to(accs[0].address)
-                    .gas(Word::from(1_000_000u64));
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-        block.sign(&wallets);
-        block
-    }
-
-    fn block_2tx() -> GethData {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-
-        let chain_id = (*MOCK_CHAIN_ID).as_u64();
-
-        let bytecode = bytecode! {
-            GAS
-            STOP
-        };
-
-        let wallet_a = LocalWallet::new(&mut rng).with_chain_id(chain_id);
-
-        let addr_a = wallet_a.address();
-        let addr_b = address!("0x000000000000000000000000000000000000BBBB");
-
-        let mut wallets = HashMap::new();
-        wallets.insert(wallet_a.address(), wallet_a);
-
-        let mut block: GethData = TestContext::<2, 2>::new(
-            None,
-            |accs| {
-                accs[0]
-                    .address(addr_b)
-                    .balance(Word::from(1u64 << 20))
-                    .code(bytecode);
-                accs[1].address(addr_a).balance(Word::from(1u64 << 20));
-            },
-            |mut txs, accs| {
-                txs[0]
-                    .from(accs[1].address)
-                    .to(accs[0].address)
-                    .gas(Word::from(1_000_000u64));
-                txs[1]
-                    .from(accs[1].address)
-                    .to(accs[0].address)
-                    .gas(Word::from(1_000_000u64));
-            },
-            |block, _tx| block.number(0xcafeu64),
-        )
-        .unwrap()
-        .into();
-        block.sign(&wallets);
-        block
-    }
-
-    const TEST_MOCK_RANDOMNESS: u64 = 0x100;
-
-    // High memory usage test.  Run in serial with:
-    // `cargo test [...] serial_ -- --ignored --test-threads 1`
-    #[ignore]
-    #[test]
-    fn serial_test_super_circuit_1tx_1max_tx() {
-        let block = block_1tx();
-        const MAX_TXS: usize = 1;
-        const MAX_CALLDATA: usize = 32;
-        let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
-            max_rws: 256,
-            max_copy_rows: 256,
-            max_bytecode: 512,
-            keccak_padding: None,
-        };
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
-    }
-    #[ignore]
-    #[test]
-    fn serial_test_super_circuit_1tx_2max_tx() {
-        let block = block_1tx();
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 32;
-        let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
-            max_rws: 256,
-            max_copy_rows: 256,
-            max_bytecode: 512,
-            keccak_padding: None,
-        };
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
-    }
-    #[ignore]
-    #[test]
-    fn serial_test_super_circuit_2tx_2max_tx() {
-        let block = block_2tx();
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 32;
-        let circuits_params = CircuitsParams {
-            max_txs: MAX_TXS,
-            max_calldata: MAX_CALLDATA,
-            max_rws: 256,
-            max_copy_rows: 256,
-            max_bytecode: 512,
-            keccak_padding: None,
-        };
-        test_super_circuit::<MAX_TXS, MAX_CALLDATA, TEST_MOCK_RANDOMNESS>(block, circuits_params);
     }
 }

@@ -5,7 +5,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes, CachedRegion, RandomLinearCombination,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -28,7 +28,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATASIZE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the calldatasize field.
@@ -88,8 +88,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
 #[cfg(test)]
 mod test {
-    use crate::evm_circuit::test::rand_bytes;
-    use crate::test_util::CircuitTestBuilder;
+    use crate::{evm_circuit::test::rand_bytes, test_util::CircuitTestBuilder};
+    use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{address, bytecode, Word};
 
     use itertools::Itertools;
@@ -124,7 +124,12 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_calldata: 1200,
+                    ..CircuitsParams::default()
+                })
+                .run();
         } else {
             let ctx = TestContext::<3, 1>::new(
                 None,
@@ -161,7 +166,12 @@ mod test {
             )
             .unwrap();
 
-            CircuitTestBuilder::new_from_test_ctx(ctx).run();
+            CircuitTestBuilder::new_from_test_ctx(ctx)
+                .params(CircuitsParams {
+                    max_calldata: 600,
+                    ..CircuitsParams::default()
+                })
+                .run();
         };
     }
 

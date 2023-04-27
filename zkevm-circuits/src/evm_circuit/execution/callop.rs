@@ -1,24 +1,27 @@
-use crate::evm_circuit::execution::ExecutionGadget;
-use crate::evm_circuit::param::{N_BYTES_GAS, N_BYTES_U64};
-use crate::evm_circuit::step::ExecutionState;
-use crate::evm_circuit::util::common_gadget::{CommonCallGadget, TransferGadget};
-use crate::evm_circuit::util::constraint_builder::Transition::{Delta, To};
-use crate::evm_circuit::util::constraint_builder::{
-    ConstraintBuilder, ReversionInfo, StepStateTransition,
+use crate::evm_circuit::{
+    execution::ExecutionGadget,
+    param::{N_BYTES_GAS, N_BYTES_U64},
+    step::ExecutionState,
+    util::{
+        and,
+        common_gadget::{CommonCallGadget, TransferGadget},
+        constraint_builder::{
+            ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+            Transition::{Delta, To},
+        },
+        math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget},
+        not, or, select, CachedRegion, Cell, Word,
+    },
 };
-use crate::evm_circuit::util::math_gadget::{
-    ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
-};
-use crate::evm_circuit::util::{and, not, or, select, CachedRegion, Cell, Word};
 
-use crate::evm_circuit::witness::{Block, Call, ExecStep, Transaction};
-use crate::table::{AccountFieldTag, CallContextFieldTag};
-use crate::util::Expr;
+use crate::{
+    evm_circuit::witness::{Block, Call, ExecStep, Transaction},
+    table::{AccountFieldTag, CallContextFieldTag},
+    util::Expr,
+};
 use bus_mapping::evm::OpcodeId;
-use eth_types::evm_types::GAS_STIPEND_CALL_WITH_VALUE;
-use eth_types::{Field, ToLittleEndian, ToScalar, U256};
-use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Error;
+use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToLittleEndian, ToScalar, U256};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
 /// `OpcodeId::CALLCODE`, `OpcodeId::DELEGATECALL` and `OpcodeId::STATICCALL`.
@@ -38,7 +41,6 @@ pub(crate) struct CallOpGadget<F> {
     is_static: Cell<F>,
     depth: Cell<F>,
     call: CommonCallGadget<F, true>,
-    call_value_is_zero: IsZeroGadget<F>,
     current_value: Word<F>,
     is_warm: Cell<F>,
     is_warm_prev: Cell<F>,
@@ -58,7 +60,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALL_OP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
         cb.opcode_lookup(opcode.expr(), 1.expr());
         let is_call = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::CALL.expr());
@@ -94,7 +96,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_delegatecall.expr(),
             is_staticcall.expr(),
         );
-        let call_value_is_zero = IsZeroGadget::construct(cb, call_gadget.value.expr());
         cb.condition(not::expr(is_call.expr() + is_callcode.expr()), |cb| {
             cb.require_zero(
                 "for non call/call code, value is zero",
@@ -135,7 +136,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             cb.require_equal(
                 "callee_rw_counter_end_of_reversion == rw_counter_end_of_reversion - (reversible_write_counter + 1)",
                 callee_reversion_info.rw_counter_end_of_reversion(),
-                reversion_info.rw_counter_of_reversion(),
+                reversion_info.rw_counter_of_reversion(1.expr()),
             );
         });
 
@@ -176,13 +177,13 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             and::expr(&[
                 is_call.expr(),
                 not::expr(is_insufficient_balance_or_error_depth.expr()),
-                not::expr(call_value_is_zero.expr()),
             ]),
             |cb| {
                 TransferGadget::construct(
                     cb,
                     caller_address.expr(),
                     callee_address.expr(),
+                    not::expr(call_gadget.callee_not_exists.expr()),
                     call_gadget.value.clone(),
                     &mut callee_reversion_info,
                 )
@@ -251,7 +252,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 //
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(call_value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
                 let rw_counter_delta = 21.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
@@ -394,7 +395,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 //
                 // No extra lookups for STATICCALL opcode.
                 let transfer_rwc_delta =
-                    is_call.expr() * not::expr(call_value_is_zero.expr()) * 2.expr();
+                    is_call.expr() * not::expr(transfer.value_is_zero.expr()) * 2.expr();
                 let rw_counter_delta = 41.expr()
                     + is_call.expr() * 1.expr()
                     + transfer_rwc_delta.clone()
@@ -429,7 +430,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_static,
             depth,
             call: call_gadget,
-            call_value_is_zero,
             is_warm,
             is_warm_prev,
             callee_reversion_info,
@@ -601,8 +601,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.memory_word_size(),
             region.word_rlc(callee_code_hash),
         )?;
-        self.call_value_is_zero
-            .assign_value(region, offset, region.word_rlc(value))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.is_warm_prev
@@ -652,12 +650,12 @@ mod test {
     use super::*;
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::geth_types::Account;
-    use eth_types::{address, bytecode, word, Address, ToWord, Word};
+    use eth_types::{
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
+    };
+
     use itertools::Itertools;
-    use mock::test_ctx::helpers::account_0_code_account_1_no_code;
-    use mock::TestContext;
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     use std::default::Default;
 

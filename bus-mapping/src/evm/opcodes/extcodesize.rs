@@ -1,7 +1,9 @@
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::evm::Opcode;
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    evm::Opcode,
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
+};
 use eth_types::{GethExecStep, ToAddress, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
@@ -40,7 +42,6 @@ impl Opcode for Extcodesize {
         let is_warm = state.sdb.check_account_in_access_list(&address);
         state.push_op_reversible(
             &mut exec_step,
-            RW::WRITE,
             TxAccessListAccountOp {
                 tx_id: state.tx_ctx.id(),
                 address,
@@ -62,8 +63,7 @@ impl Opcode for Extcodesize {
             address,
             AccountField::CodeHash,
             code_hash.to_word(),
-            code_hash.to_word(),
-        )?;
+        );
         let code_size = if exists {
             state.code(code_hash)?.len()
         } else {
@@ -85,13 +85,18 @@ impl Opcode for Extcodesize {
 #[cfg(test)]
 mod extcodesize_tests {
     use super::*;
-    use crate::circuit_input_builder::ExecState;
-    use crate::mock::BlockData;
-    use crate::operation::{AccountOp, CallContextOp, StackOp};
-    use eth_types::evm_types::{OpcodeId, StackAddress};
-    use eth_types::geth_types::{Account, GethData};
-    use eth_types::{bytecode, Bytecode, Word, U256};
-    use ethers_core::utils::keccak256;
+    use crate::{
+        circuit_input_builder::ExecState,
+        mock::BlockData,
+        operation::{AccountOp, CallContextOp, StackOp, RW},
+        state_db::CodeDB,
+    };
+    use eth_types::{
+        bytecode,
+        evm_types::{OpcodeId, StackAddress},
+        geth_types::{Account, GethData},
+        Bytecode, U256,
+    };
     use mock::{TestContext, MOCK_1_ETH, MOCK_ACCOUNTS, MOCK_CODES};
     use pretty_assertions::assert_eq;
 
@@ -228,7 +233,7 @@ mod extcodesize_tests {
             }
         );
 
-        let code_hash = Word::from(keccak256(account.code.clone()));
+        let code_hash = CodeDB::hash(&account.code).to_word();
         let operation = &container.account[indices[5].as_usize()];
         assert_eq!(operation.rw(), RW::READ);
         assert_eq!(

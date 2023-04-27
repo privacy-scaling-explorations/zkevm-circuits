@@ -1,37 +1,41 @@
 //! Public Input Circuit implementation
+mod param;
 
-use std::marker::PhantomData;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+mod dev;
+#[cfg(any(feature = "test", test))]
+mod test;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+pub use dev::PiTestCircuit;
 
-use eth_types::geth_types::BlockConstants;
-use eth_types::sign_types::SignData;
-use eth_types::H256;
 use eth_types::{
-    geth_types::Transaction, Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar,
-    Word,
+    geth_types::{BlockConstants, Transaction},
+    sign_types::SignData,
+    Address, BigEndianHash, Field, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
 use keccak256::plain::Keccak;
-use mock::MOCK_CHAIN_ID;
+use param::*;
+use std::marker::PhantomData;
 
-use crate::table::BlockTable;
-use crate::table::TxFieldTag;
-use crate::table::TxTable;
-use crate::tx_circuit::TX_LEN;
-use crate::util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig};
-use crate::witness;
-use gadgets::is_zero::IsZeroChip;
-use gadgets::util::{not, or, Expr};
+use crate::{
+    table::{BlockTable, LookupTable, TxFieldTag, TxTable},
+    tx_circuit::TX_LEN,
+    util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
+    witness,
+};
+use gadgets::{
+    is_zero::IsZeroChip,
+    util::{not, or, Expr},
+};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Region, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Selector},
+    circuit::{AssignedCell, Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
 
-/// Fixed by the spec
-const BLOCK_LEN: usize = 7 + 256;
-const EXTRA_LEN: usize = 2;
-const ZERO_BYTE_GAS_COST: u64 = 4;
-const NONZERO_BYTE_GAS_COST: u64 = 16;
+#[cfg(any(feature = "test", test, feature = "test-circuits"))]
+use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
 /// Values of the block table (as in the spec)
 #[derive(Clone, Default, Debug)]
@@ -50,7 +54,7 @@ pub struct BlockValues {
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
     nonce: Word,
-    gas: Word, //gas limit
+    gas: Word, // gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
@@ -90,7 +94,7 @@ pub struct PublicData {
 impl Default for PublicData {
     fn default() -> Self {
         PublicData {
-            chain_id: *MOCK_CHAIN_ID,
+            chain_id: Word::default(),
             history_hashes: vec![],
             transactions: vec![],
             state_root: H256::zero(),
@@ -259,6 +263,10 @@ impl<F: Field> SubCircuitConfig<F> for PiCircuitConfig<F> {
         let q_end = meta.selector();
 
         let pi = meta.instance_column();
+
+        // Annotate table columns
+        tx_table.annotate_columns(meta);
+        block_table.annotate_columns(meta);
 
         meta.enable_equality(raw_public_inputs);
         meta.enable_equality(rpi_rlc_acc);
@@ -1133,6 +1141,16 @@ impl<F: Field> PiCircuit<F> {
 impl<F: Field> SubCircuit<F> for PiCircuit<F> {
     type Config = PiCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // Column raw_public_inputs is queried at 4 distinct rotations at
+        // - Rotation::cur()
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + max_txs * TX_LEN + 1)
+        // - Rotation(BLOCK_LEN + 1 + EXTRA_LEN + 2 * (max_txs * TX_LEN + 1))
+        // so returns 7 unusable rows.
+        7
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         let public_data = PublicData {
             chain_id: block.context.chain_id,
@@ -1245,6 +1263,25 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let pi_cells = layouter.assign_region(
             || "region 0",
             |mut region| {
+                // Annotate columns
+
+                config.tx_table.annotate_columns_in_region(&mut region);
+                config.block_table.annotate_columns_in_region(&mut region);
+
+                region.name_column(|| "raw_public_inputs", config.raw_public_inputs);
+                region.name_column(|| "tx_id_inv", config.tx_id_inv);
+                region.name_column(|| "tx_value_inv", config.tx_value_inv);
+                region.name_column(|| "tx_id_diff_inv", config.tx_id_diff_inv);
+
+                region.name_column(|| "fixed_u16", config.fixed_u16);
+                region.name_column(|| "calldata_gas_cost", config.calldata_gas_cost);
+                region.name_column(|| "is_final", config.is_final);
+
+                region.name_column(|| "rpi_rlc_acc", config.rpi_rlc_acc);
+                region.name_column(|| "rand_rpi", config.rand_rpi);
+
+                region.name_column(|| "Public_Inputs", config.pi);
+
                 let circuit_len = config.circuit_len();
                 let mut raw_pi_vals = vec![F::zero(); circuit_len];
 
@@ -1364,7 +1401,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             &mut region,
                             offset,
                             i + 1,
-                            tx_id_next as usize,
+                            tx_id_next,
                             index,
                             F::from(*byte as u64),
                             is_final,
@@ -1414,57 +1451,6 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         }
 
         Ok(())
-    }
-}
-
-// We define the PiTestCircuit as a wrapper over PiCircuit extended to take the
-// generic const parameters MAX_TXS and MAX_CALLDATA.  This is necessary because
-// the trait Circuit requires an implementation of `configure` that doesn't take
-// any circuit parameters, and the PiCircuit defines gates that use rotations
-// that depend on MAX_TXS and MAX_CALLDATA, so these two values are required
-// during the configuration.
-/// Test Circuit for PiCircuit
-#[cfg(any(feature = "test", test))]
-#[derive(Default)]
-pub struct PiTestCircuit<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-    pub PiCircuit<F>,
-);
-
-#[cfg(any(feature = "test", test))]
-impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize> Circuit<F>
-    for PiTestCircuit<F, MAX_TXS, MAX_CALLDATA>
-{
-    type Config = (PiCircuitConfig<F>, Challenges);
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let block_table = BlockTable::construct(meta);
-        let tx_table = TxTable::construct(meta);
-        (
-            PiCircuitConfig::new(
-                meta,
-                PiCircuitConfigArgs {
-                    max_txs: MAX_TXS,
-                    max_calldata: MAX_CALLDATA,
-                    block_table,
-                    tx_table,
-                },
-            ),
-            Challenges::construct(meta),
-        )
-    }
-
-    fn synthesize(
-        &self,
-        (config, challenges): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let challenges = challenges.values(&mut layouter);
-        self.0.synthesize_sub(&config, &challenges, &mut layouter)
     }
 }
 
@@ -1594,69 +1580,4 @@ pub fn gen_rand_rpi<F: Field>(
     }
     let rand_rpi = Word::from(keccak.digest().as_slice()) % F::MODULUS;
     rand_rpi.to_scalar().expect("rand_rpi.to_scalar")
-}
-
-#[cfg(test)]
-mod pi_circuit_test {
-    use super::*;
-    use halo2_proofs::{
-        dev::{MockProver, VerifyFailure},
-        halo2curves::bn256::Fr,
-    };
-    use mock::CORRECT_MOCK_TXS;
-    use pretty_assertions::assert_eq;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha20Rng;
-
-    fn run<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize>(
-        k: u32,
-        public_data: PublicData,
-    ) -> Result<(), Vec<VerifyFailure>> {
-        let mut rng = ChaCha20Rng::seed_from_u64(2);
-        let randomness = F::random(&mut rng);
-        let rand_rpi = F::random(&mut rng);
-
-        let circuit = PiTestCircuit::<F, MAX_TXS, MAX_CALLDATA>(PiCircuit::new(
-            MAX_TXS,
-            MAX_CALLDATA,
-            randomness,
-            rand_rpi,
-            public_data,
-        ));
-        let public_inputs = circuit.0.instance();
-
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        prover.verify()
-    }
-
-    #[test]
-    fn test_default_pi() {
-        const MAX_TXS: usize = 2;
-        const MAX_CALLDATA: usize = 8;
-        let public_data = PublicData::default();
-
-        let k = 17;
-        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
-    }
-
-    #[test]
-    fn test_simple_pi() {
-        const MAX_TXS: usize = 8;
-        const MAX_CALLDATA: usize = 200;
-
-        let mut public_data = PublicData::default();
-
-        let n_tx = 4;
-        for i in 0..n_tx {
-            public_data
-                .transactions
-                .push(CORRECT_MOCK_TXS[i].clone().into());
-        }
-
-        let k = 17;
-        assert_eq!(run::<Fr, MAX_TXS, MAX_CALLDATA>(k, public_data), Ok(()));
-    }
 }

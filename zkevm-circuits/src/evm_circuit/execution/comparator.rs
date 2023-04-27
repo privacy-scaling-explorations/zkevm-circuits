@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget},
             select, CachedRegion, Cell, Word,
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CMP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let a = cb.query_word_rlc();
@@ -169,8 +169,7 @@ impl<F: Field> ExecutionGadget<F> for ComparatorGadget<F> {
 #[cfg(test)]
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, a: Word, b: Word, _c: Word) {

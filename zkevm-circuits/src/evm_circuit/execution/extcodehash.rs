@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
             from_bytes, select, CachedRegion, Cell, Word,
         },
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::EXTCODEHASH;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let address_word = cb.query_word_rlc();
         let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
         cb.stack_pop(address_word.expr());
@@ -238,7 +238,7 @@ mod test {
             ..Default::default()
         };
         // This account state should no longer be possible because contract nonces start
-        // at 1, per EIP-161. However, the requirement that the code be emtpy is still
+        // at 1, per EIP-161. However, the requirement that the code be empty is still
         // in the yellow paper and our constraints, so we test this case
         // anyways.
         let contract_only_account = Account {

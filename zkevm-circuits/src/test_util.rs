@@ -1,7 +1,7 @@
 //! Testing utilities
 
 use crate::{
-    evm_circuit::EvmCircuit,
+    evm_circuit::{cached::EvmCircuitCached, EvmCircuit},
     state_circuit::StateCircuit,
     util::SubCircuit,
     witness::{Block, Rw},
@@ -11,8 +11,7 @@ use eth_types::geth_types::GethData;
 use std::cmp;
 
 use crate::util::log2_ceil;
-use halo2_proofs::dev::MockProver;
-use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use mock::TestContext;
 
 #[cfg(test)]
@@ -71,7 +70,7 @@ const NUM_BLINDING_ROWS: usize = 64;
 /// .unwrap();
 ///
 /// CircuitTestBuilder::new_from_test_ctx(ctx)
-///     .block_modifier(Box::new(|block| block.evm_circuit_pad_to = (1 << 18) - 100))
+///     .block_modifier(Box::new(|block| block.circuits_params.max_evm_rows = (1 << 18) - 100))
 ///     .state_checks(Box::new(|prover, evm_rows, lookup_rows| assert!(prover.verify_at_rows_par(evm_rows.iter().cloned(), lookup_rows.iter().cloned()).is_err())))
 ///     .run();
 /// ```
@@ -215,7 +214,7 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
 
             let (active_gate_rows, active_lookup_rows) = EvmCircuit::<Fr>::get_active_rows(&block);
 
-            let circuit = EvmCircuit::<Fr>::get_test_cicuit_from_block(block.clone());
+            let circuit = EvmCircuitCached::get_test_cicuit_from_block(block.clone());
             let prover = MockProver::<Fr>::run(k, &circuit, vec![]).unwrap();
 
             self.evm_checks.as_ref()(prover, &active_gate_rows, &active_lookup_rows)
@@ -228,17 +227,15 @@ impl<const NACC: usize, const NTX: usize> CircuitTestBuilder<NACC, NTX> {
             let rows_needed = StateCircuit::<Fr>::min_num_rows_block(&block).1;
             let k = cmp::max(log2_ceil(rows_needed + NUM_BLINDING_ROWS), 18);
             let state_circuit = StateCircuit::<Fr>::new(block.rws, params.max_rws);
-            let power_of_randomness = state_circuit.instance();
-            let prover = MockProver::<Fr>::run(k, &state_circuit, power_of_randomness).unwrap();
+            let instance = state_circuit.instance();
+            let prover = MockProver::<Fr>::run(k, &state_circuit, instance).unwrap();
             // Skip verification of Start rows to accelerate testing
             let non_start_rows_len = state_circuit
                 .rows
                 .iter()
                 .filter(|rw| !matches!(rw, Rw::Start { .. }))
                 .count();
-            let rows = (params.max_rws - non_start_rows_len..params.max_rws)
-                .into_iter()
-                .collect();
+            let rows = (params.max_rws - non_start_rows_len..params.max_rws).collect();
 
             self.state_checks.as_ref()(prover, &rows, &rows);
         }

@@ -1,25 +1,28 @@
 //! Table definitions used cross-circuits
 
-use crate::copy_circuit::number_or_hash_to_field;
-use crate::evm_circuit::util::rlc;
-use crate::exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP};
-use crate::impl_expr;
-use crate::util::build_tx_log_address;
-use crate::util::Challenges;
-use crate::witness::{
-    Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+use crate::{
+    copy_circuit::util::number_or_hash_to_field,
+    evm_circuit::util::rlc,
+    exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
+    impl_expr,
+    util::{build_tx_log_address, Challenges},
+    witness::{
+        Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
+    },
 };
 use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
-use gadgets::binary_number::{BinaryNumberChip, BinaryNumberConfig};
-use gadgets::util::{split_u256, split_u256_limb64};
+use gadgets::{
+    binary_number::{BinaryNumberChip, BinaryNumberConfig},
+    util::{split_u256, split_u256_limb64},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error},
+    circuit::{Layouter, Region, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, *},
+    poly::Rotation,
 };
-use halo2_proofs::{circuit::Layouter, plonk::*, poly::Rotation};
 use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
@@ -151,6 +154,7 @@ impl TxTable {
         layouter: &mut impl Layouter<F>,
         txs: &[Transaction],
         max_txs: usize,
+        max_calldata: usize,
         challenges: &Challenges<Value<F>>,
     ) -> Result<(), Error> {
         assert!(
@@ -159,51 +163,87 @@ impl TxTable {
             txs.len(),
             max_txs
         );
+        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        assert!(
+            sum_txs_calldata <= max_calldata,
+            "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
+            sum_txs_calldata,
+            max_calldata,
+        );
+
+        fn assign_row<F: Field>(
+            region: &mut Region<'_, F>,
+            offset: usize,
+            advice_columns: &[Column<Advice>],
+            tag: &Column<Fixed>,
+            row: &[Value<F>; 4],
+            msg: &str,
+        ) -> Result<(), Error> {
+            for (index, column) in advice_columns.iter().enumerate() {
+                region.assign_advice(
+                    || format!("tx table {} row {}", msg, offset),
+                    *column,
+                    offset,
+                    || row[if index > 0 { index + 1 } else { index }],
+                )?;
+            }
+            region.assign_fixed(
+                || format!("tx table {} row {}", msg, offset),
+                *tag,
+                offset,
+                || row[1],
+            )?;
+            Ok(())
+        }
+
         layouter.assign_region(
             || "tx table",
             |mut region| {
                 let mut offset = 0;
                 let advice_columns = [self.tx_id, self.index, self.value];
-                for column in advice_columns {
-                    region.assign_advice(
-                        || "tx table all-zero row",
-                        column,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                }
-                region.assign_fixed(
-                    || "tx table all-zero row",
-                    self.tag,
+                assign_row(
+                    &mut region,
                     offset,
-                    || Value::known(F::zero()),
+                    &advice_columns,
+                    &self.tag,
+                    &[(); 4].map(|_| Value::known(F::zero())),
+                    "all-zero",
                 )?;
                 offset += 1;
 
-                let padding_txs: Vec<Transaction> = (txs.len()..max_txs)
+                // Tx Table contains an initial region that has a size parametrized by max_txs
+                // with all the tx data except for calldata, and then a second
+                // region that has a size parametrized by max_calldata with all
+                // the tx calldata.  This is required to achieve a constant fixed column tag
+                // regardless of the number of input txs or the calldata size of each tx.
+                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                // Assign Tx data (all tx fields except for calldata)
+                let padding_txs: Vec<_> = (txs.len()..max_txs)
                     .map(|i| Transaction {
                         id: i + 1,
                         ..Default::default()
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    for row in tx.table_assignments(*challenges) {
-                        for (index, column) in advice_columns.iter().enumerate() {
-                            region.assign_advice(
-                                || format!("tx table row {}", offset),
-                                *column,
-                                offset,
-                                || row[if index > 0 { index + 1 } else { index }],
-                            )?;
-                        }
-                        region.assign_fixed(
-                            || format!("tx table row {}", offset),
-                            self.tag,
-                            offset,
-                            || row[1],
-                        )?;
+                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
+                    for row in tx_data {
+                        assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;
                     }
+                    calldata_assignments.extend(tx_calldata.iter());
+                }
+                // Assign Tx calldata
+                let padding_calldata = (sum_txs_calldata..max_calldata).map(|_| {
+                    [
+                        Value::known(F::zero()),
+                        Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::zero()),
+                        Value::known(F::zero()),
+                    ]
+                });
+                for row in calldata_assignments.into_iter().chain(padding_calldata) {
+                    assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
+                    offset += 1;
                 }
                 Ok(())
             },
@@ -259,8 +299,6 @@ pub enum RwTableTag {
     TxRefund,
     /// Account operation
     Account,
-    /// Account Destructed operation
-    AccountDestructed,
     /// Call Context operation
     CallContext,
     /// Tx Log operation
@@ -280,7 +318,6 @@ impl RwTableTag {
                 | RwTableTag::TxRefund
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
-                | RwTableTag::AccountDestructed
         )
     }
 }
@@ -522,31 +559,30 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
-pub enum ProofType {
+#[derive(Clone, Copy, Debug)]
+pub enum MPTProofType {
     /// Nonce updated
-    NonceChanged = AccountFieldTag::Nonce as isize,
+    NonceMod = AccountFieldTag::Nonce as isize,
     /// Balance updated
-    BalanceChanged = AccountFieldTag::Balance as isize,
+    BalanceMod = AccountFieldTag::Balance as isize,
     /// Code hash exists
-    CodeHashExists = AccountFieldTag::CodeHash as isize,
+    CodeHashMod = AccountFieldTag::CodeHash as isize,
     /// Account does not exist
-    AccountDoesNotExist = AccountFieldTag::NonExisting as isize,
-    /// Account destroyed
-    AccountDestructed,
+    NonExistingAccountProof = AccountFieldTag::NonExisting as isize,
     /// Storage updated
-    StorageChanged,
+    StorageMod,
     /// Storage does not exist
-    StorageDoesNotExist,
+    NonExistingStorageProof,
 }
-impl_expr!(ProofType);
+impl_expr!(MPTProofType);
 
-impl From<AccountFieldTag> for ProofType {
+impl From<AccountFieldTag> for MPTProofType {
     fn from(tag: AccountFieldTag) -> Self {
         match tag {
-            AccountFieldTag::Nonce => Self::NonceChanged,
-            AccountFieldTag::Balance => Self::BalanceChanged,
-            AccountFieldTag::CodeHash => Self::CodeHashExists,
-            AccountFieldTag::NonExisting => Self::AccountDoesNotExist,
+            AccountFieldTag::Nonce => Self::NonceMod,
+            AccountFieldTag::Balance => Self::BalanceMod,
+            AccountFieldTag::CodeHash => Self::CodeHashMod,
+            AccountFieldTag::NonExisting => Self::NonExistingAccountProof,
         }
     }
 }
@@ -562,13 +598,13 @@ impl<F: Field> LookupTable<F> for MptTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("Address"),
-            String::from("Storage key"),
-            String::from("Proof type"),
-            String::from("New root"),
-            String::from("Old root"),
-            String::from("New value"),
-            String::from("Old value"),
+            String::from("address"),
+            String::from("storage_key"),
+            String::from("proof_type"),
+            String::from("new_root"),
+            String::from("old_root"),
+            String::from("new_value"),
+            String::from("old_value"),
         ]
     }
 }
@@ -1262,7 +1298,7 @@ impl<F: Field> LookupTable<F> for CopyTable {
 #[derive(Clone, Copy, Debug)]
 pub struct ExpTable {
     /// Whether the row is the start of a step.
-    pub is_step: Column<Advice>,
+    pub is_step: Column<Fixed>,
     /// An identifier for every exponentiation trace, at the moment this is the
     /// read-write counter at the time of the lookups done to the
     /// exponentiation table.
@@ -1282,7 +1318,7 @@ impl ExpTable {
     /// Construct the Exponentiation table.
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         Self {
-            is_step: meta.advice_column(),
+            is_step: meta.fixed_column(),
             identifier: meta.advice_column(),
             is_last: meta.advice_column(),
             base_limb: meta.advice_column(),
@@ -1293,7 +1329,7 @@ impl ExpTable {
 
     /// Given an exponentiation event and randomness, get assignments to the
     /// exponentiation table.
-    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 6]> {
+    pub fn assignments<F: Field>(exp_event: &ExpEvent) -> Vec<[F; 5]> {
         let mut assignments = Vec::new();
         let base_limbs = split_u256_limb64(&exp_event.base);
         let identifier = F::from(exp_event.identifier as u64);
@@ -1309,7 +1345,6 @@ impl ExpTable {
 
             // row 1
             assignments.push([
-                F::one(),
                 identifier,
                 is_last,
                 base_limbs[0].as_u64().into(),
@@ -1322,7 +1357,6 @@ impl ExpTable {
             ]);
             // row 2
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[1].as_u64().into(),
@@ -1335,7 +1369,6 @@ impl ExpTable {
             ]);
             // row 3
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[2].as_u64().into(),
@@ -1344,7 +1377,6 @@ impl ExpTable {
             ]);
             // row 4
             assignments.push([
-                F::zero(),
                 identifier,
                 F::zero(),
                 base_limbs[3].as_u64().into(),
@@ -1352,14 +1384,7 @@ impl ExpTable {
                 F::zero(),
             ]);
             for _ in ROWS_PER_STEP..OFFSET_INCREMENT {
-                assignments.push([
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                    F::zero(),
-                ]);
+                assignments.push([F::zero(), F::zero(), F::zero(), F::zero(), F::zero()]);
             }
 
             // update intermediate exponent.
@@ -1396,16 +1421,27 @@ impl ExpTable {
                                 || Value::known(value),
                             )?;
                         }
+                        let is_step = if offset % OFFSET_INCREMENT == 0 {
+                            F::one()
+                        } else {
+                            F::zero()
+                        };
+                        region.assign_fixed(
+                            || format!("exponentiation table row {}", offset),
+                            self.is_step,
+                            offset,
+                            || Value::known(is_step),
+                        )?;
                         offset += 1;
                     }
                 }
 
                 // pad an empty row
-                let row = [F::from_u128(0); 6];
-                for (&column, value) in exp_table_columns.iter().zip_eq(row) {
+                let row = [F::from_u128(0); 5];
+                for (column, value) in exp_table_columns.iter().zip_eq(row) {
                     region.assign_advice(
                         || format!("exponentiation table row {}", offset),
-                        column,
+                        *column,
                         offset,
                         || Value::known(value),
                     )?;
@@ -1442,7 +1478,7 @@ impl<F: Field> LookupTable<F> for ExpTable {
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         vec![
-            meta.query_advice(self.is_step, Rotation::cur()),
+            meta.query_fixed(self.is_step, Rotation::cur()),
             meta.query_advice(self.identifier, Rotation::cur()),
             meta.query_advice(self.is_last, Rotation::cur()),
             meta.query_advice(self.base_limb, Rotation::cur()),

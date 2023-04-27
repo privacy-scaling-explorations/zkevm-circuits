@@ -46,7 +46,12 @@ hex = "0.4.3"
 itertools = "0.10.1"
 mock = { path = "../mock" }
 pretty_assertions = "1.0.0"
+cli-table = "0.4"
+serde = { version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.78"
 
 [features]
 default = []
-test = ["ethers-signers", "mock"]
+test = ["ethers-signers", "mock", "bus-mapping/test"]
+test-circuits = []
+warn-unimplemented = ["eth-types/warn-unimplemented"]

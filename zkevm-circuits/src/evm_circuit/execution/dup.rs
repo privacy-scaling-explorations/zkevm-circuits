@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
@@ -25,7 +25,7 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::DUP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let value = cb.query_cell_phase2();
@@ -76,8 +76,7 @@ impl<F: Field> ExecutionGadget<F> for DupGadget<F> {
 
 mod test {
     use crate::{evm_circuit::test::rand_word, test_util::CircuitTestBuilder};
-    use eth_types::evm_types::OpcodeId;
-    use eth_types::{bytecode, Word};
+    use eth_types::{bytecode, evm_types::OpcodeId, Word};
     use mock::TestContext;
 
     fn test_ok(opcode: OpcodeId, value: Word) {
@@ -86,7 +85,7 @@ mod test {
             PUSH32(value)
         };
         for _ in 0..n - 1 {
-            bytecode.write_op(OpcodeId::DUP1);
+            bytecode.op_dup1();
         }
         bytecode.append(&bytecode! {
             .write_op(opcode)

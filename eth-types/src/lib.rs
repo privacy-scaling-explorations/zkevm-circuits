@@ -32,19 +32,20 @@ use halo2_proofs::{
     },
 };
 
-use crate::evm_types::{memory::Memory, stack::Stack, storage::Storage};
-use crate::evm_types::{Gas, GasCost, OpcodeId, ProgramCounter};
-pub use ethers_core::abi::ethereum_types::{BigEndianHash, U512};
+use crate::evm_types::{
+    memory::Memory, stack::Stack, storage::Storage, Gas, GasCost, OpcodeId, ProgramCounter,
+};
 use ethers_core::types;
-pub use ethers_core::types::{
-    transaction::{eip2930::AccessList, response::Transaction},
-    Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
+pub use ethers_core::{
+    abi::ethereum_types::{BigEndianHash, U512},
+    types::{
+        transaction::{eip2930::AccessList, response::Transaction},
+        Address, Block, Bytes, Signature, H160, H256, H64, U256, U64,
+    },
 };
 
 use serde::{de, Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fmt;
-use std::str::FromStr;
+use std::{collections::HashMap, fmt, str::FromStr};
 
 /// Trait used to reduce verbosity with the declaration of the [`FieldExt`]
 /// trait and its repr.
@@ -201,11 +202,34 @@ impl ToWord for u64 {
     }
 }
 
+impl ToWord for u128 {
+    fn to_word(&self) -> Word {
+        Word::from(*self)
+    }
+}
+
 impl ToWord for usize {
     fn to_word(&self) -> Word {
         u64::try_from(*self)
             .expect("usize bigger than u64")
             .to_word()
+    }
+}
+
+impl ToWord for i32 {
+    fn to_word(&self) -> Word {
+        let value = Word::from(self.unsigned_abs() as u64);
+        if self.is_negative() {
+            value.overflowing_neg().0
+        } else {
+            value
+        }
+    }
+}
+
+impl ToWord for Word {
+    fn to_word(&self) -> Word {
+        *self
     }
 }
 
@@ -446,8 +470,7 @@ macro_rules! word_map {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm_types::opcode_ids::OpcodeId;
-    use crate::evm_types::{memory::Memory, stack::Stack};
+    use crate::evm_types::{memory::Memory, opcode_ids::OpcodeId, stack::Stack};
 
     #[test]
     fn deserialize_geth_exec_trace2() {
@@ -588,8 +611,7 @@ mod tests {
 #[cfg(test)]
 mod eth_types_test {
     use super::*;
-    use crate::Error;
-    use crate::Word;
+    use crate::{Error, Word};
     use std::str::FromStr;
 
     #[test]
@@ -671,6 +693,18 @@ mod eth_types_test {
         let word_from_str = Word::from_str(word_str).unwrap();
 
         assert_eq!(word_from_u128, word_from_str);
+        Ok(())
+    }
+
+    #[test]
+    fn creation_tx_into_tx_req() -> Result<(), Error> {
+        let tx = &geth_types::Transaction {
+            to: None,
+            ..Default::default()
+        };
+
+        let req: ethers_core::types::TransactionRequest = tx.into();
+        assert_eq!(req.to, None);
         Ok(())
     }
 }

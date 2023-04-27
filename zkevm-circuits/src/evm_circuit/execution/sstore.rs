@@ -1,14 +1,16 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
+        param::N_BYTES_GAS,
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{SameContextGadget, SstoreGasGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::Delta,
             },
-            math_gadget::{IsEqualGadget, IsZeroGadget},
-            not, select, CachedRegion, Cell,
+            math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
+            not, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -35,6 +37,8 @@ pub(crate) struct SstoreGadget<F> {
     phase2_original_value: Cell<F>,
     is_warm: Cell<F>,
     tx_refund_prev: Cell<F>,
+    // Constrain for SSTORE reentrancy sentry.
+    sufficient_gas_sentry: LtGadget<F, N_BYTES_GAS>,
     gas_cost: SstoreGasGadget<F>,
     tx_refund: SstoreTxRefundGadget<F>,
 }
@@ -44,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SSTORE;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -84,6 +88,18 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             true.expr(),
             is_warm.expr(),
             Some(&mut reversion_info),
+        );
+
+        // Constrain for SSTORE reentrancy sentry.
+        let sufficient_gas_sentry = LtGadget::construct(
+            cb,
+            GasCost::SSTORE_SENTRY.0.expr(),
+            cb.curr.state.gas_left.expr(),
+        );
+        cb.require_equal(
+            "Gas left must be greater than gas sentry",
+            sufficient_gas_sentry.expr(),
+            1.expr(),
         );
 
         let gas_cost = SstoreGasGadget::construct(
@@ -131,6 +147,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             phase2_original_value,
             is_warm,
             tx_refund_prev,
+            sufficient_gas_sentry,
             gas_cost,
             tx_refund,
         }
@@ -188,15 +205,15 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
         self.tx_refund_prev
             .assign(region, offset, Value::known(F::from(tx_refund_prev)))?;
 
-        self.gas_cost.assign(
+        self.sufficient_gas_sentry.assign_value(
             region,
             offset,
-            step.gas_cost,
-            value,
-            value_prev,
-            original_value,
-            is_warm,
+            Value::known(F::from(GasCost::SSTORE_SENTRY.0)),
+            Value::known(F::from(step.gas_left)),
         )?;
+
+        self.gas_cost
+            .assign(region, offset, value, value_prev, original_value, is_warm)?;
 
         self.tx_refund.assign(
             region,
@@ -207,106 +224,6 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             value_prev,
             original_value,
         )?;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct SstoreGasGadget<F> {
-    value: Cell<F>,
-    value_prev: Cell<F>,
-    original_value: Cell<F>,
-    is_warm: Cell<F>,
-    gas_cost: Expression<F>,
-    value_eq_prev: IsEqualGadget<F>,
-    original_eq_prev: IsEqualGadget<F>,
-    original_is_zero: IsZeroGadget<F>,
-}
-
-impl<F: Field> SstoreGasGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
-        value: Cell<F>,
-        value_prev: Cell<F>,
-        original_value: Cell<F>,
-        is_warm: Cell<F>,
-    ) -> Self {
-        let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
-        let original_eq_prev =
-            IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
-        let warm_case_gas = select::expr(
-            value_eq_prev.expr(),
-            GasCost::WARM_ACCESS.expr(),
-            select::expr(
-                original_eq_prev.expr(),
-                select::expr(
-                    original_is_zero.expr(),
-                    GasCost::SSTORE_SET.expr(),
-                    GasCost::SSTORE_RESET.expr(),
-                ),
-                GasCost::WARM_ACCESS.expr(),
-            ),
-        );
-        let gas_cost = select::expr(
-            is_warm.expr(),
-            warm_case_gas.expr(),
-            warm_case_gas + GasCost::COLD_SLOAD.expr(),
-        );
-
-        Self {
-            value,
-            value_prev,
-            original_value,
-            is_warm,
-            gas_cost,
-            value_eq_prev,
-            original_eq_prev,
-            original_is_zero,
-        }
-    }
-
-    pub(crate) fn expr(&self) -> Expression<F> {
-        // Return the gas cost
-        self.gas_cost.clone()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn assign(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        gas_cost: u64,
-        value: eth_types::Word,
-        value_prev: eth_types::Word,
-        original_value: eth_types::Word,
-        is_warm: bool,
-    ) -> Result<(), Error> {
-        self.value.assign(region, offset, region.word_rlc(value))?;
-        self.value_prev
-            .assign(region, offset, region.word_rlc(value_prev))?;
-        self.original_value
-            .assign(region, offset, region.word_rlc(original_value))?;
-        self.is_warm
-            .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
-        self.value_eq_prev.assign_value(
-            region,
-            offset,
-            region.word_rlc(value),
-            region.word_rlc(value_prev),
-        )?;
-        self.original_eq_prev.assign_value(
-            region,
-            offset,
-            region.word_rlc(original_value),
-            region.word_rlc(value_prev),
-        )?;
-        self.original_is_zero
-            .assign_value(region, offset, region.word_rlc(original_value))?;
-        debug_assert_eq!(
-            calc_expected_gas_cost(value, value_prev, original_value, is_warm),
-            gas_cost
-        );
         Ok(())
     }
 }
@@ -328,7 +245,7 @@ pub(crate) struct SstoreTxRefundGadget<F> {
 
 impl<F: Field> SstoreTxRefundGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut EVMConstraintBuilder<F>,
         tx_refund_old: Cell<F>,
         value: Cell<F>,
         value_prev: Cell<F>,
@@ -446,30 +363,6 @@ impl<F: Field> SstoreTxRefundGadget<F> {
             tx_refund
         );
         Ok(())
-    }
-}
-
-fn calc_expected_gas_cost(
-    value: eth_types::Word,
-    value_prev: eth_types::Word,
-    original_value: eth_types::Word,
-    is_warm: bool,
-) -> u64 {
-    let warm_case_gas = if value_prev == value {
-        GasCost::WARM_ACCESS
-    } else if original_value == value_prev {
-        if original_value == eth_types::Word::from(0) {
-            GasCost::SSTORE_SET
-        } else {
-            GasCost::SSTORE_RESET
-        }
-    } else {
-        GasCost::WARM_ACCESS
-    };
-    if is_warm {
-        warm_case_gas.as_u64()
-    } else {
-        warm_case_gas.as_u64() + GasCost::COLD_SLOAD.as_u64()
     }
 }
 

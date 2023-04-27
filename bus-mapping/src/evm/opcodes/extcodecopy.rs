@@ -1,9 +1,11 @@
 use super::Opcode;
-use crate::circuit_input_builder::{
-    CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+use crate::{
+    circuit_input_builder::{
+        CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
+    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    Error,
 };
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
 use eth_types::{Bytecode, GethExecStep, ToAddress, ToWord, H256, U256};
 
 #[derive(Clone, Copy, Debug)]
@@ -18,7 +20,7 @@ impl Opcode for Extcodecopy {
         geth_steps: &[GethExecStep],
     ) -> Result<Vec<ExecStep>, Error> {
         let geth_step = &geth_steps[0];
-        let exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
+        let mut exec_steps = vec![gen_extcodecopy_step(state, geth_step)?];
 
         // reconstruction
         let address = geth_steps[0].stack.nth_last(0)?.to_address();
@@ -32,26 +34,11 @@ impl Opcode for Extcodecopy {
 
         let call_ctx = state.call_ctx_mut()?;
         let memory = &mut call_ctx.memory;
-        if length != 0 {
-            let minimal_length = (dest_offset + length) as usize;
-            memory.extend_at_least(minimal_length);
 
-            let mem_starts = dest_offset as usize;
-            let mem_ends = mem_starts + length as usize;
-            let code_starts = code_offset as usize;
-            let code_ends = code_starts + length as usize;
-            if code_ends <= code.len() {
-                memory[mem_starts..mem_ends].copy_from_slice(&code[code_starts..code_ends]);
-            } else if let Some(actual_length) = code.len().checked_sub(code_starts) {
-                let mem_code_ends = mem_starts + actual_length;
-                memory[mem_starts..mem_code_ends].copy_from_slice(&code[code_starts..]);
-                // since we already resize the memory, no need to copy 0s for
-                // out of bound bytes
-            }
-        }
+        memory.copy_from(dest_offset, &code, code_offset, length as usize);
 
         let copy_event = gen_copy_event(state, geth_step)?;
-        state.push_copy(copy_event);
+        state.push_copy(&mut exec_steps[0], copy_event);
         Ok(exec_steps)
     }
 }
@@ -62,7 +49,8 @@ fn gen_extcodecopy_step(
 ) -> Result<ExecStep, Error> {
     let mut exec_step = state.new_step(geth_step)?;
 
-    let external_address = geth_step.stack.nth_last(0)?.to_address();
+    let external_address_word = geth_step.stack.nth_last(0)?;
+    let external_address = external_address_word.to_address();
     let dest_offset = geth_step.stack.nth_last(1)?;
     let offset = geth_step.stack.nth_last(2)?;
     let length = geth_step.stack.nth_last(3)?;
@@ -71,7 +59,7 @@ fn gen_extcodecopy_step(
     state.stack_read(
         &mut exec_step,
         geth_step.stack.nth_last_filled(0),
-        external_address.to_word(),
+        external_address_word,
     )?;
     state.stack_read(
         &mut exec_step,
@@ -98,7 +86,6 @@ fn gen_extcodecopy_step(
     let is_warm = state.sdb.check_account_in_access_list(&external_address);
     state.push_op_reversible(
         &mut exec_step,
-        RW::WRITE,
         TxAccessListAccountOp {
             tx_id: state.tx_ctx.id(),
             address: external_address,
@@ -114,13 +101,13 @@ fn gen_extcodecopy_step(
     } else {
         H256::zero()
     };
+
     state.account_read(
         &mut exec_step,
         external_address,
         AccountField::CodeHash,
         code_hash.to_word(),
-        code_hash.to_word(),
-    )?;
+    );
     Ok(exec_step)
 }
 
@@ -206,14 +193,14 @@ mod extcodecopy_tests {
             AccountField, AccountOp, CallContextField, CallContextOp, MemoryOp, StackOp,
             TxAccessListAccountOp, RW,
         },
+        state_db::CodeDB,
     };
-    use eth_types::{address, bytecode, Bytecode, Bytes, ToWord, Word};
     use eth_types::{
+        address, bytecode,
         evm_types::{MemoryAddress, OpcodeId, StackAddress},
         geth_types::GethData,
-        H256, U256,
+        Bytecode, Bytes, ToWord, Word, U256,
     };
-    use ethers_core::utils::keccak256;
     use mock::TestContext;
 
     fn test_ok(
@@ -245,7 +232,7 @@ mod extcodecopy_tests {
         let code_hash = if code_ext.is_empty() {
             Default::default()
         } else {
-            keccak256(code_ext.clone())
+            CodeDB::hash(&code_ext)
         };
 
         // Get the execution steps from the external tracer
@@ -413,8 +400,8 @@ mod extcodecopy_tests {
                 &AccountOp {
                     address: external_address,
                     field: AccountField::CodeHash,
-                    value: Word::from(code_hash),
-                    value_prev: Word::from(code_hash),
+                    value: code_hash.to_word(),
+                    value_prev: code_hash.to_word(),
                 }
             )
         );
@@ -453,7 +440,7 @@ mod extcodecopy_tests {
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
         assert_eq!(copy_events[0].bytes.len(), copy_size);
-        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(H256(code_hash)));
+        assert_eq!(copy_events[0].src_id, NumberOrHash::Hash(code_hash));
         assert_eq!(copy_events[0].src_addr as usize, data_offset);
         assert_eq!(copy_events[0].src_addr_end as usize, code_ext.len());
         assert_eq!(copy_events[0].src_type, CopyDataType::Bytecode);

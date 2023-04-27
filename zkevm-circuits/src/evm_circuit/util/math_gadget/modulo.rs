@@ -1,6 +1,9 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::ConstraintBuilder, math_gadget::*, sum, CachedRegion,
+        self,
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        math_gadget::*,
+        sum, CachedRegion,
     },
     util::Expr,
 };
@@ -27,7 +30,7 @@ pub(crate) struct ModGadget<F> {
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word_rlc();
         let a_or_zero = cb.query_word_rlc();
@@ -99,11 +102,9 @@ impl<F: Field> ModGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::test_util::*;
-    use super::*;
+    use super::{test_util::*, *};
     use eth_types::{Word, U256, U512};
-    use halo2_proofs::halo2curves::bn256::Fr;
-    use halo2_proofs::plonk::Error;
+    use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
@@ -115,7 +116,7 @@ mod tests {
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
-        fn configure_gadget_container(cb: &mut ConstraintBuilder<F>) -> Self {
+        fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word_rlc();
             let n = cb.query_word_rlc();
             let r = cb.query_word_rlc();
@@ -207,7 +208,7 @@ mod tests {
                 Word::from(2),
                 Word::from(3),
                 Word::from(0),
-                /* magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3 */
+                // magic number (2^256 + 2) / 3, and 2^256 + 2 is divisible by 3
                 U256::try_from(U512([2, 0, 0, 0, 1, 0, 0, 0]) / U512::from(3)).unwrap(),
             ],
             false,

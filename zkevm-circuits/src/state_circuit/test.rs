@@ -1,7 +1,8 @@
-use super::{StateCircuit, StateCircuitConfig};
+#![allow(unused_imports)]
+pub use super::{dev::*, *};
 use crate::{
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::SubCircuit,
+    util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
 use bus_mapping::operation::{
@@ -13,12 +14,13 @@ use eth_types::{
     Address, Field, ToAddress, Word, U256,
 };
 use gadgets::binary_number::AsBits;
-use halo2_proofs::arithmetic::Field as Halo2Field;
-use halo2_proofs::poly::kzg::commitment::ParamsKZG;
 use halo2_proofs::{
+    arithmetic::Field as Halo2Field,
+    circuit::SimpleFloorPlanner,
     dev::{MockProver, VerifyFailure},
     halo2curves::bn256::{Bn256, Fr},
     plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem},
+    poly::kzg::commitment::ParamsKZG,
 };
 use rand::SeedableRng;
 use std::collections::{BTreeSet, HashMap};
@@ -26,65 +28,12 @@ use strum::IntoEnumIterator;
 
 const N_ROWS: usize = 1 << 16;
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
-pub enum AdviceColumn {
-    IsWrite,
-    Address,
-    AddressLimb0,
-    AddressLimb1,
-    StorageKey,
-    StorageKeyByte0,
-    StorageKeyByte1,
-    Value,
-    RwCounter,
-    RwCounterLimb0,
-    RwCounterLimb1,
-    Tag,
-    TagBit0,
-    TagBit1,
-    TagBit2,
-    TagBit3,
-    LimbIndexBit0, // most significant bit
-    LimbIndexBit1,
-    LimbIndexBit2,
-    LimbIndexBit3,
-    LimbIndexBit4, // least significant bit
-    InitialValue,
-    IsZero, // committed_value and value are 0
-    // NonEmptyWitness is the BatchedIsZero chip witness that contains the
-    // inverse of the non-zero value if any in [committed_value, value]
-    NonEmptyWitness,
-}
-
-impl AdviceColumn {
-    pub fn value<F: Field>(&self, config: &StateCircuitConfig<F>) -> Column<Advice> {
-        match self {
-            Self::IsWrite => config.rw_table.is_write,
-            Self::Address => config.rw_table.address,
-            Self::AddressLimb0 => config.sort_keys.address.limbs[0],
-            Self::AddressLimb1 => config.sort_keys.address.limbs[1],
-            Self::StorageKey => config.rw_table.storage_key,
-            Self::StorageKeyByte0 => config.sort_keys.storage_key.bytes[0],
-            Self::StorageKeyByte1 => config.sort_keys.storage_key.bytes[1],
-            Self::Value => config.rw_table.value,
-            Self::RwCounter => config.rw_table.rw_counter,
-            Self::RwCounterLimb0 => config.sort_keys.rw_counter.limbs[0],
-            Self::RwCounterLimb1 => config.sort_keys.rw_counter.limbs[1],
-            Self::Tag => config.rw_table.tag,
-            Self::TagBit0 => config.sort_keys.tag.bits[0],
-            Self::TagBit1 => config.sort_keys.tag.bits[1],
-            Self::TagBit2 => config.sort_keys.tag.bits[2],
-            Self::TagBit3 => config.sort_keys.tag.bits[3],
-            Self::LimbIndexBit0 => config.lexicographic_ordering.first_different_limb.bits[0],
-            Self::LimbIndexBit1 => config.lexicographic_ordering.first_different_limb.bits[1],
-            Self::LimbIndexBit2 => config.lexicographic_ordering.first_different_limb.bits[2],
-            Self::LimbIndexBit3 => config.lexicographic_ordering.first_different_limb.bits[3],
-            Self::LimbIndexBit4 => config.lexicographic_ordering.first_different_limb.bits[4],
-            Self::InitialValue => config.initial_value,
-            Self::IsZero => config.is_non_exist.is_zero,
-            Self::NonEmptyWitness => config.is_non_exist.nonempty_witness,
-        }
-    }
+#[test]
+fn state_circuit_unusable_rows() {
+    assert_eq!(
+        StateCircuit::<Fr>::unusable_rows(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(),
+    )
 }
 
 fn test_state_circuit_ok(
@@ -131,11 +80,15 @@ fn verifying_key_independent_of_rw_length() {
         N_ROWS,
     );
 
-    // halo2::plonk::VerifyingKey doesn't derive Eq, so we check for equality using
-    // its debug string.
+    let vk_no_rows = keygen_vk(&params, &no_rows).unwrap();
+    let vk_one_rows = keygen_vk(&params, &one_row).unwrap();
     assert_eq!(
-        format!("{:?}", keygen_vk(&params, &no_rows).unwrap()),
-        format!("{:?}", keygen_vk(&params, &one_row).unwrap())
+        vk_no_rows.fixed_commitments(),
+        vk_one_rows.fixed_commitments()
+    );
+    assert_eq!(
+        vk_no_rows.permutation().commitments(),
+        vk_one_rows.permutation().commitments()
     );
 }
 
@@ -777,7 +730,7 @@ fn invalid_memory_address() {
 fn bad_initial_memory_value() {
     let rows = vec![Rw::Memory {
         rw_counter: 1,
-        is_write: false,
+        is_write: true,
         call_id: 1,
         memory_address: 10,
         byte: 0,
@@ -785,8 +738,8 @@ fn bad_initial_memory_value() {
 
     let v = Fr::from(200);
     let overrides = HashMap::from([
-        ((AdviceColumn::IsWrite, 0), Fr::from(1)),
         ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::ValuePrev, 0), v),
         ((AdviceColumn::IsZero, 0), Fr::zero()),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
@@ -903,7 +856,10 @@ fn bad_initial_stack_value() {
         value: Word::from(10),
     }];
 
-    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(10))]);
+    let overrides = HashMap::from([
+        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
+        ((AdviceColumn::ValuePrev, 0), Fr::from(10)),
+    ]);
 
     assert_error_matches(
         verify_with_overrides(rows, overrides),
@@ -922,7 +878,10 @@ fn bad_initial_tx_access_list_account_value() {
         is_warm_prev: false,
     }];
 
-    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(1))]);
+    let overrides = HashMap::from([
+        ((AdviceColumn::InitialValue, 0), Fr::from(1)),
+        ((AdviceColumn::ValuePrev, 0), Fr::from(1)),
+    ]);
 
     assert_error_matches(
         verify_with_overrides(rows, overrides),
@@ -943,6 +902,7 @@ fn bad_initial_tx_refund_value() {
     let overrides = HashMap::from([
         ((AdviceColumn::IsWrite, 0), Fr::from(1)),
         ((AdviceColumn::Value, 0), v),
+        ((AdviceColumn::ValuePrev, 0), v),
         ((AdviceColumn::IsZero, 0), Fr::zero()),
         ((AdviceColumn::NonEmptyWitness, 0), v.invert().unwrap()),
         ((AdviceColumn::InitialValue, 0), v),
@@ -966,12 +926,77 @@ fn bad_initial_tx_log_value() {
         value: U256::from(300),
     }];
 
-    let overrides = HashMap::from([((AdviceColumn::InitialValue, 0), Fr::from(10))]);
+    let overrides = HashMap::from([
+        ((AdviceColumn::InitialValue, 0), Fr::from(10)),
+        ((AdviceColumn::ValuePrev, 0), Fr::from(10)),
+    ]);
 
     assert_error_matches(
         verify_with_overrides(rows, overrides),
         "initial TxLog value is 0",
     );
+}
+
+#[test]
+fn variadic_size_check() {
+    let mut rows = vec![
+        Rw::Stack {
+            rw_counter: 24,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1022,
+            value: U256::from(394500u64),
+        },
+        Rw::Stack {
+            rw_counter: 25,
+            is_write: false,
+            call_id: 1,
+            stack_pointer: 1022,
+            value: U256::from(394500u64),
+        },
+    ];
+
+    let updates = MptUpdates::mock_from(&rows);
+    let circuit = StateCircuit::<Fr> {
+        rows: rows.clone(),
+        updates,
+        overrides: HashMap::default(),
+        n_rows: N_ROWS,
+        _marker: std::marker::PhantomData::default(),
+    };
+    let power_of_randomness = circuit.instance();
+    let prover1 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+
+    rows.extend_from_slice(&[
+        Rw::Stack {
+            rw_counter: 26,
+            is_write: true,
+            call_id: 1,
+            stack_pointer: 1021,
+            value: U256::from(394511u64),
+        },
+        Rw::Stack {
+            rw_counter: 27,
+            is_write: false,
+            call_id: 1,
+            stack_pointer: 1021,
+            value: U256::from(394511u64),
+        },
+    ]);
+
+    let updates = MptUpdates::mock_from(&rows);
+    let circuit = StateCircuit::<Fr> {
+        rows,
+        updates,
+        overrides: HashMap::default(),
+        n_rows: N_ROWS,
+        _marker: std::marker::PhantomData::default(),
+    };
+    let power_of_randomness = circuit.instance();
+    let prover2 = MockProver::<Fr>::run(17, &circuit, power_of_randomness).unwrap();
+
+    assert_eq!(prover1.fixed(), prover2.fixed());
+    assert_eq!(prover1.permutation(), prover2.permutation());
 }
 
 #[test]

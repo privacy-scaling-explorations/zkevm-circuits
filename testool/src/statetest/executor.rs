@@ -1,18 +1,20 @@
 use super::{AccountMatch, StateTest, StateTestResult};
 use crate::config::TestSuite;
-use bus_mapping::circuit_input_builder::{CircuitInputBuilder, CircuitsParams};
-use bus_mapping::mock::BlockData;
+use bus_mapping::{
+    circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
+    mock::BlockData,
+};
 use eth_types::{geth_types, Address, Bytes, GethExecTrace, U256, U64};
-use ethers_core::k256::ecdsa::SigningKey;
-use ethers_core::types::TransactionRequest;
+use ethers_core::{
+    k256::ecdsa::SigningKey,
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest},
+};
 use ethers_signers::{LocalWallet, Signer};
 use external_tracer::TraceConfig;
 use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
-use zkevm_circuits::super_circuit::SuperCircuit;
-use zkevm_circuits::test_util::CircuitTestBuilder;
-use zkevm_circuits::witness::Block;
+use zkevm_circuits::{super_circuit::SuperCircuit, test_util::CircuitTestBuilder, witness::Block};
 
 const MAX_TXS: usize = 1;
 const MAX_CALLDATA: usize = 32;
@@ -119,14 +121,15 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
     if let Some(to) = st.to {
         tx = tx.to(to);
     }
+    let tx: TypedTransaction = tx.into();
 
-    let sig = wallet.sign_transaction_sync(&tx.into());
+    let sig = wallet.sign_transaction_sync(&tx);
 
     (
         st.id,
         TraceConfig {
             chain_id: U256::one(),
-            history_hashes: Vec::new(),
+            history_hashes: vec![U256::from_big_endian(st.env.previous_hash.as_bytes())],
             block_constants: geth_types::BlockConstants {
                 coinbase: st.env.current_coinbase,
                 timestamp: U256::from(st.env.current_timestamp),
@@ -222,6 +225,8 @@ pub fn run_test(
             r: tx.r,
             s: tx.s,
             v: U64::from(tx.v),
+            block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
+            chain_id: Some(trace_config.chain_id),
             ..eth_types::Transaction::default()
         })
         .collect();
@@ -239,7 +244,10 @@ pub fn run_test(
 
     let wallet: LocalWallet = SigningKey::from_bytes(&st.secret_key).unwrap().into();
     let mut wallets = HashMap::new();
-    wallets.insert(wallet.address(), wallet.with_chain_id(1u64));
+    wallets.insert(
+        wallet.address(),
+        wallet.with_chain_id(trace_config.chain_id.as_u64()),
+    );
 
     // process the transaction
     let mut geth_data = eth_types::geth_types::GethData {
@@ -253,17 +261,17 @@ pub fn run_test(
     let mut builder;
 
     if !circuits_config.super_circuit {
-        let block_data = BlockData::new_from_geth_data_with_params(
-            geth_data,
-            CircuitsParams {
-                max_txs: 1,
-                max_rws: 55000,
-                max_calldata: 5000,
-                max_bytecode: 5000,
-                max_copy_rows: 55000,
-                keccak_padding: None,
-            },
-        );
+        let circuits_params = CircuitsParams {
+            max_txs: 1,
+            max_rws: 55000,
+            max_calldata: 5000,
+            max_bytecode: 5000,
+            max_copy_rows: 55000,
+            max_evm_rows: 0,
+            max_exp_steps: 5000,
+            max_keccak_rows: 0,
+        };
+        let block_data = BlockData::new_from_geth_data_with_params(geth_data, circuits_params);
 
         builder = block_data.new_circuit_input_builder();
         builder
@@ -283,8 +291,10 @@ pub fn run_test(
             max_calldata: MAX_CALLDATA,
             max_rws: 256,
             max_copy_rows: 256,
+            max_exp_steps: 256,
             max_bytecode: 512,
-            keccak_padding: None,
+            max_evm_rows: 0,
+            max_keccak_rows: 0,
         };
         let (k, circuit, instance, _builder) =
             SuperCircuit::<Fr, MAX_TXS, MAX_CALLDATA, 0x100>::build(geth_data, circuits_params)

@@ -1,16 +1,12 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CopyDataType, CopyEvent, NumberOrHash};
-use crate::operation::AccountOp;
-use crate::operation::MemoryOp;
 use crate::{
-    circuit_input_builder::CircuitInputStateRef,
+    circuit_input_builder::{CircuitInputStateRef, CopyDataType, CopyEvent, NumberOrHash},
     evm::opcodes::ExecStep,
-    operation::{AccountField, CallContextField, RW},
+    operation::{AccountField, AccountOp, CallContextField, MemoryOp, RW},
+    state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
-use ethers_core::utils::keccak256;
-use keccak256::EMPTY_HASH_LE;
+use eth_types::{Bytecode, GethExecStep, ToWord, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ReturnRevert;
@@ -75,12 +71,11 @@ impl Opcode for ReturnRevert {
 
             state.push_op_reversible(
                 &mut exec_step,
-                RW::WRITE,
                 AccountOp {
                     address: state.call()?.address,
                     field: AccountField::CodeHash,
                     value: code_hash.to_word(),
-                    value_prev: Word::from_little_endian(&*EMPTY_HASH_LE),
+                    value_prev: CodeDB::empty_code_hash().to_word(),
                 },
             )?;
         }
@@ -97,7 +92,7 @@ impl Opcode for ReturnRevert {
 
         // Case C in the specs.
         if !call.is_root {
-            state.handle_restore_context(steps, &mut exec_step)?;
+            state.handle_restore_context(&mut exec_step, steps)?;
         }
 
         // Case D in the specs.
@@ -135,30 +130,9 @@ impl Opcode for ReturnRevert {
                     },
                 )?;
             }
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeId,
-                state.call()?.call_id.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataOffset,
-                offset.into(),
-            );
-
-            state.call_context_write(
-                &mut exec_step,
-                state.caller()?.call_id,
-                CallContextField::LastCalleeReturnDataLength,
-                length.into(),
-            );
         }
 
-        state.handle_return(step)?;
+        state.handle_return(&mut exec_step, steps, false)?;
         Ok(vec![exec_step])
     }
 }
@@ -201,18 +175,21 @@ fn handle_copy(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Memory,
-        dst_id: NumberOrHash::Number(destination.id),
-        dst_addr: destination.offset.try_into().unwrap(),
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Memory,
+            dst_id: NumberOrHash::Number(destination.id),
+            dst_addr: destination.offset.try_into().unwrap(),
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(())
 }
@@ -223,7 +200,7 @@ fn handle_create(
     source: Source,
 ) -> Result<H256, Error> {
     let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let code_hash = H256(keccak256(&values));
+    let code_hash = CodeDB::hash(&values);
     let dst_id = NumberOrHash::Hash(code_hash);
     let bytes: Vec<_> = Bytecode::from(values)
         .code
@@ -240,18 +217,21 @@ fn handle_create(
         );
     }
 
-    state.push_copy(CopyEvent {
-        rw_counter_start,
-        src_type: CopyDataType::Memory,
-        src_id: NumberOrHash::Number(source.id),
-        src_addr: source.offset.try_into().unwrap(),
-        src_addr_end: (source.offset + source.length).try_into().unwrap(),
-        dst_type: CopyDataType::Bytecode,
-        dst_id,
-        dst_addr: 0,
-        log_id: None,
-        bytes,
-    });
+    state.push_copy(
+        step,
+        CopyEvent {
+            rw_counter_start,
+            src_type: CopyDataType::Memory,
+            src_id: NumberOrHash::Number(source.id),
+            src_addr: source.offset.try_into().unwrap(),
+            src_addr_end: (source.offset + source.length).try_into().unwrap(),
+            dst_type: CopyDataType::Bytecode,
+            dst_id,
+            dst_addr: 0,
+            log_id: None,
+            bytes,
+        },
+    );
 
     Ok(code_hash)
 }
@@ -259,35 +239,16 @@ fn handle_create(
 #[cfg(test)]
 mod return_tests {
     use crate::mock::BlockData;
-    use eth_types::geth_types::GethData;
-    use eth_types::{bytecode, word};
-    use mock::test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0};
-    use mock::TestContext;
+    use eth_types::{bytecode, geth_types::GethData, word};
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext, MOCK_DEPLOYED_CONTRACT_BYTECODE,
+    };
 
     #[test]
     fn test_ok() {
-        // // deployed contract
-        // PUSH1 0x20
-        // PUSH1 0
-        // PUSH1 0
-        // CALLDATACOPY
-        // PUSH1 0x20
-        // PUSH1 0
-        // RETURN
-        //
-        // bytecode: 0x6020600060003760206000F3
-        //
-        // // constructor
-        // PUSH12 0x6020600060003760206000F3
-        // PUSH1 0
-        // MSTORE
-        // PUSH1 0xC
-        // PUSH1 0x14
-        // RETURN
-        //
-        // bytecode: 0x6B6020600060003760206000F3600052600C6014F3
         let code = bytecode! {
-            PUSH21(word!("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH21(*MOCK_DEPLOYED_CONTRACT_BYTECODE)
             PUSH1(0)
             MSTORE
 

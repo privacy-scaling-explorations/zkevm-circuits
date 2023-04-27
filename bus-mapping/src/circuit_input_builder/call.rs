@@ -1,7 +1,9 @@
 use super::CodeSource;
 use crate::{exec_trace::OperationRef, Error};
-use eth_types::evm_types::Memory;
-use eth_types::{evm_types::OpcodeId, Address, Hash, Word};
+use eth_types::{
+    evm_types::{Memory, OpcodeId},
+    Address, Hash, Word,
+};
 
 /// Type of a *CALL*/CREATE* Function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,6 +107,18 @@ impl Call {
     /// This call is call with op DELEGATECALL
     pub fn is_delegatecall(&self) -> bool {
         matches!(self.kind, CallKind::DelegateCall)
+    }
+
+    /// Get the code address if possible
+    pub fn code_address(&self) -> Option<Address> {
+        match self.kind {
+            CallKind::Call | CallKind::StaticCall => Some(self.address),
+            CallKind::CallCode | CallKind::DelegateCall => match self.code_source {
+                CodeSource::Address(address) => Some(address),
+                _ => None,
+            },
+            CallKind::Create | CallKind::Create2 => None,
+        }
     }
 }
 

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{
-    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
-    table::BlockContextFieldTag,
-};
+#[cfg(any(feature = "test", test))]
+use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
+
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag, util::SubCircuit};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -37,11 +37,6 @@ pub struct Block<F> {
     pub copy_events: Vec<CopyEvent>,
     /// Exponentiation traces for the exponentiation circuit's table.
     pub exp_events: Vec<ExpEvent>,
-    // TODO: Rename to `max_evm_rows`, maybe move to CircuitsParams
-    /// Pad evm circuit to make selectors fixed, so vk/pk can be universal.
-    /// When 0, the EVM circuit contains as many rows for all steps + 1 row
-    /// for EndBlock.
-    pub evm_circuit_pad_to: usize,
     /// Pad exponentiation circuit to make selectors fixed.
     pub exp_circuit_pad_to: usize,
     /// Circuit Setup Parameters
@@ -73,7 +68,7 @@ impl<F: Field> Block<F> {
 }
 
 #[cfg(feature = "test")]
-use crate::exp_circuit::OFFSET_INCREMENT;
+use crate::exp_circuit::param::OFFSET_INCREMENT;
 #[cfg(feature = "test")]
 use crate::util::log2_ceil;
 
@@ -106,8 +101,6 @@ impl<F: Field> Block<F> {
             .map(|e| e.steps.len() * OFFSET_INCREMENT)
             .sum();
 
-        const NUM_BLINDING_ROWS: usize = 64;
-
         let rows_needed: usize = itertools::max([
             num_rows_required_for_execution_steps,
             num_rows_required_for_rw_table,
@@ -120,7 +113,7 @@ impl<F: Field> Block<F> {
         ])
         .unwrap();
 
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(EvmCircuit::<F>::unusable_rows() + rows_needed);
         log::debug!(
             "num_rows_requred_for rw_table={}, fixed_table={}, bytecode_table={}, \
             copy_table={}, keccak_table={}, tx_table={}, exp_table={}",
@@ -242,11 +235,13 @@ pub fn block_convert<F: Field>(
     block: &circuit_input_builder::Block,
     code_db: &bus_mapping::state_db::CodeDB,
 ) -> Result<Block<F>, Error> {
+    let rws = RwMap::from(&block.container);
+    rws.check_value();
     Ok(Block {
         // randomness: F::from(0x100), // Special value to reveal elements after RLC
         randomness: F::from(0xcafeu64),
         context: block.into(),
-        rws: RwMap::from(&block.container),
+        rws,
         txs: block
             .txs()
             .iter()
@@ -267,7 +262,6 @@ pub fn block_convert<F: Field>(
         exp_events: block.exp_events.clone(),
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params,
-        evm_circuit_pad_to: <usize>::default(),
         exp_circuit_pad_to: <usize>::default(),
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,

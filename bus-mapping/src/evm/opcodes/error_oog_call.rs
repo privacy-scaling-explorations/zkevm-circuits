@@ -1,9 +1,10 @@
 use super::Opcode;
-use crate::circuit_input_builder::{CircuitInputStateRef, ExecStep};
-use crate::operation::{AccountField, CallContextField, TxAccessListAccountOp, RW};
-use crate::Error;
-use eth_types::evm_types::OpcodeId;
-use eth_types::{GethExecStep, ToAddress, ToWord, Word};
+use crate::{
+    circuit_input_builder::{CircuitInputStateRef, ExecStep},
+    operation::{AccountField, CallContextField, TxAccessListAccountOp, RW},
+    Error,
+};
+use eth_types::{evm_types::OpcodeId, GethExecStep, ToAddress, ToWord, Word};
 
 /// Placeholder structure used to implement [`Opcode`] trait over it
 /// corresponding to the out of gas errors for [`OpcodeId::CALL`],
@@ -31,13 +32,6 @@ impl Opcode for OOGCall {
             None
         };
         exec_step.error = state.get_step_err(geth_step, next_step).unwrap();
-
-        let args_offset = geth_step.stack.nth_last(stack_input_num - 4)?.as_usize();
-        let args_length = geth_step.stack.nth_last(stack_input_num - 3)?.as_usize();
-        let ret_offset = geth_step.stack.nth_last(stack_input_num - 2)?.as_usize();
-        let ret_length = geth_step.stack.nth_last(stack_input_num - 1)?.as_usize();
-
-        state.call_expand_memory(args_offset, args_length, ret_offset, ret_length)?;
 
         let tx_id = state.tx_ctx.id();
         let call_address = geth_step.stack.nth_last(1)?.to_address();
@@ -82,8 +76,7 @@ impl Opcode for OOGCall {
             call_address,
             AccountField::CodeHash,
             callee_code_hash_word,
-            callee_code_hash_word,
-        )?;
+        );
 
         let is_warm = state.sdb.check_account_in_access_list(&call_address);
         state.push_op(
@@ -97,8 +90,7 @@ impl Opcode for OOGCall {
             },
         );
 
-        state.gen_restore_context_ops(&mut exec_step, geth_steps)?;
-        state.handle_return(geth_step)?;
+        state.handle_return(&mut exec_step, geth_steps, true)?;
         Ok(vec![exec_step])
     }
 }

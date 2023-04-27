@@ -11,15 +11,18 @@ use crate::{
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
-use eth_types::sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData};
-use eth_types::{self, Field};
+use eth_types::{
+    self,
+    sign_types::{pk_bytes_le, pk_bytes_swap_endianness, SignData},
+    Field,
+};
 use halo2_proofs::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{AssignedCell, Cell, Layouter, Value},
-    halo2curves::secp256k1::Secp256k1Affine,
     halo2curves::{
         group::{Curve, Group},
         secp256k1,
+        secp256k1::Secp256k1Affine,
     },
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, SecondPhase, Selector},
     poly::Rotation,
@@ -706,8 +709,8 @@ mod sign_verify_tests {
     use crate::util::Challenges;
     use bus_mapping::circuit_input_builder::keccak_inputs_sign_verify;
     use eth_types::sign_types::sign;
-    use halo2_proofs::arithmetic::Field as HaloField;
     use halo2_proofs::{
+        arithmetic::Field as HaloField,
         circuit::SimpleFloorPlanner,
         dev::MockProver,
         halo2curves::{

@@ -1,14 +1,15 @@
-use super::bytecode_unroller::{unroll, UnrolledBytecode};
-use super::circuit::{BytecodeCircuit, BytecodeCircuitConfig, BytecodeCircuitConfigArgs};
-use crate::table::{BytecodeTable, KeccakTable};
-use crate::util::{Challenges, SubCircuit, SubCircuitConfig};
+pub use super::circuit::BytecodeCircuit;
+
+use crate::{
+    bytecode_circuit::circuit::{BytecodeCircuitConfig, BytecodeCircuitConfigArgs},
+    table::{BytecodeTable, KeccakTable},
+    util::{Challenges, SubCircuit, SubCircuitConfig},
+};
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::Layouter,
-    plonk::{ConstraintSystem, Error},
+    circuit::{Layouter, SimpleFloorPlanner},
+    plonk::{Circuit, ConstraintSystem, Error},
 };
-use halo2_proofs::{circuit::SimpleFloorPlanner, dev::MockProver, plonk::Circuit};
-use log::error;
 
 impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     type Config = (BytecodeCircuitConfig<F>, Challenges);
@@ -53,44 +54,4 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }
-}
-
-impl<F: Field> BytecodeCircuit<F> {
-    /// Verify that the selected bytecode fulfills the circuit
-    pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
-        let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll(b.clone())).collect();
-        Self::verify(k, unrolled, true);
-    }
-
-    pub(crate) fn verify(k: u32, bytecodes: Vec<UnrolledBytecode<F>>, success: bool) {
-        let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
-
-        let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
-        let result = prover.verify();
-        if let Err(failures) = &result {
-            for failure in failures.iter() {
-                error!("{}", failure);
-            }
-        }
-        assert_eq!(result.is_ok(), success);
-    }
-}
-
-/// Test bytecode circuit with unrolled bytecode
-pub fn test_bytecode_circuit_unrolled<F: Field>(
-    k: u32,
-    bytecodes: Vec<UnrolledBytecode<F>>,
-    success: bool,
-) {
-    let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
-
-    let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
-    let result = prover.verify_par();
-    if let Err(failures) = &result {
-        for failure in failures.iter() {
-            error!("{}", failure);
-        }
-    }
-    let error_msg = if success { "valid" } else { "invalid" };
-    assert_eq!(result.is_ok(), success, "proof must be {}", error_msg);
 }

@@ -3,22 +3,19 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::SameContextGadget,
+            common_gadget::{SameContextGadget, SloadGasGadget},
             constraint_builder::{
-                ConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
+                EVMConstraintBuilder, ReversionInfo, StepStateTransition, Transition::Delta,
             },
-            select, CachedRegion, Cell,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToScalar};
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use eth_types::{Field, ToScalar};
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SloadGadget<F> {
@@ -37,7 +34,7 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SLOAD;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
@@ -137,29 +134,6 @@ impl<F: Field> ExecutionGadget<F> for SloadGadget<F> {
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
 
         Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct SloadGasGadget<F> {
-    is_warm: Expression<F>,
-    gas_cost: Expression<F>,
-}
-
-impl<F: Field> SloadGasGadget<F> {
-    pub(crate) fn construct(_cb: &mut ConstraintBuilder<F>, is_warm: Expression<F>) -> Self {
-        let gas_cost = select::expr(
-            is_warm.expr(),
-            GasCost::WARM_ACCESS.expr(),
-            GasCost::COLD_SLOAD.expr(),
-        );
-
-        Self { is_warm, gas_cost }
-    }
-
-    pub(crate) fn expr(&self) -> Expression<F> {
-        // Return the gas cost
-        self.gas_cost.clone()
     }
 }
 

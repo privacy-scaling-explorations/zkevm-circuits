@@ -1,8 +1,7 @@
 use super::util::{CachedRegion, CellManager, CellType};
-use crate::evm_circuit::param::EXECUTION_STATE_HEIGHT_MAP;
 use crate::{
     evm_circuit::{
-        param::{MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
+        param::{EXECUTION_STATE_HEIGHT_MAP, MAX_STEP_HEIGHT, STEP_STATE_HEIGHT, STEP_WIDTH},
         util::Cell,
         witness::{Block, Call, ExecStep},
     },
@@ -14,7 +13,7 @@ use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
 };
-use std::iter;
+use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -105,9 +104,8 @@ pub enum ExecutionState {
     ErrorOutOfGasEXP,
     ErrorOutOfGasSHA3,
     ErrorOutOfGasEXTCODECOPY,
-    ErrorOutOfGasSLOAD,
-    ErrorOutOfGasSSTORE,
     ErrorOutOfGasCall,
+    ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE2,
     ErrorOutOfGasSELFDESTRUCT,
 }
@@ -115,6 +113,12 @@ pub enum ExecutionState {
 impl Default for ExecutionState {
     fn default() -> Self {
         Self::STOP
+    }
+}
+
+impl Display for ExecutionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -133,9 +137,6 @@ impl ExecutionState {
             Self::ErrorInvalidOpcode
                 | Self::ErrorStack
                 | Self::ErrorWriteProtection
-                | Self::ErrorDepth
-                | Self::ErrorInsufficientBalance
-                | Self::ErrorContractAddressCollision
                 | Self::ErrorInvalidCreationCode
                 | Self::ErrorMaxCodeSizeExceeded
                 | Self::ErrorInvalidJump
@@ -150,9 +151,8 @@ impl ExecutionState {
                 | Self::ErrorOutOfGasEXP
                 | Self::ErrorOutOfGasSHA3
                 | Self::ErrorOutOfGasEXTCODECOPY
-                | Self::ErrorOutOfGasSLOAD
-                | Self::ErrorOutOfGasSSTORE
                 | Self::ErrorOutOfGasCall
+                | Self::ErrorOutOfGasSloadSstore
                 | Self::ErrorOutOfGasCREATE2
                 | Self::ErrorOutOfGasSELFDESTRUCT
         )
@@ -163,7 +163,18 @@ impl ExecutionState {
             || self.halts_in_exception()
     }
 
-    pub(crate) fn responsible_opcodes(&self) -> Vec<OpcodeId> {
+    pub(crate) fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
+        if matches!(self, Self::ErrorStack) {
+            return OpcodeId::valid_opcodes()
+                .into_iter()
+                .flat_map(|op| {
+                    op.invalid_stack_ptrs()
+                        .into_iter()
+                        .map(move |stack_ptr| ResponsibleOp::InvalidStackPtr(op, stack_ptr))
+                })
+                .collect();
+        }
+
         match self {
             Self::STOP => vec![OpcodeId::STOP],
             Self::ADD_SUB => vec![OpcodeId::ADD, OpcodeId::SUB],
@@ -306,6 +317,9 @@ impl ExecutionState {
             Self::ErrorInvalidOpcode => OpcodeId::invalid_opcodes(),
             _ => vec![],
         }
+        .into_iter()
+        .map(Into::into)
+        .collect()
     }
 
     pub fn get_step_height_option(&self) -> Option<usize> {
@@ -315,6 +329,31 @@ impl ExecutionState {
     pub fn get_step_height(&self) -> usize {
         self.get_step_height_option()
             .unwrap_or_else(|| panic!("Execution state unknown: {:?}", self))
+    }
+}
+
+/// Enum of Responsible opcode mapping to execution state.
+#[derive(Debug)]
+pub(crate) enum ResponsibleOp {
+    /// Raw opcode
+    Op(OpcodeId),
+    /// Corresponding to ExecutionState::ErrorStack
+    InvalidStackPtr(OpcodeId, u32),
+}
+
+/// Helper for easy transform from a raw OpcodeId to ResponsibleOp.
+impl From<OpcodeId> for ResponsibleOp {
+    fn from(opcode: OpcodeId) -> Self {
+        Self::Op(opcode)
+    }
+}
+
+impl ResponsibleOp {
+    pub(crate) fn opcode(&self) -> OpcodeId {
+        *match self {
+            ResponsibleOp::Op(opcode) => opcode,
+            ResponsibleOp::InvalidStackPtr(opcode, _) => opcode,
+        }
     }
 }
 
@@ -537,7 +576,7 @@ impl<F: FieldExt> Step<F> {
         self.state.program_counter.assign(
             region,
             offset,
-            Value::known(F::from(step.program_counter as u64)),
+            Value::known(F::from(step.program_counter)),
         )?;
         self.state.stack_pointer.assign(
             region,
