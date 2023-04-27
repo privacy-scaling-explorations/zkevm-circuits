@@ -1353,6 +1353,8 @@ impl CopyTable {
 
         let mut value_word_rlc = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
+        let mut word_index = 0u64;
+
         let mut addr_slot = if copy_event.dst_type == CopyDataType::Memory {
             (copy_event.dst_addr - copy_event.dst_addr % 32) as u64
         } else {
@@ -1396,16 +1398,20 @@ impl CopyTable {
 
             let is_mask = Value::known(if copy_step.mask { F::one() } else { F::zero() });
             // assume copy events bytes is already word aligned for copy steps.
-            let word_index = Value::known(F::from((step_idx % 32) as u64));
-            addr_slot += step_idx as u64;
+            // only change by skip 32
+            addr_slot += step_idx as u64 / 2 / 32;
 
             // TODO: enable other copy type, now work for internal calldatacopy
             if is_read_step && copy_event.dst_type == CopyDataType::Memory {
-                if step_idx % 32 != 0 {
-                    value_word_rlc = value_word_rlc * challenges.keccak_input()
+                if (step_idx / 2) % 32 == 0 && step_idx != 0 {
+                    // reset
+                    //println!("value_word_rlc {:?} of step {} ", value_word_rlc, step_idx);
+                    value_word_rlc = Value::known(F::zero());
+                    value_word_rlc = value_word_rlc * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
                 } else {
-                    value_word_rlc = Value::known(F::zero());
+                    value_word_rlc = value_word_rlc * challenges.evm_word()
+                        + Value::known(F::from(copy_step.value as u64));
                 }
             }
 
@@ -1450,6 +1456,8 @@ impl CopyTable {
             // value
             let value = Value::known(F::from(copy_step.value as u64));
 
+            word_index = (step_idx as u64 / 2) % 32;
+
             // value_acc
             if is_read_step {
                 value_acc = value_acc * challenges.keccak_input() + value;
@@ -1458,6 +1466,12 @@ impl CopyTable {
             let is_pad = Value::known(F::from(
                 is_read_step && copy_step_addr >= copy_event.src_addr_end,
             ));
+
+            // debug info
+            println!(
+                "step_id {}, word index: {}, byte {}, value_word_rlc {:?}, is_read {}",
+                step_idx, word_index, copy_step.value, value_word_rlc, is_read_step
+            );
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
@@ -1498,12 +1512,12 @@ impl CopyTable {
                     (is_pad, "is_pad"),
                     (is_code, "is_code"),
                     (is_mask, "mask"),
-                    (word_index, "word_index"),
+                    (Value::known(F::from(word_index)), "word_index"),
                     (Value::known(F::from(addr_slot)), "addr_slot"),
                 ],
             ));
         }
-
+        //println!("assign copy steps: {:?} ", assignments);
         assignments
     }
 

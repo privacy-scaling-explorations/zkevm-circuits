@@ -103,7 +103,7 @@ pub struct CopyCircuitConfig<F> {
     /// Lt chip to check: src_addr < src_addr_end.
     /// Since `src_addr` and `src_addr_end` are u64, 8 bytes are sufficient for
     /// the Lt chip.
-    pub is_word_index_end: LtConfig<F, 5>,
+    pub is_word_index_end: LtConfig<F, 1>,
     // External tables
     /// TxTable
     pub tx_table: TxTable,
@@ -255,16 +255,16 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             cb.condition(
                 not::expr(meta.query_advice(is_last, Rotation::cur())),
                 |cb| {
-                    cb.require_equal(
-                        "rows[0].rw_counter + rw_diff == rows[1].rw_counter",
-                        meta.query_advice(rw_counter, Rotation::cur()) + rw_diff.clone(),
-                        meta.query_advice(rw_counter, Rotation::next()),
-                    );
-                    cb.require_equal(
-                        "rows[0].rwc_inc_left - rw_diff == rows[1].rwc_inc_left",
-                        meta.query_advice(rwc_inc_left, Rotation::cur()) - rw_diff.clone(),
-                        meta.query_advice(rwc_inc_left, Rotation::next()),
-                    );
+                    // cb.require_equal(
+                    //     "rows[0].rw_counter + rw_diff == rows[1].rw_counter",
+                    //     meta.query_advice(rw_counter, Rotation::cur()) + rw_diff.clone(),
+                    //     meta.query_advice(rw_counter, Rotation::next()),
+                    // );
+                    // cb.require_equal(
+                    //     "rows[0].rwc_inc_left - rw_diff == rows[1].rwc_inc_left",
+                    //     meta.query_advice(rwc_inc_left, Rotation::cur()) - rw_diff.clone(),
+                    //     meta.query_advice(rwc_inc_left, Rotation::next()),
+                    // );
                     cb.require_equal(
                         "rows[0].rlc_acc == rows[1].rlc_acc",
                         meta.query_advice(rlc_acc, Rotation::cur()),
@@ -396,7 +396,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
                 * not::expr(meta.query_advice(is_pad, Rotation::cur()))
-                * not::expr(addr_lt_addr_end.is_lt(meta, None));
+                * not::expr(is_word_index_end.is_lt(meta, None));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
@@ -458,8 +458,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Tx calldata lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxCalldata, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()))
-                * not::expr(meta.query_advice(mask, Rotation::cur()));
+                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
+            //* not::expr(meta.query_advice(mask, Rotation::cur()));
 
             vec![
                 meta.query_advice(id, Rotation::cur()),
@@ -503,7 +503,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         offset: &mut usize,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
-        lt_word_end_chip: &LtChip<F, 5>,
+        lt_word_end_chip: &LtChip<F, 1>,
         challenges: Challenges<Value<F>>,
         copy_event: &CopyEvent,
     ) -> Result<(), Error> {
@@ -578,14 +578,14 @@ impl<F: Field> CopyCircuitConfig<F> {
                     F::from(copy_event.src_addr + u64::try_from(step_idx).unwrap() / 2u64),
                     F::from(copy_event.src_addr_end),
                 )?;
-                lt_word_end_chip.assign(
-                    region,
-                    *offset,
-                    F::from(step_idx as u64 % 32),
-                    F::from(31u64),
-                )?;
             }
 
+            lt_word_end_chip.assign(
+                region,
+                *offset,
+                F::from((step_idx as u64 / 2) % 32), // word index
+                F::from(31u64),
+            )?;
             *offset += 1;
         }
 
@@ -620,6 +620,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 region.name_column(|| "value_wrod_rlc", self.value_wrod_rlc);
                 region.name_column(|| "word_index", self.word_index);
                 region.name_column(|| "addr_slot", self.addr_slot);
+                region.name_column(|| "mask", self.mask);
                 region.name_column(|| "is_code", self.is_code);
                 region.name_column(|| "is_pad", self.is_pad);
 
@@ -688,7 +689,7 @@ impl<F: Field> CopyCircuitConfig<F> {
         is_last_two: bool,
         tag_chip: &BinaryNumberChip<F, CopyDataType, 3>,
         lt_chip: &LtChip<F, 8>,
-        lt_word_end_chip: &LtChip<F, 5>,
+        lt_word_end_chip: &LtChip<F, 1>,
     ) -> Result<(), Error> {
         if !is_last_two {
             // q_enable

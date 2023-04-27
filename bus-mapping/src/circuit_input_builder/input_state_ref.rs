@@ -1676,11 +1676,11 @@ impl<'a> CircuitInputStateRef<'a> {
             //   MemoryOp::new(self.call()?.caller_id, addr.into(), byte)
         }
 
-        // memory word writes
+        // memory word writes to destination word
         for chunk in calldata_slot_bytes.chunks(32) {
             println!("{:?}", chunk);
             let dest_word = Word::from_big_endian(&chunk);
-            self.memory_read_word(exec_step, dst_begin_slot.into(), dest_word)?;
+            self.memory_write_word(exec_step, dst_begin_slot.into(), dest_word)?;
             dst_begin_slot = dst_begin_slot + 32;
         }
 
