@@ -219,7 +219,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
         // There are 4 branches from here.
         // add failure case for insufficient balance or error depth in the future.
-        match (is_precheck_ok, is_precompile, is_empty_code_hash) {
+        match (!is_precheck_ok, is_precompile, is_empty_code_hash) {
             // 1. Call to precompiled.
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
