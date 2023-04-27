@@ -270,6 +270,20 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
 {
     type Config = SuperCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        itertools::max([
+            EvmCircuit::<F>::unusable_rows(),
+            StateCircuit::<F>::unusable_rows(),
+            TxCircuit::<F>::unusable_rows(),
+            PiCircuit::<F>::unusable_rows(),
+            BytecodeCircuit::<F>::unusable_rows(),
+            CopyCircuit::<F>::unusable_rows(),
+            ExpCircuit::<F>::unusable_rows(),
+            KeccakCircuit::<F>::unusable_rows(),
+        ])
+        .unwrap()
+    }
+
     fn new_from_block(block: &Block<F>) -> Self {
         let evm_circuit = EvmCircuit::new_from_block(block);
         let state_circuit = StateCircuit::new_from_block(block);
@@ -441,9 +455,8 @@ impl<F: Field, const MAX_TXS: usize, const MAX_CALLDATA: usize, const MOCK_RANDO
         assert_eq!(block.circuits_params.max_txs, MAX_TXS);
         assert_eq!(block.circuits_params.max_calldata, MAX_CALLDATA);
 
-        const NUM_BLINDING_ROWS: usize = 64;
         let (_, rows_needed) = Self::min_num_rows_block(&block);
-        let k = log2_ceil(NUM_BLINDING_ROWS + rows_needed);
+        let k = log2_ceil(Self::unusable_rows() + rows_needed);
         log::debug!("super circuit uses k = {}", k);
 
         let circuit =

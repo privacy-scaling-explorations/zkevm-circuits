@@ -455,6 +455,12 @@ impl<F: Field> SubCircuit<F> for StateCircuit<F> {
         Self::new(block.rws.clone(), block.circuits_params.max_rws)
     }
 
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
+
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         (

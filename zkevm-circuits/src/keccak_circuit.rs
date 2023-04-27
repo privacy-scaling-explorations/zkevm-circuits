@@ -19,7 +19,7 @@ pub use KeccakCircuitConfig as KeccakConfig;
 
 use self::{
     cell_manager::*,
-    keccak_packed_multi::{multi_keccak, KeccakRow},
+    keccak_packed_multi::{keccak_unusable_rows, multi_keccak, KeccakRow},
     param::*,
     table::*,
     util::*,
@@ -981,6 +981,10 @@ pub struct KeccakCircuit<F: Field> {
 
 impl<F: Field> SubCircuit<F> for KeccakCircuit<F> {
     type Config = KeccakCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        keccak_unusable_rows()
+    }
 
     /// The `block.circuits_params.keccak_padding` parmeter, when enabled, sets
     /// up the circuit to support a fixed number of permutations/keccak_f's,
