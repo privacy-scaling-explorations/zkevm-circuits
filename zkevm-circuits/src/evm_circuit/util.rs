@@ -289,7 +289,7 @@ impl CellType {
     }
 
     /// Return the storage phase of phase
-    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType {
+    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
         match phase {
             0 => CellType::StoragePhase1,
             1 => CellType::StoragePhase2,
@@ -299,7 +299,7 @@ impl CellType {
 
     /// Return the storage cell of the expression
     pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
-        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+        Self::storage_for_phase(Self::expr_phase::<F>(expr))
     }
 }
 

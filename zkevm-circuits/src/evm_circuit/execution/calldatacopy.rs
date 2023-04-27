@@ -6,7 +6,7 @@ use crate::{
         util::{
             common_gadget::{SameContextGadget, WordByteCapGadget},
             constraint_builder::{
-                ConstraintBuilder, StepStateTransition,
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryCopierGasGadget, MemoryExpansionGadget},
@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLDATACOPY;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let src_id = cb.query_cell();
@@ -244,7 +244,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             region,
             offset,
             length.as_u64(),
-            memory_expansion_gas_cost as u64,
+            memory_expansion_gas_cost,
         )?;
 
         Ok(())

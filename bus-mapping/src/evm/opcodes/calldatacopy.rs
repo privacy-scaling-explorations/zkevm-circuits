@@ -512,7 +512,7 @@ mod calldatacopy_tests {
         assert_eq!(copy_events[0].bytes.len(), size);
 
         for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
-            assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));
+            assert_eq!(value, calldata.get(offset + idx).unwrap_or(&0));
             assert!(!is_code);
         }
     }
