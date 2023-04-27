@@ -790,6 +790,12 @@ impl<F: Field> CopyCircuit<F> {
 impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new_with_external_data(
             block.copy_events.clone(),

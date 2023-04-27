@@ -1718,6 +1718,12 @@ impl<F: Field> TxCircuit<F> {
 impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
+
     fn new_from_block(block: &witness::Block<F>) -> Self {
         for tx in &block.txs {
             if tx.chain_id != block.chain_id.as_u64() {
