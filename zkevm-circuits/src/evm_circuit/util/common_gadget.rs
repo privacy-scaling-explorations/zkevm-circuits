@@ -1127,8 +1127,6 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         offset: usize,
         original: U256,
     ) -> Result<bool, Error> {
-        debug_assert!(VALID_BYTES < 32);
-
         self.original
             .assign(region, offset, Some(original.to_le_bytes()))?;
 
@@ -1150,8 +1148,6 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {
-        debug_assert!(VALID_BYTES < 32);
-
         from_bytes::expr(&self.original.cells[..VALID_BYTES])
     }
 
