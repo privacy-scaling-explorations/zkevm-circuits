@@ -1719,9 +1719,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
     type Config = TxCircuitConfig<F>;
 
     fn unusable_rows() -> usize {
-        // No column queried at more than 3 distinct rotations, so returns 6 as
-        // minimum unusable rows.
-        6
+        7
     }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
