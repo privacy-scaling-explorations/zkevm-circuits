@@ -68,7 +68,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
         cb.stack_pop(data_offset.original_word());
 
         cb.condition(
-            and::expr([data_offset.within_range(), cb.curr.state.is_root.expr()]),
+            and::expr([data_offset.not_overflow(), cb.curr.state.is_root.expr()]),
             |cb| {
                 cb.call_context_lookup(
                     false.expr(),
@@ -92,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
         cb.condition(
             and::expr([
-                data_offset.within_range(),
+                data_offset.not_overflow(),
                 not::expr(cb.curr.state.is_root.expr()),
             ]),
             |cb| {
@@ -134,7 +134,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 // For a root call, the call data comes from tx's data field.
                 cb.condition(
                     and::expr([
-                        data_offset.within_range(),
+                        data_offset.not_overflow(),
                         buffer_reader.read_flag(idx),
                         cb.curr.state.is_root.expr(),
                     ]),
@@ -150,7 +150,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
                 // For an internal call, the call data comes from memory.
                 cb.condition(
                     and::expr([
-                        data_offset.within_range(),
+                        data_offset.not_overflow(),
                         buffer_reader.read_flag(idx),
                         not::expr(cb.curr.state.is_root.expr()),
                     ]),
@@ -227,11 +227,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .assign(region, offset, Value::known(F::from(call_data_offset)))?;
 
         let data_offset = block.rws[step.rw_indices[0]].stack_value();
-        let offset_within_range =
+        let offset_not_overflow =
             self.data_offset
                 .assign(region, offset, data_offset, F::from(call_data_length))?;
 
-        let data_offset = if offset_within_range {
+        let data_offset = if offset_not_overflow {
             data_offset.as_u64()
         } else {
             call_data_length
@@ -243,7 +243,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
             .min(src_addr_end);
 
         let mut calldata_bytes = vec![0u8; N_BYTES_WORD];
-        if offset_within_range {
+        if offset_not_overflow {
             for (i, byte) in calldata_bytes.iter_mut().enumerate() {
                 if call.is_root {
                     // Fetch from tx call data.

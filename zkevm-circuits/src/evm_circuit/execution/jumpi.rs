@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
         cb.condition(should_jump.clone(), |cb| {
             cb.require_equal(
                 "JUMPI destination must be within range if condition is non-zero",
-                dest.within_range(),
+                dest.not_overflow(),
                 1.expr(),
             );
 
