@@ -294,11 +294,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            and::expr(&[
-                not::expr(no_callee_code),
-                not::expr(is_insufficient_balance.expr()),
-                is_depth_ok.expr(),
-            ]),
+            and::expr(&[not::expr(no_callee_code), is_precheck_ok.expr()]),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -455,7 +451,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[5],
         ]
         .map(|idx| block.rws[idx].call_context_value());
-        let error_depth = depth.low_u64() > 1024;
+        let is_error_depth = depth.low_u64() > 1024;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         let stack_index = 6;
@@ -515,7 +511,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
         // only call opcode do transfer in sucessful case.
         let (caller_balance_pair, callee_balance_pair) =
-            if is_call && !is_insufficient && !error_depth && !value.is_zero() {
+            if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
                 rw_offset += 2;
                 (
                     block.rws[step.rw_indices[16 + rw_offset]].account_value_pair(),
@@ -605,7 +601,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_is_persistent.low_u64() != 0,
         )?;
         // conditionally assign
-        if !is_insufficient && !error_depth && !value.is_zero() {
+        if !is_insufficient && !is_error_depth && !value.is_zero() {
             self.transfer.assign(
                 region,
                 offset,
