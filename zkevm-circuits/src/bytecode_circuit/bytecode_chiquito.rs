@@ -75,11 +75,16 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
 
                 ctx.transition(if_next_step(header, eq(hash, empty_hash)));
 
-                ctx.transition(if_next_step(byte_step, eq(length, length.next())));
-                ctx.transition(if_next_step(byte_step, isz(index.next())));
-                ctx.transition(if_next_step(byte_step, eq(is_code.next(), 1)));
-                ctx.transition(if_next_step(byte_step, eq(hash, hash.next())));
-                ctx.transition(if_next_step(byte_step, eq(value_rlc.next(), value.next())));
+                ctx.transition(if_next_step(
+                    byte_step,
+                    and(vec![
+                        eq(length, length.next()),
+                        isz(index.next()),
+                        eq(is_code.next(), 1),
+                        eq(hash, hash.next()),
+                        eq(value_rlc.next(), value.next()),
+                    ]),
+                ));
 
                 ctx.wg(move |ctx, wit| {
                     let wit = wit.borrow();
@@ -112,22 +117,21 @@ pub fn bytecode_circuit<F: Field + From<u64>>(
                         .add(push_data_size, push_data_table_size),
                 );
 
-                ctx.transition(if_next_step(byte_step, eq(length, length.next())));
-                ctx.transition(if_next_step(byte_step, eq(index + 1, index.next())));
-                ctx.transition(if_next_step(byte_step, eq(hash, hash.next())));
                 ctx.transition(if_next_step(
                     byte_step,
-                    eq(
-                        value_rlc.next(),
-                        (value_rlc * challenges.keccak_input()) + value.next(),
-                    ),
-                ));
-                ctx.transition(if_next_step(
-                    byte_step,
-                    eq(
-                        push_data_left.next(),
-                        select(is_code, push_data_size, push_data_left - 1),
-                    ),
+                    and(vec![
+                        eq(length, length.next()),
+                        eq(index + 1, index.next()),
+                        eq(hash, hash.next()),
+                        eq(
+                            value_rlc.next(),
+                            (value_rlc * challenges.keccak_input()) + value.next(),
+                        ),
+                        eq(
+                            push_data_left.next(),
+                            select(is_code, push_data_size, push_data_left - 1),
+                        ),
+                    ]),
                 ));
 
                 ctx.transition(if_next_step(header, eq(index + 1, length)));
