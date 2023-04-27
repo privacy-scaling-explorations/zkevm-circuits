@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             math_gadget::IsZeroGadget,
-            not, select, CachedRegion, Cell,
+            select, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -54,11 +54,6 @@ impl<F: Field> ExecutionGadget<F> for JumpiGadget<F> {
 
             cb.opcode_lookup_at(dest.valid_value(), OpcodeId::JUMPDEST.expr(), 1.expr());
         });
-
-        cb.require_zero(
-            "JUMPI condition must be 0 if destination is Uint64 overflow",
-            dest.overflow() * not::expr(is_condition_zero.expr()),
-        );
 
         // Transit program_counter to destination when should_jump, otherwise by
         // delta 1.
