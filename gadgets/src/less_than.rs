@@ -199,7 +199,6 @@ mod test {
 
             // TODO: remove zk blinding factors in halo2 to restore the
             // correct k (without the extra + 2).
-            // let k = usize::BITS - $values.len().leading_zeros() + 2;
             let k = 9;
             let circuit = TestCircuit::<Fp> {
                 values: Some($values),
