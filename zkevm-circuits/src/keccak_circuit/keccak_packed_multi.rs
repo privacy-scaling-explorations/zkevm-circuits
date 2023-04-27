@@ -11,9 +11,17 @@ use std::{env::var, vec};
 
 pub(crate) fn get_num_rows_per_round() -> usize {
     var("KECCAK_ROWS")
-        .unwrap_or_else(|_| "12".to_string())
+        .unwrap_or_else(|_| format!("{DEFAULT_KECCAK_ROWS}"))
         .parse()
         .expect("Cannot parse KECCAK_ROWS env var as usize")
+}
+
+pub(crate) fn keccak_unusable_rows() -> usize {
+    const UNUSABLE_ROWS_BY_KECCAK_ROWS: [usize; 24] = [
+        53, 67, 63, 59, 45, 79, 77, 75, 73, 71, 69, 67, 65, 63, 61, 59, 57, 71, 89, 107, 107, 107,
+        107, 107,
+    ];
+    UNUSABLE_ROWS_BY_KECCAK_ROWS[get_num_rows_per_round() - NUM_BYTES_PER_WORD - 1]
 }
 
 pub(crate) fn get_num_bits_per_absorb_lookup() -> usize {
@@ -125,7 +133,7 @@ pub(crate) mod decode {
 pub(crate) mod split {
     use super::{decode, CellManager, KeccakRegion, Part, PartValue};
     use crate::{
-        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         keccak_circuit::util::{pack, pack_part, unpack, WordParts},
         util::Expr,
     };
@@ -188,7 +196,7 @@ pub(crate) mod split {
 pub(crate) mod split_uniform {
     use super::{decode, target_part_sizes, Cell, CellManager, KeccakRegion, Part, PartValue};
     use crate::{
-        evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+        evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
         keccak_circuit::{
             param::BIT_COUNT,
             util::{pack, pack_part, rotate, rotate_rev, unpack, WordParts},

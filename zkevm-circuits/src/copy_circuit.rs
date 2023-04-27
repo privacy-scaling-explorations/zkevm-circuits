@@ -27,7 +27,7 @@ use itertools::Itertools;
 use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
-    evm_circuit::util::constraint_builder::BaseConstraintBuilder,
+    evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
         BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
         TxContextFieldTag, TxTable,
@@ -732,6 +732,12 @@ impl<F: Field> CopyCircuit<F> {
 
 impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
+
+    fn unusable_rows() -> usize {
+        // No column queried at more than 3 distinct rotations, so returns 6 as
+        // minimum unusable rows.
+        6
+    }
 
     fn new_from_block(block: &witness::Block<F>) -> Self {
         Self::new_with_external_data(

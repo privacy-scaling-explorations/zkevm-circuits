@@ -4,7 +4,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             from_bytes,
             math_gadget::{ComparisonGadget, IsEqualGadget, LtGadget},
             select, CachedRegion, Cell, Word,
@@ -39,7 +39,7 @@ impl<F: Field> ExecutionGadget<F> for SignedComparatorGadget<F> {
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::SCMP;
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let a = cb.query_word_rlc();

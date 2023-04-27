@@ -88,7 +88,7 @@ impl<F: Field> StepStateTransition<F> {
 
 /// ReversionInfo counts `rw_counter` of reversion for gadgets, by tracking how
 /// many reversions that have been used. Gadgets should call
-/// [`ConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
+/// [`EVMConstraintBuilder::reversion_info`] to get [`ReversionInfo`] with
 /// `reversible_write_counter` initialized at current tracking one if no
 /// `call_id` is specified, then pass it as mutable reference when doing state
 /// write.
@@ -141,40 +141,22 @@ impl<F: Field> ReversionInfo<F> {
     }
 }
 
-#[derive(Default)]
-pub struct BaseConstraintBuilder<F> {
-    pub constraints: Vec<(&'static str, Expression<F>)>,
-    pub max_degree: usize,
-    pub condition: Option<Expression<F>>,
-}
+pub(crate) trait ConstrainBuilderCommon<F: Field> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>);
 
-impl<F: Field> BaseConstraintBuilder<F> {
-    pub(crate) fn new(max_degree: usize) -> Self {
-        BaseConstraintBuilder {
-            constraints: Vec::new(),
-            max_degree,
-            condition: None,
-        }
-    }
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
+    fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
     }
 
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
+    fn require_equal(&mut self, name: &'static str, lhs: Expression<F>, rhs: Expression<F>) {
         self.add_constraint(name, lhs - rhs);
     }
 
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
+    fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
         self.add_constraint(name, value.clone() * (1.expr() - value));
     }
 
-    pub(crate) fn require_in_set(
+    fn require_in_set(
         &mut self,
         name: &'static str,
         value: Expression<F>,
@@ -185,6 +167,40 @@ impl<F: Field> BaseConstraintBuilder<F> {
             set.iter()
                 .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
         );
+    }
+
+    fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
+        for (name, constraint) in constraints {
+            self.add_constraint(name, constraint);
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct BaseConstraintBuilder<F> {
+    pub constraints: Vec<(&'static str, Expression<F>)>,
+    pub max_degree: usize,
+    pub condition: Option<Expression<F>>,
+}
+
+impl<F: Field> ConstrainBuilderCommon<F> for BaseConstraintBuilder<F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = match &self.condition {
+            Some(condition) => condition.clone() * constraint,
+            None => constraint,
+        };
+        self.validate_degree(constraint.degree(), name);
+        self.constraints.push((name, constraint));
+    }
+}
+
+impl<F: Field> BaseConstraintBuilder<F> {
+    pub(crate) fn new(max_degree: usize) -> Self {
+        BaseConstraintBuilder {
+            constraints: Vec::new(),
+            max_degree,
+            condition: None,
+        }
     }
 
     pub(crate) fn condition<R>(
@@ -200,21 +216,6 @@ impl<F: Field> BaseConstraintBuilder<F> {
         let ret = constraint(self);
         self.condition = None;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = match &self.condition {
-            Some(condition) => condition.clone() * constraint,
-            None => constraint,
-        };
-        self.validate_degree(constraint.degree(), name);
-        self.constraints.push((name, constraint));
     }
 
     pub(crate) fn validate_degree(&self, degree: usize, name: &'static str) {
@@ -263,7 +264,7 @@ pub(crate) struct Constraints<F> {
     pub(crate) not_step_last: Vec<(&'static str, Expression<F>)>,
 }
 
-pub(crate) struct ConstraintBuilder<'a, F> {
+pub(crate) struct EVMConstraintBuilder<'a, F> {
     pub max_degree: usize,
     pub(crate) curr: Step<F>,
     pub(crate) next: Step<F>,
@@ -280,7 +281,20 @@ pub(crate) struct ConstraintBuilder<'a, F> {
     stored_expressions: Vec<StoredExpression<F>>,
 }
 
-impl<'a, F: Field> ConstraintBuilder<'a, F> {
+impl<'a, F: Field> ConstrainBuilderCommon<F> for EVMConstraintBuilder<'a, F> {
+    fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
+        let constraint = self.split_expression(
+            name,
+            constraint * self.condition_expr(),
+            MAX_DEGREE - IMPLICIT_DEGREE,
+        );
+
+        self.validate_degree(constraint.degree(), name);
+        self.push_constraint(name, constraint);
+    }
+}
+
+impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     pub(crate) fn new(
         curr: Step<F>,
         next: Step<F>,
@@ -441,38 +455,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
 
     pub(crate) fn empty_code_hash_rlc(&self) -> Expression<F> {
         self.word_rlc((*EMPTY_CODE_HASH_LE).map(|byte| byte.expr()))
-    }
-
-    // Common
-
-    pub(crate) fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
-        self.add_constraint(name, constraint);
-    }
-
-    pub(crate) fn require_equal(
-        &mut self,
-        name: &'static str,
-        lhs: Expression<F>,
-        rhs: Expression<F>,
-    ) {
-        self.add_constraint(name, lhs - rhs);
-    }
-
-    pub(crate) fn require_boolean(&mut self, name: &'static str, value: Expression<F>) {
-        self.add_constraint(name, value.clone() * (1.expr() - value));
-    }
-
-    pub(crate) fn require_in_set(
-        &mut self,
-        name: &'static str,
-        value: Expression<F>,
-        set: Vec<Expression<F>>,
-    ) {
-        self.add_constraint(
-            name,
-            set.iter()
-                .fold(1.expr(), |acc, item| acc * (value.clone() - item.clone())),
-        );
     }
 
     pub(crate) fn require_next_state(&mut self, execution_state: ExecutionState) {
@@ -1376,23 +1358,6 @@ impl<'a, F: Field> ConstraintBuilder<'a, F> {
         };
         self.in_next_step = false;
         ret
-    }
-
-    pub(crate) fn add_constraints(&mut self, constraints: Vec<(&'static str, Expression<F>)>) {
-        for (name, constraint) in constraints {
-            self.add_constraint(name, constraint);
-        }
-    }
-
-    pub(crate) fn add_constraint(&mut self, name: &'static str, constraint: Expression<F>) {
-        let constraint = self.split_expression(
-            name,
-            constraint * self.condition_expr(),
-            MAX_DEGREE - IMPLICIT_DEGREE,
-        );
-
-        self.validate_degree(constraint.degree(), name);
-        self.push_constraint(name, constraint);
     }
 
     /// TODO: Doc
