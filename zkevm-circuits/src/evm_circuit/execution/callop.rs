@@ -157,12 +157,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value);
         // depth < 1025
         let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
-        let is_error_depth = not::expr(is_depth_ok.expr());
-        let is_insufficient_balance_or_error_depth =
-            or::expr(&[is_insufficient_balance.expr(), is_error_depth.expr()]);
+
+        let is_precheck_ok = and::expr([
+            is_depth_ok.expr(),
+            not::expr(is_insufficient_balance.expr()),
+        ]);
 
         // stack write is zero when is_insufficient_balance is true
-        cb.condition(is_insufficient_balance_or_error_depth.expr(), |cb| {
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             cb.require_zero(
                 "stack write result is zero when is_insufficient_balance is true",
                 call_gadget.is_success.expr(),
@@ -173,22 +175,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let transfer = cb.condition(
-            and::expr(&[
-                is_call.expr(),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
-            ]),
-            |cb| {
-                TransferGadget::construct(
-                    cb,
-                    caller_address.expr(),
-                    callee_address.expr(),
-                    not::expr(call_gadget.callee_not_exists.expr()),
-                    call_gadget.value.clone(),
-                    &mut callee_reversion_info,
-                )
-            },
-        );
+        let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
+            TransferGadget::construct(
+                cb,
+                caller_address.expr(),
+                callee_address.expr(),
+                not::expr(call_gadget.callee_not_exists.expr()),
+                call_gadget.value.clone(),
+                &mut callee_reversion_info,
+            )
+        });
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -227,10 +223,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(
-            and::expr(&[
-                no_callee_code.expr(),
-                not::expr(is_insufficient_balance_or_error_depth.expr()),
-            ]),
+            and::expr(&[no_callee_code.expr(), is_precheck_ok.expr()]),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -276,7 +269,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // handle is_insufficient_balance step transition
-        cb.condition(is_insufficient_balance_or_error_depth.expr(), |cb| {
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -1045,28 +1038,5 @@ mod test {
                 ..Default::default()
             })
             .run();
-
-        // assert_eq!(
-        //     run_test_circuits_with_params(
-        //         TestContext::<2, 1>::new(
-        //             None,
-        //             account_0_code_account_1_no_code(callee_code),
-        //             |mut txs, accs| {
-        //                 txs[0]
-        //                     .to(accs[0].address)
-        //                     .from(accs[1].address)
-        //                     .gas(word!("0x2386F26FC10000"));
-        //             },
-        //             |block, _tx| block.number(0xcafeu64),
-        //         )
-        //         .unwrap(),
-        //         None,
-        //         CircuitsParams {
-        //             max_rws: 200000,
-        //             ..Default::default()
-        //         }
-        //     ),
-        //     Ok(())
-        // );
     }
 }

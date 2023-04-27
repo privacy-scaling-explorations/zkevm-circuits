@@ -290,7 +290,9 @@ fn fn_gen_error_state_associated_ops(
         ExecError::ReturnDataOutOfBounds => Some(ErrorReturnDataOutOfBound::gen_associated_ops),
         ExecError::Depth => {
             let op = geth_step.op;
-            assert!(op.is_call());
+            if !op.is_call() {
+                evm_unimplemented!("TODO: ErrDepth for CREATE is not implemented yet");
+            }
             Some(fn_gen_associated_ops(&op))
         }
         // more future errors place here
