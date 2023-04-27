@@ -11,7 +11,10 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
-            constraint_builder::{ConstraintBuilder, StepStateTransition, Transition::Delta},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
+                Transition::Delta,
+            },
             from_bytes,
             memory_gadget::BufferReaderGadget,
             not, CachedRegion, Cell, MemoryAddress,
@@ -53,7 +56,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataLoadGadget<F> {
 
     const NAME: &'static str = "CALLDATALOAD";
 
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         let offset = cb.query_word_rlc();

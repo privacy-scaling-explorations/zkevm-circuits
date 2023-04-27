@@ -4,7 +4,7 @@ use crate::{
         param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         util::{
-            constraint_builder::ConstraintBuilder,
+            constraint_builder::EVMConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
             CachedRegion, Cell, Word,
@@ -41,7 +41,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasStaticMemoryExpansion;
 
     // Support other OOG due to pure memory including CREATE, RETURN and REVERT
-    fn configure(cb: &mut ConstraintBuilder<F>) -> Self {
+    fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
         // Query address by a full word
