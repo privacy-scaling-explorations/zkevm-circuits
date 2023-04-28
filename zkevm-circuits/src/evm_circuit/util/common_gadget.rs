@@ -1038,8 +1038,8 @@ impl<F: Field> CommonErrorGadget<F> {
     }
 }
 
-/// Check if the passed in word is within the specified byte range (not overflow)
-/// and less than a maximum cap.
+/// Check if the passed in word is within the specified byte range
+/// (not overflow) and less than a maximum cap.
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
     word: WordByteRangeGadget<F, VALID_BYTES>,
@@ -1055,8 +1055,8 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
         Self { word, lt_cap }
     }
 
-    /// Return true if within the specified byte range (not overflow), false if overflow.
-    /// No matter whether it is less than the cap.
+    /// Return true if within the specified byte range (not overflow), false if
+    /// overflow. No matter whether it is less than the cap.
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
