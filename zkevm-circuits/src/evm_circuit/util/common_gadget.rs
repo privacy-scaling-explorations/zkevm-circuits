@@ -1,7 +1,7 @@
 use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
-    math_gadget::{IsEqualGadget, IsZeroGadget},
+    math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
     CachedRegion,
 };
@@ -1035,5 +1035,123 @@ impl<F: Field> CommonErrorGadget<F> {
 
         // NOTE: return value not use for now.
         Ok(1u64)
+    }
+}
+
+/// Check if the passed in word is within the specified byte range
+/// (not overflow) and less than a maximum cap.
+#[derive(Clone, Debug)]
+pub(crate) struct WordByteCapGadget<F, const VALID_BYTES: usize> {
+    word: WordByteRangeGadget<F, VALID_BYTES>,
+    lt_cap: LtGadget<F, VALID_BYTES>,
+}
+
+impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, cap: Expression<F>) -> Self {
+        let word = WordByteRangeGadget::construct(cb);
+        let value = select::expr(word.overflow(), cap.expr(), word.valid_value());
+        let lt_cap = LtGadget::construct(cb, value, cap);
+
+        Self { word, lt_cap }
+    }
+
+    /// Return true if within the specified byte range (not overflow), false if
+    /// overflow. No matter whether it is less than the cap.
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        original: U256,
+        cap: F,
+    ) -> Result<bool, Error> {
+        let not_overflow = self.word.assign(region, offset, original)?;
+
+        let value = if not_overflow {
+            let mut bytes = [0; 32];
+            bytes[0..VALID_BYTES].copy_from_slice(&original.to_le_bytes()[0..VALID_BYTES]);
+            F::from_repr(bytes).unwrap()
+        } else {
+            cap
+        };
+
+        self.lt_cap.assign(region, offset, value, cap)?;
+
+        Ok(not_overflow)
+    }
+
+    pub(crate) fn lt_cap(&self) -> Expression<F> {
+        self.lt_cap.expr()
+    }
+
+    pub(crate) fn original_word(&self) -> Expression<F> {
+        self.word.original_word()
+    }
+
+    pub(crate) fn overflow(&self) -> Expression<F> {
+        self.word.overflow()
+    }
+
+    pub(crate) fn valid_value(&self) -> Expression<F> {
+        self.word.valid_value()
+    }
+
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.word.not_overflow()
+    }
+}
+
+/// Check if the passed in word is within the specified byte range (not overflow).
+#[derive(Clone, Debug)]
+pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
+    original: Word<F>,
+    not_overflow: IsZeroGadget<F>,
+}
+
+impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
+        debug_assert!(VALID_BYTES < 32);
+
+        let original = cb.query_word_rlc();
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+
+        Self {
+            original,
+            not_overflow,
+        }
+    }
+
+    /// Return true if within the range, false if overflow.
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        original: U256,
+    ) -> Result<bool, Error> {
+        self.original
+            .assign(region, offset, Some(original.to_le_bytes()))?;
+
+        let overflow_hi = original.to_le_bytes()[VALID_BYTES..]
+            .iter()
+            .fold(0, |acc, val| acc + u64::from(*val));
+        self.not_overflow
+            .assign(region, offset, F::from(overflow_hi))?;
+
+        Ok(overflow_hi == 0)
+    }
+
+    pub(crate) fn original_word(&self) -> Expression<F> {
+        self.original.expr()
+    }
+
+    pub(crate) fn overflow(&self) -> Expression<F> {
+        not::expr(self.not_overflow())
+    }
+
+    pub(crate) fn valid_value(&self) -> Expression<F> {
+        from_bytes::expr(&self.original.cells[..VALID_BYTES])
+    }
+
+    pub(crate) fn not_overflow(&self) -> Expression<F> {
+        self.not_overflow.expr()
     }
 }
