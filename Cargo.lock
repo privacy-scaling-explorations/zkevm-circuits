@@ -2059,9 +2059,11 @@ dependencies = [
  "ff",
  "group",
  "halo2curves 0.3.1",
+ "plotters",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
+ "tabbycat",
  "tracing",
 ]
 
@@ -5045,6 +5047,7 @@ dependencies = [
  "num",
  "num-bigint",
  "num_enum",
+ "plotters",
  "pretty_assertions",
  "rand",
  "rand_chacha",

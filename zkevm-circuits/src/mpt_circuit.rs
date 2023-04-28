@@ -26,7 +26,7 @@ mod witness_row;
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
-    witness_row::{ExtensionBranchRowType, Node},
+    witness_row::{StartRowType,ExtensionBranchRowType, AccountRowType, StorageRowType,Node},
 };
 use crate::{
     assign, assignf, circuit,
@@ -121,6 +121,7 @@ pub struct MPTConfig<F> {
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_first: Column<Fixed>,
     pub(crate) q_last: Column<Fixed>,
+    pub(crate) rows_left_in_state: Column<Fixed>,
     pub(crate) rlp_columns: Vec<Column<Advice>>,
     pub(crate) managed_columns: Vec<Column<Advice>>,
     pub(crate) memory: Memory<F>,
@@ -177,6 +178,7 @@ impl<F: Field> MPTConfig<F> {
         let q_enable = meta.fixed_column();
         let q_first = meta.fixed_column();
         let q_last = meta.fixed_column();
+        let rows_left_in_state = meta.fixed_column();
 
         let mpt_table = MptTable::construct(meta);
 
@@ -234,20 +236,32 @@ impl<F: Field> MPTConfig<F> {
                         require!(a!(state_machine.is_start) => true);
                     }};
                     // Main state machine
+                    let sum_states = a!(state_machine.is_start) + a!(state_machine.is_branch) + a!(state_machine.is_account) + a!(state_machine.is_storage);
                     matchx! {
                         a!(state_machine.is_start) => {
+                            require!(sum_states => true.expr());
+                            require!(f!(rows_left_in_state) => (StartRowType::Count as usize).expr());
                             state_machine.start_config = StartConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(state_machine.is_branch) => {
+                            require!(sum_states => true.expr());
+                            require!(f!(rows_left_in_state) => (ExtensionBranchRowType::Count as usize ).expr());
+                            require!(f!(rows_left_in_state, -1) => 1.expr());
                             state_machine.branch_config = ExtensionBranchConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(state_machine.is_account) => {
+                            require!(sum_states => true.expr());
+                            require!(f!(rows_left_in_state) => (AccountRowType::Count as usize).expr());
+                            require!(f!(rows_left_in_state, -1) => 1.expr());
                             state_machine.account_config = AccountLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
                         a!(state_machine.is_storage) => {
+                            require!(sum_states => true.expr());
+                            require!(f!(rows_left_in_state) => (StorageRowType::Count as usize).expr());
+                            require!(f!(rows_left_in_state, -1) => 1.expr());
                             state_machine.storage_config = StorageLeafConfig::configure(meta, &mut cb, ctx.clone());
                         },
-                        _ => (),
+                        _ =>  require!(sum_states => false.expr()),
                     };
                     // Only account and storage rows can have lookups, disable lookups on all other rows
                     ifx! {not!(a!(state_machine.is_account) + a!(state_machine.is_storage)) => {
@@ -298,6 +312,7 @@ impl<F: Field> MPTConfig<F> {
             q_enable,
             q_first,
             q_last,
+            rows_left_in_state,
             rlp_columns,
             managed_columns,
             memory,
@@ -345,6 +360,7 @@ impl<F: Field> MPTConfig<F> {
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
+                        assignf!(region, (self.rows_left_in_state, offset + idx) => (node.values.len() - idx).scalar())?;
                     }
 
                     // Assign nodes
@@ -611,5 +627,66 @@ mod tests {
                 // assert_eq!(prover.verify_par(), Ok(()));
                 // prover.assert_satisfied();
             });
+    }
+
+    #[test]
+    fn graph_mpt() {
+        use plotters::prelude::*;
+
+        let path = "src/mpt_circuit/tests";
+        let files = fs::read_dir(path).unwrap();
+        let files: Vec<fs::DirEntry> = files
+            .filter_map(Result::ok)
+            .filter(|d| {
+                if let Some(e) = d.path().extension() {
+                    e == "json"
+                } else {
+                    false
+                }
+            }).collect();
+
+        let path = &files[0].path();
+        let mut parts = path.to_str().unwrap().split('-');
+        parts.next();
+        let file = std::fs::File::open(path.clone());
+        let reader = std::io::BufReader::new(file.unwrap());
+        let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
+
+        let randomness: Fr = 2.scalar();
+
+        let mut keccak_data = vec![];
+        let mut witness_rows = vec![];
+        for row in w.iter() {
+            if row[row.len() - 1] == 5 {
+                keccak_data.push(row[0..row.len() - 1].to_vec());
+            } else {
+                let row = MptWitnessRow::<Fr>::new(row[0..row.len()].to_vec());
+                witness_rows.push(row);
+            }
+        }
+        let nodes = prepare_witness(&mut witness_rows);
+        let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+
+        let circuit = MPTCircuit::<Fr> {
+            nodes,
+            keccak_data,
+            randomness,
+        };
+
+        println!("Start graphing");
+
+        let root = BitMapBackend::new("mpt-chip-layout.png", (2048, 7680)).into_drawing_area();
+        root.fill(&WHITE).unwrap();
+        let root = root.titled("MPT Chip Layout", ("sans-serif", 60)).unwrap();
+
+        halo2_proofs::dev::CircuitLayout::default()
+            .render(9, &circuit, &root)
+            .unwrap();
+
+        // Generate the DOT graph string.
+        let dot_string = halo2_proofs::dev::circuit_dot_graph(&circuit);
+        print!("{}", dot_string);
+
+
     }
 }
