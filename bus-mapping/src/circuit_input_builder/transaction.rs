@@ -176,7 +176,7 @@ impl TransactionContext {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
     /// The raw transaction fields
@@ -194,14 +194,6 @@ impl From<&Transaction> for geth_types::Transaction {
 }
 
 impl Transaction {
-    /// Create a dummy Transaction with zero values
-    pub fn dummy() -> Self {
-        Self {
-            tx: geth_types::Transaction::default(),
-            calls: Vec::new(),
-            steps: Vec::new(),
-        }
-    }
 
     /// Create a new Self.
     pub fn new(

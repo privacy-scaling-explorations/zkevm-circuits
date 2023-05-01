@@ -215,7 +215,7 @@ impl<'a> CircuitInputBuilder {
         end_block_not_last.rwc = self.block_ctx.rwc;
         end_block_last.rwc = self.block_ctx.rwc;
 
-        let mut dummy_tx = Transaction::dummy();
+        let mut dummy_tx = Transaction::default();
         let mut dummy_tx_ctx = TransactionContext::default();
         let mut state = self.state_ref(&mut dummy_tx, &mut dummy_tx_ctx);
 
