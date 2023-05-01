@@ -133,11 +133,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         value: tx.tx.value,
         call_data: tx.tx.call_data.to_vec(),
         call_data_length: tx.tx.call_data.len(),
-        call_data_gas_cost: tx
-            .tx
-            .call_data
-            .iter()
-            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
+        call_data_gas_cost: tx.tx.call_data_gas_cost(),
         calls: tx
             .calls()
             .iter()

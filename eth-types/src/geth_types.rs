@@ -239,6 +239,13 @@ impl Transaction {
             msg_hash,
         })
     }
+
+    /// Compute call data gas cost from call data
+    pub fn call_data_gas_cost(&self) -> u64 {
+        self.call_data
+            .iter()
+            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
+    }
 }
 
 /// GethData is a type that contains all the information of a Ethereum block
