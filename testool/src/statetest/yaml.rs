@@ -615,7 +615,7 @@ arith:
             to: Some(ccccc),
             gas_limit: 80000000,
             gas_price: U256::from(10u64),
-            nonce: U256::zero(),
+            nonce: 0,
             value: U256::one(),
             data: Bytes::from(&[0]),
             pre: HashMap::from([

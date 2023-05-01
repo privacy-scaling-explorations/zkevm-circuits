@@ -115,11 +115,9 @@ pub struct Transaction {
     /// Recipient address (None for contract creation)
     pub to: Option<Address>,
     /// Transaction nonce
-    /// u64 is justified in https://eips.ethereum.org/EIPS/eip-2681
-    pub nonce: u64,
+    pub nonce: Word,
     /// Gas Limit / Supplied gas
-    /// u64 is justified in https://eips.ethereum.org/EIPS/eip-4803
-    pub gas_limit: u64,
+    pub gas_limit: Word,
     /// Transfered value
     pub value: Word,
     /// Gas Price
@@ -169,8 +167,8 @@ impl From<&crate::Transaction> for Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce.as_u64(),
-            gas_limit: tx.gas.as_u64(),
+            nonce: tx.nonce,
+            gas_limit: tx.gas,
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),

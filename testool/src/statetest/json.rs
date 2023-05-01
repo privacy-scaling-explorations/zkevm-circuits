@@ -390,7 +390,7 @@ mod test {
             )?),
             gas_limit: 400000,
             gas_price: U256::from(10u64),
-            nonce: U256::from(0u64),
+            nonce: 0,
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
             pre: HashMap::from([(
