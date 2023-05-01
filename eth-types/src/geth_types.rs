@@ -149,8 +149,8 @@ impl From<&Transaction> for crate::Transaction {
         crate::Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce.into(),
-            gas: tx.gas_limit.into(),
+            nonce: tx.nonce,
+            gas: tx.gas_limit,
             value: tx.value,
             gas_price: Some(tx.gas_price),
             max_priority_fee_per_gas: Some(tx.gas_fee_cap),
@@ -190,11 +190,11 @@ impl From<&Transaction> for TransactionRequest {
         TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit.into()),
+            gas: Some(tx.gas_limit),
             gas_price: Some(tx.gas_price),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce.into()),
+            nonce: Some(tx.nonce),
             ..Default::default()
         }
     }

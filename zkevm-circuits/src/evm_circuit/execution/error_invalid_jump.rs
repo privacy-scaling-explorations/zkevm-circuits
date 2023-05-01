@@ -13,7 +13,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, U256, ToWord};
+use eth_types::{evm_types::OpcodeId, Field, ToWord, U256};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 

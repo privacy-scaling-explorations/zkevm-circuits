@@ -148,14 +148,8 @@ impl PublicData {
                 to_addr: tx.to.unwrap_or_else(Address::zero),
                 is_create: (tx.to.is_none() as u64),
                 value: tx.value,
-                call_data_len: tx.call_data.0.len() as u64,
-                call_data_gas_cost: tx.call_data.0.iter().fold(0, |acc, byte| {
-                    acc + if *byte == 0 {
-                        ZERO_BYTE_GAS_COST
-                    } else {
-                        NONZERO_BYTE_GAS_COST
-                    }
-                }),
+                call_data_len: tx.call_data.len() as u64,
+                call_data_gas_cost: tx.call_data_gas_cost(),
                 tx_sign_hash: msg_hash_le,
             });
         }
