@@ -88,15 +88,12 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
 
         meta.annotate_lookup_any_column(u8, || "LOOKUP_u8");
 
-        meta.lookup_any("range check for u8", |meta| {
-            diff[0..N_BYTES]
-                .iter()
-                .map(|column| {
-                    let u8_cell = meta.query_advice(*column, Rotation::cur());
-                    let u8_range = meta.query_fixed(u8, Rotation::cur());
-                    (u8_cell, u8_range)
-                })
-                .collect()
+        diff[0..N_BYTES].iter().for_each(|column| {
+            meta.lookup_any("range check for u8", |meta| {
+                let u8_cell = meta.query_advice(*column, Rotation::cur());
+                let u8_range = meta.query_fixed(u8, Rotation::cur());
+                vec![(u8_cell, u8_range)]
+            });
         });
 
         LtConfig {
