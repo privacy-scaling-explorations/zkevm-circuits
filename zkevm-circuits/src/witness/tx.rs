@@ -134,29 +134,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         call_data: tx.tx.call_data.to_vec(),
         call_data_length: tx.tx.call_data.len(),
         call_data_gas_cost: tx.tx.call_data_gas_cost(),
-        calls: tx
-            .calls()
-            .iter()
-            .map(|call| Call {
-                id: call.call_id,
-                is_root: call.is_root,
-                is_create: call.is_create(),
-                code_hash: call.code_hash.to_word(),
-                rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
-                caller_id: call.caller_id,
-                depth: call.depth,
-                caller_address: call.caller_address,
-                callee_address: call.address,
-                call_data_offset: call.call_data_offset,
-                call_data_length: call.call_data_length,
-                return_data_offset: call.return_data_offset,
-                return_data_length: call.return_data_length,
-                value: call.value,
-                is_success: call.is_success,
-                is_persistent: call.is_persistent,
-                is_static: call.is_static,
-            })
-            .collect(),
+        calls: tx.calls().to_vec(),
         steps: tx.steps().iter().map(step_convert).collect(),
     }
 }
