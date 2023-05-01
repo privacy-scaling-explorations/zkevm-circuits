@@ -124,17 +124,18 @@ impl Transaction {
 pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
     Transaction {
         id,
-        nonce: tx.nonce,
-        gas: tx.gas,
-        gas_price: tx.gas_price,
-        caller_address: tx.from,
-        callee_address: tx.to,
+        nonce: tx.tx.nonce,
+        gas: tx.tx.gas_limit,
+        gas_price: tx.tx.gas_price,
+        caller_address: tx.tx.from,
+        callee_address: tx.tx.to.unwrap(),
         is_create: tx.is_create(),
-        value: tx.value,
-        call_data: tx.input.clone(),
-        call_data_length: tx.input.len(),
+        value: tx.tx.value,
+        call_data: tx.tx.call_data.to_vec(),
+        call_data_length: tx.tx.call_data.len(),
         call_data_gas_cost: tx
-            .input
+            .tx
+            .call_data
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
         calls: tx

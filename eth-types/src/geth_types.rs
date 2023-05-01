@@ -115,9 +115,11 @@ pub struct Transaction {
     /// Recipient address (None for contract creation)
     pub to: Option<Address>,
     /// Transaction nonce
-    pub nonce: Word,
+    /// u64 is justified in https://eips.ethereum.org/EIPS/eip-2681
+    pub nonce: u64,
     /// Gas Limit / Supplied gas
-    pub gas_limit: Word,
+    /// u64 is justified in https://eips.ethereum.org/EIPS/eip-4803
+    pub gas_limit: u64,
     /// Transfered value
     pub value: Word,
     /// Gas Price
@@ -146,8 +148,8 @@ impl From<&Transaction> for crate::Transaction {
         crate::Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
-            gas: tx.gas_limit,
+            nonce: tx.nonce.into(),
+            gas: tx.gas_limit.into(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
             max_priority_fee_per_gas: Some(tx.gas_fee_cap),
@@ -167,8 +169,8 @@ impl From<&crate::Transaction> for Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
-            gas_limit: tx.gas,
+            nonce: tx.nonce.as_u64(),
+            gas_limit: tx.gas.as_u64(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
@@ -187,11 +189,11 @@ impl From<&Transaction> for TransactionRequest {
         TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit),
+            gas: Some(tx.gas_limit.into()),
             gas_price: Some(tx.gas_price),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce),
+            nonce: Some(tx.nonce.into()),
             ..Default::default()
         }
     }

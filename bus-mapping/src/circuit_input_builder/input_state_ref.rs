@@ -60,7 +60,7 @@ impl<'a> CircuitInputStateRef<'a> {
     pub fn new_begin_tx_step(&self) -> ExecStep {
         ExecStep {
             exec_state: ExecState::BeginTx,
-            gas_left: Gas(self.tx.gas),
+            gas_left: Gas(self.tx.tx.gas_limit),
             rwc: self.block_ctx.rwc,
             ..Default::default()
         }
