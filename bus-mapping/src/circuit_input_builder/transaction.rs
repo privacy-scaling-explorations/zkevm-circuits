@@ -187,14 +187,7 @@ pub struct Transaction {
     steps: Vec<ExecStep>,
 }
 
-impl From<&Transaction> for geth_types::Transaction {
-    fn from(tx: &Transaction) -> geth_types::Transaction {
-        tx.tx.clone()
-    }
-}
-
 impl Transaction {
-
     /// Create a new Self.
     pub fn new(
         call_id: usize,
