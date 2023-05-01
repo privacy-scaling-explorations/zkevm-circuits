@@ -128,7 +128,7 @@ pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> 
         gas: tx.tx.gas_limit.as_u64(),
         gas_price: tx.tx.gas_price,
         caller_address: tx.tx.from,
-        callee_address: tx.tx.unwrap_receiver(),
+        callee_address: tx.tx.to_or_contract_addr(),
         is_create: tx.is_create(),
         value: tx.tx.value,
         call_data: tx.tx.call_data.to_vec(),

@@ -6,7 +6,7 @@ use crate::{
     Word, U64,
 };
 use ethers_core::{
-    types::{NameOrAddress, TransactionRequest},
+    types::{transaction::response, NameOrAddress, TransactionRequest},
     utils::get_contract_address,
 };
 use ethers_signers::{LocalWallet, Signer};
@@ -116,6 +116,7 @@ pub struct Transaction {
     /// Sender address
     pub from: Address,
     /// Recipient address (None for contract creation)
+    /// Avoid direct read from this field. We set this field public to construct the struct
     pub to: Option<Address>,
     /// Transaction nonce
     pub nonce: Word,
@@ -248,10 +249,44 @@ impl Transaction {
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
     }
 
+    /// Get the "to" address. If `to` is None then zero adddress
+    pub fn to_or_zero(&self) -> Address {
+        self.to.unwrap_or_default()
+    }
     /// Get the "to" address. If `to` is None then compute contract adddress
-    pub fn unwrap_receiver(&self) -> Address {
+    pub fn to_or_contract_addr(&self) -> Address {
         self.to
             .unwrap_or_else(|| get_contract_address(self.from, self.nonce))
+    }
+    /// Determine if this transaction is a contract create transaction
+    pub fn is_create(&self) -> bool {
+        self.to.is_none()
+    }
+
+    /// Convert to transaction response
+    pub fn to_response(
+        &self,
+        transaction_index: U64,
+        chain_id: Word,
+        block_number: U64,
+    ) -> response::Transaction {
+        response::Transaction {
+            from: self.from,
+            to: self.to,
+            value: self.value,
+            input: self.call_data.clone(),
+            gas_price: Some(self.gas_price),
+            access_list: self.access_list.clone(),
+            nonce: self.nonce,
+            gas: self.gas_limit,
+            transaction_index: Some(transaction_index),
+            r: self.r,
+            s: self.s,
+            v: U64::from(self.v),
+            block_number: Some(block_number),
+            chain_id: Some(chain_id),
+            ..response::Transaction::default()
+        }
     }
 }
 
