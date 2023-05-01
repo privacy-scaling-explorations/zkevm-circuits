@@ -294,4 +294,9 @@ impl Transaction {
     pub fn is_steps_empty(&self) -> bool {
         self.steps.is_empty()
     }
+
+    /// Convinient method for gas limit
+    pub fn gas(&self) -> u64 {
+        self.tx.gas_limit.as_u64()
+    }
 }
