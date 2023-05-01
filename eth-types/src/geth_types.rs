@@ -5,7 +5,10 @@ use crate::{
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
     Word, U64,
 };
-use ethers_core::types::{NameOrAddress, TransactionRequest};
+use ethers_core::{
+    types::{NameOrAddress, TransactionRequest},
+    utils::get_contract_address,
+};
 use ethers_signers::{LocalWallet, Signer};
 use halo2_proofs::halo2curves::{group::ff::PrimeField, secp256k1};
 use num::Integer;
@@ -243,6 +246,12 @@ impl Transaction {
         self.call_data
             .iter()
             .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 })
+    }
+
+    /// Get the "to" address. If `to` is None then compute contract adddress
+    pub fn unwrap_receiver(&self) -> Address {
+        self.to
+            .unwrap_or_else(|| get_contract_address(self.from, self.nonce))
     }
 }
 
