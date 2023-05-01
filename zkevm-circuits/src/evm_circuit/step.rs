@@ -8,6 +8,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
+use eth_types::ToWord;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::Value,
@@ -561,18 +562,18 @@ impl<F: FieldExt> Step<F> {
         )?;
         self.state
             .call_id
-            .assign(region, offset, Value::known(F::from(call.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(call.call_id as u64)))?;
         self.state
             .is_root
             .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
         self.state.is_create.assign(
             region,
             offset,
-            Value::known(F::from(call.is_create as u64)),
+            Value::known(F::from(call.is_create() as u64)),
         )?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash))?;
+            .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
         self.state.program_counter.assign(
             region,
             offset,

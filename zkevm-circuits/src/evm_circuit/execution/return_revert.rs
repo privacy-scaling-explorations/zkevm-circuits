@@ -256,7 +256,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.is_success
             .assign(region, offset, Value::known(call.is_success.into()))?;
 
-        if !call.is_root && !call.is_create {
+        if !call.is_root && !call.is_create() {
             for (cell, value) in [
                 (&self.return_data_length, call.return_data_length.into()),
                 (&self.return_data_offset, call.return_data_offset.into()),
@@ -272,7 +272,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
         }
 
-        if call.is_create && call.is_success {
+        if call.is_create() && call.is_success {
             let values: Vec<_> = (3..3 + length.as_usize())
                 .map(|i| block.rws[step.rw_indices[i]].memory_value())
                 .collect();
@@ -285,7 +285,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
             )?;
         }
 
-        let copy_rw_increase = if call.is_create && call.is_success {
+        let copy_rw_increase = if call.is_create() && call.is_success {
             length.as_u64()
         } else if !call.is_root {
             2 * std::cmp::min(call.return_data_length, length.as_u64())
@@ -297,7 +297,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.copy_rw_increase_is_zero
             .assign(region, offset, F::from(copy_rw_increase))?;
 
-        let is_contract_deployment = call.is_create && call.is_success && !length.is_zero();
+        let is_contract_deployment = call.is_create() && call.is_success && !length.is_zero();
         if !call.is_root {
             let rw_counter_offset = 3 + if is_contract_deployment {
                 5 + length.as_u64()
@@ -323,7 +323,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.address.assign(
             region,
             offset,
-            Value::known(call.callee_address.to_scalar().unwrap()),
+            Value::known(call.address.to_scalar().unwrap()),
         )?;
 
         self.reversion_info.assign(

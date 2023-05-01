@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let address = block.rws[step.rw_indices[1]].stack_value();
-        debug_assert_eq!(call.callee_address, address.to_address());
+        debug_assert_eq!(call.address, address.to_address());
 
         self.address.assign(
             region,

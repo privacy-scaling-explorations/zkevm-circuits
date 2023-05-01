@@ -1,5 +1,5 @@
 use bus_mapping::circuit_input_builder;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
 use crate::{evm_circuit::util::rlc, table::TxContextFieldTag, util::Challenges};
