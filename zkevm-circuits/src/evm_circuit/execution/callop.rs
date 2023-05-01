@@ -1,14 +1,15 @@
 use crate::evm_circuit::{
     execution::ExecutionGadget,
-    param::N_BYTES_GAS,
+    param::{N_BYTES_GAS, N_BYTES_U64},
     step::ExecutionState,
     util::{
+        and,
         common_gadget::{CommonCallGadget, TransferGadget},
         constraint_builder::{
             ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
             Transition::{Delta, To},
         },
-        math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtWordGadget, MinMaxGadget},
+        math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget},
         not, or, select, CachedRegion, Cell, Word,
     },
 };
@@ -49,6 +50,7 @@ pub(crate) struct CallOpGadget<F> {
     caller_balance_word: Word<F>,
     // check if insufficient balance case
     is_insufficient_balance: LtWordGadget<F>,
+    is_depth_ok: LtGadget<F, N_BYTES_U64>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
 }
@@ -86,8 +88,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb.call_context_as_word(None, CallContextFieldTag::Value),
             )
         });
-
-        cb.range_lookup(depth.expr(), 1024);
 
         let call_gadget = CommonCallGadget::construct(
             cb,
@@ -155,9 +155,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
         let is_insufficient_balance =
             LtWordGadget::construct(cb, &caller_balance_word, &call_gadget.value);
+        // depth < 1025
+        let is_depth_ok = LtGadget::construct(cb, depth.expr(), 1025.expr());
+
+        let is_precheck_ok = and::expr([
+            is_depth_ok.expr(),
+            not::expr(is_insufficient_balance.expr()),
+        ]);
 
         // stack write is zero when is_insufficient_balance is true
-        cb.condition(is_insufficient_balance.expr(), |cb| {
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             cb.require_zero(
                 "stack write result is zero when is_insufficient_balance is true",
                 call_gadget.is_success.expr(),
@@ -168,19 +175,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
         // would be invalid).
-        let transfer = cb.condition(
-            is_call.expr() * not::expr(is_insufficient_balance.expr()),
-            |cb| {
-                TransferGadget::construct(
-                    cb,
-                    caller_address.expr(),
-                    callee_address.expr(),
-                    not::expr(call_gadget.callee_not_exists.expr()),
-                    call_gadget.value.clone(),
-                    &mut callee_reversion_info,
-                )
-            },
-        );
+        let transfer = cb.condition(and::expr(&[is_call.expr(), is_precheck_ok.expr()]), |cb| {
+            TransferGadget::construct(
+                cb,
+                caller_address.expr(),
+                callee_address.expr(),
+                not::expr(call_gadget.callee_not_exists.expr()),
+                call_gadget.value.clone(),
+                &mut callee_reversion_info,
+            )
+        });
 
         // For CALLCODE opcode, verify caller balance is greater than or equal to stack
         // `value` in successful case. that is `is_insufficient_balance` is false.
@@ -219,7 +223,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(
-            no_callee_code.clone() * not::expr(is_insufficient_balance.expr()),
+            and::expr(&[no_callee_code.expr(), is_precheck_ok.expr()]),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -265,7 +269,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // handle is_insufficient_balance step transition
-        cb.condition(is_insufficient_balance.expr(), |cb| {
+        cb.condition(not::expr(is_precheck_ok.expr()), |cb| {
             // Save caller's call state
             for field_tag in [
                 CallContextFieldTag::LastCalleeId,
@@ -290,7 +294,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            not::expr(no_callee_code) * not::expr(is_insufficient_balance.expr()),
+            and::expr(&[not::expr(no_callee_code), is_precheck_ok.expr()]),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -421,6 +425,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             transfer,
             caller_balance_word,
             is_insufficient_balance,
+            is_depth_ok,
             one_64th_gas,
             capped_callee_gas_left,
         }
@@ -446,6 +451,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             step.rw_indices[5],
         ]
         .map(|idx| block.rws[idx].call_context_value());
+        let is_error_depth = depth.low_u64() > 1024;
+        self.is_depth_ok
+            .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         let stack_index = 6;
 
         // This offset is used to change the index offset of `step.rw_indices`.
@@ -503,7 +511,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
         // only call opcode do transfer in sucessful case.
         let (caller_balance_pair, callee_balance_pair) =
-            if is_call && !is_insufficient && !value.is_zero() {
+            if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
                 rw_offset += 2;
                 (
                     block.rws[step.rw_indices[16 + rw_offset]].account_value_pair(),
@@ -593,7 +601,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             callee_is_persistent.low_u64() != 0,
         )?;
         // conditionally assign
-        if !is_insufficient && !value.is_zero() {
+        if !is_insufficient && !is_error_depth && !value.is_zero() {
             self.transfer.assign(
                 region,
                 offset,
@@ -632,11 +640,11 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, Address, ToWord, Word,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
     };
 
     use itertools::Itertools;
-    use mock::TestContext;
+    use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext};
 
     use std::default::Default;
 
@@ -988,5 +996,43 @@ mod test {
             },
             callee(callee_bytecode),
         );
+    }
+
+    #[test]
+    fn test_depth() {
+        let callee_code = bytecode! {
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            PUSH1(0x00)
+            ADDRESS
+            PUSH2(0xffff)
+            GAS
+            SUB
+            CALL
+            PUSH1(0x01)
+            SUB
+        };
+
+        let ctx = TestContext::<2, 1>::new(
+            None,
+            account_0_code_account_1_no_code(callee_code),
+            |mut txs, accs| {
+                txs[0]
+                    .to(accs[0].address)
+                    .from(accs[1].address)
+                    .gas(word!("0x2386F26FC10000"));
+            },
+            |block, _tx| block.number(0xcafeu64),
+        )
+        .unwrap();
+
+        CircuitTestBuilder::new_from_test_ctx(ctx)
+            .params(CircuitsParams {
+                max_rws: 300000,
+                ..Default::default()
+            })
+            .run();
     }
 }
