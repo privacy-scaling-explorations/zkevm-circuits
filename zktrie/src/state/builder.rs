@@ -16,7 +16,8 @@ use mpt_circuits::hash::Hashable;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub(crate) static ref HASH_SCHEME_DONE: bool = {
+    /// Use this boolean to initialize the hash scheme.
+    pub static ref HASH_SCHEME_DONE: bool = {
         zktrie::init_hash_scheme(hash_scheme);
         true
     };

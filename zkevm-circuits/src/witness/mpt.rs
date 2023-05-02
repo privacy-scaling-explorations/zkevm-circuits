@@ -332,3 +332,34 @@ fn value_prev(row: &Rw) -> Word {
         _ => unreachable!(),
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
+
+    #[test]
+    fn trace_dumper() {
+        assert!(*HASH_SCHEME_DONE,);
+
+        let key = Key::Account {
+            address: Address::zero(),
+            field_tag: AccountFieldTag::Nonce,
+        };
+        let update = MptUpdate {
+            key,
+            old_value: Word::zero(),
+            new_value: Word::one(),
+            old_root: Word::zero(),
+            new_root: Word::one(),
+        };
+
+        let mut updates = MptUpdates::default();
+        updates.updates.insert(key, update);
+
+        updates.fill_state_roots(&ZktrieState::default());
+        dbg!(updates.smt_traces);
+
+        panic!();
+    }
+}
