@@ -339,7 +339,32 @@ mod test {
     use mpt_zktrie::state::builder::HASH_SCHEME_DONE;
 
     #[test]
-    fn trace_dumper() {
+    fn invalid_state() {
+        assert!(*HASH_SCHEME_DONE,);
+
+        let key = Key::Account {
+            address: Address::zero(),
+            field_tag: AccountFieldTag::Nonce,
+        };
+        let update = MptUpdate {
+            key,
+            old_value: Word::zero(),
+            new_value: Word::zero(),
+            old_root: Word::zero(),
+            new_root: Word::one(),
+        };
+
+        let mut updates = MptUpdates::default();
+        updates.updates.insert(key, update);
+
+        updates.fill_state_roots(&ZktrieState::default());
+        dbg!(updates.smt_traces);
+
+        panic!();
+    }
+
+        #[test]
+    fn code_hashes_set() {
         assert!(*HASH_SCHEME_DONE,);
 
         let key = Key::Account {
