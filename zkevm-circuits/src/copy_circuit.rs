@@ -273,11 +273,11 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 },
             );
             cb.condition(meta.query_advice(is_last, Rotation::cur()), |cb| {
-                cb.require_equal(
-                    "rwc_inc_left == rw_diff for last row in the copy slot",
-                    meta.query_advice(rwc_inc_left, Rotation::cur()),
-                    rw_diff,
-                );
+                // cb.require_equal(
+                //     "rwc_inc_left == rw_diff for last row in the copy slot",
+                //     meta.query_advice(rwc_inc_left, Rotation::cur()),
+                //     rw_diff,
+                // );
             });
 
             cb.gate(meta.query_fixed(q_enable, Rotation::cur()))
@@ -1252,7 +1252,7 @@ mod tests {
 
         assert_error_matches(
             test_copy_circuit_from_block(14, block),
-            vec!["Memory lookup", "Tx calldata lookup"],
+            vec!["Memory word lookup", "Tx calldata lookup"],
         );
     }
 

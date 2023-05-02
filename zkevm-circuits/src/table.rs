@@ -26,7 +26,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
-use std::iter::repeat;
+use std::{io::copy, iter::repeat};
 
 #[cfg(feature = "onephase")]
 use halo2_proofs::plonk::FirstPhase as SecondPhase;
@@ -1320,10 +1320,8 @@ impl CopyTable {
             id: meta.advice_column_in(SecondPhase),
             tag: BinaryNumberChip::configure(meta, q_enable, None),
             addr: meta.advice_column(),
-            //addr_slot: meta.advice_column(),
             src_addr_end: meta.advice_column(),
             bytes_left: meta.advice_column(),
-            //word_index: meta.advice_column(),
             value_wrod_rlc: meta.advice_column(),
             //mask: meta.advice_column(),
             rlc_acc: meta.advice_column_in(SecondPhase),
@@ -1337,6 +1335,7 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
+        println!("assignments CopyEvent {:?} ", copy_event);
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
@@ -1468,9 +1467,11 @@ impl CopyTable {
             ));
 
             // debug info
+            let rw_count = F::from(copy_event.rw_counter(step_idx));
+            let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             println!(
-                "step_id {}, word index: {}, byte {}, value_word_rlc {:?}, is_read {}",
-                step_idx, word_index, copy_step.value, value_word_rlc, is_read_step
+                "is_first {:?}, id: {:?}, rw_count {:?}, tag {:?}, addr {:?} bytes_left {} rlc_acc {:?}, rwc_inc_left {:?}",
+                is_first, id, rw_count, tag, addr, bytes_left, rlc_acc, rwc_inc_left
             );
 
             // is_code
@@ -1573,7 +1574,6 @@ impl<F: Field> LookupTable<F> for CopyTable {
             self.addr.into(),
             self.src_addr_end.into(),
             self.bytes_left.into(),
-            //self.mask.into(),
             self.rlc_acc.into(),
             self.rw_counter.into(),
             self.rwc_inc_left.into(),
@@ -1605,7 +1605,6 @@ impl<F: Field> LookupTable<F> for CopyTable {
             meta.query_advice(self.src_addr_end, Rotation::cur()), // src_addr_end
             meta.query_advice(self.addr, Rotation::next()), // dst_addr
             meta.query_advice(self.bytes_left, Rotation::cur()), // length
-            //meta.query_advice(self.mask, Rotation::cur()), // length
             meta.query_advice(self.rlc_acc, Rotation::cur()), // rlc_acc
             meta.query_advice(self.rw_counter, Rotation::cur()), // rw_counter
             meta.query_advice(self.rwc_inc_left, Rotation::cur()), // rwc_inc_left

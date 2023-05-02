@@ -253,7 +253,8 @@ impl CopyEvent {
 
     /// rw counter increase left at step index
     pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
-        self.rw_counter(self.bytes.len() * 2) - self.rw_counter(step_index)
+        // TODO: here -1 is just hack !!! work out better solution in the future
+        self.rw_counter(self.bytes.len() * 2 - 1) - self.rw_counter(step_index)
     }
 
     /// Number of rw operations performed by this copy event

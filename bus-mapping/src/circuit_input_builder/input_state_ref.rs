@@ -1652,7 +1652,7 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_ctx_mut()?.memory.clone()
         };
 
-        memory.extend_at_least(dst_end_slot_shift as usize + 32);
+        memory.extend_at_least(dst_end_slot as usize + 32);
         // collect all bytes to calldata with padding word
         let calldata_slot_bytes =
             memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
@@ -1669,19 +1669,24 @@ impl<'a> CircuitInputStateRef<'a> {
                 // real copy byte
                 copy_steps.push((value, false, false));
             }
-            //todo: memory word reads if it is an internal call
-            // self.push_op(
-            //    exec_step,
-            //    RW::READ,
-            //   MemoryOp::new(self.call()?.caller_id, addr.into(), byte)
+        }
+
+        // memory word reads if it is an internal call
+        let mut chunk_index = dst_begin_slot;
+        if !is_root {
+            for chunk in calldata_slot_bytes.chunks(32) {
+                let dest_word = Word::from_big_endian(&chunk);
+                self.memory_read_word(exec_step, chunk_index.into(), dest_word)?;
+                chunk_index = chunk_index + 32;
+            }
         }
 
         // memory word writes to destination word
+        chunk_index = dst_begin_slot;
         for chunk in calldata_slot_bytes.chunks(32) {
-            println!("{:?}", chunk);
             let dest_word = Word::from_big_endian(&chunk);
-            self.memory_write_word(exec_step, dst_begin_slot.into(), dest_word)?;
-            dst_begin_slot = dst_begin_slot + 32;
+            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
+            chunk_index = chunk_index + 32;
         }
 
         Ok(copy_steps)
