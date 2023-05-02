@@ -68,7 +68,7 @@ impl<F: Field> SignVerifyChip<F> {
             <Secp256k1Affine as CurveAffine>::CurveExt::random(&mut rng).to_affine();
         Self {
             aux_generator,
-            window_size: 2,
+            window_size: 4,
             max_verif,
             _marker: PhantomData,
         }
@@ -87,7 +87,7 @@ impl<F: Field> SignVerifyChip<F> {
         // region. TODO: Figure out a way to get these numbers automatically.
         let rows_range_chip_table = 295188;
         let rows_ecc_chip_aux = 226;
-        let rows_ecdsa_chip_verification = 140360;
+        let rows_ecdsa_chip_verification = 104471;
         let rows_signature_address_verify = 76;
         std::cmp::max(
             rows_range_chip_table,
@@ -101,7 +101,7 @@ impl<F: Field> Default for SignVerifyChip<F> {
     fn default() -> Self {
         Self {
             aux_generator: Secp256k1Affine::default(),
-            window_size: 1,
+            window_size: 4,
             max_verif: 0,
             _marker: PhantomData::default(),
         }
@@ -353,7 +353,7 @@ impl<F: Field> SignVerifyChip<F> {
         ecc_chip: &mut GeneralEccChip<Secp256k1Affine, F, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-        ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+        ecc_chip.assign_aux(ctx, self.window_size, 2)?;
         Ok(())
     }
 
@@ -794,7 +794,7 @@ mod sign_verify_tests {
         let circuit = TestCircuitSignVerify::<F> {
             sign_verify: SignVerifyChip {
                 aux_generator,
-                window_size: 2,
+                window_size: 4,
                 max_verif,
                 _marker: PhantomData,
             },

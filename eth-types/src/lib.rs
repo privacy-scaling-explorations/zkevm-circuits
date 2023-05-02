@@ -53,6 +53,7 @@ pub trait Field: Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64>
         let bytes = self.to_repr();
         bytes[..16]
             .iter()
+            .rev()
             .fold(0u128, |acc, value| acc * 256u128 + *value as u128)
     }
     /// Gets the lower 32 bits of this field element when expressed
@@ -61,6 +62,7 @@ pub trait Field: Halo2Field + PrimeField<Repr = [u8; 32]> + FromUniformBytes<64>
         let bytes = self.to_repr();
         bytes[..4]
             .iter()
+            .rev()
             .fold(0u32, |acc, value| acc * 256u32 + *value as u32)
     }
 }
