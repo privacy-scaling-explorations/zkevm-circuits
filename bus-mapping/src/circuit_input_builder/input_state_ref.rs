@@ -24,7 +24,10 @@ use eth_types::{
     },
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
-use ethers_core::utils::{get_contract_address, get_create2_address, keccak256};
+use ethers_core::{
+    k256::sha2::digest::typenum::Minimum,
+    utils::{get_contract_address, get_create2_address, keccak256},
+};
 use std::{cmp::max, mem};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
@@ -1652,7 +1655,8 @@ impl<'a> CircuitInputStateRef<'a> {
             self.call_ctx_mut()?.memory.clone()
         };
 
-        memory.extend_at_least(dst_end_slot as usize + 32);
+        let minimal_length = dst_end_slot as usize + 32;
+        memory.extend_at_least(minimal_length);
         // collect all bytes to calldata with padding word
         let calldata_slot_bytes =
             memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
@@ -1673,18 +1677,19 @@ impl<'a> CircuitInputStateRef<'a> {
 
         // memory word reads if it is an internal call
         let mut chunk_index = dst_begin_slot;
-        if !is_root {
-            for chunk in calldata_slot_bytes.chunks(32) {
-                let dest_word = Word::from_big_endian(&chunk);
-                self.memory_read_word(exec_step, chunk_index.into(), dest_word)?;
-                chunk_index = chunk_index + 32;
-            }
-        }
 
         // memory word writes to destination word
         chunk_index = dst_begin_slot;
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
+            if !is_root {
+                self.push_op(
+                    exec_step,
+                    RW::READ,
+                    MemoryWordOp::new(self.call()?.caller_id, chunk_index.into(), dest_word),
+                );
+            }
+
             self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
             chunk_index = chunk_index + 32;
         }
