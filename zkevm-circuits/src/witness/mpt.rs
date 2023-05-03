@@ -501,5 +501,99 @@ mod test {
         panic!();
     }
 
-    fn find_matching_keys() {}
+    fn balance_update(address: Address) -> MptUpdate {
+        MptUpdate {
+            key: Key::Account {
+                address,
+                field_tag: AccountFieldTag::Balance,
+            },
+            old_value: Word::zero(),
+            new_value: Word::one(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        }
+    }
+
+    #[test]
+    fn balance_update_existing() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        updates.insert(balance_update(Address::repeat_byte(45)));
+        let mut generator = updates
+            .fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+
+        let mut updates = MptUpdates::default();
+        let mut update = balance_update(Address::repeat_byte(45));
+        update.old_value = Word::one();
+        update.new_value = Word::from(213);
+        updates.insert(update);
+
+        updates.fill_state_roots_from_generator(generator);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    #[test]
+    fn balance_update_type_1() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        updates.insert(nonce_update(Address::zero()));
+
+        // The key of this address has the same first byte as the key of Address::zero();
+        let mut address = Address::zero();
+        address.0[1] = 202;
+        updates.insert(balance_update(address));
+
+        updates.fill_state_roots(&ZktrieState::default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    #[test]
+    fn balance_update_type_2() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        updates.insert(nonce_update(Address::zero()));
+
+        // The key of this address has the same first byte as the key of Address::zero();
+        let mut address = Address::zero();
+        address.0[1] = 202;
+        updates.insert(nonce_update(address));
+
+        // This address is type 2 empty in the MPT containing the above two addresses.
+        updates.insert(balance_update(Address::repeat_byte(0x45)));
+
+        updates.fill_state_roots(&ZktrieState::default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
 }
