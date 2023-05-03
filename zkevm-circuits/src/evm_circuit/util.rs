@@ -194,7 +194,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     pub fn word_rlc(&self, n: U256) -> Value<F> {
         self.challenges
             .evm_word()
-            .map(|r| rlc::value(&n.to_le_bytes(), r))
+            .map(|r: F| rlc::value(&n.to_le_bytes(), r))
     }
     pub fn empty_code_hash_rlc(&self) -> Value<F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())

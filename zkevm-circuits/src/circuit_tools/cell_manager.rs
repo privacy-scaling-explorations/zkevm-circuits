@@ -1,36 +1,51 @@
 //! Cell manager
-use crate::util::Expr;
+use crate::util::{Expr, query_expression};
+use crate::circuit_tools::cached_region::CachedRegion;
+
 use eth_types::Field;
 use halo2_proofs::{
-    circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Column, Error, Expression, VirtualCells},
+    circuit::{AssignedCell, Value},
+    plonk::{ConstraintSystem, Advice, Column, Error, Expression, VirtualCells},
     poly::Rotation,
 };
+use halo2_proofs::arithmetic::FieldExt;
 use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::hash::Hash;
+use strum_macros::EnumIter;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
     // expression for constraint
-    expression: Option<Expression<F>>,
-    column: Option<Column<Advice>>,
+    expression: Expression<F>,
+    column: Column<Advice>,
     // relative position to selector for synthesis
     rotation: usize,
+    cell_column_index: usize,
 }
 
+
 impl<F: Field> Cell<F> {
-    pub(crate) fn new(meta: &mut VirtualCells<F>, column: Column<Advice>, rotation: usize) -> Self {
+    pub(crate) fn new(
+        meta: &mut VirtualCells<F>,
+        column: Column<Advice>,
+        rotation: usize,
+        cell_column_index: usize,
+    ) -> Self {
         Self {
-            expression: Some(meta.query_advice(column, Rotation(rotation as i32))),
-            column: Some(column),
+            expression: meta.query_advice(column, Rotation(rotation as i32)),
+            column,
             rotation,
+            cell_column_index,
         }
     }
 
+
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        value: F,
+        value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
         region.assign_advice(
             || {
@@ -39,14 +54,14 @@ impl<F: Field> Cell<F> {
                     self.column, self.rotation
                 )
             },
-            self.column.unwrap(),
+            self.column,
             offset + self.rotation,
-            || Value::known(value),
+            || value,
         )
     }
 
     pub(crate) fn column(&self) -> Column<Advice> {
-        self.column.unwrap()
+        self.column
     }
 
     pub(crate) fn rotation(&self) -> usize {
@@ -54,83 +69,205 @@ impl<F: Field> Cell<F> {
     }
 
     pub(crate) fn rot(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
-        meta.query_advice(self.column.unwrap(), Rotation((self.rotation + rot) as i32))
+        meta.query_advice(self.column, Rotation((self.rotation + rot) as i32))
     }
 }
 
 impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.as_ref().unwrap().clone()
+        self.expression.clone()
     }
 }
 
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.as_ref().unwrap().clone()
+        self.expression.clone()
     }
 }
 
-/// CellType
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CellType {
-    /// General
-    Storage,
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// pub(crate) enum CellType {
+//     StoragePhase1,
+//     StoragePhase2,
+//     StoragePermutation,
+//     LookupByte,
+//     Lookup(Table),
+// }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum CellType_<T: CustomTable> {
+    StoragePhase1,
+    StoragePhase2,
+    StoragePermutation,
+    LookupByte,
+    Lookup(T),
 }
 
-/// CellColumn
+pub trait CustomTable: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash {
+    fn matches_to(&self, other: &Self) -> bool;
+}
+
+/// Example 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
+pub(crate) enum TestTable { 
+    Fixed,
+    Tx,
+    Rw,
+    Bytecode,
+    Block,
+    Copy,
+    Keccak,
+    Exp,
+}
+
+impl CustomTable for TestTable {
+    fn matches_to(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+fn works_like_this(table: TestTable, config: &[(TestTable, usize)]) {
+    if table.matches_to(&TestTable::Fixed) {
+        println!("matched");
+    }
+}
+
+
+impl<T: CustomTable> CellType_<T> {
+    // The phase that given `Expression` becomes evaluateable.
+    fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+        use Expression::*;
+        match expr {
+            Challenge(challenge) => challenge.phase() + 1,
+            Advice(query) => query.phase(),
+            Constant(_) | Selector(_) | Fixed(_) | Instance(_) => 0,
+            Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
+            Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
+        }
+    }
+
+    /// Return the storage phase of phase
+    pub(crate) fn storage_for_phase<F: FieldExt>(phase: u8) -> CellType_<T> {
+        match phase {
+            0 => CellType_::StoragePhase1,
+            1 => CellType_::StoragePhase2,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Return the storage cell of the expression
+    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType_<T> {
+        Self::storage_for_phase::<F>(Self::expr_phase::<F>(expr))
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct CellColumn<F> {
+pub(crate) struct CellColumn<F, T: CustomTable> {
     pub(crate) index: usize,
-    pub(crate) cell_type: CellType,
+    pub(crate) cell_type: CellType_<T>,
     pub(crate) height: usize,
     pub(crate) expr: Expression<F>,
 }
 
-impl<F: Field> Expr<F> for CellColumn<F> {
+impl<F: Field, T: Debug + CustomTable> Expr<F> for CellColumn<F, T> {
     fn expr(&self) -> Expression<F> {
         self.expr.clone()
     }
 }
 
-/// CellManager
 #[derive(Clone, Debug)]
-pub struct CellManager<F> {
+pub(crate) struct CellManager<F, T: CustomTable> {
     width: usize,
     height: usize,
     cells: Vec<Cell<F>>,
-    columns: Vec<CellColumn<F>>,
-    height_limit: usize,
+    // 对cell的抽象表示和对columns的抽象表示是分开的
+    // Cell<F> 不用 T
+    columns: Vec<CellColumn<F, T>>,
+    phase_config: PhaseConfig<T>,
+    copy_columns: usize,
 }
 
-impl<F: Field> CellManager<F> {
-    pub(crate) fn new(meta: &mut VirtualCells<F>, advice_columns: &[Column<Advice>]) -> Self {
+#[derive(Clone, Debug)]
+pub struct PhaseConfig<T> {
+    phase3: Vec<(T, usize)>, //lookup
+    phase2: usize, // rlc
+    phase1: usize, // byte
+}
+
+impl<F: Field, T: CustomTable> CellManager<F, T> {
+    pub(crate) fn new(
+        meta: &mut ConstraintSystem<F>,
+        height: usize,
+        advices: &[Column<Advice>],
+        height_offset: usize,
+        phase_config: PhaseConfig<T>,
+        copy_columns: usize,
+    ) -> Self {
         // Setup the columns and query the cells
-        let width = advice_columns.len();
-        let height = 32;
+        let width = advices.len();
         let mut cells = Vec::with_capacity(height * width);
         let mut columns = Vec::with_capacity(width);
-        for c in 0..width {
-            for r in 0..height {
-                cells.push(Cell::new(meta, advice_columns[c], r));
+        
+        // 这个是meta.create_gate的替代
+        // 主要是想 query 新的 column
+        // 在会加一个0.expr()为constraint，因为里面调的create_gate要求
+        query_expression(meta, |meta| {
+            for c in 0..width {
+                for r in 0..height {
+                    cells.push(Cell::new(meta, advices[c], height_offset + r, c));
+                }
+                columns.push(CellColumn {
+                    index: c,
+                    cell_type: CellType_::StoragePhase1,
+                    height: 0,
+                    expr: cells[c * height].expr(),
+                });
             }
-            columns.push(CellColumn {
-                index: c,
-                cell_type: CellType::Storage,
-                height: 0,
-                expr: cells[c * height].expr(),
-            });
+        });
+
+        let mut column_idx = 0;
+
+        // Mark columns used for lookups in Phase3
+        for (table, count) in phase_config.phase3 {
+            for _ in 0usize..count {
+                columns[column_idx].cell_type = CellType_::Lookup(table);
+                column_idx += 1;
+            }
         }
+
+        // Mark columns used for Phase2 constraints
+        for _ in 0..phase_config.phase2 {
+            columns[column_idx].cell_type = CellType_::StoragePhase2;
+            column_idx += 1;
+        }
+
+        // Mark columns used for byte lookup
+        for _ in 0..phase_config.phase1 {
+            columns[column_idx].cell_type = CellType_::LookupByte;
+            assert_eq!(advices[column_idx].column_type().phase(), 0);
+            column_idx += 1;
+        }
+
+        // Mark columns used for copy constraints
+        for _ in 0..copy_columns {
+            meta.enable_equality(advices[column_idx]);
+            columns[column_idx].cell_type = CellType_::StoragePermutation;
+            column_idx += 1;
+        }
+
+
 
         Self {
             width,
             height,
             cells,
             columns,
-            height_limit: height,
+            phase_config,
+            copy_columns,
         }
     }
 
-    pub(crate) fn query_cells(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+    pub(crate) fn query_cells(&mut self, cell_type: CellType_<T>, count: usize) -> Vec<Cell<F>> {
         let mut cells = Vec::with_capacity(count);
         while cells.len() < count {
             let column_idx = self.next_column(cell_type);
@@ -141,19 +278,11 @@ impl<F: Field> CellManager<F> {
         cells
     }
 
-    pub(crate) fn query_cell(&mut self, cell_type: CellType) -> Cell<F> {
+    pub(crate) fn query_cell(&mut self, cell_type: CellType_<T>) -> Cell<F> {
         self.query_cells(cell_type, 1)[0].clone()
     }
 
-    pub(crate) fn reset(&mut self, height_limit: usize) {
-        assert!(height_limit <= self.height);
-        self.height_limit = height_limit;
-        for column in self.columns.iter_mut() {
-            column.height = 0;
-        }
-    }
-
-    fn next_column(&self, cell_type: CellType) -> usize {
+    fn next_column(&self, cell_type: CellType_<T>) -> usize {
         let mut best_index: Option<usize> = None;
         let mut best_height = self.height;
         for column in self.columns.iter() {
@@ -162,12 +291,21 @@ impl<F: Field> CellManager<F> {
                 best_height = column.height;
             }
         }
-        if best_height >= self.height_limit {
-            best_index = None;
+        // Replace a CellType_::Storage by CellType_::StoragePermutation if the later has
+        // better height
+        if cell_type == CellType_::StoragePhase1 {
+            for column in self.columns.iter() {
+                if column.cell_type == CellType_::StoragePermutation && column.height < best_height {
+                    best_index = Some(column.index);
+                    best_height = column.height;
+                }
+            }
         }
         match best_index {
             Some(index) => index,
-            None => unreachable!("not enough cells for query: {:?}", cell_type),
+            // If we reach this case, it means that all the columns of cell_type have assignments
+            // taking self.height rows, so there's no more space.
+            None => panic!("not enough cells for query: {:?}", cell_type),
         }
     }
 
@@ -180,7 +318,7 @@ impl<F: Field> CellManager<F> {
     }
 
     /// Returns a map of CellType -> (width, height, num_cells)
-    pub(crate) fn get_stats(&self) -> BTreeMap<CellType, (usize, usize, usize)> {
+    pub(crate) fn get_stats(&self) -> BTreeMap<CellType_<T>, (usize, usize, usize)> {
         let mut data = BTreeMap::new();
         for column in self.columns.iter() {
             let (mut count, mut height, mut num_cells) =
@@ -193,7 +331,7 @@ impl<F: Field> CellManager<F> {
         data
     }
 
-    pub(crate) fn columns(&self) -> &[CellColumn<F>] {
+    pub(crate) fn columns(&self) -> &[CellColumn<F, T>] {
         &self.columns
     }
 }

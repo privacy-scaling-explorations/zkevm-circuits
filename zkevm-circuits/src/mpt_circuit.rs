@@ -22,11 +22,13 @@ mod rlp_gadgets;
 mod start;
 mod storage_leaf;
 mod witness_row;
+mod table;
 
 use self::{
     account_leaf::AccountLeafConfig,
     helpers::{key_memory, RLPItemView},
     witness_row::{StartRowType,ExtensionBranchRowType, AccountRowType, StorageRowType,Node},
+    table::Table,
 };
 use crate::{
     assign, assignf, circuit,
@@ -38,6 +40,7 @@ use crate::{
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
+    evm_circuit::util::CachedRegion,
     table::{KeccakTable, LookupTable, MPTProofType, MptTable},
     util::Challenges,
 };
@@ -98,7 +101,7 @@ impl<F: Field> MPTContext<F> {
     pub(crate) fn rlp_item(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         idx: usize,
     ) -> RLPItemView<F> {
         // TODO(Brecht): Add RLP limitations like max num bytes
@@ -108,7 +111,7 @@ impl<F: Field> MPTContext<F> {
     pub(crate) fn nibbles(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         idx: usize,
     ) -> RLPItemView<F> {
         self.rlp_item.create_view(meta, cb, idx, true)
@@ -367,6 +370,7 @@ impl<F: Field> MPTConfig<F> {
                     if node.start.is_some() {
                         // println!("{}: start", offset);
                         assign!(region, (self.state_machine.is_start, offset) => true.scalar())?;
+                        
                         self.state_machine.start_config.assign(
                             &mut region,
                             self,
@@ -629,6 +633,7 @@ mod tests {
             });
     }
 
+    #[cfg(feature = "dev-graph")]
     #[test]
     fn graph_mpt() {
         use plotters::prelude::*;

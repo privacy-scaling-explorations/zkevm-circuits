@@ -1,7 +1,7 @@
 use crate::{
     assign, circuit,
     circuit_tools::{
-        cell_manager::{Cell, CellManager},
+        cell_manager::{Cell, CellManager, CustomTable},
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
@@ -26,6 +26,7 @@ use super::{
     rlp_gadgets::{
         get_ext_odd_nibble_value, RLPItemGadget, RLPItemWitness, RLPListGadget, RLPListWitness,
     },
+    table::Table,
     FixedTableTag,
 };
 
@@ -56,7 +57,7 @@ pub(crate) struct LeafKeyWitness {
 }
 
 impl<F: Field> LeafKeyGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, rlp_key: RLPItemView<F>) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F, Table>, rlp_key: RLPItemView<F>) -> Self {
         circuit!([meta, cb], {
             let has_no_nibbles = IsEqualGadget::<F>::construct(
                 cb,
@@ -69,14 +70,14 @@ impl<F: Field> LeafKeyGadget<F> {
 
     pub(crate) fn expr(
         &self,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         rlp_key: RLPItemView<F>,
         key_mult_prev: Expression<F>,
         is_key_odd: Expression<F>,
         r: &Expression<F>,
     ) -> Expression<F> {
         circuit!([meta, cb], {
-            let calc_rlc = |cb: &mut ConstraintBuilder<F>,
+            let calc_rlc = |cb: &mut ConstraintBuilder<F, Table>,
                             bytes: &[Expression<F>],
                             is_key_odd: Expression<F>| {
                 leaf_key_rlc(cb, bytes, key_mult_prev.expr(), is_key_odd.expr(), r)
@@ -142,8 +143,8 @@ impl LeafKeyWitness {
     }
 }
 
-pub(crate) fn ext_key_rlc_expr<F: Field>(
-    cb: &mut ConstraintBuilder<F>,
+pub(crate) fn ext_key_rlc_expr<F: Field, T>(
+    cb: &mut ConstraintBuilder<F, Table>,
     key_value: RLPItemView<F>,
     key_mult_prev: Expression<F>,
     is_key_part_odd: Expression<F>,
@@ -154,7 +155,7 @@ pub(crate) fn ext_key_rlc_expr<F: Field>(
     circuit!([meta, cb], {
         let (is_short, is_long) = (key_value.is_short(), key_value.is_long());
         let mult_first_odd = ifx! {is_key_odd => { 1.expr() } elsex { 16.expr() }};
-        let calc_rlc = |cb: &mut ConstraintBuilder<F>,
+        let calc_rlc = |cb: &mut ConstraintBuilder<F, Table>,
                         bytes: &[Expression<F>],
                         key_mult_first_even: Expression<F>| {
             ext_key_rlc(
@@ -256,7 +257,7 @@ pub(crate) struct ListKeyWitness {
 }
 
 impl<F: Field> ListKeyGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, key_value: &RLPItemView<F>) -> Self {
+    pub(crate) fn construct(cb: &mut ConstraintBuilder<F, Table>, key_value: &RLPItemView<F>) -> Self {
         let rlp_list_bytes = cb.query_bytes();
         let rlp_list_bytes_expr = rlp_list_bytes.iter().map(|c| c.expr()).collect::<Vec<_>>();
         let key = LeafKeyGadget::construct(cb, key_value.clone());
@@ -330,7 +331,7 @@ pub(crate) struct KeyDataWitness<F> {
 
 impl<F: Field> KeyData<F> {
     pub(crate) fn load(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         memory: &MemoryBank<F>,
         offset: Expression<F>,
     ) -> Self {
@@ -365,7 +366,7 @@ impl<F: Field> KeyData<F> {
     }
 
     pub(crate) fn store(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         memory: &MemoryBank<F>,
         rlc: Expression<F>,
         mult: Expression<F>,
@@ -391,7 +392,7 @@ impl<F: Field> KeyData<F> {
         );
     }
 
-    pub(crate) fn store_defaults(cb: &mut ConstraintBuilder<F>, memory: &MemoryBank<F>) {
+    pub(crate) fn store_defaults(cb: &mut ConstraintBuilder<F, Table>, memory: &MemoryBank<F>) {
         memory.store(cb, &KeyData::default_values_expr());
     }
 
@@ -484,7 +485,7 @@ pub(crate) struct ParentDataWitness<F> {
 impl<F: Field> ParentData<F> {
     pub(crate) fn load(
         description: &'static str,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         memory: &MemoryBank<F>,
         offset: Expression<F>,
     ) -> Self {
@@ -511,7 +512,7 @@ impl<F: Field> ParentData<F> {
     }
 
     pub(crate) fn store(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         memory: &MemoryBank<F>,
         rlc: Expression<F>,
         is_root: Expression<F>,
@@ -586,7 +587,7 @@ pub(crate) struct MainDataWitness<F> {
 impl<F: Field> MainData<F> {
     pub(crate) fn load(
         description: &'static str,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         memory: &MemoryBank<F>,
         offset: Expression<F>,
     ) -> Self {
@@ -615,7 +616,7 @@ impl<F: Field> MainData<F> {
     }
 
     pub(crate) fn store(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         memory: &MemoryBank<F>,
         values: [Expression<F>; 5],
     ) {
@@ -670,8 +671,8 @@ impl<F: Field> MainData<F> {
 }
 
 /// Add the nibble from the drifted branch
-pub(crate) fn nibble_rlc<F: Field>(
-    cb: &mut ConstraintBuilder<F>,
+pub(crate) fn nibble_rlc<F: Field, T>(
+    cb: &mut ConstraintBuilder<F, Table>,
     key_rlc: Expression<F>,
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
@@ -693,8 +694,8 @@ pub(crate) fn nibble_rlc<F: Field>(
     })
 }
 
-pub(crate) fn leaf_key_rlc<F: Field>(
-    cb: &mut ConstraintBuilder<F>,
+pub(crate) fn leaf_key_rlc<F: Field, T>(
+    cb: &mut ConstraintBuilder<F, Table>,
     bytes: &[Expression<F>],
     key_mult_prev: Expression<F>,
     is_key_odd: Expression<F>,
@@ -712,8 +713,8 @@ pub(crate) fn leaf_key_rlc<F: Field>(
     })
 }
 
-pub(crate) fn ext_key_rlc<F: Field>(
-    cb: &mut ConstraintBuilder<F>,
+pub(crate) fn ext_key_rlc<F: Field, T>(
+    cb: &mut ConstraintBuilder<F, Table>,
     bytes: &[Expression<F>],
     key_mult_prev: Expression<F>,
     is_odd: Expression<F>,
@@ -757,11 +758,11 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
-    use crate::{_cb, circuit, circuit_tools::constraint_builder::ConstraintBuilder};
+    use crate::{_cb, circuit, circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable}};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(
+    pub(crate) fn expr<F: Field, T: CustomTable>(
         key_len: Expression<F>,
         is_key_odd: Expression<F>,
     ) -> Expression<F> {
@@ -797,11 +798,11 @@ pub(crate) fn main_memory() -> String {
 /// MPTConstraintBuilder
 #[derive(Clone)]
 pub struct MPTConstraintBuilder<F> {
-    pub base: ConstraintBuilder<F>,
+    pub base: ConstraintBuilder<F, Table>,
 }
 
 impl<F: Field> MPTConstraintBuilder<F> {
-    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F>>) -> Self {
+    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F, Table>>) -> Self {
         MPTConstraintBuilder {
             base: ConstraintBuilder::new(max_degree, cell_manager),
         }
@@ -817,7 +818,7 @@ pub struct IsEmptyTreeGadget<F> {
 
 impl<F: Field> IsEmptyTreeGadget<F> {
     pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         parent_rlc: Expression<F>,
         r: &Expression<F>,
     ) -> Self {
@@ -1116,7 +1117,7 @@ impl<F: Field> MainRLPGadget<F> {
     pub(crate) fn create_view(
         &self,
         meta: &mut VirtualCells<F>,
-        cb: &mut ConstraintBuilder<F>,
+        cb: &mut ConstraintBuilder<F, Table>,
         rot: usize,
         is_nibbles: bool,
     ) -> RLPItemView<F> {

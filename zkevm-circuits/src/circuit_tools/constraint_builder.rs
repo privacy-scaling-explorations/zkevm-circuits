@@ -7,7 +7,7 @@ use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::cell_manager::{Cell, CellManager, CellType};
+use super::cell_manager::{Cell, CellManager, CellType_, CustomTable};
 
 /// Lookup data
 #[derive(Clone)]
@@ -24,7 +24,7 @@ pub struct LookupData<F> {
 
 /// Constraint builder
 #[derive(Clone)]
-pub struct ConstraintBuilder<F> {
+pub struct ConstraintBuilder<F, T: CustomTable> {
     constraints: Vec<(&'static str, Expression<F>)>,
     max_degree: usize,
     conditions: Vec<Expression<F>>,
@@ -33,11 +33,11 @@ pub struct ConstraintBuilder<F> {
     /// The lookup tables
     pub lookup_tables: Vec<LookupData<F>>,
     /// CellManager
-    pub cell_manager: Option<CellManager<F>>,
+    pub cell_manager: Option<CellManager<F, T>>,
 }
 
-impl<F: Field> ConstraintBuilder<F> {
-    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F>>) -> Self {
+impl<F: Field, T: CustomTable> ConstraintBuilder<F, T> {
+    pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F, T>>) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
             max_degree,
@@ -48,7 +48,7 @@ impl<F: Field> ConstraintBuilder<F> {
         }
     }
 
-    pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager<F>) {
+    pub(crate) fn set_cell_manager(&mut self, cell_manager: CellManager<F, T>) {
         self.cell_manager = Some(cell_manager);
     }
 
@@ -126,7 +126,7 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub(crate) fn query_byte(&mut self) -> Cell<F> {
         // TODO(Brecht): fix
-        self.query_cell_with_type(CellType::Storage)
+        self.query_cell_with_type(CellType_::StoragePhase1)
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -134,24 +134,24 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 
     pub(crate) fn query_bytes_dyn(&mut self, count: usize) -> Vec<Cell<F>> {
-        self.query_cells_dyn(CellType::Storage, count)
+        self.query_cells_dyn(CellType_::StoragePhase1, count)
     }
 
     pub(crate) fn query_cell(&mut self) -> Cell<F> {
-        self.query_cell_with_type(CellType::Storage)
+        self.query_cell_with_type(CellType_::StoragePhase1)
     }
 
     pub(crate) fn query_cells<const N: usize>(&mut self) -> [Cell<F>; N] {
-        self.query_cells_dyn(CellType::Storage, N)
+        self.query_cells_dyn(CellType_::StoragePhase1, N)
             .try_into()
             .unwrap()
     }
 
-    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType) -> Cell<F> {
+    pub(crate) fn query_cell_with_type(&mut self, cell_type: CellType_<T>) -> Cell<F> {
         self.query_cells_dyn(cell_type, 1).first().unwrap().clone()
     }
 
-    fn query_cells_dyn(&mut self, cell_type: CellType, count: usize) -> Vec<Cell<F>> {
+    fn query_cells_dyn(&mut self, cell_type: CellType_<T>, count: usize) -> Vec<Cell<F>> {
         self.cell_manager
             .as_mut()
             .unwrap()
@@ -325,8 +325,8 @@ impl<F: Field> ConstraintBuilder<F> {
     }
 }
 
-pub(crate) fn merge_lookups<F: Field>(
-    cb: &mut ConstraintBuilder<F>,
+pub(crate) fn merge_lookups<F: Field, T: CustomTable>(
+    cb: &mut ConstraintBuilder<F, T>,
     lookups: Vec<LookupData<F>>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     merge_values(
@@ -338,8 +338,8 @@ pub(crate) fn merge_lookups<F: Field>(
     )
 }
 
-pub(crate) fn merge_values<F: Field>(
-    cb: &mut ConstraintBuilder<F>,
+pub(crate) fn merge_values<F: Field, T: CustomTable>(
+    cb: &mut ConstraintBuilder<F, T>,
     values: Vec<(Expression<F>, Vec<Expression<F>>)>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
     let selector = sum::expr(values.iter().map(|(condition, _)| condition.expr()));
@@ -689,7 +689,7 @@ macro_rules! _require2 {
 #[macro_export]
 macro_rules! _cb {
     () => {{
-        ConstraintBuilder::<F>::new(0, None)
+        ConstraintBuilder::<F, T>::new(0, None)
     }};
 }
 

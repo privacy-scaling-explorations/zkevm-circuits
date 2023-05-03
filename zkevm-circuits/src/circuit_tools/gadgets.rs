@@ -2,23 +2,23 @@
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{
-    circuit::Region,
+    circuit::{Region, Value},
     plonk::{Error, Expression},
 };
 
 use crate::evm_circuit::util::{from_bytes, pow_of_two};
 
-use super::{cell_manager::Cell, constraint_builder::ConstraintBuilder};
+use super::{cell_manager::{Cell, CustomTable}, constraint_builder::ConstraintBuilder, cached_region::CachedRegion};
 
 /// Returns `1` when `value == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug, Default)]
 pub struct IsZeroGadget<F> {
-    inverse: Cell<F>,
+    inverse: Option<Cell<F>>,
     is_zero: Option<Expression<F>>,
 }
 
 impl<F: Field> IsZeroGadget<F> {
-    pub(crate) fn construct(cb: &mut ConstraintBuilder<F>, value: Expression<F>) -> Self {
+    pub(crate) fn construct<T: CustomTable>(cb: &mut ConstraintBuilder<F, T>, value: Expression<F>) -> Self {
         circuit!([meta, cb], {
             let inverse = cb.query_cell();
 
@@ -29,7 +29,7 @@ impl<F: Field> IsZeroGadget<F> {
             require!(inverse.expr() * is_zero.expr() => 0);
 
             Self {
-                inverse,
+                inverse: Some(inverse),
                 is_zero: Some(is_zero),
             }
         })
@@ -41,12 +41,12 @@ impl<F: Field> IsZeroGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         value: F,
     ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::zero());
-        self.inverse.assign(region, offset, inverse)?;
+        self.inverse.unwrap().assign(region, offset, Value::known(inverse))?;
         Ok(if value.is_zero().into() {
             F::one()
         } else {
@@ -62,8 +62,8 @@ pub struct IsEqualGadget<F> {
 }
 
 impl<F: Field> IsEqualGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+    pub(crate) fn construct<T: CustomTable>(
+        cb: &mut ConstraintBuilder<F, T>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -78,7 +78,7 @@ impl<F: Field> IsEqualGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         lhs: F,
         rhs: F,
@@ -97,7 +97,7 @@ impl<F: Field> IsEqualGadget<F> {
 /// be `1` when `lhs < rhs`.
 #[derive(Clone, Debug, Default)]
 pub struct LtGadget<F, const N_BYTES: usize> {
-    lt: Cell<F>, // `1` when `lhs < rhs`, `0` otherwise.
+    lt: Option<Cell<F>>, // `1` when `lhs < rhs`, `0` otherwise.
     diff: Option<[Cell<F>; N_BYTES]>, /* The byte values of `diff`.
                   * `diff` equals `lhs - rhs` if `lhs >= rhs`,
                   * `lhs - rhs + range` otherwise. */
@@ -105,8 +105,8 @@ pub struct LtGadget<F, const N_BYTES: usize> {
 }
 
 impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
-    pub(crate) fn construct(
-        cb: &mut ConstraintBuilder<F>,
+    pub(crate) fn construct<T: CustomTable>(
+        cb: &mut ConstraintBuilder<F, T>,
         lhs: Expression<F>,
         rhs: Expression<F>,
     ) -> Self {
@@ -122,33 +122,33 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
         );
 
         Self {
-            lt,
+            lt: Some(lt),
             diff: Some(diff),
             range,
         }
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
-        self.lt.expr()
+        self.lt.unwrap().expr()
     }
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         lhs: F,
         rhs: F,
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
         let lt = lhs < rhs;
-        self.lt
-            .assign(region, offset, if lt { F::one() } else { F::zero() })?;
+        self.lt.unwrap()
+            .assign(region, offset, if lt { Value::known(F::one()) } else { Value::known(F::zero()) })?;
 
         // Set the bytes of diff
         let diff = (lhs - rhs) + (if lt { self.range } else { F::zero() });
         let diff_bytes = diff.to_repr();
         for (idx, diff) in self.diff.as_ref().unwrap().iter().enumerate() {
-            diff.assign(region, offset, F::from(diff_bytes[idx] as u64))?;
+            diff.assign(region, offset, Value::known(F::from(diff_bytes[idx] as u64)))?;
         }
 
         Ok((if lt { F::one() } else { F::zero() }, diff_bytes.to_vec()))
