@@ -596,4 +596,124 @@ mod test {
 
         panic!();
     }
+
+    #[test]
+    fn update_code_size_existing() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        let address = Address::repeat_byte(45);
+        updates.insert(nonce_update(address));
+
+        let mut generator = updates
+            .fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+
+        let mut updates = MptUpdates::default();
+        let update = MptUpdate {
+            key: Key::Account {
+                address,
+                field_tag: AccountFieldTag::CodeSize,
+            },
+            old_value: Word::zero(),
+            new_value: Word::from(23412341231u64),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        };
+        updates.insert(update);
+
+        updates.fill_state_roots_from_generator(generator);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    #[test]
+    fn update_code_hash_existing() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        let address = Address::repeat_byte(45);
+        updates.insert(nonce_update(address));
+
+        let mut generator = updates
+            .fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+
+        let mut updates = MptUpdates::default();
+        let update = MptUpdate {
+            key: Key::Account {
+                address,
+                field_tag: AccountFieldTag::CodeHash,
+            },
+            old_value: Word::zero(),
+            new_value: Word::from(234123124231231u64),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        };
+        updates.insert(update);
+
+        updates.fill_state_roots_from_generator(generator);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    #[test]
+    fn update_keccak_code_hash_existing() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        let address = Address::repeat_byte(45);
+        updates.insert(nonce_update(address));
+
+        let mut generator = updates
+            .fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+
+        let mut updates = MptUpdates::default();
+        let update = MptUpdate {
+            key: Key::Account {
+                address,
+                field_tag: AccountFieldTag::KeccakCodeHash,
+            },
+            old_value: Word::zero(),
+            new_value: U256([u64::MAX; 4]),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        };
+        updates.insert(update);
+
+        updates.fill_state_roots_from_generator(generator);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
 }
