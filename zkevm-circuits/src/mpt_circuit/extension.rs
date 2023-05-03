@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
+    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::CachedRegion},
     mpt_circuit::{
         helpers::{
             ext_key_rlc_calc_value, ext_key_rlc_expr, num_nibbles, Indexable, KeyData, ParentData,
@@ -181,7 +181,7 @@ impl<F: Field> ExtensionGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget},
+    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::CachedRegion},
     mpt_circuit::{
         helpers::{nibble_rlc, Indexable},
         param::{HASH_WIDTH, RLP_NIL},
@@ -272,7 +272,7 @@ impl<F: Field> BranchGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

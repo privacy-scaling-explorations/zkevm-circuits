@@ -1,8 +1,10 @@
+use std::marker::PhantomData;
+
 use crate::{
     _cb, circuit,
     circuit_tools::{
         cell_manager::{Cell, CustomTable},
-        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue},
+        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, cached_region::CachedRegion,
     },
     matchw,
     mpt_circuit::param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
@@ -12,7 +14,6 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
 use halo2_proofs::{
-    circuit::Region,
     plonk::{Error, Expression},
 };
 
@@ -50,7 +51,7 @@ impl<F: Field> RLPListGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -104,8 +105,9 @@ impl<F: Field> RLPListGadget<F> {
     }
 
     /// Number of RLP bytes
-    pub(crate) fn num_rlp_bytes<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
+        let mut cb = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => 2.expr(),
@@ -120,8 +122,9 @@ impl<F: Field> RLPListGadget<F> {
     }
 
     /// Returns the length of the list (excluding RLP bytes)
-    pub(crate) fn len<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn len(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => get_len_list_short::expr(self.bytes[0].expr()),
                 self.is_long() => self.bytes[1].expr(),
@@ -136,8 +139,9 @@ impl<F: Field> RLPListGadget<F> {
     }
 
     /// Returns the rlc of only the RLP bytes
-    pub(crate) fn rlc_rlp_only<T: CustomTable>(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn rlc_rlp_only(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => (self.bytes[..1].rlc(r), pow::expr(r.expr(), 1)),
                 self.is_long() => (self.bytes[..2].rlc(r), pow::expr(r.expr(), 2)),
@@ -231,7 +235,7 @@ impl<F: Field> RLPListDataGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         list_bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -278,7 +282,7 @@ impl<F: Field> RLPValueGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPValueWitness, Error> {
@@ -334,8 +338,9 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     /// Number of RLP bytes
-    pub(crate) fn num_rlp_bytes<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => 0.expr(),
                 self.is_long() => 1.expr(),
@@ -345,8 +350,9 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     /// Number of bytes in total (including RLP bytes)
-    pub(crate) fn num_bytes<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn num_bytes(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => get_num_bytes_short::expr(self.bytes[0].expr()),
@@ -359,8 +365,9 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     /// Length of the value (excluding RLP bytes)
-    pub(crate) fn len<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn len(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => 1.expr(),
                 self.is_long() => get_len_short::expr(self.bytes[0].expr()),
@@ -373,7 +380,7 @@ impl<F: Field> RLPValueGadget<F> {
     }
 
     /// RLC data
-    pub(crate) fn rlc<T: CustomTable>(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
+    pub(crate) fn rlc(&self, r: &Expression<F>) -> (Expression<F>, Expression<F>) {
         (self.rlc_value(r), self.rlc_rlp(r))
     }
 
@@ -381,8 +388,9 @@ impl<F: Field> RLPValueGadget<F> {
         self.bytes.rlc(r)
     }
 
-    pub(crate) fn rlc_value<T: CustomTable>(&self, r: &Expression<F>) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn rlc_value(&self, r: &Expression<F>) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.is_short() => {
                     self.bytes[0].expr()
@@ -568,7 +576,7 @@ impl<F: Field> RLPItemGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPItemWitness, Error> {
@@ -584,8 +592,9 @@ impl<F: Field> RLPItemGadget<F> {
     }
 
     // Single RLP byte containing the byte value
-    pub(crate) fn is_short<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn is_short(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.value.is_string() => self.value.is_short(),
                 self.list.is_list() => self.list.is_short(),
@@ -594,8 +603,9 @@ impl<F: Field> RLPItemGadget<F> {
     }
 
     // Single RLP byte containing the length of the value
-    pub(crate) fn is_long<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn is_long(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.value.is_string() => self.value.is_long(),
                 self.list.is_list() => self.list.is_long(),
@@ -605,8 +615,9 @@ impl<F: Field> RLPItemGadget<F> {
 
     // RLP byte containing the lenght of the length,
     // followed by the length, followed by the actual data
-    pub(crate) fn is_very_long<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn is_very_long(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
                 self.value.is_string() => self.value.is_very_long(),
                 self.list.is_list() => self.list.is_very_long(),
@@ -615,36 +626,39 @@ impl<F: Field> RLPItemGadget<F> {
     }
 
     /// Number of RLP bytes
-    pub(crate) fn num_rlp_bytes<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn num_rlp_bytes(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
-                self.value.is_string() => self.value.num_rlp_bytes::<T>(),
-                self.list.is_list() => self.list.num_rlp_bytes::<T>(),
+                self.value.is_string() => self.value.num_rlp_bytes(),
+                self.list.is_list() => self.list.num_rlp_bytes(),
             }
         })
     }
 
     /// Number of bytes in total (including RLP bytes)
-    pub(crate) fn num_bytes<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn num_bytes(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
-                self.value.is_string() => self.value.num_bytes::<T>(),
+                self.value.is_string() => self.value.num_bytes(),
                 self.list.is_list() => self.list.num_bytes(),
             }
         })
     }
 
     /// Length of the value (excluding RLP bytes)
-    pub(crate) fn len<T: CustomTable>(&self) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn len(&self) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
-                self.value.is_string() => self.value.len::<T>(),
-                self.list.is_list() => self.list.len::<T>(),
+                self.value.is_string() => self.value.len(),
+                self.list.is_list() => self.list.len(),
             }
         })
     }
 
-    pub(crate) fn rlc_rlp<T: CustomTable>(
+    pub(crate) fn rlc_rlp(
         &self,
         cb: &mut ConstraintBuilder<F, Table>,
         r: &Expression<F>,
@@ -659,10 +673,11 @@ impl<F: Field> RLPItemGadget<F> {
 
     // Returns the RLC of the value if the RLP is a string,
     // returns the RLC of the full string if the RLP is a list.
-    pub(crate) fn rlc_content<T: CustomTable>(&self, r: &Expression<F>) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+    pub(crate) fn rlc_content(&self, r: &Expression<F>) -> Expression<F> {
+        let mut cb: ConstraintBuilder<F, Table> = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             matchx! {
-                self.value.is_string() => self.value.rlc_value::<T>(r),
+                self.value.is_string() => self.value.rlc_value(r),
                 self.list.is_list() => self.list.rlc_rlp(r),
             }
         })

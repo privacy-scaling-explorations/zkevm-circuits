@@ -6,7 +6,7 @@ use bus_mapping::state_db::CodeDB;
 use eth_types::{Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, Error, Expression},
+    plonk::{Advice, Assigned, Column, Error, Expression, Fixed},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -106,6 +106,22 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         res
     }
 
+    pub fn assign_fixed<'v, V, VR, A, AR>(
+        &'v mut self,
+        annotation: A,
+        column: Column<Fixed>,
+        offset: usize,
+        to: V,
+    ) -> Result<AssignedCell<VR, F>, Error>
+    where
+        V: Fn() -> Value<VR> + 'v,
+        for<'vr> Assigned<F>: From<&'vr VR>,
+        A: Fn() -> AR,
+        AR: Into<String>,
+    {
+        self.region.assign_fixed(annotation, column, offset, &to)
+    }
+
     pub fn get_fixed(&self, _row_index: usize, _column_index: usize, _rotation: Rotation) -> F {
         unimplemented!("fixed column");
     }
@@ -113,6 +129,10 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
         self.advice[column_index - self.width_start]
             [(((row_index - self.height_start) as i32) + rotation.0) as usize]
+    }
+
+    pub fn region(&mut self) -> &mut Region<'_, F> {
+        self.region
     }
 
     pub fn challenges(&self) -> &Challenges<Value<F>> {
@@ -190,7 +210,7 @@ impl<F: Field, T: CustomTable> StoredExpression<F, T>  {
             &|a, b| a * b,
             &|a, scalar| a * Value::known(scalar),
         );
-        self.cell.assign(region, offset, value)?;
+        self.cell.assign_value(region, offset, value)?;
         Ok(value)
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     circuit_tools::{
         cell_manager::Cell,
         constraint_builder::RLCChainable,
-        gadgets::{IsEqualGadget, LtGadget},
+        gadgets::{IsEqualGadget, LtGadget}, cached_region::CachedRegion,
     },
     mpt_circuit::{
         helpers::{
@@ -259,7 +259,7 @@ impl<F: Field> StorageLeafConfig<F> {
 
     pub fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
@@ -416,7 +416,7 @@ impl<F: Field> StorageLeafConfig<F> {
             MPTProofType::Disabled
         };
         ctx.mpt_table.assign(
-            region,
+            region.region(),
             offset,
             &MptUpdateRow {
                 address_rlc: Value::known(main_data.address_rlc),

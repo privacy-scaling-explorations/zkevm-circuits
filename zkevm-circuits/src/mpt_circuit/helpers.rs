@@ -6,7 +6,7 @@ use crate::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
         gadgets::IsEqualGadget,
-        memory::MemoryBank,
+        memory::MemoryBank, cached_region::CachedRegion,
     },
     matchw,
     mpt_circuit::{
@@ -18,8 +18,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{or, pow, Scalar};
 use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, Expression, VirtualCells},
+    plonk::{Error, Expression, VirtualCells}, circuit::Value,
 };
 
 use super::{
@@ -99,7 +98,7 @@ impl<F: Field> LeafKeyGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<LeafKeyWitness, Error> {
@@ -143,7 +142,7 @@ impl LeafKeyWitness {
     }
 }
 
-pub(crate) fn ext_key_rlc_expr<F: Field, T>(
+pub(crate) fn ext_key_rlc_expr<F: Field>(
     cb: &mut ConstraintBuilder<F, Table>,
     key_value: RLPItemView<F>,
     key_mult_prev: Expression<F>,
@@ -271,7 +270,7 @@ impl<F: Field> ListKeyGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         list_bytes: &[u8],
         key_item: &RLPItemWitness,
@@ -410,7 +409,7 @@ impl<F: Field> KeyData<F> {
     }
 
     pub(crate) fn witness_store(
-        _region: &mut Region<'_, F>,
+        _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         rlc: F,
@@ -437,7 +436,7 @@ impl<F: Field> KeyData<F> {
 
     pub(crate) fn witness_load(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
@@ -523,7 +522,7 @@ impl<F: Field> ParentData<F> {
     }
 
     pub(crate) fn witness_store(
-        _region: &mut Region<'_, F>,
+        _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         rlc: F,
@@ -545,7 +544,7 @@ impl<F: Field> ParentData<F> {
 
     pub(crate) fn witness_load(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
@@ -624,7 +623,7 @@ impl<F: Field> MainData<F> {
     }
 
     pub(crate) fn witness_store(
-        _region: &mut Region<'_, F>,
+        _region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         proof_type: usize,
@@ -647,7 +646,7 @@ impl<F: Field> MainData<F> {
 
     pub(crate) fn witness_load(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
@@ -671,7 +670,7 @@ impl<F: Field> MainData<F> {
 }
 
 /// Add the nibble from the drifted branch
-pub(crate) fn nibble_rlc<F: Field, T>(
+pub(crate) fn nibble_rlc<F: Field>(
     cb: &mut ConstraintBuilder<F, Table>,
     key_rlc: Expression<F>,
     key_mult_prev: Expression<F>,
@@ -694,7 +693,7 @@ pub(crate) fn nibble_rlc<F: Field, T>(
     })
 }
 
-pub(crate) fn leaf_key_rlc<F: Field, T>(
+pub(crate) fn leaf_key_rlc<F: Field>(
     cb: &mut ConstraintBuilder<F, Table>,
     bytes: &[Expression<F>],
     key_mult_prev: Expression<F>,
@@ -713,7 +712,7 @@ pub(crate) fn leaf_key_rlc<F: Field, T>(
     })
 }
 
-pub(crate) fn ext_key_rlc<F: Field, T>(
+pub(crate) fn ext_key_rlc<F: Field>(
     cb: &mut ConstraintBuilder<F, Table>,
     bytes: &[Expression<F>],
     key_mult_prev: Expression<F>,
@@ -758,15 +757,16 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
-    use crate::{_cb, circuit, circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable}};
+    use crate::{_cb, circuit, circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable}, mpt_circuit::table::Table};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field, T: CustomTable>(
+    pub(crate) fn expr<F: Field>(
         key_len: Expression<F>,
         is_key_odd: Expression<F>,
     ) -> Expression<F> {
-        circuit!([meta, _cb!()], {
+        let mut cb = ConstraintBuilder::<F, Table>::new(0, None);
+        circuit!([meta, cb], {
             ifx! {is_key_odd => {
                 key_len.expr() * 2.expr() - 1.expr()
             } elsex {
@@ -845,7 +845,7 @@ impl<F: Field> IsEmptyTreeGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         parent_rlc: F,
         r: F,
@@ -922,7 +922,7 @@ impl<F: Field> DriftedGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         parent_data: &[ParentDataWitness<F>],
         drifted_list_bytes: &[u8],
@@ -990,7 +990,7 @@ impl<F: Field> WrongGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         is_non_existing: bool,
         key_rlc: &[F],
@@ -1081,7 +1081,7 @@ impl<F: Field> MainRLPGadget<F> {
 
     pub(crate) fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         bytes: &[u8],
         r: F,

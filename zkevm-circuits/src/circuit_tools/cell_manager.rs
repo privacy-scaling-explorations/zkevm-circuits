@@ -14,11 +14,11 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use strum_macros::EnumIter;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Cell<F> {
     // expression for constraint
-    expression: Expression<F>,
-    column: Column<Advice>,
+    expression: Option<Expression<F>>,
+    column: Option<Column<Advice>>,
     // relative position to selector for synthesis
     rotation: usize,
     cell_column_index: usize,
@@ -33,8 +33,8 @@ impl<F: Field> Cell<F> {
         cell_column_index: usize,
     ) -> Self {
         Self {
-            expression: meta.query_advice(column, Rotation(rotation as i32)),
-            column,
+            expression: Some(meta.query_advice(column, Rotation(rotation as i32))),
+            column: Some(column),
             rotation,
             cell_column_index,
         }
@@ -45,7 +45,7 @@ impl<F: Field> Cell<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        value: Value<F>,
+        value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
         region.assign_advice(
             || {
@@ -54,14 +54,33 @@ impl<F: Field> Cell<F> {
                     self.column, self.rotation
                 )
             },
-            self.column,
+            self.column.unwrap(),
+            offset + self.rotation,
+            || Value::known(value),
+        )
+    }
+
+    pub(crate) fn assign_value(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        region.assign_advice(
+            || {
+                format!(
+                    "Cell column: {:?} and rotation: {}",
+                    self.column.unwrap(), self.rotation
+                )
+            },
+            self.column.unwrap(),
             offset + self.rotation,
             || value,
         )
     }
 
     pub(crate) fn column(&self) -> Column<Advice> {
-        self.column
+        self.column.unwrap()
     }
 
     pub(crate) fn rotation(&self) -> usize {
@@ -69,19 +88,19 @@ impl<F: Field> Cell<F> {
     }
 
     pub(crate) fn rot(&self, meta: &mut VirtualCells<F>, rot: usize) -> Expression<F> {
-        meta.query_advice(self.column, Rotation((self.rotation + rot) as i32))
+        meta.query_advice(self.column.unwrap(), Rotation((self.rotation + rot) as i32))
     }
 }
 
 impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.clone()
+        self.expression.unwrap().clone()
     }
 }
 
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.clone()
+        self.expression.unwrap().clone()
     }
 }
 
@@ -103,7 +122,7 @@ pub(crate) enum CellType_<T: CustomTable> {
     Lookup(T),
 }
 
-pub trait CustomTable: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash {
+pub trait CustomTable: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash{
     fn matches_to(&self, other: &Self) -> bool;
 }
 
@@ -280,6 +299,14 @@ impl<F: Field, T: CustomTable> CellManager<F, T> {
 
     pub(crate) fn query_cell(&mut self, cell_type: CellType_<T>) -> Cell<F> {
         self.query_cells(cell_type, 1)[0].clone()
+    }
+
+    pub(crate) fn reset(&mut self, height: usize) {
+        assert!(height <= self.height);
+        self.height = height;
+        for column in self.columns.iter_mut() {
+            column.height = 0;
+        }
     }
 
     fn next_column(&self, cell_type: CellType_<T>) -> usize {

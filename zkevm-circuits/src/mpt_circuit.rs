@@ -34,13 +34,13 @@ use crate::{
     assign, assignf, circuit,
     circuit_tools::{
         cell_manager::CellManager, constraint_builder::ConstraintBuilder, memory::Memory,
+        cached_region::CachedRegion,
     },
     mpt_circuit::{
         helpers::{main_memory, parent_memory, MPTConstraintBuilder, MainRLPGadget},
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    evm_circuit::util::CachedRegion,
     table::{KeccakTable, LookupTable, MPTProofType, MptTable},
     util::Challenges,
 };
@@ -352,27 +352,40 @@ impl<F: Field> MPTConfig<F> {
                 for node in nodes.iter() {
                     // Assign bytes
                     let mut rlp_values = Vec::new();
+                    let mut cahced_region = CachedRegion::new(
+                        &mut region,
+                        challenges,
+                        self.managed_columns.clone(),
+                        node.values.len(),
+                        offset
+                    );
                     for (idx, bytes) in node.values.iter().enumerate() {
                         let is_nibbles = node.extension_branch.is_some()
                             && idx == ExtensionBranchRowType::KeyC as usize;
                         let rlp_value = self.rlp_item.assign(
-                            &mut region,
+                            &mut cahced_region,
                             offset + idx,
                             bytes,
                             r,
                             is_nibbles,
                         )?;
                         rlp_values.push(rlp_value);
-                        assignf!(region, (self.rows_left_in_state, offset + idx) => (node.values.len() - idx).scalar())?;
+                        assignf!(cahced_region, (self.rows_left_in_state, offset + idx) => (node.values.len() - idx).scalar())?;
                     }
 
                     // Assign nodes
                     if node.start.is_some() {
                         // println!("{}: start", offset);
-                        assign!(region, (self.state_machine.is_start, offset) => true.scalar())?;
-                        
-                        self.state_machine.start_config.assign(
+                        let mut cahced_region = CachedRegion::new(
                             &mut region,
+                            challenges,
+                            self.managed_columns.clone(),
+                            StartRowType::Count as usize,
+                            offset
+                        );
+                        assign!(cahced_region, (self.state_machine.is_start, offset) => true.scalar())?;
+                        self.state_machine.start_config.assign(
+                            &mut cahced_region,
                             self,
                             &mut pv,
                             offset,
@@ -381,9 +394,16 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     } else if node.extension_branch.is_some() {
                         // println!("{}: branch", offset);
-                        assign!(region, (self.state_machine.is_branch, offset) => true.scalar())?;
-                        self.state_machine.branch_config.assign(
+                        let mut cahced_region = CachedRegion::new(
                             &mut region,
+                            challenges,
+                            self.managed_columns.clone(),
+                            ExtensionBranchRowType::Count as usize,
+                            offset
+                        );
+                        assign!(cahced_region, (self.state_machine.is_branch, offset) => true.scalar())?;
+                        self.state_machine.branch_config.assign(
+                            &mut cahced_region,
                             self,
                             &mut pv,
                             offset,
@@ -392,9 +412,16 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     } else if node.storage.is_some() {
                         // println!("{}: storage", offset);
-                        assign!(region, (self.state_machine.is_storage, offset) => true.scalar())?;
-                        self.state_machine.storage_config.assign(
+                        let mut cahced_region = CachedRegion::new(
                             &mut region,
+                            challenges,
+                            self.managed_columns.clone(),
+                            StorageRowType::Count as usize,
+                            offset
+                        );
+                        assign!(cahced_region, (self.state_machine.is_storage, offset) => true.scalar())?;
+                        self.state_machine.storage_config.assign(
+                            &mut cahced_region,
                             self,
                             &mut pv,
                             offset,
@@ -403,9 +430,16 @@ impl<F: Field> MPTConfig<F> {
                         )?;
                     } else if node.account.is_some() {
                         // println!("{}: account", offset);
-                        assign!(region, (self.state_machine.is_account, offset) => true.scalar())?;
-                        self.state_machine.account_config.assign(
+                        let mut cahced_region = CachedRegion::new(
                             &mut region,
+                            challenges,
+                            self.managed_columns.clone(),
+                            AccountRowType::Count as usize,
+                            offset
+                        );
+                        assign!(cahced_region, (self.state_machine.is_account, offset) => true.scalar())?;
+                        self.state_machine.account_config.assign(
+                            &mut cahced_region,
                             self,
                             &mut pv,
                             offset,

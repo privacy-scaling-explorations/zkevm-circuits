@@ -5,7 +5,9 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::cell_manager::Cell,
+    circuit_tools::{
+        cell_manager::Cell, cached_region::CachedRegion,
+    },
     mpt_circuit::{
         helpers::{
             key_memory, main_memory, parent_memory, KeyData, MPTConstraintBuilder, MainData,
@@ -17,8 +19,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::Region,
-    plonk::{Error, VirtualCells},
+    plonk::{Error, VirtualCells}, circuit::Value,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -82,7 +83,7 @@ impl<F: Field> StartConfig<F> {
 
     pub fn assign(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut CachedRegion<'_, '_, F>,
         ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
