@@ -68,22 +68,42 @@ impl MptUpdates {
         log::trace!("fill_state_roots init {:?}", init_trie.root());
 
         let mut wit_gen = WitnessGenerator::from(init_trie);
+        let wit_gen = self.fill_state_roots_from_generator(wit_gen);
+
+        let root_pair2 = (self.old_root, self.new_root);
+        if root_pair2 != root_pair {
+            log::error!(
+                "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
+                root_pair.0,
+                root_pair.1,
+                root_pair2.0,
+                root_pair2.1
+            );
+            wit_gen.dump();
+        }
+    }
+
+    fn fill_state_roots_from_generator(
+        &mut self,
+        mut wit_gen: WitnessGenerator,
+    ) -> WitnessGenerator {
         self.smt_traces = Vec::new();
         self.proof_types = Vec::new();
 
         for (key, update) in &mut self.updates {
             log::trace!("apply update {:?} {:#?}", key, update);
+            let key = key.set_non_exists(update.old_value, update.new_value);
             let proof_tip = state::as_proof_type(update.proof_type() as i32);
             let smt_trace = wit_gen.handle_new_state(
                 proof_tip,
                 match key {
-                    Key::Account { address, .. } | Key::AccountStorage { address, .. } => *address,
+                    Key::Account { address, .. } | Key::AccountStorage { address, .. } => address,
                 },
                 update.new_value,
                 update.old_value,
                 match key {
                     Key::Account { .. } => None,
-                    Key::AccountStorage { storage_key, .. } => Some(*storage_key),
+                    Key::AccountStorage { storage_key, .. } => Some(storage_key),
                 },
             );
             log::trace!(
@@ -102,17 +122,7 @@ impl MptUpdates {
             self.old_root,
             self.new_root
         );
-        let root_pair2 = (self.old_root, self.new_root);
-        if root_pair2 != root_pair {
-            log::error!(
-                "roots non consistent ({:#x},{:#x}) vs ({:#x},{:#x})",
-                root_pair.0,
-                root_pair.1,
-                root_pair2.0,
-                root_pair2.1
-            );
-            wit_gen.dump();
-        }
+        wit_gen
     }
 
     pub(crate) fn mock_from(rows: &[Rw]) -> Self {
@@ -185,6 +195,10 @@ impl MptUpdates {
                 ])
             })
             .collect()
+    }
+
+    fn insert(&mut self, update: MptUpdate) {
+        self.updates.insert(update.key.clone(), update);
     }
 }
 
@@ -383,33 +397,109 @@ mod test {
         updates.updates.insert(key, update);
 
         updates.fill_state_roots(&ZktrieState::default());
-        dbg!(updates.smt_traces);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces[0]).unwrap()
+        );
+
+        panic!();
+    }
+
+    fn nonce_update(address: Address) -> MptUpdate {
+        MptUpdate {
+            key: Key::Account {
+                address,
+                field_tag: AccountFieldTag::Nonce,
+            },
+            old_value: Word::zero(),
+            new_value: Word::one(),
+            old_root: Word::zero(),
+            new_root: Word::zero(),
+        }
+    }
+
+    #[test]
+    fn nonce_update_existing() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        updates.insert(nonce_update(Address::repeat_byte(45)));
+        let mut generator = updates
+            .fill_state_roots_from_generator(WitnessGenerator::from(&ZktrieState::default()));
+
+        let mut updates = MptUpdates::default();
+        let mut update = nonce_update(Address::repeat_byte(45));
+        update.old_value = Word::one();
+        update.new_value = Word::from(213);
+        updates.insert(update);
+
+        updates.fill_state_roots_from_generator(generator);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
 
         panic!();
     }
 
     #[test]
-    fn code_hashes_set() {
-        assert!(*HASH_SCHEME_DONE,);
-
-        let key = Key::Account {
-            address: Address::zero(),
-            field_tag: AccountFieldTag::Nonce,
-        };
-        let update = MptUpdate {
-            key,
-            old_value: Word::zero(),
-            new_value: Word::one(),
-            old_root: Word::zero(),
-            new_root: Word::one(),
-        };
+    fn nonce_update_type_1() {
+        assert!(*HASH_SCHEME_DONE);
 
         let mut updates = MptUpdates::default();
-        updates.updates.insert(key, update);
+        // Add precompile addresses in so MPT isn't too empty.
+        for precompile in 4..6u8 {
+            let mut address = Address::zero();
+            address.0[1] = precompile;
+            updates.insert(nonce_update(address));
+        }
+
+        updates.insert(nonce_update(Address::zero()));
+
+        // The key of this address has the same first byte as the key of Address::zero();
+        let mut address = Address::zero();
+        address.0[1] = 202;
+        updates.insert(nonce_update(address));
 
         updates.fill_state_roots(&ZktrieState::default());
-        dbg!(updates.smt_traces);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
 
         panic!();
     }
+
+    #[test]
+    fn nonce_update_type_2() {
+        assert!(*HASH_SCHEME_DONE);
+
+        let mut updates = MptUpdates::default();
+        updates.insert(nonce_update(Address::zero()));
+
+        // The key of this address has the same first byte as the key of Address::zero();
+        let mut address = Address::zero();
+        address.0[1] = 202;
+        updates.insert(nonce_update(address));
+
+        // This address is type 2 empty in the MPT containing the above two addresses.
+        updates.insert(nonce_update(Address::repeat_byte(0x45)));
+
+        updates.fill_state_roots(&ZktrieState::default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&updates.smt_traces.last().unwrap()).unwrap()
+        );
+
+        panic!();
+    }
+
+    fn find_matching_keys() {}
 }
