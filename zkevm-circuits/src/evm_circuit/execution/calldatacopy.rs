@@ -246,7 +246,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
-        // let bytes_length_to_word = (1 + copy_rwc_inc) * 32;
+
         let bytes_length_to_word = if call.is_root {
             (copy_rwc_inc + 1) * 32
         } else {

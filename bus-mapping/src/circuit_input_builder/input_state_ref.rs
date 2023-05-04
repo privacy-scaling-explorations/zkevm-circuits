@@ -1622,6 +1622,11 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr_end: u64,
         bytes_left: u64,
     ) -> Result<Vec<(u8, bool, bool)>, Error> {
+        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        if bytes_left == 0 {
+            return Ok(copy_steps);
+        }
+
         let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
         let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + bytes_left).unwrap();
         let mut memory = self.call_ctx_mut()?.memory.clone();
@@ -1632,7 +1637,6 @@ impl<'a> CircuitInputStateRef<'a> {
         let code_slot_bytes =
             memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
-        let mut copy_steps = Vec::with_capacity(bytes_left as usize);
         let mut copy_start = 0u64;
         let mut first_set = true;
         for idx in 0..code_slot_bytes.len() {
