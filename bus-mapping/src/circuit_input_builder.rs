@@ -13,7 +13,7 @@ mod transaction;
 use self::access::gen_state_access_trace;
 use crate::{
     error::Error,
-    evm::opcodes::{gen_associated_ops, gen_begin_tx_ops, gen_end_tx_ops},
+    evm::opcodes::{gen_associated_ops, gen_associated_steps},
     operation::{CallContextField, Operation, RWCounter, StartOp, RW},
     rpc::GethClient,
     state_db::{self, CodeDB, StateDB},
@@ -270,11 +270,11 @@ impl<'a> CircuitInputBuilder {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: BeginTx
-        // - op: None
         // Generate BeginTx step
-        let begin_tx_step = gen_begin_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let begin_tx_step = gen_associated_steps(
+            &mut self.state_ref(&mut tx, &mut tx_ctx),
+            ExecState::BeginTx,
+        )?;
         tx.steps_mut().push(begin_tx_step);
 
         for (index, geth_step) in geth_trace.struct_logs.iter().enumerate() {
@@ -288,11 +288,9 @@ impl<'a> CircuitInputBuilder {
             tx.steps_mut().extend(exec_steps);
         }
 
-        // TODO: Move into gen_associated_steps with
-        // - execution_state: EndTx
-        // - op: None
         // Generate EndTx step
-        let end_tx_step = gen_end_tx_ops(&mut self.state_ref(&mut tx, &mut tx_ctx))?;
+        let end_tx_step =
+            gen_associated_steps(&mut self.state_ref(&mut tx, &mut tx_ctx), ExecState::EndTx)?;
         tx.steps_mut().push(end_tx_step);
 
         self.sdb.commit_tx();
