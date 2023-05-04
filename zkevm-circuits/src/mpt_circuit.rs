@@ -222,15 +222,15 @@ impl<F: Field> MPTConfig<F> {
 
                 ifx!{f!(q_enable) => {
                     // RLP item decoding unit
-                    let mut cell_manager = CellManager::new(meta, &rlp_columns);
-                    cell_manager.reset(1);
-                    cb.base.set_cell_manager(cell_manager);
+                    // let mut cell_manager = CellManager::new(meta, 1, &rlp_columns, 0);
+                    // cell_manager.reset(1);
+                    // cb.base.set_cell_manager(cell_manager);
                     rlp_item = MainRLPGadget::construct(&mut cb, &ctx.r);
                     ctx.rlp_item = rlp_item.clone();
 
                     // Main MPT circuit
-                    let cell_manager = CellManager::new(meta, &managed_columns);
-                    cb.base.set_cell_manager(cell_manager);
+                    // let cell_manager = CellManager::new(meta, &managed_columns);
+                    // cb.base.set_cell_manager(cell_manager);
 
                     // State machine
                     // TODO(Brecht): state machine constraints

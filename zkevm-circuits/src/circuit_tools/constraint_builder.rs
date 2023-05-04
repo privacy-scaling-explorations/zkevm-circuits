@@ -152,9 +152,10 @@ impl<F: Field, T: CustomTable> ConstraintBuilder<F, T> {
     }
 
     fn query_cells_dyn(&mut self, cell_type: CellType_<T>, count: usize) -> Vec<Cell<F>> {
+        // cb 对 cm 仅有一个调度接口，即 query_cells
         self.cell_manager
             .as_mut()
-            .unwrap()
+            .expect("Cell manager not set")
             .query_cells(cell_type, count)
     }
 
@@ -171,6 +172,7 @@ impl<F: Field, T: CustomTable> ConstraintBuilder<F, T> {
     }
 
     pub(crate) fn generate_constraints(&self) -> Vec<(&'static str, Expression<F>)> {
+        // 这里没有
         self.constraints.clone()
     }
 

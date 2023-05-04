@@ -415,8 +415,8 @@ impl<F: Field> StorageLeafConfig<F> {
         } else {
             MPTProofType::Disabled
         };
-        ctx.mpt_table.assign(
-            region.region(),
+        ctx.mpt_table.assign_cached(
+            region,
             offset,
             &MptUpdateRow {
                 address_rlc: Value::known(main_data.address_rlc),

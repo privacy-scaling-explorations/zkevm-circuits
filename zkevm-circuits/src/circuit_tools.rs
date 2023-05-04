@@ -1,4 +1,5 @@
 //! Circuit utilities
+#![allow(missing_docs)]
 #[macro_use]
 pub mod constraint_builder;
 pub mod cell_manager;

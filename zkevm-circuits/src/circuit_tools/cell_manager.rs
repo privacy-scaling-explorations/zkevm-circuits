@@ -94,13 +94,13 @@ impl<F: Field> Cell<F> {
 
 impl<F: Field> Expr<F> for Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.unwrap().clone()
+        self.expression.as_ref().unwrap().clone()
     }
 }
 
 impl<F: Field> Expr<F> for &Cell<F> {
     fn expr(&self) -> Expression<F> {
-        self.expression.unwrap().clone()
+        self.expression.as_ref().unwrap().clone()
     }
 }
 
@@ -182,10 +182,10 @@ impl<T: CustomTable> CellType_<T> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct CellColumn<F, T: CustomTable> {
-    pub(crate) index: usize,
-    pub(crate) cell_type: CellType_<T>,
-    pub(crate) height: usize,
-    pub(crate) expr: Expression<F>,
+    index: usize,
+    cell_type: CellType_<T>,
+    height: usize,
+    expr: Expression<F>,
 }
 
 impl<F: Field, T: Debug + CustomTable> Expr<F> for CellColumn<F, T> {
@@ -195,15 +195,19 @@ impl<F: Field, T: Debug + CustomTable> Expr<F> for CellColumn<F, T> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CellManager<F, T: CustomTable> {
-    width: usize,
-    height: usize,
-    cells: Vec<Cell<F>>,
+pub struct CellManager<F, T: CustomTable> {
+    // Thoughts (Cecilia): Integrate CellManager's function into Halo2's VirtualCell
+    //                     They do the same things by saving queried Exressions
+    //                     CM is just slightly smarter.
+    //                     Make VC into trait, let CM impl VC.
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) cells: Vec<Cell<F>>,
     // 对cell的抽象表示和对columns的抽象表示是分开的
     // Cell<F> 不用 T
-    columns: Vec<CellColumn<F, T>>,
-    phase_config: PhaseConfig<T>,
-    copy_columns: usize,
+    pub(crate) columns: Vec<CellColumn<F, T>>,
+    pub(crate) phase_config: PhaseConfig<T>,
+    pub(crate) copy_columns: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -215,8 +219,8 @@ pub struct PhaseConfig<T> {
 
 impl<F: Field, T: CustomTable> CellManager<F, T> {
     pub(crate) fn new(
-        meta: &mut ConstraintSystem<F>,
-        height: usize,
+        meta: &mut ConstraintSystem<F>, // meta只出现一次，new的时候把所有cover的cells都query一遍
+        height: usize,                  // 拿到 Expr 存起来，后面 cb.query_cell 直接给对应格子的 Expr
         advices: &[Column<Advice>],
         height_offset: usize,
         phase_config: PhaseConfig<T>,
@@ -247,9 +251,9 @@ impl<F: Field, T: CustomTable> CellManager<F, T> {
         let mut column_idx = 0;
 
         // Mark columns used for lookups in Phase3
-        for (table, count) in phase_config.phase3 {
-            for _ in 0usize..count {
-                columns[column_idx].cell_type = CellType_::Lookup(table);
+        for (table, count) in &phase_config.phase3 {
+            for _ in 0usize..*count {
+                columns[column_idx].cell_type = CellType_::Lookup(table.clone());
                 column_idx += 1;
             }
         }

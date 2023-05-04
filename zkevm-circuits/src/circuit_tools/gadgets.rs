@@ -46,7 +46,7 @@ impl<F: Field> IsZeroGadget<F> {
         value: F,
     ) -> Result<F, Error> {
         let inverse = value.invert().unwrap_or(F::zero());
-        self.inverse.unwrap().assign(region, offset, inverse)?;
+        self.inverse.as_ref().unwrap().assign(region, offset, inverse)?;
         Ok(if value.is_zero().into() {
             F::one()
         } else {
@@ -129,7 +129,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     }
 
     pub(crate) fn expr(&self) -> Expression<F> {
-        self.lt.unwrap().expr()
+        self.lt.as_ref().unwrap().expr()
     }
 
     pub(crate) fn assign(
@@ -141,7 +141,7 @@ impl<F: Field, const N_BYTES: usize> LtGadget<F, N_BYTES> {
     ) -> Result<(F, Vec<u8>), Error> {
         // Set `lt`
         let lt = lhs < rhs;
-        self.lt.unwrap()
+        self.lt.as_ref().unwrap()
             .assign(region, offset, if lt { F::one() } else { F::zero() })?;
 
         // Set the bytes of diff

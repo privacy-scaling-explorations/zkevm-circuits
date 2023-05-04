@@ -2,7 +2,7 @@
 
 use crate::{
     circuit,
-    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable},
+    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable, cached_region::CachedRegion},
     copy_circuit::number_or_hash_to_field,
     evm_circuit::util::rlc,
     exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
@@ -683,6 +683,21 @@ impl MptTable {
     pub(crate) fn assign<F: Field>(
         &self,
         region: &mut Region<'_, F>,
+        offset: usize,
+        row: &MptUpdateRow<Value<F>>,
+    ) -> Result<(), Error> {
+        for (column, value) in <MptTable as LookupTable<F>>::advice_columns(self)
+            .iter()
+            .zip_eq(row.values())
+        {
+            region.assign_advice(|| "assign mpt table row value", *column, offset, || value)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn assign_cached<F: Field>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
         row: &MptUpdateRow<Value<F>>,
     ) -> Result<(), Error> {

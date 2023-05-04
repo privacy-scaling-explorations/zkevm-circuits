@@ -3,7 +3,7 @@ use strum_macros::EnumIter;
 use crate::circuit_tools::cell_manager::CustomTable;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum Table {
+pub enum Table {
     Fixed,
     Tx,
     Rw,

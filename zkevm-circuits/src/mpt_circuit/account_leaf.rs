@@ -571,8 +571,8 @@ impl<F: Field> AccountLeafConfig<F> {
         } else {
             (MPTProofType::Disabled, vec![0.scalar(); 2])
         };
-        ctx.mpt_table.assign(
-            region.region(),
+        ctx.mpt_table.assign_cached(
+            region,
             offset,
             &MptUpdateRow {
                 address_rlc: Value::known(account.address.rlc_value(pv.r)),

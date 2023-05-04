@@ -126,13 +126,10 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         unimplemented!("fixed column");
     }
 
+    // StoreExpression 里面调，拿 F 出去 evaluate
     pub fn get_advice(&self, row_index: usize, column_index: usize, rotation: Rotation) -> F {
         self.advice[column_index - self.width_start]
             [(((row_index - self.height_start) as i32) + rotation.0) as usize]
-    }
-
-    pub fn region(&mut self) -> &mut Region<'_, F> {
-        self.region
     }
 
     pub fn challenges(&self) -> &Challenges<Value<F>> {
