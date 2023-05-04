@@ -103,7 +103,7 @@ pub enum ExecState {
 
 impl Default for ExecState {
     fn default() -> Self {
-        ExecState::Op(OpcodeId::INVALID(0))
+        ExecState::Op(OpcodeId::STOP)
     }
 }
 
