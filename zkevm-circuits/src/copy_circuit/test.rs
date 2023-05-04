@@ -54,7 +54,7 @@ pub fn test_copy_circuit_from_block<F: Field>(
             txs: block.txs,
             max_rws: block.circuits_params.max_rws,
             rws: block.rws,
-            bytecodes: block.bytecodes,
+            bytecodes: block.bytecodes.clone(),
         },
     )
 }

@@ -130,7 +130,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
             .bytecodes
             .get(&call.code_hash.to_word())
             .expect("could not find current environment's bytecode");
-        let code_len = code.bytes.len() as u64;
+        let code_len = code.code_size() as u64;
         self.code_len
             .assign(region, offset, Value::known(F::from(code_len)))?;
 
@@ -138,21 +138,17 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.dest.assign(region, offset, dest, F::from(code_len))?;
 
         // set default value in case can not find value, is_code from bytecode table
-        let dest = u64::try_from(dest).unwrap_or(code_len);
-        let mut code_pair = [0u8, 0u8];
-        if dest < code_len {
-            // get real value from bytecode table
-            code_pair = code.get(dest as usize);
-        }
+        let dest = usize::try_from(dest).unwrap_or(code.code_size());
+        let code_pair = code.get(dest).unwrap_or((0, false));
 
         self.value
-            .assign(region, offset, Value::known(F::from(code_pair[0] as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_pair.0 as u64)))?;
         self.is_code
-            .assign(region, offset, Value::known(F::from(code_pair[1] as u64)))?;
+            .assign(region, offset, Value::known(F::from(code_pair.1.into())))?;
         self.is_jump_dest.assign(
             region,
             offset,
-            F::from(code_pair[0] as u64),
+            F::from(code_pair.0 as u64),
             F::from(OpcodeId::JUMPDEST.as_u64()),
         )?;
 

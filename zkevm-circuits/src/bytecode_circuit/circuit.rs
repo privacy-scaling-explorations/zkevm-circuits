@@ -809,7 +809,7 @@ impl<F: Field> BytecodeCircuit<F> {
         let bytecodes: Vec<UnrolledBytecode<F>> = block
             .bytecodes
             .values()
-            .map(|b| unroll(b.bytes.clone()))
+            .map(|b| unroll(b.code().clone()))
             .collect();
         Self::new(bytecodes, bytecode_size)
     }
@@ -835,7 +835,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
             block
                 .bytecodes
                 .values()
-                .map(|bytecode| bytecode.bytes.len() + 1)
+                .map(|bytecode| bytecode.table_len())
                 .sum(),
             block.circuits_params.max_bytecode,
         )

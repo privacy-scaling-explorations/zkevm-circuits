@@ -1,6 +1,6 @@
 //! EVM byte code generator
-
 use crate::{evm_types::OpcodeId, Bytes, ToWord, Word};
+use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, str::FromStr};
 
 /// Error type for Bytecode related failures
@@ -26,6 +26,7 @@ pub struct Bytecode {
     pub code: Vec<BytecodeElement>,
     num_opcodes: usize,
     markers: HashMap<String, usize>,
+    hash: Word,
 }
 
 impl From<Bytecode> for Bytes {
@@ -51,12 +52,18 @@ impl Bytecode {
                 .collect(),
             markers: HashMap::new(),
             num_opcodes: 0,
+            hash: Word::from_big_endian(Keccak256::digest(&input).as_slice()),
         }
     }
 
     /// Get the code
     pub fn code(&self) -> Vec<u8> {
         self.code.iter().map(|b| b.value).collect()
+    }
+
+    /// Get the code hash
+    pub fn hash(&self) -> Word {
+        self.hash
     }
 
     /// Get the bytecode element at an index.

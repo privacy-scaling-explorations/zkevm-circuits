@@ -89,7 +89,7 @@ impl<F: Field> Block<F> {
         let num_rows_required_for_bytecode_table: usize = self
             .bytecodes
             .values()
-            .map(|bytecode| bytecode.bytes.len() + 1)
+            .map(|bytecode| bytecode.table_len())
             .sum();
         let num_rows_required_for_copy_table: usize =
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
@@ -256,8 +256,8 @@ pub fn block_convert<F: Field>(
             .0
             .values()
             .map(|v| {
-                let bytecode = Bytecode::new(v.clone());
-                (bytecode.hash, bytecode)
+                let bytecode = Bytecode::from(v.clone());
+                (bytecode.hash(), bytecode)
             })
             .collect(),
         copy_events: block.copy_events.clone(),
