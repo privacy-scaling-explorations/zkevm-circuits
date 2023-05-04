@@ -1,5 +1,5 @@
 use bus_mapping::circuit_input_builder;
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, ToWord, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
 use crate::{evm_circuit::util::rlc, table::TxContextFieldTag, util::Challenges};
@@ -124,42 +124,17 @@ impl Transaction {
 pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
     Transaction {
         id,
-        nonce: tx.nonce,
-        gas: tx.gas,
-        gas_price: tx.gas_price,
-        caller_address: tx.from,
-        callee_address: tx.to,
+        nonce: tx.tx.nonce.as_u64(),
+        gas: tx.gas(),
+        gas_price: tx.tx.gas_price,
+        caller_address: tx.tx.from,
+        callee_address: tx.tx.to_or_contract_addr(),
         is_create: tx.is_create(),
-        value: tx.value,
-        call_data: tx.input.clone(),
-        call_data_length: tx.input.len(),
-        call_data_gas_cost: tx
-            .input
-            .iter()
-            .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
-        calls: tx
-            .calls()
-            .iter()
-            .map(|call| Call {
-                id: call.call_id,
-                is_root: call.is_root,
-                is_create: call.is_create(),
-                code_hash: call.code_hash.to_word(),
-                rw_counter_end_of_reversion: call.rw_counter_end_of_reversion,
-                caller_id: call.caller_id,
-                depth: call.depth,
-                caller_address: call.caller_address,
-                callee_address: call.address,
-                call_data_offset: call.call_data_offset,
-                call_data_length: call.call_data_length,
-                return_data_offset: call.return_data_offset,
-                return_data_length: call.return_data_length,
-                value: call.value,
-                is_success: call.is_success,
-                is_persistent: call.is_persistent,
-                is_static: call.is_static,
-            })
-            .collect(),
+        value: tx.tx.value,
+        call_data: tx.tx.call_data.to_vec(),
+        call_data_length: tx.tx.call_data.len(),
+        call_data_gas_cost: tx.tx.call_data_gas_cost(),
+        calls: tx.calls().to_vec(),
         steps: tx.steps().iter().map(step_convert).collect(),
     }
 }

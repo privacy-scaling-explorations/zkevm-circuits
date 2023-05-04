@@ -58,7 +58,7 @@ pub struct TxValues {
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
-    is_create: u64,
+    is_create: bool,
     value: Word,
     call_data_len: u64,
     call_data_gas_cost: u64,
@@ -145,17 +145,11 @@ impl PublicData {
                 gas_price: tx.gas_price,
                 gas: tx.gas_limit,
                 from_addr: tx.from,
-                to_addr: tx.to.unwrap_or_else(Address::zero),
-                is_create: (tx.to.is_none() as u64),
+                to_addr: tx.to_or_zero(),
+                is_create: tx.is_create(),
                 value: tx.value,
-                call_data_len: tx.call_data.0.len() as u64,
-                call_data_gas_cost: tx.call_data.0.iter().fold(0, |acc, byte| {
-                    acc + if *byte == 0 {
-                        ZERO_BYTE_GAS_COST
-                    } else {
-                        NONZERO_BYTE_GAS_COST
-                    }
-                }),
+                call_data_len: tx.call_data.len() as u64,
+                call_data_gas_cost: tx.call_data_gas_cost(),
                 tx_sign_hash: msg_hash_le,
             });
         }

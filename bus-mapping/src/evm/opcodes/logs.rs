@@ -291,7 +291,7 @@ mod log_tests {
             .unwrap();
 
         let is_persistent = builder.block.txs()[0].calls()[0].is_persistent;
-        let callee_address = builder.block.txs()[0].to;
+        let callee_address = builder.block.txs()[0].tx.to_or_contract_addr();
 
         let step = builder.block.txs()[0]
             .steps()

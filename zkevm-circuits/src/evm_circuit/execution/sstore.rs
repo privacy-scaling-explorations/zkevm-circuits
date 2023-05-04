@@ -178,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             region,
             offset,
             Value::known(
-                call.callee_address
+                call.address
                     .to_scalar()
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),

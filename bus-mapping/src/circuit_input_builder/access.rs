@@ -95,7 +95,7 @@ impl From<Vec<Access>> for AccessSet {
 }
 
 /// Source of the code in the EVM execution.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeSource {
     /// Code comes from a deployed contract at `Address`.
     Address(Address),

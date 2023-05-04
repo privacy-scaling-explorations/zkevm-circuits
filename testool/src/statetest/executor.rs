@@ -144,7 +144,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 to: st.to,
                 nonce: st.nonce,
                 value: st.value,
-                gas_limit: U256::from(st.gas_limit),
+                gas_limit: st.gas_limit.into(),
                 gas_price: st.gas_price,
                 gas_fee_cap: U256::zero(),
                 gas_tip_cap: U256::zero(),
@@ -212,22 +212,12 @@ pub fn run_test(
         .transactions
         .into_iter()
         .enumerate()
-        .map(|(index, tx)| eth_types::Transaction {
-            from: tx.from,
-            to: tx.to,
-            value: tx.value,
-            input: tx.call_data,
-            gas_price: Some(tx.gas_price),
-            access_list: tx.access_list,
-            nonce: tx.nonce,
-            gas: tx.gas_limit,
-            transaction_index: Some(U64::from(index)),
-            r: tx.r,
-            s: tx.s,
-            v: U64::from(tx.v),
-            block_number: Some(U64::from(trace_config.block_constants.number.as_u64())),
-            chain_id: Some(trace_config.chain_id),
-            ..eth_types::Transaction::default()
+        .map(|(index, tx)| {
+            tx.to_response(
+                U64::from(index),
+                trace_config.chain_id,
+                trace_config.block_constants.number,
+            )
         })
         .collect();
 

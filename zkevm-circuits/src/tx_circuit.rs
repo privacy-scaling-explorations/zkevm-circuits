@@ -18,9 +18,7 @@ use crate::{
     util::{random_linear_combine_word as rlc, Challenges, SubCircuit, SubCircuitConfig},
     witness,
 };
-use eth_types::{
-    geth_types::Transaction, sign_types::SignData, Address, Field, ToLittleEndian, ToScalar,
-};
+use eth_types::{geth_types::Transaction, sign_types::SignData, Field, ToLittleEndian, ToScalar};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
@@ -204,12 +202,7 @@ impl<F: Field> TxCircuit<F> {
                     };
 
                     for (tag, value) in [
-                        (
-                            TxFieldTag::Nonce,
-                            challenges
-                                .evm_word()
-                                .map(|challenge| rlc(tx.nonce.to_le_bytes(), challenge)),
-                        ),
+                        (TxFieldTag::Nonce, Value::known(F::from(tx.nonce.as_u64()))),
                         (
                             TxFieldTag::Gas,
                             Value::known(F::from(tx.gas_limit.as_u64())),
@@ -226,17 +219,9 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxFieldTag::CalleeAddress,
-                            Value::known(
-                                tx.to
-                                    .unwrap_or_else(Address::zero)
-                                    .to_scalar()
-                                    .expect("tx.to too big"),
-                            ),
+                            Value::known(tx.to_or_zero().to_scalar().expect("tx.to too big")),
                         ),
-                        (
-                            TxFieldTag::IsCreate,
-                            Value::known(F::from(tx.to.is_none() as u64)),
-                        ),
+                        (TxFieldTag::IsCreate, Value::known(F::from(tx.is_create()))),
                         (
                             TxFieldTag::Value,
                             challenges
@@ -249,12 +234,7 @@ impl<F: Field> TxCircuit<F> {
                         ),
                         (
                             TxFieldTag::CallDataGasCost,
-                            Value::known(F::from(
-                                tx.call_data
-                                    .0
-                                    .iter()
-                                    .fold(0, |acc, byte| acc + if *byte == 0 { 4 } else { 16 }),
-                            )),
+                            Value::known(F::from(tx.call_data_gas_cost())),
                         ),
                         (
                             TxFieldTag::TxSignHash,

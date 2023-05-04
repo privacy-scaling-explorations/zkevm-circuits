@@ -13,7 +13,7 @@ use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
 
 /// An execution step of the EVM.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ExecStep {
     /// Execution state
     pub exec_state: ExecState,
@@ -88,28 +88,6 @@ impl ExecStep {
     }
 }
 
-impl Default for ExecStep {
-    fn default() -> Self {
-        Self {
-            exec_state: ExecState::Op(OpcodeId::INVALID(0)),
-            pc: ProgramCounter(0),
-            stack_size: 0,
-            memory_size: 0,
-            gas_left: Gas(0),
-            gas_cost: GasCost(0),
-            gas_refund: Gas(0),
-            call_index: 0,
-            rwc: RWCounter(0),
-            reversible_write_counter: 0,
-            reversible_write_counter_delta: 0,
-            log_id: 0,
-            bus_mapping_instance: Vec::new(),
-            copy_rw_counter_delta: 0,
-            error: None,
-        }
-    }
-}
-
 /// Execution state
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecState {
@@ -121,6 +99,12 @@ pub enum ExecState {
     EndTx,
     /// Virtual step End Block
     EndBlock,
+}
+
+impl Default for ExecState {
+    fn default() -> Self {
+        ExecState::Op(OpcodeId::STOP)
+    }
 }
 
 impl ExecState {

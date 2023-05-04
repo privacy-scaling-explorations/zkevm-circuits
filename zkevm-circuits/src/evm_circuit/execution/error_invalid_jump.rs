@@ -13,7 +13,7 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::OpcodeId, Field, U256};
+use eth_types::{evm_types::OpcodeId, Field, ToWord, U256};
 
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -126,7 +126,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
 
         let code = block
             .bytecodes
-            .get(&call.code_hash)
+            .get(&call.code_hash.to_word())
             .expect("could not find current environment's bytecode");
         let code_len = code.bytes.len() as u64;
         self.code_len
