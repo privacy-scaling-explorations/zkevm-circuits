@@ -28,6 +28,18 @@ use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
 
+const WORD_BYTES: usize = 32;
+const WORD_LIMBS_BITS: usize = 128;
+const WORD_LIMBS: usize = WORD_BYTES * 8 / WORD_LIMBS_BITS;
+
+pub struct WordLimbs<T, const N: usize> {
+    inner: [T; N],
+}
+
+impl<T, const N: usize> WordLimbs<T, N> {
+    // ...
+}
+
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field> {
     /// Returns the list of ALL the table columns following the table order.
@@ -133,7 +145,7 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: WordLimbs<Column<Advice>, WORD_LIMBS>,
 }
 
 impl TxTable {
