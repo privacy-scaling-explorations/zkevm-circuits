@@ -414,7 +414,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
     }
 }
 
-impl<F: Field + Ord> CopyCircuitConfig<F> {
+impl<F: Field> CopyCircuitConfig<F> {
     /// Assign an individual copy event to the Copy Circuit.
     pub fn assign_copy_event(
         &self,
@@ -730,7 +730,7 @@ impl<F: Field> CopyCircuit<F> {
     }
 }
 
-impl<F: Field + Ord> SubCircuit<F> for CopyCircuit<F> {
+impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
     type Config = CopyCircuitConfig<F>;
 
     fn unusable_rows() -> usize {

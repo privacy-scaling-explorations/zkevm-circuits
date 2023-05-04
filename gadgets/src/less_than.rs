@@ -109,7 +109,7 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
     }
 }
 
-impl<F: Field + Ord, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
+impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
     fn assign(
         &self,
         region: &mut Region<'_, F>,

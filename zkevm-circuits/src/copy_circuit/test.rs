@@ -41,7 +41,7 @@ pub fn test_copy_circuit<F: Field>(
 }
 
 /// Test copy circuit with the provided block witness
-pub fn test_copy_circuit_from_block<F: Field + Ord>(
+pub fn test_copy_circuit_from_block<F: Field>(
     k: u32,
     block: Block<F>,
 ) -> Result<(), Vec<VerifyFailure>> {
