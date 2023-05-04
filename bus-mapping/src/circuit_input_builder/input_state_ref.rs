@@ -25,7 +25,7 @@ use eth_types::{
     Address, Bytecode, GethExecStep, ToAddress, ToBigEndian, ToWord, Word, H256, U256,
 };
 use ethers_core::{
-    k256::sha2::digest::typenum::Minimum,
+    k256::{elliptic_curve::consts::U4, sha2::digest::typenum::Minimum},
     utils::{get_contract_address, get_create2_address, keccak256},
 };
 use std::{cmp::max, mem};
@@ -1605,6 +1605,13 @@ impl<'a> CircuitInputStateRef<'a> {
         Ok(())
     }
 
+    // get word slot and shift pair for a memory address.
+    pub(crate) fn get_addr_shift_slot(&mut self, addr: u64) -> Result<(u64, u64), Error> {
+        let shift = addr % 32;
+        let slot = addr - shift;
+        Ok((shift, slot))
+    }
+
     /// Generate copy steps for bytecode.
     pub(crate) fn gen_copy_steps_for_bytecode(
         &mut self,
@@ -1615,18 +1622,53 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr_end: u64,
         bytes_left: u64,
     ) -> Result<Vec<(u8, bool, bool)>, Error> {
+        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
+        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + bytes_left).unwrap();
+        let mut memory = self.call_ctx_mut()?.memory.clone();
+
+        let minimal_length = dst_end_slot as usize + 32;
+        memory.extend_at_least(minimal_length);
+        // collect all bytecode to memory with padding word
+        let code_slot_bytes =
+            memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-        for idx in 0..bytes_left {
-            let addr = src_addr.checked_add(idx).unwrap_or(src_addr_end);
-            let step = if addr < src_addr_end {
-                let code = bytecode.code.get(addr as usize).unwrap();
-                (code.value, code.is_code, false)
+        let mut copy_start = 0u64;
+        let mut first_set = true;
+        for idx in 0..code_slot_bytes.len() {
+            let value = memory.0[dst_begin_slot as usize + idx];
+            if idx as u64 + dst_begin_slot < dst_addr {
+                // front mask byte
+                copy_steps.push((value, false, true));
+            } else if idx as u64 + dst_begin_slot >= dst_addr + bytes_left {
+                // back mask byte
+                copy_steps.push((value, false, true));
             } else {
-                (0, false, false)
-            };
-            copy_steps.push(step);
-            //TODO: change value to Word
-            self.memory_write(exec_step, (dst_addr + idx).into(), step.0)?;
+                // real copy byte
+                if first_set {
+                    copy_start = idx as u64;
+                    first_set = false;
+                }
+
+                let addr = src_addr
+                    .checked_add(idx as u64 - copy_start)
+                    .unwrap_or(src_addr_end);
+                let step = if addr < src_addr_end {
+                    let code = bytecode.code.get(addr as usize).unwrap();
+                    (code.value, code.is_code, false)
+                } else {
+                    (0, false, false)
+                };
+                copy_steps.push(step);
+            }
+        }
+
+        let mut chunk_index = dst_begin_slot;
+        // memory word writes to destination word
+        for chunk in code_slot_bytes.chunks(32) {
+            let dest_word = Word::from_big_endian(&chunk);
+            self.memory_write_word(exec_step, chunk_index.into(), dest_word)?;
+            chunk_index = chunk_index + 32;
         }
 
         Ok(copy_steps)
@@ -1642,12 +1684,15 @@ impl<'a> CircuitInputStateRef<'a> {
         bytes_left: u64,   // number of bytes to copy, with padding
     ) -> Result<Vec<(u8, bool, bool)>, Error> {
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
+        if bytes_left == 0 {
+            return Ok(copy_steps);
+        }
+
         println!("calldata : {:?}", self.call_ctx()?.call_data);
         let is_root = self.call()?.is_root;
-        let dst_end_slot_shift = (dst_addr + bytes_left) % 32;
         // dest memory slot
-        let mut dst_end_slot = (dst_addr + bytes_left) - dst_end_slot_shift;
-        let mut dst_begin_slot = dst_addr - dst_addr % 32;
+        let (_, dst_begin_slot) = self.get_addr_shift_slot(dst_addr).unwrap();
+        let (_, dst_end_slot) = self.get_addr_shift_slot(dst_addr + bytes_left).unwrap();
         let mut memory = if !is_root {
             self.caller_ctx_mut()?.memory.clone()
         } else {
@@ -1675,13 +1720,12 @@ impl<'a> CircuitInputStateRef<'a> {
             }
         }
 
-        // memory word reads if it is an internal call
         let mut chunk_index = dst_begin_slot;
-
         // memory word writes to destination word
         chunk_index = dst_begin_slot;
         for chunk in calldata_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
+            // memory word reads if it is an internal call
             if !is_root {
                 self.push_op(
                     exec_step,

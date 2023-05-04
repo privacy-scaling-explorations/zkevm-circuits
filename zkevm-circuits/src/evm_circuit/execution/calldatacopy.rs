@@ -149,8 +149,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // State transition
         let rw_counter_delta = select::expr(
             cb.curr.state.is_root.expr(),
-            6.expr() + copy_rwc_inc.expr(),
-            8.expr() + copy_rwc_inc.expr(),
+            5.expr() + copy_rwc_inc.expr() + memory_address.has_length(),
+            6.expr() + copy_rwc_inc.expr() + memory_address.has_length() * 2.expr(),
         );
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
@@ -410,7 +410,6 @@ mod test {
         test_ok_internal(0x40, 0x40, 10, Word::MAX, 0xA0.into());
     }
 
-    //TODO: test failure for word memory
     #[test]
     fn calldatacopy_gadget_overflow_memory_offset_and_zero_length() {
         test_ok_root(0x40, 0, 0x40.into(), Word::MAX);

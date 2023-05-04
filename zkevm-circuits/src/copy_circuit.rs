@@ -441,7 +441,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()));
+                * not::expr(meta.query_advice(is_pad, Rotation::cur()))
+                * not::expr(meta.query_advice(mask, Rotation::cur()));
+
             vec![
                 meta.query_advice(id, Rotation::cur()),
                 BytecodeFieldTag::Byte.expr(),
@@ -1115,9 +1117,9 @@ mod tests {
 
     fn gen_codecopy_data() -> CircuitInputBuilder {
         let code = bytecode! {
-            PUSH32(Word::from(0x20))
-            PUSH32(Word::from(0x00))
-            PUSH32(Word::from(0x00))
+            PUSH32(Word::from(0x20)) // length
+            PUSH32(Word::from(0x00)) // codeOffset
+            PUSH32(Word::from(0x00)) // memOffset
             CODECOPY
             STOP
         };

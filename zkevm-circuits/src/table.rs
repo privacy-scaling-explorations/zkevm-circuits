@@ -1353,11 +1353,10 @@ impl CopyTable {
         let mut value_word_rlc = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
         let mut word_index = 0u64;
-
         let mut addr_slot = if copy_event.dst_type == CopyDataType::Memory {
-            (copy_event.dst_addr - copy_event.dst_addr % 32) as u64
+            copy_event.dst_addr % 32
         } else {
-            0u64
+            0
         };
 
         for (step_idx, (is_read_step, copy_step)) in copy_event
@@ -1398,7 +1397,6 @@ impl CopyTable {
             let is_mask = Value::known(if copy_step.mask { F::one() } else { F::zero() });
             // assume copy events bytes is already word aligned for copy steps.
             // only change by skip 32
-            addr_slot += step_idx as u64 / 2 / 32;
 
             // TODO: enable other copy type, now work for internal calldatacopy
             if is_read_step && copy_event.dst_type == CopyDataType::Memory {
@@ -1408,6 +1406,8 @@ impl CopyTable {
                     value_word_rlc = Value::known(F::zero());
                     value_word_rlc = value_word_rlc * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
+
+                    addr_slot += 32;
                 } else {
                     value_word_rlc = value_word_rlc * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
@@ -1470,8 +1470,8 @@ impl CopyTable {
             let rw_count = F::from(copy_event.rw_counter(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             println!(
-                "is_first {:?}, id: {:?}, rw_count {:?}, tag {:?}, addr {:?} bytes_left {} rlc_acc {:?}, rwc_inc_left {:?}",
-                is_first, id, rw_count, tag, addr, bytes_left, rlc_acc, rwc_inc_left
+                "addr_slot: {:?}, rw_count {:?}, tag {:?}, addr {:?} bytes_left {} word_index {:?}, rw_count {:?}",
+                addr_slot, rw_count, tag, addr, bytes_left, word_index, rw_count
             );
 
             // is_code
