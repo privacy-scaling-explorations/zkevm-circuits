@@ -2,10 +2,10 @@
 
 use crate::{ToBigEndian, Word};
 use halo2_proofs::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::{CurveAffine, Field},
     halo2curves::{
         group::{
-            ff::{Field as GroupField, PrimeField},
+            ff::{FromUniformBytes, PrimeField},
             Curve,
         },
         secp256k1::{self, Secp256k1Affine},
@@ -36,7 +36,7 @@ pub fn sign(
     let mut x_bytes = [0u8; 64];
     x_bytes[..32].copy_from_slice(&x_repr[..]);
 
-    let sig_r = secp256k1::Fq::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+    let sig_r = secp256k1::Fq::from_uniform_bytes(&x_bytes); // get x cordinate (E::Base) on E::Scalar
     let sig_s = randomness_inv * (msg_hash + sig_r * sk);
     (sig_r, sig_s)
 }
@@ -56,11 +56,11 @@ pub struct SignData {
 lazy_static! {
     static ref SIGN_DATA_DEFAULT: SignData = {
         let generator = Secp256k1Affine::generator();
-        let sk = secp256k1::Fq::one();
+        let sk = secp256k1::Fq::ONE;
         let pk = generator * sk;
         let pk = pk.to_affine();
-        let msg_hash = secp256k1::Fq::one();
-        let randomness = secp256k1::Fq::one();
+        let msg_hash = secp256k1::Fq::ONE;
+        let randomness = secp256k1::Fq::ONE;
         let (sig_r, sig_s) = sign(randomness, sk, msg_hash);
 
         SignData {
@@ -123,7 +123,7 @@ pub fn recover_pk(
 lazy_static! {
     /// Secp256k1 Curve Scalar.  Referece: Section 2.4.1 (parameter `n`) in "SEC 2: Recommended
     /// Elliptic Curve Domain Parameters" document at http://www.secg.org/sec2-v2.pdf
-    pub static ref SECP256K1_Q: BigUint = BigUint::from_bytes_le(&(secp256k1::Fq::zero() - secp256k1::Fq::one()).to_repr()) + 1u64;
+    pub static ref SECP256K1_Q: BigUint = BigUint::from_bytes_le(&(secp256k1::Fq::ZERO - secp256k1::Fq::ONE).to_repr()) + 1u64;
 }
 
 /// Helper function to convert a `CtOption` into an `Result`.  Similar to

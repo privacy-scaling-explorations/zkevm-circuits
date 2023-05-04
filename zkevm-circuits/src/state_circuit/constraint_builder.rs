@@ -670,7 +670,7 @@ fn from_digits<F: Field>(digits: &[Expression<F>], base: Expression<F>) -> Expre
     digits
         .iter()
         .rev()
-        .fold(Expression::Constant(F::zero()), |result, digit| {
+        .fold(Expression::Constant(F::ZERO), |result, digit| {
             digit.clone() + result * base.clone()
         })
 }

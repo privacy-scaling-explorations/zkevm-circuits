@@ -196,7 +196,7 @@ impl Config {
             || "upper_limb_difference",
             self.selector,
             offset,
-            || Value::known(F::one()),
+            || Value::known(F::ONE),
         )?;
 
         let cur_be_limbs = rw_to_be_limbs(cur);

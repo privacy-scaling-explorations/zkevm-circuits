@@ -516,7 +516,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 // Overwrite the witness assignment by using the values in the `overwrite`
                 // parameter.  This is used to explicitly set intermediate witness values for
                 // negative tests.
-                let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
+                let mut value_rlc = challenges.keccak_input().map(|_| F::ZERO);
                 for (offset, row) in overwrite.rows.iter().enumerate() {
                     for (name, column, value) in [
                         ("tag", self.bytecode_table.tag, row.tag),
@@ -533,14 +533,14 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         )?;
                     }
 
-                    if row.tag == F::one() {
+                    if row.tag == F::ONE {
                         value_rlc.as_mut().zip(challenges.keccak_input()).map(
                             |(value_rlc, challenge)| {
                                 *value_rlc = *value_rlc * challenge + row.value
                             },
                         );
                     } else {
-                        value_rlc = challenges.keccak_input().map(|_| F::zero());
+                        value_rlc = challenges.keccak_input().map(|_| F::ZERO);
                     }
 
                     let code_hash = challenges
@@ -580,7 +580,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         let mut push_data_left = 0;
         let mut next_push_data_left = 0;
         let mut push_data_size = 0;
-        let mut value_rlc = challenges.keccak_input().map(|_| F::zero());
+        let mut value_rlc = challenges.keccak_input().map(|_| F::ZERO);
         let length = F::from(bytecode.bytes.len() as u64);
 
         // Code hash with challenge is calculated only using the first row of the
@@ -689,13 +689,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             offset == last_row_offset,
             empty_hash,
             F::from(BytecodeFieldTag::Header as u64),
-            F::zero(),
-            F::zero(),
-            F::zero(),
+            F::ZERO,
+            F::ZERO,
+            F::ZERO,
             0,
-            Value::known(F::zero()),
-            F::zero(),
-            F::zero(),
+            Value::known(F::ZERO),
+            F::ZERO,
+            F::ZERO,
         )
     }
 
@@ -735,7 +735,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         )?;
 
         // q_last
-        let q_last_value = if last { F::one() } else { F::zero() };
+        let q_last_value = if last { F::ONE } else { F::ZERO };
         region.assign_fixed(
             || format!("assign q_last {}", offset),
             self.q_last,
@@ -785,7 +785,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         index_length_diff_is_zero_chip.assign(
             region,
             offset,
-            Value::known(index + F::one() - length),
+            Value::known(index + F::ONE - length),
         )?;
 
         Ok(())

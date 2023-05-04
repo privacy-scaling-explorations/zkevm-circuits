@@ -890,16 +890,20 @@ impl<F: Field> KeccakCircuitConfig<F> {
     ) -> Result<(), Error> {
         // Fixed selectors
         for (name, column, value) in &[
-            ("q_enable", self.q_enable, F::from(row.q_enable)),
-            ("q_first", self.q_first, F::from(offset == 0)),
-            ("q_round", self.q_round, F::from(row.q_round)),
-            ("q_round_last", self.q_round_last, F::from(row.q_round_last)),
-            ("q_absorb", self.q_absorb, F::from(row.q_absorb)),
-            ("q_padding", self.q_padding, F::from(row.q_padding)),
+            ("q_enable", self.q_enable, F::from(row.q_enable as u64)),
+            ("q_first", self.q_first, F::from((offset == 0) as u64)),
+            ("q_round", self.q_round, F::from(row.q_round as u64)),
+            (
+                "q_round_last",
+                self.q_round_last,
+                F::from(row.q_round_last as u64),
+            ),
+            ("q_absorb", self.q_absorb, F::from(row.q_absorb as u64)),
+            ("q_padding", self.q_padding, F::from(row.q_padding as u64)),
             (
                 "q_padding_last",
                 self.q_padding_last,
-                F::from(row.q_padding_last),
+                F::from(row.q_padding_last as u64),
             ),
         ] {
             region.assign_fixed(
@@ -914,7 +918,7 @@ impl<F: Field> KeccakCircuitConfig<F> {
             region,
             offset,
             [
-                Value::known(F::from(row.is_final)),
+                Value::known(F::from(row.is_final as u64)),
                 row.data_rlc,
                 Value::known(F::from(row.length as u64)),
                 row.hash_rlc,

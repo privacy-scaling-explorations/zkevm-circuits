@@ -189,7 +189,7 @@ impl<F: Field> TxCircuit<F> {
                     0,
                     TxFieldTag::Null,
                     0,
-                    Value::known(F::zero()),
+                    Value::known(F::ZERO),
                 )?;
                 offset += 1;
                 // Assign al Tx fields except for call data
@@ -221,7 +221,10 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::CalleeAddress,
                             Value::known(tx.to_or_zero().to_scalar().expect("tx.to too big")),
                         ),
-                        (TxFieldTag::IsCreate, Value::known(F::from(tx.is_create()))),
+                        (
+                            TxFieldTag::IsCreate,
+                            Value::known(F::from(tx.is_create() as u64)),
+                        ),
                         (
                             TxFieldTag::Value,
                             challenges
@@ -285,7 +288,7 @@ impl<F: Field> TxCircuit<F> {
                         0, // tx_id
                         TxFieldTag::CallData,
                         0,
-                        Value::known(F::zero()),
+                        Value::known(F::ZERO),
                     )?;
                     offset += 1;
                 }

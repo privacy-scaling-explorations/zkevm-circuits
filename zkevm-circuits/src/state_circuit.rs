@@ -227,7 +227,7 @@ impl<F: Field> StateCircuitConfig<F> {
                 || "selector",
                 self.selector,
                 offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
 
             tag_chip.assign(region, offset, &row.tag())?;
@@ -262,7 +262,7 @@ impl<F: Field> StateCircuitConfig<F> {
                     || "not_first_access",
                     self.not_first_access,
                     offset,
-                    || Value::known(if is_first_access { F::zero() } else { F::one() }),
+                    || Value::known(if is_first_access { F::ZERO } else { F::ONE }),
                 )?;
 
                 if is_first_access {
@@ -276,12 +276,7 @@ impl<F: Field> StateCircuitConfig<F> {
                                 state_root = new_root;
                             }
                             if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
-                                assert_eq!(
-                                    row.value_assignment(randomness),
-                                    F::zero(),
-                                    "{:?}",
-                                    row
-                                );
+                                assert_eq!(row.value_assignment(randomness), F::ZERO, "{:?}", row);
                             }
                             state_root
                         });

@@ -195,7 +195,7 @@ impl<F: Field> ExecutionGadget<F> for SignextendGadget<F> {
 
         // Set the sign byte
         let mut sign = 0u64;
-        if index[0] < 31 && msb_sum_zero == F::one() {
+        if index[0] < 31 && msb_sum_zero == F::ONE {
             sign = (value[index[0] as usize] >> 7) as u64;
         }
         self.sign_byte

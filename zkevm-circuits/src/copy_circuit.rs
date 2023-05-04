@@ -459,7 +459,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 || "q_enable",
                 self.q_enable,
                 *offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
 
             // is_last, value, is_pad, is_code
@@ -561,7 +561,7 @@ impl<F: Field> CopyCircuitConfig<F> {
                 || "q_enable",
                 self.q_enable,
                 *offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
             // q_step
             if *offset % 2 == 0 {
@@ -574,89 +574,89 @@ impl<F: Field> CopyCircuitConfig<F> {
             || format!("assign is_first {}", *offset),
             self.copy_table.is_first,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // is_last
         region.assign_advice(
             || format!("assign is_last {}", *offset),
             self.is_last,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // id
         region.assign_advice(
             || format!("assign id {}", *offset),
             self.copy_table.id,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // addr
         region.assign_advice(
             || format!("assign addr {}", *offset),
             self.copy_table.addr,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // src_addr_end
         region.assign_advice(
             || format!("assign src_addr_end {}", *offset),
             self.copy_table.src_addr_end,
             *offset,
-            || Value::known(F::one()),
+            || Value::known(F::ONE),
         )?;
         // bytes_left
         region.assign_advice(
             || format!("assign bytes_left {}", *offset),
             self.copy_table.bytes_left,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // value
         region.assign_advice(
             || format!("assign value {}", *offset),
             self.value,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // rlc_acc
         region.assign_advice(
             || format!("assign rlc_acc {}", *offset),
             self.copy_table.rlc_acc,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // is_code
         region.assign_advice(
             || format!("assign is_code {}", *offset),
             self.is_code,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // is_pad
         region.assign_advice(
             || format!("assign is_pad {}", *offset),
             self.is_pad,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // rw_counter
         region.assign_advice(
             || format!("assign rw_counter {}", *offset),
             self.copy_table.rw_counter,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // rwc_inc_left
         region.assign_advice(
             || format!("assign rwc_inc_left {}", *offset),
             self.copy_table.rwc_inc_left,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // tag
         tag_chip.assign(region, *offset, &CopyDataType::Padding)?;
         // Assign LT gadget
-        lt_chip.assign(region, *offset, F::zero(), F::one())?;
+        lt_chip.assign(region, *offset, F::ZERO, F::ONE)?;
 
         *offset += 1;
 

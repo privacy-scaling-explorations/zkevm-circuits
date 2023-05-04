@@ -1,7 +1,6 @@
 //! Common utility traits and functions.
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Layouter, Value},
     plonk::{
         Challenge, Circuit, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase,
@@ -15,7 +14,7 @@ use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
-pub(crate) fn query_expression<F: FieldExt, T>(
+pub(crate) fn query_expression<F: Field, T>(
     meta: &mut ConstraintSystem<F>,
     mut f: impl FnMut(&mut VirtualCells<F>) -> T,
 ) -> T {
@@ -27,7 +26,7 @@ pub(crate) fn query_expression<F: FieldExt, T>(
     expr.unwrap()
 }
 
-pub(crate) fn random_linear_combine_word<F: FieldExt>(bytes: [u8; 32], randomness: F) -> F {
+pub(crate) fn random_linear_combine_word<F: Field>(bytes: [u8; 32], randomness: F) -> F {
     rlc::value(&bytes, randomness)
 }
 
@@ -41,7 +40,7 @@ pub struct Challenges<T = Challenge> {
 
 impl Challenges {
     /// Construct `Challenges` by allocating challenges in specific phases.
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+    pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         #[cfg(any(feature = "test", test, feature = "test-circuits"))]
         let _dummy_cols = [
             meta.advice_column(),
@@ -57,7 +56,7 @@ impl Challenges {
     }
 
     /// Returns `Expression` of challenges from `ConstraintSystem`.
-    pub fn exprs<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
+    pub fn exprs<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Challenges<Expression<F>> {
         let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
             [self.evm_word, self.keccak_input, self.lookup_input]
                 .map(|challenge| meta.query_challenge(challenge))
@@ -70,7 +69,7 @@ impl Challenges {
     }
 
     /// Returns `Value` of challenges from `Layouter`.
-    pub fn values<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
+    pub fn values<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Challenges<Value<F>> {
         Challenges {
             evm_word: layouter.get_challenge(self.evm_word),
             keccak_input: layouter.get_challenge(self.keccak_input),

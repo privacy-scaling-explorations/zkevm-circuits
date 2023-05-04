@@ -281,7 +281,7 @@ impl<F: Field> RwRow<F> {
         values
             .iter()
             .rev()
-            .fold(F::zero(), |acc, value| acc * randomness + value)
+            .fold(F::ZERO, |acc, value| acc * randomness + value)
     }
 
     pub(crate) fn rlc_value(&self, randomness: Value<F>) -> Value<F> {
@@ -399,7 +399,7 @@ impl Rw {
             ),
             value: self.value_assignment(randomness),
             value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
-            aux1: F::zero(), // only used for AccountStorage::tx_id, which moved to key1.
+            aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
             aux2: self
                 .committed_value_assignment(randomness)
                 .unwrap_or_default(),
@@ -423,8 +423,8 @@ impl Rw {
             value: randomness.map(|randomness| self.value_assignment(randomness)),
             value_prev: randomness
                 .map(|randomness| self.value_prev_assignment(randomness).unwrap_or_default()),
-            aux1: Value::known(F::zero()), /* only used for AccountStorage::tx_id, which moved to
-                                            * key1. */
+            aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
+                                          * key1. */
             aux2: randomness.map(|randomness| {
                 self.committed_value_assignment(randomness)
                     .unwrap_or_default()
@@ -563,7 +563,7 @@ impl Rw {
 
     pub(crate) fn value_assignment<F: Field>(&self, randomness: F) -> F {
         match self {
-            Self::Start { .. } => F::zero(),
+            Self::Start { .. } => F::ZERO,
             Self::CallContext {
                 field_tag, value, ..
             } => {

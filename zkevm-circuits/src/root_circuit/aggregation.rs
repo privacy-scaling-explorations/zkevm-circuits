@@ -1,8 +1,9 @@
+use eth_types::Field;
 use halo2_proofs::{
-    arithmetic::Field,
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     halo2curves::{
-        group::prime::PrimeCurveAffine, pairing::Engine, serde::SerdeObject, CurveAffine,
+        ff::Field as Halo2Field, group::prime::PrimeCurveAffine, pairing::Engine,
+        serde::SerdeObject, CurveAffine,
     },
     plonk::{Circuit, ConstraintSystem, Error},
     poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -23,7 +24,7 @@ use snark_verifier::{
         AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
     },
     system::halo2::transcript,
-    util::arithmetic::{fe_to_limbs, FieldExt, MultiMillerLoop},
+    util::arithmetic::{fe_to_limbs, MultiMillerLoop},
     verifier::{self, plonk::PlonkProtocol, SnarkVerifier},
 };
 use std::{io, iter, rc::Rc};
@@ -178,12 +179,12 @@ impl AggregationConfig {
     }
 
     /// Returns `MainGate`.
-    pub fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
+    pub fn main_gate<F: Field>(&self) -> MainGate<F> {
         MainGate::new(self.main_gate_config.clone())
     }
 
     /// Returns `RangeChip`.
-    pub fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
+    pub fn range_chip<F: Field>(&self) -> RangeChip<F> {
         RangeChip::new(self.range_config.clone())
     }
 
@@ -196,7 +197,7 @@ impl AggregationConfig {
     }
 
     /// Load fixed lookup table for `RangeChip`
-    pub fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load_table<F: Field>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         self.range_chip().load_table(layouter)
     }
 
@@ -215,7 +216,10 @@ impl AggregationConfig {
             Vec<AssignedCell<M::Scalar, M::Scalar>>,
         ),
         Error,
-    > {
+    >
+    where
+        M::Scalar: Field,
+    {
         type PoseidonTranscript<'a, C, S> =
             transcript::halo2::PoseidonTranscript<C, Rc<Halo2Loader<'a, C>>, S, T, RATE, R_F, R_P>;
         let snarks = snarks.into_iter().collect_vec();
@@ -311,6 +315,7 @@ pub fn aggregate<'a, M: MultiMillerLoop>(
 where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
+    M::Scalar: Field,
 {
     let svk = KzgSvk::<M>::new(params.get_g()[0]);
     let dk = KzgDk::new(svk, params.g2(), params.s_g2());
@@ -385,6 +390,7 @@ impl<'a, M: MultiMillerLoop> TestAggregationCircuit<'a, M>
 where
     M::G1Affine: SerdeObject,
     M::G2Affine: SerdeObject,
+    M::Scalar: Field,
 {
     /// Create an Aggregation circuit with aggregated accumulator computed.
     /// Returns `None` if any given snark is invalid.
@@ -434,7 +440,10 @@ where
     }
 }
 
-impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M> {
+impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M>
+where
+    M::Scalar: Field,
+{
     type Config = AggregationConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -446,7 +455,7 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
                 .iter()
                 .map(SnarkWitness::without_witnesses)
                 .collect(),
-            instances: vec![M::Scalar::zero(); self.instances.len()],
+            instances: vec![M::Scalar::ZERO; self.instances.len()],
         }
     }
 
@@ -484,8 +493,9 @@ impl<'a, M: MultiMillerLoop> Circuit<M::Scalar> for TestAggregationCircuit<'a, M
 #[cfg(test)]
 pub mod test {
     use crate::root_circuit::{PoseidonTranscript, Snark, TestAggregationCircuit};
+    use eth_types::Field;
     use halo2_proofs::{
-        arithmetic::FieldExt,
+        arithmetic::Field as Halo2Field,
         circuit::{floor_planner::V1, Layouter, Value},
         dev::{FailureLocation, MockProver, VerifyFailure},
         halo2curves::{
@@ -550,7 +560,7 @@ pub mod test {
 
     impl StandardPlonkConfig {
         /// Configure for `StandardPlonk`
-        pub fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+        pub fn configure<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
             let [w_l, w_r, w_o] = [(); 3].map(|_| meta.advice_column());
             let [q_l, q_r, q_o, q_m, q_c] = [(); 5].map(|_| meta.fixed_column());
             let pi = meta.instance_column();
@@ -584,7 +594,7 @@ pub mod test {
     #[derive(Clone, Copy)]
     pub struct StandardPlonk<F>(F);
 
-    impl<F: FieldExt> StandardPlonk<F> {
+    impl<F: Field> StandardPlonk<F> {
         /// Create a `StandardPlonk` with random instnace.
         pub fn rand<R: RngCore>(mut rng: R) -> Self {
             Self(F::from(rng.next_u32() as u64))
@@ -596,7 +606,7 @@ pub mod test {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
+    impl<F: Field> Circuit<F> for StandardPlonk<F> {
         type Config = StandardPlonkConfig;
         type FloorPlanner = V1;
 
@@ -622,7 +632,7 @@ pub mod test {
                     // Assign some non-zero values to make sure the advice/fixed columns have
                     // non-identity commitments.
                     let a = region.assign_advice(|| "", w_l, 0, || Value::known(self.0))?;
-                    region.assign_fixed(|| "", q_l, 0, || Value::known(-F::one()))?;
+                    region.assign_fixed(|| "", q_l, 0, || Value::known(-F::ONE))?;
                     a.copy_advice(|| "", &mut region, w_r, 1)?;
                     a.copy_advice(|| "", &mut region, w_o, 2)?;
                     region.assign_advice(|| "", w_l, 3, || Value::known(-F::from(5)))?;
@@ -642,7 +652,7 @@ pub mod test {
     ) -> Vec<SnarkOwned<G1Affine>> {
         // Preprocess
         let (pk, protocol) = {
-            let standard_plonk = StandardPlonk(Fr::zero());
+            let standard_plonk = StandardPlonk(Fr::ZERO);
             let vk = keygen_vk(params, &standard_plonk).unwrap();
             let pk = keygen_pk(params, vk, &standard_plonk).unwrap();
             let protocol = compile(
@@ -711,7 +721,7 @@ pub mod test {
                 .unwrap();
         let mut instances = aggregation.instances();
         // Change the propagated inner snark's instance
-        instances[0][0] += Fr::one();
+        instances[0][0] += Fr::ONE;
         // Then expect the verification to fail
         assert_eq!(
             MockProver::run(21, &aggregation, instances)

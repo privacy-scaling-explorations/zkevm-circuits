@@ -140,7 +140,7 @@ impl<F: Field> EvmCircuitConfig<F> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
-                for (offset, row) in std::iter::once([F::zero(); 4])
+                for (offset, row) in std::iter::once([F::ZERO; 4])
                     .chain(fixed_table_tags.iter().flat_map(|tag| tag.build()))
                     .enumerate()
                 {

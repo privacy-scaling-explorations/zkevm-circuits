@@ -253,8 +253,11 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
 
-        self.is_success
-            .assign(region, offset, Value::known(call.is_success.into()))?;
+        self.is_success.assign(
+            region,
+            offset,
+            Value::known(F::from(call.is_success as u64)),
+        )?;
 
         if !call.is_root && !call.is_create() {
             for (cell, value) in [
