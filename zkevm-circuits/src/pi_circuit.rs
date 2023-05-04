@@ -1336,7 +1336,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                             TxFieldTag::CalleeAddress,
                             tx.to_addr.to_scalar().expect("tx.to too big"),
                         ),
-                        (TxFieldTag::IsCreate, F::from(tx.is_create)),
+                        (TxFieldTag::IsCreate, F::from(tx.is_create as u64)),
                         (
                             TxFieldTag::Value,
                             rlc(tx.value.to_le_bytes(), self.randomness),
@@ -1527,7 +1527,7 @@ fn raw_public_inputs_col<F: Field>(
             rlc(tx.gas_price.to_le_bytes(), randomness),
             tx.from_addr.to_scalar().expect("tx.from too big"),
             tx.to_addr.to_scalar().expect("tx.to too big"),
-            F::from(tx.is_create),
+            F::from(tx.is_create as u64),
             rlc(tx.value.to_le_bytes(), randomness),
             F::from(tx.call_data_len),
             F::from(tx.call_data_gas_cost),

@@ -221,7 +221,10 @@ impl<F: Field> TxCircuit<F> {
                             TxFieldTag::CalleeAddress,
                             Value::known(tx.to_or_zero().to_scalar().expect("tx.to too big")),
                         ),
-                        (TxFieldTag::IsCreate, Value::known(F::from(tx.is_create()))),
+                        (
+                            TxFieldTag::IsCreate,
+                            Value::known(F::from(tx.is_create() as u64)),
+                        ),
                         (
                             TxFieldTag::Value,
                             challenges

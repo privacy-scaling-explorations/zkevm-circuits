@@ -561,9 +561,11 @@ impl<F: Field> Step<F> {
         self.state
             .is_root
             .assign(region, offset, Value::known(F::from(call.is_root as u64)))?;
-        self.state
-            .is_create
-            .assign(region, offset, Value::known(F::from(call.is_create())))?;
+        self.state.is_create.assign(
+            region,
+            offset,
+            Value::known(F::from(call.is_create() as u64)),
+        )?;
         self.state
             .code_hash
             .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
