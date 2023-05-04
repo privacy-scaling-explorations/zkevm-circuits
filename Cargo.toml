@@ -13,13 +13,8 @@ members = [
     "testool"
 ]
 
-# Uncomment after the next halo2 release
-# [patch.crates-io]
-# halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
-
-# Remove after the next halo2 release
-[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/appliedzkp/halo2.git", rev = "be955686f86eb618f55d2320c0e042485b313d22" }
+[patch.crates-io]
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_04_20" }
 
 # Definition of benchmarks profile to use.
 [profile.bench]
