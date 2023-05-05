@@ -145,7 +145,7 @@ impl CustomTable for TestTable {
     }
 }
 
-fn works_like_this(table: TestTable, config: &[(TestTable, usize)]) {
+fn works_like_this(table: TestTable, _config: &[(TestTable, usize)]) {
     if table.matches_to(&TestTable::Fixed) {
         println!("matched");
     }

@@ -2,7 +2,6 @@
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{
-    circuit::{Region, Value},
     plonk::{Error, Expression},
 };
 

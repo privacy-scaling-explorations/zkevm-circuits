@@ -1,9 +1,9 @@
-use std::marker::PhantomData;
+
 
 use crate::{
-    _cb, circuit,
+    circuit,
     circuit_tools::{
-        cell_manager::{Cell, CustomTable},
+        cell_manager::{Cell},
         constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, cached_region::CachedRegion,
     },
     matchw,

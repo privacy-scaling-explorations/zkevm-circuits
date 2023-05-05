@@ -33,7 +33,7 @@ use self::{
 use crate::{
     assign, assignf, circuit,
     circuit_tools::{
-        cell_manager::CellManager, constraint_builder::ConstraintBuilder, memory::Memory,
+        constraint_builder::ConstraintBuilder, memory::Memory,
         cached_region::CachedRegion,
     },
     mpt_circuit::{
@@ -561,7 +561,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
         // let challenges_expr = challenges.exprs(meta);
 
         let r = 2u64;
-        let challenges = Challenges::mock(
+        let _challenges = Challenges::mock(
             Value::known(F::from(r)),
             Value::known(F::from(r)),
             Value::known(F::from(r)),
@@ -584,7 +584,7 @@ impl<F: Field> Circuit<F> for MPTCircuit<F> {
 
     fn synthesize(
         &self,
-        (config, challenges): Self::Config,
+        (config, _challenges): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         // let challenges = challenges.values(&mut layouter);

@@ -19,7 +19,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    plonk::{Error, VirtualCells}, circuit::Value,
+    plonk::{Error, VirtualCells},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -84,7 +84,7 @@ impl<F: Field> StartConfig<F> {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
-        ctx: &MPTConfig<F>,
+        _ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         node: &Node,

@@ -1,7 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::Region,
     plonk::{Error, Expression, VirtualCells},
 };
 
@@ -273,7 +272,7 @@ impl<F: Field> BranchGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
-        mpt_config: &MPTConfig<F>,
+        _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         is_placeholder: &[bool; 2],

@@ -1,7 +1,6 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    circuit::Region,
     plonk::{Error, Expression, VirtualCells},
 };
 
@@ -182,7 +181,7 @@ impl<F: Field> ExtensionGadget<F> {
     pub(crate) fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
-        mpt_config: &MPTConfig<F>,
+        _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,
         key_data: &KeyDataWitness<F>,

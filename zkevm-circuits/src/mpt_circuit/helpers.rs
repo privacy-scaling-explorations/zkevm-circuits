@@ -1,7 +1,7 @@
 use crate::{
     assign, circuit,
     circuit_tools::{
-        cell_manager::{Cell, CellManager, CustomTable},
+        cell_manager::{Cell, CellManager},
         constraint_builder::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
@@ -18,7 +18,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{or, pow, Scalar};
 use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells}, circuit::Value,
+    plonk::{Error, Expression, VirtualCells},
 };
 
 use super::{
@@ -757,7 +757,7 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
 
 // Returns the number of nibbles stored in a key value
 pub(crate) mod num_nibbles {
-    use crate::{_cb, circuit, circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable}, mpt_circuit::table::Table};
+    use crate::{circuit, circuit_tools::{constraint_builder::ConstraintBuilder}, mpt_circuit::table::Table};
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 

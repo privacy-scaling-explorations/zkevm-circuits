@@ -1,7 +1,6 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    circuit::Region,
     plonk::{Error, VirtualCells},
 };
 

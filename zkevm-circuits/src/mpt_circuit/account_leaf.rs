@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    circuit::{Region, Value},
+    circuit::{Value},
     plonk::{Error, VirtualCells},
     poly::Rotation,
 };
