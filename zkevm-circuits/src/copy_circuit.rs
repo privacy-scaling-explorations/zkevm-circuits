@@ -418,7 +418,9 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
 
         meta.lookup_any("TxLog lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
-                * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta);
+                * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)
+                * not::expr(meta.query_advice(mask, Rotation::cur()));
+
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
@@ -1286,7 +1288,7 @@ mod tests {
 
         assert_error_matches(
             test_copy_circuit_from_block(14, block),
-            vec!["Memory lookup", "Bytecode lookup"],
+            vec!["Memory word lookup", "Bytecode lookup"],
         );
     }
 

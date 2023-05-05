@@ -28,7 +28,7 @@ use ethers_core::{
     k256::{elliptic_curve::consts::U4, sha2::digest::typenum::Minimum},
     utils::{get_contract_address, get_create2_address, keccak256},
 };
-use std::{cmp::max, mem};
+use std::{cmp::max, io::copy, mem};
 
 /// Reference to the internal state of the CircuitInputBuilder in a particular
 /// [`ExecStep`].
@@ -1751,30 +1751,56 @@ impl<'a> CircuitInputStateRef<'a> {
         src_addr: u64,
         bytes_left: u64,
     ) -> Result<Vec<(u8, bool, bool)>, Error> {
-        // Get memory data
-        let mem = self
-            .call_ctx()?
-            .memory
-            .read_chunk(src_addr.into(), bytes_left.into());
-
         let mut copy_steps = Vec::with_capacity(bytes_left as usize);
-        for (idx, byte) in mem.iter().enumerate() {
-            let addr = src_addr + idx as u64;
+        if bytes_left == 0 {
+            return Ok(copy_steps);
+        }
 
-            // Read memory
-            self.memory_read(exec_step, (addr as usize).into(), *byte)?;
+        let (_, dst_begin_slot) = self.get_addr_shift_slot(src_addr).unwrap();
+        let (_, dst_end_slot) = self.get_addr_shift_slot(src_addr + bytes_left).unwrap();
+        let mut memory = self.call_ctx_mut()?.memory.clone();
 
-            copy_steps.push((*byte, false, false));
+        let minimal_length = dst_end_slot as usize + 32;
+        memory.extend_at_least(minimal_length);
+        // collect all memory bytes with padding word
+        let log_slot_bytes =
+            memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
 
-            // Write log
-            self.tx_log_write(
-                exec_step,
-                self.tx_ctx.id(),
-                self.tx_ctx.log_id + 1,
-                TxLogField::Data,
-                idx,
-                Word::from(*byte),
-            )?;
+        let mut copy_start = 0u64;
+        let mut first_set = true;
+        let mut chunk_index = dst_begin_slot;
+        // memory word writes to destination word
+        for chunk in log_slot_bytes.chunks(32) {
+            let dest_word = Word::from_big_endian(&chunk);
+            self.memory_read_word(exec_step, chunk_index.into(), dest_word)?;
+            chunk_index = chunk_index + 32;
+        }
+
+        for idx in 0..log_slot_bytes.len() {
+            let value = memory.0[dst_begin_slot as usize + idx];
+            if idx as u64 + dst_begin_slot < src_addr {
+                // front mask byte
+                copy_steps.push((value, false, true));
+            } else if idx as u64 + dst_begin_slot >= src_addr + bytes_left {
+                // back mask byte
+                copy_steps.push((value, false, true));
+            } else {
+                // real copy byte
+                if first_set {
+                    copy_start = idx as u64;
+                    first_set = false;
+                }
+                copy_steps.push((value, false, false));
+                // Write log
+                self.tx_log_write(
+                    exec_step,
+                    self.tx_ctx.id(),
+                    self.tx_ctx.log_id + 1,
+                    TxLogField::Data,
+                    idx - copy_start as usize,
+                    Word::from(value),
+                )?;
+            }
         }
 
         Ok(copy_steps)

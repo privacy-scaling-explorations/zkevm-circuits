@@ -272,8 +272,7 @@ impl CopyEvent {
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
             CopyDataType::Memory => (step_index as u64 / 2) / 32,
-            // TODO: update log if needed later
-            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2,
+            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2 / 2,
             CopyDataType::TxCalldata | CopyDataType::Padding => unreachable!(),
         };
         source_rw_increase + destination_rw_increase

@@ -37,6 +37,8 @@ pub(crate) struct ExtcodecopyGadget<F> {
     code_hash: Cell<F>,
     code_size: Cell<F>,
     copy_rwc_inc: Cell<F>,
+    /// include actual and padding to word bytes
+    bytes_length_word: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY }>,
 }
@@ -54,6 +56,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             from_bytes::expr(&external_address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
 
         let code_size = cb.query_cell();
+        let bytes_length_word = cb.query_cell();
 
         let memory_length = cb.query_word_rlc();
         let memory_offset = cb.query_cell_phase2();
@@ -118,7 +121,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
                 src_addr,
                 code_size.expr(),
                 memory_address.offset(),
-                memory_address.length(),
+                bytes_length_word.expr(),
                 0.expr(),
                 copy_rwc_inc.expr(),
             );
@@ -131,7 +134,9 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         });
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(cb.rw_counter_offset()),
+            rw_counter: Transition::Delta(
+                9.expr() + copy_rwc_inc.expr() + memory_address.has_length(),
+            ),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(4.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -152,6 +157,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             code_hash,
             code_size,
             copy_rwc_inc,
+            bytes_length_word,
             memory_expansion,
             memory_copier_gas,
         }
@@ -209,14 +215,26 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         self.code_offset
             .assign(region, offset, code_offset, F::from(code_size))?;
 
+        let shift = memory_offset.low_u64() % 32;
+        let memory_start_slot = memory_offset.low_u64() - shift;
+        let memory_end = memory_offset.low_u64() + memory_length.low_u64();
+        let memory_end_slot = memory_end - memory_end % 32;
+        let copy_rwc_inc = (memory_end_slot - memory_start_slot) / 32;
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                memory_length
+                copy_rwc_inc
                     .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
+        )?;
+
+        let bytes_length_to_word = (copy_rwc_inc + 1) * 32;
+        self.bytes_length_word.assign(
+            region,
+            offset,
+            Value::known(F::from(bytes_length_to_word)),
         )?;
 
         let (_, memory_expansion_gas_cost) = self.memory_expansion.assign(

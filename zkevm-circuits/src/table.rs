@@ -1399,7 +1399,10 @@ impl CopyTable {
             // only change by skip 32
 
             // TODO: enable other copy type, now work for internal calldatacopy
-            if is_read_step && copy_event.dst_type == CopyDataType::Memory {
+            if is_read_step
+                && (copy_event.dst_type == CopyDataType::Memory
+                    || copy_event.src_type == CopyDataType::Memory)
+            {
                 if (step_idx / 2) % 32 == 0 && step_idx != 0 {
                     // reset
                     //println!("value_word_rlc {:?} of step {} ", value_word_rlc, step_idx);
@@ -1470,8 +1473,8 @@ impl CopyTable {
             let rw_count = F::from(copy_event.rw_counter(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             println!(
-                "addr_slot: {:?}, rw_count {:?}, tag {:?}, addr {:?} bytes_left {} word_index {:?}, rw_count {:?}",
-                addr_slot, rw_count, tag, addr, bytes_left, word_index, rw_count
+                "addr_slot: {:?}, rw_count {:?}, tag {:?}, addr {:?} bytes_left {} word_index {:?}, ",
+                addr_slot, rw_count, tag, addr, bytes_left, word_index,
             );
 
             // is_code
