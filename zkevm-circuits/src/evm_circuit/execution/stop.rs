@@ -113,13 +113,13 @@ impl<F: Field> ExecutionGadget<F> for StopGadget<F> {
         self.code_length.assign(
             region,
             offset,
-            Value::known(F::from(code.code_size() as u64)),
+            Value::known(F::from(code.codesize() as u64)),
         )?;
 
         self.is_out_of_range.assign(
             region,
             offset,
-            F::from(code.code_size() as u64) - F::from(step.program_counter()),
+            F::from(code.codesize() as u64) - F::from(step.pc),
         )?;
 
         let opcode = step.opcode().unwrap();

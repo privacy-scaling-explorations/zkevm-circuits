@@ -133,7 +133,7 @@ fn gen_copy_event(
     } else {
         Bytecode::default()
     };
-    let code_size = bytecode.code.len() as u64;
+    let code_size = bytecode.codesize() as u64;
 
     // Get low Uint64 of offset to generate copy steps. Since offset could be
     // Uint64 overflow if length is zero.
@@ -436,10 +436,9 @@ mod extcodecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, &(value, is_code)) in copy_events[0].bytes.iter().enumerate() {
             let bytecode_element = bytecode_ext.get(idx).unwrap_or_default();
-            assert_eq!(*value, bytecode_element.value);
-            assert_eq!(*is_code, bytecode_element.is_code);
+            assert_eq!((value, is_code), bytecode_element);
         }
     }
 

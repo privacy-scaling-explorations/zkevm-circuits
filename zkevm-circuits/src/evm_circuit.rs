@@ -420,7 +420,7 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
         )?;
         config
             .bytecode_table
-            .load(&mut layouter, block.bytecodes.values())?;
+            .load(&mut layouter, block.bytecodes.clone())?;
         config.block_table.load(&mut layouter, &block.context)?;
         config.copy_table.load(&mut layouter, block, &challenges)?;
         config

@@ -21,20 +21,10 @@ lazy_static! {
 const VALUE_ZERO: Word = Word::zero();
 
 /// Memory storage for contract code by code hash.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CodeDB(pub HashMap<Hash, Vec<u8>>);
 
-impl Default for CodeDB {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl CodeDB {
-    /// Create a new empty Self.
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
     /// Insert code indexed by code hash, and return the code hash.
     pub fn insert(&mut self, code: Vec<u8>) -> Hash {
         let hash = Self::hash(&code);

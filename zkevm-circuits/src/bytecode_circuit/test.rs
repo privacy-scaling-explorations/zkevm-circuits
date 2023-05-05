@@ -2,6 +2,7 @@ use crate::{
     bytecode_circuit::{bytecode_unroller::*, circuit::BytecodeCircuit},
     table::BytecodeFieldTag,
     util::{is_push, keccak, unusable_rows, SubCircuit},
+    witness::BytecodeCollection,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Bytecode, Field, Word};
@@ -19,11 +20,10 @@ fn bytecode_circuit_unusable_rows() {
 impl<F: Field> BytecodeCircuit<F> {
     /// Verify that the selected bytecode fulfills the circuit
     pub fn verify_raw(k: u32, bytecodes: Vec<Vec<u8>>) {
-        let unrolled: Vec<_> = bytecodes.iter().map(|b| unroll(b.clone())).collect();
-        Self::verify(k, unrolled, true);
+        Self::verify(k, BytecodeCollection::from_raw(bytecodes), true);
     }
 
-    pub(crate) fn verify(k: u32, bytecodes: Vec<UnrolledBytecode<F>>, success: bool) {
+    pub(crate) fn verify(k: u32, bytecodes: BytecodeCollection, success: bool) {
         let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));
 
         let prover = MockProver::<F>::run(k, &circuit, Vec::new()).unwrap();
@@ -40,7 +40,7 @@ impl<F: Field> BytecodeCircuit<F> {
 /// Test bytecode circuit with unrolled bytecode
 pub fn test_bytecode_circuit_unrolled<F: Field>(
     k: u32,
-    bytecodes: Vec<UnrolledBytecode<F>>,
+    bytecodes: BytecodeCollection,
     success: bool,
 ) {
     let circuit = BytecodeCircuit::<F>::new(bytecodes, 2usize.pow(k));

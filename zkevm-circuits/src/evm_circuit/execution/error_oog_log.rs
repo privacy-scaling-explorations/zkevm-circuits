@@ -255,7 +255,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xfe),
             balance: Word::from(10).pow(20.into()),
-            code: bytecode.to_vec().into(),
+            code: bytecode.code().into(),
             ..Default::default()
         }
     }
@@ -284,7 +284,7 @@ mod test {
     }
 
     fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
+        let code = code.code_vec();
         let is_empty = code.is_empty();
         Account {
             address: Address::repeat_byte(0xff),

@@ -365,9 +365,9 @@ fn tracer_err_address_collision() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -487,9 +487,9 @@ fn tracer_create_collision_free() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -622,9 +622,9 @@ fn tracer_err_code_store_out_of_gas() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0..(32 - len % 32) as u8)
@@ -770,9 +770,9 @@ fn tracer_err_invalid_code_for_create_opcode() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -922,9 +922,9 @@ fn tracer_err_max_code_size_exceeded() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))
@@ -1060,9 +1060,9 @@ fn tracer_create_stop() {
 
     let mut code_b = Bytecode::default();
     // pad code_creator to multiple of 32 bytes
-    let len = code_creator.to_vec().len();
+    let len = code_creator.codesize();
     let code_creator: Vec<u8> = code_creator
-        .to_vec()
+        .code()
         .iter()
         .cloned()
         .chain(0u8..((32 - len % 32) as u8))

@@ -10,7 +10,7 @@ use crate::{
         word::{empty_code_hash_word_value, Word, Word32, WordExpr},
         Challenges, Expr, SubCircuit, SubCircuitConfig,
     },
-    witness,
+    witness::{self, BytecodeCollection},
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
@@ -22,6 +22,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use itertools::Itertools;
 use log::trace;
 use std::vec;
 
@@ -787,7 +788,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 #[derive(Clone, Default, Debug)]
 pub struct BytecodeCircuit<F: Field> {
     /// Unrolled bytecodes
-    pub bytecodes: Vec<UnrolledBytecode<F>>,
+    pub bytecodes: BytecodeCollection,
     /// Circuit size
     pub size: usize,
     /// Overwrite
@@ -796,7 +797,7 @@ pub struct BytecodeCircuit<F: Field> {
 
 impl<F: Field> BytecodeCircuit<F> {
     /// new BytecodeCircuitTester
-    pub fn new(bytecodes: Vec<UnrolledBytecode<F>>, size: usize) -> Self {
+    pub fn new(bytecodes: BytecodeCollection, size: usize) -> Self {
         BytecodeCircuit {
             bytecodes,
             size,
@@ -806,12 +807,7 @@ impl<F: Field> BytecodeCircuit<F> {
 
     /// Creates bytecode circuit from block and bytecode_size.
     pub fn new_from_block_sized(block: &witness::Block<F>, bytecode_size: usize) -> Self {
-        let bytecodes: Vec<UnrolledBytecode<F>> = block
-            .bytecodes
-            .values()
-            .map(|b| unroll(b.code().clone()))
-            .collect();
-        Self::new(bytecodes, bytecode_size)
+        Self::new(block.bytecodes.clone(), bytecode_size)
     }
 }
 
@@ -832,11 +828,7 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
         (
-            block
-                .bytecodes
-                .values()
-                .map(|bytecode| bytecode.table_len())
-                .sum(),
+            block.bytecodes.num_rows_required_for_bytecode_table(),
             block.circuits_params.max_bytecode,
         )
     }
@@ -852,7 +844,12 @@ impl<F: Field> SubCircuit<F> for BytecodeCircuit<F> {
         config.assign_internal(
             layouter,
             self.size,
-            &self.bytecodes,
+            &self
+                .bytecodes
+                .clone()
+                .into_iter()
+                .map(|b| unroll(b.code()))
+                .collect_vec(),
             &self.overwrite,
             challenges,
             false,

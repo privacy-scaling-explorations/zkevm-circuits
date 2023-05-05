@@ -1,3 +1,5 @@
+use crate::witness::{Bytecode, BytecodeCollection};
+
 use super::*;
 
 /// Tag to identify the field in a Bytecode Table row
@@ -44,7 +46,7 @@ impl BytecodeTable {
     pub fn load<'a, F: Field>(
         &self,
         layouter: &mut impl Layouter<F>,
-        bytecodes: impl IntoIterator<Item = &'a Bytecode> + Clone,
+        bytecodes: BytecodeCollection,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "bytecode table",
@@ -62,14 +64,15 @@ impl BytecodeTable {
 
                 let bytecode_table_columns =
                     <BytecodeTable as LookupTable<F>>::advice_columns(self);
-                for bytecode in bytecodes.clone() {
-                    for row in bytecode.table_assignments::<F>() {
-                        for (&column, value) in bytecode_table_columns.iter().zip_eq(row) {
+                for bytecode in bytecodes.clone().into_iter() {
+                    let unroller: Bytecode<F> = (&bytecode).into();
+                    for row in unroller.to_rows().iter() {
+                        for (&column, value) in bytecode_table_columns.iter().zip_eq(row.to_vec()) {
                             region.assign_advice(
                                 || format!("bytecode table row {}", offset),
                                 column,
                                 offset,
-                                || value,
+                                || Value::known(value),
                             )?;
                         }
                         offset += 1;

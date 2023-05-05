@@ -5,7 +5,7 @@
 mod block;
 pub use block::{block_convert, Block, BlockContext};
 mod bytecode;
-pub use bytecode::BytecodeUnroller as Bytecode;
+pub use bytecode::{BytecodeCollection, BytecodeUnroller as Bytecode};
 mod mpt;
 pub use mpt::{MptUpdate, MptUpdateRow, MptUpdates};
 mod rw;

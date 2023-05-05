@@ -149,7 +149,7 @@ mod test {
     use mock::TestContext;
 
     fn callee(code: Bytecode) -> Account {
-        let code = code.to_vec();
+        let code = code.code_vec();
         let is_empty = code.is_empty();
 
         Account {

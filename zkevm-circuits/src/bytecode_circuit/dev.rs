@@ -47,11 +47,9 @@ impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     ) -> Result<(), Error> {
         let challenges = challenges.values(&mut layouter);
 
-        config.keccak_table.dev_load(
-            &mut layouter,
-            self.bytecodes.iter().map(|b| &b.bytes),
-            &challenges,
-        )?;
+        config
+            .keccak_table
+            .dev_load(&mut layouter, &self.bytecodes.to_raw(), &challenges)?;
         self.synthesize_sub(&config, &challenges, &mut layouter)?;
         Ok(())
     }

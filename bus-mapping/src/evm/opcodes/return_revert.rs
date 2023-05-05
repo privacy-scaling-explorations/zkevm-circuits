@@ -206,17 +206,13 @@ fn handle_create(
     step: &mut ExecStep,
     source: Source,
 ) -> Result<H256, Error> {
-    let values = state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
-    let code_hash = CodeDB::hash(&values);
+    let raw_bytes =
+        state.call_ctx()?.memory.0[source.offset..source.offset + source.length].to_vec();
+    let bytecode = Bytecode::from(raw_bytes);
+    let code_hash = bytecode.hash_h256();
     let dst_id = NumberOrHash::Hash(code_hash);
-    let bytes: Vec<_> = Bytecode::from(values)
-        .code
-        .iter()
-        .map(|element| (element.value, element.is_code))
-        .collect();
-
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _)) in bytes.iter().enumerate() {
+    for (i, byte) in bytecode.code().iter().enumerate() {
         state.push_op(
             step,
             RW::READ,
@@ -236,7 +232,7 @@ fn handle_create(
             dst_id,
             dst_addr: 0,
             log_id: None,
-            bytes,
+            bytes: bytecode.code_vec(),
         },
     );
 

@@ -77,7 +77,7 @@ fn gen_copy_event(
 
     let code_hash = state.call()?.code_hash;
     let bytecode: Bytecode = state.code(code_hash)?.into();
-    let code_size = bytecode.code.len() as u64;
+    let code_size = bytecode.codesize() as u64;
 
     // Get low Uint64 of offset to generate copy steps. Since offset could be
     // Uint64 overflow if length is zero.

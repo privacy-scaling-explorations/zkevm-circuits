@@ -575,7 +575,7 @@ pub fn build_state_code_db(
         )
     }
 
-    let mut code_db = CodeDB::new();
+    let mut code_db = CodeDB::default();
     for (_address, code) in codes {
         code_db.insert(code.clone());
     }

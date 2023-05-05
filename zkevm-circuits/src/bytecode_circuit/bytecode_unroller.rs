@@ -22,6 +22,7 @@ pub struct UnrolledBytecode<F: Field> {
     pub(crate) rows: Vec<BytecodeRow<F>>,
 }
 
+#[deprecated]
 /// Get unrolled bytecode from raw bytes
 pub fn unroll<F: Field>(bytes: Vec<u8>) -> UnrolledBytecode<F> {
     let code_hash = keccak(&bytes[..]);
