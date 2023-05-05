@@ -498,10 +498,162 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     }
 }
 
-pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
+#[derive(Clone, Debug)]
+pub(crate) struct WordLimbs<T, const N: usize> {
+    pub limbs: [T; N],
+}
+
+pub(crate) type Word2<T> = WordLimbs<T, 2>;
+
+pub(crate) type Word4<T> = WordLimbs<T, 4>;
+
+pub(crate) type Word16<T> = WordLimbs<T, 16>;
+
+pub(crate) type Word32<T> = WordLimbs<T, 32>;
+
+impl<T, const N: usize> WordLimbs<T, N> {
+    fn new(limbs: [T; N]) -> Self {
+        Self { limbs }
+    }
+
+    fn n() -> usize {
+        N
+    }
+}
+
+impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
+    fn default() -> Self {
+        Self {
+            limbs: [(); N].map(|_| T::default()),
+        }
+    }
+}
+
+pub(crate) trait WordCells<F: FieldExt, const N: usize> {
+    fn assign<const N1: usize>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        bytes: Option<[u8; N1]>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error>;
+
+    fn expr(&self) -> WordLimbs<Expression<F>, N>;
+}
+
+impl<F: FieldExt, const N: usize> WordCells<F, N> for WordLimbs<Cell<F>, N> {
+    fn assign<const N1: usize>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        bytes: Option<[u8; N1]>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        assert_eq!(N1 % N, 0); // assure N|N1
+        bytes.map_or(Err(Error::Synthesis), |bytes| {
+            bytes
+                .chunks(N1 / N) // chunk in little endian
+                .map(|chunk| from_bytes::value(chunk))
+                .zip(self.limbs.iter())
+                .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
+                .collect()
+        })
+    }
+
+    fn expr(&self) -> WordLimbs<Expression<F>, N> {
+        return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
+    }
+}
+
+// `Word`, special alias for Word2.
+#[derive(Clone, Debug)]
+pub(crate) struct Word<T>(Word2<T>);
+
+impl<T> Word<T> {
+    pub fn new(limbs: [T; 2]) -> Self {
+        Self(WordLimbs::<T, 2>::new(limbs))
+    }
+    pub fn hi(&self) -> &T {
+        &self.0.limbs[1]
+    }
+    pub fn lo(&self) -> &T {
+        &self.0.limbs[0]
+    }
+
+    pub fn n() -> usize {
+        2
+    }
+
+    pub fn to_lo_hi(&self) -> (&T, &T) {
+        (&self.0.limbs[0], &self.0.limbs[1])
+    }
+}
+
+impl<T> std::ops::Deref for Word<T> {
+    type Target = WordLimbs<T, 2>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<F: FieldExt> Word<Expression<F>> {
+    pub fn from_lo(lo: Expression<F>) -> Self {
+        Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
+    }
+
+    pub fn zero() -> Self {
+        Self(WordLimbs::<Expression<F>, 2>::new([0.expr(), 0.expr()]))
+    }
+
+    // select based on selector. Here assume selector is 1/0 therefore no overflow check
+    pub fn select(
+        selector: Expression<F>,
+        when_true: Word<Expression<F>>,
+        when_false: Word<Expression<F>>,
+    ) -> Self {
+        let (true_lo, true_hi) = when_true.mul_selector(selector.clone()).to_lo_hi();
+        let (false_lo, false_hi) = when_false.mul_selector(1.expr() - selector).to_lo_hi();
+        Word::new([
+            true_lo.clone() + false_lo.clone(),
+            true_hi.clone() + false_hi.clone(),
+        ])
+    }
+
+    // Assume selector is 1/0 therefore no overflow check
+    fn mul_selector(&self, selector: Expression<F>) -> Self {
+        Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
+    }
+}
+
+pub(crate) trait ToWordExpr<F: FieldExt, const N2: usize> {
+    fn to_word(&self) -> Word<Expression<F>>;
+
+    fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2>;
+}
+
+impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
+    for WordLimbs<Expression<F>, N1>
+{
+    fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2> {
+        // TODO assure static assertion
+        assert!(N1 % N2 == 0); // N2 | N1
+        let limbs = self
+            .limbs
+            .chunks(N1 / N2)
+            .map(|chunk| from_bytes::expr(chunk))
+            .collect_vec()
+            .try_into()
+            .unwrap();
+        WordLimbs::<Expression<F>, N2>::new(limbs)
+    }
+
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word(self.to_wordlimbs())
+    }
+}
+
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
-/// Decodes a field element from its byte representation
+/// Decodes a field element from its byte representation in little endian order
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
     use eth_types::Field;

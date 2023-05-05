@@ -10,6 +10,8 @@ use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+use super::util::Word;
+
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
@@ -139,8 +141,8 @@ pub struct RwValues<F> {
     pub address: Expression<F>,
     pub field_tag: Expression<F>,
     pub storage_key: Expression<F>,
-    pub value: Expression<F>,
-    pub value_prev: Expression<F>,
+    pub value: Word<Expression<F>>,
+    pub value_prev: Word<Expression<F>>,
     pub aux1: Expression<F>,
     pub aux2: Expression<F>,
 }
@@ -152,8 +154,8 @@ impl<F: Field> RwValues<F> {
         address: Expression<F>,
         field_tag: Expression<F>,
         storage_key: Expression<F>,
-        value: Expression<F>,
-        value_prev: Expression<F>,
+        value: Word<Expression<F>>,
+        value_prev: Word<Expression<F>>,
         aux1: Expression<F>,
         aux2: Expression<F>,
     ) -> Self {
@@ -190,7 +192,7 @@ pub(crate) enum Lookup<F> {
         /// field_tag is Calldata, otherwise should be set to 0.
         index: Expression<F>,
         /// Value of the field.
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     },
     /// Lookup to read-write table, which contains read-write access records of
     /// time-aware data.
@@ -230,7 +232,7 @@ pub(crate) enum Lookup<F> {
         /// should be set to 0.
         number: Expression<F>,
         /// Value of the field.
-        value: Expression<F>,
+        value: Word<Expression<F>>,
     },
     /// Lookup to copy table.
     CopyTable {
@@ -268,9 +270,9 @@ pub(crate) enum Lookup<F> {
         input_rlc: Expression<F>,
         /// Length of input that is being hashed.
         input_len: Expression<F>,
-        /// Output (hash) until this state. This is the RLC representation of
-        /// the final output keccak256 hash of the input.
-        output_rlc: Expression<F>,
+        /// Output (hash) until this state. hash will be split into multiple expression in little
+        /// endian.
+        output: Word<Expression<F>>,
     },
     /// Lookup to exponentiation table.
     ExpTable {
@@ -311,13 +313,17 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => vec![id.clone(), field_tag.clone(), index.clone(), value.clone()],
+            } => [
+                vec![id.clone(), field_tag.clone(), index.clone()],
+                value.limbs.to_vec().clone(),
+            ]
+            .concat(),
             Self::Rw {
                 counter,
                 is_write,
                 tag,
                 values,
-            } => {
+            } => [
                 vec![
                     counter.clone(),
                     is_write.clone(),
@@ -326,12 +332,14 @@ impl<F: Field> Lookup<F> {
                     values.address.clone(),
                     values.field_tag.clone(),
                     values.storage_key.clone(),
-                    values.value.clone(),
-                    values.value_prev.clone(),
                     values.aux1.clone(),
                     values.aux2.clone(),
-                ]
-            }
+                ],
+                values.value.limbs.to_vec().clone(),
+                values.value_prev.limbs.to_vec().clone(),
+                vec![values.aux1.clone(), values.aux2.clone()],
+            ]
+            .concat(),
             Self::Bytecode {
                 hash,
                 tag,
@@ -351,9 +359,11 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 number,
                 value,
-            } => {
-                vec![field_tag.clone(), number.clone(), value.clone()]
-            }
+            } => [
+                vec![field_tag.clone(), number.clone()],
+                value.limbs.to_vec().clone(),
+            ]
+            .concat(),
             Self::CopyTable {
                 is_first,
                 src_id,
@@ -384,13 +394,16 @@ impl<F: Field> Lookup<F> {
             Self::KeccakTable {
                 input_rlc,
                 input_len,
-                output_rlc,
-            } => vec![
-                1.expr(), // is_enabled
-                input_rlc.clone(),
-                input_len.clone(),
-                output_rlc.clone(),
-            ],
+                output,
+            } => [
+                vec![
+                    1.expr(), // is_enabled
+                    input_rlc.clone(),
+                    input_len.clone(),
+                ],
+                output.limbs.to_vec().clone(),
+            ]
+            .concat(),
             Self::ExpTable {
                 identifier,
                 is_last,

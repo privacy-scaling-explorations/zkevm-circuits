@@ -3,7 +3,7 @@ use crate::{
         self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        sum, CachedRegion,
+        sum, CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -30,12 +30,15 @@ pub(crate) struct ModGadget<F> {
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&util::Word<F>; 3]) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        words: [&util::Word32<Cell<F>>; 3],
+    ) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
-        let k = cb.query_word_rlc();
-        let a_or_zero = cb.query_word_rlc();
-        let n_is_zero = IsZeroGadget::construct(cb, sum::expr(&n.cells));
-        let a_or_is_zero = IsZeroGadget::construct(cb, sum::expr(&a_or_zero.cells));
+        let k = cb.query_word32();
+        let a_or_zero = cb.query_word32();
+        let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
+        let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
         let lt = LtWordGadget::construct(cb, r, n);

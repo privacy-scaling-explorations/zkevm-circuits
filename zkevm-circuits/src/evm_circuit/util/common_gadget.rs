@@ -3,7 +3,7 @@ use super::{
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-    CachedRegion,
+    CachedRegion, Word32,
 };
 use crate::{
     evm_circuit::{
@@ -16,7 +16,7 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, Word,
+            not, or, Cell, CellType, ToWordExpr, Word, WordCells,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
@@ -152,7 +152,12 @@ impl<F: Field> RestoreContextGadget<F> {
                 ),
             ),
         ] {
-            cb.call_context_lookup(true.expr(), Some(caller_id.expr()), field_tag, value);
+            cb.call_context_lookup(
+                true.expr(),
+                Some(caller_id.expr()),
+                field_tag,
+                Word::from_lo(value),
+            );
         }
 
         let code_deposit_cost = cb.curr.state.is_create.expr()
@@ -268,13 +273,13 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         address: Expression<F>,
-        updates: Vec<Word<F>>,
+        updates: Vec<Word32<Cell<F>>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
 
-        let balance_addend = cb.query_word_rlc();
-        let balance_sum = cb.query_word_rlc();
+        let balance_addend = cb.query_word32();
+        let balance_sum = cb.query_word32();
 
         let [value, value_prev] = if INCREASE {
             [balance_sum.expr(), balance_addend.expr()]
@@ -295,15 +300,15 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         cb.account_write(
             address,
             AccountFieldTag::Balance,
-            value,
-            value_prev,
+            value.to_word(),
+            value_prev.to_word(),
             reversion_info,
         );
 
         Self { add_words }
     }
 
-    pub(crate) fn balance(&self) -> &Word<F> {
+    pub(crate) fn balance(&self) -> &Word32<Cell<F>> {
         if INCREASE {
             self.add_words.sum()
         } else {
@@ -311,7 +316,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         }
     }
 
-    pub(crate) fn balance_prev(&self) -> &Word<F> {
+    pub(crate) fn balance_prev(&self) -> &Word32<Cell<F>> {
         if INCREASE {
             &self.add_words.addends()[0]
         } else {
@@ -383,8 +388,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
                 cb.account_write(
                     receiver_address.clone(),
                     AccountFieldTag::CodeHash,
-                    cb.empty_code_hash_rlc(),
-                    0.expr(),
+                    cb.empty_code_hash_word(),
+                    Word::zero(),
                     Some(reversion_info),
                 );
             },

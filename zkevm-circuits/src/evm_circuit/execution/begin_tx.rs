@@ -67,14 +67,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
-            tx_id.expr(),
+            Word::from_lo(tx_id.expr()),
         ); // rwc_delta += 1
         let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
-            reversion_info.is_persistent(),
+            Word::from_lo(reversion_info.is_persistent()),
         ); // rwc_delta += 1
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =

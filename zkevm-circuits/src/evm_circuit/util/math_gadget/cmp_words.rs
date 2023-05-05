@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::util::{
         self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select,
-        CachedRegion,
+        CachedRegion, Cell, ToWordExpr, WordCells,
     },
     util::Expr,
 };
@@ -20,29 +20,23 @@ pub(crate) struct CmpWordsGadget<F> {
 impl<F: Field> CmpWordsGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        a: &util::Word<F>,
-        b: &util::Word<F>,
+        a: &util::Word<Cell<F>>,
+        b: &util::Word<Cell<F>>,
     ) -> Self {
-        // `a[0..16] <= b[0..16]`
-        let comparison_lo = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[0..16]),
-            from_bytes::expr(&b.cells[0..16]),
-        );
+        let (a_lo, a_hi) = a.expr().to_word().to_lo_hi();
+        let (b_lo, b_hi) = b.expr().to_word().to_lo_hi();
+        // `a.lo <= b.lo`
+        let comparison_lo = ComparisonGadget::construct(cb, a_lo.clone(), b_lo.clone());
 
         let (lt_lo, eq_lo) = comparison_lo.expr();
 
-        // `a[16..32] <= b[16..32]`
-        let comparison_hi = ComparisonGadget::construct(
-            cb,
-            from_bytes::expr(&a.cells[16..32]),
-            from_bytes::expr(&b.cells[16..32]),
-        );
+        // `a.hi <= b.hi`
+        let comparison_hi = ComparisonGadget::construct(cb, a_hi.clone(), b_hi.clone());
         let (lt_hi, eq_hi) = comparison_hi.expr();
 
         // `a < b` when:
-        // - `a[16..32] < b[16..32]` OR
-        // - `a[16..32] == b[16..32]` AND `a[0..16] < b[0..16]`
+        // - `a.hi < b.hi` OR
+        // - `a.hi == b.hi` AND `a.lo < b.lo`
         let lt = select::expr(lt_hi, 1.expr(), eq_hi.clone() * lt_lo);
 
         // `a == b` when both parts are equal
@@ -94,16 +88,16 @@ mod tests {
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
     struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
         cmp_gadget: CmpWordsGadget<F>,
-        a: util::Word<F>,
-        b: util::Word<F>,
+        a: util::Word<Cell<F>>,
+        b: util::Word<Cell<F>>,
     }
 
     impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
         for CmpWordGadgetTestContainer<F, CHECK_EQ>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let b = cb.query_word_rlc();
+            let a = cb.query_word();
+            let b = cb.query_word();
             let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a, &b);
             cb.require_equal(
                 "(a < b) * (a == b) == 0",

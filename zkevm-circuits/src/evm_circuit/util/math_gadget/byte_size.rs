@@ -114,7 +114,7 @@ impl<F: Field> ByteSizeGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
-    use crate::evm_circuit::util;
+    use crate::evm_circuit::util::{self, WordCells};
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -122,22 +122,13 @@ mod tests {
     /// ByteSizeGadgetContainer: require(N = byte_size(a))
     struct ByteSizeGadgetContainer<F, const N: u8> {
         bytesize_gadget: ByteSizeGadget<F>,
-        a: util::Word<F>,
+        a: util::Word32<Cell<F>>,
     }
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let value_rlc = cb.query_word_rlc();
-            let bytesize_gadget = ByteSizeGadget::<F>::construct(
-                cb,
-                value_rlc
-                    .cells
-                    .iter()
-                    .map(Expr::expr)
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-            );
+            let value_word32 = cb.query_word32();
+            let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, value_word32.expr().limbs);
             cb.require_equal(
                 "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),
@@ -145,7 +136,7 @@ mod tests {
             );
             ByteSizeGadgetContainer {
                 bytesize_gadget,
-                a: value_rlc,
+                a: value_word32,
             }
         }
 

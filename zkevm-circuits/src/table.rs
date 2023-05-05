@@ -2,7 +2,7 @@
 
 use crate::{
     copy_circuit::util::number_or_hash_to_field,
-    evm_circuit::util::rlc,
+    evm_circuit::util::{rlc, Word as UtilWord},
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
     util::{build_tx_log_address, Challenges},
@@ -132,7 +132,7 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: UtilWord<Column<Advice>>,
 }
 
 impl TxTable {
@@ -142,7 +142,10 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            value: UtilWord::new([
+                meta.advice_column_in(SecondPhase),
+                meta.advice_column_in(SecondPhase),
+            ]),
         }
     }
 

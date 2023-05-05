@@ -8,7 +8,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            sum, CachedRegion, Cell, Word,
+            sum, CachedRegion, Cell, ToWordExpr, Word32, WordCells,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -21,7 +21,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Word<F>,
+    value: Word32<Cell<F>>,
     selectors: [Cell<F>; 31],
 }
 
@@ -33,7 +33,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
 
-        let value = cb.query_word_rlc();
+        let value = cb.query_word32();
         // Query selectors for each opcode_lookup
         let selectors = array_init(|_| cb.query_bool());
 
@@ -51,7 +51,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         //   [byte31,     ...,     byte2,     byte1,     byte0]
         //
         for idx in 0..32 {
-            let byte = &value.cells[idx];
+            let byte = &value.limbs[idx];
             let index = cb.curr.state.program_counter.expr() + opcode.expr()
                 - (OpcodeId::PUSH1.as_u8() - 1 + idx as u8).expr();
             if idx == 0 {
@@ -79,7 +79,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
             // byte should be 0 when selector is 0
             cb.require_zero(
                 "Constrain byte == 0 when selector == 0",
-                value.cells[idx + 1].expr() * (1.expr() - selectors[idx].expr()),
+                value.limbs[idx + 1].expr() * (1.expr() - selectors[idx].expr()),
             );
         }
 
@@ -95,7 +95,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         );
 
         // Push the value on the stack
-        cb.stack_push(value.expr());
+        cb.stack_push(value.expr().to_word());
 
         // State transition
         // `program_counter` needs to be increased by number of bytes pushed + 1
