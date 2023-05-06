@@ -41,7 +41,8 @@ use crate::{
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    table::{KeccakTable, LookupTable, MPTProofType, MptTable},
+    circuit_tools::{table::LookupTable, cell_manager::PhaseConfig},
+    table::{KeccakTable, MPTProofType, MptTable},
     util::Challenges,
 };
 use extension_branch::ExtensionBranchConfig;
@@ -213,11 +214,13 @@ impl<F: Field> MPTConfig<F> {
             memory: memory.clone(),
         };
 
+        let _phase_config = PhaseConfig::new::<F>(vec![&keccak_table], 2, 2);
+
         let mut cb = MPTConstraintBuilder::new(33 + 10, None);
         meta.create_gate("MPT", |meta| {
             circuit!([meta, cb.base], {
                 // Populate lookup tables
-                require!(@"keccak" => <KeccakTable as LookupTable<F>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
+                require!(@"keccak" => <KeccakTable as LookupTable<F, Table>>::advice_columns(&keccak_table).iter().map(|table| a!(table)).collect());
                 require!(@"fixed" => fixed_table.iter().map(|table| f!(table)).collect());
 
                 ifx!{f!(q_enable) => {

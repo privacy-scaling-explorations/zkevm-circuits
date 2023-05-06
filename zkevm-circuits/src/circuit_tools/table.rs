@@ -4,12 +4,16 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, *},
     poly::Rotation,
 };
-use std::fmt::Debug;
-use std::hash::Hash;
+
+
+use super::{cell_manager::{TableType, DefaultTableType}};
 
 /// Trait used to define lookup tables
-pub trait LookupTable<F: Field>: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash
- {
+pub trait LookupTable<F: Field, T: TableType> {
+
+
+    fn get_type(&self) -> T;
+
     /// Returns the list of ALL the table columns following the table order.
     fn columns(&self) -> Vec<Column<Any>>;
 
@@ -52,7 +56,13 @@ pub trait LookupTable<F: Field>: Clone + Copy + Debug + PartialEq + Eq + Partial
     }
 }
 
-impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [C; W] {
+
+impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F, DefaultTableType> for [C; W] {
+
+    fn get_type(&self) -> DefaultTableType {
+        DefaultTableType::Default
+    }
+
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
         self.iter()
             .map(|column| meta.query_any(*column, Rotation::cur()))
@@ -67,3 +77,4 @@ impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F> for [
         vec![]
     }
 }
+

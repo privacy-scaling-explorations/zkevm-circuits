@@ -13,7 +13,7 @@ use crate::{
         },
         Advice, Column, Fixed,
     },
-    table::LookupTable,
+    circuit_tools::table::LookupTable,
     util::Challenges,
 };
 use eth_types::{Field, Word, U256};

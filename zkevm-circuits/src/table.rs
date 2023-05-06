@@ -2,7 +2,7 @@
 
 use crate::{
     circuit,
-    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable, cached_region::CachedRegion},
+    circuit_tools::{constraint_builder::ConstraintBuilder, cell_manager::TableType, cached_region::CachedRegion},
     copy_circuit::number_or_hash_to_field,
     evm_circuit::util::rlc,
     exp_circuit::{OFFSET_INCREMENT, ROWS_PER_STEP},
@@ -657,7 +657,7 @@ impl MptTable {
         }
     }
 
-    pub(crate) fn constrain<F: Field, T: CustomTable>(
+    pub(crate) fn constrain<F: Field, T: TableType>(
         &self,
         meta: &mut VirtualCells<'_, F>,
         cb: &mut ConstraintBuilder<F, T>,

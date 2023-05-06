@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use super::{constraint_builder::ConstraintBuilder, cell_manager::CustomTable};
+use super::{constraint_builder::ConstraintBuilder, cell_manager::TableType};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Memory<F> {
@@ -55,7 +55,7 @@ impl<F: Field> Memory<F> {
         unreachable!()
     }
 
-    pub(crate) fn generate_constraints<T: CustomTable>(
+    pub(crate) fn generate_constraints<T: TableType>(
         &self,
         cb: &mut ConstraintBuilder<F, T>,
         is_first_row: Expression<F>,
@@ -150,7 +150,7 @@ impl<F: Field> MemoryBank<F> {
         self.cur.expr()
     }
 
-    pub(crate) fn load<T: CustomTable>(
+    pub(crate) fn load<T: TableType>(
         &self,
         description: &'static str,
         cb: &mut ConstraintBuilder<F, T>,
@@ -160,7 +160,7 @@ impl<F: Field> MemoryBank<F> {
         self.load_with_key(description, cb, self.key() - offset, values);
     }
 
-    pub(crate) fn load_with_key<T: CustomTable>(
+    pub(crate) fn load_with_key<T: TableType>(
         &self,
         description: &'static str,
         cb: &mut ConstraintBuilder<F, T>,
@@ -170,7 +170,7 @@ impl<F: Field> MemoryBank<F> {
         cb.lookup(description, self.tag(), self.insert_key(key, values));
     }
 
-    pub(crate) fn store<T: CustomTable>(
+    pub(crate) fn store<T: TableType>(
         &self,
         cb: &mut ConstraintBuilder<F, T>,
         values: &[Expression<F>],
@@ -180,7 +180,7 @@ impl<F: Field> MemoryBank<F> {
         key
     }
 
-    pub(crate) fn store_with_key<T: CustomTable>(
+    pub(crate) fn store_with_key<T: TableType>(
         &self,
         cb: &mut ConstraintBuilder<F, T>,
         key: Expression<F>,
@@ -202,7 +202,7 @@ impl<F: Field> MemoryBank<F> {
         self.store_offsets.clear();
     }
 
-    pub(crate) fn generate_constraints<T: CustomTable>(
+    pub(crate) fn generate_constraints<T: TableType>(
         &self,
         cb: &mut ConstraintBuilder<F, T>,
         is_first_row: Expression<F>,

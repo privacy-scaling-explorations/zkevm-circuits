@@ -7,7 +7,7 @@ use gadgets::util::{and, sum, Scalar};
 use halo2_proofs::plonk::{ConstraintSystem, Expression};
 use itertools::Itertools;
 
-use super::cell_manager::{Cell, CellManager, CellType_, CustomTable};
+use super::cell_manager::{Cell, CellManager, CellType_, TableType};
 
 /// Lookup data
 #[derive(Clone)]
@@ -24,7 +24,7 @@ pub struct LookupData<F> {
 
 /// Constraint builder
 #[derive(Clone)]
-pub struct ConstraintBuilder<F, T: CustomTable> {
+pub struct ConstraintBuilder<F, T: TableType> {
     constraints: Vec<(&'static str, Expression<F>)>,
     max_degree: usize,
     conditions: Vec<Expression<F>>,
@@ -36,7 +36,7 @@ pub struct ConstraintBuilder<F, T: CustomTable> {
     pub cell_manager: Option<CellManager<F, T>>,
 }
 
-impl<F: Field, T: CustomTable> ConstraintBuilder<F, T> {
+impl<F: Field, T: TableType> ConstraintBuilder<F, T> {
     pub(crate) fn new(max_degree: usize, cell_manager: Option<CellManager<F, T>>) -> Self {
         ConstraintBuilder {
             constraints: Vec::new(),
@@ -327,7 +327,7 @@ impl<F: Field, T: CustomTable> ConstraintBuilder<F, T> {
     }
 }
 
-pub(crate) fn merge_lookups<F: Field, T: CustomTable>(
+pub(crate) fn merge_lookups<F: Field, T: TableType>(
     cb: &mut ConstraintBuilder<F, T>,
     lookups: Vec<LookupData<F>>,
 ) -> (Expression<F>, Vec<Expression<F>>) {
@@ -340,7 +340,7 @@ pub(crate) fn merge_lookups<F: Field, T: CustomTable>(
     )
 }
 
-pub(crate) fn merge_values<F: Field, T: CustomTable>(
+pub(crate) fn merge_values<F: Field, T: TableType>(
     cb: &mut ConstraintBuilder<F, T>,
     values: Vec<(Expression<F>, Vec<Expression<F>>)>,
 ) -> (Expression<F>, Vec<Expression<F>>) {

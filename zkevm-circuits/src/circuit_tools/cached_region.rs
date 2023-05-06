@@ -14,7 +14,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::cell_manager::CustomTable;
+use super::cell_manager::TableType;
 
 pub struct CachedRegion<'r, 'b, F: Field> {
     region: &'r mut Region<'b, F>,
@@ -162,7 +162,7 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct StoredExpression<F, T: CustomTable> {
+pub struct StoredExpression<F, T: TableType> {
     pub(crate) name: String,
     cell: Cell<F>,
     cell_type: CellType_<T>,
@@ -170,14 +170,14 @@ pub struct StoredExpression<F, T: CustomTable> {
     expr_id: String,
 }
 
-impl<F, T: CustomTable> Hash for StoredExpression<F, T> {
+impl<F, T: TableType> Hash for StoredExpression<F, T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.expr_id.hash(state);
         self.cell_type.hash(state);
     }
 }
 
-impl<F: Field, T: CustomTable> StoredExpression<F, T>  {
+impl<F: Field, T: TableType> StoredExpression<F, T>  {
     pub fn assign(
         &self,
         region: &mut CachedRegion<'_, '_, F>,

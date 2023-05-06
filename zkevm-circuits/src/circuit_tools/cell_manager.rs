@@ -1,6 +1,6 @@
 //! Cell manager
 use crate::util::{Expr, query_expression};
-use crate::circuit_tools::cached_region::CachedRegion;
+use crate::circuit_tools::{table::LookupTable, cached_region::CachedRegion};
 
 use eth_types::Field;
 use halo2_proofs::{
@@ -114,7 +114,7 @@ impl<F: Field> Expr<F> for &Cell<F> {
 // }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum CellType_<T: CustomTable> {
+pub(crate) enum CellType_<T: TableType> {
     StoragePhase1,
     StoragePhase2,
     StoragePermutation,
@@ -122,37 +122,28 @@ pub(crate) enum CellType_<T: CustomTable> {
     Lookup(T),
 }
 
-pub trait CustomTable: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash{
-    fn matches_to(&self, other: &Self) -> bool;
-}
+pub trait TableType: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash {}
 
-/// Example 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum TestTable { 
-    Fixed,
-    Tx,
-    Rw,
-    Bytecode,
-    Block,
-    Copy,
-    Keccak,
-    Exp,
+pub enum DefaultTableType {
+    Default,
 }
 
-impl CustomTable for TestTable {
-    fn matches_to(&self, other: &Self) -> bool {
-        self == other
-    }
-}
+impl TableType for DefaultTableType {}
+/// Example
 
-fn works_like_this(table: TestTable, _config: &[(TestTable, usize)]) {
-    if table.matches_to(&TestTable::Fixed) {
-        println!("matched");
-    }
-}
+// use super::table::{TestTableType, MptTable, BytecodeTable};
+
+// fn work_like_this<F: Field>(meta: &mut ConstraintSystem<F>) {
+//     let config: PhaseConfig<TestTableType> = PhaseConfig::new(
+//         &[MptTable::construct(meta), BytecodeTable::construct(meta)],
+//         2,
+//         3
+//     );
+// }
 
 
-impl<T: CustomTable> CellType_<T> {
+impl<T: TableType> CellType_<T> {
     // The phase that given `Expression` becomes evaluateable.
     fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
         use Expression::*;
@@ -181,21 +172,21 @@ impl<T: CustomTable> CellType_<T> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CellColumn<F, T: CustomTable> {
+pub(crate) struct CellColumn<F, T: TableType> {
     index: usize,
     cell_type: CellType_<T>,
     height: usize,
     expr: Expression<F>,
 }
 
-impl<F: Field, T: Debug + CustomTable> Expr<F> for CellColumn<F, T> {
+impl<F: Field, T: Debug + TableType> Expr<F> for CellColumn<F, T> {
     fn expr(&self) -> Expression<F> {
         self.expr.clone()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct CellManager<F, T: CustomTable> {
+pub struct CellManager<F, T: TableType> {
     // Thoughts (Cecilia): Integrate CellManager's function into Halo2's VirtualCell
     //                     They do the same things by saving queried Exressions
     //                     CM is just slightly smarter.
@@ -217,7 +208,24 @@ pub struct PhaseConfig<T> {
     phase1: usize, // byte
 }
 
-impl<F: Field, T: CustomTable> CellManager<F, T> {
+impl<T: TableType> PhaseConfig<T> {
+    pub fn new<F: Field>(
+        tables: Vec<&dyn LookupTable<F, T>>,
+        phase2: usize, 
+        phase1: usize
+    ) -> Self {
+        let phase3   = tables.iter().map(|t|
+             (t.get_type(), t.columns().len())
+            ).collect::<Vec<_>>();
+        Self {
+            phase3,
+            phase2,
+            phase1,
+        }
+    }
+}
+
+impl<F: Field, T: TableType> CellManager<F, T> {
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>, // meta只出现一次，new的时候把所有cover的cells都query一遍
         height: usize,                  // 拿到 Expr 存起来，后面 cb.query_cell 直接给对应格子的 Expr
