@@ -19,13 +19,21 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
+    table::{
+        AccountFieldTag, BlockContextFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag,
+    },
     util::Expr,
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256};
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
+
+// For Shanghai, EIP-3651 (Warm COINBASE) adds 1 write op for coinbase.
+#[cfg(feature = "shanghai")]
+const SHANGHAI_RW_DELTA: u8 = 1;
+#[cfg(not(feature = "shanghai"))]
+const SHANGHAI_RW_DELTA: u8 = 0;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BeginTxGadget<F> {
@@ -51,6 +59,12 @@ pub(crate) struct BeginTxGadget<F> {
     create: ContractCreateGadget<F, false>,
     callee_not_exists: IsZeroGadget<F>,
     is_caller_callee_equal: Cell<F>,
+    // EIP-3651 (Warm COINBASE) for Shanghai
+    coinbase: Cell<F>,
+    // Caller, callee and a list addresses are added to the access list before
+    // coinbase, and may be duplicate.
+    // <https://github.com/ethereum/go-ethereum/blob/604e215d1bb070dff98fb76aa965064c74e3633f/core/state/statedb.go#LL1119C9-L1119C9>
+    is_coinbase_warm: Cell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
@@ -158,6 +172,24 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         ); // rwc_delta += 1
 
+        // Query coinbase address for Shanghai.
+        let coinbase = cb.query_cell();
+        let is_coinbase_warm = cb.query_bool();
+        cb.block_lookup(
+            BlockContextFieldTag::Coinbase.expr(),
+            None,
+            coinbase.expr(),
+        );
+
+        #[cfg(feature = "shanghai")]
+        cb.account_access_list_write(
+            tx_id.expr(),
+            coinbase.expr(),
+            1.expr(),
+            is_coinbase_warm.expr(),
+            None,
+        ); // rwc_delta += 1
+
         // Read code_hash of callee
         let phase2_code_hash = cb.query_cell_phase2();
         let is_empty_code_hash =
@@ -262,8 +294,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsPersistent
                 //   - Write CallContext IsSuccess
                 //   - Write Account (Caller) Nonce
-                //   - Write TxAccessListAccount
-                //   - Write TxAccessListAccount
+                //   - Write TxAccessListAccount (Caller)
+                //   - Write TxAccessListAccount (Callee)
+                //   - Write TxAccessListAccount (Coinbase) only for Shanghai
                 //   - a TransferWithGasFeeGadget
                 //   - Write Account (Callee) Nonce (Reversible)
                 //   - Write CallContext Depth
@@ -279,7 +312,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write CallContext IsRoot
                 //   - Write CallContext IsCreate
                 //   - Write CallContext CodeHash
-                rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
+                rw_counter: Delta(
+                    21.expr() + transfer_with_gas_fee.rw_delta() + SHANGHAI_RW_DELTA.expr(),
+                ),
                 call_id: To(call_id.expr()),
                 is_root: To(true.expr()),
                 is_create: To(tx_is_create.expr()),
@@ -318,11 +353,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
-                    //   - Write TxAccessListAccount
-                    //   - Write TxAccessListAccount
+                    //   - Write TxAccessListAccount (Caller)
+                    //   - Write TxAccessListAccount (Callee)
+                    //   - Write TxAccessListAccount (Coinbase) only for Shanghai
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
-                    rw_counter: Delta(8.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(
+                        8.expr() + transfer_with_gas_fee.rw_delta() + SHANGHAI_RW_DELTA.expr(),
+                    ),
                     call_id: To(call_id.expr()),
                     ..StepStateTransition::any()
                 });
@@ -362,8 +400,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsPersistent
                     //   - Write CallContext IsSuccess
                     //   - Write Account Nonce
-                    //   - Write TxAccessListAccount
-                    //   - Write TxAccessListAccount
+                    //   - Write TxAccessListAccount (Caller)
+                    //   - Write TxAccessListAccount (Callee)
+                    //   - Write TxAccessListAccount (Coinbase) only for Shanghai
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
                     //   - Write CallContext Depth
@@ -379,7 +418,9 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write CallContext IsRoot
                     //   - Write CallContext IsCreate
                     //   - Write CallContext CodeHash
-                    rw_counter: Delta(21.expr() + transfer_with_gas_fee.rw_delta()),
+                    rw_counter: Delta(
+                        21.expr() + transfer_with_gas_fee.rw_delta() + SHANGHAI_RW_DELTA.expr(),
+                    ),
                     call_id: To(call_id.expr()),
                     is_root: To(true.expr()),
                     is_create: To(tx_is_create.expr()),
@@ -415,6 +456,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             create,
             callee_not_exists,
             is_caller_callee_equal,
+            coinbase,
+            is_coinbase_warm,
         }
     }
 
@@ -432,6 +475,12 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let mut rws = StepRws::new(block, step);
         rws.offset_add(7);
+
+        #[cfg(feature = "shanghai")]
+        let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
+        #[cfg(not(feature = "shanghai"))]
+        let is_coinbase_warm = false;
+
         let mut callee_code_hash = zero;
         if !is_precompiled(&tx.callee_address) && !tx.is_create {
             callee_code_hash = rws.next().account_value_pair().1;
@@ -556,6 +605,20 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Some(callee_code_hash),
             None,
         )?;
+
+        self.coinbase.assign(
+            region,
+            offset,
+            Value::known(
+                block
+                    .context
+                    .coinbase
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
+            ),
+        )?;
+        self.is_coinbase_warm
+            .assign(region, offset, Value::known(F::from(is_coinbase_warm as u64)))?;
 
         Ok(())
     }
