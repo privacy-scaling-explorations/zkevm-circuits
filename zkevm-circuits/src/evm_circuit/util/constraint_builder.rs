@@ -24,6 +24,7 @@ use halo2_proofs::{
 
 use super::{
     rlc, CachedRegion, CellType, StoredExpression, ToWordExpr, Word16, Word32, Word4, WordCells,
+    WordLimbs,
 };
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
@@ -405,7 +406,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     // }
 
     // default query_word is 2 limbs
-    pub(crate) fn query_word<const N: usize>(&mut self) -> Word<Cell<F>> {
+    pub(crate) fn query_word<const N: usize, const N2: usize>(
+        &mut self,
+        word_constrians: WordLimbs<Cell<F>, N2>,
+    ) -> Word<Cell<F>> {
+        let new_word = self.query_word_private();
+        self.require_equal(
+            "wordlimb equality",
+            word_constrians.expr().is_eq(&new_word.expr()),
+            1.expr(),
+        );
+        new_word
+    }
+
+    fn query_word_private<const N: usize, const N2: usize>(&mut self) -> Word<Cell<F>> {
         Word::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -413,7 +427,20 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn query_word4<const N: usize>(&mut self) -> Word4<Cell<F>> {
+    pub(crate) fn query_word4<const N: usize, const N2: usize>(
+        &mut self,
+        word_constrians: WordLimbs<Cell<F>, N2>,
+    ) -> Word4<Cell<F>> {
+        let new_word = self.query_word4_private();
+        self.require_equal(
+            "wordlimb equality",
+            word_constrians.expr().is_eq(&new_word.expr()),
+            1.expr(),
+        );
+        new_word
+    }
+
+    fn query_word4_private<const N: usize, const N2: usize>(&mut self) -> Word4<Cell<F>> {
         Word4::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -665,7 +692,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
     ) -> Word<Cell<F>> {
-        let word = self.query_word();
+        let word = self.query_word_private();
         self.tx_context_lookup(id, field_tag, index, word.expr().to_word());
         word
     }
@@ -1064,7 +1091,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
-        let word = self.query_word();
+        let word = self.query_word_private();
         self.call_context_lookup(false.expr(), call_id, field_tag, word.expr().to_word());
         word
     }

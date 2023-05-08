@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell, ToWordExpr, Word, WordCells,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -47,12 +47,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let mstart = cb.query_cell_phase2();
-        let msize = cb.query_word();
+        let mstart = cb.query_word32();
+        let msize = cb.query_word32();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(Word::from_lo(mstart.expr()));
-        cb.stack_pop(msize.expr());
+        cb.stack_pop(mstart.expr().to_word());
+        cb.stack_pop(msize.expr().to_word());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call
@@ -117,7 +117,17 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
+        let memory_address = MemoryAddressGadget::construct(
+            cb,
+            mstart.limbs[0..N_BYTES_MEMORY_WORD_SIZE]
+                .to_vec()
+                .try_into()
+                .unwrap(),
+            msize.limbs[0..N_BYTES_MEMORY_WORD_SIZE]
+                .to_vec()
+                .try_into()
+                .unwrap(),
+        );
 
         // Calculate the next memory size and the gas cost for this memory
         // access

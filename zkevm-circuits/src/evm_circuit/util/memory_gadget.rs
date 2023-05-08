@@ -6,7 +6,7 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, CellType, MemoryAddress,
+            select, sum, Cell, CellType,
         },
     },
     util::Expr,
@@ -22,13 +22,13 @@ use halo2_proofs::{
 pub(crate) mod address_low {
     use crate::evm_circuit::{
         param::N_BYTES_MEMORY_ADDRESS,
-        util::{from_bytes, Word},
+        util::{from_bytes, Cell, Word32},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
-        from_bytes::expr(&address.cells[..N_BYTES_MEMORY_ADDRESS])
+    pub(crate) fn expr<F: Field>(address: &Word32<Cell<F>>) -> Expression<F> {
+        from_bytes::expr(&address.limbs[..N_BYTES_MEMORY_ADDRESS])
     }
 
     pub(crate) fn value(address: [u8; 32]) -> u64 {
@@ -43,13 +43,13 @@ pub(crate) mod address_low {
 pub(crate) mod address_high {
     use crate::evm_circuit::{
         param::N_BYTES_MEMORY_ADDRESS,
-        util::{sum, Word},
+        util::{sum, Cell, Word32},
     };
     use eth_types::Field;
     use halo2_proofs::plonk::Expression;
 
-    pub(crate) fn expr<F: Field>(address: &Word<F>) -> Expression<F> {
-        sum::expr(&address.cells[N_BYTES_MEMORY_ADDRESS..])
+    pub(crate) fn expr<F: Field>(address: &Word32<Cell<F>>) -> Expression<F> {
+        sum::expr(&address.limbs[N_BYTES_MEMORY_ADDRESS..])
     }
 
     pub(crate) fn value<F: Field>(address: [u8; 32]) -> F {
@@ -63,37 +63,25 @@ pub(crate) mod address_high {
 /// the RLC value for `memory_offset` need not match the bytes.
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAddressGadget<F> {
-    memory_offset: Cell<F>,
-    memory_offset_bytes: MemoryAddress<F>,
-    memory_length: MemoryAddress<F>,
+    memory_offset: [Cell<F>; N_BYTES_MEMORY_ADDRESS],
+    memory_length: [Cell<F>; N_BYTES_MEMORY_ADDRESS],
     memory_length_is_zero: IsZeroGadget<F>,
 }
 
 impl<F: Field> MemoryAddressGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        memory_offset: Cell<F>,
-        memory_length: MemoryAddress<F>,
+        memory_offset: [Cell<F>; N_BYTES_MEMORY_ADDRESS],
+        memory_length: [Cell<F>; N_BYTES_MEMORY_ADDRESS],
     ) -> Self {
         debug_assert_eq!(
             CellType::StoragePhase2,
-            cb.curr.cell_manager.columns()[memory_offset.cell_column_index].cell_type
+            cb.curr.cell_manager.columns()[memory_offset[0].cell_column_index].cell_type
         );
-        let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length.cells));
-        let memory_offset_bytes = cb.query_word_rlc();
-
-        let has_length = 1.expr() - memory_length_is_zero.expr();
-        cb.condition(has_length, |cb| {
-            cb.require_equal(
-                "Offset decomposition into 5 bytes",
-                memory_offset_bytes.expr(),
-                memory_offset.expr(),
-            );
-        });
+        let memory_length_is_zero = IsZeroGadget::construct(cb, sum::expr(&memory_length));
 
         Self {
             memory_offset,
-            memory_offset_bytes,
             memory_length,
             memory_length_is_zero,
         }
@@ -106,40 +94,41 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: U256,
         memory_length: U256,
     ) -> Result<u64, Error> {
-        let memory_offset_bytes = memory_offset.to_le_bytes();
-        let memory_length_bytes = memory_length.to_le_bytes();
         let memory_length_is_zero = memory_length.is_zero();
-        self.memory_offset.assign(
-            region,
-            offset,
-            region.word_rlc(U256::from_little_endian(&memory_offset_bytes)),
-        )?;
-        self.memory_offset_bytes.assign(
-            region,
-            offset,
-            Some(if memory_length_is_zero {
-                [0; 5]
-            } else {
-                memory_offset_bytes[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
+        let memory_offset_bytes: [u8; 5] = if memory_length_is_zero {
+            [0u8; 5]
+        } else {
+            memory_offset.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS]
+                .try_into()
+                .unwrap()
+        };
+        let memory_length_bytes = &memory_length.to_le_bytes()[..N_BYTES_MEMORY_ADDRESS];
+
+        memory_offset_bytes
+            .iter()
+            .zip(self.memory_offset.iter())
+            .map(|(byte, offset_cell)| {
+                offset_cell
+                    .assign(region, offset, Value::known(F::from(*byte as u64)))
                     .unwrap()
-            }),
-        )?;
-        self.memory_length.assign(
-            region,
-            offset,
-            Some(
-                memory_length_bytes[..N_BYTES_MEMORY_ADDRESS]
-                    .try_into()
-                    .unwrap(),
-            ),
-        )?;
+            });
+
+        memory_length_bytes
+            .iter()
+            .zip(self.memory_length.iter())
+            .map(|(byte, length_cell)| {
+                length_cell
+                    .assign(region, offset, Value::known(F::from(*byte as u64)))
+                    .unwrap()
+            });
+
         self.memory_length_is_zero
             .assign(region, offset, sum::value(&memory_length_bytes))?;
         Ok(if memory_length_is_zero {
             0
         } else {
-            address_low::value(memory_offset_bytes) + address_low::value(memory_length_bytes)
+            address_low::value(memory_offset.to_le_bytes())
+                + address_low::value(memory_length.to_le_bytes())
         })
     }
 
@@ -148,11 +137,11 @@ impl<F: Field> MemoryAddressGadget<F> {
     }
 
     pub(crate) fn offset(&self) -> Expression<F> {
-        self.has_length() * from_bytes::expr(&self.memory_offset_bytes.cells)
+        self.has_length() * from_bytes::expr(&self.memory_offset)
     }
 
     pub(crate) fn length(&self) -> Expression<F> {
-        from_bytes::expr(&self.memory_length.cells)
+        from_bytes::expr(&self.memory_length)
     }
 
     pub(crate) fn address(&self) -> Expression<F> {

@@ -88,17 +88,22 @@ mod tests {
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
     struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
         cmp_gadget: CmpWordsGadget<F>,
-        a: util::Word<Cell<F>>,
-        b: util::Word<Cell<F>>,
+        a: util::Word32<Cell<F>>,
+        b: util::Word32<Cell<F>>,
+        a_word: util::Word<Cell<F>>,
+        b_word: util::Word<Cell<F>>,
     }
 
     impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
         for CmpWordGadgetTestContainer<F, CHECK_EQ>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word();
-            let b = cb.query_word();
-            let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a, &b);
+            let a = cb.query_word32();
+            let b = cb.query_word32();
+            let a_word = cb.query_word(a);
+            let b_word = cb.query_word(b);
+
+            let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a_word, &b_word);
             cb.require_equal(
                 "(a < b) * (a == b) == 0",
                 cmp_gadget.eq.clone() * cmp_gadget.lt.clone(),
@@ -111,7 +116,13 @@ mod tests {
                 cb.require_equal("a < b", cmp_gadget.lt.clone(), 1.expr());
             }
 
-            CmpWordGadgetTestContainer { cmp_gadget, a, b }
+            CmpWordGadgetTestContainer {
+                cmp_gadget,
+                a,
+                b,
+                a_word,
+                b_word,
+            }
         }
 
         fn assign_gadget_container(
@@ -124,7 +135,9 @@ mod tests {
             let offset = 0;
 
             self.a.assign(region, offset, Some(a.to_le_bytes()))?;
+            self.a_word.assign(region, offset, Some(a.to_le_bytes()))?;
             self.b.assign(region, offset, Some(b.to_le_bytes()))?;
+            self.b_word.assign(region, offset, Some(b.to_le_bytes()))?;
             self.cmp_gadget.assign(region, offset, a, b)?;
             Ok(())
         }

@@ -628,6 +628,8 @@ pub(crate) trait ToWordExpr<F: FieldExt, const N2: usize> {
     fn to_word(&self) -> Word<Expression<F>>;
 
     fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2>;
+
+    fn is_eq(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F>;
 }
 
 impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
@@ -648,6 +650,18 @@ impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
 
     fn to_word(&self) -> Word<Expression<F>> {
         Word(self.to_wordlimbs())
+    }
+
+    fn is_eq(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
+        assert!(N1 % N2 == 0); // N2 | N1
+        not::expr(or::expr(
+            self.limbs
+                .chunks(N1 / N2)
+                .map(|chunk| from_bytes::expr(chunk))
+                .zip(others.limbs)
+                .map(|(expr1, expr2)| expr1 - expr2)
+                .collect_vec(),
+        ))
     }
 }
 

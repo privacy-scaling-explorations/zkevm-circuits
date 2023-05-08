@@ -371,8 +371,8 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
         receiver_address: Expression<F>,
         receiver_exists: Expression<F>,
         must_create: Expression<F>,
-        value: Word<F>,
-        gas_fee: Word<F>,
+        value: Word32<F>,
+        gas_fee: Word32<F>,
         reversion_info: &mut ReversionInfo<F>,
     ) -> Self {
         let sender_sub_fee =
@@ -1108,7 +1108,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
 /// Check if the passed in word is within the specified byte range (not overflow).
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
-    original: Word<F>,
+    original: Word32<Cell<F>>,
     not_overflow: IsZeroGadget<F>,
 }
 
@@ -1116,8 +1116,8 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
         debug_assert!(VALID_BYTES < 32);
 
-        let original = cb.query_word_rlc();
-        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.cells[VALID_BYTES..]));
+        let original = cb.query_word32();
+        let not_overflow = IsZeroGadget::construct(cb, sum::expr(&original.limbs[VALID_BYTES..]));
 
         Self {
             original,
@@ -1144,16 +1144,12 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         Ok(overflow_hi == 0)
     }
 
-    pub(crate) fn original_word(&self) -> Expression<F> {
-        self.original.expr()
-    }
-
     pub(crate) fn overflow(&self) -> Expression<F> {
         not::expr(self.not_overflow())
     }
 
     pub(crate) fn valid_value(&self) -> Expression<F> {
-        from_bytes::expr(&self.original.cells[..VALID_BYTES])
+        from_bytes::expr(&self.original.limbs[..VALID_BYTES])
     }
 
     pub(crate) fn not_overflow(&self) -> Expression<F> {
