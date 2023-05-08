@@ -26,6 +26,22 @@ use super::{
     param::PUSH_TABLE_WIDTH,
 };
 
+#[derive(Debug, Clone)]
+/// Row for assignment
+pub struct BytecodeCircuitRow<F: Field> {
+    enable: bool,
+    last: bool,
+    code_hash: Value<F>,
+    tag: F,
+    index: F,
+    is_code: F,
+    value: F,
+    push_data_left: u64,
+    value_rlc: Value<F>,
+    length: F,
+    push_data_size: F,
+}
+
 #[derive(Clone, Debug)]
 /// Bytecode circuit configuration
 pub struct BytecodeCircuitConfig<F> {
@@ -138,7 +154,6 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             },
             index_length_diff_inv,
         );
-        // dbg!(index_length_diff_is_zero.clone().is_zero_expression);
 
         // When q_first || q_last ->
         // assert cur.tag == Header
@@ -604,17 +619,19 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 self.set_row(
                     region,
                     *offset,
-                    true,
-                    *offset == last_row_offset,
-                    code_hash,
-                    row.tag,
-                    row.index,
-                    row.is_code,
-                    row.value,
-                    push_data_left,
-                    value_rlc,
-                    length,
-                    F::from(push_data_size),
+                    BytecodeCircuitRow {
+                        enable: true,
+                        last: *offset == last_row_offset,
+                        code_hash,
+                        tag: row.tag,
+                        index: row.index,
+                        is_code: row.is_code,
+                        value: row.value,
+                        push_data_left,
+                        value_rlc,
+                        length,
+                        push_data_size: F::from(push_data_size),
+                    },
                 )?;
 
                 trace!(
@@ -653,43 +670,34 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         self.set_row(
             region,
             offset,
-            offset <= last_row_offset,
-            offset == last_row_offset,
-            empty_hash,
-            F::from(BytecodeFieldTag::Header as u64),
-            F::ZERO,
-            F::ZERO,
-            F::ZERO,
-            0,
-            Value::known(F::ZERO),
-            F::ZERO,
-            F::ZERO,
+            BytecodeCircuitRow {
+                enable: offset <= last_row_offset,
+                last: offset == last_row_offset,
+                code_hash: empty_hash,
+                tag: F::from(BytecodeFieldTag::Header as u64),
+                index: F::ZERO,
+                is_code: F::ZERO,
+                value: F::ZERO,
+                push_data_left: 0,
+                value_rlc: Value::known(F::ZERO),
+                length: F::ZERO,
+                push_data_size: F::ZERO,
+            },
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn set_row(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
-        enable: bool,
-        last: bool,
-        code_hash: Value<F>,
-        tag: F,
-        index: F,
-        is_code: F,
-        value: F,
-        push_data_left: u64,
-        value_rlc: Value<F>,
-        length: F,
-        push_data_size: F,
+        row: BytecodeCircuitRow<F>,
     ) -> Result<(), Error> {
         // q_enable
         region.assign_fixed(
             || format!("assign q_enable {}", offset),
             self.q_enable,
             offset,
-            || Value::known(F::from(enable as u64)),
+            || Value::known(F::from(row.enable.into())),
         )?;
 
         // q_first
@@ -697,26 +705,25 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             || format!("assign q_first {}", offset),
             self.q_first,
             offset,
-            || Value::known(F::from((offset == 0) as u64)),
+            || Value::known(F::from((offset == 0).into())),
         )?;
 
         // q_last
-        let q_last_value = if last { F::ONE } else { F::ZERO };
         region.assign_fixed(
             || format!("assign q_last {}", offset),
             self.q_last,
             offset,
-            || Value::known(q_last_value),
+            || Value::known(F::from(row.last.into())),
         )?;
 
         // Advices
         for (name, column, value) in [
-            ("tag", self.bytecode_table.tag, tag),
-            ("index", self.bytecode_table.index, index),
-            ("is_code", self.bytecode_table.is_code, is_code),
-            ("value", self.bytecode_table.value, value),
-            ("length", self.length, length),
-            ("push_data_size", self.push_data_size, push_data_size),
+            ("tag", self.bytecode_table.tag, row.tag),
+            ("index", self.bytecode_table.index, row.index),
+            ("is_code", self.bytecode_table.is_code, row.is_code),
+            ("value", self.bytecode_table.value, row.value),
+            ("length", self.length, row.length),
+            ("push_data_size", self.push_data_size, row.push_data_size),
         ] {
             region.assign_advice(
                 || format!("assign {} {}", name, offset),
@@ -726,8 +733,8 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             )?;
         }
         for (name, column, value) in [
-            ("code_hash", self.bytecode_table.code_hash, code_hash),
-            ("value_rlc", self.value_rlc, value_rlc),
+            ("code_hash", self.bytecode_table.code_hash, row.code_hash),
+            ("value_rlc", self.value_rlc, row.value_rlc),
         ] {
             region.assign_advice(
                 || format!("assign {} {}", name, offset),
@@ -740,13 +747,13 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         self.push_data_left_is_zero.assign(
             region,
             offset,
-            Value::known(F::from(push_data_left)),
+            Value::known(F::from(row.push_data_left)),
         )?;
 
         self.index_length_diff_is_zero.assign(
             region,
             offset,
-            Value::known(index + F::ONE - length),
+            Value::known(row.index + F::ONE - row.length),
         )?;
 
         Ok(())
