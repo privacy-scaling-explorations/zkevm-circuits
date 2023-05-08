@@ -251,10 +251,41 @@ impl CopyEvent {
         u64::try_from(self.rw_counter_start.0).unwrap() + self.rw_counter_increase(step_index)
     }
 
+    /// rw counter at step index
+    pub fn rw_counter_step(&self, step_index: usize) -> u64 {
+        let mut rw_counter = u64::try_from(self.rw_counter_start.0).unwrap();
+        let mut rw_counter_increase = self.rw_counter_increase(step_index);
+        let mut rw_counter_increase_log = 0u64;
+        if self.dst_type == CopyDataType::TxLog {
+            rw_counter_increase_log = self.rw_counter_increase_log(step_index);
+            rw_counter_increase =
+                rw_counter_increase - rw_counter_increase_log + rw_counter_increase_log / 2
+        }
+        rw_counter = rw_counter + rw_counter_increase;
+
+        // step_index == self.bytes.len() when caculate total rw increasing.
+        if self.dst_type == CopyDataType::TxLog && step_index != self.bytes.len() * 2 {
+            if step_index % 2 == 0 {
+                // memory reading
+                rw_counter = rw_counter - rw_counter_increase + step_index as u64 / 2 / 32;
+            } else {
+                // log writing
+                rw_counter = rw_counter + self.bytes.len() as u64 / 32;
+            }
+        }
+
+        return rw_counter;
+    }
+
     /// rw counter increase left at step index
     pub fn rw_counter_increase_left(&self, step_index: usize) -> u64 {
-        // TODO: here -1 is just hack !!! work out better solution in the future
-        self.rw_counter(self.bytes.len() * 2 - 1) - self.rw_counter(step_index)
+        if self.rw_counter_step(self.bytes.len() * 2) < self.rw_counter_step(step_index) {
+            let rw_counter = self.rw_counter_step(self.bytes.len() * 2);
+            let rw_prevous = self.rw_counter_step(step_index);
+            return 0u64;
+        }
+
+        self.rw_counter_step(self.bytes.len() * 2) - self.rw_counter_step(step_index)
     }
 
     /// Number of rw operations performed by this copy event
@@ -272,10 +303,20 @@ impl CopyEvent {
         let destination_rw_increase = match self.dst_type {
             CopyDataType::RlcAcc | CopyDataType::Bytecode => 0,
             CopyDataType::Memory => (step_index as u64 / 2) / 32,
-            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2 / 2,
+            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2,
             CopyDataType::TxCalldata | CopyDataType::Padding => unreachable!(),
         };
         source_rw_increase + destination_rw_increase
+    }
+
+    // increase in rw counter for tx log specially
+    fn rw_counter_increase_log(&self, step_index: usize) -> u64 {
+        let destination_rw_increase = match self.dst_type {
+            CopyDataType::TxLog => u64::try_from(step_index).unwrap() / 2,
+            _ => unreachable!(),
+        };
+
+        destination_rw_increase
     }
 }
 

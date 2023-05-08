@@ -1320,7 +1320,7 @@ mod tests {
 
         assert_error_matches(
             test_copy_circuit_from_block(10, block),
-            vec!["Memory lookup", "TxLog lookup"],
+            vec!["Memory word lookup", "TxLog lookup"],
         );
     }
 

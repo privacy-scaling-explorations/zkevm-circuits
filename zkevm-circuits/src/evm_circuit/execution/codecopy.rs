@@ -102,7 +102,6 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
                 src_addr,
                 code_size.expr(),
                 dst_memory_addr.offset(),
-                //dst_memory_addr.length(),
                 bytes_length_word.expr(),
                 0.expr(), // for CODECOPY, rlc_acc is 0
                 copy_rwc_inc.expr(),
@@ -117,9 +116,10 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
 
         // Expected state transition.
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(
-                3.expr() + copy_rwc_inc.expr() + dst_memory_addr.has_length(),
-            ),
+            // rw_counter: Transition::Delta(
+            //     3.expr() + copy_rwc_inc.expr() + dst_memory_addr.has_length(),
+            // ),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(3.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -190,10 +190,14 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             .assign(region, offset, size.as_u64(), memory_expansion_cost)?;
 
         let shift = dest_offset.low_u64() % 32;
-        let memory_start_slot = dest_offset.low_u64() - dest_offset.low_u64() % 32;
+        let memory_start_slot = dest_offset.low_u64() - shift;
         let memory_end = dest_offset.low_u64() + size.low_u64();
         let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = (memory_end_slot - memory_start_slot) / 32;
+        let copy_rwc_inc = if size.low_u64() == 0 {
+            0
+        } else {
+            (memory_end_slot - memory_start_slot) / 32 + 1
+        };
 
         self.copy_rwc_inc.assign(
             region,
@@ -205,7 +209,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
             ),
         )?;
 
-        let bytes_length_to_word = (copy_rwc_inc + 1) * 32;
+        let bytes_length_to_word = copy_rwc_inc * 32;
 
         self.bytes_length_word.assign(
             region,

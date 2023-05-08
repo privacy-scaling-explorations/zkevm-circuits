@@ -134,9 +134,10 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         });
 
         let step_state_transition = StepStateTransition {
-            rw_counter: Transition::Delta(
-                9.expr() + copy_rwc_inc.expr() + memory_address.has_length(),
-            ),
+            // rw_counter: Transition::Delta(
+            //     9.expr() + copy_rwc_inc.expr() + memory_address.has_length(),
+            // ),
+            rw_counter: Transition::Delta(cb.rw_counter_offset()),
             program_counter: Transition::Delta(1.expr()),
             stack_pointer: Transition::Delta(4.expr()),
             memory_word_size: Transition::To(memory_expansion.next_memory_word_size()),
@@ -219,7 +220,12 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
         let memory_start_slot = memory_offset.low_u64() - shift;
         let memory_end = memory_offset.low_u64() + memory_length.low_u64();
         let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = (memory_end_slot - memory_start_slot) / 32;
+        let copy_rwc_inc = if memory_length.low_u64() == 0 {
+            0
+        } else {
+            (memory_end_slot - memory_start_slot) / 32 + 1
+        };
+
         self.copy_rwc_inc.assign(
             region,
             offset,
@@ -230,7 +236,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodecopyGadget<F> {
             ),
         )?;
 
-        let bytes_length_to_word = (copy_rwc_inc + 1) * 32;
+        let bytes_length_to_word = copy_rwc_inc * 32;
         self.bytes_length_word.assign(
             region,
             offset,

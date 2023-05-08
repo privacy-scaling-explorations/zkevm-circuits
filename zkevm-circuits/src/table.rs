@@ -1398,7 +1398,6 @@ impl CopyTable {
             // assume copy events bytes is already word aligned for copy steps.
             // only change by skip 32
 
-            // TODO: enable other copy type, now work for internal calldatacopy
             if is_read_step
                 && (copy_event.dst_type == CopyDataType::Memory
                     || copy_event.src_type == CopyDataType::Memory)
@@ -1470,11 +1469,11 @@ impl CopyTable {
             ));
 
             // debug info
-            let rw_count = F::from(copy_event.rw_counter(step_idx));
+            let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             println!(
-                "addr_slot: {:?}, rw_count {:?}, tag {:?}, addr {:?} bytes_left {} word_index {:?}, ",
-                addr_slot, rw_count, tag, addr, bytes_left, word_index,
+                "step_idx: {} , rw_count {:?}, tag {:?}, addr {:?} rwc_inc_left {:?} word_index {:?}, ",
+                step_idx, rw_count, tag, addr, rwc_inc_left, word_index,
             );
 
             // is_code
@@ -1500,7 +1499,7 @@ impl CopyTable {
                         "rlc_acc",
                     ),
                     (
-                        Value::known(F::from(copy_event.rw_counter(step_idx))),
+                        Value::known(F::from(copy_event.rw_counter_step(step_idx))),
                         "rw_counter",
                     ),
                     (

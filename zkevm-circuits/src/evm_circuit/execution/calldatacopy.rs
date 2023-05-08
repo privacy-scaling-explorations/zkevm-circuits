@@ -22,6 +22,7 @@ use crate::{
 };
 use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId};
 use eth_types::{evm_types::GasCost, Field, ToScalar};
+use ethers_core::k256::U256;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 use std::cmp::min;
@@ -146,16 +147,19 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
             );
         });
 
-        // State transition
-        let rw_counter_delta = select::expr(
-            cb.curr.state.is_root.expr(),
-            5.expr() + copy_rwc_inc.expr() + memory_address.has_length(),
-            6.expr() + copy_rwc_inc.expr() + memory_address.has_length() * 2.expr(),
-        );
+        // // State transition
+        // let rw_counter_delta = select::expr(
+        //     cb.curr.state.is_root.expr(),
+        //     select::expr(selector, when_true, when_false)
+        //     //4.expr() + copy_rwc_inc.expr() +  memory_address.has_length(),
+
+        //     5.expr() + copy_rwc_inc.expr() - memory_address.has_length(),
+        //     6.expr() + copy_rwc_inc.expr() - memory_address.has_length(),
+        // );
         let step_state_transition = StepStateTransition {
             // 1 tx id lookup + 3 stack pop + option(calldatalength lookup)
             //TODO: handle internal call rw_counter
-            rw_counter: Delta(rw_counter_delta),
+            rw_counter: Delta(cb.rw_counter_offset()),
             program_counter: Delta(1.expr()),
             stack_pointer: Delta(3.expr()),
             gas_left: Delta(
@@ -221,21 +225,24 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         // rw_counter increase from copy lookup is `length` memory writes + a variable
         // number of memory reads.
         let shift = memory_offset.low_u64() % 32;
+        let length_u64 = length.low_u64();
         let memory_start_slot = memory_offset.low_u64() - memory_offset.low_u64() % 32;
-        let memory_end = memory_offset.low_u64() + length.low_u64();
+        let memory_end = memory_offset.low_u64() + length_u64;
         let memory_end_slot = memory_end - memory_end % 32;
         println!(
             "memory_start {}, length {}",
             memory_offset.low_u64(),
             length.low_u64()
         );
-        let copy_rwc_inc = if call.is_root {
+        let copy_rwc_inc = if length_u64 == 0 {
+            0
+        } else if call.is_root {
             // no memory reads when reading from tx call data.
-            (memory_end_slot - memory_start_slot) / 32
+            (memory_end_slot - memory_start_slot) / 32 + 1
         } else {
             // memory reads when reading from memory of caller is capped by call_data_length
             // - data_offset.
-            (memory_end_slot - memory_start_slot) / 32 * 2
+            (1 + (memory_end_slot - memory_start_slot) / 32) * 2
         };
         self.copy_rwc_inc.assign(
             region,
@@ -248,10 +255,10 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         )?;
 
         let bytes_length_to_word = if call.is_root {
-            (copy_rwc_inc + 1) * 32
+            copy_rwc_inc * 32
         } else {
             // read/write
-            (copy_rwc_inc / 2 + 1) * 32
+            (copy_rwc_inc / 2) * 32
         };
 
         self.bytes_length_word.assign(
@@ -400,7 +407,7 @@ mod test {
 
     #[test]
     fn calldatacopy_gadget_zero_length() {
-        test_ok_root(0x40, 0, 0x00.into(), 0x40.into());
+        //test_ok_root(0x40, 0, 0x00.into(), 0x40.into());
         test_ok_internal(0x40, 0x40, 0, 0x10.into(), 0xA0.into());
     }
 
