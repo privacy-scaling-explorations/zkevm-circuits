@@ -11,6 +11,7 @@ sha3 = "0.7.2"
 eth-types = { path = "../eth-types" }
 digest = "0.7.6"
 strum = "0.24"
+chiquito = { git = "https://github.com/privacy-scaling-explorations/chiquito.git", tag = "2023_04_23_v2" }
 
 [dev-dependencies]
 rand_xorshift = "0.3"

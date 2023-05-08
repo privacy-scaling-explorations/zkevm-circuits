@@ -12,6 +12,23 @@ use super::{
     util::{expr_from_bytes, pow_of_two},
 };
 
+use chiquito::{
+    ast::expr::*,
+    backend::halo2::{chiquito2Halo2, ChiquitoHalo2}, /* compiles to Chiquito Halo2 backend,
+                                                      * which can be integrated into Halo2
+                                                      * circuit */
+    compiler::{
+        cell_manager::SingleRowCellManager, // input for constructing the compiler
+        step_selector::SimpleStepSelectorBuilder, // input for constructing the compiler
+        Compiler,                           // compiles AST to IR
+    },
+    dsl::{
+        cb::*,   // functions for constraint building
+        circuit, // main function for constructing an AST circuit
+    },
+    ir::Circuit, // IR object that the compiler compiles to
+};
+
 /// Instruction that the Lt chip needs to implement.
 pub trait LtInstruction<F: Field> {
     /// Assign the lhs and rhs witnesses to the Lt chip's region.
@@ -33,11 +50,11 @@ pub struct LtConfig<F, const N_BYTES: usize> {
     /// Denotes the lt outcome. If lhs < rhs then lt == 1, otherwise lt == 0.
     pub lt: Column<Advice>,
     /// Denotes the bytes representation of the difference between lhs and rhs.
-    pub diff: [Column<Advice>; N_BYTES],
+    pub diff: [Column<Advice>; N_BYTES], // This array of columns in the advice region stores the bytes representation of the difference between lhs and rhs (lhs - rhs). Each byte of the difference is stored in a separate column.
     /// Denotes the range within which each byte should lie.
-    pub u8: Column<Fixed>,
+    pub u8: Column<Fixed>, // This fixed column in the circuit is used to constrain the values in the diff array to be within the valid u8 range (0 to 255).
     /// Denotes the range within which both lhs and rhs lie.
-    pub range: F,
+    pub range: F, // range: This field element is used to denote the valid range for lhs and rhs values. It ensures that the inputs are within the allowed range and that no overflow occurs during the calculation.
 }
 
 impl<F: Field, const N_BYTES: usize> LtConfig<F, N_BYTES> {
@@ -75,10 +92,13 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
                 .map(|c| meta.query_advice(*c, Rotation::cur()))
                 .collect::<Vec<Expression<F>>>();
 
+            // from below: diff = (lhs - rhs) + (if lt { config.range } else { F::ZERO });
             let check_a =
-                lhs(meta) - rhs(meta) - expr_from_bytes(&diff_bytes) + (lt.clone() * range);
+                lhs(meta) - rhs(meta) - expr_from_bytes(&diff_bytes) + (lt.clone() * range); 
+                // This gate enforces the constraint that the difference between lhs and rhs plus the result of the "less than" operation (lt) times the range equals the sum of the bytes represented by diff
 
             let check_b = bool_check(lt);
+            // Additionally, it checks that lt is either 0 or 1, ensuring it's a boolean value.
 
             [check_a, check_b]
                 .into_iter()
@@ -86,7 +106,7 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
         });
 
         meta.annotate_lookup_any_column(u8, || "LOOKUP_u8");
-
+        // It sets up a range check for each byte in the diff array using the lookup_any method, ensuring that each byte in the diff array is within the range of a valid u8 value.
         diff[0..N_BYTES].iter().for_each(|column| {
             meta.lookup_any("range check for u8", |meta| {
                 let u8_cell = meta.query_advice(*column, Rotation::cur());
@@ -110,7 +130,7 @@ impl<F: Field, const N_BYTES: usize> LtChip<F, N_BYTES> {
 }
 
 impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
-    fn assign(
+    fn assign( // assign lt result and diff byte columns, given lhs, rhs, and offset
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -118,7 +138,8 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
         rhs: F,
     ) -> Result<(), Error> {
         let config = self.config();
-
+        // It computes the boolean result lt of the "less than" operation between lhs and rhs. If lhs is less than rhs, lt will be true; otherwise, it will be false.
+        // It assigns the lt value to the config.lt advice column at the given offset.
         let lt = lhs < rhs;
         region.assign_advice(
             || "lt chip: lt",
@@ -127,14 +148,15 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
             || Value::known(F::from(lt as u64)),
         )?;
 
-        let diff = (lhs - rhs) + (if lt { config.range } else { F::ZERO });
+        let diff = (lhs - rhs) + (if lt { config.range } else { F::ZERO }); // ??? why is diff defined with range? 
         let diff_bytes = diff.to_repr();
         let diff_bytes = diff_bytes.as_ref();
-        for (idx, diff_column) in config.diff.iter().enumerate() {
+        // It converts diff to its byte representation and assigns each byte to the corresponding advice column in the config.diff array at the given offset.
+        for (idx, diff_column) in config.diff.iter().enumerate() { // iterate over config.diff columns and assign diff_bytes
             region.assign_advice(
                 || format!("lt chip: diff byte {}", idx),
                 *diff_column,
-                offset,
+                offset, // same offset as lt result
                 || Value::known(F::from(diff_bytes[idx] as u64)),
             )?;
         }
@@ -145,7 +167,7 @@ impl<F: Field, const N_BYTES: usize> LtInstruction<F> for LtChip<F, N_BYTES> {
     fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         const RANGE: usize = 256;
 
-        layouter.assign_region(
+        layouter.assign_region( // assign 256 values to one fixed column u8 to constrain the diff byte values
             || "load u8 range check table",
             |mut region| {
                 for i in 0..RANGE {
@@ -166,11 +188,11 @@ impl<F: Field, const N_BYTES: usize> Chip<F> for LtChip<F, N_BYTES> {
     type Config = LtConfig<F, N_BYTES>;
     type Loaded = ();
 
-    fn config(&self) -> &Self::Config {
+    fn config(&self) -> &Self::Config { // required method for Chip
         &self.config
     }
 
-    fn loaded(&self) -> &Self::Loaded {
+    fn loaded(&self) -> &Self::Loaded { // required method for Chip
         &()
     }
 }
@@ -200,6 +222,7 @@ mod test {
                 checks: Some($checks),
                 _marker: PhantomData,
             };
+            // The macro constructs a TestCircuit with the provided values and checks, and then runs the MockProver on it. The MockProver is a test prover that simulates the proving process without actually generating a proof. After the prover has been run, the macro checks if the verification result is equal to the expected result $result.
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), $result);
         }};
@@ -218,6 +241,7 @@ mod test {
                 _marker: PhantomData,
             };
             let prover = MockProver::<Fp>::run(k, &circuit, vec![]).unwrap();
+            // Similar to the try_test_circuit macro, this macro constructs a TestCircuit with the provided values and checks and runs the MockProver. However, instead of comparing the verification result to an expected result, this macro checks if the verification result is an error.
             assert!(prover.verify().is_err());
         }};
     }
@@ -229,7 +253,7 @@ mod test {
             q_enable: Selector,
             value: Column<Advice>,
             check: Column<Advice>,
-            lt: LtConfig<F, 8>,
+            lt: LtConfig<F, 8>, // 8 bytes for the diff byte vector
         }
 
         #[derive(Default)]
@@ -248,15 +272,15 @@ mod test {
                 Self::default()
             }
 
-            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config { // make columns
                 let q_enable = meta.complex_selector();
                 let value = meta.advice_column();
                 let check = meta.advice_column();
 
                 let lt = LtChip::configure(
                     meta,
-                    |meta| meta.query_selector(q_enable),
-                    |meta| meta.query_advice(value, Rotation::prev()),
+                    |meta| meta.query_selector(q_enable), // just created above
+                    |meta| meta.query_advice(value, Rotation::prev()), // query the same column but different rows corresponding to the vector input
                     |meta| meta.query_advice(value, Rotation::cur()),
                 );
 
@@ -273,18 +297,19 @@ mod test {
                     // This verifies lt(value::cur, value::next) is calculated correctly
                     let check = meta.query_advice(config.check, Rotation::cur());
 
-                    vec![q_enable * (config.lt.is_lt(meta, None) - check)]
+                    vec![q_enable * (config.lt.is_lt(meta, None) - check)] // call is_lt (the main function that returns the lt value from the LtChip) with no rotation
+                    // ensure check (true false value in vector provided) equals to result generated from lt
                 });
 
                 config
             }
 
-            fn synthesize(
+            fn synthesize( // assign witnesses
                 &self,
                 config: Self::Config,
                 mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let chip = LtChip::construct(config.lt);
+                let chip = LtChip::construct(config.lt); // testcircuitconfig has a lt field which is a ltconfig
 
                 let values: Vec<_> = self
                     .values
@@ -293,14 +318,14 @@ mod test {
                     .ok_or(Error::Synthesis)?;
                 let checks = self.checks.as_ref().ok_or(Error::Synthesis)?;
                 let (first_value, values) = values.split_at(1);
-                let first_value = first_value[0];
+                let first_value = first_value[0]; // take out first value and the rest values, checks have one element fewer than values
 
                 chip.load(&mut layouter)?;
 
                 layouter.assign_region(
                     || "witness",
-                    |mut region| {
-                        region.assign_advice(
+                    |mut region| { // q_enable not enabled for the first row
+                        region.assign_advice( // no check assigned for first row
                             || "first row value",
                             config.value,
                             0,
@@ -309,7 +334,7 @@ mod test {
 
                         let mut value_prev = first_value;
                         for (idx, (value, check)) in values.iter().zip(checks).enumerate() {
-                            config.q_enable.enable(&mut region, idx + 1)?;
+                            config.q_enable.enable(&mut region, idx + 1)?; // q_enable enabled for all the rest rows
                             region.assign_advice(
                                 || "check",
                                 config.check,
@@ -322,7 +347,7 @@ mod test {
                                 idx + 1,
                                 || Value::known(*value),
                             )?;
-                            chip.assign(&mut region, idx + 1, value_prev, *value)?;
+                            chip.assign(&mut region, idx + 1, value_prev, *value)?; // ltchip has same offset as the testcircuit, so in the test circuit it's constrained that q_enable * (check - lt) == 0
 
                             value_prev = *value;
                         }
@@ -334,7 +359,7 @@ mod test {
         }
 
         // ok
-        try_test_circuit!(vec![1, 2, 3, 4, 5], vec![true, true, true, true], Ok(()));
+        try_test_circuit!(vec![1, 2, 3, 4, 5], vec![true, true, true, true], Ok(())); // query starting from the second row
         try_test_circuit!(vec![1, 2, 1, 3, 2], vec![true, false, true, false], Ok(()));
         // error
         try_test_circuit_error!(vec![5, 4, 3, 2, 1], vec![true, true, true, true]);
@@ -344,7 +369,7 @@ mod test {
     #[test]
     fn column_diff_is_lt() {
         #[derive(Clone, Debug)]
-        struct TestCircuitConfig<F> {
+        struct TestCircuitConfig<F> { // different config from above
             q_enable: Selector,
             value_a: Column<Advice>,
             value_b: Column<Advice>,
