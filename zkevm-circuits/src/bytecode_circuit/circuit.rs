@@ -483,10 +483,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             last_row_offset
         );
 
-        let empty_hash = challenges
-            .evm_word()
-            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
-
         layouter.assign_region(
             || "assign bytecode",
             |mut region| {
@@ -499,7 +495,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                         &mut region,
                         bytecode,
                         challenges,
-                        empty_hash,
                         &mut offset,
                         last_row_offset,
                         fail_fast,
@@ -508,7 +503,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
 
                 // Padding
                 for idx in offset..=last_row_offset {
-                    self.set_padding_row(&mut region, empty_hash, idx, last_row_offset)?;
+                    self.set_padding_row(&mut region, challenges, idx, last_row_offset)?;
                 }
 
                 // Overwrite the witness assignment by using the values in the `overwrite`
@@ -567,7 +562,6 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region: &mut Region<'_, F>,
         bytecode: &UnrolledBytecode<F>,
         challenges: &Challenges<Value<F>>,
-        empty_hash: Value<F>,
         offset: &mut usize,
         last_row_offset: usize,
         fail_fast: bool,
@@ -653,7 +647,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 push_data_left = next_push_data_left
             }
             if *offset == last_row_offset {
-                self.set_padding_row(region, empty_hash, *offset, last_row_offset)?;
+                self.set_padding_row(region, challenges, *offset, last_row_offset)?;
             }
         }
 
@@ -663,10 +657,14 @@ impl<F: Field> BytecodeCircuitConfig<F> {
     fn set_padding_row(
         &self,
         region: &mut Region<'_, F>,
-        empty_hash: Value<F>,
+        challenges: &Challenges<Value<F>>,
         offset: usize,
         last_row_offset: usize,
     ) -> Result<(), Error> {
+        let empty_hash = challenges
+            .evm_word()
+            .map(|challenge| rlc::value(EMPTY_CODE_HASH_LE.as_ref(), challenge));
+
         self.set_row(
             region,
             offset,
