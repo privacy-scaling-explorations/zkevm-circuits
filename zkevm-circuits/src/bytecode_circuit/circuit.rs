@@ -665,6 +665,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
                 last_row_offset,
                 code_hash: empty_hash,
                 tag: F::from(BytecodeFieldTag::Header as u64),
+                value_rlc: Value::known(F::ZERO),
                 ..Default::default()
             },
         )
