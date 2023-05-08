@@ -152,6 +152,10 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 s: sig.s,
             }],
             accounts: st.pre,
+            #[cfg(feature = "shanghai")]
+            chain_config: Some(external_tracer::ChainConfig::shanghai()),
+            #[cfg(not(feature = "shanghai"))]
+            chain_config: None,
             ..Default::default()
         },
         st.result,

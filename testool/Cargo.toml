@@ -40,3 +40,4 @@ urlencoding = "2.1.2"
 [features]
 default = []
 ignore-test-docker = []
+shanghai = []
