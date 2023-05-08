@@ -508,7 +508,7 @@ mod test {
                 field_tag: AccountFieldTag::Balance,
             },
             old_value: Word::zero(),
-            new_value: Word::one(),
+            new_value: Word::from(u64::MAX),
             old_root: Word::zero(),
             new_root: Word::zero(),
         }
@@ -532,8 +532,8 @@ mod test {
 
         let mut updates = MptUpdates::default();
         let mut update = balance_update(Address::repeat_byte(45));
-        update.old_value = Word::one();
-        update.new_value = Word::from(213);
+        update.old_value = Word::from(u64::MAX);
+        update.new_value = Word::from(u64::MAX - (1 << 50));
         updates.insert(update);
 
         updates.fill_state_roots_from_generator(generator);
