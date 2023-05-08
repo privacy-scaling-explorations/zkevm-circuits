@@ -8,7 +8,7 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToWord};
+use eth_types::{evm_types::GasCost, Field, ToWord};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
@@ -16,6 +16,65 @@ use halo2_proofs::{
 use std::{fmt::Display, iter};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
+
+/// Addresses of the precompiled contracts.
+#[derive(Copy, Clone, Debug, EnumIter)]
+pub enum Precompiles {
+    /// Elliptic Curve Recovery
+    ECRecover = 0x01,
+    /// SHA2-256 hash function
+    Sha256 = 0x02,
+    /// Ripemd-160 hash function
+    Ripemd160 = 0x03,
+    /// Identity function
+    Identity = 0x04,
+    /// Modular exponentiation
+    Modexp = 0x05,
+    /// Point addition
+    Bn128Add = 0x06,
+    /// Scalar multiplication
+    Bn128Mul = 0x07,
+    /// Bilinear function
+    Bn128Pairing = 0x08,
+    /// Compression function
+    Blake2F = 0x09,
+}
+
+impl From<Precompiles> for u64 {
+    fn from(value: Precompiles) -> Self {
+        value as u64
+    }
+}
+
+impl Precompiles {
+    pub fn execution_state(&self) -> ExecutionState {
+        match self {
+            &Self::ECRecover => ExecutionState::PrecompileEcRecover,
+            &Self::Sha256 => ExecutionState::PrecompileSha256,
+            &Self::Ripemd160 => ExecutionState::PrecompileRipemd160,
+            &Self::Identity => ExecutionState::PrecompileIdentity,
+            &Self::Modexp => ExecutionState::PrecompileBigModExp,
+            &Self::Bn128Add => ExecutionState::PrecompileBn256Add,
+            &Self::Bn128Mul => ExecutionState::PrecompileBn256ScalarMul,
+            &Self::Bn128Pairing => ExecutionState::PrecompileBn256Pairing,
+            &Self::Blake2F => ExecutionState::PrecompileBlake2f,
+        }
+    }
+
+    pub fn base_gas_cost(&self) -> GasCost {
+        match self {
+            Self::ECRecover => GasCost::PRECOMPILE_EC_RECOVER_BASE,
+            Self::Sha256 => GasCost::PRECOMPILE_SHA256_BASE,
+            Self::Ripemd160 => GasCost::PRECOMPILE_RIPEMD160_BASE,
+            Self::Identity => GasCost::PRECOMPILE_IDENTITY_BASE,
+            Self::Modexp => GasCost::PRECOMPILE_MODEXP,
+            Self::Bn128Add => GasCost::PRECOMPILE_BN256ADD,
+            Self::Bn128Mul => GasCost::PRECOMPILE_BN256MUL,
+            Self::Bn128Pairing => GasCost::PRECOMPILE_BN256PAIRING,
+            Self::Blake2F => GasCost::PRECOMPILE_BLAKE2F,
+        }
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
@@ -108,6 +167,16 @@ pub enum ExecutionState {
     ErrorOutOfGasSloadSstore,
     ErrorOutOfGasCREATE2,
     ErrorOutOfGasSELFDESTRUCT,
+    // Precompiles
+    PrecompileEcRecover,
+    PrecompileSha256,
+    PrecompileRipemd160,
+    PrecompileIdentity,
+    PrecompileBigModExp,
+    PrecompileBn256Add,
+    PrecompileBn256ScalarMul,
+    PrecompileBn256Pairing,
+    PrecompileBlake2f,
 }
 
 impl Default for ExecutionState {

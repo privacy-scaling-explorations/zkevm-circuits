@@ -93,6 +93,7 @@ mod opcode_not;
 mod origin;
 mod pc;
 mod pop;
+mod precompiles;
 mod push;
 mod return_revert;
 mod returndatacopy;
@@ -163,6 +164,7 @@ use opcode_not::NotGadget;
 use origin::OriginGadget;
 use pc::PcGadget;
 use pop::PopGadget;
+use precompiles::IdentityGadget;
 use push::PushGadget;
 use return_revert::ReturnRevertGadget;
 use returndatacopy::ReturnDataCopyGadget;
@@ -310,6 +312,8 @@ pub(crate) struct ExecutionConfig<F> {
     error_invalid_creation_code:
         Box<DummyGadget<F, 0, 0, { ExecutionState::ErrorInvalidCreationCode }>>,
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
+    // precompile calls
+    precompile_identity_gadget: Box<IdentityGadget<F>>,
 }
 
 impl<F: Field> ExecutionConfig<F> {
@@ -571,6 +575,8 @@ impl<F: Field> ExecutionConfig<F> {
             error_contract_address_collision: configure_gadget!(),
             error_invalid_creation_code: configure_gadget!(),
             error_return_data_out_of_bound: configure_gadget!(),
+            // precompile calls
+            precompile_identity_gadget: configure_gadget!(),
             // step and presets
             step: step_curr,
             height_map,
@@ -1302,6 +1308,10 @@ impl<F: Field> ExecutionConfig<F> {
             }
             ExecutionState::ErrorReturnDataOutOfBound => {
                 assign_exec_step!(self.error_return_data_out_of_bound)
+            }
+            // precompile calls
+            ExecutionState::PrecompileIdentity => {
+                assign_exec_step!(self.precompile_identity_gadget)
             }
 
             _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", step.execution_state),

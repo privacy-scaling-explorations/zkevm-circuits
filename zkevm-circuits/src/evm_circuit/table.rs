@@ -10,6 +10,8 @@ use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+use super::step::Precompiles;
+
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
     Zero = 0,
@@ -28,6 +30,7 @@ pub enum FixedTableTag {
     ResponsibleOpcode,
     Pow2,
     ConstantGasCost,
+    PrecompileInfo,
 }
 impl_expr!(FixedTableTag);
 
@@ -117,6 +120,14 @@ impl FixedTableTag {
                         ]
                     }),
             ),
+            Self::PrecompileInfo => Box::new(Precompiles::iter().map(move |precompile| {
+                [
+                    tag,
+                    F::from(precompile.execution_state().as_u64()),
+                    F::from(u64::from(precompile)),
+                    F::from(precompile.base_gas_cost().0),
+                ]
+            })),
         }
     }
 }
