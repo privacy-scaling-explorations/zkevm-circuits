@@ -71,6 +71,7 @@ pub struct BytecodeCircuitConfig<F> {
     q_first: Column<Fixed>,
     q_last: Column<Fixed>,
     bytecode_table: BytecodeTable,
+    push_data_left: Column<Advice>,
     value_rlc: Column<Advice>,
     length: Column<Advice>,
     push_data_size: Column<Advice>,
@@ -461,6 +462,7 @@ impl<F: Field> SubCircuitConfig<F> for BytecodeCircuitConfig<F> {
             q_first,
             q_last,
             bytecode_table,
+            push_data_left,
             value_rlc,
             length,
             push_data_size,
@@ -703,6 +705,11 @@ impl<F: Field> BytecodeCircuitConfig<F> {
             ("index", self.bytecode_table.index, row.index),
             ("is_code", self.bytecode_table.is_code, row.is_code),
             ("value", self.bytecode_table.value, row.value),
+            (
+                "push_data_left",
+                self.push_data_left,
+                F::from(row.push_data_left),
+            ),
             ("length", self.length, row.length),
             ("push_data_size", self.push_data_size, row.push_data_size),
         ] {
