@@ -547,7 +547,7 @@ impl<F: FieldExt, const N: usize> WordCells<F, N> for WordLimbs<Cell<F>, N> {
         offset: usize,
         bytes: Option<[u8; N1]>,
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
-        assert_eq!(N1 % N, 0); // assure N|N1
+        assert_eq!(N1 % N, 0); // TODO assure N|N1, find way to use static_assertion instead
         bytes.map_or(Err(Error::Synthesis), |bytes| {
             bytes
                 .chunks(N1 / N) // chunk in little endian
@@ -625,6 +625,7 @@ impl<F: FieldExt> Word<Expression<F>> {
 }
 
 pub(crate) trait ToWordExpr<F: FieldExt, const N2: usize> {
+    const CHECK: ();
     fn to_word(&self) -> Word<Expression<F>>;
 
     fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2>;
@@ -635,9 +636,11 @@ pub(crate) trait ToWordExpr<F: FieldExt, const N2: usize> {
 impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
     for WordLimbs<Expression<F>, N1>
 {
+    // TODO here applied wordaround https://github.com/nvzqz/static-assertions-rs/issues/40, check work as expected or not
+    const CHECK: () = assert!(N1 % N2 == 0);
+
     fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2> {
-        // TODO assure static assertion
-        assert!(N1 % N2 == 0); // N2 | N1
+        let _ = Self::CHECK; // this is necessary for CHECK to evaluate at comp time
         let limbs = self
             .limbs
             .chunks(N1 / N2)
@@ -653,7 +656,7 @@ impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
     }
 
     fn is_eq(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
-        assert!(N1 % N2 == 0); // N2 | N1
+        let _ = Self::CHECK; // this is necessary for CHECK to evaluate at comp time
         not::expr(or::expr(
             self.limbs
                 .chunks(N1 / N2)

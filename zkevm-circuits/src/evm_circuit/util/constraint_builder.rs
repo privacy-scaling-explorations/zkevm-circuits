@@ -410,7 +410,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         &mut self,
         word_constrians: WordLimbs<Cell<F>, N2>,
     ) -> Word<Cell<F>> {
-        let new_word = self.query_word_private();
+        let new_word = self._query_word();
         self.require_equal(
             "wordlimb equality",
             word_constrians.expr().is_eq(&new_word.expr()),
@@ -419,7 +419,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         new_word
     }
 
-    fn query_word_private<const N: usize, const N2: usize>(&mut self) -> Word<Cell<F>> {
+    fn _query_word<const N: usize, const N2: usize>(&mut self) -> Word<Cell<F>> {
         Word::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -431,7 +431,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         &mut self,
         word_constrians: WordLimbs<Cell<F>, N2>,
     ) -> Word4<Cell<F>> {
-        let new_word = self.query_word4_private();
+        let new_word = self._query_word4();
         self.require_equal(
             "wordlimb equality",
             word_constrians.expr().is_eq(&new_word.expr()),
@@ -440,7 +440,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         new_word
     }
 
-    fn query_word4_private<const N: usize, const N2: usize>(&mut self) -> Word4<Cell<F>> {
+    fn _query_word4<const N: usize, const N2: usize>(&mut self) -> Word4<Cell<F>> {
         Word4::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -692,7 +692,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
     ) -> Word<Cell<F>> {
-        let word = self.query_word_private();
+        let word = self._query_word();
         self.tx_context_lookup(id, field_tag, index, word.expr().to_word());
         word
     }
@@ -1091,7 +1091,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
-        let word = self.query_word_private();
+        let word = self._query_word();
         self.call_context_lookup(false.expr(), call_id, field_tag, word.expr().to_word());
         word
     }

@@ -43,30 +43,27 @@ impl<F: Field> IsEqualWordGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs_lo: F,
-        lhs_hi: F,
-        rhs_lo: F,
-        rhs_hi: F,
+        lhs: Word<F>,
+        rhs: Word<F>,
     ) -> Result<F, Error> {
-        self.is_zero_lo.assign(region, offset, rhs_lo - lhs_lo)?;
-        self.is_zero_hi.assign(region, offset, rhs_hi - lhs_hi)?;
-        Ok(F::one())
+        let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
+        let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
+        self.is_zero_lo.assign(region, offset, *rhs_lo - *lhs_lo)?;
+        self.is_zero_hi.assign(region, offset, *rhs_hi - *lhs_hi)?;
+        Ok(F::from(2))
     }
 
     pub(crate) fn assign_value(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs_lo: Value<F>,
-        lhs_hi: Value<F>,
-        rhs_lo: Value<F>,
-        rhs_hi: Value<F>,
+        lhs: Value<Word<F>>,
+        rhs: Value<Word<F>>,
     ) -> Result<Value<F>, Error> {
-        let lo = lhs_lo.zip(rhs_lo);
-        let hi = lhs_hi.zip(rhs_hi);
-        transpose_val_ret(lo.zip(hi).map(|((lhs_lo, rhs_lo), (lhs_hi, rhs_hi))| {
-            self.assign(region, offset, lhs_lo, lhs_hi, rhs_lo, rhs_hi)
-        }))
+        transpose_val_ret(
+            lhs.zip(rhs)
+                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
+        )
     }
 }
 

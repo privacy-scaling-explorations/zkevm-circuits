@@ -332,8 +332,6 @@ impl<F: Field> Lookup<F> {
                     values.address.clone(),
                     values.field_tag.clone(),
                     values.storage_key.clone(),
-                    values.aux1.clone(),
-                    values.aux2.clone(),
                 ],
                 values.value.limbs.to_vec().clone(),
                 values.value_prev.limbs.to_vec().clone(),

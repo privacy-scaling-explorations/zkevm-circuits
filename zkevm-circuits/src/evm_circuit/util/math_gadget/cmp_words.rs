@@ -80,7 +80,7 @@ impl<F: Field> CmpWordsGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Word2};
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -102,6 +102,7 @@ mod tests {
             let b = cb.query_word32();
             let a_word = cb.query_word(a);
             let b_word = cb.query_word(b);
+            let d = cb.query_word4(Word2::new(a_word.limbs));
 
             let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a_word, &b_word);
             cb.require_equal(
