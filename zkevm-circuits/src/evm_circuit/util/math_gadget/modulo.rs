@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::util::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes,
         math_gadget::*,
         CachedRegion,
     },
@@ -86,18 +85,10 @@ impl<F: Field> ModGadget<F> {
             .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
         let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
-        self.n_is_zero.assign(
-            region,
-            offset,
-            from_bytes::value(&n_sum.to_le_bytes()[..16]),
-            from_bytes::value(&n_sum.to_le_bytes()[16..]),
-        )?;
-        self.a_or_is_zero.assign(
-            region,
-            offset,
-            from_bytes::value(&a_or_zero.to_le_bytes()[..16]),
-            from_bytes::value(&a_or_zero.to_le_bytes()[16..]),
-        )?;
+        self.n_is_zero
+            .assign(region, offset, word::Word::from_u64(n_sum))?;
+        self.a_or_is_zero
+            .assign(region, offset, word::Word::from_u256(a_or_zero))?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;

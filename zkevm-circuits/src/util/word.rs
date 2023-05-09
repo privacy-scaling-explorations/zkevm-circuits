@@ -109,17 +109,37 @@ impl<T> std::ops::Deref for Word<T> {
 }
 
 impl<F: FieldExt> Word<F> {
-    pub fn from_u256(u256: eth_types::Word) -> Word<F> {
-        let bytes = u256.to_le_bytes();
+    pub fn from_u256(value: eth_types::Word) -> Word<F> {
+        let bytes = value.to_le_bytes();
         Word::new([
             from_bytes::value(&bytes[..16]),
             from_bytes::value(&bytes[16..]),
         ])
     }
+
+    pub fn from_u64(value: u64) -> Word<F> {
+        let bytes = value.to_le_bytes();
+        Word::new([from_bytes::value(&bytes), F::zero()])
+    }
+}
+
+impl<F: FieldExt> Word<Cell<F>> {
+    pub fn assign_lo(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        Ok(vec![
+            self.limbs[0].assign(region, offset, value)?,
+            self.limbs[1].assign(region, offset, Value::known(F::zero()))?,
+        ])
+    }
 }
 
 impl<F: FieldExt> Word<Expression<F>> {
-    pub fn from_lo(lo: Expression<F>) -> Self {
+    // create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
+    pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
     }
 
@@ -148,6 +168,10 @@ impl<F: FieldExt> Word<Expression<F>> {
 }
 
 impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
+    /// to_wordlimbs will aggregate nested expressions, which implies during expression evaluation
+    /// it need more recursive call. if the converted limbs word will be used in many place,
+    /// consider create new low limbs word, have equality constrain, then finally use low limbs
+    /// elsewhere.
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
     pub fn to_wordlimbs<const N2: usize>(&self) -> WordLimbs<Expression<F>, N2> {
         assert_eq!(N1 % N2, 0);

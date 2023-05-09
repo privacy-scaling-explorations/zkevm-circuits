@@ -446,7 +446,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    // each limb is 8 bits, and any conversion to smaller limbs inherits the type check.
+    // query_word32 each limb is 8 bits, and any conversion to smaller limbs inherits the type
+    // check.
     pub(crate) fn query_word32(&mut self) -> Word32Cell<F> {
         Word32::new(self.query_bytes())
     }
@@ -672,7 +673,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Cell<F> {
         let cell = self.query_cell();
-        self.tx_context_lookup(id, field_tag, index, Word::from_lo(cell.expr()));
+        self.tx_context_lookup(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
         cell
     }
 
@@ -1072,7 +1073,12 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             _ => CellType::StoragePhase1,
         };
         let cell = self.query_cell_with_type(phase);
-        self.call_context_lookup(false.expr(), call_id, field_tag, Word::from_lo(cell.expr()));
+        self.call_context_lookup(
+            false.expr(),
+            call_id,
+            field_tag,
+            Word::from_lo_unchecked(cell.expr()),
+        );
         cell
     }
 
@@ -1125,7 +1131,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 is_write.expr(),
                 call_id.clone(),
                 field_tag,
-                Word::from_lo(cell.expr()),
+                Word::from_lo_unchecked(cell.expr()),
             );
             cell
         });
@@ -1208,7 +1214,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 memory_address,
                 0.expr(),
                 0.expr(),
-                Word::from_lo(byte),
+                Word::from_lo_unchecked(byte),
                 Word::zero(),
                 0.expr(),
                 0.expr(),
@@ -1233,8 +1239,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
                 0.expr(),
-                Word::from_lo(value),
-                Word::from_lo(0.expr()),
+                Word::from_lo_unchecked(value),
+                Word::from_lo_unchecked(0.expr()),
                 0.expr(),
                 0.expr(),
             ),
@@ -1259,8 +1265,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 tag.expr(),
                 0.expr(),
-                Word::from_lo(value),
-                Word::from_lo(0.expr()),
+                Word::from_lo_unchecked(value),
+                Word::from_lo_unchecked(0.expr()),
                 0.expr(),
                 0.expr(),
             ),
@@ -1280,8 +1286,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 address: 0.expr(),
                 field_tag: 0.expr(),
                 storage_key: 0.expr(),
-                value: Word::from_lo(0.expr()),
-                value_prev: Word::from_lo(0.expr()),
+                value: Word::from_lo_unchecked(0.expr()),
+                value_prev: Word::from_lo_unchecked(0.expr()),
                 aux1: 0.expr(),
                 aux2: 0.expr(),
             },
