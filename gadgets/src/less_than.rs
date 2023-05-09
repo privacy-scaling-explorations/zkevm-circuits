@@ -13,20 +13,12 @@ use super::{
 };
 
 use chiquito::{
-    ast::expr::*,
-    backend::halo2::{chiquito2Halo2, ChiquitoHalo2}, /* compiles to Chiquito Halo2 backend,
-                                                      * which can be integrated into Halo2
-                                                      * circuit */
+    ast::{query::Queriable, Expr, ToExpr, ToField},
+    backend::halo2::{chiquito2Halo2, ChiquitoHalo2},
     compiler::{
-        cell_manager::SingleRowCellManager, // input for constructing the compiler
-        step_selector::SimpleStepSelectorBuilder, // input for constructing the compiler
-        Compiler,                           // compiles AST to IR
+        cell_manager::SingleRowCellManager, step_selector::SimpleStepSelectorBuilder, Compiler,
     },
-    dsl::{
-        cb::*,   // functions for constraint building
-        circuit, // main function for constructing an AST circuit
-    },
-    ir::Circuit, // IR object that the compiler compiles to
+    dsl::{cb::*, circuit},
 };
 
 /// Instruction that the Lt chip needs to implement.
@@ -42,6 +34,59 @@ pub trait LtInstruction<F: Field> {
 
     /// Load the u8 lookup table.
     fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
+}
+
+// chiquito
+fn less_than_circuit<F: Field, const N_BYTES: usize>(
+    u8: Column<Fixed>
+) -> Circuit<F: Field, (), (u64, u64, bool)> {
+    let lt_chip = circuit::<F, (u64, u64, bool), (u64, u64, bool), _>("lt", |ctx| {
+        
+        let u8 = ctx.import_halo2_fixed("u8", u8);
+        ctx.fixed_gen(move |ctx| {
+            const RANGE: usize = 256;
+            (0..RANGE).map(|idx| {ctx.assign(idx, u8, F::from(idx as u64))});
+        });
+
+        let range = pow_of_two(N_BYTES * 8);
+        let lt_step = ctx.step_type("lt");
+        ctx.step_type_def(lt_step, |ctx| {
+            let lhs = ctx.internal("lhs");
+            let rhs = ctx.internal("rhs");
+            let lt = ctx.internal("lt");
+            let diff: Vec<Queriable<F>> = (0..N_BYTES).map(|idx| ctx.internal(format!("diff{idx}").as_str())).collect();
+            let q_enable = ctx.internal("q_enable");
+
+            // Multiply all Queriable elements in diff
+            let diff_product = diff.iter().fold(Expr::Const(F::from(1)), |acc, x| acc * *x);
+
+            // Set lhs - rhs + lt * range = product of Queriable
+            ctx.constr(when(q_enable, eq(lhs - rhs + lt * range, diff_product)));
+
+            // bool value for lt
+            ctx.constr(when(q_enable, or(vec![eq(lt, 0u64.expr()), eq(lt, 1u64.expr())])));
+
+            ctx.wg(move |ctx, (lhs_value, rhs_value, q_enable_value)| {
+                ctx.assign(lhs, lhs_value.field());
+                ctx.assign(rhs, rhs_value.field());
+                ctx.assign(q_enable, q_enable_value.field());
+                let lt_value = lhs_value < rhs_value;
+                ctx.assign(lt, lt_value.field());
+                let diff_field = (lhs_value - rhs_value).field() + (if (lt_value) {range} else {0u64.field()});
+                let diff_bytes: [F; 32] = diff_field.to_repr().map(|byte| byte.field());
+                for(idx, diff) in diff.iter().enumerate() {
+                    ctx.assign(*diff, diff_bytes[idx]);
+                }    
+            });
+            
+            // lookup for each of the diff columns to constrain them to 0-255
+            ctx.add_lookup(diff.iter().fold(&mut lookup::<F>(), |acc, x| acc.add(*x, u8)));
+        });
+
+        ctx.trace(move |ctx, (lhs_value, rhs_value, q_enable_value)| {
+            ctx.add(&lt_step, (lhs_value, rhs_value, q_enable_value));
+        });
+    });
 }
 
 /// Config for the Lt chip.

@@ -418,7 +418,7 @@ dependencies = [
  "ethers-core",
  "ethers-providers",
  "gadgets",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "hex",
  "itertools",
  "keccak256",
@@ -515,6 +515,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "chiquito"
+version = "0.1.0"
+source = "git+https://github.com/privacy-scaling-explorations/chiquito?tag=v2023_04_26#3a64e343292d1ec19f77f17d87a891baf186e69c"
+dependencies = [
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_02_02)",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,7 +555,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers-signers",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "itertools",
  "keccak256",
  "mock",
@@ -1451,7 +1459,7 @@ version = "0.1.0"
 dependencies = [
  "ethers-core",
  "ethers-signers",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "hex",
  "itertools",
  "lazy_static",
@@ -2024,9 +2032,10 @@ dependencies = [
 name = "gadgets"
 version = "0.1.0"
 dependencies = [
+ "chiquito",
  "digest 0.7.6",
  "eth-types",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "rand",
  "rand_xorshift",
  "sha3 0.7.3",
@@ -2175,17 +2184,49 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.2.0"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_02_02#0a8646b78286a13d320759b1c585262d6536dce4"
+dependencies = [
+ "blake2b_simd",
+ "ff 0.12.1",
+ "group 0.12.1",
+ "halo2curves 0.3.1",
+ "rand_core",
+ "rayon",
+ "sha3 0.9.1",
+ "tracing",
+]
+
+[[package]]
+name = "halo2_proofs"
+version = "0.2.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20#be955686f86eb618f55d2320c0e042485b313d22"
 dependencies = [
  "blake2b_simd",
  "ff 0.13.0",
  "group 0.13.0",
- "halo2curves",
+ "halo2curves 0.3.2",
  "rand_chacha",
  "rand_core",
  "rayon",
  "sha3 0.9.1",
  "tracing",
+]
+
+[[package]]
+name = "halo2curves"
+version = "0.3.1"
+source = "git+https://github.com/privacy-scaling-explorations/halo2curves.git?tag=0.3.1#9b67e19bca30a35208b0c1b41c1723771e2c9f49"
+dependencies = [
+ "ff 0.12.1",
+ "group 0.12.1",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves 0.4.1",
+ "rand",
+ "rand_core",
+ "static_assertions",
+ "subtle",
 ]
 
 [[package]]
@@ -2211,7 +2252,7 @@ name = "halo2wrong"
 version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/halo2wrong?tag=v2023_04_20#f72db265aa3cebe297c9b9816e940d0e1d400886"
 dependencies = [
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -2552,7 +2593,7 @@ dependencies = [
  "env_logger",
  "eth-types",
  "ethers",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "lazy_static",
  "log",
  "mock",
@@ -3456,7 +3497,7 @@ name = "poseidon"
 version = "0.2.0"
 source = "git+https://github.com/privacy-scaling-explorations/poseidon.git?tag=v2023_04_20#807f8f555313f726ca03bdf941f798098f488ba4"
 dependencies = [
- "halo2curves",
+ "halo2curves 0.3.2",
  "subtle",
 ]
 
@@ -4360,8 +4401,8 @@ version = "0.1.0"
 source = "git+https://github.com/privacy-scaling-explorations/snark-verifier?tag=v2023_04_20#e5d5e4a6ccff2bba71baf77ab7a12b124d6364a1"
 dependencies = [
  "ecc",
- "halo2_proofs 0.2.0",
- "halo2curves",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
+ "halo2curves 0.3.2",
  "hex",
  "itertools",
  "lazy_static",
@@ -4544,7 +4585,7 @@ dependencies = [
  "ethers-signers",
  "external-tracer",
  "glob",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "handlebars",
  "hex",
  "keccak256",
@@ -5282,7 +5323,7 @@ dependencies = [
  "ethers-core",
  "ethers-signers",
  "gadgets",
- "halo2_proofs 0.2.0",
+ "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git?tag=v2023_04_20)",
  "hex",
  "integer",
  "itertools",
