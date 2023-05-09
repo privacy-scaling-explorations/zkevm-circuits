@@ -57,6 +57,8 @@ mod error_return_data_outofbound;
 mod error_simple;
 mod error_write_protection;
 
+mod precompiles;
+
 #[cfg(test)]
 mod memory_expansion_test;
 
@@ -92,6 +94,7 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
+use precompiles::Identity;
 use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;
