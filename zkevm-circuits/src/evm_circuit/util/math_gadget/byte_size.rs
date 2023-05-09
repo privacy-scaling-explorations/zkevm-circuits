@@ -114,7 +114,7 @@ impl<F: Field> ByteSizeGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
-    use crate::evm_circuit::util::{self, WordCells};
+    use crate::evm_circuit::util::{self};
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 

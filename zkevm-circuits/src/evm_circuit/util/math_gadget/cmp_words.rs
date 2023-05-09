@@ -1,7 +1,7 @@
 use crate::{
     evm_circuit::util::{
         self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select,
-        CachedRegion, Cell, ToWordExpr, WordCells,
+        CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -23,8 +23,8 @@ impl<F: Field> CmpWordsGadget<F> {
         a: &util::Word<Cell<F>>,
         b: &util::Word<Cell<F>>,
     ) -> Self {
-        let (a_lo, a_hi) = a.expr().to_word().to_lo_hi();
-        let (b_lo, b_hi) = b.expr().to_word().to_lo_hi();
+        let (a_lo, a_hi) = a.to_word().to_lo_hi();
+        let (b_lo, b_hi) = b.to_word().to_lo_hi();
         // `a.lo <= b.lo`
         let comparison_lo = ComparisonGadget::construct(cb, a_lo.clone(), b_lo.clone());
 

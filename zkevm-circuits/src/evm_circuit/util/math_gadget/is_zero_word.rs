@@ -7,7 +7,7 @@ use halo2_proofs::{
 
 use crate::evm_circuit::util::{
     constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    transpose_val_ret, CachedRegion, Cell, CellType, ToWordExpr, Word32, WordCells,
+    transpose_val_ret, CachedRegion, Cell, CellType, Word32,
 };
 
 /// Returns `1` when `word == 0`, and returns `0` otherwise.
@@ -20,7 +20,7 @@ pub struct IsZeroWordGadget<F> {
 
 impl<F: Field> IsZeroWordGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: Word32<Cell<F>>) -> Self {
-        let (word_lo, word_hi) = word.expr().to_word().to_lo_hi();
+        let (word_lo, word_hi) = word.to_word().to_lo_hi();
         let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(word_lo));
         let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(word_hi));
 

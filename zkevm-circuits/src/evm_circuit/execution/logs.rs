@@ -10,7 +10,7 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, ToWordExpr, Word, WordCells,
+            not, sum, CachedRegion, Cell, Word,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -51,8 +51,8 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let msize = cb.query_word32();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.expr().to_word());
-        cb.stack_pop(msize.expr().to_word());
+        cb.stack_pop(mstart.to_word());
+        cb.stack_pop(msize.to_word());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call

@@ -22,10 +22,7 @@ use halo2_proofs::{
     },
 };
 
-use super::{
-    rlc, CachedRegion, CellType, StoredExpression, ToWordExpr, Word16, Word32, Word4, WordCells,
-    WordLimbs,
-};
+use super::{rlc, CachedRegion, CellType, StoredExpression, Word16, Word32, Word4, WordLimbs};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -448,8 +445,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
+    // TODO figure out Word16 for range check
     pub(crate) fn query_word16<const N: usize>(&mut self) -> Word16<Cell<F>> {
-        // TODO figure out Word16 for range check
         Word16::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -693,7 +690,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Word<Cell<F>> {
         let word = self._query_word();
-        self.tx_context_lookup(id, field_tag, index, word.expr().to_word());
+        self.tx_context_lookup(id, field_tag, index, word.to_word());
         word
     }
 
@@ -1092,7 +1089,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
         let word = self._query_word();
-        self.call_context_lookup(false.expr(), call_id, field_tag, word.expr().to_word());
+        self.call_context_lookup(false.expr(), call_id, field_tag, word.to_word());
         word
     }
 

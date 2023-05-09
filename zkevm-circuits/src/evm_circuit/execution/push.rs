@@ -8,7 +8,7 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            sum, CachedRegion, Cell, ToWordExpr, Word32, WordCells,
+            sum, CachedRegion, Cell, Word32,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -95,7 +95,7 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         );
 
         // Push the value on the stack
-        cb.stack_push(value.expr().to_word());
+        cb.stack_push(value.to_word());
 
         // State transition
         // `program_counter` needs to be increased by number of bytes pushed + 1

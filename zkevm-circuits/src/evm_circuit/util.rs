@@ -529,19 +529,8 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
-pub(crate) trait WordCells<F: FieldExt, const N: usize> {
-    fn assign<const N1: usize>(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        bytes: Option<[u8; N1]>,
-    ) -> Result<Vec<AssignedCell<F, F>>, Error>;
-
-    fn expr(&self) -> WordLimbs<Expression<F>, N>;
-}
-
-impl<F: FieldExt, const N: usize> WordCells<F, N> for WordLimbs<Cell<F>, N> {
-    fn assign<const N1: usize>(
+impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
+    pub fn assign<const N1: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
@@ -558,8 +547,12 @@ impl<F: FieldExt, const N: usize> WordCells<F, N> for WordLimbs<Cell<F>, N> {
         })
     }
 
-    fn expr(&self) -> WordLimbs<Expression<F>, N> {
+    pub fn expr(&self) -> WordLimbs<Expression<F>, N> {
         return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
+    }
+
+    pub fn to_word(&self) -> Word<Expression<F>> {
+        Word(self.expr().to_wordlimbs())
     }
 }
 
@@ -624,23 +617,10 @@ impl<F: FieldExt> Word<Expression<F>> {
     }
 }
 
-pub(crate) trait ToWordExpr<F: FieldExt, const N2: usize> {
-    const CHECK: ();
-    fn to_word(&self) -> Word<Expression<F>>;
-
-    fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2>;
-
-    fn is_eq(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F>;
-}
-
-impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
-    for WordLimbs<Expression<F>, N1>
-{
-    // TODO here applied wordaround https://github.com/nvzqz/static-assertions-rs/issues/40, check work as expected or not
-    const CHECK: () = assert!(N1 % N2 == 0);
-
-    fn to_wordlimbs(&self) -> WordLimbs<Expression<F>, N2> {
-        let _ = Self::CHECK; // this is necessary for CHECK to evaluate at comp time
+impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
+    // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
+    pub fn to_wordlimbs<const N2: usize>(&self) -> WordLimbs<Expression<F>, N2> {
+        assert_eq!(N1 % N2, 0);
         let limbs = self
             .limbs
             .chunks(N1 / N2)
@@ -651,12 +631,13 @@ impl<F: FieldExt, const N1: usize, const N2: usize> ToWordExpr<F, N2>
         WordLimbs::<Expression<F>, N2>::new(limbs)
     }
 
-    fn to_word(&self) -> Word<Expression<F>> {
+    pub fn to_word(&self) -> Word<Expression<F>> {
         Word(self.to_wordlimbs())
     }
 
-    fn is_eq(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
-        let _ = Self::CHECK; // this is necessary for CHECK to evaluate at comp time
+    // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
+    pub fn is_eq<const N2: usize>(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
+        assert_eq!(N1 % N2, 0);
         not::expr(or::expr(
             self.limbs
                 .chunks(N1 / N2)

@@ -1,6 +1,5 @@
 use crate::evm_circuit::util::{
     self, constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion, Cell,
-    ToWordExpr, WordCells,
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -19,8 +18,8 @@ impl<F: Field> LtWordGadget<F> {
         lhs: &util::Word32<Cell<F>>,
         rhs: &util::Word32<Cell<F>>,
     ) -> Self {
-        let lhs_expr = lhs.expr().to_word();
-        let rhs_expr = rhs.expr().to_word();
+        let lhs_expr = lhs.to_word();
+        let rhs_expr = rhs.to_word();
         let comparison_hi =
             ComparisonGadget::construct(cb, lhs_expr.lo().clone(), rhs_expr.lo().clone());
         let lt_lo = LtGadget::construct(cb, lhs_expr.hi().clone(), rhs_expr.hi().clone());

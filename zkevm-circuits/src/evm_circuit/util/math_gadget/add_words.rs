@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        pow_of_two_expr, split_u256, sum, CachedRegion, Cell, ToWordExpr, WordCells,
+        pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -36,14 +36,14 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 
         let addends_lo = &addends
             .iter()
-            .map(|addend| addend.expr().to_word().lo().clone())
+            .map(|addend| addend.to_word().lo().clone())
             .collect::<Vec<_>>();
         let addends_hi = addends
             .iter()
-            .map(|addend| addend.expr().to_word().hi().clone())
+            .map(|addend| addend.to_word().hi().clone())
             .collect::<Vec<_>>();
-        let sum_lo = sum.expr().to_word().lo().clone();
-        let sum_hi = sum.expr().to_word().hi().clone();
+        let sum_lo = sum.to_word().lo().clone();
+        let sum_hi = sum.to_word().hi().clone();
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",

@@ -3,7 +3,7 @@ use crate::{
         self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        CachedRegion, Cell, ToWordExpr, WordCells,
+        CachedRegion, Cell,
     },
     util::Expr,
 };
@@ -31,8 +31,8 @@ impl<F: Field> AbsWordGadget<F> {
         let x = cb.query_word32();
         let x_abs = cb.query_word32();
         let sum = cb.query_word32();
-        let (x_lo, x_hi) = x.expr().to_word().to_lo_hi();
-        let (x_abs_lo, x_abs_hi) = x_abs.expr().to_word().to_lo_hi();
+        let (x_lo, x_hi) = x.to_word().to_lo_hi();
+        let (x_abs_lo, x_abs_hi) = x_abs.to_word().to_lo_hi();
         let is_neg = LtGadget::construct(cb, 127.expr(), x.limbs[31].expr());
 
         cb.add_constraint(
