@@ -89,7 +89,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         cb.require_equal(
             "check a_reduced + b 512 bit carry if n != 0",
-            sum_areduced_b_overflow.word_expr(),
+            sum_areduced_b_overflow.expr(),
             sum_areduced_b.carry().clone().unwrap().expr() * not::expr(n_is_zero.expr()),
         );
 
@@ -104,10 +104,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // pop/push values
         // take care that if n==0 pushed value for r should be zero also
-        cb.stack_pop(a.word_expr());
+        cb.stack_pop(a.expr());
         cb.stack_pop(b.expr());
         cb.stack_pop(n.expr());
-        cb.stack_push(r.word_expr() * not::expr(n_is_zero.expr()));
+        cb.stack_push(r.expr() * not::expr(n_is_zero.expr()));
 
         // State transition
         let step_state_transition = StepStateTransition {

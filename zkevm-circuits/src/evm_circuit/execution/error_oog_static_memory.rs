@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGStaticMemoryGadget<F> {
 
         // Pop the address from the stack
         // We still have to do this to verify the correctness of `address`
-        cb.stack_pop(address.word_expr());
+        cb.stack_pop(address.expr());
 
         // TODO: Use ContextSwitchGadget to switch call context to caller's and
         // consume all gas_left.

@@ -69,12 +69,12 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         // The second pop is multiplicand for MUL and divisor for DIV/MOD
         // The push is product for MUL, quotient for DIV, and residue for MOD
         // Note that for DIV/MOD, when divisor == 0, the push value is also 0.
-        cb.stack_pop(select::expr(is_mul.clone(), a.word_expr(), d.word_expr()));
-        cb.stack_pop(b.word_expr());
+        cb.stack_pop(select::expr(is_mul.clone(), a.expr(), d.expr()));
+        cb.stack_pop(b.expr());
         cb.stack_push(
-            is_mul.clone() * d.word_expr()
-                + is_div * a.word_expr() * (1.expr() - divisor_is_zero.expr())
-                + is_mod * c.word_expr() * (1.expr() - divisor_is_zero.expr()),
+            is_mul.clone() * d.expr()
+                + is_div * a.expr() * (1.expr() - divisor_is_zero.expr())
+                + is_mod * c.expr() * (1.expr() - divisor_is_zero.expr()),
         );
 
         // Constraint for MUL case

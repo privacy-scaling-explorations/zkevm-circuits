@@ -3,18 +3,14 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            self,
             common_gadget::SameContextGadget,
-            constraint_builder::{
-                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
-                Transition::Delta,
-            },
+            constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{IsZeroGadget, LtWordGadget, ModGadget, MulAddWords512Gadget},
             sum, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::Word32Cell, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, U256};
@@ -27,11 +23,11 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct MulModGadget<F> {
     same_context: SameContextGadget<F>,
     // a, b, n, r
-    pub words: [util::Word<F>; 4],
-    k: util::Word<F>,
-    a_reduced: util::Word<F>,
-    d: util::Word<F>,
-    e: util::Word<F>,
+    pub words: [Word32Cell<F>; 4],
+    k: Word32Cell<F>,
+    a_reduced: Word32Cell<F>,
+    d: Word32Cell<F>,
+    e: Word32Cell<F>,
     modword: ModGadget<F>,
     mul512_left: MulAddWords512Gadget<F>,
     mul512_right: MulAddWords512Gadget<F>,
@@ -75,10 +71,10 @@ impl<F: Field> ExecutionGadget<F> for MulModGadget<F> {
             1.expr() - lt.expr() - n_is_zero.expr(),
         );
 
-        cb.stack_pop(a.word_expr());
-        cb.stack_pop(b.word_expr());
-        cb.stack_pop(n.word_expr());
-        cb.stack_push(r.word_expr());
+        cb.stack_pop(a.expr());
+        cb.stack_pop(b.expr());
+        cb.stack_pop(n.expr());
+        cb.stack_push(r.expr());
 
         // State transition
         let step_state_transition = StepStateTransition {

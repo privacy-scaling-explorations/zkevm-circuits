@@ -15,12 +15,12 @@ use crate::{
                 ContractCreateGadget, IsEqualGadget, IsZeroGadget, MulWordByU64Gadget,
                 RangeCheckGadget,
             },
-            not, or, select, CachedRegion, Cell, StepRws, Word,
+            not, or, select, CachedRegion, Cell, StepRws,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag, TxFieldTag as TxContextFieldTag},
-    util::Expr,
+    util::{word::Word32Cell, Expr},
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
 use ethers_core::utils::{get_contract_address, keccak256};
@@ -32,14 +32,14 @@ pub(crate) struct BeginTxGadget<F> {
     tx_id: Cell<F>,
     tx_nonce: Cell<F>,
     tx_gas: Cell<F>,
-    tx_gas_price: Word<F>,
+    tx_gas_price: Word32Cell<F>,
     mul_gas_fee_by_gas: MulWordByU64Gadget<F>,
     tx_caller_address: Cell<F>,
     tx_caller_address_is_zero: IsZeroGadget<F>,
     tx_callee_address: Cell<F>,
     call_callee_address: Cell<F>,
     tx_is_create: Cell<F>,
-    tx_value: Word<F>,
+    tx_value: Word32Cell<F>,
     tx_call_data_length: Cell<F>,
     tx_call_data_gas_cost: Cell<F>,
     reversion_info: ReversionInfo<F>,
@@ -67,14 +67,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::TxId,
-            Word::from_lo(tx_id.expr()),
+            tx_id.expr(),
         ); // rwc_delta += 1
         let mut reversion_info = cb.reversion_info_write(None); // rwc_delta += 2
         cb.call_context_lookup(
             1.expr(),
             Some(call_id.expr()),
             CallContextFieldTag::IsSuccess,
-            Word::from_lo(reversion_info.is_persistent()),
+            reversion_info.is_persistent(),
         ); // rwc_delta += 1
 
         let [tx_nonce, tx_gas, tx_caller_address, tx_callee_address, tx_is_create, tx_call_data_length, tx_call_data_gas_cost] =
@@ -240,7 +240,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     CallContextFieldTag::CallDataLength,
                     tx_call_data_length.expr(),
                 ),
-                (CallContextFieldTag::Value, tx_value.word_expr()),
+                (CallContextFieldTag::Value, tx_value.expr()),
                 (CallContextFieldTag::IsStatic, 0.expr()),
                 (CallContextFieldTag::LastCalleeId, 0.expr()),
                 (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
@@ -343,7 +343,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                         CallContextFieldTag::CallDataLength,
                         tx_call_data_length.expr(),
                     ),
-                    (CallContextFieldTag::Value, tx_value.word_expr()),
+                    (CallContextFieldTag::Value, tx_value.expr()),
                     (CallContextFieldTag::IsStatic, 0.expr()),
                     (CallContextFieldTag::LastCalleeId, 0.expr()),
                     (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
