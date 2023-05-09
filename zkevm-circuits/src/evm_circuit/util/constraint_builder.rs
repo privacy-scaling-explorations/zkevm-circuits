@@ -436,7 +436,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    // TODO figure out Word16 for range check
+    // each limb is 16 bits, and any conversion to smaller limbs inherits the type check.
+    // TODO implement 16bits range check
     pub(crate) fn query_word16<const N: usize>(&mut self) -> Word16<Cell<F>> {
         Word16::new(
             self.query_cells(CellType::StoragePhase1, N)
@@ -445,6 +446,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
+    // each limb is 8 bits, and any conversion to smaller limbs inherits the type check.
     pub(crate) fn query_word32(&mut self) -> Word32Cell<F> {
         Word32::new(self.query_bytes())
     }
