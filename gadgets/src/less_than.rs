@@ -39,9 +39,12 @@ pub trait LtInstruction<F: Field> {
 // chiquito
 fn less_than_circuit<F: Field, const N_BYTES: usize>(
     u8: Column<Fixed>
-) -> Circuit<F: Field, (), (u64, u64, bool)> {
-    let lt_chip = circuit::<F, (u64, u64, bool), (u64, u64, bool), _>("lt", |ctx| {
+) -> Circuit<(u64, u64, bool), (u64, u64, bool), F: Field> {
+    let lt_chip = circuit::<(u64, u64, bool), (u64, u64, bool), F: Field>("lt", |ctx| {
         
+        // Column<Fixed> of u8 (input) is different from the required Column<Fixed> of import_halo2_fixed
+        // because Chiquito is using a different halo2_proof version
+        // TODO: update the halo2_proof dependency of Chiquito
         let u8 = ctx.import_halo2_fixed("u8", u8);
         ctx.fixed_gen(move |ctx| {
             const RANGE: usize = 256;
@@ -87,6 +90,10 @@ fn less_than_circuit<F: Field, const N_BYTES: usize>(
             ctx.add(&lt_step, (lhs_value, rhs_value, q_enable_value));
         });
     });
+
+    let compiler = Compiler::new(SingleRowCellManager {}, SimpleStepSelectorBuilder {});
+    compiler.compile(&lt_chip)
+
 }
 
 /// Config for the Lt chip.
