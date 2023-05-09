@@ -125,11 +125,10 @@ pub(crate) enum CellType_<T: TableType> {
 pub trait TableType: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub enum DefaultTableType {
+pub enum SingleTable {
     Default,
 }
-
-impl TableType for DefaultTableType {}
+impl TableType for SingleTable {}
 /// Example
 
 // use super::table::{TestTableType, MptTable, BytecodeTable};

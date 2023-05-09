@@ -6,7 +6,7 @@ use halo2_proofs::{
 };
 
 
-use super::{cell_manager::{TableType, DefaultTableType}};
+use super::{cell_manager::{TableType, SingleTable}};
 
 /// Trait used to define lookup tables
 pub trait LookupTable<F: Field, T: TableType> {
@@ -57,10 +57,10 @@ pub trait LookupTable<F: Field, T: TableType> {
 }
 
 
-impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F, DefaultTableType> for [C; W] {
+impl<F: Field, C: Into<Column<Any>> + Copy, const W: usize> LookupTable<F, SingleTable> for [C; W] {
 
-    fn get_type(&self) -> DefaultTableType {
-        DefaultTableType::Default
+    fn get_type(&self) -> SingleTable {
+        SingleTable::Default
     }
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
