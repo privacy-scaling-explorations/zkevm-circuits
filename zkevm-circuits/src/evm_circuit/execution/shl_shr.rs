@@ -77,9 +77,9 @@ impl<F: Field> ExecutionGadget<F> for ShlShrGadget<F> {
         // - for SHL, two pops are shift and quotient, and push is dividend.
         // - for SHR, two pops are shift and dividend, and push is quotient.
         cb.stack_pop(shift.expr());
-        cb.stack_pop(is_shl.expr() * quotient.expr() + is_shr.expr() * dividend.expr());
+        cb.stack_pop(is_shl.expr() * quotient.word_expr() + is_shr.expr() * dividend.word_expr());
         cb.stack_push(
-            (is_shl.expr() * dividend.expr() + is_shr.expr() * quotient.expr())
+            (is_shl.expr() * dividend.word_expr() + is_shr.expr() * quotient.word_expr())
                 * (1.expr() - divisor_is_zero.expr()),
         );
 

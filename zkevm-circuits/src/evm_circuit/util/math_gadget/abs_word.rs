@@ -48,7 +48,7 @@ impl<F: Field> AbsWordGadget<F> {
         let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
         cb.add_constraint(
             "sum == 0 when x < 0",
-            is_neg.expr() * sum::expr(add_words.sum().expr().limbs),
+            is_neg.expr() * sum::expr(add_words.sum().word_expr().limbs),
         );
         cb.add_constraint(
             "carry_hi == 1 when x < 0",

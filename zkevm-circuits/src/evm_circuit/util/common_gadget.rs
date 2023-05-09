@@ -285,9 +285,9 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         let balance_sum = cb.query_word32();
 
         let [value, value_prev] = if INCREASE {
-            [balance_sum.expr(), balance_addend.expr()]
+            [balance_sum.word_expr(), balance_addend.word_expr()]
         } else {
-            [balance_addend.expr(), balance_sum.expr()]
+            [balance_addend.word_expr(), balance_sum.word_expr()]
         };
 
         let add_words = AddWordsGadget::construct(

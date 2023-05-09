@@ -67,12 +67,12 @@ impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
         })
     }
 
-    pub fn expr(&self) -> WordLimbs<Expression<F>, N> {
+    pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
         return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
     }
 
     pub fn to_word(&self) -> Word<Expression<F>> {
-        Word(self.expr().to_wordlimbs())
+        Word(self.word_expr().to_wordlimbs())
     }
 }
 

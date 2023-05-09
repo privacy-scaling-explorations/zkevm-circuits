@@ -339,7 +339,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                         CallContextFieldTag::Value,
                         select::expr(
                             is_delegatecall.expr(),
-                            current_value.expr(),
+                            current_value.word_expr(),
                             call_gadget.value.expr(),
                         ),
                     ),

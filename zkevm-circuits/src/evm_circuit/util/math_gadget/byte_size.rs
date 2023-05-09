@@ -128,7 +128,8 @@ mod tests {
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let value_word32 = cb.query_word32();
-            let bytesize_gadget = ByteSizeGadget::<F>::construct(cb, value_word32.expr().limbs);
+            let bytesize_gadget =
+                ByteSizeGadget::<F>::construct(cb, value_word32.word_expr().limbs);
             cb.require_equal(
                 "byte size gadget must equal N",
                 bytesize_gadget.byte_size(),

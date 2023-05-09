@@ -61,8 +61,8 @@ impl<F: Field> MulAddWordsGadget<F> {
 
         let mut a_limbs = vec![];
         let mut b_limbs = vec![];
-        let word4_a: Word4<Expression<F>> = a.expr().to_wordlimbs();
-        let word4_b: Word4<Expression<F>> = b.expr().to_wordlimbs();
+        let word4_a: Word4<Expression<F>> = a.word_expr().to_wordlimbs();
+        let word4_b: Word4<Expression<F>> = b.word_expr().to_wordlimbs();
         for i in 0..4 {
             a_limbs.push(word4_a.limbs[i].expr());
             b_limbs.push(word4_b.limbs[i].expr());

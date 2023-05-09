@@ -52,12 +52,12 @@ impl<F: Field> ExecutionGadget<F> for SignedDivModGadget<F> {
         let remainder_is_zero =
             IsZeroGadget::construct(cb, sum::expr(&remainder_abs_word.x().cells));
 
-        cb.stack_pop(dividend_abs_word.x().expr());
-        cb.stack_pop(divisor_abs_word.x().expr());
+        cb.stack_pop(dividend_abs_word.x().word_expr());
+        cb.stack_pop(divisor_abs_word.x().word_expr());
         cb.stack_push(select::expr(
             is_sdiv,
-            quotient_abs_word.x().expr() * (1.expr() - divisor_is_zero.expr()),
-            remainder_abs_word.x().expr() * (1.expr() - divisor_is_zero.expr()),
+            quotient_abs_word.x().word_expr() * (1.expr() - divisor_is_zero.expr()),
+            remainder_abs_word.x().word_expr() * (1.expr() - divisor_is_zero.expr()),
         ));
 
         // Constrain `|quotient| * |divisor| + |remainder| = |dividend|`.
