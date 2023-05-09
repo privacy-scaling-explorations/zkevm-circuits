@@ -23,6 +23,7 @@ use itertools::Itertools;
 use keccak256::plain::Keccak;
 use std::array;
 use strum_macros::{EnumCount, EnumIter};
+use serde::{Serialize, Deserialize};
 
 /// Trait used for dynamic tables.  Used to get an automatic implementation of
 /// the LookupTable trait where each `table_expr` is a query to each column at
@@ -430,7 +431,7 @@ impl RwTable {
 }
 
 /// The types of proofs in the MPT table
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ProofType {
     /// Disabled
     Disabled,

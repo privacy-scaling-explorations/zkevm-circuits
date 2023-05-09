@@ -17,6 +17,10 @@ use crate::{
 };
 
 use super::helpers::Indexable;
+use std::fs::File;
+use std::io::prelude::*;
+use serde::{Serialize, Deserialize};
+use std::fs;
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum StorageRowType {
@@ -80,7 +84,7 @@ pub(crate) enum StartRowType {
 }
 
 /// MPT branch node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BranchNode {
     pub(crate) modified_index: usize,
     pub(crate) drifted_index: usize,
@@ -88,19 +92,19 @@ pub struct BranchNode {
 }
 
 /// MPT extension node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionNode {
     pub(crate) list_rlp_bytes: Vec<u8>,
 }
 
 /// MPT start node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StartNode {
     pub(crate) proof_type: ProofType,
 }
 
 /// MPT extension branch node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionBranchNode {
     pub(crate) is_extension: bool,
     pub(crate) is_placeholder: [bool; 2],
@@ -109,7 +113,7 @@ pub struct ExtensionBranchNode {
 }
 
 /// MPT account node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountNode {
     pub(crate) address: Vec<u8>,
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
@@ -120,7 +124,7 @@ pub struct AccountNode {
 }
 
 /// MPT storage node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StorageNode {
     pub(crate) list_rlp_bytes: [Vec<u8>; 2],
     pub(crate) value_rlp_bytes: [Vec<u8>; 2],
@@ -129,7 +133,7 @@ pub struct StorageNode {
 }
 
 /// MPT node
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Node {
     pub(crate) start: Option<StartNode>,
     pub(crate) extension_branch: Option<ExtensionBranchNode>,
@@ -446,6 +450,10 @@ pub fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec<Node> 
             let mut node = Node::default();
             node.start = Some(start_node);
             node.values = node_rows;
+
+            let j = serde_json::to_string(&node).unwrap();
+            fs::write("/Users/miha/Desktop/foo.json", j).expect("Unable to write file");
+
             nodes.push(node);
         }
 

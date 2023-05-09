@@ -537,7 +537,8 @@ mod tests {
 
     #[test]
     fn test_mpt() {
-        let path = "src/mpt_circuit/tests";
+        // let path = "src/mpt_circuit/tests";
+        let path = "/Users/miha/projects/2appliedzkp/zkevm-circuits/zkevm-circuits/src/mpt_circuit/tests";
         let files = fs::read_dir(path).unwrap();
         files
             .filter_map(Result::ok)
@@ -555,15 +556,16 @@ mod tests {
                 parts.next();
                 let file = std::fs::File::open(path.clone());
                 let reader = std::io::BufReader::new(file.unwrap());
-                let w: Vec<Vec<u8>> = serde_json::from_reader(reader).unwrap();
+                let nodes:Vec<Node> = serde_json::from_reader(reader).unwrap();
+                let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
 
-                let count = w.iter().filter(|r| r[r.len() - 1] != 5).count() * 2;
                 let randomness: Fr = 123456789.scalar();
                 let instance: Vec<Vec<Fr>> = (1..HASH_WIDTH + 1)
-                    .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); count])
+                    .map(|exp| vec![randomness.pow(&[exp as u64, 0, 0, 0]); num_rows])
                     .collect();
 
                 let mut keccak_data = vec![];
+                /*
                 let mut witness_rows = vec![];
                 for row in w.iter() {
                     if row[row.len() - 1] == 5 {
@@ -574,7 +576,12 @@ mod tests {
                     }
                 }
                 let nodes = prepare_witness(&mut witness_rows);
-                let num_rows: usize = nodes.iter().map(|node| node.values.len()).sum();
+                */
+
+
+
+                println!("-----????-------");
+                println!("{:?}", nodes);
 
                 let circuit = MPTCircuit::<Fr> {
                     nodes,
