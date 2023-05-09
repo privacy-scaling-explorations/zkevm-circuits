@@ -273,7 +273,11 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let memory_start_slot = memory_start.low_u64() - shift;
         let memory_end = memory_start.low_u64() + msize.low_u64();
         let memory_end_slot = memory_end - memory_end % 32;
-        let copy_rwc_inc = (memory_end_slot - memory_start_slot) / 32 + msize.low_u64();
+        let copy_rwc_inc = if msize.low_u64() == 0 || !call.is_persistent {
+            0
+        } else {
+            ((memory_end_slot - memory_start_slot) / 32 + 1)
+        };
 
         self.copy_rwc_inc.assign(
             region,
@@ -285,7 +289,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
             ),
         )?;
 
-        let bytes_length_to_word = (copy_rwc_inc - msize.low_u64() + 1) * 32;
+        let bytes_length_to_word = copy_rwc_inc * 32;
 
         self.bytes_length_word.assign(
             region,
@@ -310,43 +314,43 @@ mod test {
         // zero topic: log0
         test_log_ok(&[], true, None);
         // one topic: log1
-        //test_log_ok(&[Word::from(0xA0)], true, None);
-        // // two topics: log2
-        // test_log_ok(&[Word::from(0xA0), Word::from(0xef)], true, None);
-        // // three topics: log3
-        // test_log_ok(
-        //     &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
-        //     true,
-        //     None,
-        // );
-        // // four topics: log4
-        // test_log_ok(
-        //      &[
-        //         Word::from(0xA0),
-        //         Word::from(0xef),
-        //         Word::from(0xb0),
-        //         Word::from(0x37),
-        //     ],
-        //     true,
-        //     None,
-        // );
+        test_log_ok(&[Word::from(0xA0)], true, None);
+        // two topics: log2
+        test_log_ok(&[Word::from(0xA0), Word::from(0xef)], true, None);
+        // three topics: log3
+        test_log_ok(
+            &[Word::from(0xA0), Word::from(0xef), Word::from(0xb0)],
+            true,
+            None,
+        );
+        // four topics: log4
+        test_log_ok(
+            &[
+                Word::from(0xA0),
+                Word::from(0xef),
+                Word::from(0xb0),
+                Word::from(0x37),
+            ],
+            true,
+            None,
+        );
 
-        // // 2. tests for is_persistent = false cases
-        // // log0
-        // test_log_ok(&[], false, None);
-        // // log1
-        // test_log_ok(&[Word::from(0xA0)], false, None);
-        // // log4
-        // test_log_ok(
-        //     &[
-        //         Word::from(0xA0),
-        //         Word::from(0xef),
-        //         Word::from(0xb0),
-        //         Word::from(0x37),
-        //     ],
-        //     false,
-        //     None,
-        // );
+        // 2. tests for is_persistent = false cases
+        // log0
+        test_log_ok(&[], false, None);
+        // log1
+        test_log_ok(&[Word::from(0xA0)], false, None);
+        // log4
+        test_log_ok(
+            &[
+                Word::from(0xA0),
+                Word::from(0xef),
+                Word::from(0xb0),
+                Word::from(0x37),
+            ],
+            false,
+            None,
+        );
     }
 
     #[test]

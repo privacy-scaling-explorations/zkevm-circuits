@@ -26,6 +26,7 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
+use rand::seq::index;
 use std::{io::copy, iter::repeat};
 
 #[cfg(feature = "onephase")]
@@ -1404,7 +1405,6 @@ impl CopyTable {
             {
                 if (step_idx / 2) % 32 == 0 && step_idx != 0 {
                     // reset
-                    //println!("value_word_rlc {:?} of step {} ", value_word_rlc, step_idx);
                     value_word_rlc = Value::known(F::zero());
                     value_word_rlc = value_word_rlc * challenges.evm_word()
                         + Value::known(F::from(copy_step.value as u64));
@@ -1441,7 +1441,7 @@ impl CopyTable {
             let addr = if tag == CopyDataType::TxLog {
                 Value::known(
                     build_tx_log_address(
-                        copy_step_addr,
+                        addr_slot,
                         TxLogFieldTag::Data,
                         copy_event.log_id.unwrap(),
                     )
@@ -1472,8 +1472,8 @@ impl CopyTable {
             let rw_count = F::from(copy_event.rw_counter_step(step_idx));
             let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
             println!(
-                "step_idx: {} , rw_count {:?}, tag {:?}, addr {:?} rwc_inc_left {:?} word_index {:?}, ",
-                step_idx, rw_count, tag, addr, rwc_inc_left, word_index,
+                "step_idx: {},rw_count {:?}, tag {:?}, addr_slot {} addr {:?} word_index {:?}, value_word_rlc {:?}",
+                step_idx, rw_count, tag, addr_slot, addr, word_index, value_word_rlc,
             );
 
             // is_code

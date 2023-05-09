@@ -655,6 +655,7 @@ impl Rw {
                 field_tag, value, ..
             } => match field_tag {
                 TxLogFieldTag::Topic => rlc::value(&value.to_le_bytes(), randomness),
+                TxLogFieldTag::Data => rlc::value(&value.to_le_bytes(), randomness),
                 _ => value.to_scalar().unwrap(),
             },
 

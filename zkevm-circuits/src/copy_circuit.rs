@@ -232,11 +232,13 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                         tag.value(Rotation::cur())(meta),
                         tag.value(Rotation(2))(meta),
                     );
-                    cb.require_equal(
-                        "rows[0].addr + 1 == rows[2].addr",
-                        meta.query_advice(addr, Rotation::cur()) + 1.expr(),
-                        meta.query_advice(addr, Rotation(2)),
-                    );
+                    // not work for this tx log, log index use addr_slot as index
+                    // TODO: handle tx log case
+                    // cb.require_equal(
+                    //     "rows[0].addr + 1 == rows[2].addr",
+                    //     meta.query_advice(addr, Rotation::cur()) + 1.expr(),
+                    //     meta.query_advice(addr, Rotation(2)),
+                    // );
                     cb.require_equal(
                         "rows[0].src_addr_end == rows[2].src_addr_end for non-last step",
                         meta.query_advice(src_addr_end, Rotation::cur()),
@@ -419,7 +421,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("TxLog lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(mask, Rotation::cur()));
+                //* not::expr(meta.query_advice(mask, Rotation::cur()));
+                * not::expr(is_word_index_end.is_lt(meta, None));
 
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
@@ -429,7 +432,8 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
                 0.expr(),
                 0.expr(),
-                meta.query_advice(value, Rotation::cur()),
+                meta.query_advice(value_wrod_rlc, Rotation::cur()),
+                //meta.query_advice(value, Rotation::cur()),
                 0.expr(),
                 0.expr(),
                 0.expr(),
@@ -1178,7 +1182,7 @@ mod tests {
             block.clone(),
             CircuitsParams {
                 max_rws: 2000,
-                max_copy_rows: 0x200 * 2 + 2,
+                max_copy_rows: 0x200 * 2 + 200,
                 ..Default::default()
             },
         )

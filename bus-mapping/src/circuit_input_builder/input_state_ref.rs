@@ -1772,7 +1772,17 @@ impl<'a> CircuitInputStateRef<'a> {
         // memory word writes to destination word
         for chunk in log_slot_bytes.chunks(32) {
             let dest_word = Word::from_big_endian(&chunk);
+            // read memory
             self.memory_read_word(exec_step, chunk_index.into(), dest_word)?;
+            // write log
+            self.tx_log_write(
+                exec_step,
+                self.tx_ctx.id(),
+                self.tx_ctx.log_id + 1,
+                TxLogField::Data,
+                (chunk_index - dst_begin_slot) as usize,
+                dest_word,
+            )?;
             chunk_index = chunk_index + 32;
         }
 
@@ -1791,15 +1801,6 @@ impl<'a> CircuitInputStateRef<'a> {
                     first_set = false;
                 }
                 copy_steps.push((value, false, false));
-                // Write log
-                self.tx_log_write(
-                    exec_step,
-                    self.tx_ctx.id(),
-                    self.tx_ctx.log_id + 1,
-                    TxLogField::Data,
-                    idx - copy_start as usize,
-                    Word::from(value),
-                )?;
             }
         }
 
