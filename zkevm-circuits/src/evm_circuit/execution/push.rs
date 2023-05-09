@@ -8,11 +8,11 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            sum, CachedRegion, Cell, Word32,
+            sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::Word32, Expr},
 };
 use array_init::array_init;
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};
@@ -21,7 +21,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
-    value: Word32<Cell<F>>,
+    value: Word32Cell<F>,
     selectors: [Cell<F>; 31],
 }
 

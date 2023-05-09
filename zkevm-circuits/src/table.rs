@@ -2,10 +2,10 @@
 
 use crate::{
     copy_circuit::util::number_or_hash_to_field,
-    evm_circuit::util::{rlc, Word as UtilWord},
+    evm_circuit::util::rlc,
     exp_circuit::param::{OFFSET_INCREMENT, ROWS_PER_STEP},
     impl_expr,
-    util::{build_tx_log_address, Challenges},
+    util::{build_tx_log_address, word, Challenges},
     witness::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
@@ -132,7 +132,7 @@ pub struct TxTable {
     /// Index for Tag = CallData
     pub index: Column<Advice>,
     /// Value
-    pub value: UtilWord<Column<Advice>>,
+    pub value: word::Word<Column<Advice>>,
 }
 
 impl TxTable {
@@ -142,7 +142,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: UtilWord::new([
+            value: word::Word::new([
                 meta.advice_column_in(SecondPhase),
                 meta.advice_column_in(SecondPhase),
             ]),
@@ -202,7 +202,8 @@ impl TxTable {
             || "tx table",
             |mut region| {
                 let mut offset = 0;
-                let advice_columns = [self.tx_id, self.index, self.value];
+                let advice_columns =
+                    [vec![self.tx_id, self.index], self.value.limbs.to_vec()].concat();
                 assign_row(
                     &mut region,
                     offset,
@@ -255,12 +256,11 @@ impl TxTable {
 
 impl<F: Field> LookupTable<F> for TxTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![
-            self.tx_id.into(),
-            self.tag.into(),
-            self.index.into(),
-            self.value.into(),
+        [
+            vec![self.tx_id.into(), self.tag.into(), self.index.into()],
+            self.value.limbs.map(|limb| limb.into()).to_vec(),
         ]
+        .concat()
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -273,12 +273,18 @@ impl<F: Field> LookupTable<F> for TxTable {
     }
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        vec![
-            meta.query_advice(self.tx_id, Rotation::cur()),
-            meta.query_fixed(self.tag, Rotation::cur()),
-            meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value, Rotation::cur()),
+        [
+            vec![
+                meta.query_advice(self.tx_id, Rotation::cur()),
+                meta.query_fixed(self.tag, Rotation::cur()),
+                meta.query_advice(self.index, Rotation::cur()),
+            ],
+            self.value
+                .limbs
+                .map(|column| meta.query_advice(column, Rotation::cur()))
+                .to_vec(),
         ]
+        .concat()
     }
 }
 

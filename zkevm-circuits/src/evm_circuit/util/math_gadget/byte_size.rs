@@ -114,7 +114,7 @@ impl<F: Field> ByteSizeGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{super::test_util::*, *};
-    use crate::evm_circuit::util::{self};
+    use crate::util::word::Word32Cell;
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -122,7 +122,7 @@ mod tests {
     /// ByteSizeGadgetContainer: require(N = byte_size(a))
     struct ByteSizeGadgetContainer<F, const N: u8> {
         bytesize_gadget: ByteSizeGadget<F>,
-        a: util::Word32<Cell<F>>,
+        a: Word32Cell<F>,
     }
 
     impl<F: Field, const N: u8> MathGadgetContainer<F> for ByteSizeGadgetContainer<F, N> {

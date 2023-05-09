@@ -1,11 +1,10 @@
 use crate::{
     evm_circuit::util::{
-        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         math_gadget::*,
-        CachedRegion, Cell,
+        CachedRegion,
     },
-    util::Expr,
+    util::{word::Word32Cell, Expr},
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::util::sum;
@@ -19,9 +18,9 @@ use halo2_proofs::plonk::Error;
 /// (expressed as an U256 of `2^255`).
 #[derive(Clone, Debug)]
 pub(crate) struct AbsWordGadget<F> {
-    x: util::Word32<Cell<F>>,
-    x_abs: util::Word32<Cell<F>>,
-    sum: util::Word32<Cell<F>>,
+    x: Word32Cell<F>,
+    x_abs: Word32Cell<F>,
+    sum: Word32Cell<F>,
     is_neg: LtGadget<F, 1>,
     add_words: AddWordsGadget<F, 2, false>,
 }
@@ -86,11 +85,11 @@ impl<F: Field> AbsWordGadget<F> {
         self.add_words.assign(region, offset, [x, x_abs], sum)
     }
 
-    pub(crate) fn x(&self) -> &util::Word32<Cell<F>> {
+    pub(crate) fn x(&self) -> &Word32Cell<F> {
         &self.x
     }
 
-    pub(crate) fn x_abs(&self) -> &util::Word32<Cell<F>> {
+    pub(crate) fn x_abs(&self) -> &Word32Cell<F> {
         &self.x_abs
     }
 

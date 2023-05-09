@@ -5,8 +5,11 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-use crate::evm_circuit::util::{
-    constraint_builder::EVMConstraintBuilder, transpose_val_ret, CachedRegion, Word,
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::EVMConstraintBuilder, transpose_val_ret, CachedRegion,
+    },
+    util::word::Word,
 };
 
 use super::IsZeroGadget;

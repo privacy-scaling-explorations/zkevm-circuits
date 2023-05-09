@@ -1,11 +1,12 @@
 use crate::{
     evm_circuit::util::{
-        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell, Word,
-        Word4,
+        from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
-    util::Expr,
+    util::{
+        word::{Word, Word32Cell, Word4},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, Word as U256Word};
 use halo2_proofs::{
@@ -51,10 +52,7 @@ pub(crate) struct MulAddWordsGadget<F> {
 }
 
 impl<F: Field> MulAddWordsGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        words: [&util::Word32<Cell<F>>; 4],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 4]) -> Self {
         let (a, b, c, d) = (words[0], words[1], words[2], words[3]);
         let carry_lo = cb.query_bytes();
         let carry_hi = cb.query_bytes();
@@ -162,10 +160,10 @@ mod tests {
     /// MulAddGadgetContainer: require(a*b + c == d + carry*(2**256))
     struct MulAddGadgetContainer<F> {
         muladd_words_gadget: MulAddWordsGadget<F>,
-        a: util::Word32<Cell<F>>,
-        b: util::Word32<Cell<F>>,
-        c: util::Word32<Cell<F>>,
-        d: util::Word32<Cell<F>>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
+        c: Word32Cell<F>,
+        d: Word32Cell<F>,
         carry: Cell<F>,
     }
 

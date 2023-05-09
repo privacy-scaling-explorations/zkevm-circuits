@@ -1,4 +1,6 @@
 //! Common utility traits and functions.
+pub mod word;
+
 use bus_mapping::evm::OpcodeId;
 use halo2_proofs::{
     circuit::{Layouter, Value},

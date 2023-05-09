@@ -1,14 +1,17 @@
 use crate::{
     evm_circuit::util::{
-        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        from_bytes,
         math_gadget::*,
-        sum, CachedRegion, Cell,
+        CachedRegion,
     },
-    util::Expr,
+    util::{
+        word::{self, Word32Cell},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, Word};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Constraints for the words a, n, r:
 /// a mod n = r, if n!=0
@@ -21,26 +24,23 @@ use halo2_proofs::plonk::Error;
 /// this equation assures that r<n or r=n=0.
 #[derive(Clone, Debug)]
 pub(crate) struct ModGadget<F> {
-    k: util::Word<F>,
-    a_or_zero: util::Word<F>,
+    k: Word32Cell<F>,
+    a_or_zero: Word32Cell<F>,
     mul_add_words: MulAddWordsGadget<F>,
-    n_is_zero: IsZeroGadget<F>,
-    a_or_is_zero: IsZeroGadget<F>,
-    eq: IsEqualGadget<F>,
+    n_is_zero: IsZeroWordGadget<F>,
+    a_or_is_zero: IsZeroWordGadget<F>,
+    eq: IsEqualWordGadget<F>,
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        words: [&util::Word32<Cell<F>>; 3],
-    ) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word32();
         let a_or_zero = cb.query_word32();
         let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
         let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualGadget::construct(cb, a.expr(), a_or_zero.expr());
+        let eq = IsEqualWordGadget::construct(cb, a.to_word(), a_or_zero.to_word());
         let lt = LtWordGadget::construct(cb, r, n);
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
         // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
@@ -86,17 +86,26 @@ impl<F: Field> ModGadget<F> {
             .assign(region, offset, Some(a_or_zero.to_le_bytes()))?;
         let n_sum = (0..32).fold(0, |acc, idx| acc + n.byte(idx) as u64);
         let a_or_zero_sum = (0..32).fold(0, |acc, idx| acc + a_or_zero.byte(idx) as u64);
-        self.n_is_zero.assign(region, offset, F::from(n_sum))?;
-        self.a_or_is_zero
-            .assign(region, offset, F::from(a_or_zero_sum))?;
+        self.n_is_zero.assign(
+            region,
+            offset,
+            from_bytes::value(&n_sum.to_le_bytes()[..16]),
+            from_bytes::value(&n_sum.to_le_bytes()[16..]),
+        )?;
+        self.a_or_is_zero.assign(
+            region,
+            offset,
+            from_bytes::value(&a_or_zero.to_le_bytes()[..16]),
+            from_bytes::value(&a_or_zero.to_le_bytes()[16..]),
+        )?;
         self.mul_add_words
             .assign(region, offset, [k, n, r, a_or_zero])?;
         self.lt.assign(region, offset, r, n)?;
         self.eq.assign_value(
             region,
             offset,
-            region.word_rlc(a),
-            region.word_rlc(a_or_zero),
+            Value::known(word::Word::from_u256(a)),
+            Value::known(word::Word::from_u256(a_or_zero)),
         )?;
 
         Ok(())
@@ -113,16 +122,16 @@ mod tests {
     /// ModGadgetTestContainer: require(a % n == r)
     struct ModGadgetTestContainer<F> {
         mod_gadget: ModGadget<F>,
-        a: util::Word<F>,
-        n: util::Word<F>,
-        r: util::Word<F>,
+        a: Word32Cell<F>,
+        n: Word32Cell<F>,
+        r: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word_rlc();
-            let n = cb.query_word_rlc();
-            let r = cb.query_word_rlc();
+            let a = cb.query_word32();
+            let n = cb.query_word32();
+            let r = cb.query_word32();
             let mod_gadget = ModGadget::<F>::construct(cb, [&a, &n, &r]);
             ModGadgetTestContainer {
                 mod_gadget,

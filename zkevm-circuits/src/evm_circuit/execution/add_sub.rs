@@ -6,11 +6,11 @@ use crate::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
             math_gadget::{AddWordsGadget, PairSelectGadget},
-            CachedRegion, Word,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;

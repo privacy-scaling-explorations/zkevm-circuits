@@ -2,6 +2,7 @@ pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
+    util::word::Word,
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -9,8 +10,6 @@ use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-
-use super::util::Word;
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {

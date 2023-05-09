@@ -1,5 +1,8 @@
-use crate::evm_circuit::util::{
-    self, constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion, Cell,
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion, Cell,
+    },
+    util::word::Word32Cell,
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -15,8 +18,8 @@ pub struct LtWordGadget<F> {
 impl<F: Field> LtWordGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        lhs: &util::Word32<Cell<F>>,
-        rhs: &util::Word32<Cell<F>>,
+        lhs: &Word32Cell<F>,
+        rhs: &Word32Cell<F>,
     ) -> Self {
         let lhs_expr = lhs.to_word();
         let rhs_expr = rhs.to_word();
@@ -71,8 +74,8 @@ mod tests {
     /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
         ltword_gadget: LtWordGadget<F>,
-        a: util::Word32<Cell<F>>,
-        b: util::Word32<Cell<F>>,
+        a: Word32Cell<F>,
+        b: Word32Cell<F>,
     }
 
     impl<F: Field> MathGadgetContainer<F> for LtWordTestContainer<F> {

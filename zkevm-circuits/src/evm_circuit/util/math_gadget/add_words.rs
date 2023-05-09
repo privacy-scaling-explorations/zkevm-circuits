@@ -4,7 +4,7 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
-    util::Expr,
+    util::{word::Word32Cell, Expr},
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -13,8 +13,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 /// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]
 pub(crate) struct AddWordsGadget<F, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool> {
-    addends: [util::Word32<Cell<F>>; N_ADDENDS],
-    sum: util::Word32<Cell<F>>,
+    addends: [Word32Cell<F>; N_ADDENDS],
+    sum: Word32Cell<F>,
     carry_lo: Cell<F>,
     carry_hi: Option<Cell<F>>,
 }
@@ -24,8 +24,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        addends: [util::Word32<Cell<F>>; N_ADDENDS],
-        sum: util::Word32<Cell<F>>,
+        addends: [Word32Cell<F>; N_ADDENDS],
+        sum: Word32Cell<F>,
     ) -> Self {
         let carry_lo = cb.query_cell();
         let carry_hi = if CHECK_OVERFLOW {
@@ -133,11 +133,11 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
         Ok(())
     }
 
-    pub(crate) fn addends(&self) -> &[util::Word32<Cell<F>>] {
+    pub(crate) fn addends(&self) -> &[Word32Cell<F>] {
         &self.addends
     }
 
-    pub(crate) fn sum(&self) -> &util::Word32<Cell<F>> {
+    pub(crate) fn sum(&self) -> &Word32Cell<F> {
         &self.sum
     }
 
@@ -161,8 +161,8 @@ mod tests {
         const CHECK_OVERFLOW: bool,
     > {
         addwords_gadget: AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>,
-        addends: [util::Word32<Cell<F>>; N_ADDENDS],
-        sum: util::Word32<Cell<F>>,
+        addends: [Word32Cell<F>; N_ADDENDS],
+        sum: Word32Cell<F>,
     }
 
     impl<F: Field, const N_ADDENDS: usize, const CARRY_HI: u64, const CHECK_OVERFLOW: bool>

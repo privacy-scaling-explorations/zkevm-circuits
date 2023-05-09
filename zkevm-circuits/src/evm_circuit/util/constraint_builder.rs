@@ -3,13 +3,17 @@ use crate::{
         param::STACK_CAPACITY,
         step::{ExecutionState, Step},
         table::{FixedTableTag, Lookup, RwValues},
-        util::{Cell, RandomLinearCombination, Word},
+        util::{Cell, RandomLinearCombination},
     },
     table::{
         AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
         TxLogFieldTag, TxReceiptFieldTag,
     },
-    util::{build_tx_log_expression, Challenges, Expr},
+    util::{
+        build_tx_log_expression,
+        word::{Word, Word16, Word32, Word32Cell, Word4},
+        Challenges, Expr,
+    },
 };
 use bus_mapping::state_db::EMPTY_CODE_HASH_LE;
 use eth_types::Field;
@@ -22,7 +26,7 @@ use halo2_proofs::{
     },
 };
 
-use super::{rlc, CachedRegion, CellType, StoredExpression, Word16, Word32, Word4, WordLimbs};
+use super::{rlc, CachedRegion, CellType, StoredExpression};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -402,21 +406,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     //     RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.evm_word())
     // }
 
-    // default query_word is 2 limbs
-    pub(crate) fn query_word<const N: usize, const N2: usize>(
-        &mut self,
-        word_constrians: WordLimbs<Cell<F>, N2>,
-    ) -> Word<Cell<F>> {
-        let new_word = self._query_word();
-        self.require_equal(
-            "wordlimb equality",
-            word_constrians.expr().is_eq(&new_word.expr()),
-            1.expr(),
-        );
-        new_word
-    }
-
-    fn _query_word<const N: usize, const N2: usize>(&mut self) -> Word<Cell<F>> {
+    // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
+    pub fn query_word_unchecked<const N: usize, const N2: usize>(&mut self) -> Word<Cell<F>> {
         Word::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -424,20 +415,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn query_word4<const N: usize, const N2: usize>(
-        &mut self,
-        word_constrians: WordLimbs<Cell<F>, N2>,
-    ) -> Word4<Cell<F>> {
-        let new_word = self._query_word4();
-        self.require_equal(
-            "wordlimb equality",
-            word_constrians.expr().is_eq(&new_word.expr()),
-            1.expr(),
-        );
-        new_word
-    }
-
-    fn _query_word4<const N: usize, const N2: usize>(&mut self) -> Word4<Cell<F>> {
+    /// query_word4_unchecked get word with 4 limbs. Each limb is not guaranteed to be 64 bits.
+    pub fn query_word4_unchecked<const N: usize, const N2: usize>(&mut self) -> Word4<Cell<F>> {
         Word4::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
@@ -454,7 +433,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn query_word32(&mut self) -> Word32<Cell<F>> {
+    pub(crate) fn query_word32(&mut self) -> Word32Cell<F> {
         Word32::new(self.query_bytes())
     }
 
@@ -689,7 +668,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         field_tag: TxContextFieldTag,
         index: Option<Expression<F>>,
     ) -> Word<Cell<F>> {
-        let word = self._query_word();
+        let word = self.query_word_unchecked();
         self.tx_context_lookup(id, field_tag, index, word.to_word());
         word
     }
@@ -1088,7 +1067,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
-        let word = self._query_word();
+        let word = self.query_word_unchecked();
         self.call_context_lookup(false.expr(), call_id, field_tag, word.to_word());
         word
     }

@@ -5,9 +5,12 @@ use halo2_proofs::{
     plonk::{Error, Expression},
 };
 
-use crate::evm_circuit::util::{
-    constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-    transpose_val_ret, CachedRegion, Cell, CellType, Word32,
+use crate::{
+    evm_circuit::util::{
+        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+        transpose_val_ret, CachedRegion, Cell, CellType,
+    },
+    util::word::{Word32, Word32Cell},
 };
 
 /// Returns `1` when `word == 0`, and returns `0` otherwise.
@@ -19,7 +22,7 @@ pub struct IsZeroWordGadget<F> {
 }
 
 impl<F: Field> IsZeroWordGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: Word32<Cell<F>>) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: Word32Cell<F>) -> Self {
         let (word_lo, word_hi) = word.to_word().to_lo_hi();
         let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(word_lo));
         let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(word_hi));
@@ -72,7 +75,7 @@ impl<F: Field> IsZeroWordGadget<F> {
         self.inverse_hi
             .assign(region, offset, Value::known(inverse_hi))?;
         Ok(if value_lo.is_zero().into() && value_hi.is_zero().into() {
-            F::one()
+            F::from(2)
         } else {
             F::zero()
         })

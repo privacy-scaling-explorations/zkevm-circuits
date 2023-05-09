@@ -3,7 +3,7 @@ use super::{
     from_bytes,
     math_gadget::{IsEqualGadget, IsZeroGadget, LtGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-    CachedRegion, Word32,
+    CachedRegion,
 };
 use crate::{
     evm_circuit::{
@@ -16,11 +16,14 @@ use crate::{
                 Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
-            not, or, Cell, CellType, Word,
+            not, or, Cell, CellType,
         },
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word, Word32},
+        Expr,
+    },
     witness::{Block, Call, ExecStep},
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
@@ -273,7 +276,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         address: Expression<F>,
-        updates: Vec<Word32<Cell<F>>>,
+        updates: Vec<Word32Cell<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) -> Self {
         debug_assert!(updates.len() == N_ADDENDS - 1);
@@ -308,7 +311,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         Self { add_words }
     }
 
-    pub(crate) fn balance(&self) -> &Word32<Cell<F>> {
+    pub(crate) fn balance(&self) -> &Word32Cell<F> {
         if INCREASE {
             self.add_words.sum()
         } else {
@@ -316,7 +319,7 @@ impl<F: Field, const N_ADDENDS: usize, const INCREASE: bool>
         }
     }
 
-    pub(crate) fn balance_prev(&self) -> &Word32<Cell<F>> {
+    pub(crate) fn balance_prev(&self) -> &Word32Cell<F> {
         if INCREASE {
             &self.add_words.addends()[0]
         } else {
@@ -1108,7 +1111,7 @@ impl<F: Field, const VALID_BYTES: usize> WordByteCapGadget<F, VALID_BYTES> {
 /// Check if the passed in word is within the specified byte range (not overflow).
 #[derive(Clone, Debug)]
 pub(crate) struct WordByteRangeGadget<F, const VALID_BYTES: usize> {
-    original: Word32<Cell<F>>,
+    original: Word32Cell<F>,
     not_overflow: IsZeroGadget<F>,
 }
 

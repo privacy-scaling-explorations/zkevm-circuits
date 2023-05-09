@@ -1,9 +1,9 @@
 use crate::{
     evm_circuit::util::{
-        self, constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select,
-        CachedRegion, Cell,
+        constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select, CachedRegion,
+        Cell,
     },
-    util::Expr,
+    util::{word, Expr},
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -20,8 +20,8 @@ pub(crate) struct CmpWordsGadget<F> {
 impl<F: Field> CmpWordsGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        a: &util::Word<Cell<F>>,
-        b: &util::Word<Cell<F>>,
+        a: &word::Word<Cell<F>>,
+        b: &word::Word<Cell<F>>,
     ) -> Self {
         let (a_lo, a_hi) = a.to_word().to_lo_hi();
         let (b_lo, b_hi) = b.to_word().to_lo_hi();
@@ -80,7 +80,7 @@ impl<F: Field> CmpWordsGadget<F> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::{constraint_builder::ConstrainBuilderCommon, Word2};
+    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
@@ -88,21 +88,16 @@ mod tests {
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
     struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
         cmp_gadget: CmpWordsGadget<F>,
-        a: util::Word32<Cell<F>>,
-        b: util::Word32<Cell<F>>,
-        a_word: util::Word<Cell<F>>,
-        b_word: util::Word<Cell<F>>,
+        a_word: word::Word<Cell<F>>,
+        b_word: word::Word<Cell<F>>,
     }
 
     impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
         for CmpWordGadgetTestContainer<F, CHECK_EQ>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let a = cb.query_word32();
-            let b = cb.query_word32();
-            let a_word = cb.query_word(a);
-            let b_word = cb.query_word(b);
-            let d = cb.query_word4(Word2::new(a_word.limbs));
+            let a_word = cb.query_word_unchecked();
+            let b_word = cb.query_word_unchecked();
 
             let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a_word, &b_word);
             cb.require_equal(
@@ -119,8 +114,6 @@ mod tests {
 
             CmpWordGadgetTestContainer {
                 cmp_gadget,
-                a,
-                b,
                 a_word,
                 b_word,
             }
@@ -135,9 +128,7 @@ mod tests {
             let b = witnesses[1];
             let offset = 0;
 
-            self.a.assign(region, offset, Some(a.to_le_bytes()))?;
             self.a_word.assign(region, offset, Some(a.to_le_bytes()))?;
-            self.b.assign(region, offset, Some(b.to_le_bytes()))?;
             self.b_word.assign(region, offset, Some(b.to_le_bytes()))?;
             self.cmp_gadget.assign(region, offset, a, b)?;
             Ok(())
