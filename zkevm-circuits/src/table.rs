@@ -1355,7 +1355,9 @@ impl CopyTable {
         let mut value_acc = Value::known(F::zero());
         let mut word_index = 0u64;
         let mut addr_slot = if copy_event.dst_type == CopyDataType::Memory {
-            copy_event.dst_addr % 32
+            copy_event.dst_addr - copy_event.dst_addr % 32
+        } else if copy_event.src_type == CopyDataType::Memory {
+            copy_event.src_addr - copy_event.src_addr % 32
         } else {
             0
         };
@@ -1460,7 +1462,7 @@ impl CopyTable {
             word_index = (step_idx as u64 / 2) % 32;
 
             // value_acc
-            if is_read_step {
+            if is_read_step && !copy_step.mask {
                 value_acc = value_acc * challenges.keccak_input() + value;
             }
             // is_pad

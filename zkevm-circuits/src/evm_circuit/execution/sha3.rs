@@ -27,6 +27,8 @@ pub(crate) struct Sha3Gadget<F> {
     sha3_rlc: Word<F>,
     copy_rwc_inc: Cell<F>,
     rlc_acc: Cell<F>,
+    /// include actual and padding to word bytes
+    bytes_length_word: Cell<F>,
     memory_expansion: MemoryExpansionGadget<F, 1, N_BYTES_MEMORY_WORD_SIZE>,
     memory_copier_gas: MemoryCopierGasGadget<F, { GasCost::COPY_SHA3 }>,
 }
@@ -42,6 +44,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         let offset = cb.query_cell_phase2();
         let size = cb.query_word_rlc();
         let sha3_rlc = cb.query_word_rlc();
+        let bytes_length_word = cb.query_cell();
 
         cb.stack_pop(offset.expr());
         cb.stack_pop(size.expr());
@@ -61,7 +64,8 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
                 memory_address.offset(),
                 memory_address.address(),
                 0.expr(), // dst_addr for CopyDataType::RlcAcc is 0.
-                memory_address.length(),
+                // memory_address.length(),
+                bytes_length_word.expr(),
                 rlc_acc.expr(),
                 copy_rwc_inc.expr(),
             );
@@ -98,6 +102,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
             sha3_rlc,
             copy_rwc_inc,
             rlc_acc,
+            bytes_length_word,
             memory_expansion,
             memory_copier_gas,
         }
@@ -123,18 +128,51 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         self.sha3_rlc
             .assign(region, offset, Some(sha3_output.to_le_bytes()))?;
 
+        let shift = memory_offset.low_u64() % 32;
+        let memory_start_slot = memory_offset.low_u64() - shift;
+        let memory_end = memory_offset.low_u64() + size.low_u64();
+        let memory_end_slot = memory_end - memory_end % 32;
+        let copy_rwc_inc = if size.low_u64() == 0 {
+            0
+        } else {
+            (memory_end_slot - memory_start_slot) / 32 + 1
+        };
+
         self.copy_rwc_inc.assign(
             region,
             offset,
             Value::known(
-                size.to_scalar()
+                copy_rwc_inc
+                    .to_scalar()
                     .expect("unexpected U256 -> Scalar conversion failure"),
             ),
         )?;
 
-        let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
+        let bytes_length_to_word = copy_rwc_inc * 32;
+        self.bytes_length_word.assign(
+            region,
+            offset,
+            Value::known(F::from(bytes_length_to_word)),
+        )?;
+
+        // read real bytes from padded memory words
+        let padded_bytes: Vec<u8> = (3..3 + (copy_rwc_inc as usize))
+            .map(|i| {
+                let mut bytes = block.rws[step.rw_indices[i]]
+                    .memory_word_value()
+                    .to_le_bytes();
+                bytes.reverse();
+                bytes
+            })
+            .into_iter()
+            .flat_map(|byte| byte)
             .collect();
+
+        let values: Vec<u8> = if size.is_zero() {
+            vec![0; 0]
+        } else {
+            padded_bytes[shift as usize..shift as usize + size.as_usize()].to_vec()
+        };
 
         let rlc_acc = region
             .challenges()

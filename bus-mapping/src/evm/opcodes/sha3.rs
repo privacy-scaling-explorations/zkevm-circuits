@@ -53,14 +53,50 @@ impl Opcode for Sha3 {
 
         // Memory read operations
         let rw_counter_start = state.block_ctx.rwc;
-        let mut steps = Vec::with_capacity(size.as_usize());
-        for (i, byte) in memory.iter().enumerate() {
-            // Read step
-            state.memory_read(&mut exec_step, (offset.as_usize() + i).into(), *byte)?;
-            steps.push((*byte, false, false));
-        }
-        state.block.sha3_inputs.push(memory);
+        let mut copy_steps = Vec::with_capacity(size.as_usize());
 
+        if size.as_usize() != 0 {
+            let (_, dst_begin_slot) = state.get_addr_shift_slot(offset.low_u64()).unwrap();
+            let (_, dst_end_slot) = state
+                .get_addr_shift_slot(offset.low_u64() + size.low_u64())
+                .unwrap();
+            let mut memory_clone = state.call_ctx_mut()?.memory.clone();
+
+            let minimal_length = dst_end_slot as usize + 32;
+            memory_clone.extend_at_least(minimal_length);
+            // collect all memory bytes with padding word
+            let memory_slot_bytes =
+                memory_clone.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+
+            // Read step
+            let mut copy_start = 0u64;
+            let mut first_set = true;
+            let mut chunk_index = dst_begin_slot;
+            for chunk in memory_slot_bytes.chunks(32) {
+                let dest_word = Word::from_big_endian(&chunk);
+                state.memory_read_word(&mut exec_step, chunk_index.into(), dest_word)?;
+                chunk_index = chunk_index + 32;
+            }
+            for idx in 0..memory_slot_bytes.len() {
+                let value = memory_clone.0[dst_begin_slot as usize + idx];
+                if idx as u64 + dst_begin_slot < offset.low_u64() {
+                    // front mask byte
+                    copy_steps.push((value, false, true));
+                } else if idx as u64 + dst_begin_slot >= offset.low_u64() + size.low_u64() {
+                    // back mask byte
+                    copy_steps.push((value, false, true));
+                } else {
+                    // real copy byte
+                    if first_set {
+                        copy_start = idx as u64;
+                        first_set = false;
+                    }
+                    copy_steps.push((value, false, false));
+                }
+            }
+        }
+
+        state.block.sha3_inputs.push(memory);
         let call_id = state.call()?.call_id;
         state.push_copy(
             &mut exec_step,
@@ -77,7 +113,7 @@ impl Opcode for Sha3 {
                 dst_id: NumberOrHash::Number(call_id),
                 log_id: None,
                 rw_counter_start,
-                bytes: steps,
+                bytes: copy_steps,
             },
         );
 

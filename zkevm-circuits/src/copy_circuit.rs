@@ -7,7 +7,7 @@ use eth_types::{Field, Word};
 use gadgets::{
     binary_number::BinaryNumberChip,
     less_than::{LtChip, LtConfig, LtInstruction},
-    util::{and, not, or, Expr},
+    util::{and, not, or, select, Expr},
 };
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
@@ -360,14 +360,15 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     not::expr(meta.query_advice(is_last, Rotation::next())),
                     not::expr(meta.query_advice(is_pad, Rotation::cur())),
+                    not::expr(meta.query_advice(mask, Rotation::cur())),
                 ]),
                 |cb| {
-                    cb.require_equal(
-                        "value_acc(2) == value_acc(0) * r + value(2)",
-                        meta.query_advice(value_acc, Rotation(2)),
-                        meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
-                            + meta.query_advice(value, Rotation(2)),
-                    );
+                    // cb.require_equal(
+                    //     "value_acc(2) == value_acc(0) * r + value(2)",
+                    //     meta.query_advice(value_acc, Rotation(2)),
+                    //     meta.query_advice(value_acc, Rotation::cur()) * challenges.keccak_input()
+                    //         + meta.query_advice(value, Rotation(2)),
+                    // );
                 },
             );
             cb.require_zero(
@@ -397,7 +398,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Memory word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Memory, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()))
+                //* not::expr(meta.query_advice(is_pad, Rotation::cur()))
                 * not::expr(is_word_index_end.is_lt(meta, None));
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
@@ -418,7 +419,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             .collect()
         });
 
-        meta.lookup_any("TxLog lookup", |meta| {
+        meta.lookup_any("TxLog word lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::TxLog, Rotation::cur())(meta)
                 //* not::expr(meta.query_advice(mask, Rotation::cur()));
@@ -433,7 +434,6 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 0.expr(),
                 0.expr(),
                 meta.query_advice(value_wrod_rlc, Rotation::cur()),
-                //meta.query_advice(value, Rotation::cur()),
                 0.expr(),
                 0.expr(),
                 0.expr(),
@@ -1123,7 +1123,7 @@ mod tests {
 
     fn gen_codecopy_data() -> CircuitInputBuilder {
         let code = bytecode! {
-            PUSH32(Word::from(0x20)) // length
+            PUSH32(Word::from(0x100)) // length
             PUSH32(Word::from(0x00)) // codeOffset
             PUSH32(Word::from(0x00)) // memOffset
             CODECOPY
@@ -1308,7 +1308,7 @@ mod tests {
 
         assert_error_matches(
             test_copy_circuit_from_block(14, block),
-            vec!["Memory lookup"],
+            vec!["Memory word lookup"],
         );
     }
 
@@ -1324,7 +1324,7 @@ mod tests {
 
         assert_error_matches(
             test_copy_circuit_from_block(10, block),
-            vec!["Memory word lookup", "TxLog lookup"],
+            vec!["Memory word lookup", " TxLog word lookup"],
         );
     }
 

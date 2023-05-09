@@ -276,7 +276,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let copy_rwc_inc = if msize.low_u64() == 0 || !call.is_persistent {
             0
         } else {
-            ((memory_end_slot - memory_start_slot) / 32 + 1)
+            (memory_end_slot - memory_start_slot) / 32 + 1
         };
 
         self.copy_rwc_inc.assign(
@@ -290,7 +290,6 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         )?;
 
         let bytes_length_to_word = copy_rwc_inc * 32;
-
         self.bytes_length_word.assign(
             region,
             offset,
