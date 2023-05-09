@@ -35,3 +35,5 @@ rand = "0.8"
 
 [features]
 test = ["mock", "rand"]
+# Enable shanghai feature of mock only if mock is enabled (by test).
+shanghai = ["mock?/shanghai"]
