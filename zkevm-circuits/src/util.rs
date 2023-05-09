@@ -229,9 +229,9 @@ pub(crate) fn get_push_size(byte: u8) -> u64 {
 /// For circuit with column queried at more than 3 distinct rotation, we can
 /// calculate the unusable rows as (x - 3) + 6 where x is the number of distinct
 /// rotation.
-pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>() -> usize {
+pub(crate) fn unusable_rows<F: Field, C: Circuit<F>>(params: C::Params) -> usize {
     let mut cs = ConstraintSystem::default();
-    C::configure(&mut cs);
+    C::configure_with_params(&mut cs, params);
 
     cs.blinding_factors() + 1
 }

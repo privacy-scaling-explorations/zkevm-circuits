@@ -753,6 +753,7 @@ mod sign_verify_tests {
     impl<F: Field> Circuit<F> for TestCircuitSignVerify<F> {
         type Config = TestCircuitSignVerifyConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()

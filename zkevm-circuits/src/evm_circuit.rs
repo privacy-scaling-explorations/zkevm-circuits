@@ -329,6 +329,7 @@ pub(crate) mod cached {
     impl Circuit<Fr> for EvmCircuitCached {
         type Config = (EvmCircuitConfig<Fr>, Challenges);
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self(self.0.without_witnesses())
@@ -359,6 +360,7 @@ pub(crate) mod cached {
 impl<F: Field> Circuit<F> for EvmCircuit<F> {
     type Config = (EvmCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
@@ -470,7 +472,7 @@ mod evm_circuit_stats {
     fn evm_circuit_unusable_rows() {
         assert_eq!(
             EvmCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, EvmCircuit::<Fr>>(),
+            unusable_rows::<Fr, EvmCircuit::<Fr>>(()),
         )
     }
 
