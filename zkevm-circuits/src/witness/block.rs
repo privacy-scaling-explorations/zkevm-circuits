@@ -5,16 +5,20 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 #[cfg(feature = "test")]
 use crate::util::SubCircuit;
 
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
+use crate::{
+    evm_circuit::util::rlc,
+    table::{BlockContextFieldTag, RwTableTag},
+};
 
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
+    operation::Target,
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
+use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -61,12 +65,17 @@ impl<F: Field> Block<F> {
         for (tx_idx, tx) in self.txs.iter().enumerate() {
             println!("tx {}", tx_idx);
             for step in &tx.steps {
-                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
+                println!(" step {:?} rwc: {}", step.exec_state, step.rwc.0);
                 for rw_ref in &step.bus_mapping_instance {
                     println!("  - {:?}", self.rws[*rw_ref]);
                 }
             }
         }
+    }
+
+    /// Get a read-write record
+    pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
+        self.rws[step.rw_index(index)]
     }
 }
 

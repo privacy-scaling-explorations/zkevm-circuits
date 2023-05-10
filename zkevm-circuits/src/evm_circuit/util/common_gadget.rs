@@ -76,12 +76,12 @@ impl<F: Field> SameContextGadget<F> {
         offset: usize,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         self.sufficient_gas_left
-            .assign(region, offset, F::from(step.gas_left - step.gas_cost))?;
+            .assign(region, offset, F::from(step.gas_spent()))?;
 
         Ok(())
     }
@@ -222,7 +222,7 @@ impl<F: Field> RestoreContextGadget<F> {
                 [U256::zero(); 9]
             } else {
                 [0, 1, 2, 3, 4, 5, 6, 7, 8]
-                    .map(|i| step.rw_indices[i + rw_offset])
+                    .map(|i| step.rw_index(i + rw_offset))
                     .map(|idx| block.rws[idx].call_context_value())
             };
 
