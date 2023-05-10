@@ -673,6 +673,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Cell<F> {
         let cell = self.query_cell();
+        // lookup read, unchecked is safe
         self.tx_context_lookup(id, field_tag, index, Word::from_lo_unchecked(cell.expr()));
         cell
     }
@@ -1077,7 +1078,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             false.expr(),
             call_id,
             field_tag,
-            Word::from_lo_unchecked(cell.expr()),
+            Word::from_lo_unchecked(cell.expr()), // lookup read, unchecked is safe
         );
         cell
     }
@@ -1131,6 +1132,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 is_write.expr(),
                 call_id.clone(),
                 field_tag,
+                // TODO assure range check since write=true also possible
                 Word::from_lo_unchecked(cell.expr()),
             );
             cell
@@ -1214,6 +1216,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 memory_address,
                 0.expr(),
                 0.expr(),
+                // TODO assure range check since write=true also possible
                 Word::from_lo_unchecked(byte),
                 Word::zero(),
                 0.expr(),
@@ -1239,8 +1242,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 build_tx_log_expression(index, field_tag.expr(), log_id),
                 0.expr(),
                 0.expr(),
+                // TODO assure range check since here is write
                 Word::from_lo_unchecked(value),
-                Word::from_lo_unchecked(0.expr()),
+                Word::zero(),
                 0.expr(),
                 0.expr(),
             ),
@@ -1265,8 +1269,9 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 0.expr(),
                 tag.expr(),
                 0.expr(),
+                // TODO assure range check since write=true also possible
                 Word::from_lo_unchecked(value),
-                Word::from_lo_unchecked(0.expr()),
+                Word::zero(),
                 0.expr(),
                 0.expr(),
             ),
@@ -1286,8 +1291,8 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 address: 0.expr(),
                 field_tag: 0.expr(),
                 storage_key: 0.expr(),
-                value: Word::from_lo_unchecked(0.expr()),
-                value_prev: Word::from_lo_unchecked(0.expr()),
+                value: Word::zero(),
+                value_prev: Word::zero(),
                 aux1: 0.expr(),
                 aux2: 0.expr(),
             },
