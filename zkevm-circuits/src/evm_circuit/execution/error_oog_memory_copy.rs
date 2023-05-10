@@ -18,7 +18,7 @@ use crate::{
 };
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
-    Field, ToLittleEndian, U256,
+    Field, U256, ToLittleEndian,
 };
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -155,7 +155,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_extcodecopy = opcode == OpcodeId::EXTCODECOPY;
 
         log::debug!(
@@ -167,8 +167,8 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let (is_warm, external_address) = if is_extcodecopy {
             (
-                block.rws[step.rw_indices[1]].tx_access_list_value_pair().0,
-                block.rws[step.rw_indices[2]].stack_value(),
+                block.get_rws(step, 1).tx_access_list_value_pair().0,
+                block.get_rws(step, 2).stack_value(),
             )
         } else {
             (false, U256::zero())
@@ -176,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
 
         let rw_offset = if is_extcodecopy { 3 } else { 0 };
         let [dst_offset, src_offset, copy_size] = [rw_offset, rw_offset + 1, rw_offset + 2]
-            .map(|idx| block.rws[step.rw_indices[idx]].stack_value());
+            .map(|index| block.get_rws(step, index).stack_value());
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -212,7 +212,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.insufficient_gas.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.into())),
             Value::known(F::from(constant_gas_cost.0 + memory_copier_gas)),
         )?;
         self.is_extcodecopy.assign(

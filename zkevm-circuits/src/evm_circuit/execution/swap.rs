@@ -70,8 +70,8 @@ impl<F: Field> ExecutionGadget<F> for SwapGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         for (cell, value) in self.phase2_values.iter().zip(
-            [step.rw_index(0), step.rw_index(1)]
-                .map(|idx| block.rws[idx].stack_value())
+            [0, 1]
+                .map(|index| block.get_rws(step, index).stack_value())
                 .iter(),
         ) {
             cell.assign(region, offset, region.word_rlc(*value))?;

@@ -54,6 +54,12 @@ impl ProgramCounter {
 #[derive(Default, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Gas(pub u64);
 
+impl fmt::Display for Gas {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
+
 impl fmt::Debug for Gas {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{}", self.0))
@@ -74,6 +80,12 @@ pub const GAS_STIPEND_CALL_WITH_VALUE: u64 = 2300;
 /// Defines the gas consumption.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct GasCost(pub u64);
+
+impl fmt::Display for GasCost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
 
 impl fmt::Debug for GasCost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

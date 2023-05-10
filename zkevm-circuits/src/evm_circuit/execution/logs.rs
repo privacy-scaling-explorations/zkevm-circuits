@@ -14,7 +14,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
+    table::{CallContextFieldTag, TxLogFieldTag},
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
@@ -194,9 +194,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let [memory_start, msize] =
-            [step.rw_indices[0], step.rw_indices[1]].map(|idx| block.rws[idx].stack_value());
-
+        let [memory_start, msize] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_start, msize)?;
@@ -205,24 +203,23 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [memory_address])?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
         let is_persistent = call.is_persistent as u64;
-        let mut topic_stack_entry = if topic_count > 0 {
-            step.rw_indices[6 + call.is_persistent as usize]
+        let mut topic_stack_index = if topic_count > 0 {
+            6 + call.is_persistent as usize
         } else {
-            // if topic_count == 0, this value will be no used anymore
-            (RwTableTag::Stack, 0usize)
+            0
         };
 
         for i in 0..4 {
             let mut topic = region.word_rlc(U256::zero());
             if i < topic_count {
-                topic = region.word_rlc(block.rws[topic_stack_entry].stack_value());
+                topic = region.word_rlc(block.get_rws(step, topic_stack_index).stack_value());
                 self.topic_selectors[i].assign(region, offset, Value::known(F::ONE))?;
-                topic_stack_entry.1 += 1;
+                topic_stack_index += 1;
             } else {
                 self.topic_selectors[i].assign(region, offset, Value::known(F::ZERO))?;
             }

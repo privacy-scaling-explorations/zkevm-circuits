@@ -184,7 +184,8 @@ impl<F: Field> ExecutionGadget<F> for SstoreGadget<F> {
             ),
         )?;
 
-        let [key, value] = [5, 6].map(|idx| block.get_rws(step, idx).stack_value());
+        let key = block.get_rws(step, 5).stack_value();
+        let value = block.get_rws(step, 6).stack_value();
         self.phase2_key
             .assign(region, offset, region.word_rlc(key))?;
         self.phase2_value

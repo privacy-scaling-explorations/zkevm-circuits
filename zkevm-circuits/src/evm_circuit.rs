@@ -14,7 +14,7 @@ pub(crate) mod util;
 
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
-use self::step::{ExecutionState, HasExecutionState};
+use self::step::HasExecutionState;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use self::EvmCircuit as TestEvmCircuit;
 

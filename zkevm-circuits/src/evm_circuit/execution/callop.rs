@@ -440,17 +440,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_call = opcode == OpcodeId::CALL;
         let is_callcode = opcode == OpcodeId::CALLCODE;
         let is_delegatecall = opcode == OpcodeId::DELEGATECALL;
-        let [tx_id, is_static, depth, current_callee_address] = [
-            step.rw_indices[0],
-            step.rw_indices[3],
-            step.rw_indices[4],
-            step.rw_indices[5],
-        ]
-        .map(|idx| block.rws[idx].call_context_value());
+        let [tx_id, is_static, depth, current_callee_address] =
+            [0, 3, 4, 5].map(|index| block.get_rws(step, index).call_context_value());
         let is_error_depth = depth.low_u64() > 1024;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
@@ -463,46 +458,40 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let mut rw_offset = 0;
         let [current_caller_address, current_value] = if is_delegatecall {
             rw_offset += 2;
-            [step.rw_indices[6], step.rw_indices[7]].map(|idx| block.rws[idx].call_context_value())
+            [6, 7].map(|index| block.get_rws(step, index).call_context_value())
         } else {
             [U256::zero(), U256::zero()]
         };
-        let [gas, callee_address] = [
-            step.rw_indices[stack_index + rw_offset],
-            step.rw_indices[stack_index + 1 + rw_offset],
-        ]
-        .map(|idx| block.rws[idx].stack_value());
+        let [gas, callee_address] = [stack_index + rw_offset, stack_index + 1 + rw_offset]
+            .map(|index| block.get_rws(step, index).stack_value());
         let value = if is_call || is_callcode {
             rw_offset += 1;
-            block.rws[step.rw_indices[7 + rw_offset]].stack_value()
+            block.get_rws(step, 7 + rw_offset).stack_value()
         } else {
             U256::zero()
         };
         let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [
-            step.rw_indices[stack_index + 2 + rw_offset],
-            step.rw_indices[stack_index + 3 + rw_offset],
-            step.rw_indices[stack_index + 4 + rw_offset],
-            step.rw_indices[stack_index + 5 + rw_offset],
-            step.rw_indices[stack_index + 6 + rw_offset],
+            stack_index + 2 + rw_offset,
+            stack_index + 3 + rw_offset,
+            stack_index + 4 + rw_offset,
+            stack_index + 5 + rw_offset,
+            stack_index + 6 + rw_offset,
         ]
-        .map(|idx| block.rws[idx].stack_value());
-        let callee_code_hash = block.rws[step.rw_indices[13 + rw_offset]]
-            .account_value_pair()
-            .0;
+        .map(|index| block.get_rws(step, index).stack_value());
+        let callee_code_hash = block.get_rws(step, 13 + rw_offset).account_value_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 
-        let (is_warm, is_warm_prev) =
-            block.rws[step.rw_indices[14 + rw_offset]].tx_access_list_value_pair();
+        let (is_warm, is_warm_prev) = block
+            .get_rws(step, 14 + rw_offset)
+            .tx_access_list_value_pair();
 
-        let [callee_rw_counter_end_of_reversion, callee_is_persistent] = [
-            step.rw_indices[15 + rw_offset],
-            step.rw_indices[16 + rw_offset],
-        ]
-        .map(|idx| block.rws[idx].call_context_value());
+        let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
+            [15 + rw_offset, 16 + rw_offset]
+                .map(|index| block.get_rws(step, index).call_context_value());
 
         // check if it is insufficient balance case.
         // get caller balance
-        let (caller_balance, _) = block.rws[step.rw_indices[17 + rw_offset]].account_value_pair();
+        let (caller_balance, _) = block.get_rws(step, 17 + rw_offset).account_value_pair();
         self.caller_balance_word
             .assign(region, offset, Some(caller_balance.to_le_bytes()))?;
         self.is_insufficient_balance
@@ -514,8 +503,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
                 rw_offset += 2;
                 (
-                    block.rws[step.rw_indices[16 + rw_offset]].account_value_pair(),
-                    block.rws[step.rw_indices[17 + rw_offset]].account_value_pair(),
+                    block.get_rws(step, 16 + rw_offset).account_value_pair(),
+                    block.get_rws(step, 17 + rw_offset).account_value_pair(),
                 )
             } else {
                 ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
@@ -619,7 +608,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             has_value,
             !callee_exists,
         )?;
-        let gas_available = step.gas_left - gas_cost;
+        let gas_available: u64 = step.gas_left.0 - gas_cost;
 
         self.one_64th_gas
             .assign(region, offset, gas_available.into())?;

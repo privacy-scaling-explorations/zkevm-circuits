@@ -5,14 +5,10 @@ use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
 #[cfg(feature = "test")]
 use crate::util::SubCircuit;
 
-use crate::{
-    evm_circuit::util::rlc,
-    table::{BlockContextFieldTag, RwTableTag},
-};
+use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
 
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
-    operation::Target,
     Error,
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};

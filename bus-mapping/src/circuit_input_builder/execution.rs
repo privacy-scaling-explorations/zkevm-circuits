@@ -1,10 +1,8 @@
 //! Execution step related module.
 
 use crate::{
-    circuit_input_builder::CallContext,
-    error::ExecError,
-    exec_trace::OperationRef,
-    operation::{RWCounter, Target},
+    circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
+    operation::RWCounter,
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
@@ -105,11 +103,6 @@ impl ExecStep {
     /// Get the size of read and writes
     pub fn rw_indices_len(&self) -> usize {
         self.bus_mapping_instance.len()
-    }
-
-    /// Get the spent gas
-    pub fn gas_spent(&self) -> u64 {
-        self.gas_left.0 - self.gas_cost.0
     }
 
     /// Get stack pointer

@@ -5,7 +5,6 @@ use crate::{
         },
         table::Table,
     },
-    table::RwTableTag,
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
