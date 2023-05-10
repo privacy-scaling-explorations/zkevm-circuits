@@ -14,7 +14,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
+use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -256,8 +256,8 @@ pub fn block_convert<F: Field>(
             .enumerate()
             .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
-        end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
-        end_block_last: step_convert(&block.block_steps.end_block_last),
+        end_block_not_last: block.block_steps.end_block_not_last.clone(),
+        end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db
             .0
             .values()

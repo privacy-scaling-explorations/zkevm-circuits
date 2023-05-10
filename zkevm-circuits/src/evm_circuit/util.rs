@@ -634,7 +634,7 @@ impl<'a> StepRws<'a> {
     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
-            step: &step,
+            step,
             offset: 0,
         }
     }
