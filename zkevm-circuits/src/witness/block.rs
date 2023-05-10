@@ -62,7 +62,7 @@ impl<F: Field> Block<F> {
             println!("tx {}", tx_idx);
             for step in &tx.steps {
                 println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
-                for rw_ref in &step.rw_indices {
+                for rw_ref in &step.bus_mapping_instance {
                     println!("  - {:?}", self.rws[*rw_ref]);
                 }
             }

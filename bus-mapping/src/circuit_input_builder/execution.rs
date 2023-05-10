@@ -1,8 +1,10 @@
 //! Execution step related module.
 
 use crate::{
-    circuit_input_builder::CallContext, error::ExecError, exec_trace::OperationRef,
-    operation::RWCounter,
+    circuit_input_builder::CallContext,
+    error::ExecError,
+    exec_trace::OperationRef,
+    operation::{RWCounter, Target},
 };
 use eth_types::{
     evm_types::{Gas, GasCost, OpcodeId, ProgramCounter},
@@ -85,6 +87,20 @@ impl ExecStep {
             self.error,
             Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
         )
+    }
+
+    /// Try get opcode, if possible
+    pub fn opcode(&self) -> Option<OpcodeId> {
+        match self.exec_state {
+            ExecState::Op(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    /// get rw index
+    pub fn rw_index(&self, index: usize) -> (Target, usize) {
+        let x = self.bus_mapping_instance[index];
+        (x.0, x.1)
     }
 }
 
