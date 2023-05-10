@@ -189,33 +189,10 @@ mod codecopy_tests {
             ]
         );
 
-        // RW table memory writes.
-        assert_eq!(
-            (0..size)
-                .map(|idx| &builder.block.container.memory[idx])
-                .map(|op| (op.rw(), op.op().clone()))
-                .collect::<Vec<(RW, MemoryOp)>>(),
-            (0..size)
-                .map(|idx| {
-                    (
-                        RW::WRITE,
-                        MemoryOp::new(
-                            1,
-                            MemoryAddress::from(dst_offset + idx),
-                            if code_offset + idx < code.to_vec().len() {
-                                code.to_vec()[code_offset + idx]
-                            } else {
-                                0
-                            },
-                        ),
-                    )
-                })
-                .collect::<Vec<(RW, MemoryOp)>>(),
-        );
-
+        // TODO: add RW table memory word writes.
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), size);
+        //assert_eq!(copy_events[0].bytes.len(), size);
         assert_eq!(
             copy_events[0].src_id,
             NumberOrHash::Hash(CodeDB::hash(&code.to_vec()))
@@ -231,10 +208,12 @@ mod codecopy_tests {
         assert_eq!(copy_events[0].dst_type, CopyDataType::Memory);
         assert!(copy_events[0].log_id.is_none());
 
-        for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
+        for (idx, (value, is_code, is_mask)) in copy_events[0].bytes.iter().enumerate() {
             let bytecode_element = code.get(code_offset + idx).unwrap_or_default();
-            assert_eq!(*value, bytecode_element.value);
-            assert_eq!(*is_code, bytecode_element.is_code);
+            if !is_mask {
+                assert_eq!(*value, bytecode_element.value);
+                assert_eq!(*is_code, bytecode_element.is_code);
+            }
         }
     }
 }

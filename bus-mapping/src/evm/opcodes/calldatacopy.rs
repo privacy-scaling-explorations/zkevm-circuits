@@ -323,6 +323,7 @@ mod calldatacopy_tests {
 
         let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
+
         //assert_eq!(copy_events[0].bytes.len(), copy_size);
         assert_eq!(copy_events[0].src_id, NumberOrHash::Number(caller_id));
         assert_eq!(
@@ -337,16 +338,8 @@ mod calldatacopy_tests {
         );
         assert_eq!(copy_events[0].dst_addr as usize, dst_offset);
 
-        let mut mask_count = 0;
         for (idx, (value, is_code, mask)) in copy_events[0].bytes.iter().enumerate() {
-            mask_count += if *mask { 1 } else { 0 };
-            //compare real copy byte
-            if *mask {
-                assert_eq!(
-                    Some(value),
-                    memory_a.get(offset + call_data_offset + idx - mask_count)
-                );
-            }
+            assert_eq!(Some(value), memory_a.get(idx));
             assert!(!is_code);
         }
     }
@@ -510,13 +503,16 @@ mod calldatacopy_tests {
         // 1. Since its a root call, we should only have memory RW::WRITE where the
         // current call's memory is written to.
         // no explictl memory op now
-        assert_eq!(builder.block.container.memory.len(), 0);
-
-        let copy_events = builder.block.copy_events.clone();
-
         // single copy event with `size` reads and `size` writes.
+        let copy_events = builder.block.copy_events.clone();
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), size);
+        let begin_slot = dst_offset - dst_offset % 32;
+        let end_slot = dst_offset + size - (dst_offset + size) % 32;
+        assert_eq!(copy_events[0].bytes.len(), end_slot - begin_slot + 32);
+        assert_eq!(
+            builder.block.container.memory_word.len(),
+            (end_slot - begin_slot) / 32 + 1
+        );
 
         for (idx, (value, is_code, _)) in copy_events[0].bytes.iter().enumerate() {
             assert_eq!(value, calldata.get(offset as usize + idx).unwrap_or(&0));

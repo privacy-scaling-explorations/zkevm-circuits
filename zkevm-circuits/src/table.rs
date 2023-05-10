@@ -1471,12 +1471,12 @@ impl CopyTable {
             ));
 
             // debug info
-            let rw_count = F::from(copy_event.rw_counter_step(step_idx));
-            let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-            println!(
-                "step_idx: {},rw_count {:?}, tag {:?}, addr_slot {} addr {:?} word_index {:?}, value_word_rlc {:?}",
-                step_idx, rw_count, tag, addr_slot, addr, word_index, value_word_rlc,
-            );
+            // let rw_count = F::from(copy_event.rw_counter_step(step_idx));
+            // let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
+            // println!(
+            //     "step_idx: {}, rwc_inc_left {:?}, tag {:?}, addr_slot {} addr {:?} word_index
+            // {:?}, value_word_rlc {:?}",     step_idx, rwc_inc_left, tag, addr_slot,
+            // addr, word_index, value_word_rlc, );
 
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
