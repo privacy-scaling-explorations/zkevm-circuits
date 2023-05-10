@@ -756,6 +756,7 @@ impl<F: Field> BytecodeCircuitConfig<F> {
         region.name_column(|| "BYTECODE_q_first", self.q_first);
         region.name_column(|| "BYTECODE_q_last", self.q_last);
         region.name_column(|| "BYTECODE_length", self.length);
+        region.name_column(|| "BYTECODE_push_data_left", self.push_data_left);
         region.name_column(|| "BYTECODE_push_data_size", self.push_data_size);
         region.name_column(|| "BYTECODE_value_rlc", self.value_rlc);
     }
