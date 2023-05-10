@@ -250,11 +250,20 @@ impl StateTest {
             );
         }
 
+        pre.insert(
+            *mock::MOCK_COINBASE,
+            Account {
+                address: *mock::MOCK_COINBASE,
+                balance: U256::from(1),
+                ..Default::default()
+            },
+        );
+
         let state_test = StateTest {
             path: String::default(),
             id: String::default(),
             env: Env {
-                current_coinbase: Address::default(),
+                current_coinbase: *mock::MOCK_COINBASE,
                 current_difficulty: U256::default(),
                 current_gas_limit: 16000000,
                 current_number: 1,
