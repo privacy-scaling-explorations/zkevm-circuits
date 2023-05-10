@@ -141,6 +141,7 @@ pub struct Node {
     pub(crate) storage: Option<StorageNode>,
     /// MPT node values
     pub values: Vec<Vec<u8>>,
+    pub keccak_data: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, Eq, PartialEq, TryFromPrimitive)]

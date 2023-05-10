@@ -565,20 +565,12 @@ mod tests {
                     .collect();
 
                 let mut keccak_data = vec![];
-                /*
-                let mut witness_rows = vec![];
-                for row in w.iter() {
-                    if row[row.len() - 1] == 5 {
-                        keccak_data.push(row[0..row.len() - 1].to_vec());
-                    } else {
-                        let row = MptWitnessRow::<Fr>::new(row[0..row.len()].to_vec());
-                        witness_rows.push(row);
+
+                for node in nodes.iter() {
+                    for k in node.keccak_data.iter() {
+                        keccak_data.push(k.clone());
                     }
                 }
-                let nodes = prepare_witness(&mut witness_rows);
-                */
-
-
 
                 println!("-----????-------");
                 println!("{:?}", nodes);
