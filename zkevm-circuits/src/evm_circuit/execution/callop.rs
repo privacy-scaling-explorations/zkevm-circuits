@@ -462,22 +462,22 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             [U256::zero(), U256::zero()]
         };
-        let [gas, callee_address] = [stack_index + rw_offset, stack_index + 1 + rw_offset]
-            .map(|index| block.get_rws(step, index).stack_value());
+        let [gas, callee_address] = [0, 1].map(|i| {
+            block
+                .get_rws(step, stack_index + i + rw_offset)
+                .stack_value()
+        });
         let value = if is_call || is_callcode {
             rw_offset += 1;
             block.get_rws(step, 7 + rw_offset).stack_value()
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [
-            stack_index + 2 + rw_offset,
-            stack_index + 3 + rw_offset,
-            stack_index + 4 + rw_offset,
-            stack_index + 5 + rw_offset,
-            stack_index + 6 + rw_offset,
-        ]
-        .map(|index| block.get_rws(step, index).stack_value());
+        let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [2, 3, 4, 5, 6].map(|i| {
+            block
+                .get_rws(step, stack_index + i + rw_offset)
+                .stack_value()
+        });
         let callee_code_hash = block.get_rws(step, 13 + rw_offset).account_value_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 

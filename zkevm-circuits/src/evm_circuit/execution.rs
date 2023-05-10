@@ -1376,10 +1376,8 @@ impl<F: Field> ExecutionConfig<F> {
             }
         }
 
-        let rlc_assignments: BTreeSet<_> = step
-            .bus_mapping_instance
-            .iter()
-            .map(|rw_idx| block.rws[*rw_idx])
+        let rlc_assignments: BTreeSet<_> = (0..step.rw_indices_len())
+            .map(|index| block.get_rws(step, index))
             .map(|rw| {
                 rw.table_assignment_aux(evm_randomness)
                     .rlc(lookup_randomness)
