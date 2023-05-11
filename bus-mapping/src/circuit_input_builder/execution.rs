@@ -115,7 +115,7 @@ impl ExecStep {
         let n_bytes_word = 32u64;
         let memory_size = self.memory_size as u64;
         // EVM always pads the memory size to word size
-        // https://github.com/ethereum/go-ethereum/blob/master/core/vm/interpreter.go#L212-L216
+        // https://github.com/ethereum/go-ethereum/blob/a340721aa909ea4b541ffd1ea5e9c7bd441ff769/core/vm/interpreter.go#L201-L205
         // Thus, the memory size must be a multiple of 32 bytes.
         assert_eq!(memory_size % n_bytes_word, 0);
         memory_size / n_bytes_word
