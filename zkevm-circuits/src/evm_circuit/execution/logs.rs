@@ -18,7 +18,7 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
-use bus_mapping::circuit_input_builder::CopyDataType;
+use bus_mapping::{circuit_input_builder::CopyDataType, exec_trace::OperationRef};
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
     Field, ToScalar, U256,
@@ -208,22 +208,23 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         assert!(topic_count <= 4);
 
         let is_persistent = call.is_persistent as u64;
-        let mut topic_stack_index = if topic_count > 0 {
-            6 + call.is_persistent as usize
-        } else {
-            0
-        };
+        let topic_stack_entry =
+            (topic_count > 0).then(|| step.rw_index(6 + call.is_persistent as usize));
 
         for i in 0..4 {
-            let mut topic = region.word_rlc(U256::zero());
-            if i < topic_count {
-                topic = region.word_rlc(block.get_rws(step, topic_stack_index).stack_value());
-                self.topic_selectors[i].assign(region, offset, Value::known(F::ONE))?;
-                topic_stack_index += 1;
-            } else {
-                self.topic_selectors[i].assign(region, offset, Value::known(F::ZERO))?;
-            }
-            self.phase2_topics[i].assign(region, offset, topic)?;
+            let topic = topic_stack_entry
+                .filter(|_| i < topic_count)
+                .map(|OperationRef(target, index)| {
+                    block.rws[OperationRef(target, index + i)].stack_value()
+                })
+                .unwrap_or_default();
+
+            self.topic_selectors[i].assign(
+                region,
+                offset,
+                Value::known(F::from((i < topic_count).into())),
+            )?;
+            self.phase2_topics[i].assign(region, offset, region.word_rlc(topic))?;
         }
 
         self.contract_address.assign(
