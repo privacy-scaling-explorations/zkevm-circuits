@@ -36,12 +36,6 @@ impl From<(Target, usize)> for OperationRef {
     }
 }
 
-impl From<OperationRef> for (Target, usize) {
-    fn from(value: OperationRef) -> Self {
-        (value.0, value.1)
-    }
-}
-
 impl OperationRef {
     /// Return the `OperationRef` as a `usize`.
     pub const fn as_usize(&self) -> usize {
