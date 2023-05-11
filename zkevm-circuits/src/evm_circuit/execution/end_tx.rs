@@ -17,11 +17,10 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{
-        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
-    },
+    table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
     util::Expr,
 };
+use bus_mapping::operation::Target;
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
@@ -284,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
-                RwTableTag::TxReceipt,
+                Target::TxReceipt,
                 (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()

@@ -10,6 +10,7 @@ mod random_linear_combination;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
+use bus_mapping::operation::Target;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::StateCircuit as TestStateCircuit;
 
@@ -19,7 +20,7 @@ use self::{
 };
 use crate::{
     evm_circuit::{param::N_BYTES_WORD, util::rlc},
-    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable, RwTableTag},
+    table::{AccountFieldTag, LookupTable, MPTProofType, MptTable, RwTable},
     util::{Challenges, Expr, SubCircuit, SubCircuitConfig},
     witness::{self, MptUpdates, Rw, RwMap},
 };
@@ -275,7 +276,7 @@ impl<F: Field> StateCircuitConfig<F> {
                                 assert_eq!(state_root, old_root);
                                 state_root = new_root;
                             }
-                            if matches!(row.tag(), RwTableTag::CallContext) && !row.is_write() {
+                            if matches!(row.tag(), Target::CallContext) && !row.is_write() {
                                 assert_eq!(row.value_assignment(randomness), F::ZERO, "{:?}", row);
                             }
                             state_root
@@ -393,7 +394,7 @@ impl<F: Field> StateCircuitConfig<F> {
 /// Keys for sorting the rows of the state circuit
 #[derive(Clone, Copy)]
 pub struct SortKeysConfig {
-    tag: BinaryNumberConfig<RwTableTag, 4>,
+    tag: BinaryNumberConfig<Target, 4>,
     id: MpiConfig<u32, N_LIMBS_ID>,
     address: MpiConfig<Address, N_LIMBS_ACCOUNT_ADDRESS>,
     field_tag: Column<Advice>,
