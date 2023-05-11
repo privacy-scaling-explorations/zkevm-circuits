@@ -32,7 +32,7 @@ const N_ROWS: usize = 1 << 16;
 fn state_circuit_unusable_rows() {
     assert_eq!(
         StateCircuit::<Fr>::unusable_rows(),
-        unusable_rows::<Fr, StateCircuit::<Fr>>(),
+        unusable_rows::<Fr, StateCircuit::<Fr>>(()),
     )
 }
 

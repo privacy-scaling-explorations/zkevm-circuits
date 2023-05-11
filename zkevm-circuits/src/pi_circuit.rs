@@ -5,8 +5,6 @@ mod param;
 mod dev;
 #[cfg(any(feature = "test", test))]
 mod test;
-#[cfg(any(feature = "test", test, feature = "test-circuits"))]
-pub use dev::PiTestCircuit;
 
 use eth_types::{
     geth_types::{BlockConstants, Transaction},

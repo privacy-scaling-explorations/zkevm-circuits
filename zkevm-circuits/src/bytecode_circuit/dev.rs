@@ -14,6 +14,7 @@ use halo2_proofs::{
 impl<F: Field> Circuit<F> for BytecodeCircuit<F> {
     type Config = (BytecodeCircuitConfig<F>, Challenges);
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
