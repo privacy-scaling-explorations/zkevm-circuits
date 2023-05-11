@@ -701,7 +701,7 @@ impl<F: Field> Step<F> {
     ) -> Result<(), Error> {
         self.state
             .execution_state
-            .assign(region, offset, ExecutionState::from(step) as usize)?;
+            .assign(region, offset, step.execution_state() as usize)?;
         self.state
             .rw_counter
             .assign(region, offset, Value::known(F::from(step.rwc.into())))?;
