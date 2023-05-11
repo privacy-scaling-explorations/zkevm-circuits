@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::CachedRegion},
+    circuit_tools::{cell_manager::Cell, constraint_builder::RLCChainable, gadgets::LtGadget, cached_region::{CachedRegion, ChallengeSet}},
     mpt_circuit::{
         helpers::{nibble_rlc, Indexable},
         param::{HASH_WIDTH, RLP_NIL},
@@ -269,9 +269,9 @@ impl<F: Field> BranchGadget<F> {
         self.post_state.as_ref().unwrap().clone()
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         _mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

@@ -6,7 +6,7 @@ use crate::{
             ConstraintBuilder, RLCChainable, RLCChainableValue, RLCable, RLCableValue,
         },
         gadgets::IsEqualGadget,
-        memory::MemoryBank, cached_region::CachedRegion,
+        memory::MemoryBank, cached_region::{CachedRegion, ChallengeSet},
     },
     matchw,
     mpt_circuit::{
@@ -96,9 +96,9 @@ impl<F: Field> LeafKeyGadget<F> {
         })
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<LeafKeyWitness, Error> {
@@ -268,9 +268,9 @@ impl<F: Field> ListKeyGadget<F> {
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         list_bytes: &[u8],
         key_item: &RLPItemWitness,
@@ -408,8 +408,8 @@ impl<F: Field> KeyData<F> {
         ]
     }
 
-    pub(crate) fn witness_store(
-        _region: &mut CachedRegion<'_, '_, F>,
+    pub(crate) fn witness_store<C: ChallengeSet<F>>(
+        _region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         rlc: F,
@@ -434,9 +434,9 @@ impl<F: Field> KeyData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load(
+    pub(crate) fn witness_load<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
@@ -521,8 +521,8 @@ impl<F: Field> ParentData<F> {
         memory.store(cb, &[rlc, is_root, is_placeholder, drifted_parent_rlc]);
     }
 
-    pub(crate) fn witness_store(
-        _region: &mut CachedRegion<'_, '_, F>,
+    pub(crate) fn witness_store<C: ChallengeSet<F>>(
+        _region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         rlc: F,
@@ -542,9 +542,9 @@ impl<F: Field> ParentData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load(
+    pub(crate) fn witness_load<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
@@ -622,8 +622,8 @@ impl<F: Field> MainData<F> {
         memory.store(cb, &values);
     }
 
-    pub(crate) fn witness_store(
-        _region: &mut CachedRegion<'_, '_, F>,
+    pub(crate) fn witness_store<C: ChallengeSet<F>>(
+        _region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         memory: &mut MemoryBank<F>,
         proof_type: usize,
@@ -644,9 +644,9 @@ impl<F: Field> MainData<F> {
         Ok(())
     }
 
-    pub(crate) fn witness_load(
+    pub(crate) fn witness_load<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         memory: &MemoryBank<F>,
         load_offset: usize,
@@ -843,9 +843,9 @@ impl<F: Field> IsEmptyTreeGadget<F> {
         or::expr(&[self.is_in_empty_trie.expr(), self.is_in_empty_branch.expr()])
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         parent_rlc: F,
         r: F,
@@ -920,9 +920,9 @@ impl<F: Field> DriftedGadget<F> {
         })
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         parent_data: &[ParentDataWitness<F>],
         drifted_list_bytes: &[u8],
@@ -988,9 +988,9 @@ impl<F: Field> WrongGadget<F> {
         })
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         is_non_existing: bool,
         key_rlc: &[F],
@@ -1079,9 +1079,9 @@ impl<F: Field> MainRLPGadget<F> {
         })
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         bytes: &[u8],
         r: F,

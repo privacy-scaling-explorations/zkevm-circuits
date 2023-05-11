@@ -4,7 +4,7 @@ use crate::{
     circuit,
     circuit_tools::{
         cell_manager::{Cell},
-        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, cached_region::CachedRegion,
+        constraint_builder::{ConstraintBuilder, RLCable, RLCableValue}, cached_region::{CachedRegion, ChallengeSet},
     },
     matchw,
     mpt_circuit::param::{RLP_LIST_LONG, RLP_LIST_SHORT, RLP_SHORT},
@@ -49,9 +49,9 @@ impl<F: Field> RLPListGadget<F> {
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -233,9 +233,9 @@ impl<F: Field> RLPListDataGadget<F> {
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         list_bytes: &[u8],
     ) -> Result<RLPListWitness, Error> {
@@ -280,9 +280,9 @@ impl<F: Field> RLPValueGadget<F> {
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPValueWitness, Error> {
@@ -574,9 +574,9 @@ impl<F: Field> RLPItemGadget<F> {
         }
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         bytes: &[u8],
     ) -> Result<RLPItemWitness, Error> {

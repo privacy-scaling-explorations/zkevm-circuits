@@ -6,7 +6,7 @@ use super::{
 use crate::{
     circuit,
     circuit_tools::{
-        cell_manager::Cell, cached_region::CachedRegion,
+        cell_manager::Cell, cached_region::{CachedRegion, ChallengeSet},
     },
     mpt_circuit::{
         helpers::{
@@ -81,9 +81,9 @@ impl<F: Field> StartConfig<F> {
         config
     }
 
-    pub fn assign(
+    pub fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         _ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

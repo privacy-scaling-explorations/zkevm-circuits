@@ -11,7 +11,7 @@ use crate::{
     circuit_tools::{
         cell_manager::Cell,
         constraint_builder::RLCChainable,
-        gadgets::{IsEqualGadget, LtGadget}, cached_region::CachedRegion,
+        gadgets::{IsEqualGadget, LtGadget}, cached_region::{CachedRegion, ChallengeSet},
     },
     mpt_circuit::{
         helpers::{
@@ -257,9 +257,9 @@ impl<F: Field> StorageLeafConfig<F> {
         config
     }
 
-    pub fn assign(
+    pub fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         ctx: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

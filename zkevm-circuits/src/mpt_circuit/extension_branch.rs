@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     circuit,
-    circuit_tools::{cell_manager::Cell, cached_region::CachedRegion},
+    circuit_tools::{cell_manager::Cell, cached_region::{CachedRegion, ChallengeSet}},
     mpt_circuit::{
         helpers::{key_memory, parent_memory, Indexable, KeyData, ParentData},
         witness_row::ExtensionBranchRowType,
@@ -181,9 +181,9 @@ impl<F: Field> ExtensionBranchConfig<F> {
         config
     }
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         mpt_config: &MPTConfig<F>,
         pv: &mut MPTState<F>,
         offset: usize,

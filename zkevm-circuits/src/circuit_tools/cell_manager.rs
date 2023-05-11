@@ -1,6 +1,6 @@
 //! Cell manager
 use crate::util::{Expr, query_expression};
-use crate::circuit_tools::{table::LookupTable, cached_region::CachedRegion};
+use crate::circuit_tools::{table::LookupTable, cached_region::{CachedRegion, ChallengeSet}};
 
 use eth_types::Field;
 use halo2_proofs::{
@@ -41,9 +41,9 @@ impl<F: Field> Cell<F> {
     }
 
 
-    pub(crate) fn assign(
+    pub(crate) fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -60,9 +60,9 @@ impl<F: Field> Cell<F> {
         )
     }
 
-    pub(crate) fn assign_value(
+    pub(crate) fn assign_value<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
         value: Value<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
@@ -225,6 +225,17 @@ impl<T: TableType> PhaseConfig<T> {
 }
 
 impl<F: Field, T: TableType> CellManager<F, T> {
+    
+    // 一步到位
+    pub(crate) fn new_(
+        meta: &mut ConstraintSystem<F>,
+        max_height: usize,
+        max_width: usize,
+        phase_config: PhaseConfig<T>,
+    ) -> Self {
+        todo!()
+    }
+
     pub(crate) fn new(
         meta: &mut ConstraintSystem<F>, // meta只出现一次，new的时候把所有cover的cells都query一遍
         height: usize,                  // 拿到 Expr 存起来，后面 cb.query_cell 直接给对应格子的 Expr
@@ -260,6 +271,7 @@ impl<F: Field, T: TableType> CellManager<F, T> {
         // Mark columns used for lookups in Phase3
         for (table, count) in &phase_config.phase3 {
             for _ in 0usize..*count {
+                assert_eq!(advices[column_idx].column_type().phase(), 2u8);
                 columns[column_idx].cell_type = CellType_::Lookup(table.clone());
                 column_idx += 1;
             }
@@ -267,13 +279,13 @@ impl<F: Field, T: TableType> CellManager<F, T> {
 
         // Mark columns used for Phase2 constraints
         for _ in 0..phase_config.phase2 {
+            assert_eq!(advices[column_idx].column_type().phase(), 1u8);
             columns[column_idx].cell_type = CellType_::StoragePhase2;
             column_idx += 1;
         }
 
         // Mark columns used for byte lookup
         for _ in 0..phase_config.phase1 {
-            columns[column_idx].cell_type = CellType_::LookupByte;
             assert_eq!(advices[column_idx].column_type().phase(), 0);
             column_idx += 1;
         }
@@ -284,7 +296,6 @@ impl<F: Field, T: TableType> CellManager<F, T> {
             columns[column_idx].cell_type = CellType_::StoragePermutation;
             column_idx += 1;
         }
-
 
 
         Self {

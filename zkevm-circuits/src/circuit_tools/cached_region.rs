@@ -1,12 +1,11 @@
 use crate::{
-    circuit_tools::cell_manager::{Cell, CellType_},
-    util::Challenges
+    circuit_tools::cell_manager::{Cell, CellType_}, util::query_expression,
 };
 use bus_mapping::state_db::CodeDB;
 use eth_types::{Field, ToLittleEndian, ToWord, U256};
 use halo2_proofs::{
-    circuit::{AssignedCell, Region, Value},
-    plonk::{Advice, Assigned, Column, Error, Expression, Fixed},
+    circuit::{AssignedCell, Region, Value, Layouter},
+    plonk::{Advice, Assigned, Column, Error, Expression, Fixed, Challenge, ConstraintSystem, SecondPhase, FirstPhase},
     poly::Rotation,
 };
 use itertools::Itertools;
@@ -16,20 +15,86 @@ use std::{
 
 use super::cell_manager::TableType;
 
-pub struct CachedRegion<'r, 'b, F: Field> {
+pub trait ChallengeSet<F: Field> {
+    type Expression;
+    type Value;
+
+     /// Construct `Challenges` by allocating challenges in specific phases.
+    fn construct(meta: &mut ConstraintSystem<F>) -> Self;
+
+    /// Returns `Expression` of challenges from `ConstraintSystem`.
+    fn exprs(&self, meta: &mut ConstraintSystem<F>) -> Self::Expression;
+
+    /// Returns `Value` of challenges from `Layouter`.
+    fn values(&self, layouter: &mut impl Layouter<F>) -> Self::Value;
+}
+
+
+// #[derive(Default, Clone, Copy, Debug)]
+// pub struct EvmChallenges<C = Challenge> {
+//     evm_word: C,
+//     keccak_input: C,
+//     lookup_input: C,
+// }
+
+impl<F: Field> ChallengeSet<F> for crate::util::Challenges {
+    type Expression = crate::util::Challenges<Expression<F>>; 
+    type Value = crate::util::Challenges<Value<F>>;
+
+    /// Construct `Challenges` by allocating challenges in specific phases.
+    fn construct(meta: &mut ConstraintSystem<F>) -> Self {
+        #[cfg(any(feature = "test", test, feature = "test-circuits"))]
+        let _dummy_cols = [
+            meta.advice_column(),
+            meta.advice_column_in(SecondPhase),
+            meta.advice_column_in(halo2_proofs::plonk::ThirdPhase),
+        ];
+
+        Self {
+            evm_word: meta.challenge_usable_after(FirstPhase),
+            keccak_input: meta.challenge_usable_after(FirstPhase),
+            lookup_input: meta.challenge_usable_after(SecondPhase),
+        }
+    }
+
+    /// Returns `Expression` of challenges from `ConstraintSystem`.
+    fn exprs(&self, meta: &mut ConstraintSystem<F>) -> Self::Expression {
+        let [evm_word, keccak_input, lookup_input] = query_expression(meta, |meta| {
+            [self.evm_word, self.keccak_input, self.lookup_input]
+                .map(|challenge| meta.query_challenge(challenge))
+        });
+        crate::util::Challenges {
+            evm_word,
+            keccak_input,
+            lookup_input,
+        }
+    }
+
+    /// Returns `Value` of challenges from `Layouter`.
+    fn values(&self, layouter: &mut impl Layouter<F>) -> Self::Value {
+        crate::util::Challenges {
+            evm_word: layouter.get_challenge(self.evm_word),
+            keccak_input: layouter.get_challenge(self.keccak_input),
+            lookup_input: layouter.get_challenge(self.lookup_input),
+        }
+    }
+}
+
+
+pub struct CachedRegion<'r, 'b, F: Field, C: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
     advice: Vec<Vec<F>>,
-    challenges: &'r Challenges<Value<F>>,
+    challenges: &'r C::Value,
     advice_columns: Vec<Column<Advice>>,
     width_start: usize,
     height_start: usize,
 }
 
-impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
+impl<'r, 'b, F: Field, C: ChallengeSet<F>> CachedRegion<'r, 'b, F, C> {
     /// New cached region
     pub(crate) fn new(
         region: &'r mut Region<'b, F>,
-        challenges: &'r Challenges<Value<F>>,
+        challenges: &'r C::Value,
         advice_columns: Vec<Column<Advice>>,
         height: usize,
         height_start: usize,
@@ -132,18 +197,18 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
             [(((row_index - self.height_start) as i32) + rotation.0) as usize]
     }
 
-    pub fn challenges(&self) -> &Challenges<Value<F>> {
+    pub fn challenges(&self) -> &C::Value {
         self.challenges
     }
 
-    pub fn word_rlc(&self, n: U256) -> Value<F> {
-        self.challenges
-            .evm_word()
-            .map(|r| rlc::value(&n.to_le_bytes(), r))
-    }
-    pub fn empty_code_hash_rlc(&self) -> Value<F> {
-        self.word_rlc(CodeDB::empty_code_hash().to_word())
-    }
+    // pub fn word_rlc(&self, n: U256) -> Value<F> {
+    //     self.challenges
+    //         .evm_word()
+    //         .map(|r| rlc::value(&n.to_le_bytes(), r))
+    // }
+    // pub fn empty_code_hash_rlc(&self) -> Value<F> {
+    //     self.word_rlc(CodeDB::empty_code_hash().to_word())
+    // }
 
     /// Constrains a cell to have a constant value.
     ///
@@ -178,9 +243,9 @@ impl<F, T: TableType> Hash for StoredExpression<F, T> {
 }
 
 impl<F: Field, T: TableType> StoredExpression<F, T>  {
-    pub fn assign(
+    pub fn assign<C: ChallengeSet<F>>(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
+        region: &mut CachedRegion<'_, '_, F, C>,
         offset: usize,
     ) -> Result<Value<F>, Error> {
         let value = self.expr.evaluate(
