@@ -449,8 +449,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let is_error_depth = depth.low_u64() > 1024;
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
-        let stack_index = 6;
-
         // This offset is used to change the index offset of `step.rw_indices`.
         // Since both CALL and CALLCODE have an extra stack pop `value`, and
         // opcode DELEGATECALL has two extra call context lookups - current
@@ -462,22 +460,17 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         } else {
             [U256::zero(), U256::zero()]
         };
-        let [gas, callee_address] = [0, 1].map(|i| {
-            block
-                .get_rws(step, stack_index + i + rw_offset)
-                .stack_value()
-        });
+        let [gas, callee_address] =
+            [6, 7].map(|i| block.get_rws(step, i + rw_offset).stack_value());
         let value = if is_call || is_callcode {
+            let value = block.get_rws(step, 8 + rw_offset).stack_value();
             rw_offset += 1;
-            block.get_rws(step, 7 + rw_offset).stack_value()
+            value
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length, is_success] = [2, 3, 4, 5, 6].map(|i| {
-            block
-                .get_rws(step, stack_index + i + rw_offset)
-                .stack_value()
-        });
+        let [cd_offset, cd_length, rd_offset, rd_length, is_success] =
+            [8, 9, 10, 11, 12].map(|i| block.get_rws(step, i + rw_offset).stack_value());
         let callee_code_hash = block.get_rws(step, 13 + rw_offset).account_value_pair().0;
         let callee_exists = !callee_code_hash.is_zero();
 
@@ -486,8 +479,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             .tx_access_list_value_pair();
 
         let [callee_rw_counter_end_of_reversion, callee_is_persistent] =
-            [15 + rw_offset, 16 + rw_offset]
-                .map(|index| block.get_rws(step, index).call_context_value());
+            [15, 16].map(|index| block.get_rws(step, index + rw_offset).call_context_value());
 
         // check if it is insufficient balance case.
         // get caller balance
@@ -499,15 +491,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         let is_insufficient = (value > caller_balance) && (is_call || is_callcode);
         // only call opcode do transfer in sucessful case.
-        let (caller_balance_pair, callee_balance_pair) =
+        let [caller_balance_pair, callee_balance_pair] =
             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-                rw_offset += 2;
-                (
-                    block.get_rws(step, 16 + rw_offset).account_value_pair(),
-                    block.get_rws(step, 17 + rw_offset).account_value_pair(),
-                )
+                [18, 19].map(|index| block.get_rws(step, index + rw_offset).account_value_pair())
             } else {
-                ((U256::zero(), U256::zero()), (U256::zero(), U256::zero()))
+                [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
             };
 
         self.opcode
