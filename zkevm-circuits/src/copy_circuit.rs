@@ -32,8 +32,8 @@ use std::{collections::HashMap, marker::PhantomData};
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
-        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
-        TxContextFieldTag, TxTable,
+        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, TxContextFieldTag,
+        TxTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -330,7 +330,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
-                RwTableTag::from(Target::Memory).expr(),
+                Target::Memory.expr(),
                 meta.query_advice(id, Rotation::cur()), // call_id
                 meta.query_advice(addr, Rotation::cur()), // memory address
                 0.expr(),
@@ -352,7 +352,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
-                RwTableTag::from(Target::TxLog).expr(),
+                Target::TxLog.expr(),
                 meta.query_advice(id, Rotation::cur()), // tx_id
                 meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
                 0.expr(),

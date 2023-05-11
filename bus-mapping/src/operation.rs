@@ -6,6 +6,8 @@ pub(crate) mod container;
 
 pub use container::OperationContainer;
 pub use eth_types::evm_types::{MemoryAddress, StackAddress};
+use gadgets::impl_expr;
+use halo2_proofs::plonk::Expression;
 use strum_macros::EnumIter;
 
 use core::{cmp::Ordering, fmt, fmt::Debug};
@@ -114,6 +116,8 @@ pub enum Target {
     /// Means the target of the operation is the TxLog.
     TxLog,
 }
+
+impl_expr!(Target);
 
 impl From<Target> for usize {
     fn from(value: Target) -> usize {

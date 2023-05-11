@@ -657,7 +657,7 @@ impl Rw {
 
 impl From<&operation::OperationContainer> for RwMap {
     fn from(container: &operation::OperationContainer) -> Self {
-        let mut rws: HashMap<Target, _, _> = HashMap::default();
+        let mut rws = HashMap::default();
 
         rws.insert(
             Target::Start,

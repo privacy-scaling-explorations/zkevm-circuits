@@ -6,8 +6,8 @@ use crate::{
         util::{Cell, RandomLinearCombination, Word},
     },
     table::{
-        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag,
-        TxLogFieldTag, TxReceiptFieldTag,
+        AccountFieldTag, BytecodeFieldTag, CallContextFieldTag, TxContextFieldTag, TxLogFieldTag,
+        TxReceiptFieldTag,
     },
     util::{build_tx_log_expression, Challenges, Expr},
 };
@@ -686,7 +686,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             Lookup::Rw {
                 counter,
                 is_write,
-                tag: RwTableTag::from(tag).expr(),
+                tag: tag.expr(),
                 values,
             },
         );
