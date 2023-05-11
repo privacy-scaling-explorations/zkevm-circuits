@@ -18,7 +18,7 @@ use crate::{
     util::{build_tx_log_expression, Expr},
 };
 use array_init::array_init;
-use bus_mapping::{circuit_input_builder::CopyDataType, exec_trace::OperationRef};
+use bus_mapping::circuit_input_builder::CopyDataType;
 use eth_types::{
     evm_types::{GasCost, OpcodeId},
     Field, ToScalar, U256,
@@ -207,24 +207,29 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_count = opcode.postfix().expect("opcode with postfix") as usize;
         assert!(topic_count <= 4);
 
-        let is_persistent = call.is_persistent as u64;
-        let topic_stack_entry =
-            (topic_count > 0).then(|| step.rw_index(6 + call.is_persistent as usize));
-
+        let is_persistent = call.is_persistent as usize;
+        let mut topics = (0..topic_count).map(|topic| {
+            // We compute the index of the correct read-write record from
+            // bus-mapping/src/evm/opcodes/logs.rs::gen_log_step
+            // It takes 6 + is_persistent reads or writes to reach the topic stack write section.
+            // Each topic takes at least 1 stack read. They take an additional tx log write if the
+            // call is persistent.
+            block
+                .get_rws(step, 6 + is_persistent + topic * (1 + is_persistent))
+                .stack_value()
+        });
         for i in 0..4 {
-            let topic = topic_stack_entry
-                .filter(|_| i < topic_count)
-                .map(|OperationRef(target, index)| {
-                    block.rws[OperationRef(target, index + i)].stack_value()
-                })
-                .unwrap_or_default();
-
+            let topic = topics.next();
             self.topic_selectors[i].assign(
                 region,
                 offset,
-                Value::known(F::from((i < topic_count).into())),
+                Value::known(F::from(topic.is_some().into())),
             )?;
-            self.phase2_topics[i].assign(region, offset, region.word_rlc(topic))?;
+            self.phase2_topics[i].assign(
+                region,
+                offset,
+                region.word_rlc(topic.unwrap_or_default()),
+            )?;
         }
 
         self.contract_address.assign(
@@ -236,7 +241,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
                     .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
-
+        let is_persistent = call.is_persistent as u64;
         self.is_static_call
             .assign(region, offset, Value::known(F::from(call.is_static as u64)))?;
         self.is_persistent
