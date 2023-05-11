@@ -1166,9 +1166,7 @@ impl<F: Field> ExecutionConfig<F> {
             };
         }
 
-        let execution_state = ExecutionState::from(step);
-
-        match execution_state {
+        match step.execution_state() {
             // internal states
             ExecutionState::BeginTx => assign_exec_step!(self.begin_tx_gadget),
             ExecutionState::EndTx => assign_exec_step!(self.end_tx_gadget),
@@ -1307,7 +1305,7 @@ impl<F: Field> ExecutionConfig<F> {
                 assign_exec_step!(self.error_return_data_out_of_bound)
             }
 
-            _ => evm_unimplemented!("unimplemented ExecutionState: {:?}", execution_state),
+            unimpl_state => evm_unimplemented!("unimplemented ExecutionState: {:?}", unimpl_state),
         }
 
         // Fill in the witness values for stored expressions
@@ -1315,8 +1313,8 @@ impl<F: Field> ExecutionConfig<F> {
 
         // enable with `RUST_LOG=debug`
         if log::log_enabled!(log::Level::Debug) {
-            let is_padding_step =
-                matches!(execution_state, ExecutionState::EndBlock) && step.rw_indices_len() == 0;
+            let is_padding_step = matches!(step.execution_state(), ExecutionState::EndBlock)
+                && step.rw_indices_len() == 0;
             if !is_padding_step {
                 // expensive function call
                 Self::check_rw_lookup(

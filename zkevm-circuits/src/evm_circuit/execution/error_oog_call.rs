@@ -133,13 +133,11 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
         } else {
             U256::zero()
         };
-        let [cd_offset, cd_length, rd_offset, rd_length] = [
-            stack_index + is_call_or_callcode + 2,
-            stack_index + is_call_or_callcode + 3,
-            stack_index + is_call_or_callcode + 4,
-            stack_index + is_call_or_callcode + 5,
-        ]
-        .map(|index| block.get_rws(step, index).stack_value());
+        let [cd_offset, cd_length, rd_offset, rd_length] = [2, 3, 4, 5].map(|i| {
+            block
+                .get_rws(step, stack_index + is_call_or_callcode + i)
+                .stack_value()
+        });
 
         let callee_code_hash = block
             .get_rws(step, 9 + is_call_or_callcode)
