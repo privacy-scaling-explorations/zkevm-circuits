@@ -207,7 +207,7 @@ impl<F: Field> MPTConfig<F> {
         memory.allocate(meta, main_memory());
 
         let mut ctx = MPTContext {
-            mpt_table: mpt_table,
+            mpt_table,
             rlp_item: rlp_item.clone(),
             challenges: challenges.clone(),
             r: challenges.keccak_input(),
@@ -362,6 +362,7 @@ impl<F: Field> MPTConfig<F> {
                         node.values.len(),
                         offset
                     );
+                    // Decompose RLP
                     for (idx, bytes) in node.values.iter().enumerate() {
                         let is_nibbles = node.extension_branch.is_some()
                             && idx == ExtensionBranchRowType::KeyC as usize;

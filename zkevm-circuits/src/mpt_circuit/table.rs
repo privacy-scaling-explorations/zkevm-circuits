@@ -1,10 +1,10 @@
 
 use eth_types::Field;
-use halo2_proofs::plonk::{Column, Any};
+use halo2_proofs::{plonk::{Column, Any}, circuit::Value};
 use strum_macros::EnumIter;
 use crate::{
     circuit_tools::cell_manager::TableType, 
-    circuit_tools::table::LookupTable,
+    circuit_tools::{table::LookupTable, cached_region::ChallengeSet},
     table::KeccakTable
 };
 
@@ -46,4 +46,10 @@ impl<F: Field> LookupTable<F, Table> for KeccakTable {
         ]
     }
 
+}
+
+impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
+    fn indexed(&self) -> Vec<&Value<F>> {
+        vec![&self.evm_word, &self.keccak_input, &self.lookup_input]
+    }
 }

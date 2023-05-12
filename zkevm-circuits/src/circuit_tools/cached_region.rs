@@ -14,30 +14,15 @@ use std::{
 
 use super::cell_manager::TableType;
 
-trait Indexd<T> {
-    fn indexed(&self) -> Vec<&T>;
-}
-
-impl<T> Indexd<T> for crate::util::Challenges<T> {
-    fn indexed(&self) -> Vec<&T> {
-        vec![&self.evm_word, &self.keccak_input, &self.lookup_input]
-    }
-}
 pub trait ChallengeSet<F: Field> {
     fn indexed(&self) -> Vec<&Value<F>>;
 }
 
-impl<F: Field> ChallengeSet<F> for crate::util::Challenges<Value<F>> {
+impl<F: Field, V: AsRef<[Value<F>]>> ChallengeSet<F> for V {
     fn indexed(&self) -> Vec<&Value<F>> {
-        vec![&self.evm_word, &self.keccak_input, &self.lookup_input]
+        self.as_ref().iter().collect()
     }
 }
-
-// pub struct EvmChallenges<T = Challenge> {
-//     pub evm_word: T,
-//     pub keccak_input: T,
-//     pub lookup_input: T,
-// }
 
 pub struct CachedRegion<'r, 'b, F: Field, C: ChallengeSet<F>> {
     region: &'r mut Region<'b, F>,
