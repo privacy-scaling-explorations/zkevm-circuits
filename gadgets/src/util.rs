@@ -164,7 +164,7 @@ pub mod pow {
     pub fn value<F: Field>(value: F, exponent: usize) -> F {
         let mut result = 1.scalar();
         for _ in 0..exponent {
-            result = result * value;
+            result *= value;
         }
         result
     }

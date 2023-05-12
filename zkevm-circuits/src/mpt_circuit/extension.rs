@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::{pow, Scalar};
 use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells}, circuit::Value,
+    plonk::{Error, Expression, VirtualCells},
 };
 
 use super::{
@@ -163,7 +163,7 @@ impl<F: Field> ExtensionGadget<F> {
 
             // Store the post ext state
             config.post_state = Some(ExtState {
-                key_rlc: key_rlc,
+                key_rlc,
                 key_mult: key_data.mult.expr() * config.mult_key.expr(),
                 num_nibbles,
                 is_key_odd,
@@ -246,7 +246,7 @@ impl<F: Field> ExtensionGadget<F> {
 
         // Key RLC
         let (key_rlc_ext, _) = ext_key_rlc_calc_value(
-            rlp_key.key_item.clone(),
+            rlp_key.key_item,
             key_data.mult,
             is_key_part_odd,
             !*is_key_odd,

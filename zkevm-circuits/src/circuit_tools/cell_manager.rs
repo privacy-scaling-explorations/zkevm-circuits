@@ -228,10 +228,10 @@ impl<F: Field, T: TableType> CellManager<F, T> {
     
     // 一步到位
     pub(crate) fn new_(
-        meta: &mut ConstraintSystem<F>,
-        max_height: usize,
-        max_width: usize,
-        phase_config: PhaseConfig<T>,
+        _meta: &mut ConstraintSystem<F>,
+        _max_height: usize,
+        _max_width: usize,
+        _phase_config: PhaseConfig<T>,
     ) -> Self {
         todo!()
     }
@@ -272,7 +272,7 @@ impl<F: Field, T: TableType> CellManager<F, T> {
         for (table, count) in &phase_config.phase3 {
             for _ in 0usize..*count {
                 assert_eq!(advices[column_idx].column_type().phase(), 2u8);
-                columns[column_idx].cell_type = CellType_::Lookup(table.clone());
+                columns[column_idx].cell_type = CellType_::Lookup(*table);
                 column_idx += 1;
             }
         }

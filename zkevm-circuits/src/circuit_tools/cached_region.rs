@@ -1,10 +1,10 @@
 use crate::{
-    circuit_tools::cell_manager::{Cell, CellType_}, util::query_expression,
+    circuit_tools::cell_manager::{Cell, CellType_},
 };
-use eth_types::{Field, ToLittleEndian, ToWord, U256};
+use eth_types::{Field};
 use halo2_proofs::{
-    circuit::{AssignedCell, Region, Value, Layouter},
-    plonk::{Advice, Assigned, Column, Error, Expression, Fixed, Challenge, ConstraintSystem, SecondPhase, FirstPhase},
+    circuit::{AssignedCell, Region, Value},
+    plonk::{Advice, Assigned, Column, Error, Expression, Fixed},
     poly::Rotation,
 };
 use itertools::Itertools;

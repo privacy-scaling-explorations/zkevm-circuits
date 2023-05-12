@@ -371,14 +371,12 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
                 2
             } else if is_very_long {
                 3
+            } else if row.get_type() == MptWitnessRowType::ExtensionNodeS {
+                0
+            } else if is_string {
+                unreachable!()
             } else {
-                if row.get_type() == MptWitnessRowType::ExtensionNodeS {
-                    0
-                } else if is_string {
-                    unreachable!()
-                } else {
-                    unreachable!()
-                }
+                unreachable!()
             };
 
             // println!("bytes: {:?}", key_bytes);
@@ -514,7 +512,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             node_rows[StartRowType::RootC as usize] = new_row.c();
 
             let start_node = StartNode {
-                proof_type: new_row.proof_type.clone(),
+                proof_type: new_row.proof_type,
             };
             let mut node = Node::default();
             node.start = Some(start_node);
@@ -524,7 +522,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
 
         if witness[offset].get_type() == MptWitnessRowType::InitBranch {
             let row_init = witness[offset].to_owned();
-            let is_placeholder = row_init.is_placeholder.clone();
+            let is_placeholder = row_init.is_placeholder;
             let is_extension = row_init.is_extension;
             let modified_index = row_init.modified_index;
             let mut drifted_index = row_init.drifted_index;
@@ -569,7 +567,7 @@ pub(crate) fn prepare_witness<F: Field>(witness: &mut [MptWitnessRow<F>]) -> Vec
             node.values = node_rows;
             nodes.push(node);
         } else if witness[offset].get_type() == MptWitnessRowType::StorageLeafSKey {
-            let row_key = [&witness[offset + 0], &witness[offset + 2]];
+            let row_key = [&witness[offset], &witness[offset + 2]];
             let row_value = [&witness[offset + 1], &witness[offset + 3]];
             let row_drifted = &witness[offset + 4];
             let row_wrong = &witness[offset + 5];

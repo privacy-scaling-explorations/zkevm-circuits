@@ -155,7 +155,7 @@ impl<F: Field> CellGadget<F> {
 
         assign!(region, (self.a.column(), offset) => 2u64.scalar())?;
         assign!(region, (self.b.column(), offset) => 3u64.scalar())?;
-        assign!(region, (self.c.column(), offset) => 2u64.scalar() + 3u64.scalar() * r1)?;
+        // assign!(region, (self.c.column(), offset) => 2u64.scalar() + 3u64.scalar() * r1)?;
         assign!(region, (self.d.column(), offset) => 2u64.scalar())?;
 
         region.get_advice(1, 1, Rotation::cur());

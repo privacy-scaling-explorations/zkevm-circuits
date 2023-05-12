@@ -364,7 +364,7 @@ pub(crate) fn merge_values_unsafe<F: Field>(
     let default_value = 0.expr();
     for (idx, value) in merged_values.iter_mut().enumerate() {
         *value = sum::expr(values.iter().map(|(condition, values)| {
-            condition.expr() * values.get(idx).unwrap_or_else(|| &default_value).expr()
+            condition.expr() * values.get(idx).unwrap_or(&default_value).expr()
         }));
     }
     (selector, merged_values)
@@ -508,10 +508,10 @@ pub trait ExprResult<F> {
 
 impl<F: Field> ExprResult<F> for () {
     fn add(&self, _other: &Self) -> Self {
-        ()
+        
     }
     fn mul(&self, _other: &Expression<F>) -> Self {
-        ()
+        
     }
 }
 
@@ -639,7 +639,7 @@ impl<F: Field, S: Scalar<F>, I: IntoIterator<Item = S>> RLCChainableValue<F, S, 
         let mut rlc = self.0;
         let mut mult = self.1;
         for value in values.into_iter().map(|byte| byte.scalar()) {
-            rlc = rlc + value * mult;
+            rlc += value * mult;
             mult *= r;
         }
         (rlc, mult)

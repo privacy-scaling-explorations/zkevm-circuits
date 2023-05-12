@@ -1,7 +1,7 @@
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells}, circuit::Value,
+    plonk::{Error, Expression, VirtualCells},
 };
 
 use super::{
@@ -338,12 +338,10 @@ impl<F: Field> BranchGadget<F> {
         for is_s in [true, false] {
             mod_node_hash_rlc[is_s.idx()] = if is_placeholder[is_s.idx()] {
                 rlp_values[1 + branch.drifted_index].rlc_content(pv.r)
+            } else if is_s {
+                rlp_values[1 + branch.modified_index].rlc_content(pv.r)
             } else {
-                if is_s {
-                    rlp_values[1 + branch.modified_index].rlc_content(pv.r)
-                } else {
-                    rlp_values[0].rlc_content(pv.r)
-                }
+                rlp_values[0].rlc_content(pv.r)
             };
             self.mod_rlc[is_s.idx()].assign(region, offset, mod_node_hash_rlc[is_s.idx()])?;
         }

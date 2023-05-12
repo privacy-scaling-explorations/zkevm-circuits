@@ -18,7 +18,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{or, pow, Scalar};
 use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells}, circuit::Value,
+    plonk::{Error, Expression, VirtualCells},
 };
 
 use super::{
@@ -226,7 +226,7 @@ pub(crate) fn ext_key_rlc_calc_value<F: Field>(
                 // Check that `nibble_hi` is correct.
                 assert!(*byte == nibble_lo * 16 + nibble_hi);
                 // Collect bytes
-                (F::from(*nibble_hi as u64) * F::from(16 as u64) * r) + F::from(nibble_lo as u64)
+                (F::from(*nibble_hi as u64) * F::from(16_u64) * r) + F::from(nibble_lo as u64)
             }).collect::<Vec<_>>());
             calc_rlc(&key_bytes, 1.scalar())
         },
@@ -752,7 +752,7 @@ pub(crate) fn ext_key_rlc_value<F: Field>(
         (0.scalar(), 1.scalar())
     };
     (rlc, key_mult_prev * mult)
-        .rlc_chain_value(bytes[1..].iter().map(|v| v).collect::<Vec<&F>>(), r)
+        .rlc_chain_value(bytes[1..].iter().collect::<Vec<&F>>(), r)
 }
 
 // Returns the number of nibbles stored in a key value
@@ -827,7 +827,7 @@ impl<F: Field> IsEmptyTreeGadget<F> {
                 .iter()
                 .map(|v| v.expr())
                 .collect::<Vec<_>>()
-                .rlc(&r);
+                .rlc(r);
             let is_in_empty_trie =
                 IsEqualGadget::construct(cb, parent_rlc.expr(), empty_root_rlc.expr());
             let is_in_empty_branch = IsEqualGadget::construct(cb, parent_rlc.expr(), 0.expr());
@@ -896,7 +896,7 @@ impl<F: Field> DriftedGadget<F> {
                             config.drifted_rlp_key.key_value.clone(),
                             key_mult.expr(),
                             is_key_odd.expr(),
-                            &r
+                            r
                         );
                         // The key of the drifted leaf needs to match the key of the leaf
                         require!(key_rlc => expected_key_rlc[is_s.idx()]);
@@ -907,10 +907,10 @@ impl<F: Field> DriftedGadget<F> {
                         require!(key_num_nibbles.expr() + num_nibbles => KEY_LEN_IN_NIBBLES);
 
                         // Multiplier after list and key
-                        let mult = config.drifted_rlp_key.rlp_list.rlp_mult(&r) * drifted_item.mult();
+                        let mult = config.drifted_rlp_key.rlp_list.rlp_mult(r) * drifted_item.mult();
 
                         // Complete the drifted leaf rlc by adding the bytes on the value row
-                        let leaf_rlc = (config.drifted_rlp_key.rlc(&r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
+                        let leaf_rlc = (config.drifted_rlp_key.rlc(r), mult.expr()).rlc_chain(leaf_no_key_rlc[is_s.idx()].expr());
                         // The drifted leaf needs to be stored in the branch at `drifted_index`.
                         require!((1, leaf_rlc, config.drifted_rlp_key.rlp_list.num_bytes(), parent_data[is_s.idx()].drifted_parent_rlc.expr()) => @"keccak");
                     }

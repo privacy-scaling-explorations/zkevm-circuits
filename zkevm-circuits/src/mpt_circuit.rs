@@ -41,7 +41,7 @@ use crate::{
         start::StartConfig,
         storage_leaf::StorageLeafConfig,
     },
-    circuit_tools::{table::LookupTable, cell_manager::PhaseConfig, cached_region::ChallengeSet},
+    circuit_tools::{table::LookupTable, cell_manager::PhaseConfig},
     table::{KeccakTable, MPTProofType, MptTable},
     util::Challenges,
 };
@@ -207,7 +207,7 @@ impl<F: Field> MPTConfig<F> {
         memory.allocate(meta, main_memory());
 
         let mut ctx = MPTContext {
-            mpt_table: mpt_table.clone(),
+            mpt_table: mpt_table,
             rlp_item: rlp_item.clone(),
             challenges: challenges.clone(),
             r: challenges.keccak_input(),
@@ -304,9 +304,9 @@ impl<F: Field> MPTConfig<F> {
             cb.base.generate_lookups(meta, &ctx.memory.tags());
         } else if disable_lookups == 3 {
             cb.base
-                .generate_lookups(meta, &vec!["fixed".to_string(), "keccak".to_string()]);
+                .generate_lookups(meta, &["fixed".to_string(), "keccak".to_string()]);
         } else if disable_lookups == 4 {
-            cb.base.generate_lookups(meta, &vec!["keccak".to_string()]);
+            cb.base.generate_lookups(meta, &["keccak".to_string()]);
         }
 
         println!("num lookups: {}", meta.lookups().len());

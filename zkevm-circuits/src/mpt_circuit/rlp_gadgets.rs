@@ -14,7 +14,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{not, pow, Scalar};
 use halo2_proofs::{
-    plonk::{Error, Expression}, circuit::Value,
+    plonk::{Error, Expression},
 };
 
 use super::param::{KEY_PREFIX_ODD, KEY_TERMINAL_PREFIX_ODD, RLP_LONG};
