@@ -1,28 +1,26 @@
+use std::marker::PhantomData;
+
 use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, from_bytes, math_gadget::*, select, CachedRegion,
-        Cell,
     },
-    util::{word, Expr},
+    util::{word::WordExpr, Expr},
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use halo2_proofs::plonk::{Error, Expression};
 
 #[derive(Clone, Debug)]
 /// CmpWordsGadget compares two words, exposing `eq`  and `lt`
-pub(crate) struct CmpWordsGadget<F> {
+pub(crate) struct CmpWordsGadget<F, T> {
     comparison_lo: ComparisonGadget<F, 16>,
     comparison_hi: ComparisonGadget<F, 16>,
     pub eq: Expression<F>,
     pub lt: Expression<F>,
+    marker: PhantomData<T>,
 }
 
-impl<F: Field> CmpWordsGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        a: &word::Word<Cell<F>>,
-        b: &word::Word<Cell<F>>,
-    ) -> Self {
+impl<F: Field, T: WordExpr<F>> CmpWordsGadget<F, T> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, a: T, b: T) -> Self {
         let (a_lo, a_hi) = a.to_word().to_lo_hi();
         let (b_lo, b_hi) = b.to_word().to_lo_hi();
         // `a.lo <= b.lo`
@@ -47,6 +45,7 @@ impl<F: Field> CmpWordsGadget<F> {
             comparison_hi,
             lt,
             eq,
+            marker: Default::default(),
         }
     }
 
@@ -86,14 +85,14 @@ mod tests {
 
     #[derive(Clone)]
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
-    struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
-        cmp_gadget: CmpWordsGadget<F>,
-        a_word: word::Word<Cell<F>>,
-        b_word: word::Word<Cell<F>>,
+    struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool, T: WordExpr<F>> {
+        cmp_gadget: CmpWordsGadget<F, T>,
+        a_word: T,
+        b_word: T,
     }
 
-    impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
-        for CmpWordGadgetTestContainer<F, CHECK_EQ>
+    impl<F: Field, const CHECK_EQ: bool, T: WordExpr<F>> MathGadgetContainer<F>
+        for CmpWordGadgetTestContainer<F, CHECK_EQ, T>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a_word = cb.query_word_unchecked();

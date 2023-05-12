@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use eth_types::Field;
 use gadgets::util::and;
 use halo2_proofs::{
@@ -9,24 +11,21 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, transpose_val_ret, CachedRegion,
     },
-    util::word::Word,
+    util::word::{Word, WordExpr},
 };
 
 use super::IsZeroGadget;
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
-pub struct IsEqualWordGadget<F> {
+pub struct IsEqualWordGadget<F, T> {
     is_zero_lo: IsZeroGadget<F>,
     is_zero_hi: IsZeroGadget<F>,
+    marker: PhantomData<T>,
 }
 
-impl<F: Field> IsEqualWordGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        lhs: Word<Expression<F>>,
-        rhs: Word<Expression<F>>,
-    ) -> Self {
+impl<F: Field, T: WordExpr<F>> IsEqualWordGadget<F, T> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T, rhs: T) -> Self {
         let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
         let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
         let is_zero_lo = IsZeroGadget::construct(cb, lhs_lo.clone() - rhs_lo.clone());
@@ -35,6 +34,7 @@ impl<F: Field> IsEqualWordGadget<F> {
         Self {
             is_zero_lo,
             is_zero_hi,
+            marker: Default::default(),
         }
     }
 

@@ -3,7 +3,7 @@ use super::{
     from_bytes,
     math_gadget::{IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-    CachedRegion,
+    AccountAddress, CachedRegion,
 };
 use crate::{
     evm_circuit::{
@@ -21,7 +21,7 @@ use crate::{
     },
     table::{AccountFieldTag, CallContextFieldTag},
     util::{
-        word::{Word, Word32Cell, WordCell},
+        word::{Word, Word32Cell, WordCell, WordExpr},
         Expr,
     },
     witness::{Block, Call, ExecStep},
@@ -583,12 +583,12 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
+pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool, T> {
     pub is_success: Cell<F>,
 
     pub gas: Word32Cell<F>,
     pub gas_is_u64: IsZeroGadget<F>,
-    pub callee_address: Word32Cell<F>,
+    pub callee_address: AccountAddress<F>,
     pub value: Word32Cell<F>,
     pub cd_address: MemoryAddressGadget<F>,
     pub rd_address: MemoryAddressGadget<F>,
@@ -597,12 +597,14 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
     value_is_zero: IsZeroWordGadget<F>,
     pub has_value: Expression<F>,
     pub callee_code_hash: Word32Cell<F>,
-    pub is_empty_code_hash: IsEqualWordGadget<F>,
+    pub is_empty_code_hash: IsEqualWordGadget<F, T>,
 
     pub callee_not_exists: IsZeroWordGadget<F>,
 }
 
-impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
+impl<F: Field, const IS_SUCCESS_CALL: bool, T: WordExpr<F>>
+    CommonCallGadget<F, IS_SUCCESS_CALL, T>
+{
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,
@@ -618,7 +620,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         );
 
         let gas_word = cb.query_word32();
-        let callee_address_word = cb.query_word32();
+        let callee_address_word = cb.query_account_address();
         let value = cb.query_word32();
         let cd_offset = cb.query_word32();
         let cd_length = cb.query_word32();
@@ -666,7 +668,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
 
         let callee_code_hash = cb.query_word32();
         cb.account_read(
-            from_bytes::expr(&callee_address_word.limbs[..N_BYTES_ACCOUNT_ADDRESS]),
+            callee_address_word.expr(),
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
@@ -692,7 +694,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
     }
 
     pub fn callee_address_expr(&self) -> Expression<F> {
-        from_bytes::expr(&self.callee_address.limbs[..N_BYTES_ACCOUNT_ADDRESS])
+        self.callee_address.expr()
     }
 
     pub fn gas_expr(&self) -> Expression<F> {

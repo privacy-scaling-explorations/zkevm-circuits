@@ -11,12 +11,12 @@ use crate::{
                 Transition::Delta,
             },
             math_gadget::LtGadget,
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::BlockContextFieldTag,
-    util::Expr,
+    util::{word::WordCell, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian, ToScalar};
@@ -28,7 +28,7 @@ pub(crate) struct BlockHashGadget<F> {
     same_context: SameContextGadget<F>,
     block_number: WordByteCapGadget<F, N_BYTES_U64>,
     current_block_number: Cell<F>,
-    block_hash: Word<F>,
+    block_hash: WordCell<F>,
     diff_lt: LtGadget<F, N_BYTES_U64>,
 }
 
@@ -48,7 +48,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         let block_number = WordByteCapGadget::construct(cb, current_block_number.expr());
         cb.stack_pop(block_number.original_word());
 
-        let block_hash = cb.query_word_rlc();
+        let block_hash = cb.query_word_unchecked();
 
         let diff_lt = LtGadget::construct(
             cb,
@@ -62,7 +62,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             cb.block_lookup(
                 BlockContextFieldTag::BlockHash.expr(),
                 Some(block_number.valid_value()),
-                block_hash.expr(),
+                block_hash.to_word(),
             );
         });
 
@@ -73,7 +73,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             );
         });
 
-        cb.stack_push(block_hash.expr());
+        cb.stack_push(block_hash.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),

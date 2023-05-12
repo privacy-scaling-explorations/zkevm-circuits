@@ -20,7 +20,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, Challenges, Expr},
+    util::{query_expression, word::WordExpr, Challenges, Expr},
 };
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
@@ -197,7 +197,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F> {
+pub(crate) struct ExecutionConfig<F, T> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -224,7 +224,7 @@ pub(crate) struct ExecutionConfig<F> {
     end_tx_gadget: Box<EndTxGadget<F>>,
     // opcode gadgets
     add_sub_gadget: Box<AddSubGadget<F>>,
-    addmod_gadget: Box<AddModGadget<F>>,
+    addmod_gadget: Box<AddModGadget<F, T>>,
     address_gadget: Box<AddressGadget<F>>,
     balance_gadget: Box<BalanceGadget<F>>,
     bitwise_gadget: Box<BitwiseGadget<F>>,
@@ -312,7 +312,7 @@ pub(crate) struct ExecutionConfig<F> {
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
 }
 
-impl<F: Field> ExecutionConfig<F> {
+impl<F: Field, T: WordExpr<F>> ExecutionConfig<F, T> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::redundant_closure_call)]
     pub(crate) fn configure(
@@ -1398,7 +1398,7 @@ impl<F: Field> ExecutionConfig<F> {
         // plus the number of rw lookups done by the copy circuit.
         if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}",
                 step.rw_indices.len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,

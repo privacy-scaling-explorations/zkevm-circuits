@@ -49,6 +49,10 @@ impl<T: Default, const N: usize> Default for WordLimbs<T, N> {
     }
 }
 
+pub(crate) trait WordExpr<F> {
+    fn to_word(&self) -> Word<Expression<F>>;
+}
+
 impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
     pub fn assign<const N1: usize>(
         &self,
@@ -70,8 +74,10 @@ impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
         return WordLimbs::new(self.limbs.map(|cell| cell.expr()));
     }
+}
 
-    pub fn to_word(&self) -> Word<Expression<F>> {
+impl<F: FieldExt, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
+    fn to_word(&self) -> Word<Expression<F>> {
         Word(self.word_expr().to_word_n())
     }
 }
@@ -162,7 +168,7 @@ impl<F: FieldExt> Word<Expression<F>> {
     }
 
     // Assume selector is 1/0 therefore no overflow check
-    fn mul_selector(&self, selector: Expression<F>) -> Self {
+    pub fn mul_selector(&self, selector: Expression<F>) -> Self {
         Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
     }
 }
@@ -185,10 +191,6 @@ impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
         WordLimbs::<Expression<F>, N2>::new(limbs)
     }
 
-    pub fn to_word(&self) -> Word<Expression<F>> {
-        Word(self.to_word_n())
-    }
-
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
     pub fn is_eq<const N2: usize>(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
         assert_eq!(N1 % N2, 0);
@@ -200,6 +202,12 @@ impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
                 .map(|(expr1, expr2)| expr1 - expr2)
                 .collect_vec(),
         ))
+    }
+}
+
+impl<F: FieldExt, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word(self.to_word_n())
     }
 }
 

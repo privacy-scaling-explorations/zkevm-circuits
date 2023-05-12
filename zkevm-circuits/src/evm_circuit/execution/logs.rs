@@ -10,12 +10,12 @@ use crate::{
                 Transition::{Delta, To},
             },
             memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
-            not, sum, CachedRegion, Cell, Word,
+            not, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-    util::{build_tx_log_expression, Expr},
+    util::{build_tx_log_expression, word::Word, Expr},
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -80,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in phase2_topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
-                cb.stack_pop(Word::from_lo(topic.expr()));
+                cb.stack_pop(Word::from_lo_unchecked(topic.expr()));
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(
@@ -117,17 +117,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         }
 
         // check memory copy
-        let memory_address = MemoryAddressGadget::construct(
-            cb,
-            mstart.limbs[0..N_BYTES_MEMORY_WORD_SIZE]
-                .to_vec()
-                .try_into()
-                .unwrap(),
-            msize.limbs[0..N_BYTES_MEMORY_WORD_SIZE]
-                .to_vec()
-                .try_into()
-                .unwrap(),
-        );
+        let memory_address = MemoryAddressGadget::construct(cb, mstart, msize);
 
         // Calculate the next memory size and the gas cost for this memory
         // access

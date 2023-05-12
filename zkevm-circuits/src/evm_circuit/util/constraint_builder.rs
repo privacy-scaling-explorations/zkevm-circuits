@@ -26,7 +26,7 @@ use halo2_proofs::{
     },
 };
 
-use super::{rlc, CachedRegion, CellType, StoredExpression};
+use super::{rlc, AccountAddress, CachedRegion, CellType, StoredExpression};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -150,6 +150,10 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
 
     fn require_zero(&mut self, name: &'static str, constraint: Expression<F>) {
         self.add_constraint(name, constraint);
+    }
+
+    fn require_zero_word(&mut self, name: &'static str, word: Word<Expression<F>>) {
+        self.require_equal_word(word, Word::zero());
     }
 
     fn require_equal_word(
@@ -456,6 +460,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.keccak_input())
     }
 
+    pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
+        AccountAddress::<F>::new(self.query_bytes(), F::from(256))
+    }
+
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
         self.query_bytes_dyn(N).try_into().unwrap()
     }
@@ -685,6 +693,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         index: Option<Expression<F>>,
     ) -> Word<Cell<F>> {
         let word = self.query_word_unchecked();
+        self.tx_context_lookup(id, field_tag, index, word.to_word());
+        word
+    }
+
+    pub(crate) fn tx_context_as_word32(
+        &mut self,
+        id: Expression<F>,
+        field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
+    ) -> Word32Cell<F> {
+        let word = self.query_word32();
         self.tx_context_lookup(id, field_tag, index, word.to_word());
         word
     }
@@ -1074,8 +1093,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
             _ => CellType::StoragePhase1,
         };
         let cell = self.query_cell_with_type(phase);
-        self.call_context_lookup(
-            false.expr(),
+        self.call_context_lookup_read(
             call_id,
             field_tag,
             Word::from_lo_unchecked(cell.expr()), // lookup read, unchecked is safe
@@ -1083,26 +1101,48 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         cell
     }
 
-    pub(crate) fn call_context_as_word(
+    pub(crate) fn call_context_read_as_word(
         &mut self,
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
     ) -> Word<Cell<F>> {
         let word = self.query_word_unchecked();
-        self.call_context_lookup(false.expr(), call_id, field_tag, word.to_word());
+        self.call_context_lookup_read(call_id, field_tag, word.to_word());
         word
     }
 
-    pub(crate) fn call_context_lookup(
+    pub(crate) fn call_context_lookup_read(
         &mut self,
-        is_write: Expression<F>,
         call_id: Option<Expression<F>>,
         field_tag: CallContextFieldTag,
         value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "CallContext lookup",
-            is_write,
+            0.expr(),
+            RwTableTag::CallContext,
+            RwValues::new(
+                call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),
+                0.expr(),
+                field_tag.expr(),
+                0.expr(),
+                value,
+                Word::zero(),
+                0.expr(),
+                0.expr(),
+            ),
+        );
+    }
+
+    pub(crate) fn call_context_lookup_write_unchecked(
+        &mut self,
+        call_id: Option<Expression<F>>,
+        field_tag: CallContextFieldTag,
+        value: Word<Expression<F>>,
+    ) {
+        self.rw_lookup(
+            "CallContext lookup",
+            1.expr(),
             RwTableTag::CallContext,
             RwValues::new(
                 call_id.unwrap_or_else(|| self.curr.state.call_id.expr()),

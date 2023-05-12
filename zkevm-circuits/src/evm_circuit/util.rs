@@ -6,7 +6,11 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
-    util::{query_expression, Challenges, Expr},
+    util::{
+        query_expression,
+        word::{Word, WordExpr},
+        Challenges, Expr,
+    },
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
@@ -29,6 +33,8 @@ pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
+
+use super::param::N_BYTES_ACCOUNT_ADDRESS;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -499,6 +505,14 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 }
 
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
+
+pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
+
+impl<F: FieldExt> WordExpr<F> for AccountAddress<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
 
 /// Decodes a field element from its byte representation in little endian order
 pub(crate) mod from_bytes {
