@@ -1,7 +1,10 @@
 #![allow(missing_docs)]
 use std::collections::HashMap;
 
-use bus_mapping::operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField};
+use bus_mapping::{
+    exec_trace::OperationRef,
+    operation::{self, AccountField, CallContextField, TxLogField, TxReceiptField},
+};
 use eth_types::{Address, Field, ToAddress, ToLittleEndian, ToScalar, Word, U256};
 use halo2_proofs::{circuit::Value, halo2curves::bn256::Fr};
 use itertools::Itertools;
@@ -25,6 +28,16 @@ impl std::ops::Index<(RwTableTag, usize)> for RwMap {
         &self.0.get(&tag).unwrap()[idx]
     }
 }
+
+impl std::ops::Index<OperationRef> for RwMap {
+    type Output = Rw;
+
+    fn index(&self, OperationRef(tag, idx): OperationRef) -> &Self::Output {
+        let tag: RwTableTag = tag.into();
+        &self.0.get(&tag).unwrap()[idx]
+    }
+}
+
 impl RwMap {
     /// Check rw_counter is continuous and starting from 1
     pub fn check_rw_counter_sanity(&self) {

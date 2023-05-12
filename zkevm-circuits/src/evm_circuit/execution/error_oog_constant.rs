@@ -65,20 +65,20 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGConstantGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
         // Inputs/Outputs
         self.gas_required
-            .assign(region, offset, Value::known(F::from(step.gas_cost)))?;
+            .assign(region, offset, Value::known(F::from(step.gas_cost.0)))?;
         // Gas insufficient check
         // Get `gas_available` variable here once it's available
         self.insufficient_gas.assign(
             region,
             offset,
-            F::from(step.gas_left),
-            F::from(step.gas_cost),
+            F::from(step.gas_left.0),
+            F::from(step.gas_cost.0),
         )?;
 
         self.common_error_gadget

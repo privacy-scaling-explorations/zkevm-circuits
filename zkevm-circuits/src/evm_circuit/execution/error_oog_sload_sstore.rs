@@ -159,15 +159,14 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_sstore = opcode == OpcodeId::SSTORE;
-        let key = block.rws[step.rw_indices[3]].stack_value();
-        let (is_warm, _) = block.rws[step.rw_indices[4]].tx_access_list_value_pair();
+        let key = block.get_rws(step, 3).stack_value();
+        let (is_warm, _) = block.get_rws(step, 4).tx_access_list_value_pair();
 
         let (value, value_prev, original_value, gas_cost) = if is_sstore {
-            let value = block.rws[step.rw_indices[5]].stack_value();
-            let (_, value_prev, _, original_value) =
-                block.rws[step.rw_indices[6]].storage_value_aux();
+            let value = block.get_rws(step, 5).stack_value();
+            let (_, value_prev, _, original_value) = block.get_rws(step, 6).storage_value_aux();
             let gas_cost =
                 cal_sstore_gas_cost_for_assignment(value, value_prev, original_value, is_warm);
             (value, value_prev, original_value, gas_cost)
@@ -179,7 +178,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         log::debug!(
             "ErrorOutOfGasSloadSstore: is_sstore = {}, gas_left = {}, gas_cost = {}, gas_sentry = {}",
             is_sstore,
-            step.gas_left,
+            step.gas_left.0,
             gas_cost,
             if is_sstore { GasCost::SSTORE_SENTRY.0 } else { 0 },
         );
@@ -222,13 +221,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGSloadSstoreGadget<F> {
         self.insufficient_gas_cost.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.into())),
             Value::known(F::from(gas_cost)),
         )?;
         self.insufficient_gas_sentry.assign_value(
             region,
             offset,
-            Value::known(F::from(step.gas_left)),
+            Value::known(F::from(step.gas_left.into())),
             Value::known(F::from(GasCost::SSTORE_SENTRY.0.checked_add(1).unwrap())),
         )?;
 

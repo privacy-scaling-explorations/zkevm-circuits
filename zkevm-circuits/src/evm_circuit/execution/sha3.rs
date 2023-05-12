@@ -114,8 +114,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [memory_offset, size, sha3_output] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+            [0, 1, 2].map(|idx| block.get_rws(step, idx).stack_value());
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, size)?;
@@ -132,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
         )?;
 
         let values: Vec<u8> = (3..3 + (size.low_u64() as usize))
-            .map(|i| block.rws[step.rw_indices[i]].memory_value())
+            .map(|i| block.get_rws(step, i).memory_value())
             .collect();
 
         let rlc_acc = region

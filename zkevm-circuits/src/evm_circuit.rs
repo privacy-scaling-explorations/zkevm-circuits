@@ -14,6 +14,7 @@ pub(crate) mod util;
 
 #[cfg(any(feature = "test", test))]
 pub(crate) mod test;
+use self::step::HasExecutionState;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use self::EvmCircuit as TestEvmCircuit;
 
@@ -222,7 +223,7 @@ impl<F: Field> EvmCircuit<F> {
         let mut num_rows = 0;
         for transaction in &block.txs {
             for step in &transaction.steps {
-                num_rows += step.execution_state.get_step_height();
+                num_rows += step.execution_state().get_step_height();
             }
         }
 
@@ -280,7 +281,7 @@ pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTa
     let need_bitwise_lookup = block.txs.iter().any(|tx| {
         tx.steps.iter().any(|step| {
             matches!(
-                step.opcode,
+                step.opcode(),
                 Some(OpcodeId::AND)
                     | Some(OpcodeId::OR)
                     | Some(OpcodeId::XOR)

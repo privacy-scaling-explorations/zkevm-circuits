@@ -126,9 +126,9 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
 

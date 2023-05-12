@@ -121,9 +121,8 @@ impl<F: Field> ExecutionGadget<F> for MulDivModGadget<F> {
         step: &ExecStep,
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
-        let indices = [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]];
-        let [pop1, pop2, push] = indices.map(|idx| block.rws[idx].stack_value());
-        let (a, b, c, d) = match step.opcode.unwrap() {
+        let [pop1, pop2, push] = [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
+        let (a, b, c, d) = match step.opcode().unwrap() {
             OpcodeId::MUL => (pop1, pop2, U256::from(0), push),
             OpcodeId::DIV => (push, pop2, pop1 - push * pop2, pop1),
             OpcodeId::MOD => (

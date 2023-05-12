@@ -10,7 +10,10 @@ use crate::{
         Block, BlockContext, Bytecode, MptUpdateRow, MptUpdates, Rw, RwMap, RwRow, Transaction,
     },
 };
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent};
+use bus_mapping::{
+    circuit_input_builder::{CopyDataType, CopyEvent, CopyStep, ExpEvent},
+    operation::Target,
+};
 use core::iter::once;
 use eth_types::{Field, ToLittleEndian, ToScalar, Word, U256};
 use gadgets::{
@@ -324,6 +327,24 @@ impl RwTableTag {
 impl From<RwTableTag> for usize {
     fn from(t: RwTableTag) -> Self {
         t as usize
+    }
+}
+
+impl From<Target> for RwTableTag {
+    fn from(t: Target) -> Self {
+        match t {
+            Target::Memory => Self::Memory,
+            Target::Stack => Self::Stack,
+            Target::Storage => Self::AccountStorage,
+            Target::TxAccessListAccount => Self::TxAccessListAccount,
+            Target::TxAccessListAccountStorage => Self::TxAccessListAccountStorage,
+            Target::TxRefund => Self::TxRefund,
+            Target::Account => Self::Account,
+            Target::CallContext => Self::CallContext,
+            Target::TxReceipt => Self::TxReceipt,
+            Target::TxLog => Self::TxLog,
+            Target::Start => Self::Start,
+        }
     }
 }
 
