@@ -19,7 +19,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::Scalar;
 use halo2_proofs::{
-    plonk::{Error, VirtualCells},
+    plonk::{Error, VirtualCells}, circuit::Value,
 };
 
 #[derive(Clone, Debug, Default)]

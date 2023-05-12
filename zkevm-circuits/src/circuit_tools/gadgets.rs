@@ -2,7 +2,7 @@
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::{
-    plonk::{Error, Expression},
+    plonk::{Error, Expression}, circuit::Value,
 };
 
 use crate::evm_circuit::util::{from_bytes, pow_of_two};

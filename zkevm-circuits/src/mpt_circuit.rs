@@ -332,7 +332,7 @@ impl<F: Field> MPTConfig<F> {
     }
 
     /// Make the assignments to the MPTCircuit
-    pub fn assign<C: ChallengeSet<F>>(
+    pub fn assign(
         &self,
         layouter: &mut impl Layouter<F>,
         nodes: &[Node],
@@ -355,7 +355,7 @@ impl<F: Field> MPTConfig<F> {
                 for node in nodes.iter() {
                     // Assign bytes
                     let mut rlp_values = Vec::new();
-                    let mut cahced_region: CachedRegion<F, C> = CachedRegion::new(
+                    let mut cahced_region = CachedRegion::new(
                         &mut region,
                         challenges,
                         self.managed_columns.clone(),

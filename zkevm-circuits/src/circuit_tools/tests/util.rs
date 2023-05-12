@@ -147,11 +147,11 @@ impl<F: Field> CellGadget<F> {
         self.a.assign(region, offset, 2u64.scalar())?;
         self.b.assign(region, offset, 3u64.scalar())?;
 
-        self.c.assign(
-            region, 
-            offset,
-             Value::known(2u64.scalar()) + Value::known(2u64.scalar()) * r1.scalar()
-            )?;
+        // self.c.assign(
+        //     region, 
+        //     offset,
+        //      2u64.scalar() + 3u64.scalar() * r1
+        //     )?;
 
         assign!(region, (self.a.column(), offset) => 2u64.scalar())?;
         assign!(region, (self.b.column(), offset) => 3u64.scalar())?;
@@ -189,7 +189,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         let r1 = meta.challenge_usable_after(FirstPhase);
         
         let config = TestConfig::new(meta, table, r1);
-        (Self { config }, r1)
+        (config, r1)
     }
 
     fn synthesize(

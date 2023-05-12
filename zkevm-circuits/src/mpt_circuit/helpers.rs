@@ -18,7 +18,7 @@ use crate::{
 use eth_types::Field;
 use gadgets::util::{or, pow, Scalar};
 use halo2_proofs::{
-    plonk::{Error, Expression, VirtualCells},
+    plonk::{Error, Expression, VirtualCells}, circuit::Value,
 };
 
 use super::{
