@@ -70,8 +70,8 @@ impl<F: Field> MulAddWords512Gadget<F> {
         // Split input words in limbs
         let mut a_limbs = vec![];
         let mut b_limbs = vec![];
-        let word4_a: Word4<Expression<F>> = words[0].word_expr().to_wordlimbs();
-        let word4_b: Word4<Expression<F>> = words[1].word_expr().to_wordlimbs();
+        let word4_a: Word4<Expression<F>> = words[0].word_expr().to_word_n();
+        let word4_b: Word4<Expression<F>> = words[1].word_expr().to_word_n();
         for i in 0..4 {
             a_limbs.push(word4_a.limbs[i].expr());
             b_limbs.push(word4_b.limbs[i].expr());

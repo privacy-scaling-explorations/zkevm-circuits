@@ -72,7 +72,7 @@ impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
     }
 
     pub fn to_word(&self) -> Word<Expression<F>> {
-        Word(self.word_expr().to_wordlimbs())
+        Word(self.word_expr().to_word_n())
     }
 }
 
@@ -173,7 +173,7 @@ impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
     /// consider create new low limbs word, have equality constrain, then finally use low limbs
     /// elsewhere.
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
-    pub fn to_wordlimbs<const N2: usize>(&self) -> WordLimbs<Expression<F>, N2> {
+    pub fn to_word_n<const N2: usize>(&self) -> WordLimbs<Expression<F>, N2> {
         assert_eq!(N1 % N2, 0);
         let limbs = self
             .limbs
@@ -186,7 +186,7 @@ impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
     }
 
     pub fn to_word(&self) -> Word<Expression<F>> {
-        Word(self.to_wordlimbs())
+        Word(self.to_word_n())
     }
 
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
