@@ -6,7 +6,7 @@ use crate::{
     state_db::CodeDB,
     Error,
 };
-use eth_types::{Bytecode, GethExecStep, ToWord, H256};
+use eth_types::{Bytecode, GethExecStep, ToWord, Word, H256};
 use ethers_core::utils::keccak256;
 
 #[derive(Debug, Copy, Clone)]
@@ -243,12 +243,47 @@ fn handle_create(
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _, _)) in bytes.iter().enumerate() {
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(source.id, (source.offset + i).into(), *byte),
-        );
+    let (_, dst_begin_slot) = state.get_addr_shift_slot(source.offset as u64).unwrap();
+    let (_, dst_end_slot) = state
+        .get_addr_shift_slot((source.offset + source.length) as u64)
+        .unwrap();
+    let mut memory = state.call_ctx_mut()?.memory.clone();
+
+    let minimal_length = dst_end_slot as usize + 32;
+    memory.extend_at_least(minimal_length);
+    // collect all bytecode to memory with padding word
+    let create_slot_bytes =
+        memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+
+    let mut copy_start = 0u64;
+    let mut first_set = true;
+    let mut chunk_index = dst_begin_slot;
+    // memory word writes to destination word
+    for chunk in create_slot_bytes.chunks(32) {
+        let dest_word = Word::from_big_endian(&chunk);
+        // read memory
+        state.memory_read_word(step, chunk_index.into(), dest_word)?;
+        chunk_index = chunk_index + 32;
+    }
+
+    let mut copy_steps = Vec::with_capacity(source.length as usize);
+    for idx in 0..create_slot_bytes.len() {
+        let value = memory.0[dst_begin_slot as usize + idx];
+        if idx as u64 + dst_begin_slot < source.offset as u64 {
+            // front mask byte
+            copy_steps.push((value, false, true));
+        } else if idx as u64 + dst_begin_slot >= (source.offset + source.offset) as u64 {
+            // back mask byte
+            copy_steps.push((value, false, true));
+        } else {
+            // real copy byte
+            if first_set {
+                copy_start = idx as u64;
+                first_set = false;
+            }
+
+            copy_steps.push(bytes[idx - copy_start as usize]);
+        }
     }
 
     state.push_copy(
@@ -263,7 +298,7 @@ fn handle_create(
             dst_id,
             dst_addr: 0,
             log_id: None,
-            bytes,
+            bytes: copy_steps,
         },
     );
 

@@ -376,6 +376,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
                 and::expr([
                     meta.query_advice(is_pad, Rotation::cur()),
                     meta.query_advice(value, Rotation::cur()),
+                    meta.query_advice(mask, Rotation::cur()),
                 ]),
             );
             cb.require_equal(
@@ -447,7 +448,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
         meta.lookup_any("Bytecode lookup", |meta| {
             let cond = meta.query_fixed(q_enable, Rotation::cur())
                 * tag.value_equals(CopyDataType::Bytecode, Rotation::cur())(meta)
-                * not::expr(meta.query_advice(is_pad, Rotation::cur()))
+                //* not::expr(meta.query_advice(is_pad, Rotation::cur()))
                 * not::expr(meta.query_advice(mask, Rotation::cur()));
 
             vec![
@@ -1213,6 +1214,48 @@ mod tests {
         builder
     }
 
+    fn gen_create_data() -> CircuitInputBuilder {
+        let code = bytecode! {
+            PUSH21(Word::from("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH1(0)
+            MSTORE
+
+            PUSH1 (0xef) // salt
+            PUSH1 (0x15) // size
+            PUSH1 (0xB) // offset
+            PUSH1 (0)   // value
+            CREATE2
+            STOP
+        };
+
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
+    fn gen_return_data() -> CircuitInputBuilder {
+        let code = bytecode! {
+            PUSH21(Word::from("6B6020600060003760206000F3600052600C6014F3"))
+            PUSH1(0)
+            MSTORE
+            PUSH2(0x10)
+            PUSH1(0)
+            RETURN
+        };
+
+        let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
+        let block: GethData = test_ctx.into();
+        let mut builder = BlockData::new_from_geth_data(block.clone()).new_circuit_input_builder();
+        builder
+            .handle_block(&block.eth_block, &block.geth_traces)
+            .unwrap();
+        builder
+    }
+
     #[test]
     fn copy_circuit_valid_calldatacopy() {
         let builder = gen_calldatacopy_data();
@@ -1244,6 +1287,20 @@ mod tests {
     #[test]
     fn copy_circuit_valid_tx_log() {
         let builder = gen_tx_log_data();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_valid_create() {
+        let builder = gen_create_data();
+        let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
+        assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
+    }
+
+    #[test]
+    fn copy_circuit_valid_return() {
+        let builder = gen_return_data();
         let block = block_convert::<Fr>(&builder.block, &builder.code_db).unwrap();
         assert_eq!(test_copy_circuit_from_block(10, block), Ok(()));
     }

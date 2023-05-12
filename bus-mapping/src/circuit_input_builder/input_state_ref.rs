@@ -1806,4 +1806,6 @@ impl<'a> CircuitInputStateRef<'a> {
 
         Ok(copy_steps)
     }
+
+    // TODO: add new gen_copy_steps for common use
 }

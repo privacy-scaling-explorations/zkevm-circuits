@@ -310,6 +310,10 @@ fn handle_copy(
     length: usize,
 ) -> Result<(Vec<u8>, H256, H256), Error> {
     let initialization_bytes = state.call_ctx()?.memory.0[offset..offset + length].to_vec();
+    println!(
+        "initialization_bytes bussmapping is {:?}",
+        initialization_bytes
+    );
     let keccak_code_hash = H256(keccak256(&initialization_bytes));
     let code_hash = CodeDB::hash(&initialization_bytes);
     let bytes: Vec<_> = Bytecode::from(initialization_bytes.clone())
@@ -319,13 +323,45 @@ fn handle_copy(
         .collect();
 
     let rw_counter_start = state.block_ctx.rwc;
-    for (i, (byte, _, _)) in bytes.iter().enumerate() {
-        // this could be a memory read, if this happens before we push the new call?
-        state.push_op(
-            step,
-            RW::READ,
-            MemoryOp::new(callee_id, (offset + i).into(), *byte),
-        );
+    let (_, dst_begin_slot) = state.get_addr_shift_slot(offset as u64).unwrap();
+    let (_, dst_end_slot) = state.get_addr_shift_slot((offset + length) as u64).unwrap();
+    let mut memory = state.call_ctx_mut()?.memory.clone();
+
+    let minimal_length = dst_end_slot as usize + 32;
+    memory.extend_at_least(minimal_length);
+    // collect all bytecode to memory with padding word
+    let create_slot_bytes =
+        memory.0[dst_begin_slot as usize..(dst_end_slot + 32) as usize].to_vec();
+
+    let mut copy_start = 0u64;
+    let mut first_set = true;
+    let mut chunk_index = dst_begin_slot;
+    // memory word writes to destination word
+    for chunk in create_slot_bytes.chunks(32) {
+        let dest_word = Word::from_big_endian(&chunk);
+        // read memory
+        state.memory_read_word(step, chunk_index.into(), dest_word)?;
+        chunk_index = chunk_index + 32;
+    }
+
+    let mut copy_steps = Vec::with_capacity(length as usize);
+    for idx in 0..create_slot_bytes.len() {
+        let value = memory.0[dst_begin_slot as usize + idx];
+        if idx as u64 + dst_begin_slot < offset as u64 {
+            // front mask byte
+            copy_steps.push((value, false, true));
+        } else if idx as u64 + dst_begin_slot >= (offset + length) as u64 {
+            // back mask byte
+            copy_steps.push((value, false, true));
+        } else {
+            // real copy byte
+            if first_set {
+                copy_start = idx as u64;
+                first_set = false;
+            }
+
+            copy_steps.push(bytes[idx - copy_start as usize]);
+        }
     }
 
     state.push_copy(
@@ -340,7 +376,7 @@ fn handle_copy(
             dst_id: NumberOrHash::Hash(code_hash),
             dst_addr: 0,
             log_id: None,
-            bytes,
+            bytes: copy_steps,
         },
     );
 

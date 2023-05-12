@@ -1336,7 +1336,7 @@ impl CopyTable {
         copy_event: &CopyEvent,
         challenges: Challenges<Value<F>>,
     ) -> Vec<(CopyDataType, CopyTableRow<F>, CopyCircuitRow<F>)> {
-        println!("assignments CopyEvent {:?} ", copy_event);
+        println!("assignments CopyEvent challenge  {:?} ", challenges);
         let mut assignments = Vec::new();
         // rlc_acc
         let rlc_acc = {
@@ -1346,13 +1346,22 @@ impl CopyTable {
                 .filter(|(_, _, mask)| !mask)
                 .map(|(value, _, _)| *value)
                 .collect::<Vec<u8>>();
+
+            println!("rlc_acc bytes are {:?}", values);
             challenges
                 .keccak_input()
                 .map(|keccak_input| rlc::value(values.iter().rev(), keccak_input))
         };
 
+        println!("rlc_acc of bytecode bytes {:?} ", rlc_acc);
         let mut value_word_rlc = Value::known(F::zero());
         let mut value_acc = Value::known(F::zero());
+
+        let mut non_mask_pos = copy_event
+            .bytes
+            .iter()
+            .position(|&step| !step.2)
+            .unwrap_or(0);
         let mut word_index = 0u64;
         let mut addr_slot = if copy_event.dst_type == CopyDataType::Memory {
             copy_event.dst_addr - copy_event.dst_addr % 32
@@ -1450,6 +1459,15 @@ impl CopyTable {
                     .to_scalar()
                     .unwrap(),
                 )
+            } else if tag == CopyDataType::Bytecode && copy_event.dst_type == CopyDataType::Bytecode
+            {
+                // get real bytecode addr
+                let bytecode_addr_increase = if step_idx > non_mask_pos * 2 {
+                    step_idx as u64 / 2 - non_mask_pos as u64
+                } else {
+                    0
+                };
+                Value::known(F::from(copy_event.dst_addr + bytecode_addr_increase))
             } else {
                 Value::known(F::from(copy_step_addr))
             };
@@ -1470,16 +1488,16 @@ impl CopyTable {
                 is_read_step && copy_step_addr >= copy_event.src_addr_end,
             ));
 
-            // debug info
-            // let rw_count = F::from(copy_event.rw_counter_step(step_idx));
-            // let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
-            // println!(
-            //     "step_idx: {}, rwc_inc_left {:?}, tag {:?}, addr_slot {} addr {:?} word_index
-            // {:?}, value_word_rlc {:?}",     step_idx, rwc_inc_left, tag, addr_slot,
-            // addr, word_index, value_word_rlc, );
-
             // is_code
             let is_code = Value::known(copy_step.is_code.map_or(F::zero(), |v| F::from(v)));
+
+            // debug info
+            let rw_count = F::from(copy_event.rw_counter_step(step_idx));
+            let rwc_inc_left = F::from(copy_event.rw_counter_increase_left(step_idx));
+            // println!(
+            //     "step_idx: {}, rw_count {:?}, tag {:?}, addr {:?} id {:?} mask
+            // {:?}, is_code {:?}",     step_idx, rw_count, tag, addr,
+            // id, is_mask, is_code, );
 
             assignments.push((
                 tag,
