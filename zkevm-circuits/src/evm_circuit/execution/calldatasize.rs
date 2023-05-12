@@ -70,7 +70,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let call_data_size = block.rws[step.rw_indices[1]].stack_value();
+        let call_data_size = block.get_rws(step, 1).stack_value();
 
         self.call_data_size.assign(
             region,

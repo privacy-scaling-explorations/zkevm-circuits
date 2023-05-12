@@ -100,7 +100,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_call = opcode == OpcodeId::CALL;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
@@ -108,8 +108,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorWriteProtectionGadget<F> {
 
         if is_call {
             [gas, code_address, value] =
-                [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                    .map(|idx| block.rws[idx].stack_value());
+                [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
         }
 
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;

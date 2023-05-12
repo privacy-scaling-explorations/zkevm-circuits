@@ -109,7 +109,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
             .to_scalar()
             .expect("unexpected U256 -> Scalar conversion failure");
 
-        let block_number = block.rws[step.rw_indices[0]].stack_value();
+        let block_number = block.get_rws(step, 0).stack_value();
         self.block_number
             .assign(region, offset, block_number, current_block_number)?;
 
@@ -119,7 +119,7 @@ impl<F: Field> ExecutionGadget<F> for BlockHashGadget<F> {
         self.block_hash.assign(
             region,
             offset,
-            Some(block.rws[step.rw_indices[1]].stack_value().to_le_bytes()),
+            Some(block.get_rws(step, 1).stack_value().to_le_bytes()),
         )?;
 
         self.diff_lt.assign(

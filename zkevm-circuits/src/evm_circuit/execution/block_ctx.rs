@@ -90,7 +90,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU64Gadget<F> {
             .same_context
             .assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
 
         self.value_u64.value.assign(
             region,
@@ -131,7 +131,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU160Gadget<F> {
             .same_context
             .assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
 
         self.value_u160.value.assign(
             region,
@@ -176,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for BlockCtxU256Gadget<F> {
             .same_context
             .assign_exec_step(region, offset, step)?;
 
-        let value = block.rws[step.rw_indices[0]].stack_value();
+        let value = block.get_rws(step, 0).stack_value();
 
         self.value_u256
             .value

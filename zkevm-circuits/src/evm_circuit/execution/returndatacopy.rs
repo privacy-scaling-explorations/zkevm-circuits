@@ -176,7 +176,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [dest_offset, data_offset, size] =
-            [0, 1, 2].map(|i| block.rws[step.rw_indices[i as usize]].stack_value());
+            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
         self.data_offset.assign(
             region,
@@ -194,7 +194,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnDataCopyGadget<F> {
             (5, CallContextFieldTag::LastCalleeReturnDataLength),
         ]
         .map(|(i, tag)| {
-            let rw = block.rws[step.rw_indices[i as usize]];
+            let rw = block.get_rws(step, i);
             assert_eq!(rw.field_tag(), Some(tag as u64));
             rw.call_context_value()
         });

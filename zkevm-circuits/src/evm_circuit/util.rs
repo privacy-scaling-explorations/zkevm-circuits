@@ -5,7 +5,6 @@ use crate::{
         },
         table::Table,
     },
-    table::RwTableTag,
     util::{query_expression, Challenges, Expr},
     witness::{Block, ExecStep, Rw, RwMap},
 };
@@ -626,7 +625,7 @@ pub(crate) fn is_precompiled(address: &Address) -> bool {
 /// Helper struct to read rw operations from a step sequentially.
 pub(crate) struct StepRws<'a> {
     rws: &'a RwMap,
-    rw_indices: &'a Vec<(RwTableTag, usize)>,
+    step: &'a ExecStep,
     offset: usize,
 }
 
@@ -635,7 +634,7 @@ impl<'a> StepRws<'a> {
     pub(crate) fn new<F>(block: &'a Block<F>, step: &'a ExecStep) -> Self {
         Self {
             rws: &block.rws,
-            rw_indices: &step.rw_indices,
+            step,
             offset: 0,
         }
     }
@@ -645,7 +644,7 @@ impl<'a> StepRws<'a> {
     }
     /// Return the next rw operation from the step.
     pub(crate) fn next(&mut self) -> Rw {
-        let rw = self.rws[self.rw_indices[self.offset]];
+        let rw = self.rws[self.step.rw_index(self.offset)];
         self.offset += 1;
         rw
     }

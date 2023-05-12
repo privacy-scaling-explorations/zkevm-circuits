@@ -86,6 +86,45 @@ impl ExecStep {
             Some(ExecError::OutOfGas(_) | ExecError::StackOverflow | ExecError::StackUnderflow)
         )
     }
+
+    /// Try get opcode, if possible
+    pub fn opcode(&self) -> Option<OpcodeId> {
+        match self.exec_state {
+            ExecState::Op(op) => Some(op),
+            _ => None,
+        }
+    }
+
+    /// get rw index
+    pub fn rw_index(&self, index: usize) -> OperationRef {
+        self.bus_mapping_instance[index]
+    }
+
+    /// Get the size of read and writes
+    pub fn rw_indices_len(&self) -> usize {
+        self.bus_mapping_instance.len()
+    }
+
+    /// Get stack pointer
+    pub fn stack_pointer(&self) -> u64 {
+        1024 - self.stack_size as u64
+    }
+
+    /// The memory size in word **before** this step
+    pub fn memory_word_size(&self) -> u64 {
+        let n_bytes_word = 32u64;
+        let memory_size = self.memory_size as u64;
+        // EVM always pads the memory size to word size
+        // https://github.com/ethereum/go-ethereum/blob/a340721aa909ea4b541ffd1ea5e9c7bd441ff769/core/vm/interpreter.go#L201-L205
+        // Thus, the memory size must be a multiple of 32 bytes.
+        assert_eq!(memory_size % n_bytes_word, 0);
+        memory_size / n_bytes_word
+    }
+
+    /// Get program counter
+    pub fn program_counter(&self) -> u64 {
+        self.pc.0.try_into().expect("program counter can fit u64")
+    }
 }
 
 /// Execution state

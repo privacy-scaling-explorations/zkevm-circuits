@@ -112,13 +112,13 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let opcode = step.opcode.unwrap();
+        let opcode = step.opcode().unwrap();
         let is_jumpi = opcode == OpcodeId::JUMPI;
         self.opcode
             .assign(region, offset, Value::known(F::from(opcode.as_u64())))?;
 
         let condition = if is_jumpi {
-            block.rws[step.rw_indices[1]].stack_value()
+            block.get_rws(step, 1).stack_value()
         } else {
             U256::zero()
         };
@@ -132,7 +132,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorInvalidJumpGadget<F> {
         self.code_len
             .assign(region, offset, Value::known(F::from(code_len)))?;
 
-        let dest = block.rws[step.rw_indices[0]].stack_value();
+        let dest = block.get_rws(step, 0).stack_value();
         self.dest.assign(region, offset, dest, F::from(code_len))?;
 
         // set default value in case can not find value, is_code from bytecode table

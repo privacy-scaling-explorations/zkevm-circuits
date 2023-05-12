@@ -50,6 +50,12 @@ impl From<RWCounter> for usize {
     }
 }
 
+impl From<RWCounter> for u64 {
+    fn from(addr: RWCounter) -> u64 {
+        addr.0.try_into().expect("rwc should not overflow")
+    }
+}
+
 impl From<usize> for RWCounter {
     fn from(rwc: usize) -> Self {
         RWCounter(rwc)
