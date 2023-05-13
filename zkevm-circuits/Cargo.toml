@@ -55,3 +55,7 @@ default = []
 test = ["ethers-signers", "mock", "bus-mapping/test"]
 test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
+
+[[bin]]
+name = "state_states_stats"
+required-features = ["warn-unimplemented"]
