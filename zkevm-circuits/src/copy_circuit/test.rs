@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-
 use crate::{
     copy_circuit::*,
     evm_circuit::{test::rand_bytes, witness::block_convert},
@@ -8,7 +6,7 @@ use crate::{
 };
 use bus_mapping::{
     circuit_input_builder::{CircuitInputBuilder, CircuitsParams},
-    evm::{gen_sha3_code, MemoryKind},
+    evm::Sha3OpcodeGen,
     mock::BlockData,
 };
 use eth_types::{bytecode, geth_types::GethData, ToWord, Word};
@@ -153,7 +151,7 @@ fn gen_extcodecopy_data() -> CircuitInputBuilder {
 }
 
 fn gen_sha3_data() -> CircuitInputBuilder {
-    let (code, _) = gen_sha3_code(0x20, 0x200, MemoryKind::EqualToSize);
+    let (code, _) = Sha3OpcodeGen::mem_eq_size(0x20, 0x200).gen_sha3_code();
     let test_ctx = TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap();
     let block: GethData = test_ctx.into();
     let mut builder = BlockData::new_from_geth_data_with_params(

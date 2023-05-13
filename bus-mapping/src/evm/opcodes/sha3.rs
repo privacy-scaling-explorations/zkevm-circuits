@@ -1,13 +1,13 @@
+use super::Opcode;
 use crate::{
     circuit_input_builder::{
         CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
     Error,
 };
-use eth_types::{GethExecStep, Word, U256};
+use eth_types::{bytecode, Bytecode, GethExecStep, Word, U256};
 use ethers_core::utils::keccak256;
-
-use super::Opcode;
+use rand::{rngs::ThreadRng, Rng};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Sha3;
@@ -82,49 +82,78 @@ impl Opcode for Sha3 {
     }
 }
 
-#[cfg(any(feature = "test", test))]
-pub mod sha3_tests {
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Bytecode, Word};
-    use ethers_core::utils::keccak256;
-    use mock::{
-        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-        TestContext,
-    };
-    use rand::{random, Rng};
-
-    use crate::{
-        circuit_input_builder::{CircuitsParams, ExecState},
-        mock::BlockData,
-        operation::{MemoryOp, StackOp, RW},
-    };
-
+/// Generate Sha3 opcode
+pub struct Sha3OpcodeGen {
+    /// The offset
+    pub offset: usize,
+    /// The size
+    pub size: usize,
+    data_len: usize,
+    rng: ThreadRng,
+}
+impl Sha3OpcodeGen {
+    /// Construct with memory less than size
+    pub fn mem_lt_size(offset: usize, size: usize) -> Self {
+        let mut rng = rand::thread_rng();
+        let data_len = offset
+            + if size.gt(&0) {
+                rng.gen_range(0..size)
+            } else {
+                0
+            };
+        Self {
+            offset,
+            size,
+            data_len,
+            rng,
+        }
+    }
+    /// Construct with memory equal to size
+    pub fn mem_eq_size(offset: usize, size: usize) -> Self {
+        let data_len = offset + size;
+        Self {
+            offset,
+            size,
+            data_len,
+            rng: rand::thread_rng(),
+        }
+    }
+    /// Construct with memory greater than size
+    pub fn mem_gt_size(offset: usize, size: usize) -> Self {
+        let mut rng = rand::thread_rng();
+        let data_len = offset
+            + size
+            + if size.gt(&0) {
+                rng.gen_range(0..size)
+            } else {
+                0
+            };
+        Self {
+            offset,
+            size,
+            data_len,
+            rng,
+        }
+    }
+    /// Construct with empty memory
+    pub fn mem_empty(offset: usize, size: usize) -> Self {
+        Self {
+            offset,
+            size,
+            data_len: 0,
+            rng: rand::thread_rng(),
+        }
+    }
+    fn rand_bytes(&mut self) -> Vec<u8> {
+        (0..self.data_len)
+            .map(|_| self.rng.gen())
+            .collect::<Vec<u8>>()
+    }
     /// Generate bytecode for SHA3 opcode after having populated sufficient
     /// memory given the offset and size arguments for SHA3.
-    pub fn gen_sha3_code(offset: usize, size: usize, mem_kind: MemoryKind) -> (Bytecode, Vec<u8>) {
-        let mut rng = rand::thread_rng();
-        let data_len = match mem_kind {
-            MemoryKind::LessThanSize => {
-                offset
-                    + if size.gt(&0) {
-                        rng.gen_range(0..size)
-                    } else {
-                        0
-                    }
-            }
-            MemoryKind::EqualToSize => offset + size,
-            MemoryKind::MoreThanSize => {
-                offset
-                    + size
-                    + if size.gt(&0) {
-                        rng.gen_range(0..size)
-                    } else {
-                        0
-                    }
-            }
-            MemoryKind::Empty => 0,
-        };
-        let data = rand_bytes(data_len);
-        let mut memory = Vec::with_capacity(data_len);
+    pub fn gen_sha3_code(&mut self) -> (Bytecode, Vec<u8>) {
+        let data = self.rand_bytes();
+        let mut memory = Vec::with_capacity(self.data_len);
 
         // add opcodes to populate memory in the current context.
         let mut code = Bytecode::default();
@@ -142,42 +171,43 @@ pub mod sha3_tests {
         }
         // append SHA3 related opcodes at the tail end.
         let code_tail = bytecode! {
-            PUSH32(size)
-            PUSH32(offset)
+            PUSH32(self.size)
+            PUSH32(self.offset)
             SHA3
             STOP
         };
         code.append(&code_tail);
         (code, memory)
     }
+}
 
-    /// Memory of a context with respect to the input size to SHA3.
-    pub enum MemoryKind {
-        /// Variant defining empty memory.
-        Empty,
-        /// Variant defining memory length being less than size.
-        LessThanSize,
-        /// Variant defining memory length being equal to size.
-        EqualToSize,
-        /// Variant defining memory length being more than size.
-        MoreThanSize,
-    }
+#[cfg(test)]
+pub(crate) mod sha3_tests {
+    use super::Sha3OpcodeGen;
+    use eth_types::{evm_types::OpcodeId, geth_types::GethData, Word};
+    use ethers_core::utils::keccak256;
+    use mock::{
+        test_ctx::helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
+    };
 
-    fn rand_bytes(size: usize) -> Vec<u8> {
-        (0..size).map(|_| random()).collect::<Vec<u8>>()
-    }
+    use crate::{
+        circuit_input_builder::{CircuitsParams, ExecState},
+        mock::BlockData,
+        operation::{MemoryOp, StackOp, RW},
+    };
 
-    fn test_ok(offset: usize, size: usize, mem_kind: MemoryKind) {
-        let (code, memory) = gen_sha3_code(offset, size, mem_kind);
+    fn test_ok(mut gen: Sha3OpcodeGen) {
+        let (code, memory) = gen.gen_sha3_code();
         let memory_len = memory.len();
 
         // The memory that is hashed.
         let mut memory_view = memory
             .into_iter()
-            .skip(offset)
-            .take(size)
+            .skip(gen.offset)
+            .take(gen.size)
             .collect::<Vec<u8>>();
-        memory_view.resize(size, 0);
+        memory_view.resize(gen.size, 0);
         let expected_sha3_value = keccak256(&memory_view);
 
         let block: GethData = TestContext::<2, 1>::new(
@@ -217,11 +247,11 @@ pub mod sha3_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1022.into(), Word::from(offset)),
+                    &StackOp::new(call_id, 1022.into(), Word::from(gen.offset)),
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1023.into(), Word::from(size)),
+                    &StackOp::new(call_id, 1023.into(), Word::from(gen.size)),
                 ),
                 (
                     RW::WRITE,
@@ -234,17 +264,17 @@ pub mod sha3_tests {
         // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
         // skip them.
         assert_eq!(
-            (memory_len..(memory_len + size))
+            (memory_len..(memory_len + gen.size))
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
             {
-                let mut memory_ops = Vec::with_capacity(size);
-                (0..size).for_each(|idx| {
+                let mut memory_ops = Vec::with_capacity(gen.size);
+                (0..gen.size).for_each(|idx| {
                     let value = memory_view[idx];
                     memory_ops.push((
                         RW::READ,
-                        MemoryOp::new(call_id, (offset + idx).into(), value),
+                        MemoryOp::new(call_id, (gen.offset + idx).into(), value),
                     ));
                 });
                 memory_ops
@@ -255,7 +285,7 @@ pub mod sha3_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), size);
+        assert_eq!(copy_events[0].bytes.len(), gen.size);
 
         for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
             assert_eq!(Some(value), memory_view.get(idx));
@@ -265,9 +295,9 @@ pub mod sha3_tests {
 
     #[test]
     fn sha3_opcode_ok() {
-        test_ok(0x10, 0x32, MemoryKind::Empty);
-        test_ok(0x34, 0x44, MemoryKind::LessThanSize);
-        test_ok(0x222, 0x111, MemoryKind::EqualToSize);
-        test_ok(0x20, 0x30, MemoryKind::MoreThanSize);
+        test_ok(Sha3OpcodeGen::mem_empty(0x10, 0x32));
+        test_ok(Sha3OpcodeGen::mem_lt_size(0x34, 0x44));
+        test_ok(Sha3OpcodeGen::mem_eq_size(0x222, 0x111));
+        test_ok(Sha3OpcodeGen::mem_gt_size(0x20, 0x30));
     }
 }
