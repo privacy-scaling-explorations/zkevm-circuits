@@ -58,7 +58,7 @@ impl<const N: usize> DisplayTable<N> {
 }
 
 /// Generate the prefix bytecode to trigger a big amount of rw operations
-pub(crate) fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
+pub fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
     match opcode {
         OpcodeId::CODECOPY | OpcodeId::CALLDATACOPY => {
             bytecode! {
@@ -125,7 +125,7 @@ struct Row {
 ///   `MOCK_ACCOUNT[2]` which has the main code
 /// - `0x0` account has a copy of the main code
 /// - `MOCK_ACCOUNTS[3]` has a small code that returns a 0-memory chunk
-pub(crate) fn print_circuit_stats_by_states(
+pub fn print_circuit_stats_by_states(
     // Function to select which opcodes to analyze.  When this returns false,
     // the opcode is skipped.
     fn_filter: impl Fn(ExecutionState) -> bool,
