@@ -58,10 +58,10 @@ exp_bench: ## Run Exp Circuit benchmarks
 circuit_benches: evm_bench state_bench ## Run All Circuit benchmarks
 
 stats_state_circuit: # Print a table with State Circuit stats by ExecState/opcode
-	@cargo run --bin state_states_stats --features warn-unimplemented
+	@cargo run --bin stats --features warn-unimplemented -- state
 
 stats_evm_circuit: # Print a table with EVM Circuit stats by ExecState/opcode
-	@cargo test -p zkevm-circuits --features=test,warn-unimplemented get_evm_states_stats -- --nocapture --ignored
+	@cargo run --bin stats --features warn-unimplemented -- evm
 
 stats_copy_circuit: # Print a table with Copy Circuit stats by ExecState/opcode
 	@cargo test -p zkevm-circuits --features=test,warn-unimplemented get_copy_states_stats -- --nocapture --ignored

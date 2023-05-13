@@ -57,5 +57,5 @@ test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
 
 [[bin]]
-name = "state_states_stats"
+name = "stats"
 required-features = ["warn-unimplemented"]
