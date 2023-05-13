@@ -39,7 +39,7 @@ use witness::Block;
 pub struct EvmCircuitConfig<F> {
     fixed_table: [Column<Fixed>; 4],
     byte_table: [Column<Fixed>; 1],
-    pub(crate) execution: Box<ExecutionConfig<F>>,
+    pub execution: Box<ExecutionConfig<F>>,
     // External tables
     tx_table: TxTable,
     rw_table: RwTable,
@@ -440,33 +440,19 @@ impl<F: Field> Circuit<F> for EvmCircuit<F> {
 #[cfg(test)]
 mod evm_circuit_stats {
     use crate::{
-        evm_circuit::{
-            param::{
-                LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
-            },
-            step::ExecutionState,
-            EvmCircuit,
-        },
-        stats::print_circuit_stats_by_states,
+        evm_circuit::EvmCircuit,
         test_util::CircuitTestBuilder,
         util::{unusable_rows, SubCircuit},
         witness::block_convert,
     };
     use bus_mapping::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use cli_table::{print_stdout, Cell, Style, Table};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, ToWord};
-    use halo2_proofs::{
-        dev::MockProver,
-        halo2curves::bn256::Fr,
-        plonk::{Circuit, ConstraintSystem},
-    };
-    use itertools::Itertools;
-    use mock::{
-        test_ctx::{
-            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-            TestContext,
-        },
-        MOCK_ACCOUNTS,
+
+    use eth_types::{bytecode, geth_types::GethData};
+    use halo2_proofs::{self, dev::MockProver, halo2curves::bn256::Fr};
+
+    use mock::test_ctx::{
+        helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+        TestContext,
     };
 
     #[test]
@@ -496,82 +482,6 @@ mod evm_circuit_stats {
         .run();
     }
 
-    /// This function prints to stdout a table with the top X ExecutionState
-    /// cell consumers of each EVM Cell type.
-    ///
-    /// Run with:
-    /// `cargo test -p zkevm-circuits --release get_exec_steps_occupancy
-    /// --features test -- --nocapture --ignored`
-    #[ignore]
-    #[test]
-    fn get_exec_steps_occupancy() {
-        let mut meta = ConstraintSystem::<Fr>::default();
-        let circuit = EvmCircuit::configure(&mut meta);
-
-        let report = circuit.0.execution.instrument().clone().analyze();
-        macro_rules! gen_report {
-            ($report:expr, $($id:ident, $cols:expr), +) => {
-                $(
-                let row_report = report
-                    .iter()
-                    .sorted_by(|a, b| a.$id.utilization.partial_cmp(&b.$id.utilization).unwrap())
-                    .rev()
-                    .take(10)
-                    .map(|exec| {
-                        vec![
-                            format!("{:?}", exec.state),
-                            format!("{:?}", exec.$id.available_cells),
-                            format!("{:?}", exec.$id.unused_cells),
-                            format!("{:?}", exec.$id.used_cells),
-                            format!("{:?}", exec.$id.top_height),
-                            format!("{:?}", exec.$id.used_columns),
-                            format!("{:?}", exec.$id.utilization),
-                        ]
-                    })
-                    .collect::<Vec<Vec<String>>>();
-
-                let table = row_report.table().title(vec![
-                    format!("{:?}", stringify!($id)).cell().bold(true),
-                    format!("total_available_cells").cell().bold(true),
-                    format!("unused_cells").cell().bold(true),
-                    format!("cells").cell().bold(true),
-                    format!("top_height").cell().bold(true),
-                    format!("used columns (Max: {:?})", $cols).cell().bold(true),
-                    format!("Utilization").cell().bold(true),
-                ]);
-                print_stdout(table).unwrap();
-                )*
-            };
-        }
-
-        gen_report!(
-            report,
-            storage_1,
-            N_PHASE1_COLUMNS,
-            storage_2,
-            N_PHASE2_COLUMNS,
-            storage_perm,
-            N_COPY_COLUMNS,
-            byte_lookup,
-            N_BYTE_LOOKUPS,
-            fixed_table,
-            LOOKUP_CONFIG[0].1,
-            tx_table,
-            LOOKUP_CONFIG[1].1,
-            rw_table,
-            LOOKUP_CONFIG[2].1,
-            bytecode_table,
-            LOOKUP_CONFIG[3].1,
-            block_table,
-            LOOKUP_CONFIG[4].1,
-            copy_table,
-            LOOKUP_CONFIG[5].1,
-            keccak_table,
-            LOOKUP_CONFIG[6].1,
-            exp_table,
-            LOOKUP_CONFIG[7].1
-        );
-    }
     #[test]
     fn variadic_size_check() {
         let params = CircuitsParams {
