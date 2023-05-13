@@ -4,20 +4,16 @@ use halo2_proofs::{
     halo2curves::bn256::Fr,
     plonk::{Circuit, ConstraintSystem},
 };
+mod helpers;
+use helpers::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states};
 use itertools::Itertools;
 use mock::MOCK_ACCOUNTS;
 use std::env;
-use zkevm_circuits::{
-    evm_circuit::{
-        param::{
-            LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS,
-        },
-        step::ExecutionState,
-        EvmCircuit,
-    },
-    stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
+use zkevm_circuits::evm_circuit::{
+    param::{LOOKUP_CONFIG, N_BYTE_LOOKUPS, N_COPY_COLUMNS, N_PHASE1_COLUMNS, N_PHASE2_COLUMNS},
+    step::ExecutionState,
+    EvmCircuit,
 };
-
 fn main() {
     let args: Vec<String> = env::args().collect();
 

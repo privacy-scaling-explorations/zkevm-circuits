@@ -31,9 +31,6 @@ pub mod table;
 #[cfg(any(feature = "test", test))]
 pub mod test_util;
 
-/// Helpers for stats toolings.
-pub mod stats;
-
 pub mod tx_circuit;
 pub mod util;
 pub mod witness;

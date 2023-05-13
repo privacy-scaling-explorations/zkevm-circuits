@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-use crate::evm_circuit::step::ExecutionState;
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, ExecState},
     mock::BlockData,
@@ -8,6 +7,7 @@ use bus_mapping::{
 use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address, Bytecode, ToWord};
 use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
 use strum::IntoEnumIterator;
+use zkevm_circuits::evm_circuit::step::ExecutionState;
 
 /// Helper type to print formatted tables in MarkDown
 pub(crate) struct DisplayTable<const N: usize> {
@@ -58,7 +58,7 @@ impl<const N: usize> DisplayTable<N> {
 }
 
 /// Generate the prefix bytecode to trigger a big amount of rw operations
-pub fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
+pub(crate) fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
     match opcode {
         OpcodeId::CODECOPY | OpcodeId::CALLDATACOPY => {
             bytecode! {
@@ -125,7 +125,7 @@ struct Row {
 ///   `MOCK_ACCOUNT[2]` which has the main code
 /// - `0x0` account has a copy of the main code
 /// - `MOCK_ACCOUNTS[3]` has a small code that returns a 0-memory chunk
-pub fn print_circuit_stats_by_states(
+pub(crate) fn print_circuit_stats_by_states(
     // Function to select which opcodes to analyze.  When this returns false,
     // the opcode is skipped.
     fn_filter: impl Fn(ExecutionState) -> bool,
