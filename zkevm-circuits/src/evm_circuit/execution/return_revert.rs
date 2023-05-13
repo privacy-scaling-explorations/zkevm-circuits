@@ -245,10 +245,10 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
         self.opcode.assign(
             region,
             offset,
-            Value::known(F::from(step.opcode.unwrap().as_u64())),
+            Value::known(F::from(step.opcode().unwrap().as_u64())),
         )?;
 
-        let [memory_offset, length] = [0, 1].map(|i| block.rws[step.rw_indices[i]].stack_value());
+        let [memory_offset, length] = [0, 1].map(|index| block.get_rws(step, index).stack_value());
         let range = self.range.assign(region, offset, memory_offset, length)?;
         self.memory_expansion
             .assign(region, offset, step.memory_word_size(), [range])?;
@@ -277,7 +277,7 @@ impl<F: Field> ExecutionGadget<F> for ReturnRevertGadget<F> {
 
         if call.is_create() && call.is_success {
             let values: Vec<_> = (3..3 + length.as_usize())
-                .map(|i| block.rws[step.rw_indices[i]].memory_value())
+                .map(|index| block.get_rws(step, index).memory_value())
                 .collect();
             let mut code_hash = CodeDB::hash(&values).to_fixed_bytes();
             code_hash.reverse();

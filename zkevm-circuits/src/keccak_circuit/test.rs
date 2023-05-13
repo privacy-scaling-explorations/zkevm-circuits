@@ -22,7 +22,7 @@ fn serial_keccak_circuit_unusable_rows() {
         std::env::set_var("KECCAK_ROWS", format!("{keccak_rows}"));
         assert_eq!(
             KeccakCircuit::<Fr>::unusable_rows(),
-            unusable_rows::<Fr, KeccakCircuit::<Fr>>(),
+            unusable_rows::<Fr, KeccakCircuit::<Fr>>(()),
         )
     }
     std::env::set_var("KECCAK_ROWS", format!("{DEFAULT_KECCAK_ROWS}"));

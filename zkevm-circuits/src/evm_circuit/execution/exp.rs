@@ -227,8 +227,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let [base, exponent, exponentiation] =
-            [step.rw_indices[0], step.rw_indices[1], step.rw_indices[2]]
-                .map(|idx| block.rws[idx].stack_value());
+            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
         self.base.assign(region, offset, Some(base.to_le_bytes()))?;
         self.exponent

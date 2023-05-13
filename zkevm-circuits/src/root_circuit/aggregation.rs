@@ -446,6 +446,7 @@ where
 {
     type Config = AggregationConfig;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {
@@ -609,6 +610,7 @@ pub mod test {
     impl<F: Field> Circuit<F> for StandardPlonk<F> {
         type Config = StandardPlonkConfig;
         type FloorPlanner = V1;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             *self

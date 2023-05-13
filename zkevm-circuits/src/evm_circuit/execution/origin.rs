@@ -72,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
         _: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let origin = block.rws[step.rw_indices[1]].stack_value();
+        let origin = block.get_rws(step, 1).stack_value();
 
         // Assing TxId.
         self.tx_id

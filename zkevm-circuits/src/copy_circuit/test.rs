@@ -22,7 +22,7 @@ use mock::{test_ctx::helpers::account_0_code_account_1_no_code, TestContext, MOC
 fn copy_circuit_unusable_rows() {
     assert_eq!(
         CopyCircuit::<Fr>::unusable_rows(),
-        unusable_rows::<Fr, CopyCircuit::<Fr>>(),
+        unusable_rows::<Fr, CopyCircuit::<Fr>>(()),
     )
 }
 
