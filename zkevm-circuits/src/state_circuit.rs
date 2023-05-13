@@ -591,8 +591,3 @@ fn queries<F: Field>(meta: &mut VirtualCells<'_, F>, c: &StateCircuitConfig<F>) 
         state_root_prev: meta.query_advice(c.state_root, Rotation::prev()),
     }
 }
-
-#[cfg(test)]
-mod state_circuit_stats {
-  
-}
