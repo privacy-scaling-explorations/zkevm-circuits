@@ -6,7 +6,6 @@
 //! In the zkevm circuit, this `encode(word)` expression will not be directly
 //! looked up. Instead, it will be folded into the bus mapping lookup.
 
-use crate::Variable;
 use digest::{FixedOutput, Input};
 use eth_types::Field;
 use halo2_proofs::{
@@ -38,9 +37,6 @@ pub fn encode<F: Field>(vals: impl Iterator<Item = u8>, r: F) -> F {
         acc * r + byte
     })
 }
-
-/// A 256-bit word represented in the circuit as 32 bytes.
-pub struct Word<F: Field>([Variable<u8, F>; 32]);
 
 #[allow(dead_code)]
 /// Configuration structure used to constraint. generate and assign an EVM Word
@@ -128,25 +124,20 @@ impl<F: Field> WordConfig<F> {
         region: &mut Region<'_, F>,
         offset: usize,
         word: [Value<u8>; 32],
-    ) -> Result<Word<F>, Error> {
-        let mut bytes: Vec<Variable<u8, F>> = Vec::with_capacity(32);
-
+    ) -> Result<(), Error> {
         for (idx, (byte, column)) in word.iter().zip(self.bytes.iter()).enumerate() {
             // TODO: We will likely enable this selector outside of the helper.
             self.q_encode.enable(region, offset)?;
 
             let byte_field_elem = byte.map(|byte| F::from(byte as u64));
-            let cell = region.assign_advice(
+            region.assign_advice(
                 || format!("assign byte {}", idx),
                 *column,
                 offset,
                 || byte_field_elem,
             )?;
-
-            bytes.push(Variable::new(cell, *byte));
         }
-
-        Ok(Word(bytes.try_into().unwrap()))
+        Ok(())
     }
 }
 

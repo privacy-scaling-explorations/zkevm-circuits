@@ -20,24 +20,7 @@ pub mod mul_add;
 pub mod util;
 
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::{AssignedCell, Value},
-    plonk::Expression,
-};
-
-#[allow(dead_code)]
-/// An assigned cell in the circuit.
-#[derive(Clone, Debug)]
-pub struct Variable<T, F: Field> {
-    assig_cell: AssignedCell<F, F>,
-    value: Value<T>,
-}
-
-impl<T, F: Field> Variable<T, F> {
-    pub(crate) fn new(assig_cell: AssignedCell<F, F>, value: Value<T>) -> Self {
-        Self { assig_cell, value }
-    }
-}
+use halo2_proofs::plonk::Expression;
 
 /// Restrict an expression to be a boolean.
 pub fn bool_check<F: Field>(value: Expression<F>) -> Expression<F> {
