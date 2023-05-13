@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-#[cfg(any(feature = "test", test))]
-use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-#[cfg(feature = "test")]
-use crate::util::SubCircuit;
-
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
+use crate::{
+    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    table::BlockContextFieldTag,
+    util::SubCircuit,
+};
 
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
@@ -59,19 +58,12 @@ impl<F: Field> Block<F> {
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
     }
-}
 
-#[cfg(feature = "test")]
-use crate::exp_circuit::param::OFFSET_INCREMENT;
-#[cfg(feature = "test")]
-use crate::util::log2_ceil;
-
-#[cfg(feature = "test")]
-impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
     pub fn get_test_degree(&self) -> u32 {
+        use crate::{exp_circuit::param::OFFSET_INCREMENT, util::log2_ceil};
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(self);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
