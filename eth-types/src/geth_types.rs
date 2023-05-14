@@ -119,7 +119,7 @@ pub struct Transaction {
     /// Avoid direct read from this field. We set this field public to construct the struct
     pub to: Option<Address>,
     /// Transaction nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Gas Limit / Supplied gas
     pub gas_limit: Word,
     /// Transfered value
@@ -150,7 +150,7 @@ impl From<&Transaction> for crate::Transaction {
         crate::Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
+            nonce: tx.nonce.into(),
             gas: tx.gas_limit,
             value: tx.value,
             gas_price: Some(tx.gas_price),
@@ -171,7 +171,7 @@ impl From<&crate::Transaction> for Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce,
+            nonce: tx.nonce.low_u64(),
             gas_limit: tx.gas,
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
@@ -195,7 +195,7 @@ impl From<&Transaction> for TransactionRequest {
             gas_price: Some(tx.gas_price),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce),
+            nonce: Some(tx.nonce.into()),
             ..Default::default()
         }
     }
@@ -277,7 +277,7 @@ impl Transaction {
             input: self.call_data.clone(),
             gas_price: Some(self.gas_price),
             access_list: self.access_list.clone(),
-            nonce: self.nonce,
+            nonce: self.nonce.into(),
             gas: self.gas_limit,
             transaction_index: Some(transaction_index),
             r: self.r,
