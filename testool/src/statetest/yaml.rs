@@ -244,7 +244,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 nonce: if acc_nonce.is_badvalue() {
                     None
                 } else {
-                    Some(Self::parse_u256(acc_nonce)?)
+                    Some(Self::parse_u64(acc_nonce)?)
                 },
                 storage,
             };

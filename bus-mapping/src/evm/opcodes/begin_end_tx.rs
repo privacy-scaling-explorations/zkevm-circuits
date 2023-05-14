@@ -55,8 +55,8 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         &mut exec_step,
         caller_address,
         AccountField::Nonce,
-        nonce_prev + 1,
-        nonce_prev,
+        (nonce_prev + 1).into(),
+        nonce_prev.into(),
     )?;
 
     // Add caller and callee into access list

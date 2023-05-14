@@ -18,7 +18,7 @@ pub struct AccountMatch {
     pub address: Address,
     pub balance: Option<U256>,
     pub code: Option<Bytes>,
-    pub nonce: Option<U256>,
+    pub nonce: Option<u64>,
     pub storage: HashMap<U256, U256>,
 }
 
@@ -205,7 +205,7 @@ impl StateTest {
             from,
             Account {
                 address: from,
-                nonce: U256::zero(),
+                nonce: 0,
                 balance: U256::from(10).pow(18.into()),
                 code: Bytes::default(),
                 storage: HashMap::new(),
@@ -242,7 +242,7 @@ impl StateTest {
                 address,
                 Account {
                     address,
-                    nonce: U256::one(),
+                    nonce: 0,
                     code: Bytes::from(code.code()),
                     balance,
                     storage,

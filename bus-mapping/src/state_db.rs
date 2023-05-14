@@ -57,7 +57,7 @@ impl CodeDB {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Account {
     /// Nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// Storage key-value map
@@ -70,7 +70,7 @@ impl Account {
     /// Return an empty account, with all values set at zero.
     pub fn zero() -> Self {
         Self {
-            nonce: Word::zero(),
+            nonce: 0,
             balance: Word::zero(),
             storage: HashMap::new(),
             code_hash: *EMPTY_CODE_HASH,
@@ -79,7 +79,7 @@ impl Account {
 
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero() && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
+        self.nonce == 0 && self.balance.is_zero() && self.code_hash.eq(&EMPTY_CODE_HASH)
     }
 }
 
@@ -187,13 +187,13 @@ impl StateDB {
     /// Get nonce of account with `addr`.
     pub fn get_nonce(&self, addr: &Address) -> u64 {
         let (_, account) = self.get_account(addr);
-        account.nonce.as_u64()
+        account.nonce
     }
 
     /// Increase nonce of account with `addr` and return the previous value.
     pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
         let (_, account) = self.get_account_mut(addr);
-        let nonce = account.nonce.as_u64();
+        let nonce = account.nonce;
         account.nonce = account.nonce + 1;
         nonce
     }

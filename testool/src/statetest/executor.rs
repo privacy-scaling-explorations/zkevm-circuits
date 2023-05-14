@@ -23,7 +23,7 @@ pub enum StateTestError {
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
-    NonceMismatch { expected: U256, found: U256 },
+    NonceMismatch { expected: u64, found: u64 },
     #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
     #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]

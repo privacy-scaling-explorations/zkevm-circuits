@@ -25,7 +25,7 @@ pub struct Account {
     /// Address
     pub address: Address,
     /// nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// EVM Code
@@ -38,10 +38,7 @@ pub struct Account {
 impl Account {
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce.is_zero()
-            && self.balance.is_zero()
-            && self.code.is_empty()
-            && self.storage.is_empty()
+        self.nonce == 0 && self.balance.is_zero() && self.code.is_empty() && self.storage.is_empty()
     }
 }
 

@@ -215,7 +215,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             let account = Account {
                 address,
                 balance: parse::parse_u256(&acc.balance)?,
-                nonce: parse::parse_u256(&acc.nonce)?,
+                nonce: parse::parse_u64(&acc.nonce)?,
                 code: parse::parse_code(self.compiler, &acc.code)?,
                 storage,
             };
@@ -253,7 +253,7 @@ impl<'a> JsonStateTestBuilder<'a> {
                 nonce: acc
                     .nonce
                     .as_ref()
-                    .map(|v| parse::parse_u256(v))
+                    .map(|v| parse::parse_u64(v))
                     .transpose()?,
                 storage,
             };

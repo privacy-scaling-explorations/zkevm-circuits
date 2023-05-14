@@ -11,7 +11,7 @@ pub struct MockAccount {
     /// Address
     pub address: Address,
     /// nonce
-    pub nonce: Word,
+    pub nonce: u64,
     /// Balance
     pub balance: Word,
     /// EVM Code
@@ -40,7 +40,7 @@ impl MockAccount {
     }
 
     /// Set nonce field for the MockAccount.
-    pub fn nonce(&mut self, nonce: Word) -> &mut Self {
+    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
         self.nonce = nonce;
         self
     }
