@@ -74,7 +74,6 @@ impl<F: Field> SubCircuitConfig<F> for EvmCircuitConfig<F> {
     type ConfigArgs = EvmCircuitConfigArgs<F>;
 
     /// Configure EvmCircuitConfig
-    #[allow(clippy::too_many_arguments)]
     fn new(
         meta: &mut ConstraintSystem<F>,
         Self::ConfigArgs {
