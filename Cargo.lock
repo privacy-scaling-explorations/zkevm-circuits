@@ -5209,5 +5209,4 @@ dependencies = [
  "snark-verifier",
  "strum",
  "strum_macros",
- "subtle",
 ]
