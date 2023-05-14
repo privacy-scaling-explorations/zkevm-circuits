@@ -62,12 +62,19 @@ pub(crate) fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
     }
 }
 
+/// Wrap f64 for both sorting and pretty formatting
 #[derive(PartialEq, PartialOrd)]
-struct HeightPerGas(f64);
+struct PrettyF64(f64);
 
-impl std::fmt::Display for HeightPerGas {
+impl std::fmt::Display for PrettyF64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:1.3}", self.0)
+    }
+}
+
+impl From<f64> for PrettyF64 {
+    fn from(value: f64) -> Self {
+        Self(value)
     }
 }
 
@@ -82,7 +89,7 @@ struct Row {
     #[table(title = "Gas Cost", justify = "Justify::Right")]
     gas_cost: u64,
     #[table(title = "Height per Gas", justify = "Justify::Right")]
-    height_per_gas: HeightPerGas,
+    height_per_gas: PrettyF64,
 }
 
 /// This function prints to stdout a table with all the implemented states
@@ -221,7 +228,7 @@ pub(crate) fn print_circuit_stats_by_states(
                 opcode,
                 height,
                 gas_cost,
-                height_per_gas: HeightPerGas(height as f64 / gas_cost as f64),
+                height_per_gas: (height as f64 / gas_cost as f64).into(),
             });
         }
     }
