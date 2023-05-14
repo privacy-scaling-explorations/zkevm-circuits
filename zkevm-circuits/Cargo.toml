@@ -36,7 +36,7 @@ num-bigint = { version = "0.4" }
 subtle = "2.4"
 rand_chacha = "0.3"
 snark-verifier = { git = "https://github.com/privacy-scaling-explorations/snark-verifier", tag = "v2023_04_20", default-features = false, features = ["loader_halo2", "system_halo2"] }
-cli-table = "0.4"
+cli-table = { version = "0.4", optional = true }
 
 [dev-dependencies]
 bus-mapping = { path = "../bus-mapping", features = ["test"] }
@@ -55,7 +55,8 @@ default = []
 test = ["ethers-signers", "mock", "bus-mapping/test"]
 test-circuits = []
 warn-unimplemented = ["eth-types/warn-unimplemented"]
+stats = ["warn-unimplemented", "dep:cli-table"]
 
 [[bin]]
 name = "stats"
-required-features = ["warn-unimplemented"]
+required-features = ["stats"]
