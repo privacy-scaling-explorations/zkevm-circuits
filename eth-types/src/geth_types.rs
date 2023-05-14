@@ -121,7 +121,7 @@ pub struct Transaction {
     /// Transaction nonce
     pub nonce: u64,
     /// Gas Limit / Supplied gas
-    pub gas_limit: Word,
+    pub gas_limit: u64,
     /// Transfered value
     pub value: Word,
     /// Gas Price
@@ -151,7 +151,7 @@ impl From<&Transaction> for crate::Transaction {
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce.into(),
-            gas: tx.gas_limit,
+            gas: tx.gas_limit.into(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
             max_priority_fee_per_gas: Some(tx.gas_fee_cap),
@@ -172,7 +172,7 @@ impl From<&crate::Transaction> for Transaction {
             from: tx.from,
             to: tx.to,
             nonce: tx.nonce.low_u64(),
-            gas_limit: tx.gas,
+            gas_limit: tx.gas.low_u64(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
@@ -191,7 +191,7 @@ impl From<&Transaction> for TransactionRequest {
         TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit),
+            gas: Some(tx.gas_limit.into()),
             gas_price: Some(tx.gas_price),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
@@ -278,7 +278,7 @@ impl Transaction {
             gas_price: Some(self.gas_price),
             access_list: self.access_list.clone(),
             nonce: self.nonce.into(),
-            gas: self.gas_limit,
+            gas: self.gas_limit.into(),
             transaction_index: Some(transaction_index),
             r: self.r,
             s: self.s,

@@ -203,10 +203,7 @@ impl<F: Field> TxCircuit<F> {
 
                     for (tag, value) in [
                         (TxFieldTag::Nonce, Value::known(F::from(tx.nonce))),
-                        (
-                            TxFieldTag::Gas,
-                            Value::known(F::from(tx.gas_limit.as_u64())),
-                        ),
+                        (TxFieldTag::Gas, Value::known(F::from(tx.gas_limit))),
                         (
                             TxFieldTag::GasPrice,
                             challenges

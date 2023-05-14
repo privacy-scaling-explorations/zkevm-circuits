@@ -141,7 +141,7 @@ impl PublicData {
             tx_vals.push(TxValues {
                 nonce: tx.nonce.into(),
                 gas_price: tx.gas_price,
-                gas: tx.gas_limit,
+                gas: tx.gas_limit.into(),
                 from_addr: tx.from,
                 to_addr: tx.to_or_zero(),
                 is_create: tx.is_create(),
