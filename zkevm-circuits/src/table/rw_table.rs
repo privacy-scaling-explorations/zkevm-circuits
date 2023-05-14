@@ -1,4 +1,5 @@
 use super::*;
+use bus_mapping::operation::Target;
 
 /// Tag to identify the operation type in a RwTable row
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter)]
@@ -39,6 +40,24 @@ impl RwTableTag {
                 | RwTableTag::Account
                 | RwTableTag::AccountStorage
         )
+    }
+}
+
+impl From<Target> for RwTableTag {
+    fn from(t: Target) -> Self {
+        match t {
+            Target::Memory => Self::Memory,
+            Target::Stack => Self::Stack,
+            Target::Storage => Self::AccountStorage,
+            Target::TxAccessListAccount => Self::TxAccessListAccount,
+            Target::TxAccessListAccountStorage => Self::TxAccessListAccountStorage,
+            Target::TxRefund => Self::TxRefund,
+            Target::Account => Self::Account,
+            Target::CallContext => Self::CallContext,
+            Target::TxReceipt => Self::TxReceipt,
+            Target::TxLog => Self::TxLog,
+            Target::Start => Self::Start,
+        }
     }
 }
 
