@@ -139,7 +139,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             transactions: vec![geth_types::Transaction {
                 from: st.from,
                 to: st.to,
-                nonce: st.nonce.low_u64(),
+                nonce: st.nonce,
                 value: st.value,
                 gas_limit: st.gas_limit,
                 gas_price: st.gas_price,

@@ -104,7 +104,7 @@ impl<'a> YamlStateTestBuilder<'a> {
                 Self::parse_u256(&yaml_transaction["gasPrice"]).unwrap_or_else(|_| U256::one());
 
             // TODO handle maxPriorityFeePerGas & maxFeePerGas
-            let nonce = Self::parse_u256(&yaml_transaction["nonce"])?;
+            let nonce = Self::parse_u64(&yaml_transaction["nonce"])?;
             let to = Self::parse_to_address(&yaml_transaction["to"])?;
             let secret_key = Self::parse_bytes(&yaml_transaction["secretKey"])?;
             let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
@@ -615,7 +615,7 @@ arith:
             to: Some(ccccc),
             gas_limit: 80000000,
             gas_price: U256::from(10u64),
-            nonce: U256::zero(),
+            nonce: 0,
             value: U256::one(),
             data: Bytes::from(&[0]),
             pre: HashMap::from([
@@ -626,7 +626,6 @@ arith:
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01, 0x00]),
                         nonce: U256::zero(),
-
                         storage: HashMap::from([(U256::zero(), U256::one())]),
                     },
                 ),

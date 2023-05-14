@@ -108,7 +108,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             let to = parse::parse_to_address(&test.transaction.to)?;
             let secret_key = parse::parse_bytes(&test.transaction.secret_key)?;
             let from = secret_key_to_address(&SigningKey::from_bytes(&secret_key.to_vec())?);
-            let nonce = parse::parse_u256(&test.transaction.nonce)?;
+            let nonce = parse::parse_u64(&test.transaction.nonce)?;
             let gas_price = parse::parse_u256(&test.transaction.gas_price)?;
 
             let data_s: Vec<_> = test
@@ -388,7 +388,7 @@ mod test {
             )?),
             gas_limit: 400000,
             gas_price: U256::from(10u64),
-            nonce: U256::from(0u64),
+            nonce: 0,
             value: U256::from(100000u64),
             data: Bytes::from(hex::decode("6001")?),
             pre: HashMap::from([(
