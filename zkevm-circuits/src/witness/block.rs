@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    exp_circuit::param::OFFSET_INCREMENT,
     table::BlockContextFieldTag,
-    util::SubCircuit,
+    util::{log2_ceil, SubCircuit},
 };
-
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -63,7 +63,6 @@ impl<F: Field> Block<F> {
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
     pub fn get_test_degree(&self) -> u32 {
-        use crate::{exp_circuit::param::OFFSET_INCREMENT, util::log2_ceil};
         let num_rows_required_for_execution_steps: usize =
             EvmCircuit::<F>::get_num_rows_required(self);
         let num_rows_required_for_rw_table: usize = self.circuits_params.max_rws;
