@@ -83,7 +83,7 @@ impl Opcode for Sha3 {
 }
 
 /// Generate Sha3 opcode
-pub struct Sha3OpcodeGen {
+pub struct Sha3CodeGen {
     /// The offset
     pub offset: usize,
     /// The size
@@ -91,7 +91,7 @@ pub struct Sha3OpcodeGen {
     data_len: usize,
     rng: ThreadRng,
 }
-impl Sha3OpcodeGen {
+impl Sha3CodeGen {
     /// Construct with memory less than size
     pub fn mem_lt_size(offset: usize, size: usize) -> Self {
         let mut rng = rand::thread_rng();
@@ -183,7 +183,7 @@ impl Sha3OpcodeGen {
 
 #[cfg(test)]
 pub(crate) mod sha3_tests {
-    use super::Sha3OpcodeGen;
+    use super::Sha3CodeGen;
     use eth_types::{evm_types::OpcodeId, geth_types::GethData, Word};
     use ethers_core::utils::keccak256;
     use mock::{
@@ -197,7 +197,7 @@ pub(crate) mod sha3_tests {
         operation::{MemoryOp, StackOp, RW},
     };
 
-    fn test_ok(mut gen: Sha3OpcodeGen) {
+    fn test_ok(mut gen: Sha3CodeGen) {
         let (code, memory) = gen.gen_sha3_code();
         let (size, offset) = (gen.size, gen.offset);
         let memory_len = memory.len();
@@ -296,9 +296,9 @@ pub(crate) mod sha3_tests {
 
     #[test]
     fn sha3_opcode_ok() {
-        test_ok(Sha3OpcodeGen::mem_empty(0x10, 0x32));
-        test_ok(Sha3OpcodeGen::mem_lt_size(0x34, 0x44));
-        test_ok(Sha3OpcodeGen::mem_eq_size(0x222, 0x111));
-        test_ok(Sha3OpcodeGen::mem_gt_size(0x20, 0x30));
+        test_ok(Sha3CodeGen::mem_empty(0x10, 0x32));
+        test_ok(Sha3CodeGen::mem_lt_size(0x34, 0x44));
+        test_ok(Sha3CodeGen::mem_eq_size(0x222, 0x111));
+        test_ok(Sha3CodeGen::mem_gt_size(0x20, 0x30));
     }
 }

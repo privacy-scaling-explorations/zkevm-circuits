@@ -157,10 +157,10 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 #[cfg(test)]
 mod tests {
     use crate::test_util::CircuitTestBuilder;
-    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::Sha3OpcodeGen};
+    use bus_mapping::{circuit_input_builder::CircuitsParams, evm::Sha3CodeGen};
     use mock::TestContext;
 
-    fn test_ok(mut gen: Sha3OpcodeGen) {
+    fn test_ok(mut gen: Sha3CodeGen) {
         let (code, _) = gen.gen_sha3_code();
         CircuitTestBuilder::new_from_test_ctx(
             TestContext::<2, 1>::simple_ctx_with_bytecode(code).unwrap(),
@@ -174,22 +174,22 @@ mod tests {
 
     #[test]
     fn sha3_gadget_zero_length() {
-        test_ok(Sha3OpcodeGen::mem_gt_size(0x20, 0x00));
+        test_ok(Sha3CodeGen::mem_gt_size(0x20, 0x00));
     }
 
     #[test]
     fn sha3_gadget_simple() {
-        test_ok(Sha3OpcodeGen::mem_empty(0x00, 0x08));
-        test_ok(Sha3OpcodeGen::mem_lt_size(0x10, 0x10));
-        test_ok(Sha3OpcodeGen::mem_eq_size(0x24, 0x16));
-        test_ok(Sha3OpcodeGen::mem_gt_size(0x32, 0x78));
+        test_ok(Sha3CodeGen::mem_empty(0x00, 0x08));
+        test_ok(Sha3CodeGen::mem_lt_size(0x10, 0x10));
+        test_ok(Sha3CodeGen::mem_eq_size(0x24, 0x16));
+        test_ok(Sha3CodeGen::mem_gt_size(0x32, 0x78));
     }
 
     #[test]
     fn sha3_gadget_large() {
-        test_ok(Sha3OpcodeGen::mem_empty(0x101, 0x202));
-        test_ok(Sha3OpcodeGen::mem_lt_size(0x202, 0x303));
-        test_ok(Sha3OpcodeGen::mem_eq_size(0x303, 0x404));
-        test_ok(Sha3OpcodeGen::mem_gt_size(0x404, 0x505));
+        test_ok(Sha3CodeGen::mem_empty(0x101, 0x202));
+        test_ok(Sha3CodeGen::mem_lt_size(0x202, 0x303));
+        test_ok(Sha3CodeGen::mem_eq_size(0x303, 0x404));
+        test_ok(Sha3CodeGen::mem_gt_size(0x404, 0x505));
     }
 }
