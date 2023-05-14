@@ -199,15 +199,16 @@ pub(crate) mod sha3_tests {
 
     fn test_ok(mut gen: Sha3OpcodeGen) {
         let (code, memory) = gen.gen_sha3_code();
+        let (size, offset) = (gen.size, gen.offset);
         let memory_len = memory.len();
 
         // The memory that is hashed.
         let mut memory_view = memory
             .into_iter()
-            .skip(gen.offset)
-            .take(gen.size)
+            .skip(offset)
+            .take(size)
             .collect::<Vec<u8>>();
-        memory_view.resize(gen.size, 0);
+        memory_view.resize(size, 0);
         let expected_sha3_value = keccak256(&memory_view);
 
         let block: GethData = TestContext::<2, 1>::new(
@@ -247,11 +248,11 @@ pub(crate) mod sha3_tests {
             [
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1022.into(), Word::from(gen.offset)),
+                    &StackOp::new(call_id, 1022.into(), Word::from(offset)),
                 ),
                 (
                     RW::READ,
-                    &StackOp::new(call_id, 1023.into(), Word::from(gen.size)),
+                    &StackOp::new(call_id, 1023.into(), Word::from(size)),
                 ),
                 (
                     RW::WRITE,
@@ -264,17 +265,17 @@ pub(crate) mod sha3_tests {
         // Initial memory_len bytes are the memory writes from MSTORE instruction, so we
         // skip them.
         assert_eq!(
-            (memory_len..(memory_len + gen.size))
+            (memory_len..(memory_len + size))
                 .map(|idx| &builder.block.container.memory[idx])
                 .map(|op| (op.rw(), op.op().clone()))
                 .collect::<Vec<(RW, MemoryOp)>>(),
             {
-                let mut memory_ops = Vec::with_capacity(gen.size);
-                (0..gen.size).for_each(|idx| {
+                let mut memory_ops = Vec::with_capacity(size);
+                (0..size).for_each(|idx| {
                     let value = memory_view[idx];
                     memory_ops.push((
                         RW::READ,
-                        MemoryOp::new(call_id, (gen.offset + idx).into(), value),
+                        MemoryOp::new(call_id, (offset + idx).into(), value),
                     ));
                 });
                 memory_ops
@@ -285,7 +286,7 @@ pub(crate) mod sha3_tests {
 
         // single copy event with `size` reads and `size` writes.
         assert_eq!(copy_events.len(), 1);
-        assert_eq!(copy_events[0].bytes.len(), gen.size);
+        assert_eq!(copy_events[0].bytes.len(), size);
 
         for (idx, (value, is_code)) in copy_events[0].bytes.iter().enumerate() {
             assert_eq!(Some(value), memory_view.get(idx));
