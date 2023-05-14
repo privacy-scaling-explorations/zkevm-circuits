@@ -141,7 +141,7 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
                 to: st.to,
                 nonce: st.nonce.low_u64(),
                 value: st.value,
-                gas_limit: st.gas_limit.into(),
+                gas_limit: st.gas_limit,
                 gas_price: st.gas_price,
                 gas_fee_cap: U256::zero(),
                 gas_tip_cap: U256::zero(),
