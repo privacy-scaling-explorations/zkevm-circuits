@@ -571,10 +571,15 @@ fn tracer_create_collision_free() {
             code_hash: Hash::zero(),
         },
     );
-    builder
-        .builder
-        .sdb
-        .set_account(&create_address, Account::zero());
+    builder.builder.sdb.set_account(
+        &create_address,
+        Account {
+            nonce: 0,
+            balance: Word::zero(),
+            storage: HashMap::new(),
+            code_hash: Hash::zero(),
+        },
+    );
 
     let error = builder.state_ref().get_step_err(step, next_step);
     // expects no errors detected
@@ -698,7 +703,7 @@ fn tracer_err_code_store_out_of_gas_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(55000u64.into())
-                .nonce(1)
+                .nonce(0)
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
@@ -944,7 +949,7 @@ fn tracer_err_max_code_size_exceeded_tx_deploy() {
             txs[0]
                 .from(accs[1].address)
                 .gas(60000u64.into())
-                .nonce(1)
+                .nonce(0)
                 .input(code_creator.into());
         },
         |block, _tx| block.number(0x0264),
