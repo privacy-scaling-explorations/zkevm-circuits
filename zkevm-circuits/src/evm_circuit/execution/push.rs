@@ -12,7 +12,7 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::Word32, Expr},
+    util::{word::Word32Cell, Expr},
 };
 use array_init::array_init;
 use eth_types::{evm_types::OpcodeId, Field, ToLittleEndian};

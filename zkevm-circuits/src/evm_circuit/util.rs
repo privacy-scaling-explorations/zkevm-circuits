@@ -506,6 +506,12 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
+impl<F: FieldExt> WordExpr<F> for MemoryAddress<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
+
 pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
 
 impl<F: FieldExt> WordExpr<F> for AccountAddress<F> {

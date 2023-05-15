@@ -26,7 +26,7 @@ use halo2_proofs::{
     },
 };
 
-use super::{rlc, AccountAddress, CachedRegion, CellType, StoredExpression};
+use super::{rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -462,6 +462,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
         AccountAddress::<F>::new(self.query_bytes(), F::from(256))
+    }
+
+    pub(crate) fn query_memory_address(&mut self) -> AccountAddress<F> {
+        MemoryAddress::<F>::new(self.query_bytes(), F::from(256))
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {

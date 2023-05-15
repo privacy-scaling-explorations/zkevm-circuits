@@ -11,7 +11,7 @@ use crate::{
         },
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{word::WordExpr, Expr},
     witness::{Block, Call, ExecStep, Transaction},
 };
 use bus_mapping::evm::OpcodeId;
@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 /// [`OpcodeId::CALL`], [`OpcodeId::CALLCODE`], [`OpcodeId::DELEGATECALL`] and
 /// [`OpcodeId::STATICCALL`].
 #[derive(Clone, Debug)]
-pub(crate) struct ErrorOOGCallGadget<F> {
+pub(crate) struct ErrorOOGCallGadget<F, T> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
     is_callcode: IsZeroGadget<F>,
@@ -30,13 +30,13 @@ pub(crate) struct ErrorOOGCallGadget<F> {
     is_staticcall: IsZeroGadget<F>,
     tx_id: Cell<F>,
     is_static: Cell<F>,
-    call: CommonCallGadget<F, false>,
+    call: CommonCallGadget<F, false, T>,
     is_warm: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
-impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
+impl<F: Field, T: WordExpr<F>> ExecutionGadget<F> for ErrorOOGCallGadget<F, T> {
     const NAME: &'static str = "ErrorOutOfGasCall";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasCall;
