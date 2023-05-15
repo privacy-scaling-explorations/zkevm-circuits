@@ -14,6 +14,7 @@ use eth_types::{Field, ToAddress, Word};
 pub use ethers_core::types::{Address, U256};
 pub use gadgets::util::Expr;
 
+/// Cell Manager
 pub mod cell_manager;
 
 pub(crate) fn query_expression<F: FieldExt, T>(
