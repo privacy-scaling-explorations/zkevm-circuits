@@ -25,6 +25,7 @@ pub struct Account {
     /// Address
     pub address: Address,
     /// nonce
+    #[serde(serialize_with = "serde_u64")]
     pub nonce: u64,
     /// Balance
     pub balance: Word,
@@ -43,7 +44,7 @@ impl Account {
 }
 
 fn serde_u64<S: Serializer>(to_serialize: &u64, serializer: S) -> Result<S::Ok, S::Error> {
-    to_serialize.to_string().serialize(serializer)
+    format!("0x{}", to_serialize.to_string()).serialize(serializer)
 }
 
 fn serde_account_storage<S: Serializer>(
@@ -120,8 +121,10 @@ pub struct Transaction {
     /// Avoid direct read from this field. We set this field public to construct the struct
     pub to: Option<Address>,
     /// Transaction nonce
+    #[serde(serialize_with = "serde_u64")]
     pub nonce: u64,
     /// Gas Limit / Supplied gas
+    #[serde(serialize_with = "serde_u64")]
     pub gas_limit: u64,
     /// Transfered value
     pub value: Word,
