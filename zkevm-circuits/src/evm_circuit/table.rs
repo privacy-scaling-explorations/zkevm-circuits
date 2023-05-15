@@ -312,51 +312,52 @@ impl<F: Field> Lookup<F> {
                 field_tag,
                 index,
                 value,
-            } => [
-                vec![id.clone(), field_tag.clone(), index.clone()],
-                value.limbs.to_vec().clone(),
-            ]
-            .concat(),
+            } => vec![
+                id.clone(),
+                field_tag.clone(),
+                index.clone(),
+                value.lo(),
+                value.hi(),
+            ],
             Self::Rw {
                 counter,
                 is_write,
                 tag,
                 values,
-            } => [
-                vec![
-                    counter.clone(),
-                    is_write.clone(),
-                    tag.clone(),
-                    values.id.clone(),
-                    values.address.clone(),
-                    values.field_tag.clone(),
-                    values.storage_key.clone(),
-                ],
-                values.value.limbs.to_vec().clone(),
-                values.value_prev.limbs.to_vec().clone(),
-                vec![values.aux1.clone(), values.aux2.clone()],
-            ]
-            .concat(),
+            } => vec![
+                counter.clone(),
+                is_write.clone(),
+                tag.clone(),
+                values.id.clone(),
+                values.address.clone(),
+                values.field_tag.clone(),
+                values.storage_key.clone(),
+                values.value.lo(),
+                values.value.hi(),
+                values.value_prev.lo(),
+                values.value_prev.hi(),
+                values.aux1.clone(),
+                values.aux2.clone(),
+            ],
             Self::Bytecode {
                 hash,
                 tag,
                 index,
                 is_code,
                 value,
-            } => [
-                hash.limbs.to_vec().clone(),
-                vec![tag.clone(), index.clone(), is_code.clone(), value.clone()],
-            ]
-            .concat(),
+            } => vec![
+                hash.lo(),
+                hash.hi(),
+                tag.clone(),
+                index.clone(),
+                is_code.clone(),
+                value.clone(),
+            ],
             Self::Block {
                 field_tag,
                 number,
                 value,
-            } => [
-                vec![field_tag.clone(), number.clone()],
-                value.limbs.to_vec().clone(),
-            ]
-            .concat(),
+            } => vec![field_tag.clone(), number.clone(), value.lo(), value.hi()],
             Self::CopyTable {
                 is_first,
                 src_id,
@@ -388,15 +389,13 @@ impl<F: Field> Lookup<F> {
                 input_rlc,
                 input_len,
                 output,
-            } => [
-                vec![
-                    1.expr(), // is_enabled
-                    input_rlc.clone(),
-                    input_len.clone(),
-                ],
-                output.limbs.to_vec().clone(),
-            ]
-            .concat(),
+            } => vec![
+                1.expr(), // is_enabled
+                input_rlc.clone(),
+                input_len.clone(),
+                output.lo(),
+                output.hi(),
+            ],
             Self::ExpTable {
                 identifier,
                 is_last,

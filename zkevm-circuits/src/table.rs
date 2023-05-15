@@ -142,10 +142,7 @@ impl TxTable {
             tx_id: meta.advice_column(),
             tag: meta.fixed_column(),
             index: meta.advice_column(),
-            value: word::Word::new([
-                meta.advice_column_in(SecondPhase),
-                meta.advice_column_in(SecondPhase),
-            ]),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -256,11 +253,13 @@ impl TxTable {
 
 impl<F: Field> LookupTable<F> for TxTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        [
-            vec![self.tx_id.into(), self.tag.into(), self.index.into()],
-            self.value.limbs.map(|limb| limb.into()).to_vec(),
+        vec![
+            self.tx_id.into(),
+            self.tag.into(),
+            self.index.into(),
+            self.value.lo(),
+            self.value.hi(),
         ]
-        .concat()
     }
 
     fn annotations(&self) -> Vec<String> {
@@ -268,23 +267,19 @@ impl<F: Field> LookupTable<F> for TxTable {
             String::from("tx_id"),
             String::from("tag"),
             String::from("index"),
-            String::from("value"),
+            String::from("value_lo"),
+            String::from("value_hi"),
         ]
     }
 
     fn table_exprs(&self, meta: &mut VirtualCells<F>) -> Vec<Expression<F>> {
-        [
-            vec![
-                meta.query_advice(self.tx_id, Rotation::cur()),
-                meta.query_fixed(self.tag, Rotation::cur()),
-                meta.query_advice(self.index, Rotation::cur()),
-            ],
-            self.value
-                .limbs
-                .map(|column| meta.query_advice(column, Rotation::cur()))
-                .to_vec(),
+        vec![
+            meta.query_advice(self.tx_id, Rotation::cur()),
+            meta.query_fixed(self.tag, Rotation::cur()),
+            meta.query_advice(self.index, Rotation::cur()),
+            meta.query_advice(self.value.lo(), Rotation::cur()),
+            meta.query_advice(self.value.hi(), Rotation::cur()),
         ]
-        .concat()
     }
 }
 
@@ -451,9 +446,9 @@ pub struct RwTable {
     /// Key3 (StorageKey)
     pub storage_key: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
     /// Value Previous
-    pub value_prev: Column<Advice>,
+    pub value_prev: word::Word<Column<Advice>>,
     /// Aux1
     pub aux1: Column<Advice>,
     /// Aux2 (Committed Value)
@@ -470,8 +465,10 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.address.into(),
             self.field_tag.into(),
             self.storage_key.into(),
-            self.value.into(),
-            self.value_prev.into(),
+            self.value.lo(),
+            self.value.hi(),
+            self.value_prev.lo(),
+            self.value_prev.hi(),
             self.aux1.into(),
             self.aux2.into(),
         ]
@@ -486,8 +483,10 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("address"),
             String::from("field_tag"),
             String::from("storage_key"),
-            String::from("value"),
-            String::from("value_prev"),
+            String::from("value_lo"),
+            String::from("value_hi"),
+            String::from("value_prev_lo"),
+            String::from("value_prev_hi"),
             String::from("aux1"),
             String::from("aux2"),
         ]
@@ -504,8 +503,8 @@ impl RwTable {
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
             storage_key: meta.advice_column_in(SecondPhase),
-            value: meta.advice_column_in(SecondPhase),
-            value_prev: meta.advice_column_in(SecondPhase),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
+            value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
             // It seems that aux1 for the moment is not using randomness
             // TODO check in a future review
             aux1: meta.advice_column_in(SecondPhase),
@@ -682,7 +681,7 @@ impl_expr!(BytecodeFieldTag);
 #[derive(Clone, Debug)]
 pub struct BytecodeTable {
     /// Code Hash
-    pub code_hash: Column<Advice>,
+    pub code_hash: word::Word<Column<Advice>>,
     /// Tag
     pub tag: Column<Advice>,
     /// Index
@@ -697,7 +696,7 @@ impl BytecodeTable {
     /// Construct a new BytecodeTable
     pub fn construct<F: Field>(meta: &mut ConstraintSystem<F>) -> Self {
         let [tag, index, is_code, value] = array::from_fn(|_| meta.advice_column());
-        let code_hash = meta.advice_column_in(SecondPhase);
+        let code_hash = word::Word::new([meta.advice_column(), meta.advice_column()]);
         Self {
             code_hash,
             tag,
@@ -753,7 +752,8 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash.into(),
+            self.code_hash.lo(),
+            self.code_hash.hi(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),
@@ -763,7 +763,8 @@ impl<F: Field> LookupTable<F> for BytecodeTable {
 
     fn annotations(&self) -> Vec<String> {
         vec![
-            String::from("code_hash"),
+            String::from("code_hash_lo"),
+            String::from("code_hash_hi"),
             String::from("tag"),
             String::from("index"),
             String::from("is_code"),
@@ -804,7 +805,7 @@ pub struct BlockTable {
     /// Index
     pub index: Column<Advice>,
     /// Value
-    pub value: Column<Advice>,
+    pub value: word::Word<Column<Advice>>,
 }
 
 impl BlockTable {
@@ -813,7 +814,7 @@ impl BlockTable {
         Self {
             tag: meta.advice_column(),
             index: meta.advice_column(),
-            value: meta.advice_column_in(SecondPhase),
+            value: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -859,14 +860,20 @@ impl BlockTable {
 
 impl<F: Field> LookupTable<F> for BlockTable {
     fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.tag.into(), self.index.into(), self.value.into()]
+        vec![
+            self.tag.into(),
+            self.index.into(),
+            self.value.lo(),
+            self.value.hi(),
+        ]
     }
 
     fn annotations(&self) -> Vec<String> {
         vec![
             String::from("tag"),
             String::from("index"),
-            String::from("value"),
+            String::from("value_lo"),
+            String::from("value_hi"),
         ]
     }
 }
@@ -881,7 +888,7 @@ pub struct KeccakTable {
     /// Byte array input length
     pub input_len: Column<Advice>,
     /// RLC of the hash result
-    pub output_rlc: Column<Advice>, // RLC of hash of input bytes
+    pub output: word::Word<Column<Advice>>, // RLC of hash of input bytes
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
@@ -890,7 +897,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.is_enabled.into(),
             self.input_rlc.into(),
             self.input_len.into(),
-            self.output_rlc.into(),
+            self.output.lo(),
+            self.output.hi(),
         ]
     }
 
@@ -899,7 +907,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             String::from("is_enabled"),
             String::from("input_rlc"),
             String::from("input_len"),
-            String::from("output_rlc"),
+            String::from("output_lo"),
+            String::from("output_hi"),
         ]
     }
 }
@@ -911,7 +920,7 @@ impl KeccakTable {
             is_enabled: meta.advice_column(),
             input_rlc: meta.advice_column_in(SecondPhase),
             input_len: meta.advice_column(),
-            output_rlc: meta.advice_column_in(SecondPhase),
+            output: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
 
@@ -1006,12 +1015,13 @@ impl KeccakTable {
         &self,
         value_rlc: Column<Advice>,
         length: Column<Advice>,
-        code_hash: Column<Advice>,
+        code_hash: word::Word<Column<Advice>>,
     ) -> Vec<(Column<Advice>, Column<Advice>)> {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash, self.output_rlc),
+            (code_hash.lo(), self.output.lo()),
+            (code_hash.hi(), self.output.hi()),
         ]
     }
 }
