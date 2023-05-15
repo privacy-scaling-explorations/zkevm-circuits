@@ -282,7 +282,7 @@ pub(crate) struct ExecutionConfig<F, T> {
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
     // error gadgets
-    error_oog_call: Box<ErrorOOGCallGadget<F>>,
+    error_oog_call: Box<ErrorOOGCallGadget<F, T>>,
     error_oog_constant: Box<ErrorOOGConstantGadget<F>>,
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
     error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,

@@ -211,7 +211,7 @@ pub(crate) enum Lookup<F> {
     /// contract code.
     Bytecode {
         /// Hash to specify which code to read.
-        hash: Expression<F>,
+        hash: Word<Expression<F>>,
         /// Tag to specify whether its the bytecode length or byte value in the
         /// bytecode.
         tag: Expression<F>,
@@ -343,15 +343,11 @@ impl<F: Field> Lookup<F> {
                 index,
                 is_code,
                 value,
-            } => {
-                vec![
-                    hash.clone(),
-                    tag.clone(),
-                    index.clone(),
-                    is_code.clone(),
-                    value.clone(),
-                ]
-            }
+            } => [
+                hash.limbs.to_vec().clone(),
+                vec![tag.clone(), index.clone(), is_code.clone(), value.clone()],
+            ]
+            .concat(),
             Self::Block {
                 field_tag,
                 number,

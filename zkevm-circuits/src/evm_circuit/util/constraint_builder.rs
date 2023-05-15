@@ -54,7 +54,7 @@ pub(crate) struct StepStateTransition<F: Field> {
     pub(crate) call_id: Transition<Expression<F>>,
     pub(crate) is_root: Transition<Expression<F>>,
     pub(crate) is_create: Transition<Expression<F>>,
-    pub(crate) code_hash: Transition<Expression<F>>,
+    pub(crate) code_hash: Transition<Word<Expression<F>>>,
     pub(crate) program_counter: Transition<Expression<F>>,
     pub(crate) stack_pointer: Transition<Expression<F>>,
     pub(crate) gas_left: Transition<Expression<F>>,
@@ -646,7 +646,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
 
     pub(crate) fn bytecode_lookup(
         &mut self,
-        code_hash: Expression<F>,
+        code_hash: Word<Expression<F>>,
         index: Expression<F>,
         is_code: Expression<F>,
         value: Expression<F>,
@@ -663,7 +663,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         )
     }
 
-    pub(crate) fn bytecode_length(&mut self, code_hash: Expression<F>, value: Expression<F>) {
+    pub(crate) fn bytecode_length(&mut self, code_hash: Word<Expression<F>>, value: Expression<F>) {
         self.add_lookup(
             "Bytecode (length)",
             Lookup::Bytecode {
