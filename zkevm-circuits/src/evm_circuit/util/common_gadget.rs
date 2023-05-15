@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -97,7 +97,7 @@ pub(crate) struct RestoreContextGadget<F> {
     caller_id: Cell<F>,
     caller_is_root: Cell<F>,
     caller_is_create: Cell<F>,
-    caller_code_hash: Cell<F>,
+    caller_code_hash: WordCell<F>,
     caller_program_counter: Cell<F>,
     caller_stack_pointer: Cell<F>,
     caller_gas_left: Cell<F>,
@@ -118,11 +118,10 @@ impl<F: Field> RestoreContextGadget<F> {
     ) -> Self {
         // Read caller's context for restore
         let caller_id = cb.call_context(None, CallContextFieldTag::CallerId);
-        let [caller_is_root, caller_is_create, caller_code_hash, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
+        let [caller_is_root, caller_is_create, caller_program_counter, caller_stack_pointer, caller_gas_left, caller_memory_word_size, caller_reversible_write_counter] =
             [
                 CallContextFieldTag::IsRoot,
                 CallContextFieldTag::IsCreate,
-                CallContextFieldTag::CodeHash,
                 CallContextFieldTag::ProgramCounter,
                 CallContextFieldTag::StackPointer,
                 CallContextFieldTag::GasLeft,
@@ -130,6 +129,9 @@ impl<F: Field> RestoreContextGadget<F> {
                 CallContextFieldTag::ReversibleWriteCounter,
             ]
             .map(|field_tag| cb.call_context(Some(caller_id.expr()), field_tag));
+
+        let caller_code_hash =
+            cb.call_context_read_as_word(Some(caller_id.expr()), CallContextFieldTag::CodeHash);
 
         // Update caller's last callee information
         // EIP-211 CREATE/CREATE2 call successful case should set RETURNDATASIZE = 0
@@ -156,8 +158,8 @@ impl<F: Field> RestoreContextGadget<F> {
                 ),
             ),
         ] {
-            cb.call_context_lookup(
-                true.expr(),
+            // TODO review and assure range check
+            cb.call_context_lookup_write_unchecked(
                 Some(caller_id.expr()),
                 field_tag,
                 Word::from_lo_unchecked(value),
@@ -195,7 +197,7 @@ impl<F: Field> RestoreContextGadget<F> {
             call_id: To(caller_id.expr()),
             is_root: To(caller_is_root.expr()),
             is_create: To(caller_is_create.expr()),
-            code_hash: To(caller_code_hash.expr()),
+            code_hash: To(caller_code_hash.to_word()),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
             gas_left: To(gas_left),
@@ -260,7 +262,7 @@ impl<F: Field> RestoreContextGadget<F> {
         }
 
         self.caller_code_hash
-            .assign(region, offset, region.word_rlc(caller_code_hash))?;
+            .assign(region, offset, Word::from_u256(caller_code_hash))?;
 
         Ok(())
     }
@@ -364,7 +366,7 @@ pub(crate) struct TransferWithGasFeeGadget<F> {
     receiver: UpdateBalanceGadget<F, 2, true>,
     receiver_exists: Expression<F>,
     must_create: Expression<F>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F>,
+    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
 impl<F: Field> TransferWithGasFeeGadget<F> {
@@ -496,7 +498,7 @@ impl<F: Field> TransferWithGasFeeGadget<F> {
 pub(crate) struct TransferGadget<F> {
     sender: UpdateBalanceGadget<F, 2, false>,
     receiver: UpdateBalanceGadget<F, 2, true>,
-    pub(crate) value_is_zero: IsZeroWordGadget<F>,
+    pub(crate) value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
 impl<F: Field> TransferGadget<F> {
@@ -594,12 +596,12 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
     pub rd_address: MemoryAddressGadget<F>,
     pub memory_expansion: MemoryExpansionGadget<F, 2, N_BYTES_MEMORY_WORD_SIZE>,
 
-    value_is_zero: IsZeroWordGadget<F>,
+    value_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     pub has_value: Expression<F>,
-    pub callee_code_hash: Word32Cell<F>,
-    pub is_empty_code_hash: IsEqualWordGadget<F, Word<Expression<F>>>,
+    pub callee_code_hash: WordCell<F>,
+    pub is_empty_code_hash: IsEqualWordGadget<F, WordCell<F>, Word<Expression<F>>>,
 
-    pub callee_not_exists: IsZeroWordGadget<F>,
+    pub callee_not_exists: IsZeroWordGadget<F, WordCell<F>>,
 }
 
 impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
@@ -664,14 +666,14 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             1.expr() - value_is_zero.expr(),
         );
 
-        let callee_code_hash = cb.query_word32();
+        let callee_code_hash = cb.query_word_unchecked();
         cb.account_read(
             callee_address_word.expr(),
             AccountFieldTag::CodeHash,
             callee_code_hash.to_word(),
         );
         let is_empty_code_hash =
-            IsEqualWordGadget::construct(cb, callee_code_hash.to_word(), cb.empty_code_hash_word());
+            IsEqualWordGadget::construct(cb, callee_code_hash, cb.empty_code_hash_word());
         let callee_not_exists = IsZeroWordGadget::construct(cb, callee_code_hash);
 
         Self {
@@ -732,8 +734,13 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         callee_code_hash: U256,
     ) -> Result<u64, Error> {
         self.gas.assign(region, offset, Some(gas.to_le_bytes()))?;
-        self.callee_address
-            .assign(region, offset, Some(callee_address.to_le_bytes()))?;
+        self.callee_address.assign(
+            region,
+            offset,
+            callee_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
+                .try_into()
+                .unwrap(),
+        )?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;
         if IS_SUCCESS_CALL {
@@ -971,15 +978,9 @@ impl<F: Field> CommonErrorGadget<F> {
         let rw_counter_end_of_reversion = cb.query_word_unchecked(); // rw_counter_end_of_reversion just used for read lookup, therefore skip range check
 
         // current call must be failed.
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::IsSuccess,
-            Word::zero(),
-        );
+        cb.call_context_lookup_read(None, CallContextFieldTag::IsSuccess, Word::zero());
 
-        cb.call_context_lookup(
-            false.expr(),
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::RwCounterEndOfReversion,
             rw_counter_end_of_reversion.to_word(),

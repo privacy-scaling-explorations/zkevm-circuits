@@ -3,18 +3,17 @@
 // - Limbs: An EVN word is 256 bits. Limbs N means split 256 into N limb. For example, N = 4, each
 //   limb is 256/4 = 64 bits
 
-use eth_types::ToLittleEndian;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::{not, or, Expr};
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
-    halo2curves::FieldExt,
     plonk::{Error, Expression},
 };
 use itertools::Itertools;
 
 use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub(crate) struct WordLimbs<T, const N: usize> {
     pub limbs: [T; N],
 }
@@ -53,7 +52,7 @@ pub(crate) trait WordExpr<F> {
     fn to_word(&self) -> Word<Expression<F>>;
 }
 
-impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
+impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
     pub fn assign<const N1: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -76,7 +75,7 @@ impl<F: FieldExt, const N: usize> WordLimbs<Cell<F>, N> {
     }
 }
 
-impl<F: FieldExt, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
+impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
     fn to_word(&self) -> Word<Expression<F>> {
         Word(self.word_expr().to_word_n())
     }
@@ -114,7 +113,7 @@ impl<T> std::ops::Deref for Word<T> {
     }
 }
 
-impl<F: FieldExt> Word<F> {
+impl<F: Field> Word<F> {
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
@@ -125,11 +124,11 @@ impl<F: FieldExt> Word<F> {
 
     pub fn from_u64(value: u64) -> Word<F> {
         let bytes = value.to_le_bytes();
-        Word::new([from_bytes::value(&bytes), F::zero()])
+        Word::new([from_bytes::value(&bytes), F::from(0)])
     }
 }
 
-impl<F: FieldExt> Word<Cell<F>> {
+impl<F: Field> Word<Cell<F>> {
     pub fn assign_lo(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -138,12 +137,18 @@ impl<F: FieldExt> Word<Cell<F>> {
     ) -> Result<Vec<AssignedCell<F, F>>, Error> {
         Ok(vec![
             self.limbs[0].assign(region, offset, value)?,
-            self.limbs[1].assign(region, offset, Value::known(F::zero()))?,
+            self.limbs[1].assign(region, offset, Value::known(F::from(0)))?,
         ])
     }
 }
 
-impl<F: FieldExt> Word<Expression<F>> {
+impl<F: Field> WordExpr<F> for Word<Cell<F>> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        self.word_expr()
+    }
+}
+
+impl<F: Field> Word<Expression<F>> {
     // create word from lo limb with hi limb as 0. caller need to guaranteed to be 128 bits.
     pub fn from_lo_unchecked(lo: Expression<F>) -> Self {
         Self(WordLimbs::<Expression<F>, 2>::new([lo, 0.expr()]))
@@ -172,11 +177,6 @@ impl<F: FieldExt> Word<Expression<F>> {
         Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
     }
 
-    // Assume selector is 1/0 therefore no overflow check
-    pub fn mul_selector(&self, selector: Expression<F>) -> Self {
-        Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
-    }
-
     // No overflow check on lo/hi limbs
     pub fn add_unchecked(self, rhs: Self) -> Self {
         Word::new([
@@ -186,7 +186,13 @@ impl<F: FieldExt> Word<Expression<F>> {
     }
 }
 
-impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
+impl<F: Field> WordExpr<F> for Word<Expression<F>> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        self.clone()
+    }
+}
+
+impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
     /// to_wordlimbs will aggregate nested expressions, which implies during expression evaluation
     /// it need more recursive call. if the converted limbs word will be used in many place,
     /// consider create new low limbs word, have equality constrain, then finally use low limbs
@@ -218,7 +224,7 @@ impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
     }
 }
 
-impl<F: FieldExt, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
+impl<F: Field, const N1: usize> WordExpr<F> for WordLimbs<Expression<F>, N1> {
     fn to_word(&self) -> Word<Expression<F>> {
         Word(self.to_word_n())
     }

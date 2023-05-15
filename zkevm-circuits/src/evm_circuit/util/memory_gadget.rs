@@ -71,7 +71,7 @@ pub(crate) mod address_high {
 pub(crate) struct MemoryAddressGadget<F> {
     memory_offset: Word32Cell<F>,
     memory_length: Word32Cell<F>,
-    memory_length_is_zero: IsZeroWordGadget<F>,
+    memory_length_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
 }
 
 impl<F: Field> MemoryAddressGadget<F> {

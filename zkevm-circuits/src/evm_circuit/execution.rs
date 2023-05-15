@@ -197,7 +197,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F, T> {
+pub(crate) struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -312,7 +312,7 @@ pub(crate) struct ExecutionConfig<F, T> {
     error_return_data_out_of_bound: Box<ErrorReturnDataOutOfBoundGadget<F>>,
 }
 
-impl<F: Field, T: WordExpr<F>> ExecutionConfig<F, T> {
+impl<F: Field> ExecutionConfig<F> {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::redundant_closure_call)]
     pub(crate) fn configure(

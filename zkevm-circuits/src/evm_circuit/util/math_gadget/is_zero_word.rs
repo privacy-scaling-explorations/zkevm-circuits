@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use eth_types::Field;
 use gadgets::util::{or, Expr};
 use halo2_proofs::{
@@ -10,19 +12,20 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         transpose_val_ret, CachedRegion, Cell, CellType,
     },
-    util::word::{Word, Word32Cell},
+    util::word::{Word, WordExpr},
 };
 
 /// Returns `1` when `word == 0`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
-pub struct IsZeroWordGadget<F> {
+pub struct IsZeroWordGadget<F, T> {
     inverse_lo: Cell<F>,
     inverse_hi: Cell<F>,
     is_zero: Expression<F>,
+    _marker: PhantomData<T>,
 }
 
-impl<F: Field> IsZeroWordGadget<F> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: Word32Cell<F>) -> Self {
+impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: T) -> Self {
         let (word_lo, word_hi) = word.to_word().to_lo_hi();
         let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(word_lo));
         let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(word_hi));
@@ -54,6 +57,7 @@ impl<F: Field> IsZeroWordGadget<F> {
             inverse_lo,
             inverse_hi,
             is_zero: or::expr([is_zero_lo, is_zero_hi]),
+            _marker: Default::default(),
         }
     }
 
@@ -68,16 +72,16 @@ impl<F: Field> IsZeroWordGadget<F> {
         value: Word<F>,
     ) -> Result<F, Error> {
         let (value_lo, value_hi) = value.to_lo_hi();
-        let inverse_lo = value_lo.invert().unwrap_or(F::zero());
+        let inverse_lo = value_lo.invert().unwrap_or(F::from(0));
         self.inverse_lo
             .assign(region, offset, Value::known(inverse_lo))?;
-        let inverse_hi = value_hi.invert().unwrap_or(F::zero());
+        let inverse_hi = value_hi.invert().unwrap_or(F::from(0));
         self.inverse_hi
             .assign(region, offset, Value::known(inverse_hi))?;
         Ok(if value_lo.is_zero().into() && value_hi.is_zero().into() {
             F::from(2)
         } else {
-            F::zero()
+            F::from(0)
         })
     }
 

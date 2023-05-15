@@ -10,7 +10,10 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    util::{word::Word, Expr},
+    util::{
+        word::{Word, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;

@@ -4,7 +4,10 @@ use crate::{
         math_gadget::*,
         CachedRegion,
     },
-    util::{word::Word32Cell, Expr},
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, Word};
 use gadgets::util::sum;

@@ -5,7 +5,7 @@ use crate::{
         CachedRegion,
     },
     util::{
-        word::{self, Word32Cell, WordExpr},
+        word::{self, Word32Cell},
         Expr,
     },
 };
@@ -26,9 +26,9 @@ pub(crate) struct ModGadget<F> {
     k: Word32Cell<F>,
     a_or_zero: Word32Cell<F>,
     mul_add_words: MulAddWordsGadget<F>,
-    n_is_zero: IsZeroWordGadget<F>,
-    a_or_is_zero: IsZeroWordGadget<F>,
-    eq: IsEqualWordGadget<F, word::Word<Expression<F>>>,
+    n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    a_or_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
+    eq: IsEqualWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
     lt: LtWordGadget<F>,
 }
 impl<F: Field> ModGadget<F> {
@@ -39,7 +39,7 @@ impl<F: Field> ModGadget<F> {
         let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
         let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
-        let eq = IsEqualWordGadget::construct(cb, a.to_word(), a_or_zero.to_word());
+        let eq = IsEqualWordGadget::construct(cb, a.clone(), a_or_zero);
         let lt = LtWordGadget::construct(cb, r, n);
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
         // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
@@ -118,7 +118,7 @@ mod tests {
         r: Word32Cell<F>,
     }
 
-    impl<F: Field, T: WordExpr<F>> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
+    impl<F: Field> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word32();
             let n = cb.query_word32();

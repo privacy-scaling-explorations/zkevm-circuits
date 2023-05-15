@@ -1,7 +1,7 @@
 use eth_types::Field;
 use num_bigint::BigUint;
 
-/// Convert a bigUint value to FieldExt
+/// Convert a bigUint value to Field
 ///
 /// We assume the input value is smaller than the field size
 pub fn biguint_to_f<F: Field>(x: &BigUint) -> F {

@@ -11,7 +11,7 @@ use crate::{
     },
     util::{
         build_tx_log_expression,
-        word::{Word, Word16, Word32, Word32Cell, Word4, WordExpr, WordLimbs},
+        word::{Word, Word16, Word32, Word32Cell, Word4, WordCell, WordExpr, WordLimbs},
         Challenges, Expr,
     },
 };
@@ -423,7 +423,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     // }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
-    pub fn query_word_unchecked<const N: usize>(&mut self) -> Word<Cell<F>> {
+    pub fn query_word_unchecked<const N: usize>(&mut self) -> WordCell<F> {
         Word::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()

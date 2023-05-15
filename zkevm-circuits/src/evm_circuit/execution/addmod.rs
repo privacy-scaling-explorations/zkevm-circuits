@@ -46,8 +46,8 @@ pub(crate) struct AddModGadget<F> {
     muladd_d_n_r: MulAddWords512Gadget<F>,
 
     n_is_zero: IsZeroWordGadget<F>,
-    cmp_r_n: CmpWordsGadget<F, Word32Cell<F>>,
-    cmp_areduced_n: CmpWordsGadget<F, Word32Cell<F>>,
+    cmp_r_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
+    cmp_areduced_n: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {

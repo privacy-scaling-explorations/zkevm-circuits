@@ -18,23 +18,23 @@ use super::IsZeroGadget;
 
 /// Returns `1` when `lhs == rhs`, and returns `0` otherwise.
 #[derive(Clone, Debug)]
-pub struct IsEqualWordGadget<F, T> {
+pub struct IsEqualWordGadget<F, T1, T2> {
     is_zero_lo: IsZeroGadget<F>,
     is_zero_hi: IsZeroGadget<F>,
-    marker: PhantomData<T>,
+    _marker: PhantomData<(T1, T2)>,
 }
 
-impl<F: Field, T: WordExpr<F>> IsEqualWordGadget<F, T> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T, rhs: T) -> Self {
-        let (lhs_lo, lhs_hi) = lhs.to_lo_hi();
-        let (rhs_lo, rhs_hi) = rhs.to_lo_hi();
+impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T1, rhs: T2) -> Self {
+        let (lhs_lo, lhs_hi) = lhs.to_word().to_lo_hi();
+        let (rhs_lo, rhs_hi) = rhs.to_word().to_lo_hi();
         let is_zero_lo = IsZeroGadget::construct(cb, lhs_lo.clone() - rhs_lo.clone());
         let is_zero_hi = IsZeroGadget::construct(cb, lhs_hi.clone() - rhs_hi.clone());
 
         Self {
             is_zero_lo,
             is_zero_hi,
-            marker: Default::default(),
+            _marker: Default::default(),
         }
     }
 

@@ -2,7 +2,7 @@ use crate::{
     evm_circuit::util::{
         constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion, Cell,
     },
-    util::word::Word32Cell,
+    util::word::{Word32Cell, WordExpr},
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};

@@ -4,7 +4,7 @@ use crate::{
         from_bytes, pow_of_two_expr, split_u256, split_u256_limb64, CachedRegion, Cell,
     },
     util::{
-        word::{self, Word4},
+        word::{self, Word4, WordExpr},
         Expr,
     },
 };

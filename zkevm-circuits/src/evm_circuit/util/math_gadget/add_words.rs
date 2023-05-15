@@ -4,7 +4,10 @@ use crate::{
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
         pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
-    util::{word::Word32Cell, Expr},
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
