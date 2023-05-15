@@ -143,7 +143,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word, U64,
+        ToWord, Word,
     };
     use mock::TestContext;
 
@@ -160,10 +160,11 @@ mod test {
     fn callee(code: Bytecode) -> Account {
         let code = code.to_vec();
         let is_empty = code.is_empty();
+
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: (if is_empty { U64::zero() } else { U64::one() }),
+            nonce: (!is_empty).into(),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

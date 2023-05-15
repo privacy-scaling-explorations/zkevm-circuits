@@ -618,7 +618,6 @@ mod test {
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
         address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
-        U64,
     };
 
     use itertools::Itertools;
@@ -748,7 +747,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: if is_empty { U64::zero() } else { U64::one() },
+            nonce: (!is_empty).into(),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

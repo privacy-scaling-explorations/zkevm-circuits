@@ -134,6 +134,7 @@ mod test {
 
     fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
+            .clone()
             .map(|a| a.address)
             .unwrap_or(*EXTERNAL_ADDRESS);
 

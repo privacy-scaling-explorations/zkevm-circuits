@@ -42,6 +42,10 @@ impl Account {
     }
 }
 
+fn serde_u64<S: Serializer>(to_serialize: &u64, serializer: S) -> Result<S::Ok, S::Error> {
+    to_serialize.to_string().serialize(serializer)
+}
+
 fn serde_account_storage<S: Serializer>(
     to_serialize: &HashMap<Word, Word>,
     serializer: S,
