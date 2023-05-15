@@ -211,7 +211,7 @@ impl<F: Field, const N1: usize> WordLimbs<Expression<F>, N1> {
     }
 
     // TODO static assertion. wordaround https://github.com/nvzqz/static-assertions-rs/issues/40
-    pub fn is_eq<const N2: usize>(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
+    pub fn eq<const N2: usize>(&self, others: &WordLimbs<Expression<F>, N2>) -> Expression<F> {
         assert_eq!(N1 % N2, 0);
         not::expr(or::expr(
             self.limbs
