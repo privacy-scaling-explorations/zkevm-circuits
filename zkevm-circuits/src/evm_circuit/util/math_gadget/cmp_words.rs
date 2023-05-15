@@ -79,26 +79,28 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> CmpWordsGadget<F, T1, T2> {
 #[cfg(test)]
 mod tests {
     use super::{test_util::*, *};
-    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+    use crate::{
+        evm_circuit::util::constraint_builder::ConstrainBuilderCommon, util::word::Word32Cell,
+    };
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
 
     #[derive(Clone)]
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
-    struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool, T1, T2> {
-        cmp_gadget: CmpWordsGadget<F, T1, T2>,
-        a_word: T1,
-        b_word: T2,
+    struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
+        cmp_gadget: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
+        a_word: Word32Cell<F>,
+        b_word: Word32Cell<F>,
     }
 
-    impl<F: Field, const CHECK_EQ: bool, T1: WordExpr<F> + Clone, T2: WordExpr<F> + Clone>
-        MathGadgetContainer<F> for CmpWordGadgetTestContainer<F, CHECK_EQ, T1, T2>
+    impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
+        for CmpWordGadgetTestContainer<F, CHECK_EQ>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a_word = cb.query_word_unchecked();
             let b_word = cb.query_word_unchecked();
 
-            let cmp_gadget = CmpWordsGadget::<F>::construct(cb, &a_word, &b_word);
+            let cmp_gadget = CmpWordsGadget::<F>::construct(cb, a_word, b_word);
             cb.require_equal(
                 "(a < b) * (a == b) == 0",
                 cmp_gadget.eq.clone() * cmp_gadget.lt.clone(),

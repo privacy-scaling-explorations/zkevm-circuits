@@ -144,7 +144,7 @@ impl<F: Field> Word<Cell<F>> {
 
 impl<F: Field> WordExpr<F> for Word<Cell<F>> {
     fn to_word(&self) -> Word<Expression<F>> {
-        self.word_expr()
+        self.word_expr().to_word()
     }
 }
 
@@ -163,7 +163,7 @@ impl<F: Field> Word<Expression<F>> {
         selector: Expression<F>,
         when_true: Word<Expression<F>>,
         when_false: Word<Expression<F>>,
-    ) -> Self {
+    ) -> Word<Expression<F>> {
         let (true_lo, true_hi) = when_true.mul_selector(selector.clone()).to_lo_hi();
         let (false_lo, false_hi) = when_false.mul_selector(1.expr() - selector).to_lo_hi();
         Word::new([

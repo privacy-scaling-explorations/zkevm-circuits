@@ -9,7 +9,7 @@ use crate::{
                 ConstantDivisionGadget, IsZeroGadget, IsZeroWordGadget, MinMaxGadget,
                 RangeCheckGadget,
             },
-            select, sum, Cell, CellType,
+            select, sum, Cell,
         },
     },
     util::{
@@ -80,10 +80,6 @@ impl<F: Field> MemoryAddressGadget<F> {
         memory_offset: Word32Cell<F>,
         memory_length: Word32Cell<F>,
     ) -> Self {
-        debug_assert_eq!(
-            CellType::StoragePhase2,
-            cb.curr.cell_manager.columns()[memory_offset.limbs[0].cell_column_index].cell_type
-        );
         let memory_length_is_zero = IsZeroWordGadget::construct(cb, memory_length);
 
         Self {

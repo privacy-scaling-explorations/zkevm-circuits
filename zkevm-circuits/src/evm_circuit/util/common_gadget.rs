@@ -13,7 +13,7 @@ use crate::{
         util::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Delta, Same, To},
+                Transition::{Delta, Same, To, ToWord as TransitionToWord},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
             not, or, Cell,
@@ -197,7 +197,7 @@ impl<F: Field> RestoreContextGadget<F> {
             call_id: To(caller_id.expr()),
             is_root: To(caller_is_root.expr()),
             is_create: To(caller_is_create.expr()),
-            code_hash: To(caller_code_hash.to_word()),
+            code_hash: TransitionToWord(caller_code_hash),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
             gas_left: To(gas_left),
@@ -262,7 +262,7 @@ impl<F: Field> RestoreContextGadget<F> {
         }
 
         self.caller_code_hash
-            .assign(region, offset, Word::from_u256(caller_code_hash))?;
+            .assign(region, offset, Some(caller_code_hash.to_le_bytes()))?;
 
         Ok(())
     }
@@ -739,7 +739,7 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
             offset,
             callee_address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
                 .try_into()
-                .unwrap(),
+                .ok(),
         )?;
         self.value
             .assign(region, offset, Some(value.to_le_bytes()))?;

@@ -40,6 +40,7 @@ pub(crate) enum Transition<T> {
     Delta(T),
     To(T),
     Any,
+    ToWord(Word<T>),
 }
 
 impl<F> Default for Transition<F> {
@@ -153,7 +154,7 @@ pub(crate) trait ConstrainBuilderCommon<F: Field> {
     }
 
     fn require_zero_word(&mut self, name: &'static str, word: Word<Expression<F>>) {
-        self.require_equal_word(word, Word::zero());
+        self.require_equal_word("word zero equality", word, Word::zero());
     }
 
     fn require_equal_word(
@@ -479,11 +480,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     }
 
     pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
-        AccountAddress::<F>::new(self.query_bytes(), F::from(256))
+        AccountAddress::<F>::new(self.query_bytes(), 256u64.expr())
     }
 
-    pub(crate) fn query_memory_address(&mut self) -> AccountAddress<F> {
-        MemoryAddress::<F>::new(self.query_bytes(), F::from(256))
+    pub(crate) fn query_memory_address(&mut self) -> MemoryAddress<F> {
+        MemoryAddress::<F>::new(self.query_bytes(), 256u64.expr())
     }
 
     pub(crate) fn query_bytes<const N: usize>(&mut self) -> [Cell<F>; N] {
@@ -577,6 +578,11 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                         self.next.state.$name.expr(),
                         to,
                     ),
+                    Transition::ToWord(to) => self.require_equal_word(
+                        concat!("State transition (to) constraint of ", stringify!($name)),
+                        self.next.state.$name.to_word(),
+                        to.to_word(),
+                    ),
                     _ => {}
                 }
             };
@@ -650,7 +656,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         self.add_lookup(
             "Opcode lookup",
             Lookup::Bytecode {
-                hash: self.curr.state.code_hash.expr(),
+                hash: self.curr.state.code_hash.to_word(),
                 tag: BytecodeFieldTag::Byte.expr(),
                 index,
                 is_code,
@@ -1190,13 +1196,21 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         ]
         .map(|field_tag| {
             let cell = self.query_cell();
-            self.call_context_lookup(
-                is_write.expr(),
-                call_id.clone(),
-                field_tag,
-                // TODO assure range check since write=true also possible
-                Word::from_lo_unchecked(cell.expr()),
-            );
+            if is_write == true {
+                self.call_context_lookup_write_unchecked(
+                    call_id.clone(),
+                    field_tag,
+                    // TODO assure range check since write=true also possible
+                    Word::from_lo_unchecked(cell.expr()),
+                );
+            } else {
+                self.call_context_lookup_read(
+                    call_id.clone(),
+                    field_tag,
+                    Word::from_lo_unchecked(cell.expr()),
+                );
+            }
+
             cell
         });
 
