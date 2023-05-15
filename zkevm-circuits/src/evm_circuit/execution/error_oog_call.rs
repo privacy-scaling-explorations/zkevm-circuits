@@ -22,7 +22,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 /// [`OpcodeId::CALL`], [`OpcodeId::CALLCODE`], [`OpcodeId::DELEGATECALL`] and
 /// [`OpcodeId::STATICCALL`].
 #[derive(Clone, Debug)]
-pub(crate) struct ErrorOOGCallGadget<F, T> {
+pub(crate) struct ErrorOOGCallGadget<F> {
     opcode: Cell<F>,
     is_call: IsZeroGadget<F>,
     is_callcode: IsZeroGadget<F>,
@@ -30,13 +30,13 @@ pub(crate) struct ErrorOOGCallGadget<F, T> {
     is_staticcall: IsZeroGadget<F>,
     tx_id: Cell<F>,
     is_static: Cell<F>,
-    call: CommonCallGadget<F, false, T>,
+    call: CommonCallGadget<F, false>,
     is_warm: Cell<F>,
     insufficient_gas: LtGadget<F, N_BYTES_GAS>,
     common_error_gadget: CommonErrorGadget<F>,
 }
 
-impl<F: Field, T: WordExpr<F>> ExecutionGadget<F> for ErrorOOGCallGadget<F, T> {
+impl<F: Field> ExecutionGadget<F> for ErrorOOGCallGadget<F> {
     const NAME: &'static str = "ErrorOutOfGasCall";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ErrorOutOfGasCall;

@@ -27,7 +27,7 @@ use eth_types::{Field, ToLittleEndian, U256, U512};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
-pub(crate) struct AddModGadget<F, T> {
+pub(crate) struct AddModGadget<F> {
     same_context: SameContextGadget<F>,
 
     a: Word32Cell<F>,
@@ -46,11 +46,11 @@ pub(crate) struct AddModGadget<F, T> {
     muladd_d_n_r: MulAddWords512Gadget<F>,
 
     n_is_zero: IsZeroWordGadget<F>,
-    cmp_r_n: CmpWordsGadget<F, T>,
-    cmp_areduced_n: CmpWordsGadget<F, T>,
+    cmp_r_n: CmpWordsGadget<F, Word32Cell<F>>,
+    cmp_areduced_n: CmpWordsGadget<F, Word32Cell<F>>,
 }
 
-impl<F: Field, T: WordExpr<F>> ExecutionGadget<F> for AddModGadget<F, T> {
+impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
     const NAME: &'static str = "ADDMOD";
 
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDMOD;

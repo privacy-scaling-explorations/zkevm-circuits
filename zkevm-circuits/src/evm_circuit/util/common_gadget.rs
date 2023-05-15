@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     evm_circuit::{
-        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
+        param::{N_BYTES_GAS, N_BYTES_MEMORY_WORD_SIZE},
         step::ExecutionState,
         table::{FixedTableTag, Lookup},
         util::{
@@ -583,7 +583,7 @@ impl<F: Field> TransferGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool, T> {
+pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool> {
     pub is_success: Cell<F>,
 
     pub gas: Word32Cell<F>,
@@ -597,14 +597,12 @@ pub(crate) struct CommonCallGadget<F, const IS_SUCCESS_CALL: bool, T> {
     value_is_zero: IsZeroWordGadget<F>,
     pub has_value: Expression<F>,
     pub callee_code_hash: Word32Cell<F>,
-    pub is_empty_code_hash: IsEqualWordGadget<F, T>,
+    pub is_empty_code_hash: IsEqualWordGadget<F, Word<Expression<F>>>,
 
     pub callee_not_exists: IsZeroWordGadget<F>,
 }
 
-impl<F: Field, const IS_SUCCESS_CALL: bool, T: WordExpr<F>>
-    CommonCallGadget<F, IS_SUCCESS_CALL, T>
-{
+impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
         is_call: Expression<F>,

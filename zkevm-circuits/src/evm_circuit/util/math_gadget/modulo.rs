@@ -22,16 +22,16 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 /// case of n=0. Unlike the usual k * n + r = a, which forces r = a when n=0,
 /// this equation assures that r<n or r=n=0.
 #[derive(Clone, Debug)]
-pub(crate) struct ModGadget<F, T> {
+pub(crate) struct ModGadget<F> {
     k: Word32Cell<F>,
     a_or_zero: Word32Cell<F>,
     mul_add_words: MulAddWordsGadget<F>,
     n_is_zero: IsZeroWordGadget<F>,
     a_or_is_zero: IsZeroWordGadget<F>,
-    eq: IsEqualWordGadget<F, T>,
+    eq: IsEqualWordGadget<F, word::Word<Expression<F>>>,
     lt: LtWordGadget<F>,
 }
-impl<F: Field, T: WordExpr<F>> ModGadget<F, T> {
+impl<F: Field> ModGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {
         let (a, n, r) = (words[0], words[1], words[2]);
         let k = cb.query_word32();
@@ -111,14 +111,14 @@ mod tests {
 
     #[derive(Clone)]
     /// ModGadgetTestContainer: require(a % n == r)
-    struct ModGadgetTestContainer<F, T> {
-        mod_gadget: ModGadget<F, T>,
+    struct ModGadgetTestContainer<F> {
+        mod_gadget: ModGadget<F>,
         a: Word32Cell<F>,
         n: Word32Cell<F>,
         r: Word32Cell<F>,
     }
 
-    impl<F: Field, T: WordExpr<F>> MathGadgetContainer<F> for ModGadgetTestContainer<F, T> {
+    impl<F: Field, T: WordExpr<F>> MathGadgetContainer<F> for ModGadgetTestContainer<F> {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
             let a = cb.query_word32();
             let n = cb.query_word32();

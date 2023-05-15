@@ -224,7 +224,7 @@ pub(crate) struct ExecutionConfig<F, T> {
     end_tx_gadget: Box<EndTxGadget<F>>,
     // opcode gadgets
     add_sub_gadget: Box<AddSubGadget<F>>,
-    addmod_gadget: Box<AddModGadget<F, T>>,
+    addmod_gadget: Box<AddModGadget<F>>,
     address_gadget: Box<AddressGadget<F>>,
     balance_gadget: Box<BalanceGadget<F>>,
     bitwise_gadget: Box<BitwiseGadget<F>>,
@@ -282,7 +282,7 @@ pub(crate) struct ExecutionConfig<F, T> {
     block_ctx_u160_gadget: Box<BlockCtxU160Gadget<F>>,
     block_ctx_u256_gadget: Box<BlockCtxU256Gadget<F>>,
     // error gadgets
-    error_oog_call: Box<ErrorOOGCallGadget<F, T>>,
+    error_oog_call: Box<ErrorOOGCallGadget<F>>,
     error_oog_constant: Box<ErrorOOGConstantGadget<F>>,
     error_oog_exp: Box<ErrorOOGExpGadget<F>>,
     error_oog_memory_copy: Box<ErrorOOGMemoryCopyGadget<F>>,

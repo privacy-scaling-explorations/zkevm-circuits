@@ -11,7 +11,7 @@ use crate::{
     },
     util::{
         build_tx_log_expression,
-        word::{Word, Word16, Word32, Word32Cell, Word4},
+        word::{Word, Word16, Word32, Word32Cell, Word4, WordExpr, WordLimbs},
         Challenges, Expr,
     },
 };
@@ -423,12 +423,30 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
     // }
 
     // default query_word is 2 limbs. Each limb is not guaranteed to be 128 bits.
-    pub fn query_word_unchecked<const N: usize, const N2: usize>(&mut self) -> Word<Cell<F>> {
+    pub fn query_word_unchecked<const N: usize>(&mut self) -> Word<Cell<F>> {
         Word::new(
             self.query_cells(CellType::StoragePhase1, N)
                 .try_into()
                 .unwrap(),
         )
+    }
+
+    // default query_word is 2 limbs. constrain word equality with external word
+    pub fn query_word<const N: usize, const N2: usize>(
+        &mut self,
+        w_constrain: WordLimbs<Cell<F>, N2>,
+    ) -> Word<Cell<F>> {
+        let word = Word::new(
+            self.query_cells(CellType::StoragePhase1, N)
+                .try_into()
+                .unwrap(),
+        );
+        self.require_equal_word(
+            "word limbs equality constrain",
+            word.to_word(),
+            w_constrain.to_word(),
+        );
+        word
     }
 
     /// query_word4_unchecked get word with 4 limbs. Each limb is not guaranteed to be 64 bits.
