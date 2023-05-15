@@ -171,6 +171,19 @@ impl<F: FieldExt> Word<Expression<F>> {
     pub fn mul_selector(&self, selector: Expression<F>) -> Self {
         Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
     }
+
+    // Assume selector is 1/0 therefore no overflow check
+    pub fn mul_selector(&self, selector: Expression<F>) -> Self {
+        Word::new([self.lo().clone() * selector, self.hi().clone() * selector])
+    }
+
+    // No overflow check on lo/hi limbs
+    pub fn add_unchecked(self, rhs: Self) -> Self {
+        Word::new([
+            self.lo().clone() + rhs.lo().clone(),
+            self.hi().clone() + rhs.hi().clone(),
+        ])
+    }
 }
 
 impl<F: FieldExt, const N1: usize> WordLimbs<Expression<F>, N1> {
