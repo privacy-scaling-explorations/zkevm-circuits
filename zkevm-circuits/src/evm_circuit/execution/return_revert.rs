@@ -420,13 +420,13 @@ mod test {
             let callee = Account {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),
-                nonce: Word::one(),
+                nonce: 1,
                 ..Default::default()
             };
             let caller = Account {
                 address: CALLER_ADDRESS,
                 code: caller_bytecode(*caller_offset, *caller_length).into(),
-                nonce: Word::one(),
+                nonce: 1,
                 ..Default::default()
             };
 
@@ -499,7 +499,7 @@ mod test {
             let caller = Account {
                 address: CALLER_ADDRESS,
                 code: root_code.into(),
-                nonce: Word::one(),
+                nonce: 1,
                 balance: eth(10),
                 ..Default::default()
             };
@@ -550,7 +550,7 @@ mod test {
         let caller = Account {
             address: CALLER_ADDRESS,
             code: root_code.into(),
-            nonce: Word::one(),
+            nonce: 1,
             balance: eth(10),
             ..Default::default()
         };

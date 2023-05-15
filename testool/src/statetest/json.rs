@@ -215,7 +215,7 @@ impl<'a> JsonStateTestBuilder<'a> {
             let account = Account {
                 address,
                 balance: parse::parse_u256(&acc.balance)?,
-                nonce: parse::parse_u64(&acc.nonce)?,
+                nonce: parse::parse_u64(&acc.nonce)?.into(),
                 code: parse::parse_code(self.compiler, &acc.code)?,
                 storage,
             };
@@ -395,17 +395,16 @@ mod test {
                 acc095e,
                 Account {
                     address: acc095e,
-                    nonce: U256::from(0u64),
                     balance: U256::from(1000000000000000000u64),
                     code: Bytes::from(hex::decode("600160010160005500")?),
-                    storage: HashMap::new(),
+                    ..Default::default()
                 },
             )]),
             result: HashMap::from([(
                 acc095e,
                 AccountMatch {
                     address: acc095e,
-                    nonce: Some(U256::from(1u64)),
+                    nonce: Some(1u64),
                     balance: None,
                     code: Some(Bytes::from(hex::decode("600160010160005500")?)),
                     storage: HashMap::from([(U256::zero(), U256::from(2u64))]),

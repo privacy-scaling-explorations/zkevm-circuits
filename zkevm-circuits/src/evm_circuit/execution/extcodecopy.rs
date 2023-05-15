@@ -291,10 +291,7 @@ mod test {
                     .balance(Word::from(1u64 << 20));
                 accs[2].address(external_address);
                 if let Some(external_account) = external_account {
-                    accs[2]
-                        .balance(external_account.balance)
-                        .nonce(external_account.nonce)
-                        .code(external_account.code);
+                    accs[2].account(&external_account);
                 }
             },
             |mut txs, accs| {

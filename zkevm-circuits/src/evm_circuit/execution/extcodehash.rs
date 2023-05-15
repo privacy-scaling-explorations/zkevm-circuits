@@ -134,7 +134,6 @@ mod test {
 
     fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
-            .as_ref()
             .map(|a| a.address)
             .unwrap_or(*EXTERNAL_ADDRESS);
 
@@ -166,10 +165,7 @@ mod test {
 
                 accs[1].address(external_address);
                 if let Some(external_account) = external_account {
-                    accs[1]
-                        .balance(external_account.balance)
-                        .nonce(external_account.nonce)
-                        .code(external_account.code);
+                    accs[1].account(&external_account);
                 }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
@@ -200,7 +196,7 @@ mod test {
         test_ok(
             Some(Account {
                 address: *EXTERNAL_ADDRESS,
-                nonce: U256::from(259),
+                nonce: 259,
                 code: Bytes::from([3]),
                 ..Default::default()
             }),
@@ -227,7 +223,7 @@ mod test {
         // code = [].
         let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
-            nonce: U256::from(200),
+            nonce: 200,
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously

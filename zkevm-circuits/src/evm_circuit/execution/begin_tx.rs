@@ -664,7 +664,7 @@ mod test {
         // This test checks that the rw table assignment and evm circuit are consistent
         // in not applying an RLC to account and tx nonces.
         // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/592
-        let multibyte_nonce = Word::from(700);
+        let multibyte_nonce = 700;
 
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];

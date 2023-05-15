@@ -29,7 +29,7 @@ impl TryInto<Account> for AccountMatch {
             address: self.address,
             balance: self.balance.context("balance")?,
             code: self.code.context("code")?,
-            nonce: self.nonce.context("nonce")?,
+            nonce: self.nonce.context("nonce")?.into(),
             storage: self.storage,
         })
     }
@@ -205,10 +205,8 @@ impl StateTest {
             from,
             Account {
                 address: from,
-                nonce: 0,
                 balance: U256::from(10).pow(18.into()),
-                code: Bytes::default(),
-                storage: HashMap::new(),
+                ..Default::default()
             },
         );
 

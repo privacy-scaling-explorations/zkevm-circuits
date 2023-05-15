@@ -24,7 +24,7 @@ impl From<MockAccount> for Account {
     fn from(mock: MockAccount) -> Self {
         Account {
             address: mock.address,
-            nonce: mock.nonce,
+            nonce: mock.nonce.into(),
             balance: mock.balance,
             code: mock.code,
             storage: mock.storage,

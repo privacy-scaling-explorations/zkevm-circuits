@@ -625,8 +625,8 @@ arith:
                         address: ccccc,
                         balance: U256::from(1000000000000u64),
                         code: Bytes::from(&[0x60, 0x01, 0x00]),
-                        nonce: U256::zero(),
                         storage: HashMap::from([(U256::zero(), U256::one())]),
+                        ..Default::default()
                     },
                 ),
                 (
@@ -634,10 +634,7 @@ arith:
                     Account {
                         address: a94f5,
                         balance: U256::from(1000000000000u64),
-                        code: Bytes::default(),
-                        nonce: U256::zero(),
-
-                        storage: HashMap::new(),
+                        ..Default::default()
                     },
                 ),
             ]),
@@ -646,7 +643,7 @@ arith:
                 AccountMatch {
                     address: ccccc,
                     balance: Some(U256::from(1000000000001u64)),
-                    nonce: Some(U256::from(0)),
+                    nonce: Some(0),
                     code: Some(Bytes::from(&[0x60, 0x01, 0x00])),
                     storage: HashMap::from([(U256::zero(), U256::one())]),
                 },
@@ -761,8 +758,8 @@ arith:
                 CircuitsConfig::default()
             ),
             Err(StateTestError::NonceMismatch {
-                expected: U256::from(2),
-                found: U256::from(0)
+                expected: 0,
+                found: 0
             })
         );
 

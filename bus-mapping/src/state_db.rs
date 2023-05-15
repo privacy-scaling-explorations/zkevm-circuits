@@ -291,12 +291,12 @@ mod statedb_tests {
         let (found, acc) = statedb.get_account_mut(&addr_a);
         assert!(!found);
         assert_eq!(acc, &Account::zero());
-        acc.nonce = Word::from(100);
+        acc.nonce = 100;
 
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_a);
         assert!(found);
-        assert_eq!(acc.nonce, Word::from(100));
+        assert_eq!(acc.nonce, 100);
 
         // Get non-existing storage key for existing account and set value
         let (found, value) = statedb.get_storage_mut(&addr_a, &Word::from(2));
@@ -318,7 +318,7 @@ mod statedb_tests {
         // Get existing account and check nonce
         let (found, acc) = statedb.get_account(&addr_b);
         assert!(found);
-        assert_eq!(acc.nonce, Word::zero());
+        assert_eq!(acc.nonce, 0);
 
         // Get existing storage key and check value
         let (found, value) = statedb.get_storage(&addr_b, &Word::from(3));
