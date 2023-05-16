@@ -29,7 +29,7 @@ pub(crate) struct ModGadget<F> {
     n_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     a_or_is_zero: IsZeroWordGadget<F, Word32Cell<F>>,
     eq: IsEqualWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
-    lt: LtWordGadget<F>,
+    lt: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
 }
 impl<F: Field> ModGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, words: [&Word32Cell<F>; 3]) -> Self {

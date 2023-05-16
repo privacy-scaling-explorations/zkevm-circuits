@@ -1,8 +1,10 @@
+use std::marker::PhantomData;
+
 use crate::{
     evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion, Cell,
+        constraint_builder::EVMConstraintBuilder, math_gadget::*, split_u256, CachedRegion,
     },
-    util::word::{Word32Cell, WordExpr},
+    util::word::WordExpr,
 };
 use eth_types::{Field, Word};
 use halo2_proofs::plonk::{Error, Expression};
@@ -10,25 +12,23 @@ use halo2_proofs::plonk::{Error, Expression};
 /// Returns `1` when `lhs < rhs`, and returns `0` otherwise.
 /// lhs and rhs are both 256-bit word.
 #[derive(Clone, Debug)]
-pub struct LtWordGadget<F> {
+pub struct LtWordGadget<F, T1, T2> {
     comparison_hi: ComparisonGadget<F, 16>,
     lt_lo: LtGadget<F, 16>,
+    _marker: PhantomData<(T1, T2)>,
 }
 
-impl<F: Field> LtWordGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        lhs: &Word32Cell<F>,
-        rhs: &Word32Cell<F>,
-    ) -> Self {
+impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> LtWordGadget<F, T1, T2> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, lhs: T1, rhs: T2) -> Self {
         let lhs_expr = lhs.to_word();
         let rhs_expr = rhs.to_word();
         let comparison_hi =
-            ComparisonGadget::construct(cb, lhs_expr.lo().clone(), rhs_expr.lo().clone());
-        let lt_lo = LtGadget::construct(cb, lhs_expr.hi().clone(), rhs_expr.hi().clone());
+            ComparisonGadget::construct(cb, lhs_expr.hi().clone(), rhs_expr.hi().clone());
+        let lt_lo = LtGadget::construct(cb, lhs_expr.lo().clone(), rhs_expr.lo().clone());
         Self {
             comparison_hi,
             lt_lo,
+            _marker: Default::default(),
         }
     }
 
@@ -64,7 +64,9 @@ impl<F: Field> LtWordGadget<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::evm_circuit::util::constraint_builder::ConstrainBuilderCommon;
+    use crate::{
+        evm_circuit::util::constraint_builder::ConstrainBuilderCommon, util::word::Word32Cell,
+    };
 
     use super::{test_util::*, *};
     use eth_types::*;
@@ -73,7 +75,7 @@ mod tests {
     #[derive(Clone)]
     /// LtWordTestContainer: require(a < b)
     struct LtWordTestContainer<F> {
-        ltword_gadget: LtWordGadget<F>,
+        ltword_gadget: LtWordGadget<F, Word32Cell<F>, Word32Cell<F>>,
         a: Word32Cell<F>,
         b: Word32Cell<F>,
     }

@@ -159,13 +159,19 @@ impl<F: Field> Word<Expression<F>> {
     }
 
     // select based on selector. Here assume selector is 1/0 therefore no overflow check
-    pub fn select(
+    pub fn select<T: WordExpr<F>>(
         selector: Expression<F>,
-        when_true: Word<Expression<F>>,
-        when_false: Word<Expression<F>>,
+        when_true: T,
+        when_false: T,
     ) -> Word<Expression<F>> {
-        let (true_lo, true_hi) = when_true.mul_selector(selector.clone()).to_lo_hi();
-        let (false_lo, false_hi) = when_false.mul_selector(1.expr() - selector).to_lo_hi();
+        let (true_lo, true_hi) = when_true
+            .to_word()
+            .mul_selector(selector.clone())
+            .to_lo_hi();
+        let (false_lo, false_hi) = when_false
+            .to_word()
+            .mul_selector(1.expr() - selector)
+            .to_lo_hi();
         Word::new([
             true_lo.clone() + false_lo.clone(),
             true_hi.clone() + false_hi.clone(),
@@ -182,6 +188,14 @@ impl<F: Field> Word<Expression<F>> {
         Word::new([
             self.lo().clone() + rhs.lo().clone(),
             self.hi().clone() + rhs.hi().clone(),
+        ])
+    }
+
+    // No underflow check on lo/hi limbs
+    pub fn sub_unchecked(self, rhs: Self) -> Self {
+        Word::new([
+            self.lo().clone() - rhs.lo().clone(),
+            self.hi().clone() - rhs.hi().clone(),
         ])
     }
 }
