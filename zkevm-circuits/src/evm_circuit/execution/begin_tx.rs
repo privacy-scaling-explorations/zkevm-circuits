@@ -776,12 +776,12 @@ mod test {
                 accs[0]
                     .address(MOCK_ACCOUNTS[0])
                     .balance(eth(20))
-                    .nonce(nonce.into());
+                    .nonce(nonce);
             },
             |mut txs, _accs| {
                 txs[0]
                     .from(MOCK_ACCOUNTS[0])
-                    .nonce(nonce.into())
+                    .nonce(nonce)
                     .gas_price(gwei(2))
                     .gas(Word::from(0x10000))
                     .value(eth(2))

@@ -302,8 +302,8 @@ mod test {
                 accs[0]
                     .address(address!("0x000000000000000000000000000000000000cafe"))
                     .balance(Word::from(10u64.pow(19)));
-                accs[1].account(&caller);
-                accs[2].account(&callee);
+                accs[1].account(caller);
+                accs[2].account(callee);
             },
             |mut txs, accs| {
                 txs[0]

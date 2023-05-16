@@ -74,7 +74,8 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{
-        self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word, U64,
+        self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
+        U64,
     };
 
     use mock::TestContext;

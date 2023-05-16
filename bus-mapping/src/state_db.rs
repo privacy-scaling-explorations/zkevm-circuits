@@ -205,7 +205,7 @@ impl StateDB {
     pub fn increase_nonce(&mut self, addr: &Address) -> u64 {
         let (_, account) = self.get_account_mut(addr);
         let nonce = account.nonce;
-        account.nonce = account.nonce + 1;
+        account.nonce += 1;
         nonce
     }
 

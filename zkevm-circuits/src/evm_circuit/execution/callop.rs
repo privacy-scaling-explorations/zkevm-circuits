@@ -617,7 +617,8 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::circuit_input_builder::CircuitsParams;
     use eth_types::{
-        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word, U64,
+        address, bytecode, evm_types::OpcodeId, geth_types::Account, word, Address, ToWord, Word,
+        U64,
     };
 
     use itertools::Itertools;
