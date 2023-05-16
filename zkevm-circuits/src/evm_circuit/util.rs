@@ -1,6 +1,6 @@
 pub use crate::util::{
     query_expression,
-    word::{Word as WordNew, WordExpr, WordLegacy as Word},
+    word::{Word, WordExpr},
     Challenges, Expr,
 };
 use crate::{
@@ -210,10 +210,15 @@ impl<'r, 'b, F: Field> CachedRegion<'r, 'b, F> {
         self.word_rlc(CodeDB::empty_code_hash().to_word())
     }
 
+    #[deprecated(note = "in fav of code_hash_word")]
     pub fn code_hash(&self, n: U256) -> Value<F> {
         self.challenges
             .evm_word()
             .map(|r| rlc::value(&n.to_le_bytes(), r))
+    }
+
+    pub fn code_hash_word(&self, n: U256) -> Word<Value<F>> {
+        Word::from(n).into_value()
     }
 
     /// Constrains a cell to have a constant value.
@@ -519,16 +524,16 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for MemoryAddress<F> {
-    fn to_word(&self) -> WordNew<Expression<F>> {
-        WordNew::from_lo_unchecked(self.expr())
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
     }
 }
 
 pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for AccountAddress<F> {
-    fn to_word(&self) -> WordNew<Expression<F>> {
-        WordNew::new([
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::new([
             rlc::expr(
                 &self.cells[0..16]
                     .iter()
@@ -550,8 +555,8 @@ impl<F: Field> WordExpr<F> for AccountAddress<F> {
 pub(crate) type U64Cell<F> = RandomLinearCombination<F, N_BYTES_U64>;
 
 impl<F: Field> WordExpr<F> for U64Cell<F> {
-    fn to_word(&self) -> WordNew<Expression<F>> {
-        WordNew::from_lo_unchecked(self.expr())
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
     }
 }
 
@@ -675,6 +680,15 @@ pub(crate) fn transpose_val_ret<F, E>(value: Value<Result<F, E>>) -> Result<Valu
 
 pub(crate) fn is_precompiled(address: &Address) -> bool {
     address.0[0..19] == [0u8; 19] && (1..=9).contains(&address.0[19])
+}
+
+const BASE_128_BYTES: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+/// convert address (h160) to single expression.
+pub fn address_word_to_expr<F: Field>(address: Word<Expression<F>>) -> Expression<F> {
+    address.lo() + address.hi() * Expression::Constant(F::from_repr(BASE_128_BYTES).unwrap())
 }
 
 /// Helper struct to read rw operations from a step sequentially.

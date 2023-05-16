@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use eth_types::Field;
-use gadgets::util::{or, Expr};
+use gadgets::util::{and, Expr};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Error, Expression},
@@ -25,7 +25,7 @@ pub struct IsZeroWordGadget<F, T> {
 }
 
 impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: T) -> Self {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, word: &T) -> Self {
         let (word_lo, word_hi) = word.to_word().to_lo_hi();
         let inverse_lo = cb.query_cell_with_type(CellType::storage_for_expr(&word_lo));
         let inverse_hi = cb.query_cell_with_type(CellType::storage_for_expr(&word_hi));
@@ -56,7 +56,7 @@ impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
         Self {
             inverse_lo,
             inverse_hi,
-            is_zero: or::expr([is_zero_lo, is_zero_hi]),
+            is_zero: and::expr([is_zero_lo, is_zero_hi]),
             _marker: Default::default(),
         }
     }
@@ -83,6 +83,15 @@ impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
         } else {
             F::from(0)
         })
+    }
+
+    pub(crate) fn assign_u256(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: eth_types::Word,
+    ) -> Result<F, Error> {
+        self.assign(region, offset, Word::from(value))
     }
 
     pub(crate) fn assign_value(

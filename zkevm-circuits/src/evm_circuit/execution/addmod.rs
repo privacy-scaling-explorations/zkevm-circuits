@@ -23,7 +23,7 @@ use crate::{
 };
 
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToLittleEndian, U256, U512};
+use eth_types::{Field, U256, U512};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
@@ -69,11 +69,11 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let a_reduced = cb.query_word32();
         let d = cb.query_word32();
 
-        let n_is_zero = IsZeroWordGadget::construct(cb, n.clone());
+        let n_is_zero = IsZeroWordGadget::construct(cb, &n);
 
         // 1. check k * N + a_reduced == a without overflow
         let muladd_k_n_areduced =
-            MulAddWordsGadget::construct_new(cb, [&k, &n.clone(), &a_reduced, &a]);
+            MulAddWordsGadget::construct(cb, [&k, &n.clone(), &a_reduced, &a]);
         cb.require_zero(
             "k * N + a_reduced does not overflow",
             muladd_k_n_areduced.overflow(),
@@ -82,7 +82,7 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         // 2. check d * N + r == a_reduced + b, only checking carry if n != 0
         let sum_areduced_b = {
             let sum = cb.query_word32();
-            AddWordsGadget::construct_new(cb, [a_reduced.clone(), b.clone()], sum)
+            AddWordsGadget::construct(cb, [a_reduced.clone(), b.clone()], sum)
         };
         let sum_areduced_b_overflow = cb.query_word32();
         let muladd_d_n_r = MulAddWords512Gadget::construct(
@@ -162,9 +162,9 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         let [mut r, n, b, a] = [3, 2, 1, 0].map(|index| block.get_rws(step, index).stack_value());
 
         // assing a,b & n stack values
-        self.a.assign(region, offset, Some(a.to_le_bytes()))?;
-        self.b.assign(region, offset, Some(b.to_le_bytes()))?;
-        self.n.assign(region, offset, Some(n.to_le_bytes()))?;
+        self.a.assign_u256(region, offset, a)?;
+        self.b.assign_u256(region, offset, b)?;
+        self.n.assign_u256(region, offset, n)?;
 
         // compute a_reduced,k,d,a_reduced_plus_b,a_reduced_plus_b_overflow,r values
         let a_reduced;
@@ -196,11 +196,10 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
 
         // rest of values and gadgets
 
-        self.r.assign(region, offset, Some(r.to_le_bytes()))?;
-        self.k.assign(region, offset, Some(k.to_le_bytes()))?;
-        self.d.assign(region, offset, Some(d.to_le_bytes()))?;
-        self.a_reduced
-            .assign(region, offset, Some(a_reduced.to_le_bytes()))?;
+        self.r.assign_u256(region, offset, r)?;
+        self.k.assign_u256(region, offset, k)?;
+        self.d.assign_u256(region, offset, d)?;
+        self.a_reduced.assign_u256(region, offset, a_reduced)?;
 
         self.muladd_k_n_areduced
             .assign(region, offset, [k, n, a_reduced, a])?;
@@ -208,11 +207,8 @@ impl<F: Field> ExecutionGadget<F> for AddModGadget<F> {
         self.sum_areduced_b
             .assign(region, offset, [a_reduced, b], a_reduced_plus_b)?;
 
-        self.sum_areduced_b_overflow.assign(
-            region,
-            offset,
-            Some(a_reduced_plus_b_overflow.to_le_bytes()),
-        )?;
+        self.sum_areduced_b_overflow
+            .assign_u256(region, offset, a_reduced_plus_b_overflow)?;
         self.muladd_d_n_r.assign(
             region,
             offset,

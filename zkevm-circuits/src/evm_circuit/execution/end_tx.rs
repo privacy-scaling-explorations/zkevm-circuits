@@ -19,12 +19,12 @@ use crate::{
     },
     table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
     util::{
-        word::{Word, WordExpr},
+        word::{Word, WordCell, WordExpr},
         Expr,
     },
 };
 use bus_mapping::operation::Target;
-use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
+use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
 
@@ -36,11 +36,11 @@ pub(crate) struct EndTxGadget<F> {
     refund: Cell<F>,
     effective_refund: MinMaxGadget<F, N_BYTES_GAS>,
     mul_gas_price_by_refund: MulWordByU64Gadget<F>,
-    tx_caller_address: Cell<F>,
+    tx_caller_address: WordCell<F>,
     gas_fee_refund: UpdateBalanceGadget<F, 2, true>,
     sub_gas_price_by_base_fee: AddWordsGadget<F, 2, true>,
     mul_effective_tip_by_gas_used: MulWordByU64Gadget<F>,
-    coinbase: Cell<F>,
+    coinbase: WordCell<F>,
     coinbase_reward: UpdateBalanceGadget<F, 2, true>,
     current_cumulative_gas_used: Cell<F>,
     is_first_tx: IsEqualGadget<F>,
@@ -56,9 +56,9 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let is_persistent = cb.call_context(None, CallContextFieldTag::IsPersistent);
 
-        let [tx_gas, tx_caller_address] =
-            [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
-                .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
+        let tx_gas = cb.tx_context(tx_id.expr(), TxContextFieldTag::Gas, None);
+        let tx_caller_address =
+            cb.tx_context_as_word(tx_id.expr(), TxContextFieldTag::CallerAddress, None);
         let tx_gas_price = cb.tx_context_as_word32(tx_id.expr(), TxContextFieldTag::GasPrice, None);
 
         // Calculate effective gas to refund
@@ -80,32 +80,29 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         );
         let gas_fee_refund = UpdateBalanceGadget::construct(
             cb,
-            tx_caller_address.expr(),
+            tx_caller_address.to_word(),
             vec![mul_gas_price_by_refund.product().clone()],
             None,
         );
 
         // Add gas_used * effective_tip to coinbase's balance
-        let coinbase = cb.query_cell();
+        let coinbase = cb.query_word_unchecked();
         let base_fee = cb.query_word32();
         // lookup && range check
         for (tag, value) in [
-            (
-                BlockContextFieldTag::Coinbase,
-                Word::from_lo_unchecked(coinbase.expr()),
-            ),
+            (BlockContextFieldTag::Coinbase, coinbase.to_word()),
             (BlockContextFieldTag::BaseFee, base_fee.to_word()),
         ] {
             cb.block_lookup_word(tag.expr(), None, value);
         }
         let effective_tip = cb.query_word32();
         let sub_gas_price_by_base_fee =
-            AddWordsGadget::construct_new(cb, [effective_tip.clone(), base_fee], tx_gas_price);
+            AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
             MulWordByU64Gadget::construct(cb, effective_tip, gas_used.clone());
         let coinbase_reward = UpdateBalanceGadget::construct(
             cb,
-            coinbase.expr(),
+            coinbase.to_word(),
             vec![mul_effective_tip_by_gas_used.product().clone()],
             None,
         );
@@ -235,15 +232,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             effective_refund + step.gas_left,
             gas_fee_refund,
         )?;
-        self.tx_caller_address.assign(
-            region,
-            offset,
-            Value::known(
-                tx.caller_address
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
+        self.tx_caller_address
+            .assign_h160(region, offset, tx.caller_address)?;
         self.gas_fee_refund.assign(
             region,
             offset,
@@ -265,17 +255,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             gas_used,
             effective_tip * gas_used,
         )?;
-        self.coinbase.assign(
-            region,
-            offset,
-            Value::known(
-                block
-                    .context
-                    .coinbase
-                    .to_scalar()
-                    .expect("unexpected Address -> Scalar conversion failure"),
-            ),
-        )?;
+        self.coinbase
+            .assign_h160(region, offset, block.context.coinbase)?;
         self.coinbase_reward.assign(
             region,
             offset,

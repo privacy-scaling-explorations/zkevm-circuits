@@ -1,9 +1,11 @@
 use crate::{
-    evm_circuit::util::{
-        self,
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        math_gadget::*,
-        CachedRegion,
+    evm_circuit::{
+        param::N_BYTES_WORD,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            math_gadget::*,
+            CachedRegion,
+        },
     },
     util::{
         word::{Word32Cell, WordExpr},
@@ -49,10 +51,10 @@ impl<F: Field> AbsWordGadget<F> {
 
         // When `is_neg`, constrain `sum == 0` and `carry == 1`. Since the final
         // result is `1 << 256`.
-        let add_words = AddWordsGadget::construct_new(cb, [x.clone(), x_abs.clone()], sum.clone());
+        let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
         cb.add_constraint(
             "sum == 0 when x < 0",
-            is_neg.expr() * sum::expr(add_words.sum().word_expr().limbs),
+            is_neg.expr() * sum::expr(add_words.sum().to_word_n::<N_BYTES_WORD>().limbs),
         );
         cb.add_constraint(
             "carry_hi == 1 when x < 0",
@@ -75,9 +77,8 @@ impl<F: Field> AbsWordGadget<F> {
         x: Word,
         x_abs: Word,
     ) -> Result<(), Error> {
-        self.x.assign(region, offset, Some(x.to_le_bytes()))?;
-        self.x_abs
-            .assign(region, offset, Some(x_abs.to_le_bytes()))?;
+        self.x.assign_u256(region, offset, x)?;
+        self.x_abs.assign_u256(region, offset, x_abs)?;
         self.is_neg.assign(
             region,
             offset,
@@ -85,17 +86,8 @@ impl<F: Field> AbsWordGadget<F> {
             u64::from(x.to_le_bytes()[31]).into(),
         )?;
         let sum = x.overflowing_add(x_abs).0;
-        self.sum.assign(region, offset, Some(sum.to_le_bytes()))?;
+        self.sum.assign_u256(region, offset, sum)?;
         self.add_words.assign(region, offset, [x, x_abs], sum)
-    }
-
-    #[deprecated(note = "in fav of x_word")]
-    pub(crate) fn x(&self) -> &util::Word<F> {
-        todo!()
-    }
-    #[deprecated(note = "in fav of x_abs_word")]
-    pub(crate) fn x_abs(&self) -> &util::Word<F> {
-        todo!()
     }
 
     pub(crate) fn is_neg(&self) -> &LtGadget<F, 1> {

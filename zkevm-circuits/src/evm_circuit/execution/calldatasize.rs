@@ -6,21 +6,24 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            from_bytes, CachedRegion, RandomLinearCombination,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::Expr,
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CallDataSizeGadget<F> {
     same_context: SameContextGadget<F>,
-    call_data_size: RandomLinearCombination<F, N_BYTES_CALLDATASIZE>,
+    call_data_size: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
@@ -32,16 +35,15 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
         let opcode = cb.query_cell();
 
         // Add lookup constraint in the call context for the calldatasize field.
-        let call_data_size = cb.query_word_rlc();
-        cb.call_context_lookup(
-            false.expr(),
+        let call_data_size = cb.query_word_unchecked();
+        cb.call_context_lookup_read(
             None,
             CallContextFieldTag::CallDataLength,
-            from_bytes::expr(&call_data_size.cells),
+            call_data_size.to_word(),
         );
 
         // The calldatasize should be pushed to the top of the stack.
-        cb.stack_push(call_data_size.expr());
+        cb.stack_push_word(call_data_size.to_word());
 
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(2.expr()),
@@ -72,14 +74,14 @@ impl<F: Field> ExecutionGadget<F> for CallDataSizeGadget<F> {
 
         let call_data_size = block.get_rws(step, 1).stack_value();
 
-        self.call_data_size.assign(
+        self.call_data_size.assign_lo(
             region,
             offset,
-            Some(
+            Value::known(F::from(u64::from_le_bytes(
                 call_data_size.to_le_bytes()[..N_BYTES_CALLDATASIZE]
                     .try_into()
                     .unwrap(),
-            ),
+            ))),
         )?;
 
         Ok(())

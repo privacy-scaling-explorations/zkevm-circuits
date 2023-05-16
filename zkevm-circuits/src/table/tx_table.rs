@@ -116,7 +116,7 @@ impl TxTable {
             offset: usize,
             advice_columns: &[Column<Advice>],
             tag: &Column<Fixed>,
-            row: &[Value<F>; 4],
+            row: &[Value<F>; 5],
             msg: &str,
         ) -> Result<(), Error> {
             for (index, column) in advice_columns.iter().enumerate() {
@@ -147,7 +147,7 @@ impl TxTable {
                     offset,
                     &advice_columns,
                     &self.tag,
-                    &[(); 4].map(|_| Value::known(F::ZERO)),
+                    &[(); 5].map(|_| Value::known(F::ZERO)),
                     "all-zero",
                 )?;
                 offset += 1;
@@ -157,7 +157,7 @@ impl TxTable {
                 // region that has a size parametrized by max_calldata with all
                 // the tx calldata.  This is required to achieve a constant fixed column tag
                 // regardless of the number of input txs or the calldata size of each tx.
-                let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
+                let mut calldata_assignments: Vec<[Value<F>; 5]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs: Vec<_> = (txs.len()..max_txs)
                     .map(|i| Transaction {
@@ -178,6 +178,7 @@ impl TxTable {
                     [
                         Value::known(F::ZERO),
                         Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                        Value::known(F::ZERO),
                         Value::known(F::ZERO),
                         Value::known(F::ZERO),
                     ]

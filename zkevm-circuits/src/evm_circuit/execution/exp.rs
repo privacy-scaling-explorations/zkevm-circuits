@@ -1,20 +1,25 @@
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, U256};
-use gadgets::util::{and, not, split_u256, sum, Expr};
-use halo2_proofs::{circuit::Value, plonk::Error};
+use eth_types::{evm_types::GasCost, Field, ToScalar, U256};
+use gadgets::util::{and, not, split_u256, Expr};
+use halo2_proofs::{
+    circuit::Value,
+    plonk::{Error, Expression},
+};
 
-use crate::evm_circuit::{
-    step::ExecutionState,
-    util::{
-        common_gadget::SameContextGadget,
-        constraint_builder::{
-            ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+use crate::{
+    evm_circuit::{
+        step::ExecutionState,
+        util::{
+            common_gadget::SameContextGadget,
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition, Transition,
+            },
+            math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
+            CachedRegion, Cell,
         },
-        from_bytes,
-        math_gadget::{ByteSizeGadget, IsEqualGadget, IsZeroGadget},
-        CachedRegion, Cell, Word,
+        witness::{Block, Call, ExecStep, Transaction},
     },
-    witness::{Block, Call, ExecStep, Transaction},
+    util::word::{Word32Cell, Word4, WordExpr},
 };
 
 use super::ExecutionGadget;
@@ -24,15 +29,13 @@ pub(crate) struct ExponentiationGadget<F> {
     /// Gadget to check that we stay within the same context.
     same_context: SameContextGadget<F>,
     /// RLC-encoded integer base that will be exponentiated.
-    base: Word<F>,
+    base: Word32Cell<F>,
     /// RLC-encoded representation for base * base, i.e. base^2
-    base_sq: Word<F>,
-    /// RLC-encoded representation for zero.
-    zero_rlc: Word<F>,
+    base_sq: Word32Cell<F>,
     /// RLC-encoded exponent for the exponentiation operation.
-    exponent: Word<F>,
+    exponent: Word32Cell<F>,
     /// RLC-encoded result of the exponentiation.
-    exponentiation: Word<F>,
+    exponentiation: Word32Cell<F>,
     /// Gadget to check if low 128-bit part of exponent is zero or not.
     exponent_lo_is_zero: IsZeroGadget<F>,
     /// Gadget to check if high 128-bit part of exponent is zero or not.
@@ -55,32 +58,23 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         // Query RLC-encoded values for base, exponent and exponentiation, where:
         // base^exponent == exponentiation (mod 2^256).
-        let base_rlc = cb.query_word_rlc();
-        let exponent_rlc = cb.query_word_rlc();
-        let exponentiation_rlc = cb.query_word_rlc();
+        let base = cb.query_word32();
+        let exponent = cb.query_word32();
+        let exponentiation = cb.query_word32();
 
         // Pop RLC-encoded base and exponent from the stack.
-        cb.stack_pop(base_rlc.expr());
-        cb.stack_pop(exponent_rlc.expr());
+        cb.stack_pop_word(base.to_word());
+        cb.stack_pop_word(exponent.to_word());
 
         // Push RLC-encoded exponentiation to the stack.
-        cb.stack_push(exponentiation_rlc.expr());
+        cb.stack_push_word(exponentiation.to_word());
 
         // Extract low and high bytes of the base.
-        let (base_lo, base_hi) = (
-            from_bytes::expr(&base_rlc.cells[0x00..0x10]),
-            from_bytes::expr(&base_rlc.cells[0x10..0x20]),
-        );
+        let (base_lo, base_hi) = base.to_word().to_lo_hi();
         // Extract low and high bytes of the exponent.
-        let (exponent_lo, exponent_hi) = (
-            from_bytes::expr(&exponent_rlc.cells[0x00..0x10]),
-            from_bytes::expr(&exponent_rlc.cells[0x10..0x20]),
-        );
+        let (exponent_lo, exponent_hi) = exponent.to_word().to_lo_hi();
         // Extract low and high bytes of the exponentiation result.
-        let (exponentiation_lo, exponentiation_hi) = (
-            from_bytes::expr(&exponentiation_rlc.cells[0x00..0x10]),
-            from_bytes::expr(&exponentiation_rlc.cells[0x10..0x20]),
-        );
+        let (exponentiation_lo, exponentiation_hi) = exponentiation.to_word().to_lo_hi();
 
         // We simplify constraints depending on whether or not the exponent is 0 or 1.
         // In order to do this, we build some utility expressions.
@@ -92,12 +86,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let exponent_is_one_expr =
             and::expr([exponent_lo_is_one.expr(), exponent_hi_is_zero.expr()]);
 
-        let zero_rlc = cb.query_word_rlc();
-        cb.require_zero(
-            "base * base + c == base^2 (c == 0)",
-            sum::expr(&zero_rlc.cells),
-        );
-        let base_sq = cb.query_word_rlc();
+        let base_sq = cb.query_word32();
 
         // If exponent == 0, base^exponent == 1, which implies:
         // 1. Low bytes of exponentiation == 1
@@ -140,23 +129,15 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                 not::expr(exponent_is_one_expr),
             ]),
             |cb| {
-                let base_limbs = [
-                    from_bytes::expr(&base_rlc.cells[0x00..0x08]),
-                    from_bytes::expr(&base_rlc.cells[0x08..0x10]),
-                    from_bytes::expr(&base_rlc.cells[0x10..0x18]),
-                    from_bytes::expr(&base_rlc.cells[0x18..0x20]),
-                ];
-                let (base_sq_lo, base_sq_hi) = (
-                    from_bytes::expr(&base_sq.cells[0x00..0x10]),
-                    from_bytes::expr(&base_sq.cells[0x10..0x20]),
-                );
+                let base_limbs: Word4<Expression<F>> = base.to_word_n();
+                let (base_sq_lo, base_sq_hi) = base_sq.to_word().to_lo_hi();
                 let identifier = cb.curr.state.rw_counter.expr() + cb.rw_counter_offset();
                 // lookup for first step, i.e.
                 // (is_last, base, exponent, exponentiation)
                 cb.exp_table_lookup(
                     identifier.clone(),
                     single_step.expr(),
-                    base_limbs.clone(),
+                    base_limbs.limbs.clone(),
                     [exponent_lo.clone(), exponent_hi.clone()],
                     [exponentiation_lo.clone(), exponentiation_hi.clone()],
                 );
@@ -164,7 +145,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
                 cb.exp_table_lookup(
                     identifier,
                     1.expr(),
-                    base_limbs,
+                    base_limbs.limbs,
                     [2.expr(), 0.expr()], // exponent == 2
                     [base_sq_lo.expr(), base_sq_hi.expr()],
                 );
@@ -174,16 +155,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         // In order to calculate the dynamic gas cost of the exponentiation operation,
         // we need the byte-size of the exponent, i.e. the minimum number of
         // bytes that can represent the exponent value.
-        let exponent_byte_size = ByteSizeGadget::construct(
-            cb,
-            exponent_rlc
-                .cells
-                .iter()
-                .map(Expr::expr)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap(),
-        );
+        let exponent_byte_size = ByteSizeGadget::construct(cb, exponent.to_word_n().limbs);
 
         // Finally we build an expression for the dynamic gas cost as:
         // dynamic_gas = 50 * exponent_byte_size
@@ -202,11 +174,10 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
 
         Self {
             same_context,
-            base: base_rlc,
+            base,
             base_sq,
-            zero_rlc,
-            exponent: exponent_rlc,
-            exponentiation: exponentiation_rlc,
+            exponent,
+            exponentiation,
             exponent_lo_is_zero,
             exponent_hi_is_zero,
             exponent_lo_is_one,
@@ -229,11 +200,10 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
         let [base, exponent, exponentiation] =
             [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
-        self.base.assign(region, offset, Some(base.to_le_bytes()))?;
-        self.exponent
-            .assign(region, offset, Some(exponent.to_le_bytes()))?;
+        self.base.assign_u256(region, offset, base)?;
+        self.exponent.assign_u256(region, offset, exponent)?;
         self.exponentiation
-            .assign(region, offset, Some(exponentiation.to_le_bytes()))?;
+            .assign_u256(region, offset, exponentiation)?;
 
         let (exponent_lo, exponent_hi) = split_u256(&exponent);
         let exponent_lo_scalar = exponent_lo
@@ -250,10 +220,7 @@ impl<F: Field> ExecutionGadget<F> for ExponentiationGadget<F> {
             .assign(region, offset, exponent_lo_scalar, F::ONE)?;
 
         let (base_sq, _) = base.overflowing_mul(base);
-        self.zero_rlc
-            .assign(region, offset, Some(U256::zero().to_le_bytes()))?;
-        self.base_sq
-            .assign(region, offset, Some(base_sq.to_le_bytes()))?;
+        self.base_sq.assign_u256(region, offset, base_sq)?;
         let single_step = exponent.eq(&U256::from(2u64));
         self.single_step
             .assign(region, offset, Value::known(F::from(single_step as u64)))?;

@@ -15,7 +15,7 @@ use bus_mapping::{
     error::{DepthError, ExecError, InsufficientBalanceError, NonceUintOverflowError, OogError},
     evm::OpcodeId,
 };
-use eth_types::{evm_unimplemented, Field};
+use eth_types::{evm_unimplemented, Field, ToWord};
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
@@ -738,7 +738,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .code_hash
-            .assign(region, offset, Some(call.code_hash.to_fixed_bytes()))?;
+            .assign_u256(region, offset, call.code_hash.to_word())?;
         self.state
             .program_counter
             .assign(region, offset, Value::known(F::from(step.pc)))?;

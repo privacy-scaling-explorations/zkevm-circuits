@@ -269,6 +269,7 @@ pub struct RwRow<F> {
     pub(crate) init_val: word::Word<F>,
 }
 
+// TODO figure out a better trait bound on T to support function word lo()/hi()
 impl<F: Field> RwRow<F> {
     pub(crate) fn values(&self) -> [F; 14] {
         [
