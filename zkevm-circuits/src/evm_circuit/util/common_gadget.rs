@@ -1,7 +1,7 @@
 use super::{
     constraint_builder::ConstrainBuilderCommon,
     from_bytes,
-    math_gadget::{IsEqualGadget, IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
+    math_gadget::{IsEqualWordGadget, IsZeroGadget, IsZeroWordGadget, LtGadget},
     memory_gadget::{MemoryAddressGadget, MemoryExpansionGadget},
     AccountAddress, CachedRegion,
 };
@@ -836,28 +836,27 @@ impl<F: Field> SloadGasGadget<F> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct SstoreGasGadget<F> {
-    value: Cell<F>,
-    value_prev: Cell<F>,
-    original_value: Cell<F>,
+    value: WordCell<F>,
+    value_prev: WordCell<F>,
+    original_value: WordCell<F>,
     is_warm: Cell<F>,
     gas_cost: Expression<F>,
-    value_eq_prev: IsEqualGadget<F>,
-    original_eq_prev: IsEqualGadget<F>,
-    original_is_zero: IsZeroGadget<F>,
+    value_eq_prev: IsEqualWordGadget<F, WordCell<F>, WordCell<F>>,
+    original_eq_prev: IsEqualWordGadget<F, WordCell<F>, WordCell<F>>,
+    original_is_zero: IsZeroWordGadget<F, WordCell<F>>,
 }
 
 impl<F: Field> SstoreGasGadget<F> {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        value: Cell<F>,
-        value_prev: Cell<F>,
-        original_value: Cell<F>,
+        value: WordCell<F>,
+        value_prev: WordCell<F>,
+        original_value: WordCell<F>,
         is_warm: Cell<F>,
     ) -> Self {
-        let value_eq_prev = IsEqualGadget::construct(cb, value.expr(), value_prev.expr());
-        let original_eq_prev =
-            IsEqualGadget::construct(cb, original_value.expr(), value_prev.expr());
-        let original_is_zero = IsZeroGadget::construct(cb, original_value.expr());
+        let value_eq_prev = IsEqualWordGadget::construct(cb, value, value_prev);
+        let original_eq_prev = IsEqualWordGadget::construct(cb, original_value, value_prev);
+        let original_is_zero = IsZeroWordGadget::construct(cb, original_value);
         let warm_case_gas = select::expr(
             value_eq_prev.expr(),
             GasCost::WARM_ACCESS.expr(),
@@ -902,27 +901,31 @@ impl<F: Field> SstoreGasGadget<F> {
         original_value: eth_types::Word,
         is_warm: bool,
     ) -> Result<(), Error> {
-        self.value.assign(region, offset, region.word_rlc(value))?;
+        self.value
+            .assign(region, offset, Some(value.to_le_bytes()))?;
         self.value_prev
-            .assign(region, offset, region.word_rlc(value_prev))?;
+            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
         self.original_value
-            .assign(region, offset, region.word_rlc(original_value))?;
+            .assign(region, offset, Some(original_value.to_le_bytes()))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.value_eq_prev.assign_value(
             region,
             offset,
-            region.word_rlc(value),
-            region.word_rlc(value_prev),
+            Value::known(Word::from_u256(value)),
+            Value::known(Word::from_u256(value_prev)),
         )?;
         self.original_eq_prev.assign_value(
             region,
             offset,
-            region.word_rlc(original_value),
-            region.word_rlc(value_prev),
+            Value::known(Word::from_u256(original_value)),
+            Value::known(Word::from_u256(value_prev)),
         )?;
-        self.original_is_zero
-            .assign_value(region, offset, region.word_rlc(original_value))?;
+        self.original_is_zero.assign_value(
+            region,
+            offset,
+            Value::known(Word::from_u256(original_value)),
+        )?;
         Ok(())
     }
 }
