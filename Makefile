@@ -1,3 +1,10 @@
+CARGO = cargo
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	CARGO += --config 'build.rustdocflags = ["-C", "link-args=-framework CoreFoundation -framework Security"]'
+endif
+
 help: ## Display this help screen
 	@grep -h \
 		-E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -20,8 +27,9 @@ test: ## Run tests for all the workspace members
 	# Run heavy tests serially to avoid OOM
 	@cargo test --release --all --all-features --exclude integration-tests --exclude circuit-benchmarks serial_ -- --ignored --test-threads 1
 
+
 test_doc: ## Test the docs
-	@cargo test --release --all --all-features --doc
+	@$(CARGO) test --release --all --all-features --doc
 
 test_benches: ## Compiles the benchmarks
 	@cargo test --verbose --release --all-features -p circuit-benchmarks --no-run
