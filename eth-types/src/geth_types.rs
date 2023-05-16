@@ -175,8 +175,8 @@ impl From<&crate::Transaction> for Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce.low_u64().into(),
-            gas_limit: tx.gas.low_u64().into(),
+            nonce: tx.nonce.as_u64().into(),
+            gas_limit: tx.gas.as_u64().into(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),

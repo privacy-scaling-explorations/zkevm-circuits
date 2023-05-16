@@ -318,7 +318,7 @@ impl<'a> CircuitInputStateRef<'a> {
         // Perform the write to the account in the StateDB
         if matches!(rw, RW::WRITE) {
             match op.field {
-                AccountField::Nonce => account.nonce = op.value.low_u64(),
+                AccountField::Nonce => account.nonce = op.value.as_u64(),
                 AccountField::Balance => account.balance = op.value,
                 AccountField::CodeHash => account.code_hash = H256::from(op.value.to_be_bytes()),
             }
