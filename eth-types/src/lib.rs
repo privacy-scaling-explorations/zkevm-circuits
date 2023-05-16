@@ -302,7 +302,7 @@ pub struct EIP1186ProofResponse {
     /// The hash of the code of the account
     pub code_hash: H256,
     /// The nonce of the account
-    pub nonce: u64,
+    pub nonce: U64,
     /// SHA3 of the StorageRoot
     pub storage_hash: H256,
     /// Array of rlp-serialized MerkleTree-Nodes
