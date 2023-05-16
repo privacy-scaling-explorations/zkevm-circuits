@@ -1,16 +1,13 @@
-#![allow(dead_code, unused_imports)]
-
 use super::{
     parse,
     spec::{AccountMatch, Env, StateTest},
 };
-use crate::{abi, compiler::Compiler, utils::MainnetFork};
-use anyhow::{bail, Context, Result};
-use eth_types::{evm_types::OpcodeId, geth_types::Account, Address, Bytes, H256, U256};
+use crate::{compiler::Compiler, utils::MainnetFork};
+use anyhow::{bail, Result};
+use eth_types::{geth_types::Account, Address, U256};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use serde::Deserialize;
-use std::{collections::HashMap, convert::TryInto, ops::RangeBounds, str::FromStr};
-use yaml_rust::Yaml;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +33,6 @@ struct AccountPost {
     code: Option<String>,
     nonce: Option<String>,
     storage: Option<HashMap<String, String>>,
-    shouldnotexist: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -298,6 +294,8 @@ impl<'a> JsonStateTestBuilder<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use eth_types::{Bytes, H256};
+    use std::{collections::HashMap, str::FromStr};
 
     const JSON: &str = r#"
 {
