@@ -1164,6 +1164,10 @@ impl<F: Field, const VALID_BYTES: usize> WordByteRangeGadget<F, VALID_BYTES> {
         not::expr(self.not_overflow())
     }
 
+    pub(crate) fn original(&self) -> Word<Expression<F>> {
+        self.original.to_word()
+    }
+
     pub(crate) fn valid_value(&self) -> Expression<F> {
         from_bytes::expr(&self.original.limbs[..VALID_BYTES])
     }

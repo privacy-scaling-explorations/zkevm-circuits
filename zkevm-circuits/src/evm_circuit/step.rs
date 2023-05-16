@@ -5,7 +5,10 @@ use crate::{
         util::Cell,
         witness::{Block, Call, ExecStep},
     },
-    util::{word::Word, Expr},
+    util::{
+        word::{Word, WordCell},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::Field;
@@ -471,7 +474,7 @@ pub(crate) struct StepState<F> {
     /// In the case of a contract creation internal call, this denotes the hash
     /// of the chunk of bytes from caller's memory that represent the
     /// contract init code.
-    pub(crate) code_hash: Word<Cell<F>>,
+    pub(crate) code_hash: WordCell<F>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -479,7 +482,7 @@ pub(crate) struct StepState<F> {
     /// The amount of gas left
     pub(crate) gas_left: Cell<F>,
     /// Memory size in words (32 bytes)
-    pub(crate) memory_word_size: Cell<F>,
+    pub(crate) memory_word_size: WordCell<F>,
     /// The counter for reversible writes
     pub(crate) reversible_write_counter: Cell<F>,
     /// The counter for log index

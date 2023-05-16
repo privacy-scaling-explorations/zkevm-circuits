@@ -20,7 +20,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, word::WordExpr, Challenges, Expr},
+    util::{query_expression, Challenges, Expr},
 };
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
