@@ -24,7 +24,8 @@ use std::collections::HashMap;
 pub struct Account {
     /// Address
     pub address: Address,
-    /// nonce
+    /// Nonce.
+    /// U64 type is required to serialize into proper hex with 0x prefix
     pub nonce: U64,
     /// Balance
     pub balance: Word,
@@ -64,7 +65,8 @@ pub struct BlockConstants {
     pub coinbase: Address,
     /// time
     pub timestamp: Word,
-    /// number
+    /// Block number
+    /// U64 type is required to serialize into proper hex with 0x prefix
     pub number: U64,
     /// difficulty
     pub difficulty: Word,
@@ -119,8 +121,10 @@ pub struct Transaction {
     /// Avoid direct read from this field. We set this field public to construct the struct
     pub to: Option<Address>,
     /// Transaction nonce
+    /// U64 type is required to serialize into proper hex with 0x prefix
     pub nonce: U64,
     /// Gas Limit / Supplied gas
+    /// U64 type is required to serialize into proper hex with 0x prefix
     pub gas_limit: U64,
     /// Transfered value
     pub value: Word,
