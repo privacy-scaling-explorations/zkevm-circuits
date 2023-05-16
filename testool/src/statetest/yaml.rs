@@ -758,7 +758,7 @@ arith:
                 CircuitsConfig::default()
             ),
             Err(StateTestError::NonceMismatch {
-                expected: 0,
+                expected: 2,
                 found: 0
             })
         );
