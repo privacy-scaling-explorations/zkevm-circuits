@@ -9,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     evm_circuit::util::rlc,
     table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
-    util::build_tx_log_address,
+    util::{build_tx_log_address, word},
 };
 
 use super::MptUpdates;
@@ -253,15 +253,15 @@ pub struct RwRow<F> {
     pub(crate) id: F,
     pub(crate) address: F,
     pub(crate) field_tag: F,
-    pub(crate) storage_key: F,
-    pub(crate) value: F,
-    pub(crate) value_prev: F,
+    pub(crate) storage_key: word::Word<F>,
+    pub(crate) value: word::Word<F>,
+    pub(crate) value_prev: word::Word<F>,
     pub(crate) aux1: F,
     pub(crate) aux2: F,
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 11] {
+    pub(crate) fn values(&self) -> [F; 14] {
         [
             self.rw_counter,
             self.is_write,
@@ -269,9 +269,12 @@ impl<F: Field> RwRow<F> {
             self.id,
             self.address,
             self.field_tag,
-            self.storage_key,
-            self.value,
-            self.value_prev,
+            self.storage_key.lo().clone(),
+            self.storage_key.hi().clone(),
+            self.value.lo().clone(),
+            self.value.hi().clone(),
+            self.value_prev.lo().clone(),
+            self.value_prev.hi().clone(),
             self.aux1,
             self.aux2,
         ]
@@ -393,10 +396,7 @@ impl Rw {
             id: F::from(self.id().unwrap_or_default() as u64),
             address: self.address().unwrap_or_default().to_scalar().unwrap(),
             field_tag: F::from(self.field_tag().unwrap_or_default()),
-            storage_key: rlc::value(
-                &self.storage_key().unwrap_or_default().to_le_bytes(),
-                randomness,
-            ),
+            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
             value: self.value_assignment(randomness),
             value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
             aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.

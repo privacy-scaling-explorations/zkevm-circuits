@@ -34,7 +34,7 @@ pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
 
-use super::param::N_BYTES_ACCOUNT_ADDRESS;
+use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -515,6 +515,29 @@ impl<F: Field> WordExpr<F> for MemoryAddress<F> {
 pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
 
 impl<F: Field> WordExpr<F> for AccountAddress<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::new([
+            rlc::expr(
+                &self.cells[0..16]
+                    .iter()
+                    .map(|cell| cell.expr())
+                    .collect_vec(),
+                256.expr(),
+            ),
+            rlc::expr(
+                &self.cells[16..]
+                    .iter()
+                    .map(|cell| cell.expr())
+                    .collect_vec(),
+                256.expr(),
+            ),
+        ])
+    }
+}
+
+pub(crate) type U64Cell<F> = RandomLinearCombination<F, N_BYTES_U64>;
+
+impl<F: Field> WordExpr<F> for U64Cell<F> {
     fn to_word(&self) -> Word<Expression<F>> {
         Word::from_lo_unchecked(self.expr())
     }

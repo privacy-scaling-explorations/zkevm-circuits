@@ -80,7 +80,7 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> CmpWordsGadget<F, T1, T2> {
 mod tests {
     use super::{test_util::*, *};
     use crate::{
-        evm_circuit::util::constraint_builder::ConstrainBuilderCommon, util::word::Word32Cell,
+        evm_circuit::util::constraint_builder::ConstrainBuilderCommon, util::word::WordCell,
     };
     use eth_types::Word;
     use halo2_proofs::{halo2curves::bn256::Fr, plonk::Error};
@@ -88,9 +88,9 @@ mod tests {
     #[derive(Clone)]
     /// CmpWordGadgetTestContainer: require(a == b if CHECK_EQ else a < b)
     struct CmpWordGadgetTestContainer<F, const CHECK_EQ: bool> {
-        cmp_gadget: CmpWordsGadget<F, Word32Cell<F>, Word32Cell<F>>,
-        a_word: Word32Cell<F>,
-        b_word: Word32Cell<F>,
+        cmp_gadget: CmpWordsGadget<F, WordCell<F>, WordCell<F>>,
+        a_word: WordCell<F>,
+        b_word: WordCell<F>,
     }
 
     impl<F: Field, const CHECK_EQ: bool> MathGadgetContainer<F>
@@ -100,7 +100,8 @@ mod tests {
             let a_word = cb.query_word_unchecked();
             let b_word = cb.query_word_unchecked();
 
-            let cmp_gadget = CmpWordsGadget::<F>::construct(cb, a_word, b_word);
+            let cmp_gadget =
+                CmpWordsGadget::<F, WordCell<F>, WordCell<F>>::construct(cb, a_word, b_word);
             cb.require_equal(
                 "(a < b) * (a == b) == 0",
                 cmp_gadget.eq.clone() * cmp_gadget.lt.clone(),

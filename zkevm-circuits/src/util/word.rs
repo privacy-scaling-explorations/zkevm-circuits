@@ -82,10 +82,10 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
 }
 
 // `Word`, special alias for Word2.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy, Default)]
 pub(crate) struct Word<T>(Word2<T>);
 
-impl<T> Word<T> {
+impl<T: Clone> Word<T> {
     pub fn new(limbs: [T; 2]) -> Self {
         Self(WordLimbs::<T, 2>::new(limbs))
     }

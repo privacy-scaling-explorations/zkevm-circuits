@@ -257,8 +257,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             self.tx_id.into(),
             self.tag.into(),
             self.index.into(),
-            self.value.lo(),
-            self.value.hi(),
+            self.value.lo().clone().into(),
+            self.value.hi().clone().into(),
         ]
     }
 
@@ -277,8 +277,8 @@ impl<F: Field> LookupTable<F> for TxTable {
             meta.query_advice(self.tx_id, Rotation::cur()),
             meta.query_fixed(self.tag, Rotation::cur()),
             meta.query_advice(self.index, Rotation::cur()),
-            meta.query_advice(self.value.lo(), Rotation::cur()),
-            meta.query_advice(self.value.hi(), Rotation::cur()),
+            meta.query_advice(self.value.lo().clone(), Rotation::cur()),
+            meta.query_advice(self.value.hi().clone(), Rotation::cur()),
         ]
     }
 }
@@ -444,7 +444,7 @@ pub struct RwTable {
     /// Key3 (FieldTag)
     pub field_tag: Column<Advice>,
     /// Key3 (StorageKey)
-    pub storage_key: Column<Advice>,
+    pub storage_key: word::Word<Column<Advice>>,
     /// Value
     pub value: word::Word<Column<Advice>>,
     /// Value Previous
@@ -464,11 +464,12 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.id.into(),
             self.address.into(),
             self.field_tag.into(),
-            self.storage_key.into(),
-            self.value.lo(),
-            self.value.hi(),
-            self.value_prev.lo(),
-            self.value_prev.hi(),
+            self.storage_key.lo().clone().into(),
+            self.storage_key.hi().clone().into(),
+            self.value.lo().clone().into(),
+            self.value.hi().clone().into(),
+            self.value_prev.lo().clone().into(),
+            self.value_prev.hi().clone().into(),
             self.aux1.into(),
             self.aux2.into(),
         ]
@@ -482,7 +483,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("id"),
             String::from("address"),
             String::from("field_tag"),
-            String::from("storage_key"),
+            String::from("storage_key_lo"),
+            String::from("storage_key_hi"),
             String::from("value_lo"),
             String::from("value_hi"),
             String::from("value_prev_lo"),
@@ -502,7 +504,7 @@ impl RwTable {
             id: meta.advice_column(),
             address: meta.advice_column(),
             field_tag: meta.advice_column(),
-            storage_key: meta.advice_column_in(SecondPhase),
+            storage_key: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value: word::Word::new([meta.advice_column(), meta.advice_column()]),
             value_prev: word::Word::new([meta.advice_column(), meta.advice_column()]),
             // It seems that aux1 for the moment is not using randomness
@@ -752,8 +754,8 @@ impl BytecodeTable {
 impl<F: Field> LookupTable<F> for BytecodeTable {
     fn columns(&self) -> Vec<Column<Any>> {
         vec![
-            self.code_hash.lo(),
-            self.code_hash.hi(),
+            self.code_hash.lo().clone().into(),
+            self.code_hash.hi().clone().into(),
             self.tag.into(),
             self.index.into(),
             self.is_code.into(),
@@ -863,8 +865,8 @@ impl<F: Field> LookupTable<F> for BlockTable {
         vec![
             self.tag.into(),
             self.index.into(),
-            self.value.lo(),
-            self.value.hi(),
+            self.value.lo().clone().into(),
+            self.value.hi().clone().into(),
         ]
     }
 
@@ -897,8 +899,8 @@ impl<F: Field> LookupTable<F> for KeccakTable {
             self.is_enabled.into(),
             self.input_rlc.into(),
             self.input_len.into(),
-            self.output.lo(),
-            self.output.hi(),
+            self.output.lo().clone().into(),
+            self.output.hi().clone().into(),
         ]
     }
 
@@ -1020,8 +1022,8 @@ impl KeccakTable {
         vec![
             (value_rlc, self.input_rlc),
             (length, self.input_len),
-            (code_hash.lo(), self.output.lo()),
-            (code_hash.hi(), self.output.hi()),
+            (code_hash.lo().clone(), self.output.lo().clone()),
+            (code_hash.hi().clone(), self.output.hi().clone()),
         ]
     }
 }

@@ -13,7 +13,7 @@ use crate::{
         util::{
             constraint_builder::{
                 EVMConstraintBuilder, ReversionInfo, StepStateTransition,
-                Transition::{Delta, Same, To, ToWord as TransitionToWord},
+                Transition::{Delta, Same, To},
             },
             math_gadget::{AddWordsGadget, RangeCheckGadget},
             not, or, Cell,
@@ -197,7 +197,7 @@ impl<F: Field> RestoreContextGadget<F> {
             call_id: To(caller_id.expr()),
             is_root: To(caller_is_root.expr()),
             is_create: To(caller_is_create.expr()),
-            code_hash: TransitionToWord(caller_code_hash),
+            code_hash: To(caller_code_hash.to_word()),
             program_counter: To(caller_program_counter.expr()),
             stack_pointer: To(caller_stack_pointer.expr()),
             gas_left: To(gas_left),

@@ -26,7 +26,9 @@ use halo2_proofs::{
     },
 };
 
-use super::{rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression};
+use super::{
+    rlc, AccountAddress, CachedRegion, CellType, MemoryAddress, StoredExpression, U64Cell,
+};
 
 // Max degree allowed in all expressions passing through the ConstraintBuilder.
 // It aims to cap `extended_k` to 2, which allows constraint degree to 2^2+1,
@@ -40,7 +42,6 @@ pub(crate) enum Transition<T> {
     Delta(T),
     To(T),
     Any,
-    ToWord(Word<T>),
 }
 
 impl<F> Default for Transition<F> {
@@ -479,6 +480,10 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         RandomLinearCombination::<F, N>::new(self.query_bytes(), self.challenges.keccak_input())
     }
 
+    pub(crate) fn query_u64(&mut self) -> U64Cell<F> {
+        U64Cell::new(self.query_bytes(), 256u64.expr())
+    }
+
     pub(crate) fn query_account_address(&mut self) -> AccountAddress<F> {
         AccountAddress::<F>::new(self.query_bytes(), 256u64.expr())
     }
@@ -578,10 +583,23 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                         self.next.state.$name.expr(),
                         to,
                     ),
-                    Transition::ToWord(to) => self.require_equal_word(
+                    _ => {}
+                }
+            };
+        }
+
+        macro_rules! constrain_word {
+            ($name:tt) => {
+                match step_state_transition.$name {
+                    Transition::Same => self.require_equal_word(
+                        concat!("State transition (same) constraint of ", stringify!($name)),
+                        self.next.state.$name.to_word(),
+                        self.curr.state.$name.to_word(),
+                    ),
+                    Transition::To(to) => self.require_equal_word(
                         concat!("State transition (to) constraint of ", stringify!($name)),
                         self.next.state.$name.to_word(),
-                        to.to_word(),
+                        to,
                     ),
                     _ => {}
                 }
@@ -592,7 +610,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         constrain!(call_id);
         constrain!(is_root);
         constrain!(is_create);
-        constrain!(code_hash);
+        constrain_word!(code_hash);
         constrain!(program_counter);
         constrain!(stack_pointer);
         constrain!(gas_left);

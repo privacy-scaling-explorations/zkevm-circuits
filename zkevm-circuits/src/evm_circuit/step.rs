@@ -5,10 +5,10 @@ use crate::{
         util::Cell,
         witness::{Block, Call, ExecStep},
     },
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{Field, ToWord};
+use eth_types::Field;
 use halo2_proofs::{
     circuit::Value,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression},
@@ -471,7 +471,7 @@ pub(crate) struct StepState<F> {
     /// In the case of a contract creation internal call, this denotes the hash
     /// of the chunk of bytes from caller's memory that represent the
     /// contract init code.
-    pub(crate) code_hash: Cell<F>,
+    pub(crate) code_hash: Word<Cell<F>>,
     /// The program counter
     pub(crate) program_counter: Cell<F>,
     /// The stack pointer
@@ -515,7 +515,10 @@ impl<F: Field> Step<F> {
                 call_id: cell_manager.query_cell(CellType::StoragePhase1),
                 is_root: cell_manager.query_cell(CellType::StoragePhase1),
                 is_create: cell_manager.query_cell(CellType::StoragePhase1),
-                code_hash: cell_manager.query_cell(CellType::StoragePhase2),
+                code_hash: Word::new([
+                    cell_manager.query_cell(CellType::StoragePhase1),
+                    cell_manager.query_cell(CellType::StoragePhase1),
+                ]),
                 program_counter: cell_manager.query_cell(CellType::StoragePhase1),
                 stack_pointer: cell_manager.query_cell(CellType::StoragePhase1),
                 gas_left: cell_manager.query_cell(CellType::StoragePhase1),
@@ -568,7 +571,7 @@ impl<F: Field> Step<F> {
         )?;
         self.state
             .code_hash
-            .assign(region, offset, region.word_rlc(call.code_hash.to_word()))?;
+            .assign(region, offset, Some(call.code_hash.to_fixed_bytes()))?;
         self.state.program_counter.assign(
             region,
             offset,
