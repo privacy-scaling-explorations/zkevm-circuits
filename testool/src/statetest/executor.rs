@@ -23,7 +23,7 @@ pub enum StateTestError {
     #[error("BalanceMismatch(expected:{expected:?}, found:{found:?})")]
     BalanceMismatch { expected: U256, found: U256 },
     #[error("NonceMismatch(expected:{expected:?}, found:{found:?})")]
-    NonceMismatch { expected: U256, found: U256 },
+    NonceMismatch { expected: u64, found: u64 },
     #[error("CodeMismatch(expected: {expected:?}, found:{found:?})")]
     CodeMismatch { expected: Bytes, found: Bytes },
     #[error("StorgeMismatch(slot:{slot:?} expected:{expected:?}, found: {found:?})")]
@@ -139,9 +139,9 @@ fn into_traceconfig(st: StateTest) -> (String, TraceConfig, StateTestResult) {
             transactions: vec![geth_types::Transaction {
                 from: st.from,
                 to: st.to,
-                nonce: st.nonce,
+                nonce: U64::from(st.nonce),
                 value: st.value,
-                gas_limit: st.gas_limit.into(),
+                gas_limit: U64::from(st.gas_limit),
                 gas_price: st.gas_price,
                 gas_fee_cap: U256::zero(),
                 gas_tip_cap: U256::zero(),
