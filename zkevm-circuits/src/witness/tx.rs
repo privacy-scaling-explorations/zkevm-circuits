@@ -124,7 +124,7 @@ impl Transaction {
 pub(super) fn tx_convert(tx: &circuit_input_builder::Transaction, id: usize) -> Transaction {
     Transaction {
         id,
-        nonce: tx.tx.nonce,
+        nonce: tx.tx.nonce.as_u64(),
         gas: tx.gas(),
         gas_price: tx.tx.gas_price,
         caller_address: tx.tx.from,

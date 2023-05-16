@@ -139,9 +139,9 @@ impl PublicData {
             let mut msg_hash_le = [0u8; 32];
             msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {
-                nonce: tx.nonce,
+                nonce: tx.nonce.as_u64(),
                 gas_price: tx.gas_price,
-                gas: tx.gas_limit,
+                gas: tx.gas_limit.as_u64(),
                 from_addr: tx.from,
                 to_addr: tx.to_or_zero(),
                 is_create: tx.is_create(),

@@ -94,7 +94,7 @@ mod test {
     use bus_mapping::evm::OpcodeId;
     use eth_types::{
         self, address, bytecode, bytecode::Bytecode, evm_types::GasCost, geth_types::Account,
-        Address, ToWord, Word,
+        Address, ToWord, Word, U64,
     };
 
     use mock::{
@@ -248,7 +248,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: (!is_empty).into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

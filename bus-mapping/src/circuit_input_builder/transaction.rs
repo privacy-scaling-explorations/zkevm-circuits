@@ -297,6 +297,6 @@ impl Transaction {
 
     /// Convinient method for gas limit
     pub fn gas(&self) -> u64 {
-        self.tx.gas_limit
+        self.tx.gas_limit.as_u64()
     }
 }

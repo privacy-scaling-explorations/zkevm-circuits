@@ -347,7 +347,7 @@ mod test {
         address, bytecode,
         evm_types::OpcodeId,
         geth_types::{Account, GethData},
-        Address, Bytecode, ToWord, Word, U256,
+        Address, Bytecode, Bytes, ToWord, Word, U256, U64,
     };
     use itertools::Itertools;
     use mock::{eth, TestContext, MOCK_ACCOUNTS};
@@ -420,13 +420,13 @@ mod test {
             let callee = Account {
                 address: CALLEE_ADDRESS,
                 code: callee_bytecode(*is_return, *callee_offset, *callee_length).into(),
-                nonce: 1,
+                nonce: U64::one(),
                 ..Default::default()
             };
             let caller = Account {
                 address: CALLER_ADDRESS,
                 code: caller_bytecode(*caller_offset, *caller_length).into(),
-                nonce: 1,
+                nonce: U64::one(),
                 ..Default::default()
             };
 
@@ -496,21 +496,17 @@ mod test {
                 CREATE
             };
 
-            let caller = Account {
-                address: CALLER_ADDRESS,
-                code: root_code.into(),
-                nonce: 1,
-                balance: eth(10),
-                ..Default::default()
-            };
-
             let ctx = TestContext::<2, 1>::new(
                 None,
                 |accs| {
                     accs[0]
                         .address(address!("0x000000000000000000000000000000000000cafe"))
                         .balance(eth(10));
-                    accs[1].account(&caller);
+                    accs[1]
+                        .address(CALLER_ADDRESS)
+                        .code::<Bytes>(root_code.into())
+                        .nonce(1)
+                        .balance(eth(10));
                 },
                 |mut txs, accs| {
                     txs[0]
@@ -550,7 +546,7 @@ mod test {
         let caller = Account {
             address: CALLER_ADDRESS,
             code: root_code.into(),
-            nonce: 1,
+            nonce: U64::one(),
             balance: eth(10),
             ..Default::default()
         };

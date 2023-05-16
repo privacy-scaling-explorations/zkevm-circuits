@@ -69,7 +69,7 @@ impl MockAccount {
     /// Set all fields for the MockAccount based on their values in `account`.
     pub fn account(&mut self, account: &Account) -> &mut Self {
         self.address(account.address);
-        self.nonce(account.nonce);
+        self.nonce(account.nonce.as_u64());
         self.balance(account.balance);
         self.code(account.code.clone());
         self.storage(account.storage.iter().map(|(k, v)| (*k, *v)));

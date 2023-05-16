@@ -74,7 +74,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::OpcodeId};
     use eth_types::{
-        self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word,
+        self, address, bytecode, bytecode::Bytecode, geth_types::Account, Address, ToWord, Word, U64,
     };
 
     use mock::TestContext;
@@ -221,7 +221,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: (!is_empty).into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

@@ -241,6 +241,12 @@ impl ToWord for i32 {
     }
 }
 
+impl ToWord for U64 {
+    fn to_word(&self) -> Word {
+        self.as_u64().into()
+    }
+}
+
 impl ToWord for Word {
     fn to_word(&self) -> Word {
         *self

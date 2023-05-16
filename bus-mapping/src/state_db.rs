@@ -1,7 +1,7 @@
 //! Implementation of an in-memory key-value database to represent the
 //! Ethereum State Trie.
 
-use eth_types::{Address, Hash, Word, H256, U256};
+use eth_types::{geth_types, Address, Hash, Word, H256, U256};
 use ethers_core::utils::keccak256;
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
@@ -64,6 +64,17 @@ pub struct Account {
     pub storage: HashMap<Word, Word>,
     /// Code hash
     pub code_hash: Hash,
+}
+
+impl From<geth_types::Account> for Account {
+    fn from(account: geth_types::Account) -> Self {
+        Self {
+            nonce: account.nonce.as_u64(),
+            balance: account.balance,
+            storage: account.storage.clone(),
+            code_hash: CodeDB::hash(&account.code.to_vec()),
+        }
+    }
 }
 
 impl Account {

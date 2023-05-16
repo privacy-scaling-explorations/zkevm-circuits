@@ -185,7 +185,7 @@ mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
         address, bytecode, bytecode::Bytecode, evm_types::OpcodeId, geth_types::Account, Address,
-        ToWord, Word,
+        ToWord, Word, U64,
     };
 
     use mock::TestContext;
@@ -258,7 +258,7 @@ mod test {
         Account {
             address: Address::repeat_byte(0xff),
             code: code.into(),
-            nonce: (!is_empty).into(),
+            nonce: U64::from(!is_empty as u64),
             balance: if is_empty { 0 } else { 0xdeadbeefu64 }.into(),
             ..Default::default()
         }

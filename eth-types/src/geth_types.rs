@@ -3,7 +3,7 @@
 use crate::{
     sign_types::{biguint_to_32bytes_le, ct_option_ok_or, recover_pk, SignData, SECP256K1_Q},
     AccessList, Address, Block, Bytes, Error, GethExecTrace, Hash, ToBigEndian, ToLittleEndian,
-    Word, U64,
+    ToWord, Word, U64,
 };
 use ethers_core::{
     types::{transaction::response, NameOrAddress, TransactionRequest},
@@ -25,8 +25,7 @@ pub struct Account {
     /// Address
     pub address: Address,
     /// nonce
-    #[serde(serialize_with = "serde_u64")]
-    pub nonce: u64,
+    pub nonce: U64,
     /// Balance
     pub balance: Word,
     /// EVM Code
@@ -39,7 +38,10 @@ pub struct Account {
 impl Account {
     /// Return if account is empty or not.
     pub fn is_empty(&self) -> bool {
-        self.nonce == 0 && self.balance.is_zero() && self.code.is_empty() && self.storage.is_empty()
+        self.nonce.is_zero()
+            && self.balance.is_zero()
+            && self.code.is_empty()
+            && self.storage.is_empty()
     }
 }
 
@@ -121,11 +123,9 @@ pub struct Transaction {
     /// Avoid direct read from this field. We set this field public to construct the struct
     pub to: Option<Address>,
     /// Transaction nonce
-    #[serde(serialize_with = "serde_u64")]
-    pub nonce: u64,
+    pub nonce: U64,
     /// Gas Limit / Supplied gas
-    #[serde(serialize_with = "serde_u64")]
-    pub gas_limit: u64,
+    pub gas_limit: U64,
     /// Transfered value
     pub value: Word,
     /// Gas Price
@@ -154,8 +154,8 @@ impl From<&Transaction> for crate::Transaction {
         crate::Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce.into(),
-            gas: tx.gas_limit.into(),
+            nonce: tx.nonce.to_word(),
+            gas: tx.gas_limit.to_word(),
             value: tx.value,
             gas_price: Some(tx.gas_price),
             max_priority_fee_per_gas: Some(tx.gas_fee_cap),
@@ -175,8 +175,8 @@ impl From<&crate::Transaction> for Transaction {
         Transaction {
             from: tx.from,
             to: tx.to,
-            nonce: tx.nonce.low_u64(),
-            gas_limit: tx.gas.low_u64(),
+            nonce: tx.nonce.low_u64().into(),
+            gas_limit: tx.gas.low_u64().into(),
             value: tx.value,
             gas_price: tx.gas_price.unwrap_or_default(),
             gas_fee_cap: tx.max_priority_fee_per_gas.unwrap_or_default(),
@@ -195,11 +195,11 @@ impl From<&Transaction> for TransactionRequest {
         TransactionRequest {
             from: Some(tx.from),
             to: tx.to.map(NameOrAddress::Address),
-            gas: Some(tx.gas_limit.into()),
+            gas: Some(tx.gas_limit.to_word()),
             gas_price: Some(tx.gas_price),
             value: Some(tx.value),
             data: Some(tx.call_data.clone()),
-            nonce: Some(tx.nonce.into()),
+            nonce: Some(tx.nonce.to_word()),
             ..Default::default()
         }
     }
@@ -260,7 +260,7 @@ impl Transaction {
     /// Get the "to" address. If `to` is None then compute contract adddress
     pub fn to_or_contract_addr(&self) -> Address {
         self.to
-            .unwrap_or_else(|| get_contract_address(self.from, self.nonce))
+            .unwrap_or_else(|| get_contract_address(self.from, self.nonce.to_word()))
     }
     /// Determine if this transaction is a contract create transaction
     pub fn is_create(&self) -> bool {
@@ -281,8 +281,8 @@ impl Transaction {
             input: self.call_data.clone(),
             gas_price: Some(self.gas_price),
             access_list: self.access_list.clone(),
-            nonce: self.nonce.into(),
-            gas: self.gas_limit.into(),
+            nonce: self.nonce.to_word(),
+            gas: self.gas_limit.to_word(),
             transaction_index: Some(transaction_index),
             r: self.r,
             s: self.s,
