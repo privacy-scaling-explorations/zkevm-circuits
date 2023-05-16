@@ -240,7 +240,7 @@ impl StateTest {
                 address,
                 Account {
                     address,
-                    nonce: U64::zero(),
+                    nonce: U64::one(),
                     code: Bytes::from(code.code()),
                     balance,
                     storage,
