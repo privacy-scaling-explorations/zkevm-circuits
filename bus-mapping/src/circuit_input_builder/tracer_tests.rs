@@ -6,7 +6,6 @@ use crate::{
         GETH_ERR_GAS_UINT_OVERFLOW, GETH_ERR_OUT_OF_GAS, GETH_ERR_STACK_OVERFLOW,
         GETH_ERR_STACK_UNDERFLOW,
     },
-    operation::RWCounter,
     state_db::Account,
 };
 use eth_types::{
@@ -31,7 +30,6 @@ struct CircuitInputBuilderTx {
     builder: CircuitInputBuilder,
     tx: Transaction,
     pub(crate) tx_ctx: TransactionContext,
-    step: ExecStep,
 }
 
 impl CircuitInputBuilderTx {
@@ -53,19 +51,10 @@ impl CircuitInputBuilderTx {
         )
         .unwrap();
 
-        let prev_log_id = if tx.is_steps_empty() {
-            0
-        } else {
-            tx.last_step().log_id
-        };
-
-        let call_ctx = tx_ctx.call_ctx().unwrap();
-        let exec_step = ExecStep::new(geth_step, call_ctx, RWCounter::new(), 0, prev_log_id);
         Self {
             builder,
             tx,
             tx_ctx,
-            step: exec_step,
         }
     }
 

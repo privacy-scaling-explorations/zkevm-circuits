@@ -213,8 +213,6 @@
 //! See: <https://hackmd.io/@liangcc/zkvmbook/https%3A%2F%2Fhackmd.io%2FAmhZ2ryITxicmhYFyQ0DEw#Bus-Mapping>
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// Temporary until we have more of the crate implemented.
-#![allow(dead_code)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.

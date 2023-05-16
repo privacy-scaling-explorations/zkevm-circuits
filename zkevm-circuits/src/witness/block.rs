@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-#[cfg(any(feature = "test", test))]
-use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-#[cfg(feature = "test")]
-use crate::util::SubCircuit;
-
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
-
+use crate::{
+    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    exp_circuit::param::OFFSET_INCREMENT,
+    table::BlockContextFieldTag,
+    util::{log2_ceil, SubCircuit},
+};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -59,15 +58,7 @@ impl<F: Field> Block<F> {
     pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
         self.rws[step.rw_index(index)]
     }
-}
 
-#[cfg(feature = "test")]
-use crate::exp_circuit::param::OFFSET_INCREMENT;
-#[cfg(feature = "test")]
-use crate::util::log2_ceil;
-
-#[cfg(feature = "test")]
-impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.

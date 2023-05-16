@@ -198,7 +198,7 @@ pub(crate) trait ExecutionGadget<F: Field> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExecutionConfig<F> {
+pub struct ExecutionConfig<F> {
     // EVM Circuit selector, which enables all usable rows.  The rows where this selector is
     // disabled won't verify any constraint (they can be unused rows or rows with blinding
     // factors).
@@ -596,7 +596,7 @@ impl<F: Field> ExecutionConfig<F> {
         config
     }
 
-    pub(crate) fn instrument(&self) -> &Instrument {
+    pub fn instrument(&self) -> &Instrument {
         &self.instrument
     }
 
