@@ -1,14 +1,16 @@
 use crate::{
     evm_circuit::util::{
-        self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes,
         math_gadget::*,
         CachedRegion,
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, Word};
+use gadgets::util::sum;
 use halo2_proofs::plonk::Error;
 
 /// Construction of 256-bit word original and absolute values, which is useful
@@ -19,23 +21,21 @@ use halo2_proofs::plonk::Error;
 /// (expressed as an U256 of `2^255`).
 #[derive(Clone, Debug)]
 pub(crate) struct AbsWordGadget<F> {
-    x: util::Word<F>,
-    x_abs: util::Word<F>,
-    sum: util::Word<F>,
+    x: Word32Cell<F>,
+    x_abs: Word32Cell<F>,
+    sum: Word32Cell<F>,
     is_neg: LtGadget<F, 1>,
     add_words: AddWordsGadget<F, 2, false>,
 }
 
 impl<F: Field> AbsWordGadget<F> {
     pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let x = cb.query_word_rlc();
-        let x_abs = cb.query_word_rlc();
-        let sum = cb.query_word_rlc();
-        let x_lo = from_bytes::expr(&x.cells[0..16]);
-        let x_hi = from_bytes::expr(&x.cells[16..32]);
-        let x_abs_lo = from_bytes::expr(&x_abs.cells[0..16]);
-        let x_abs_hi = from_bytes::expr(&x_abs.cells[16..32]);
-        let is_neg = LtGadget::construct(cb, 127.expr(), x.cells[31].expr());
+        let x = cb.query_word32();
+        let x_abs = cb.query_word32();
+        let sum = cb.query_word32();
+        let (x_lo, x_hi) = x.to_word().to_lo_hi();
+        let (x_abs_lo, x_abs_hi) = x_abs.to_word().to_lo_hi();
+        let is_neg = LtGadget::construct(cb, 127.expr(), x.limbs[31].expr());
 
         cb.add_constraint(
             "x_abs_lo == x_lo when x >= 0",
@@ -51,7 +51,7 @@ impl<F: Field> AbsWordGadget<F> {
         let add_words = AddWordsGadget::construct(cb, [x.clone(), x_abs.clone()], sum.clone());
         cb.add_constraint(
             "sum == 0 when x < 0",
-            is_neg.expr() * add_words.sum().expr(),
+            is_neg.expr() * sum::expr(add_words.sum().word_expr().limbs),
         );
         cb.add_constraint(
             "carry_hi == 1 when x < 0",
@@ -88,11 +88,11 @@ impl<F: Field> AbsWordGadget<F> {
         self.add_words.assign(region, offset, [x, x_abs], sum)
     }
 
-    pub(crate) fn x(&self) -> &util::Word<F> {
+    pub(crate) fn x(&self) -> &Word32Cell<F> {
         &self.x
     }
 
-    pub(crate) fn x_abs(&self) -> &util::Word<F> {
+    pub(crate) fn x_abs(&self) -> &Word32Cell<F> {
         &self.x_abs
     }
 

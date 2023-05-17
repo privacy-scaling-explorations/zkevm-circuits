@@ -85,7 +85,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let (current_caller_address, current_value) = cb.condition(is_delegatecall.expr(), |cb| {
             (
                 cb.call_context(None, CallContextFieldTag::CallerAddress),
-                cb.call_context_as_word(None, CallContextFieldTag::Value),
+                cb.call_context_read_as_word(None, CallContextFieldTag::Value),
             )
         });
 

@@ -20,7 +20,7 @@ use crate::{
     table::{
         BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
     },
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -57,7 +57,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         let [tx_gas, tx_caller_address] =
             [TxContextFieldTag::Gas, TxContextFieldTag::CallerAddress]
                 .map(|field_tag| cb.tx_context(tx_id.expr(), field_tag, None));
-        let tx_gas_price = cb.tx_context_as_word(tx_id.expr(), TxContextFieldTag::GasPrice, None);
+        let tx_gas_price = cb.tx_context_as_word32(tx_id.expr(), TxContextFieldTag::GasPrice, None);
 
         // Calculate effective gas to refund
         let gas_used = tx_gas.expr() - cb.curr.state.gas_left.expr();
@@ -67,7 +67,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             MAX_REFUND_QUOTIENT_OF_GAS_USED as u64,
         );
         let refund = cb.query_cell();
-        cb.tx_refund_read(tx_id.expr(), refund.expr());
+        cb.tx_refund_read(tx_id.expr(), Word::from_lo_unchecked(refund.expr()));
         let effective_refund = MinMaxGadget::construct(cb, max_refund.quotient(), refund.expr());
 
         // Add effective_refund * tx_gas_price back to caller's balance
@@ -85,14 +85,18 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
 
         // Add gas_used * effective_tip to coinbase's balance
         let coinbase = cb.query_cell();
-        let base_fee = cb.query_word_rlc();
+        let base_fee = cb.query_word32();
+        // lookup && range check
         for (tag, value) in [
-            (BlockContextFieldTag::Coinbase, coinbase.expr()),
-            (BlockContextFieldTag::BaseFee, base_fee.expr()),
+            (
+                BlockContextFieldTag::Coinbase,
+                Word::from_lo_unchecked(coinbase.expr()),
+            ),
+            (BlockContextFieldTag::BaseFee, base_fee.to_word()),
         ] {
             cb.block_lookup(tag.expr(), None, value);
         }
-        let effective_tip = cb.query_word_rlc();
+        let effective_tip = cb.query_word32();
         let sub_gas_price_by_base_fee =
             AddWordsGadget::construct(cb, [effective_tip.clone(), base_fee], tx_gas_price);
         let mul_effective_tip_by_gas_used =
@@ -151,7 +155,8 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
                     true.expr(),
                     Some(cb.next.state.rw_counter.expr()),
                     CallContextFieldTag::TxId,
-                    tx_id.expr() + 1.expr(),
+                    // tx_id has been lookup and range_check above
+                    Word::from_lo_unchecked(tx_id.expr() + 1.expr()),
                 );
 
                 cb.require_step_state_transition(StepStateTransition {

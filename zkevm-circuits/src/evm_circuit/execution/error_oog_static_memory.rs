@@ -7,7 +7,7 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             math_gadget::{IsEqualGadget, IsZeroGadget, RangeCheckGadget},
             memory_gadget::{address_high, address_low, MemoryExpansionGadget},
-            CachedRegion, Cell, Word,
+            CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },

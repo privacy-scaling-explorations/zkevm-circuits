@@ -15,7 +15,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, RwTableTag, TxLogFieldTag},
-    util::{build_tx_log_expression, Expr},
+    util::{build_tx_log_expression, word::Word, Expr},
 };
 use array_init::array_init;
 use bus_mapping::circuit_input_builder::CopyDataType;
@@ -47,12 +47,12 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::LOG;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let mstart = cb.query_cell_phase2();
-        let msize = cb.query_word_rlc();
+        let mstart = cb.query_word32();
+        let msize = cb.query_word32();
 
         // Pop mstart_address, msize from stack
-        cb.stack_pop(mstart.expr());
-        cb.stack_pop(msize.expr());
+        cb.stack_pop(mstart.to_word());
+        cb.stack_pop(msize.to_word());
         // read tx id
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         // constrain not in static call
@@ -80,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         let topic_selectors: [Cell<F>; 4] = array_init(|_| cb.query_cell());
         for (idx, topic) in phase2_topics.iter().enumerate() {
             cb.condition(topic_selectors[idx].expr(), |cb| {
-                cb.stack_pop(topic.expr());
+                cb.stack_pop(Word::from_lo_unchecked(topic.expr()));
             });
             cb.condition(topic_selectors[idx].expr() * is_persistent.expr(), |cb| {
                 cb.tx_log_lookup(

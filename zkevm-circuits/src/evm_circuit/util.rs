@@ -6,7 +6,11 @@ use crate::{
         table::Table,
     },
     table::RwTableTag,
-    util::{query_expression, Challenges, Expr},
+    util::{
+        query_expression,
+        word::{Word, WordExpr},
+        Challenges, Expr,
+    },
     witness::{Block, ExecStep, Rw, RwMap},
 };
 use bus_mapping::state_db::CodeDB;
@@ -29,6 +33,8 @@ pub(crate) mod math_gadget;
 pub(crate) mod memory_gadget;
 
 pub use gadgets::util::{and, not, or, select, sum};
+
+use super::param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_U64};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Cell<F> {
@@ -498,10 +504,46 @@ impl<F: Field, const N: usize> Expr<F> for RandomLinearCombination<F, N> {
     }
 }
 
-pub(crate) type Word<F> = RandomLinearCombination<F, 32>;
 pub(crate) type MemoryAddress<F> = RandomLinearCombination<F, N_BYTES_MEMORY_ADDRESS>;
 
-/// Decodes a field element from its byte representation
+impl<F: Field> WordExpr<F> for MemoryAddress<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
+
+pub(crate) type AccountAddress<F> = RandomLinearCombination<F, N_BYTES_ACCOUNT_ADDRESS>;
+
+impl<F: Field> WordExpr<F> for AccountAddress<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::new([
+            rlc::expr(
+                &self.cells[0..16]
+                    .iter()
+                    .map(|cell| cell.expr())
+                    .collect_vec(),
+                256.expr(),
+            ),
+            rlc::expr(
+                &self.cells[16..]
+                    .iter()
+                    .map(|cell| cell.expr())
+                    .collect_vec(),
+                256.expr(),
+            ),
+        ])
+    }
+}
+
+pub(crate) type U64Cell<F> = RandomLinearCombination<F, N_BYTES_U64>;
+
+impl<F: Field> WordExpr<F> for U64Cell<F> {
+    fn to_word(&self) -> Word<Expression<F>> {
+        Word::from_lo_unchecked(self.expr())
+    }
+}
+
+/// Decodes a field element from its byte representation in little endian order
 pub(crate) mod from_bytes {
     use crate::{evm_circuit::param::MAX_N_BYTES_INTEGER, util::Expr};
     use eth_types::Field;

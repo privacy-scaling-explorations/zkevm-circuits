@@ -1398,7 +1398,7 @@ impl<F: Field> ExecutionConfig<F> {
         // plus the number of rw lookups done by the copy circuit.
         if step.rw_indices.len() != assigned_rw_values.len() + step.copy_rw_counter_delta as usize {
             log::error!(
-                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}", 
+                "step.rw_indices.len: {} != assigned_rw_values.len: {} + step.copy_rw_counter_delta: {} in step: {:?}",
                 step.rw_indices.len(),
                 assigned_rw_values.len(),
                 step.copy_rw_counter_delta,

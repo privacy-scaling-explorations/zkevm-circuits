@@ -2,9 +2,12 @@ use crate::{
     evm_circuit::util::{
         self,
         constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        from_bytes, pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
+        pow_of_two_expr, split_u256, sum, CachedRegion, Cell,
     },
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -13,8 +16,8 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 /// opcode ADD, SUB and balance operation
 #[derive(Clone, Debug)]
 pub(crate) struct AddWordsGadget<F, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool> {
-    addends: [util::Word<F>; N_ADDENDS],
-    sum: util::Word<F>,
+    addends: [Word32Cell<F>; N_ADDENDS],
+    sum: Word32Cell<F>,
     carry_lo: Cell<F>,
     carry_hi: Option<Cell<F>>,
 }
@@ -24,8 +27,8 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 {
     pub(crate) fn construct(
         cb: &mut EVMConstraintBuilder<F>,
-        addends: [util::Word<F>; N_ADDENDS],
-        sum: util::Word<F>,
+        addends: [Word32Cell<F>; N_ADDENDS],
+        sum: Word32Cell<F>,
     ) -> Self {
         let carry_lo = cb.query_cell();
         let carry_hi = if CHECK_OVERFLOW {
@@ -36,14 +39,14 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
 
         let addends_lo = &addends
             .iter()
-            .map(|addend| from_bytes::expr(&addend.cells[..16]))
+            .map(|addend| addend.to_word().lo().clone())
             .collect::<Vec<_>>();
-        let addends_hi = &addends
+        let addends_hi = addends
             .iter()
-            .map(|addend| from_bytes::expr(&addend.cells[16..]))
+            .map(|addend| addend.to_word().hi().clone())
             .collect::<Vec<_>>();
-        let sum_lo = from_bytes::expr(&sum.cells[..16]);
-        let sum_hi = from_bytes::expr(&sum.cells[16..]);
+        let sum_lo = sum.to_word().lo().clone();
+        let sum_hi = sum.to_word().hi().clone();
 
         cb.require_equal(
             "sum(addends_lo) == sum_lo + carry_lo ⋅ 2^128",
@@ -133,11 +136,11 @@ impl<F: Field, const N_ADDENDS: usize, const CHECK_OVERFLOW: bool>
         Ok(())
     }
 
-    pub(crate) fn addends(&self) -> &[util::Word<F>] {
+    pub(crate) fn addends(&self) -> &[Word32Cell<F>] {
         &self.addends
     }
 
-    pub(crate) fn sum(&self) -> &util::Word<F> {
+    pub(crate) fn sum(&self) -> &Word32Cell<F> {
         &self.sum
     }
 
@@ -161,16 +164,16 @@ mod tests {
         const CHECK_OVERFLOW: bool,
     > {
         addwords_gadget: AddWordsGadget<F, N_ADDENDS, CHECK_OVERFLOW>,
-        addends: [util::Word<F>; N_ADDENDS],
-        sum: util::Word<F>,
+        addends: [Word32Cell<F>; N_ADDENDS],
+        sum: Word32Cell<F>,
     }
 
     impl<F: Field, const N_ADDENDS: usize, const CARRY_HI: u64, const CHECK_OVERFLOW: bool>
         MathGadgetContainer<F> for AddWordsTestContainer<F, N_ADDENDS, CARRY_HI, CHECK_OVERFLOW>
     {
         fn configure_gadget_container(cb: &mut EVMConstraintBuilder<F>) -> Self {
-            let addends = [(); N_ADDENDS].map(|_| cb.query_word_rlc());
-            let sum = cb.query_word_rlc();
+            let addends = [(); N_ADDENDS].map(|_| cb.query_word32());
+            let sum = cb.query_word32();
             let addwords_gadget = AddWordsGadget::<F, N_ADDENDS, CHECK_OVERFLOW>::construct(
                 cb,
                 addends.clone(),

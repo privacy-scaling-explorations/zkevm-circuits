@@ -1,7 +1,6 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_ACCOUNT_ADDRESS,
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
@@ -9,14 +8,16 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
                 Transition::Delta,
             },
-            from_bytes,
-            math_gadget::IsZeroGadget,
-            not, select, CachedRegion, Cell, Word,
+            math_gadget::{IsZeroGadget, IsZeroWordGadget},
+            not, select, AccountAddress, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{AccountFieldTag, CallContextFieldTag},
-    util::Expr,
+    util::{
+        word::{Word32Cell, WordExpr},
+        Expr,
+    },
 };
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian};
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -24,11 +25,11 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct BalanceGadget<F> {
     same_context: SameContextGadget<F>,
-    address_word: Word<F>,
+    address: AccountAddress<F>,
     reversion_info: ReversionInfo<F>,
     tx_id: Cell<F>,
     is_warm: Cell<F>,
-    code_hash: Cell<F>,
+    code_hash: Word32Cell<F>,
     not_exists: IsZeroGadget<F>,
     balance: Cell<F>,
 }
@@ -39,9 +40,8 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::BALANCE;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let address_word = cb.query_word_rlc();
-        let address = from_bytes::expr(&address_word.cells[..N_BYTES_ACCOUNT_ADDRESS]);
-        cb.stack_pop(address_word.expr());
+        let address = cb.query_account_address();
+        cb.stack_pop(address.to_word());
 
         let tx_id = cb.call_context(None, CallContextFieldTag::TxId);
         let mut reversion_info = cb.reversion_info_read(None);
@@ -53,20 +53,24 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
             is_warm.expr(),
             Some(&mut reversion_info),
         );
-        let code_hash = cb.query_cell_phase2();
+        let code_hash = cb.query_word32();
         // For non-existing accounts the code_hash must be 0 in the rw_table.
-        cb.account_read(address.expr(), AccountFieldTag::CodeHash, code_hash.expr());
-        let not_exists = IsZeroGadget::construct(cb, code_hash.expr());
+        cb.account_read(
+            address.expr(),
+            AccountFieldTag::CodeHash,
+            code_hash.to_word(),
+        );
+        let not_exists = IsZeroWordGadget::construct(cb, code_hash.to_word());
         let exists = not::expr(not_exists.expr());
-        let balance = cb.query_cell_phase2();
+        let balance = cb.query_word32();
         cb.condition(exists.expr(), |cb| {
-            cb.account_read(address.expr(), AccountFieldTag::Balance, balance.expr());
+            cb.account_read(address.expr(), AccountFieldTag::Balance, balance.to_word());
         });
         cb.condition(not_exists.expr(), |cb| {
-            cb.require_zero("balance is zero when non_exists", balance.expr());
+            cb.require_zero_word("balance is zero when non_exists", balance.to_word());
         });
 
-        cb.stack_push(balance.expr());
+        cb.stack_push(balance.to_word());
 
         let gas_cost = select::expr(
             is_warm.expr(),
@@ -88,7 +92,7 @@ impl<F: Field> ExecutionGadget<F> for BalanceGadget<F> {
 
         Self {
             same_context,
-            address_word,
+            address,
             reversion_info,
             tx_id,
             is_warm,

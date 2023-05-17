@@ -12,7 +12,7 @@ use crate::{
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::{CallContextFieldTag, TxContextFieldTag},
-    util::Expr,
+    util::{word::Word, Expr},
 };
 use eth_types::Field;
 use halo2_proofs::{circuit::Value, plonk::Error};
@@ -54,7 +54,11 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
         });
         cb.condition(not::expr(is_empty_block.expr()), |cb| {
             // 1b. total_txs matches the tx_id that corresponds to the final step.
-            cb.call_context_lookup(0.expr(), None, CallContextFieldTag::TxId, total_txs.expr());
+            cb.call_context_lookup_read(
+                None,
+                CallContextFieldTag::TxId,
+                Word::from_lo_unchecked(total_txs.expr()),
+            );
         });
 
         // 2. If total_txs == max_txs, we know we have covered all txs from the
@@ -68,7 +72,7 @@ impl<F: Field> ExecutionGadget<F> for EndBlockGadget<F> {
                 total_txs.expr() + 1.expr(),
                 TxContextFieldTag::CallerAddress,
                 None,
-                0.expr(),
+                Word::zero(),
             );
             // Since every tx lookup done in the EVM circuit must succeed
             // and uses a unique tx_id, we know that at
