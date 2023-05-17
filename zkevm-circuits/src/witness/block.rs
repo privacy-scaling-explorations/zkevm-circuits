@@ -46,7 +46,7 @@ pub struct Block<F> {
     pub circuits_params: CircuitsParams,
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
-    /// State root of the previous block
+    /// State root of the block
     pub state_root: Word,
     /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256

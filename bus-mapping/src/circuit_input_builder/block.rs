@@ -72,7 +72,7 @@ pub struct Block {
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
-    /// State root of the previous block
+    /// State root of the block
     pub state_root: Word,
     /// State root of the previous block
     pub prev_state_root: Word,
