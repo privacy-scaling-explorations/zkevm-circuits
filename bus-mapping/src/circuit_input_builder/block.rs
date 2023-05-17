@@ -5,7 +5,7 @@ use crate::{
     operation::{OperationContainer, RWCounter},
     Error,
 };
-use eth_types::{evm_unimplemented, Address, Word};
+use eth_types::{evm_unimplemented, Address, ToWord, Word};
 use std::collections::HashMap;
 
 /// Context of a [`Block`] which can mutate in a [`Transaction`].
@@ -70,6 +70,8 @@ pub struct Block {
     pub difficulty: Word,
     /// base fee
     pub base_fee: Word,
+    /// State root of the block
+    pub state_root: Word,
     /// State root of the previous block
     pub prev_state_root: Word,
     /// Container of operations done in this block.
@@ -84,8 +86,6 @@ pub struct Block {
     pub sha3_inputs: Vec<Vec<u8>>,
     /// Exponentiation events in the block.
     pub exp_events: Vec<ExpEvent>,
-    /// Original block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 impl Block {
@@ -118,6 +118,7 @@ impl Block {
             timestamp: eth_block.timestamp,
             difficulty: eth_block.difficulty,
             base_fee: eth_block.base_fee_per_gas.unwrap_or_default(),
+            state_root: eth_block.state_root.to_word(),
             prev_state_root,
             container: OperationContainer::new(),
             txs: Vec::new(),
@@ -134,7 +135,6 @@ impl Block {
             copy_events: Vec::new(),
             exp_events: Vec::new(),
             sha3_inputs: Vec::new(),
-            eth_block: eth_block.clone(),
         })
     }
 

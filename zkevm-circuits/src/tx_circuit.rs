@@ -314,12 +314,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.context.chain_id.as_u64(),
-            block
-                .eth_block
-                .transactions
-                .iter()
-                .map(|tx| tx.into())
-                .collect(),
+            block.txs.iter().map(|tx| tx.tx.clone()).collect_vec(),
         )
     }
 
@@ -328,7 +323,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
         (
             Self::min_num_rows(
                 block.txs.len(),
-                block.txs.iter().map(|tx| tx.call_data.len()).sum(),
+                block.txs.iter().map(|tx| tx.tx.call_data.len()).sum(),
             ),
             Self::min_num_rows(
                 block.circuits_params.max_txs,

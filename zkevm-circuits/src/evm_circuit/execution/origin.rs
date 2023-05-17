@@ -75,7 +75,7 @@ impl<F: Field> ExecutionGadget<F> for OriginGadget<F> {
 
         // Assing TxId.
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id)))?;
 
         // Assign Origin addr.
         self.origin.assign_u256(region, offset, origin)?;

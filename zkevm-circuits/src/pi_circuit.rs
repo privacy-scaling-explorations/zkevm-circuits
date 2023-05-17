@@ -1322,7 +1322,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
     /// Return the minimum number of rows required to prove the block
     fn min_num_rows_block(block: &witness::Block<F>) -> (usize, usize) {
-        let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
+        let calldata_len = block.txs.iter().map(|tx| tx.tx.call_data.len()).sum();
         (
             Self::Config::circuit_len_by_txs_calldata(block.txs.len(), calldata_len),
             Self::Config::circuit_len_by_txs_calldata(
@@ -1561,8 +1561,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
 
                 let mut call_data_offset = TX_LEN * self.max_txs + EMPTY_TX_ROW_COUNT;
 
-                let txs = self.public_data.txs();
-                for (i, tx) in self.public_data.txs().iter().enumerate() {
+                let txs = self.public_data.transactions.clone();
+                for (i, tx) in self.public_data.transactions.iter().enumerate() {
                     let call_data_length = tx.call_data.0.len();
                     let mut gas_cost = F::ZERO;
                     for (index, byte) in tx.call_data.0.iter().enumerate() {

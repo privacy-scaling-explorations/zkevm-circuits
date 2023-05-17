@@ -214,7 +214,7 @@ impl<F: Field> EvmCircuit<F> {
     pub fn get_min_num_rows_required(block: &Block<F>) -> usize {
         let mut num_rows = 0;
         for transaction in &block.txs {
-            for step in &transaction.steps {
+            for step in transaction.steps() {
                 num_rows += step.execution_state().get_step_height();
             }
         }
@@ -270,7 +270,7 @@ impl<F: Field> SubCircuit<F> for EvmCircuit<F> {
 /// create fixed_table_tags needed given witness block
 pub(crate) fn detect_fixed_table_tags<F: Field>(block: &Block<F>) -> Vec<FixedTableTag> {
     let need_bitwise_lookup = block.txs.iter().any(|tx| {
-        tx.steps.iter().any(|step| {
+        tx.steps().iter().any(|step| {
             matches!(
                 step.opcode(),
                 Some(OpcodeId::AND)
