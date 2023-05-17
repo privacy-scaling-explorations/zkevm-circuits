@@ -82,7 +82,7 @@ pub struct PublicData {
     /// where the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block Transactions
-    transactions: Vec<Transaction>,
+    pub transactions: Vec<Transaction>,
     /// Block State Root
     pub state_root: H256,
     /// Previous block root

@@ -188,11 +188,8 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         } else {
             call.caller_id as u64
         };
-        self.src_id.assign(
-            region,
-            offset,
-            Value::known(F::from(u64::try_from(src_id).unwrap())),
-        )?;
+        self.src_id
+            .assign(region, offset, Value::known(F::from(src_id)))?;
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
