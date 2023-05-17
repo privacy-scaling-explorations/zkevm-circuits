@@ -122,7 +122,7 @@ impl<F: Field> ExecutionGadget<F> for ExtcodehashGadget<F> {
 mod test {
     use crate::test_util::CircuitTestBuilder;
     use eth_types::{
-        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256,
+        address, bytecode, geth_types::Account, Address, Bytecode, Bytes, ToWord, Word, U256, U64,
     };
     use lazy_static::lazy_static;
     use mock::TestContext;
@@ -134,7 +134,7 @@ mod test {
 
     fn test_ok(external_account: Option<Account>, is_warm: bool) {
         let external_address = external_account
-            .as_ref()
+            .clone()
             .map(|a| a.address)
             .unwrap_or(*EXTERNAL_ADDRESS);
 
@@ -166,10 +166,7 @@ mod test {
 
                 accs[1].address(external_address);
                 if let Some(external_account) = external_account {
-                    accs[1]
-                        .balance(external_account.balance)
-                        .nonce(external_account.nonce)
-                        .code(external_account.code);
+                    accs[1].account(&external_account);
                 }
                 accs[2]
                     .address(address!("0x0000000000000000000000000000000000000010"))
@@ -200,7 +197,7 @@ mod test {
         test_ok(
             Some(Account {
                 address: *EXTERNAL_ADDRESS,
-                nonce: U256::from(259),
+                nonce: U64::from(259),
                 code: Bytes::from([3]),
                 ..Default::default()
             }),
@@ -227,7 +224,7 @@ mod test {
         // code = [].
         let nonce_only_account = Account {
             address: *EXTERNAL_ADDRESS,
-            nonce: U256::from(200),
+            nonce: U64::from(200),
             ..Default::default()
         };
         // This account state is possible if another account sends ETH to a previously

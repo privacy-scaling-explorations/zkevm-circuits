@@ -60,16 +60,8 @@ impl BlockData {
         }
 
         for account in geth_data.accounts {
-            let code_hash = code_db.insert(account.code.to_vec());
-            sdb.set_account(
-                &account.address,
-                state_db::Account {
-                    nonce: account.nonce,
-                    balance: account.balance,
-                    storage: account.storage,
-                    code_hash,
-                },
-            );
+            code_db.insert(account.code.to_vec());
+            sdb.set_account(&account.address, state_db::Account::from(account.clone()));
         }
 
         Self {

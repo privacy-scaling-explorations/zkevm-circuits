@@ -315,7 +315,7 @@ impl ExecutionState {
             || self.halts_in_exception()
     }
 
-    pub(crate) fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
+    pub fn responsible_opcodes(&self) -> Vec<ResponsibleOp> {
         if matches!(self, Self::ErrorStack) {
             return OpcodeId::valid_opcodes()
                 .into_iter()
@@ -486,7 +486,7 @@ impl ExecutionState {
 
 /// Enum of Responsible opcode mapping to execution state.
 #[derive(Debug)]
-pub(crate) enum ResponsibleOp {
+pub enum ResponsibleOp {
     /// Raw opcode
     Op(OpcodeId),
     /// Corresponding to ExecutionState::ErrorStack
@@ -501,7 +501,7 @@ impl From<OpcodeId> for ResponsibleOp {
 }
 
 impl ResponsibleOp {
-    pub(crate) fn opcode(&self) -> OpcodeId {
+    pub fn opcode(&self) -> OpcodeId {
         *match self {
             ResponsibleOp::Op(opcode) => opcode,
             ResponsibleOp::InvalidStackPtr(opcode, _) => opcode,

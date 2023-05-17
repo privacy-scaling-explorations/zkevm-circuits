@@ -51,8 +51,8 @@ pub struct BlockValues {
 /// Values of the tx table (as in the spec)
 #[derive(Default, Debug, Clone)]
 pub struct TxValues {
-    nonce: Word,
-    gas: Word, // gas limit
+    nonce: u64,
+    gas: u64, // gas limit
     gas_price: Word,
     from_addr: Address,
     to_addr: Address,
@@ -139,9 +139,9 @@ impl PublicData {
             let mut msg_hash_le = [0u8; 32];
             msg_hash_le.copy_from_slice(sign_data.msg_hash.to_bytes().as_slice());
             tx_vals.push(TxValues {
-                nonce: tx.nonce,
+                nonce: tx.nonce.as_u64(),
                 gas_price: tx.gas_price,
-                gas: tx.gas_limit,
+                gas: tx.gas_limit.as_u64(),
                 from_addr: tx.from,
                 to_addr: tx.to_or_zero(),
                 is_create: tx.is_create(),
@@ -1317,11 +1317,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
                     let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
                     for (tag, value) in &[
-                        (
-                            TxFieldTag::Nonce,
-                            rlc(tx.nonce.to_le_bytes(), self.randomness),
-                        ),
-                        (TxFieldTag::Gas, rlc(tx.gas.to_le_bytes(), self.randomness)),
+                        (TxFieldTag::Nonce, F::from(tx.nonce)),
+                        (TxFieldTag::Gas, F::from(tx.gas)),
                         (
                             TxFieldTag::GasPrice,
                             rlc(tx.gas_price.to_le_bytes(), self.randomness),
@@ -1520,8 +1517,8 @@ fn raw_public_inputs_col<F: Field>(
         let tx = if i < txs.len() { &txs[i] } else { &tx_default };
 
         for val in &[
-            rlc(tx.nonce.to_le_bytes(), randomness),
-            rlc(tx.gas.to_le_bytes(), randomness),
+            F::from(tx.nonce),
+            F::from(tx.gas),
             rlc(tx.gas_price.to_le_bytes(), randomness),
             tx.from_addr.to_scalar().expect("tx.from too big"),
             tx.to_addr.to_scalar().expect("tx.to too big"),

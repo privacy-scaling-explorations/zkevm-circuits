@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context};
-use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256};
+use eth_types::{geth_types::Account, Address, Bytes, Word, H256, U256, U64};
 use ethers_core::{k256::ecdsa::SigningKey, utils::secret_key_to_address};
 use std::{collections::HashMap, str::FromStr};
 
@@ -18,7 +18,7 @@ pub struct AccountMatch {
     pub address: Address,
     pub balance: Option<U256>,
     pub code: Option<Bytes>,
-    pub nonce: Option<U256>,
+    pub nonce: Option<u64>,
     pub storage: HashMap<U256, U256>,
 }
 
@@ -29,7 +29,7 @@ impl TryInto<Account> for AccountMatch {
             address: self.address,
             balance: self.balance.context("balance")?,
             code: self.code.context("code")?,
-            nonce: self.nonce.context("nonce")?,
+            nonce: self.nonce.context("nonce")?.into(),
             storage: self.storage,
         })
     }
@@ -47,7 +47,7 @@ pub struct StateTest {
     pub to: Option<Address>,
     pub gas_limit: u64,
     pub gas_price: U256,
-    pub nonce: U256,
+    pub nonce: u64,
     pub value: U256,
     pub data: Bytes,
     pub pre: HashMap<Address, Account>,
@@ -205,10 +205,8 @@ impl StateTest {
             from,
             Account {
                 address: from,
-                nonce: U256::zero(),
                 balance: U256::from(10).pow(18.into()),
-                code: Bytes::default(),
-                storage: HashMap::new(),
+                ..Default::default()
             },
         );
 
@@ -242,7 +240,7 @@ impl StateTest {
                 address,
                 Account {
                     address,
-                    nonce: U256::one(),
+                    nonce: U64::one(),
                     code: Bytes::from(code.code()),
                     balance,
                     storage,
@@ -275,7 +273,7 @@ impl StateTest {
             to,
             gas_limit,
             gas_price: U256::one(),
-            nonce: U256::zero(),
+            nonce: 0,
             value,
             data: data.into(),
             pre,

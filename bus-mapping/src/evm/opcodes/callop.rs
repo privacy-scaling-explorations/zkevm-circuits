@@ -742,7 +742,8 @@ mod tests {
                 assert_eq!(
                     *stack_value,
                     step.stack.nth_last(offset).expect("stack value not found"),
-                    "stack output mismatch"
+                    "stack output mismatch {}",
+                    test_call.name
                 );
             }
         }

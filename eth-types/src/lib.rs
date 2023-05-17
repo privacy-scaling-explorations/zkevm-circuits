@@ -1,8 +1,6 @@
 //! Ethereum and Evm types used to deserialize responses from web3 / geth.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-// Temporary until we have more of the crate implemented.
-#![allow(dead_code)]
 // We want to have UPPERCASE idents sometimes.
 #![allow(non_snake_case)]
 // Catch documentation errors caused by code changes.
@@ -243,6 +241,12 @@ impl ToWord for i32 {
     }
 }
 
+impl ToWord for U64 {
+    fn to_word(&self) -> Word {
+        self.as_u64().into()
+    }
+}
+
 impl ToWord for Word {
     fn to_word(&self) -> Word {
         *self
@@ -298,7 +302,7 @@ pub struct EIP1186ProofResponse {
     /// The hash of the code of the account
     pub code_hash: H256,
     /// The nonce of the account
-    pub nonce: U256,
+    pub nonce: U64,
     /// SHA3 of the StorageRoot
     pub storage_hash: H256,
     /// Array of rlp-serialized MerkleTree-Nodes
