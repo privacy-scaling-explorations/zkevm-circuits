@@ -18,7 +18,8 @@ impl<const IS_CREATE2: bool> Opcode for DummyCreate<IS_CREATE2> {
         // TODO: replace dummy create here
         let geth_step = &geth_steps[0];
 
-        // Get low Uint64 of offset.
+        // Get low Uint64 of offset to generate copy steps. Since offset could
+        // be Uint64 overflow if length is zero.
         let offset = geth_step.stack.nth_last(1)?.low_u64() as usize;
         let length = geth_step.stack.nth_last(2)?.as_usize();
 

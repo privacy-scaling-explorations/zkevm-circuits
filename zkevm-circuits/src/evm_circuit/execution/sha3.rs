@@ -158,6 +158,7 @@ impl<F: Field> ExecutionGadget<F> for Sha3Gadget<F> {
 mod tests {
     use crate::test_util::CircuitTestBuilder;
     use bus_mapping::{circuit_input_builder::CircuitsParams, evm::Sha3CodeGen};
+    use eth_types::{bytecode, U256};
     use mock::TestContext;
 
     fn test_ok(mut gen: Sha3CodeGen) {
@@ -197,7 +198,7 @@ mod tests {
     fn sha3_gadget_overflow_offset_and_zero_size() {
         let bytecode = bytecode! {
             PUSH1(0)
-            PUSH32(Word::MAX)
+            PUSH32(U256::MAX)
             SHA3
         };
 

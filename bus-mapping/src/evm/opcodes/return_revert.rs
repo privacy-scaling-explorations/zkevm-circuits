@@ -40,7 +40,8 @@ impl Opcode for ReturnRevert {
             call.is_success.to_word(),
         );
 
-        // Get low Uint64 of offset.
+        // Get low Uint64 of offset to generate copy steps. Since offset could
+        // be Uint64 overflow if length is zero.
         let offset = offset.low_u64() as usize;
         let length = length.as_usize();
 
