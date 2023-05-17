@@ -50,7 +50,7 @@ pub(crate) use exp_table::ExpTable;
 pub(crate) use keccak_table::KeccakTable;
 
 pub(crate) use mpt_table::{MPTProofType, MptTable};
-pub(crate) use rw_table::{RwTable, RwTableTag};
+pub(crate) use rw_table::RwTable;
 pub(crate) use tx_table::{
     TxContextFieldTag, TxFieldTag, TxLogFieldTag, TxReceiptFieldTag, TxTable,
 };

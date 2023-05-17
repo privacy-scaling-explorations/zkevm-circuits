@@ -6,14 +6,6 @@ use crate::{
     witness::Block,
 };
 use bus_mapping::circuit_input_builder::ExpEvent;
-// use eth_types::{Field, ToScalar, U256};
-// use gadgets::util::{split_u256, split_u256_limb64};
-// use halo2_proofs::{
-//     circuit::{Layouter, Region, Value},
-//     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
-//     poly::Rotation,
-// };
-// use itertools::Itertools;
 
 /// Lookup table within the Exponentiation circuit.
 #[derive(Clone, Copy, Debug)]
