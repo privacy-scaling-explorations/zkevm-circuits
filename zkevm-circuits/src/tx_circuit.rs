@@ -312,7 +312,7 @@ impl<F: Field> SubCircuit<F> for TxCircuit<F> {
             block.circuits_params.max_txs,
             block.circuits_params.max_calldata,
             block.context.chain_id.as_u64(),
-            block.txs,
+            block.txs.iter().map(|tx| tx.tx.clone()).collect_vec(),
         )
     }
 

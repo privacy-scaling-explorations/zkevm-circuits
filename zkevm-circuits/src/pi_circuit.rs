@@ -14,6 +14,7 @@ use eth_types::{
     Address, BigEndianHash, Field, Keccak, ToBigEndian, ToLittleEndian, ToScalar, Word, H256,
 };
 use halo2_proofs::plonk::{Instance, SecondPhase};
+use itertools::Itertools;
 use param::*;
 use std::marker::PhantomData;
 
@@ -81,7 +82,7 @@ pub struct PublicData {
     /// where the latest one is at history_hashes[history_hashes.len() - 1].
     pub history_hashes: Vec<Word>,
     /// Block Transactions
-    pub transactions: Vec<Transaction>,
+    transactions: Vec<Transaction>,
     /// Block State Root
     pub state_root: H256,
     /// Previous block root
@@ -164,8 +165,9 @@ impl PublicData {
         }
     }
 
-    fn txs(&self) -> Vec<Transaction> {
-        self.transactions
+    /// Get txs
+    pub fn txs(&self) -> Vec<Transaction> {
+        self.transactions.clone()
     }
 }
 
@@ -1148,8 +1150,8 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let public_data = PublicData {
             chain_id: block.context.chain_id,
             history_hashes: block.context.history_hashes.clone(),
-            transactions: block.txs.clone(),
-            state_root: block.state_root.into(),
+            transactions: block.txs.iter().map(|tx| tx.tx.clone()).collect_vec(),
+            state_root: H256::from_uint(&block.state_root),
             prev_state_root: H256::from_uint(&block.prev_state_root),
             block_constants: BlockConstants {
                 coinbase: block.context.coinbase,

@@ -11,6 +11,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use itertools::Itertools;
 use log::error;
 
 impl<F: Field> Circuit<F> for TxCircuit<F> {
