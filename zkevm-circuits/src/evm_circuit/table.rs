@@ -1,4 +1,3 @@
-pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
