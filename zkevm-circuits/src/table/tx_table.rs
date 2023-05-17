@@ -155,10 +155,7 @@ impl TxTable {
                 let mut calldata_assignments: Vec<[Value<F>; 4]> = Vec::new();
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs: Vec<_> = (txs.len()..max_txs)
-                    .map(|i| Transaction {
-                        id: Some(i as u64 + 1),
-                        ..Default::default()
-                    })
+                    .map(|i| Transaction::padding_tx(i + 1))
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
                     let tx_id = Value::known(F::from(tx.id()));

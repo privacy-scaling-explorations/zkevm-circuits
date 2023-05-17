@@ -312,4 +312,12 @@ impl Transaction {
     pub fn gas(&self) -> u64 {
         self.tx.gas_limit.as_u64()
     }
+
+    /// Constructor for padding tx in tx circuit
+    pub fn padding_tx(id: usize) -> Self {
+        Self {
+            id: Some(id as u64),
+            ..Default::default()
+        }
+    }
 }
