@@ -572,9 +572,6 @@ mod tests {
                     }
                 }
 
-                println!("-----????-------");
-                println!("{:?}", nodes);
-
                 let circuit = MPTCircuit::<Fr> {
                     nodes,
                     keccak_data,
