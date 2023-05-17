@@ -1,16 +1,11 @@
 use std::marker::PhantomData;
 
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, math_gadget::*, transpose_val_ret, CachedRegion,
-    },
+    evm_circuit::util::{constraint_builder::EVMConstraintBuilder, math_gadget::*, CachedRegion},
     util::word::{Word, WordExpr},
 };
 use eth_types::Field;
-use halo2_proofs::{
-    circuit::Value,
-    plonk::{Error, Expression},
-};
+use halo2_proofs::plonk::{Error, Expression};
 /// Returns `rhs` when `lhs < rhs`, and returns `lhs` otherwise.
 /// lhs and rhs `< 256**N_BYTES`
 /// `N_BYTES` is required to be `<= MAX_N_BYTES_INTEGER`.
@@ -48,28 +43,11 @@ impl<F: Field, T: WordExpr<F> + Clone> MinMaxWordGadget<F, T> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        lhs: Word<F>,
-        rhs: Word<F>,
-    ) -> Result<(F, F), Error> {
-        let (lt, _) = self.lt.assign(region, offset, lhs, rhs)?;
-        Ok(if lt.is_zero_vartime() {
-            (rhs, lhs)
-        } else {
-            (lhs, rhs)
-        })
-    }
-
-    pub(crate) fn assign_value(
-        &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        lhs: Value<F>,
-        rhs: Value<F>,
-    ) -> Result<Value<(F, F)>, Error> {
-        transpose_val_ret(
-            lhs.zip(rhs)
-                .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
-        )
+        lhs: eth_types::Word,
+        rhs: eth_types::Word,
+    ) -> Result<(), Error> {
+        self.lt.assign(region, offset, lhs, rhs)?;
+        Ok(())
     }
 }
 

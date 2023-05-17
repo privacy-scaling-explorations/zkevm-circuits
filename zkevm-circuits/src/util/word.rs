@@ -53,6 +53,13 @@ pub(crate) trait WordExpr<F> {
 }
 
 impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
+    // N1 is number of bytes to assign, while N is number of limbs.
+    // N1 % N = 0 (also implies N1 >= N)
+    // If N1 > N, then N1 will be chunk into N1 / N size then aggregate to single expression
+    // then assign to N limbs respectively.
+    // e.g. N1 = 4 bytes, [b1, b2, b3, b4], and N = 2 limbs [l1, l2]
+    // It equivalent `l1.assign(b1.expr() + b2.expr * F(256))`, `l2.assign(b3.expr() + b4.expr *
+    // F(256))`
     pub fn assign<const N1: usize>(
         &self,
         region: &mut CachedRegion<'_, '_, F>,
@@ -68,6 +75,56 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
                 .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
                 .collect()
         })
+    }
+
+    // N_LO, N_HI are number of bytes to assign to first half and second half of size N limbs,
+    // respectively N_LO and N_HI can be different size, the only requirement is N_LO % (N/2)
+    // and N_HI % (N/2) [N/2] limbs will be assigned separately.
+    // E.g. N_LO = 4 => [nl1, nl2, nl3, nl4]
+    // N_HI = 2 => [nh1, nh2]
+    // N = 2 => [l1, l2]
+    // it equivalent l1.assign(nl1.expr() + nl2.expr() * 256 + nl3.expr() * 256^2 +  nl3.expr() *
+    // 256^3) and l2.assign(nh1.expr() + nh2.expr() * 256)
+    pub fn assign_lo_hi<const N_LO: usize, const N_HI: usize>(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        bytes_lo: Option<[u8; N_LO]>,
+        bytes_hi: Option<[u8; N_HI]>,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        assert_eq!(N % 2, 0); // TODO use static_assertion instead
+        assert_eq!(N_LO % (N / 2), 0);
+        assert_eq!(N_HI % (N / 2), 0);
+        // assign lo
+        let bytes_lo_assigned: Result<Vec<AssignedCell<F, F>>, Error> =
+            bytes_lo.map_or(Err(Error::Synthesis), |bytes| {
+                bytes
+                    .chunks(N_LO / (N / 2)) // chunk in little endian
+                    .map(|chunk| from_bytes::value(chunk))
+                    .zip(self.limbs[0..(N / 2)].iter())
+                    .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
+                    .collect()
+            });
+
+        // assign hi
+        let bytes_hi_assigned: Result<Vec<AssignedCell<F, F>>, Error> =
+            bytes_hi.map_or(Err(Error::Synthesis), |bytes| {
+                bytes
+                    .chunks(N_HI / (N / 2)) // chunk in little endian
+                    .map(|chunk| from_bytes::value(chunk))
+                    .zip(self.limbs[N / 2..].iter())
+                    .map(|(value, cell)| cell.assign(region, offset, Value::known(value)))
+                    .collect()
+            });
+
+        match (bytes_lo_assigned, bytes_hi_assigned) {
+            (Ok(bytes_lo_assignedcells), Ok(bytes_hi_assignedcells)) => Ok([
+                bytes_lo_assignedcells.to_vec(),
+                bytes_hi_assignedcells.to_vec(),
+            ]
+            .concat()),
+            _ => Err(Error::Synthesis),
+        }
     }
 
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
