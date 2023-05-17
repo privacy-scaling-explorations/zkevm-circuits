@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 pub use super::{dev::*, *};
 use crate::{
-    table::{AccountFieldTag, CallContextFieldTag, RwTableTag, TxLogFieldTag, TxReceiptFieldTag},
+    table::{AccountFieldTag, CallContextFieldTag, TxLogFieldTag, TxReceiptFieldTag},
     util::{unusable_rows, SubCircuit},
     witness::{MptUpdates, Rw, RwMap},
 };
@@ -824,7 +824,7 @@ fn invalid_stack_address_change() {
 #[test]
 fn invalid_tags() {
     let first_row_offset = -isize::try_from(N_ROWS).unwrap();
-    let tags: BTreeSet<usize> = RwTableTag::iter().map(|x| x as usize).collect();
+    let tags: BTreeSet<usize> = Target::iter().map(|x| x as usize).collect();
     for i in 0..16 {
         if tags.contains(&i) {
             continue;

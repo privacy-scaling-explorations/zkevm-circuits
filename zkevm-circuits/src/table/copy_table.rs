@@ -1,22 +1,5 @@
 use super::*;
 
-// use crate::{
-//     table::LookupTable,
-//     witness::Block,
-// };
-// use bus_mapping::circuit_input_builder::ExpEvent;
-// use eth_types::{Field, ToScalar, U256};
-// use halo2_proofs::{
-//     circuit::{Layouter, Region, Value},
-//     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
-//     poly::Rotation,
-// };
-// use itertools::Itertools;
-// use gadgets::{
-//     binary_number::{BinaryNumberChip, BinaryNumberConfig},
-//     util::{split_u256, split_u256_limb64},
-// };
-
 type CopyTableRow<F> = [(Value<F>, &'static str); 8];
 type CopyCircuitRow<F> = [(Value<F>, &'static str); 4];
 
