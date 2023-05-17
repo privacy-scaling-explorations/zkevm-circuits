@@ -247,7 +247,7 @@ impl<F: Field> ExecutionGadget<F> for LogGadget<F> {
         self.is_persistent
             .assign(region, offset, Value::known(F::from(is_persistent)))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id())))?;
         // rw_counter increase from copy table lookup is `msize` memory reads + `msize`
         // log writes when `is_persistent` is true.
         self.copy_rwc_inc.assign(

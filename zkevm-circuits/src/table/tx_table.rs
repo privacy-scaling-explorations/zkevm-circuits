@@ -99,7 +99,7 @@ impl TxTable {
             txs.len(),
             max_txs
         );
-        let sum_txs_calldata = txs.iter().map(|tx| tx.call_data.len()).sum();
+        let sum_txs_calldata = txs.iter().map(|tx| tx.tx.call_data.len()).sum();
         assert!(
             sum_txs_calldata <= max_calldata,
             "sum_txs_calldata <= max_calldata: sum_txs_calldata={}, max_calldata={}",
@@ -156,12 +156,75 @@ impl TxTable {
                 // Assign Tx data (all tx fields except for calldata)
                 let padding_txs: Vec<_> = (txs.len()..max_txs)
                     .map(|i| Transaction {
-                        id: i + 1,
+                        id: Some(i as u64 + 1),
                         ..Default::default()
                     })
                     .collect();
                 for tx in txs.iter().chain(padding_txs.iter()) {
-                    let [tx_data, tx_calldata] = tx.table_assignments(*challenges);
+                    let tx_id = Value::known(F::from(tx.id()));
+                    let tx_data = vec![
+                        (
+                            TxContextFieldTag::Nonce,
+                            Value::known(F::from(tx.tx.nonce.as_u64())),
+                        ),
+                        (TxContextFieldTag::Gas, Value::known(F::from(tx.gas()))),
+                        (
+                            TxContextFieldTag::GasPrice,
+                            challenges.evm_word().map(|challenge| {
+                                rlc::value(&tx.tx.gas_price.to_le_bytes(), challenge)
+                            }),
+                        ),
+                        (
+                            TxContextFieldTag::CallerAddress,
+                            Value::known(tx.tx.from.to_scalar().unwrap()),
+                        ),
+                        (
+                            TxContextFieldTag::CalleeAddress,
+                            Value::known(tx.tx.to_or_contract_addr().to_scalar().unwrap()),
+                        ),
+                        (
+                            TxContextFieldTag::IsCreate,
+                            Value::known(F::from(tx.tx.is_create().into())),
+                        ),
+                        (
+                            TxContextFieldTag::Value,
+                            challenges
+                                .evm_word()
+                                .map(|challenge| rlc::value(&tx.tx.value.to_le_bytes(), challenge)),
+                        ),
+                        (
+                            TxContextFieldTag::CallDataLength,
+                            Value::known(F::from(tx.tx.call_data.len() as u64)),
+                        ),
+                        (
+                            TxContextFieldTag::CallDataGasCost,
+                            Value::known(F::from(tx.tx.call_data_gas_cost())),
+                        ),
+                    ]
+                    .iter()
+                    .map(|&(tag, value)| {
+                        [
+                            tx_id,
+                            Value::known(F::from(tag as u64)),
+                            Value::known(F::ZERO),
+                            value,
+                        ]
+                    })
+                    .collect_vec();
+                    let tx_calldata = tx
+                        .tx
+                        .call_data
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, byte)| {
+                            [
+                                tx_id,
+                                Value::known(F::from(TxContextFieldTag::CallData as u64)),
+                                Value::known(F::from(idx as u64)),
+                                Value::known(F::from(*byte as u64)),
+                            ]
+                        })
+                        .collect_vec();
                     for row in tx_data {
                         assign_row(&mut region, offset, &advice_columns, &self.tag, &row, "")?;
                         offset += 1;

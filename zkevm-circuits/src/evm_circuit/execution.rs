@@ -902,7 +902,7 @@ impl<F: Field> ExecutionConfig<F> {
                 let last_call = block
                     .txs
                     .last()
-                    .map(|tx| tx.calls[0].clone())
+                    .map(|tx| tx.calls()[0].clone())
                     .unwrap_or_else(Call::default);
                 let end_block_not_last = &block.end_block_not_last;
                 let end_block_last = &block.end_block_last;
@@ -911,9 +911,9 @@ impl<F: Field> ExecutionConfig<F> {
                     .txs
                     .iter()
                     .flat_map(|tx| {
-                        tx.steps
+                        tx.steps()
                             .iter()
-                            .map(move |step| (tx, &tx.calls[step.call_index], step))
+                            .map(move |step| (tx, &tx.calls()[step.call_index], step))
                     })
                     .chain(std::iter::once((&dummy_tx, &last_call, end_block_not_last)))
                     .peekable();

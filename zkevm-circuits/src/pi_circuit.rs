@@ -1180,7 +1180,7 @@ impl<F: Field> SubCircuit<F> for PiCircuit<F> {
         let row_num = |tx_num, calldata_len| {
             BLOCK_LEN + 1 + EXTRA_LEN + 3 * (TX_LEN * tx_num + 1) + calldata_len
         };
-        let calldata_len = block.txs.iter().map(|tx| tx.call_data.len()).sum();
+        let calldata_len = block.txs.iter().map(|tx| tx.tx.call_data.len()).sum();
         (
             row_num(block.txs.len(), calldata_len),
             row_num(

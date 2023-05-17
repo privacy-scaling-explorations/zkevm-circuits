@@ -183,7 +183,7 @@ impl<F: Field> ExecutionGadget<F> for ErrorOOGMemoryCopyGadget<F> {
         self.is_warm
             .assign(region, offset, Value::known(F::from(u64::from(is_warm))))?;
         self.tx_id
-            .assign(region, offset, Value::known(F::from(transaction.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(transaction.id())))?;
         self.external_address
             .assign(region, offset, Some(external_address.to_le_bytes()))?;
         self.src_offset

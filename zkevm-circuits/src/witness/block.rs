@@ -12,8 +12,9 @@ use bus_mapping::{
 };
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
+use itertools::Itertools;
 
-use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
+use super::{Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -93,7 +94,7 @@ impl<F: Field> Block<F> {
             self.copy_events.iter().map(|c| c.bytes.len() * 2).sum();
         let num_rows_required_for_keccak_table: usize = self.keccak_inputs.len();
         let num_rows_required_for_tx_table: usize =
-            self.txs.iter().map(|tx| 9 + tx.call_data.len()).sum();
+            self.txs.iter().map(|tx| 9 + tx.tx.call_data.len()).sum();
         let num_rows_required_for_exp_table: usize = self
             .exp_events
             .iter()
@@ -245,8 +246,8 @@ pub fn block_convert<F: Field>(
             .txs()
             .iter()
             .enumerate()
-            .map(|(idx, tx)| tx_convert(tx, idx + 1))
-            .collect(),
+            .map(move |(idx, tx)| tx.clone().set_id(idx as u64 + 1).clone())
+            .collect_vec(),
         end_block_not_last: block.block_steps.end_block_not_last.clone(),
         end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db

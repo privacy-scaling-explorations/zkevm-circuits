@@ -183,7 +183,11 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
         let memory_address = self
             .memory_address
             .assign(region, offset, memory_offset, length)?;
-        let src_id = if call.is_root { tx.id } else { call.caller_id };
+        let src_id = if call.is_root {
+            tx.id()
+        } else {
+            call.caller_id as u64
+        };
         self.src_id.assign(
             region,
             offset,
@@ -192,7 +196,7 @@ impl<F: Field> ExecutionGadget<F> for CallDataCopyGadget<F> {
 
         // Call data length and call data offset
         let (call_data_length, call_data_offset) = if call.is_root {
-            (tx.call_data_length as u64, 0_u64)
+            (tx.tx.call_data.len() as u64, 0_u64)
         } else {
             (call.call_data_length, call.call_data_offset)
         };

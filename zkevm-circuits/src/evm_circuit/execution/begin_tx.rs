@@ -24,8 +24,8 @@ use crate::{
     },
     util::Expr,
 };
-use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar};
-use ethers_core::utils::{get_contract_address, keccak256};
+use eth_types::{evm_types::GasCost, Field, ToLittleEndian, ToScalar, ToWord};
+use ethers_core::utils::keccak256;
 use gadgets::util::expr_from_bytes;
 use halo2_proofs::{circuit::Value, plonk::Error};
 
@@ -466,7 +466,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_fee = tx.gas_price * tx.gas;
+        let gas_fee = tx.tx.gas_price * tx.gas();
         let zero = eth_types::Word::zero();
 
         let mut rws = StepRws::new(block, step);
@@ -474,39 +474,41 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
 
         let is_coinbase_warm = rws.next().tx_access_list_value_pair().1;
         let mut callee_code_hash = zero;
-        if !is_precompiled(&tx.callee_address) && !tx.is_create {
+        if !is_precompiled(&tx.tx.to_or_contract_addr()) && !tx.is_create() {
             callee_code_hash = rws.next().account_value_pair().1;
         }
-        let callee_exists =
-            is_precompiled(&tx.callee_address) || (!tx.is_create && !callee_code_hash.is_zero());
+        let callee_exists = is_precompiled(&tx.tx.to_or_contract_addr())
+            || (!tx.is_create() && !callee_code_hash.is_zero());
         let caller_balance_sub_fee_pair = rws.next().account_value_pair();
-        let must_create = tx.is_create;
-        if (!callee_exists && !tx.value.is_zero()) || must_create {
+        let must_create = tx.is_create();
+        if (!callee_exists && !tx.tx.value.is_zero()) || must_create {
             callee_code_hash = rws.next().account_value_pair().1;
         }
         let mut caller_balance_sub_value_pair = (zero, zero);
         let mut callee_balance_pair = (zero, zero);
-        if !tx.value.is_zero() {
+        if !tx.tx.value.is_zero() {
             caller_balance_sub_value_pair = rws.next().account_value_pair();
             callee_balance_pair = rws.next().account_value_pair();
         };
 
         self.tx_id
-            .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.id())))?;
         self.tx_nonce
-            .assign(region, offset, Value::known(F::from(tx.nonce)))?;
+            .assign(region, offset, Value::known(F::from(tx.tx.nonce.as_u64())))?;
         self.tx_gas
-            .assign(region, offset, Value::known(F::from(tx.gas)))?;
+            .assign(region, offset, Value::known(F::from(tx.gas())))?;
         self.tx_gas_price
-            .assign(region, offset, Some(tx.gas_price.to_le_bytes()))?;
+            .assign(region, offset, Some(tx.tx.gas_price.to_le_bytes()))?;
         self.mul_gas_fee_by_gas
-            .assign(region, offset, tx.gas_price, tx.gas, gas_fee)?;
+            .assign(region, offset, tx.tx.gas_price, tx.gas(), gas_fee)?;
         let caller_address = tx
-            .caller_address
+            .tx
+            .from
             .to_scalar()
             .expect("unexpected Address -> Scalar conversion failure");
         let callee_address = tx
-            .callee_address
+            .tx
+            .to_or_contract_addr()
             .to_scalar()
             .expect("unexpected Address -> Scalar conversion failure");
         self.tx_caller_address
@@ -519,13 +521,10 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             region,
             offset,
             Value::known(
-                if tx.is_create {
-                    get_contract_address(tx.caller_address, tx.nonce)
-                } else {
-                    tx.callee_address
-                }
-                .to_scalar()
-                .expect("unexpected Address -> Scalar conversion failure"),
+                tx.tx
+                    .to_or_contract_addr()
+                    .to_scalar()
+                    .expect("unexpected Address -> Scalar conversion failure"),
             ),
         )?;
         self.is_caller_callee_equal.assign(
@@ -534,16 +533,16 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             Value::known(F::from((caller_address == callee_address) as u64)),
         )?;
         self.tx_is_create
-            .assign(region, offset, Value::known(F::from(tx.is_create as u64)))?;
+            .assign(region, offset, Value::known(F::from(tx.is_create().into())))?;
         self.tx_call_data_length.assign(
             region,
             offset,
-            Value::known(F::from(tx.call_data_length as u64)),
+            Value::known(F::from(tx.tx.call_data.len() as u64)),
         )?;
         self.tx_call_data_gas_cost.assign(
             region,
             offset,
-            Value::known(F::from(tx.call_data_gas_cost)),
+            Value::known(F::from(tx.tx.call_data_gas_cost())),
         )?;
         self.tx_call_data_word_length
             .assign(region, offset, tx.call_data_length as u128 + 31)?;
@@ -554,14 +553,14 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.is_persistent,
         )?;
         self.sufficient_gas_left
-            .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
+            .assign(region, offset, F::from(tx.gas() - step.gas_cost))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
             caller_balance_sub_fee_pair,
             caller_balance_sub_value_pair,
             callee_balance_pair,
-            tx.value,
+            tx.tx.value,
             gas_fee,
         )?;
         self.phase2_code_hash
@@ -578,8 +577,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let untrimmed_contract_addr = {
             let mut stream = ethers_core::utils::rlp::RlpStream::new();
             stream.begin_list(2);
-            stream.append(&tx.caller_address);
-            stream.append(&eth_types::U256::from(tx.nonce));
+            stream.append(&tx.tx.from);
+            stream.append(&tx.tx.nonce.to_word());
             let rlp_encoding = stream.out().to_vec();
             keccak256(&rlp_encoding)
         };
@@ -594,8 +593,8 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         self.create.assign(
             region,
             offset,
-            tx.caller_address,
-            tx.nonce,
+            tx.tx.from,
+            tx.tx.nonce.as_u64(),
             Some(callee_code_hash),
             None,
         )?;

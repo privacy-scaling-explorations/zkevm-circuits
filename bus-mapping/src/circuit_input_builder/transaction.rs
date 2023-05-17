@@ -179,6 +179,7 @@ impl TransactionContext {
 #[derive(Debug, Clone, Default)]
 /// Result of the parsing of an Ethereum Transaction.
 pub struct Transaction {
+    id: Option<u64>,
     /// The raw transaction fields
     pub tx: geth_types::Transaction,
     /// Calls made in the transaction
@@ -244,10 +245,22 @@ impl Transaction {
         };
 
         Ok(Self {
+            id: None,
             tx: eth_tx.into(),
             calls: vec![call],
             steps: Vec::new(),
         })
+    }
+
+    /// Set the tx id for this transaction
+    pub fn set_id(&mut self, id: u64) -> &Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Force get id
+    pub fn id(&self) -> u64 {
+        self.id.expect("We have id already")
     }
 
     /// Whether this [`Transaction`] is a create one
