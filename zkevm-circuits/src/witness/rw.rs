@@ -257,11 +257,11 @@ pub struct RwRow<F> {
     pub(crate) value: word::Word<F>,
     pub(crate) value_prev: word::Word<F>,
     pub(crate) aux1: F,
-    pub(crate) aux2: F,
+    pub(crate) aux2: word::Word<F>,
 }
 
 impl<F: Field> RwRow<F> {
-    pub(crate) fn values(&self) -> [F; 14] {
+    pub(crate) fn values(&self) -> [F; 15] {
         [
             self.rw_counter,
             self.is_write,
@@ -276,7 +276,8 @@ impl<F: Field> RwRow<F> {
             self.value_prev.lo().clone(),
             self.value_prev.hi().clone(),
             self.aux1,
-            self.aux2,
+            self.aux2.lo().clone(),
+            self.aux2.hi().clone(),
         ]
     }
     pub(crate) fn rlc(&self, randomness: F) -> F {

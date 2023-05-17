@@ -40,7 +40,7 @@ impl<F: Field> ModGadget<F> {
         let a_or_is_zero = IsZeroWordGadget::construct(cb, a_or_zero.clone());
         let mul_add_words = MulAddWordsGadget::construct(cb, [&k, n, r, &a_or_zero]);
         let eq = IsEqualWordGadget::construct(cb, a.clone(), a_or_zero);
-        let lt = LtWordGadget::construct(cb, r, n);
+        let lt = LtWordGadget::construct(cb, r.clone(), n.clone());
         // Constrain the aux variable a_or_zero to be =a or =0 if n==0:
         // (a == a_or_zero) ^ (n == 0 & a_or_zero == 0)
         cb.add_constraint(

@@ -622,10 +622,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         let gas_word = cb.query_word32();
         let callee_address_word = cb.query_account_address();
         let value = cb.query_word32();
-        let cd_offset = cb.query_word32();
-        let cd_length = cb.query_word32();
-        let rd_offset = cb.query_word32();
-        let rd_length = cb.query_word32();
+        let cd_offset = cb.query_word_unchecked();
+        let cd_length = cb.query_memory_address();
+        let rd_offset = cb.query_word_unchecked();
+        let rd_length = cb.query_memory_address();
         let is_success = cb.query_bool();
 
         // Lookup values from stack

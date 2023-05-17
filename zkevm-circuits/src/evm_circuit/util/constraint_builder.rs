@@ -899,7 +899,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 value_prev,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -923,7 +923,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value.clone(),
                 value,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -948,7 +948,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 value_prev,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -973,7 +973,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value.clone(),
                 value,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -993,7 +993,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value.clone(),
                 value,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1016,7 +1016,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 value_prev,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -1042,7 +1042,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value.clone(),
                 value,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1066,7 +1066,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 value_prev,
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
             reversion_info,
         );
@@ -1080,7 +1080,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         key: Word<Expression<F>>,
         value: Word<Expression<F>>,
         tx_id: Expression<F>,
-        committed_value: Expression<F>,
+        committed_value: Word<Expression<F>>,
     ) {
         self.rw_lookup(
             "account_storage_read",
@@ -1107,7 +1107,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         value: Word<Expression<F>>,
         value_prev: Word<Expression<F>>,
         tx_id: Expression<F>,
-        committed_value: Expression<F>,
+        committed_value: Word<Expression<F>>,
         reversion_info: Option<&mut ReversionInfo<F>>,
     ) {
         self.reversible_write(
@@ -1175,7 +1175,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 Word::zero(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1198,7 +1198,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 Word::zero(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1287,7 +1287,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value,
                 Word::zero(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1314,7 +1314,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 Word::from_lo_unchecked(byte),
                 Word::zero(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1340,7 +1340,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 Word::from_lo_unchecked(value),
                 Word::zero(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1367,7 +1367,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 Word::from_lo_unchecked(value),
                 Word::zero(),
                 0.expr(),
-                0.expr(),
+                Word::zero(),
             ),
         );
     }
@@ -1388,7 +1388,7 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
                 value: Word::zero(),
                 value_prev: Word::zero(),
                 aux1: 0.expr(),
-                aux2: 0.expr(),
+                aux2: Word::zero(),
             },
         );
     }

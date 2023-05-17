@@ -452,7 +452,7 @@ pub struct RwTable {
     /// Aux1
     pub aux1: Column<Advice>,
     /// Aux2 (Committed Value)
-    pub aux2: Column<Advice>,
+    pub aux2: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for RwTable {
@@ -471,7 +471,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             self.value_prev.lo().clone().into(),
             self.value_prev.hi().clone().into(),
             self.aux1.into(),
-            self.aux2.into(),
+            self.aux2.lo().clone().into(),
+            self.aux2.hi().clone().into(),
         ]
     }
 
@@ -490,7 +491,8 @@ impl<F: Field> LookupTable<F> for RwTable {
             String::from("value_prev_lo"),
             String::from("value_prev_hi"),
             String::from("aux1"),
-            String::from("aux2"),
+            String::from("aux2_lo"),
+            String::from("aux2_hi"),
         ]
     }
 }
@@ -510,7 +512,7 @@ impl RwTable {
             // It seems that aux1 for the moment is not using randomness
             // TODO check in a future review
             aux1: meta.advice_column_in(SecondPhase),
-            aux2: meta.advice_column_in(SecondPhase),
+            aux2: word::Word::new([meta.advice_column(), meta.advice_column()]),
         }
     }
     fn assign<F: Field>(

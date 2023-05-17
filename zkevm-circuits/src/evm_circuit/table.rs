@@ -142,8 +142,8 @@ pub struct RwValues<F> {
     pub storage_key: Word<Expression<F>>,
     pub value: Word<Expression<F>>,
     pub value_prev: Word<Expression<F>>,
-    pub aux1: Expression<F>,
-    pub aux2: Expression<F>,
+    pub aux1: Expression<F>,       // for AccountStorage::tx_id
+    pub aux2: Word<Expression<F>>, // for AccountStorage committed value
 }
 
 impl<F: Field> RwValues<F> {
@@ -156,7 +156,7 @@ impl<F: Field> RwValues<F> {
         value: Word<Expression<F>>,
         value_prev: Word<Expression<F>>,
         aux1: Expression<F>,
-        aux2: Expression<F>,
+        aux2: Word<Expression<F>>,
     ) -> Self {
         Self {
             id,
@@ -338,7 +338,8 @@ impl<F: Field> Lookup<F> {
                 values.value_prev.lo().clone(),
                 values.value_prev.hi().clone(),
                 values.aux1.clone(),
-                values.aux2.clone(),
+                values.aux2.lo().clone(),
+                values.aux2.hi().clone(),
             ],
             Self::Bytecode {
                 hash,
