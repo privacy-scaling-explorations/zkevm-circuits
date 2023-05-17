@@ -10,11 +10,11 @@ use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
 };
-use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
+use eth_types::{Address, Field, ToLittleEndian, ToScalar, Transaction, Word};
 use halo2_proofs::circuit::Value;
 use itertools::Itertools;
 
-use super::{Bytecode, ExecStep, Rw, RwMap, Transaction};
+use super::{Bytecode, ExecStep, Rw, RwMap};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -47,11 +47,11 @@ pub struct Block<F> {
     /// Inputs to the SHA3 opcode
     pub sha3_inputs: Vec<Vec<u8>>,
     /// State root of the previous block
+    pub state_root: Word,
+    /// State root of the previous block
     pub prev_state_root: Word, // TODO: Make this H256
     /// Keccak inputs
     pub keccak_inputs: Vec<Vec<u8>>,
-    /// Original Block from geth
-    pub eth_block: eth_types::Block<eth_types::Transaction>,
 }
 
 impl<F: Field> Block<F> {
@@ -263,8 +263,8 @@ pub fn block_convert<F: Field>(
         sha3_inputs: block.sha3_inputs.clone(),
         circuits_params: block.circuits_params,
         exp_circuit_pad_to: <usize>::default(),
+        state_root: block.state_root,
         prev_state_root: block.prev_state_root,
         keccak_inputs: circuit_input_builder::keccak_inputs(block, code_db)?,
-        eth_block: block.eth_block.clone(),
     })
 }
