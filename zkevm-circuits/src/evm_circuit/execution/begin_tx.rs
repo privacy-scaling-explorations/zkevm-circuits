@@ -511,7 +511,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             call.is_persistent,
         )?;
         self.sufficient_gas_left
-            .assign(region, offset, F::from(tx.gas - step.gas_cost))?;
+            .assign(region, offset, F::from(tx.gas - step.gas_cost.0))?;
         self.transfer_with_gas_fee.assign(
             region,
             offset,
@@ -664,7 +664,7 @@ mod test {
         // This test checks that the rw table assignment and evm circuit are consistent
         // in not applying an RLC to account and tx nonces.
         // https://github.com/privacy-scaling-explorations/zkevm-circuits/issues/592
-        let multibyte_nonce = Word::from(700);
+        let multibyte_nonce = 700;
 
         let to = MOCK_ACCOUNTS[0];
         let from = MOCK_ACCOUNTS[1];
@@ -776,12 +776,12 @@ mod test {
                 accs[0]
                     .address(MOCK_ACCOUNTS[0])
                     .balance(eth(20))
-                    .nonce(nonce.into());
+                    .nonce(nonce);
             },
             |mut txs, _accs| {
                 txs[0]
                     .from(MOCK_ACCOUNTS[0])
-                    .nonce(nonce.into())
+                    .nonce(nonce)
                     .gas_price(gwei(2))
                     .gas(Word::from(0x10000))
                     .value(eth(2))

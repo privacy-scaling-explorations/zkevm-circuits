@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-#[cfg(any(feature = "test", test))]
-use crate::evm_circuit::{detect_fixed_table_tags, EvmCircuit};
-#[cfg(feature = "test")]
-use crate::util::SubCircuit;
-
-use crate::{evm_circuit::util::rlc, table::BlockContextFieldTag};
-
+use crate::{
+    evm_circuit::{detect_fixed_table_tags, util::rlc, EvmCircuit},
+    exp_circuit::param::OFFSET_INCREMENT,
+    table::BlockContextFieldTag,
+    util::{log2_ceil, SubCircuit},
+};
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, CopyEvent, ExpEvent},
     Error,
@@ -14,7 +13,7 @@ use bus_mapping::{
 use eth_types::{Address, Field, ToLittleEndian, ToScalar, Word};
 use halo2_proofs::circuit::Value;
 
-use super::{step::step_convert, tx::tx_convert, Bytecode, ExecStep, RwMap, Transaction};
+use super::{tx::tx_convert, Bytecode, ExecStep, Rw, RwMap, Transaction};
 
 // TODO: Remove fields that are duplicated in`eth_block`
 /// Block is the struct used by all circuits, which contains all the needed
@@ -55,28 +54,11 @@ pub struct Block<F> {
 }
 
 impl<F: Field> Block<F> {
-    /// For each tx, for each step, print the rwc at the beginning of the step,
-    /// and all the rw operations of the step.
-    pub(crate) fn debug_print_txs_steps_rw_ops(&self) {
-        for (tx_idx, tx) in self.txs.iter().enumerate() {
-            println!("tx {}", tx_idx);
-            for step in &tx.steps {
-                println!(" step {:?} rwc: {}", step.execution_state, step.rw_counter);
-                for rw_ref in &step.rw_indices {
-                    println!("  - {:?}", self.rws[*rw_ref]);
-                }
-            }
-        }
+    /// Get a read-write record
+    pub(crate) fn get_rws(&self, step: &ExecStep, index: usize) -> Rw {
+        self.rws[step.rw_index(index)]
     }
-}
 
-#[cfg(feature = "test")]
-use crate::exp_circuit::param::OFFSET_INCREMENT;
-#[cfg(feature = "test")]
-use crate::util::log2_ceil;
-
-#[cfg(feature = "test")]
-impl<F: Field> Block<F> {
     /// Obtains the expected Circuit degree needed in order to be able to test
     /// the EvmCircuit with this block without needing to configure the
     /// `ConstraintSystem`.
@@ -251,8 +233,8 @@ pub fn block_convert<F: Field>(
             .enumerate()
             .map(|(idx, tx)| tx_convert(tx, idx + 1))
             .collect(),
-        end_block_not_last: step_convert(&block.block_steps.end_block_not_last),
-        end_block_last: step_convert(&block.block_steps.end_block_last),
+        end_block_not_last: block.block_steps.end_block_not_last.clone(),
+        end_block_last: block.block_steps.end_block_last.clone(),
         bytecodes: code_db
             .0
             .values()

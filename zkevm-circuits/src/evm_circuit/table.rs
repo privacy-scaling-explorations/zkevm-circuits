@@ -1,4 +1,3 @@
-pub use crate::table::TxContextFieldTag;
 use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
@@ -133,7 +132,7 @@ impl FixedTableTag {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
-pub(crate) enum Table {
+pub enum Table {
     Fixed,
     Tx,
     Rw,

@@ -17,11 +17,10 @@ use crate::{
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
-    table::{
-        BlockContextFieldTag, CallContextFieldTag, RwTableTag, TxContextFieldTag, TxReceiptFieldTag,
-    },
+    table::{BlockContextFieldTag, CallContextFieldTag, TxContextFieldTag, TxReceiptFieldTag},
     util::Expr,
 };
+use bus_mapping::operation::Target;
 use eth_types::{evm_types::MAX_REFUND_QUOTIENT_OF_GAS_USED, Field, ToScalar};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use strum::EnumCount;
@@ -202,10 +201,10 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
         call: &Call,
         step: &ExecStep,
     ) -> Result<(), Error> {
-        let gas_used = tx.gas - step.gas_left;
-        let (refund, _) = block.rws[step.rw_indices[2]].tx_refund_value_pair();
+        let gas_used = tx.gas - step.gas_left.0;
+        let (refund, _) = block.get_rws(step, 2).tx_refund_value_pair();
         let [(caller_balance, caller_balance_prev), (coinbase_balance, coinbase_balance_prev)] =
-            [step.rw_indices[3], step.rw_indices[4]].map(|idx| block.rws[idx].account_value_pair());
+            [3, 4].map(|index| block.get_rws(step, index).account_value_pair());
 
         self.tx_id
             .assign(region, offset, Value::known(F::from(tx.id as u64)))?;
@@ -221,12 +220,12 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             F::from(refund),
         )?;
         let effective_refund = refund.min(max_refund as u64);
-        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left);
+        let gas_fee_refund = tx.gas_price * (effective_refund + step.gas_left.0);
         self.mul_gas_price_by_refund.assign(
             region,
             offset,
             tx.gas_price,
-            effective_refund + step.gas_left,
+            effective_refund + step.gas_left.0,
             gas_fee_refund,
         )?;
         self.tx_caller_address.assign(
@@ -284,7 +283,7 @@ impl<F: Field> ExecutionGadget<F> for EndTxGadget<F> {
             // first transaction needs TxReceiptFieldTag::COUNT(3) lookups to tx receipt,
             // while later transactions need 4 (with one extra cumulative gas read) lookups
             let rw = &block.rws[(
-                RwTableTag::TxReceipt,
+                Target::TxReceipt,
                 (tx.id - 2) * (TxReceiptFieldTag::COUNT + 1) + 2,
             )];
             rw.receipt_value()

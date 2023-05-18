@@ -152,7 +152,7 @@ impl<F: Field> ExecutionGadget<F> for CodeCopyGadget<F> {
         // 3. `size` is the number of
         // bytes to be read and written (0s to be copied for out of bounds).
         let [dest_offset, code_offset, size] =
-            [0, 1, 2].map(|i| block.rws[step.rw_indices[i]].stack_value());
+            [0, 1, 2].map(|index| block.get_rws(step, index).stack_value());
 
         let bytecode = block
             .bytecodes

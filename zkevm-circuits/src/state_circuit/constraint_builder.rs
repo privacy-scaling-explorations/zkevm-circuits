@@ -7,9 +7,10 @@ use crate::{
         param::N_BYTES_WORD,
         util::{math_gadget::generate_lagrange_base_polynomial, not},
     },
-    table::{AccountFieldTag, MPTProofType, RwTableTag},
+    table::{AccountFieldTag, MPTProofType},
     util::Expr,
 };
+use bus_mapping::operation::Target;
 use eth_types::Field;
 use gadgets::binary_number::BinaryNumberConfig;
 use halo2_proofs::plonk::Expression;
@@ -101,35 +102,34 @@ impl<F: Field> ConstraintBuilder<F> {
 
     pub fn build(&mut self, q: &Queries<F>) {
         self.build_general_constraints(q);
-        self.condition(q.tag_matches(RwTableTag::Start), |cb| {
+        self.condition(q.tag_matches(Target::Start), |cb| {
             cb.build_start_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Memory), |cb| {
+        self.condition(q.tag_matches(Target::Memory), |cb| {
             cb.build_memory_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Stack), |cb| {
+        self.condition(q.tag_matches(Target::Stack), |cb| {
             cb.build_stack_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::AccountStorage), |cb| {
+        self.condition(q.tag_matches(Target::Storage), |cb| {
             cb.build_account_storage_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::TxAccessListAccount), |cb| {
+        self.condition(q.tag_matches(Target::TxAccessListAccount), |cb| {
             cb.build_tx_access_list_account_constraints(q)
         });
-        self.condition(
-            q.tag_matches(RwTableTag::TxAccessListAccountStorage),
-            |cb| cb.build_tx_access_list_account_storage_constraints(q),
-        );
-        self.condition(q.tag_matches(RwTableTag::TxRefund), |cb| {
+        self.condition(q.tag_matches(Target::TxAccessListAccountStorage), |cb| {
+            cb.build_tx_access_list_account_storage_constraints(q)
+        });
+        self.condition(q.tag_matches(Target::TxRefund), |cb| {
             cb.build_tx_refund_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::Account), |cb| {
+        self.condition(q.tag_matches(Target::Account), |cb| {
             cb.build_account_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::CallContext), |cb| {
+        self.condition(q.tag_matches(Target::CallContext), |cb| {
             cb.build_call_context_constraints(q)
         });
-        self.condition(q.tag_matches(RwTableTag::TxLog), |cb| {
+        self.condition(q.tag_matches(Target::TxLog), |cb| {
             cb.build_tx_log_constraints(q)
         });
     }
@@ -617,8 +617,8 @@ impl<F: Field> Queries<F> {
         self.mpt_proof_type.clone()
     }
 
-    fn tag_matches(&self, tag: RwTableTag) -> Expression<F> {
-        BinaryNumberConfig::<RwTableTag, 4>::value_equals_expr(tag, self.tag_bits.clone())
+    fn tag_matches(&self, tag: Target) -> Expression<F> {
+        BinaryNumberConfig::<Target, 4>::value_equals_expr(tag, self.tag_bits.clone())
     }
 
     fn first_access(&self) -> Expression<F> {

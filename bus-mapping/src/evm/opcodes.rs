@@ -9,8 +9,7 @@ use crate::{
 use core::fmt::Debug;
 use eth_types::{evm_unimplemented, GethExecStep, ToAddress};
 
-#[cfg(any(feature = "test", test))]
-pub use self::sha3::sha3_tests::{gen_sha3_code, MemoryKind};
+pub use self::sha3::Sha3CodeGen;
 
 mod address;
 mod balance;

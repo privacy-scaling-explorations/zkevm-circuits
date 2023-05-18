@@ -23,7 +23,7 @@ lazy_static! {
         vec![MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[0])
-            .nonce(word!("0x103"))
+            .nonce(0x103u64)
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -31,7 +31,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[1])
-            .nonce(word!("0x104"))
+            .nonce(0x104u64)
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -39,7 +39,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[2])
-            .nonce(word!("0x105"))
+            .nonce(0x105u64)
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -47,7 +47,7 @@ lazy_static! {
             MockTransaction::default()
             .from(AddrOrWallet::random(&mut rng))
             .to(MOCK_ACCOUNTS[0])
-            .nonce(word!("0x106"))
+            .nonce(0x106u64)
             .value(word!("0x3e8"))
             .gas_price(word!("0x4d2"))
             .input(Bytes::from(b"hello"))
@@ -119,7 +119,7 @@ impl AddrOrWallet {
 /// any of it's details.
 pub struct MockTransaction {
     pub hash: Option<Hash>,
-    pub nonce: Word,
+    pub nonce: u64,
     pub block_hash: Hash,
     pub block_number: U64,
     pub transaction_index: U64,
@@ -143,7 +143,7 @@ impl Default for MockTransaction {
     fn default() -> Self {
         MockTransaction {
             hash: None,
-            nonce: Word::zero(),
+            nonce: 0,
             block_hash: Hash::zero(),
             block_number: U64::zero(),
             transaction_index: U64::zero(),
@@ -169,7 +169,7 @@ impl From<MockTransaction> for Transaction {
     fn from(mock: MockTransaction) -> Self {
         Transaction {
             hash: mock.hash.unwrap_or_default(),
-            nonce: mock.nonce,
+            nonce: mock.nonce.into(),
             block_hash: Some(mock.block_hash),
             block_number: Some(mock.block_number),
             transaction_index: Some(mock.transaction_index),
@@ -207,7 +207,7 @@ impl MockTransaction {
     }
 
     /// Set nonce field for the MockTransaction.
-    pub fn nonce(&mut self, nonce: Word) -> &mut Self {
+    pub fn nonce(&mut self, nonce: u64) -> &mut Self {
         self.nonce = nonce;
         self
     }

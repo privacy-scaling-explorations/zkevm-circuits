@@ -1,61 +1,17 @@
 use std::cmp::Ordering;
 
-use crate::evm_circuit::step::ExecutionState;
 use bus_mapping::{
     circuit_input_builder::{self, CircuitsParams, ExecState},
     mock::BlockData,
 };
+use cli_table::{
+    format::{Justify, Separator},
+    print_stdout, Table, WithTitle,
+};
 use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, Address, Bytecode, ToWord};
 use mock::{eth, test_ctx::TestContext, MOCK_ACCOUNTS};
 use strum::IntoEnumIterator;
-
-/// Helper type to print formatted tables in MarkDown
-pub(crate) struct DisplayTable<const N: usize> {
-    header: [String; N],
-    rows: Vec<[String; N]>,
-}
-
-impl<const N: usize> DisplayTable<N> {
-    pub(crate) fn new(header: [String; N]) -> Self {
-        Self {
-            header,
-            rows: Vec::new(),
-        }
-    }
-    fn push_row(&mut self, row: [String; N]) {
-        self.rows.push(row)
-    }
-    fn print_row(row: &[String; N], rows_width: &[usize; N]) {
-        for (i, h) in row.iter().enumerate() {
-            if i == 0 {
-                print!("|");
-            }
-            print!(" {:width$} |", h, width = rows_width[i]);
-        }
-        println!();
-    }
-    pub(crate) fn print(&self) {
-        let mut rows_width = [0; N];
-        for row in std::iter::once(&self.header).chain(self.rows.iter()) {
-            for (i, s) in row.iter().enumerate() {
-                if s.len() > rows_width[i] {
-                    rows_width[i] = s.len();
-                }
-            }
-        }
-        Self::print_row(&self.header, &rows_width);
-        for (i, width) in rows_width.iter().enumerate() {
-            if i == 0 {
-                print!("|");
-            }
-            print!(" {:-<width$} |", "", width = width);
-        }
-        println!();
-        for row in &self.rows {
-            Self::print_row(row, &rows_width);
-        }
-    }
-}
+use zkevm_circuits::evm_circuit::step::ExecutionState;
 
 /// Generate the prefix bytecode to trigger a big amount of rw operations
 pub(crate) fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
@@ -106,12 +62,34 @@ pub(crate) fn bytecode_prefix_op_big_rws(opcode: OpcodeId) -> Bytecode {
     }
 }
 
+/// Wrap f64 for both sorting and pretty formatting
+#[derive(PartialEq, PartialOrd)]
+struct PrettyF64(f64);
+
+impl std::fmt::Display for PrettyF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:1.3}", self.0)
+    }
+}
+
+impl From<f64> for PrettyF64 {
+    fn from(value: f64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Table)]
 struct Row {
+    #[table(title = "Execution State")]
     state: ExecutionState,
+    #[table(title = "Opcode")]
     opcode: OpcodeId,
+    #[table(title = "Height", justify = "Justify::Right")]
     height: usize,
+    #[table(title = "Gas Cost", justify = "Justify::Right")]
     gas_cost: u64,
-    height_per_gas: f64,
+    #[table(title = "Height per Gas", justify = "Justify::Right")]
+    height_per_gas: PrettyF64,
 }
 
 /// This function prints to stdout a table with all the implemented states
@@ -161,7 +139,6 @@ pub(crate) fn print_circuit_stats_by_states(
         STOP
     };
 
-    let mut table = DisplayTable::new(["state", "opcode", "h", "g", "h/g"].map(|s| s.into()));
     let mut rows = vec![];
     for state in implemented_states {
         if !fn_filter(state) {
@@ -251,7 +228,7 @@ pub(crate) fn print_circuit_stats_by_states(
                 opcode,
                 height,
                 gas_cost,
-                height_per_gas: height as f64 / gas_cost as f64,
+                height_per_gas: (height as f64 / gas_cost as f64).into(),
             });
         }
     }
@@ -261,16 +238,6 @@ pub(crate) fn print_circuit_stats_by_states(
             .unwrap_or(Ordering::Greater)
     });
 
-    for row in rows.iter() {
-        let row = [
-            format!("{:?}", row.state),
-            format!("{:?}", row.opcode),
-            format!("{}", row.height),
-            format!("{}", row.gas_cost),
-            format!("{:1.3}", row.height_per_gas),
-        ];
-        table.push_row(row);
-    }
-
-    table.print();
+    print_stdout(rows.with_title().separator(Separator::builder().build()))
+        .expect("the table renders");
 }

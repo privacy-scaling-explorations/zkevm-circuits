@@ -7,14 +7,6 @@ use mock::{
     TestContext,
 };
 
-fn might_neg_index(index: isize, len: usize) -> usize {
-    if index < 0 {
-        (len as isize + index) as usize
-    } else {
-        index as usize
-    }
-}
-
 fn assert_expanded(_traces: &[GethExecStep], _before: isize, _after: isize) {
     // FIXME: memory is removed
     // let traces_len = traces.len();

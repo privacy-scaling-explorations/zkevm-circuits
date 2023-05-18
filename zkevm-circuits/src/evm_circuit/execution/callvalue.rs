@@ -71,7 +71,7 @@ impl<F: Field> ExecutionGadget<F> for CallValueGadget<F> {
     ) -> Result<(), Error> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
-        let call_value = block.rws[step.rw_indices[1]].stack_value();
+        let call_value = block.get_rws(step, 1).stack_value();
 
         self.call_value
             .assign(region, offset, region.word_rlc(call_value))?;

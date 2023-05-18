@@ -5,12 +5,15 @@ pub(crate) mod util;
 
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 mod dev;
-#[cfg(any(feature = "test", test))]
+#[cfg(test)]
 mod test;
 #[cfg(any(feature = "test", test, feature = "test-circuits"))]
 pub use dev::CopyCircuit as TestCopyCircuit;
 
-use bus_mapping::circuit_input_builder::{CopyDataType, CopyEvent};
+use bus_mapping::{
+    circuit_input_builder::{CopyDataType, CopyEvent},
+    operation::Target,
+};
 use eth_types::{Field, Word};
 
 use gadgets::{
@@ -29,8 +32,8 @@ use std::{collections::HashMap, marker::PhantomData};
 use crate::{
     evm_circuit::util::constraint_builder::{BaseConstraintBuilder, ConstrainBuilderCommon},
     table::{
-        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, RwTableTag,
-        TxContextFieldTag, TxTable,
+        BytecodeFieldTag, BytecodeTable, CopyTable, LookupTable, RwTable, TxContextFieldTag,
+        TxTable,
     },
     util::{Challenges, SubCircuit, SubCircuitConfig},
     witness,
@@ -327,7 +330,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 not::expr(meta.query_selector(q_step)),
-                RwTableTag::Memory.expr(),
+                Target::Memory.expr(),
                 meta.query_advice(id, Rotation::cur()), // call_id
                 meta.query_advice(addr, Rotation::cur()), // memory address
                 0.expr(),
@@ -349,7 +352,7 @@ impl<F: Field> SubCircuitConfig<F> for CopyCircuitConfig<F> {
             vec![
                 meta.query_advice(rw_counter, Rotation::cur()),
                 1.expr(),
-                RwTableTag::TxLog.expr(),
+                Target::TxLog.expr(),
                 meta.query_advice(id, Rotation::cur()), // tx_id
                 meta.query_advice(addr, Rotation::cur()), // byte_index || field_tag || log_id
                 0.expr(),
@@ -775,47 +778,5 @@ impl<F: Field> SubCircuit<F> for CopyCircuit<F> {
         layouter: &mut impl Layouter<F>,
     ) -> Result<(), Error> {
         config.assign_copy_events(layouter, &self.copy_events, self.max_copy_rows, *challenges)
-    }
-}
-
-#[cfg(test)]
-mod copy_circuit_stats {
-    use crate::{
-        evm_circuit::step::ExecutionState,
-        stats::{bytecode_prefix_op_big_rws, print_circuit_stats_by_states},
-    };
-
-    /// Prints the stats of Copy circuit per execution state.  See
-    /// `print_circuit_stats_by_states` for more details.
-    ///
-    /// Run with:
-    /// `cargo test -p zkevm-circuits --release --all-features
-    /// get_evm_states_stats -- --nocapture --ignored`
-    #[ignore]
-    #[test]
-    fn get_copy_states_stats() {
-        print_circuit_stats_by_states(
-            |state| {
-                // TODO: Enable CREATE/CREATE2 once they are supported
-                matches!(
-                    state,
-                    ExecutionState::RETURNDATACOPY
-                        | ExecutionState::CODECOPY
-                        | ExecutionState::LOG
-                        | ExecutionState::CALLDATACOPY
-                        | ExecutionState::EXTCODECOPY
-                        | ExecutionState::RETURN_REVERT
-                )
-            },
-            bytecode_prefix_op_big_rws,
-            |block, _, _| {
-                assert!(block.copy_events.len() <= 1);
-                block
-                    .copy_events
-                    .iter()
-                    .map(|c| c.bytes.len() * 2)
-                    .sum::<usize>()
-            },
-        );
     }
 }
