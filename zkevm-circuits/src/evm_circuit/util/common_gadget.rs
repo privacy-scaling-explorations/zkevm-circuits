@@ -835,25 +835,16 @@ impl<F: Field> SloadGasGadget<F> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SstoreGasGadget<F> {
-    value: WordCell<F>,
-    value_prev: WordCell<F>,
-    original_value: WordCell<F>,
+pub(crate) struct SstoreGasGadget<F, T> {
     is_warm: Cell<F>,
     gas_cost: Expression<F>,
-    value_eq_prev: IsEqualWordGadget<F, WordCell<F>, WordCell<F>>,
-    original_eq_prev: IsEqualWordGadget<F, WordCell<F>, WordCell<F>>,
-    original_is_zero: IsZeroWordGadget<F, WordCell<F>>,
+    value_eq_prev: IsEqualWordGadget<F, T, T>,
+    original_eq_prev: IsEqualWordGadget<F, T, T>,
+    original_is_zero: IsZeroWordGadget<F, T>,
 }
 
-impl<F: Field> SstoreGasGadget<F> {
-    pub(crate) fn construct(
-        cb: &mut EVMConstraintBuilder<F>,
-        value: WordCell<F>,
-        value_prev: WordCell<F>,
-        original_value: WordCell<F>,
-        is_warm: Cell<F>,
-    ) -> Self {
+impl<F: Field, T: WordExpr<F>> SstoreGasGadget<F, T> {
+    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, is_warm: Cell<F>, value: T, value_prev: T, original_value: T) -> Self {
         let value_eq_prev = IsEqualWordGadget::construct(cb, value, value_prev);
         let original_eq_prev = IsEqualWordGadget::construct(cb, original_value, value_prev);
         let original_is_zero = IsZeroWordGadget::construct(cb, original_value);
@@ -877,9 +868,6 @@ impl<F: Field> SstoreGasGadget<F> {
         );
 
         Self {
-            value,
-            value_prev,
-            original_value,
             is_warm,
             gas_cost,
             value_eq_prev,
@@ -901,12 +889,6 @@ impl<F: Field> SstoreGasGadget<F> {
         original_value: eth_types::Word,
         is_warm: bool,
     ) -> Result<(), Error> {
-        self.value
-            .assign(region, offset, Some(value.to_le_bytes()))?;
-        self.value_prev
-            .assign(region, offset, Some(value_prev.to_le_bytes()))?;
-        self.original_value
-            .assign(region, offset, Some(original_value.to_le_bytes()))?;
         self.is_warm
             .assign(region, offset, Value::known(F::from(is_warm as u64)))?;
         self.value_eq_prev.assign_value(
