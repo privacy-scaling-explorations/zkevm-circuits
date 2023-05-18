@@ -2,14 +2,12 @@ use crate::{
     evm_circuit::step::{ExecutionState, ResponsibleOp},
     impl_expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::PrecompileCalls};
 use eth_types::Field;
 use gadgets::util::Expr;
 use halo2_proofs::plonk::Expression;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
-
-use super::step::Precompiles;
 
 #[derive(Clone, Copy, Debug, EnumIter)]
 pub enum FixedTableTag {
@@ -119,10 +117,13 @@ impl FixedTableTag {
                         ]
                     }),
             ),
-            Self::PrecompileInfo => Box::new(Precompiles::iter().map(move |precompile| {
+            Self::PrecompileInfo => Box::new(PrecompileCalls::iter().map(move |precompile| {
                 [
                     tag,
-                    F::from(precompile.execution_state().as_u64()),
+                    F::from({
+                        let state: ExecutionState = precompile.into();
+                        state.as_u64()
+                    }),
                     F::from(u64::from(precompile)),
                     F::from(precompile.base_gas_cost().0),
                 ]

@@ -10,7 +10,9 @@ use crate::evm_circuit::{
             Transition::{Delta, To},
         },
         math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget},
-        not, or, select, CachedRegion, Cell, Word,
+        not, or,
+        precompile::PrecompileGadget,
+        select, CachedRegion, Cell, Word,
     },
 };
 
@@ -53,6 +55,10 @@ pub(crate) struct CallOpGadget<F> {
     is_depth_ok: LtGadget<F, N_BYTES_U64>,
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
+    // check if the call is a precompile call.
+    callee_address_zero: IsZeroGadget<F>,
+    callee_address_lt: LtGadget<F, 1>,
+    precompile_gadget: PrecompileGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
@@ -171,6 +177,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             );
         });
 
+        // whether the call is to a precompiled contract.
+        // precompile contracts are stored from address 0x01 to 0x09.
+        let callee_address_lt =
+            LtGadget::construct(cb, call_gadget.callee_address_expr(), 10.expr());
+        let callee_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_precompile = and::expr([
+            callee_address_lt.expr(),
+            not::expr(callee_address_zero.expr()),
+        ]);
+
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
         // skip the transfer (this is necessary for non-existing accounts, which
         // will not be crated when value is 0 and so the callee balance lookup
@@ -218,6 +234,18 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // TODO: Handle precompiled
+        let precompile_gadget = cb.condition(is_precompile, |cb| {
+            PrecompileGadget::construct(
+                cb,
+                call_gadget.callee_address_expr(),
+                call_gadget.is_success.expr(),
+                cb.curr.state.call_id.expr(),
+                call_gadget.cd_address.offset(),
+                call_gadget.cd_address.length(),
+                call_gadget.rd_address.offset(),
+                call_gadget.rd_address.length(),
+            )
+        });
 
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
@@ -428,6 +456,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_depth_ok,
             one_64th_gas,
             capped_callee_gas_left,
+            callee_address_zero,
+            callee_address_lt,
+            precompile_gadget,
         }
     }
 

@@ -93,7 +93,6 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
-use precompiles::Identity;
 use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;

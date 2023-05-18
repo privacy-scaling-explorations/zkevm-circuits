@@ -136,7 +136,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 (call.is_persistent as u64).into(),
             ),
         ] {
-            state.call_context_write(&mut exec_step, call.clone().call_id, field, value);
+            state.call_context_write(&mut exec_step, call.call_id, field, value);
         }
 
         let (found, sender_account) = state.sdb.get_account(&call.caller_address);

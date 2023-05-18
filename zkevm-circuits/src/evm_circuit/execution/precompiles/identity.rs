@@ -35,23 +35,10 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
     const NAME: &'static str = "IDENTITY";
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let callee_address = cb.query_cell();
-        cb.call_context_lookup(
-            false.expr(),
-            None,
-            CallContextFieldTag::CalleeAddress,
-            callee_address.expr(),
-        );
-
-        cb.precompile_info_lookup(
-            cb.execution_state().as_u64().expr(),
-            callee_address.expr(),
-            GasCost::PRECOMPILE_IDENTITY_BASE.expr(),
-        );
-
-        let [is_success, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
+        let [is_success, callee_address, caller_id, call_data_offset, call_data_length, return_data_offset, return_data_length] =
             [
                 CallContextFieldTag::IsSuccess,
+                CallContextFieldTag::CalleeAddress,
                 CallContextFieldTag::CallerId,
                 CallContextFieldTag::CallDataOffset,
                 CallContextFieldTag::CallDataLength,
@@ -59,6 +46,12 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
                 CallContextFieldTag::ReturnDataLength,
             ]
             .map(|tag| cb.call_context(None, tag));
+
+        cb.precompile_info_lookup(
+            cb.execution_state().as_u64().expr(),
+            callee_address.expr(),
+            GasCost::PRECOMPILE_IDENTITY_BASE.expr(),
+        );
 
         let copier_gadget = MemoryCopierGasGadget::construct(
             cb,
@@ -126,12 +119,12 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
 
     fn assign_exec_step(
         &self,
-        region: &mut CachedRegion<'_, '_, F>,
-        offset: usize,
-        block: &Block<F>,
-        transaction: &Transaction,
-        call: &Call,
-        step: &ExecStep,
+        _region: &mut CachedRegion<'_, '_, F>,
+        _offset: usize,
+        _block: &Block<F>,
+        _transaction: &Transaction,
+        _call: &Call,
+        _step: &ExecStep,
     ) -> Result<(), Error> {
         unimplemented!()
     }
