@@ -33,6 +33,7 @@ mod mload;
 mod mstore;
 mod number;
 mod origin;
+mod push0;
 mod return_revert;
 mod returndatacopy;
 mod returndatasize;
@@ -91,6 +92,7 @@ use logs::Log;
 use mload::Mload;
 use mstore::Mstore;
 use origin::Origin;
+use push0::Push0;
 use return_revert::ReturnRevert;
 use returndatacopy::Returndatacopy;
 use returndatasize::Returndatasize;
@@ -143,11 +145,12 @@ type FnGenAssociatedOps = fn(
 ) -> Result<Vec<ExecStep>, Error>;
 
 fn fn_gen_associated_ops(opcode_id: &OpcodeId) -> FnGenAssociatedOps {
-    if opcode_id.is_push() {
+    if opcode_id.is_push_with_data() {
         return StackOnlyOpcode::<0, 1>::gen_associated_ops;
     }
 
     match opcode_id {
+        OpcodeId::PUSH0 => Push0::gen_associated_ops,
         OpcodeId::STOP => Stop::gen_associated_ops,
         OpcodeId::ADD => StackOnlyOpcode::<2, 1>::gen_associated_ops,
         OpcodeId::MUL => StackOnlyOpcode::<2, 1>::gen_associated_ops,

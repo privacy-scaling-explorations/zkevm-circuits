@@ -81,7 +81,7 @@ mod test {
             vec![0xf6],
             vec![0xfe],
             // Multiple invalid opcodes
-            vec![0x5c, 0x5e, 0x5f],
+            vec![0x5c, 0x5e],
         ];
     }
 

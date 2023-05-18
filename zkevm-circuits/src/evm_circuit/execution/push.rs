@@ -9,8 +9,8 @@ use crate::{
                 ConstrainBuilderCommon, EVMConstraintBuilder, StepStateTransition,
                 Transition::Delta,
             },
-            math_gadget::LtGadget,
-            sum, CachedRegion, Cell,
+            math_gadget::{IsZeroGadget, LtGadget},
+            select, sum, CachedRegion, Cell,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
@@ -26,6 +26,7 @@ use halo2_proofs::{circuit::Value, plonk::Error};
 #[derive(Clone, Debug)]
 pub(crate) struct PushGadget<F> {
     same_context: SameContextGadget<F>,
+    is_push0: IsZeroGadget<F>,
     value: Word32Cell<F>,
     is_pushed: [Cell<F>; 32],
     is_padding: [Cell<F>; 32],
@@ -40,6 +41,8 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
         let opcode = cb.query_cell();
+        let is_push0 = IsZeroGadget::construct(cb, opcode.expr() - OpcodeId::PUSH0.expr());
+
         let code_length = cb.query_cell();
         let code_length_left = code_length.expr() - cb.curr.state.program_counter.expr() - 1.expr();
 
@@ -141,15 +144,20 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         // `program_counter` needs to be increased by number of bytes pushed + 1
         let step_state_transition = StepStateTransition {
             rw_counter: Delta(1.expr()),
-            program_counter: Delta(opcode.expr() - (OpcodeId::PUSH1.as_u64() - 2).expr()),
+            program_counter: Delta(opcode.expr() - (OpcodeId::PUSH0.as_u64() - 1).expr()),
             stack_pointer: Delta((-1).expr()),
-            gas_left: Delta(-OpcodeId::PUSH1.constant_gas_cost().expr()),
+            gas_left: Delta(select::expr(
+                is_push0.expr(),
+                -OpcodeId::PUSH0.constant_gas_cost().expr(),
+                -OpcodeId::PUSH1.constant_gas_cost().expr(),
+            )),
             ..Default::default()
         };
         let same_context = SameContextGadget::construct(cb, opcode, step_state_transition);
 
         Self {
             same_context,
+            is_push0,
             value,
             is_pushed,
             is_padding,
@@ -170,6 +178,12 @@ impl<F: Field> ExecutionGadget<F> for PushGadget<F> {
         self.same_context.assign_exec_step(region, offset, step)?;
 
         let opcode = step.opcode().unwrap();
+        self.is_push0.assign(
+            region,
+            offset,
+            F::from(opcode.as_u64()) - F::from(OpcodeId::PUSH0.as_u64()),
+        )?;
+
         let num_pushed = opcode.postfix().expect("opcode with postfix");
         let npushed = num_pushed as usize;
 
@@ -242,6 +256,7 @@ mod test {
 
     #[test]
     fn push_gadget_simple() {
+        test_ok(OpcodeId::PUSH0, &[]);
         test_ok(OpcodeId::PUSH1, &[1]);
         test_ok(OpcodeId::PUSH2, &[1, 2]);
         test_ok(OpcodeId::PUSH5, &[1, 2, 3, 4, 5]);
