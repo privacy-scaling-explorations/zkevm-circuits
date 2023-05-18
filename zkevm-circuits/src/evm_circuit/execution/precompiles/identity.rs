@@ -1,6 +1,6 @@
 use bus_mapping::circuit_input_builder::{Call, CopyDataType};
 use eth_types::{evm_types::GasCost, Field};
-use gadgets::util::Expr;
+use gadgets::util::{and, not, Expr};
 use halo2_proofs::plonk::Error;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
         step::ExecutionState,
         util::{
             common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
-            memory_gadget::MemoryCopierGasGadget, CachedRegion, Cell,
+            math_gadget::IsZeroGadget, memory_gadget::MemoryCopierGasGadget, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -25,6 +25,8 @@ pub struct IdentityGadget<F> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
+    call_data_length_zero: IsZeroGadget<F>,
+    return_data_length_zero: IsZeroGadget<F>,
     copier_gadget: MemoryCopierGasGadget<F, { GasCost::PRECOMPILE_IDENTITY_PER_WORD }>,
     restore_context: RestoreContextGadget<F>,
 }
@@ -60,39 +62,53 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         );
         let total_gas_cost = GasCost::PRECOMPILE_IDENTITY_BASE.expr() + copier_gadget.gas_cost();
 
+        let (call_data_length_zero, return_data_length_zero) = (
+            IsZeroGadget::construct(cb, call_data_length.expr()),
+            IsZeroGadget::construct(cb, return_data_length.expr()),
+        );
+
         // copy table lookup to verify the copying of bytes:
         // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
         // - to the current call's memory (`call_data_length` bytes starting at `0`).
-        cb.copy_table_lookup(
-            caller_id.expr(),
-            CopyDataType::Memory.expr(),
-            cb.curr.state.call_id.expr(),
-            CopyDataType::Memory.expr(),
-            call_data_offset.expr(),
-            call_data_offset.expr() + call_data_length.expr(),
-            0.expr(),
-            call_data_length.expr(),
-            0.expr(),
-            0.expr(),
-        );
-
-        // copy table lookup to verify the copying of bytes if the precompile call was successful.
-        // - from precompile call's memory (`return_data_length` bytes starting at `0`)
-        // - to caller's memory (`return_data_length` bytes starting at `return_data_offset`).
-        cb.condition(is_success.expr(), |cb| {
+        cb.condition(not::expr(call_data_length.expr()), |cb| {
             cb.copy_table_lookup(
-                cb.curr.state.call_id.expr(),
-                CopyDataType::Memory.expr(),
                 caller_id.expr(),
                 CopyDataType::Memory.expr(),
+                cb.curr.state.call_id.expr(),
+                CopyDataType::Memory.expr(),
+                call_data_offset.expr(),
+                call_data_offset.expr() + call_data_length.expr(),
                 0.expr(),
-                return_data_length.expr(),
-                return_data_offset.expr(),
-                return_data_length.expr(),
+                call_data_length.expr(),
                 0.expr(),
                 0.expr(),
             );
         });
+
+        // copy table lookup to verify the copying of bytes if the precompile call was successful.
+        // - from precompile call's memory (`return_data_length` bytes starting at `0`)
+        // - to caller's memory (`return_data_length` bytes starting at `return_data_offset`).
+        cb.condition(
+            and::expr([
+                is_success.expr(),
+                not::expr(call_data_length_zero.expr()),
+                not::expr(return_data_length_zero.expr()),
+            ]),
+            |cb| {
+                cb.copy_table_lookup(
+                    cb.curr.state.call_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    caller_id.expr(),
+                    CopyDataType::Memory.expr(),
+                    0.expr(),
+                    return_data_length.expr(),
+                    return_data_offset.expr(),
+                    return_data_length.expr(),
+                    0.expr(),
+                    0.expr(),
+                );
+            },
+        );
 
         let restore_context = RestoreContextGadget::construct(
             cb,
@@ -112,6 +128,8 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
+            call_data_length_zero,
+            return_data_length_zero,
             copier_gadget,
             restore_context,
         }

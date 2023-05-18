@@ -1,8 +1,9 @@
 use super::Opcode;
 use crate::{
     circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
+    evm::opcodes::precompiles::identity::gen_associated_ops as precompile_identity_ops,
     operation::{AccountField, CallContextField, TxAccessListAccountOp},
-    precompile::{execute_precompiled, is_precompiled},
+    precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
 };
@@ -223,7 +224,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             // 1. Call to precompiled.
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
-                let caller_ctx = state.caller_ctx_mut()?;
+                let caller_ctx = state.caller_ctx()?;
                 let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
@@ -239,12 +240,19 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     result.len(),
                     contract_gas_cost
                 );
-                caller_ctx.return_data = result.clone();
+                let precompile_step = match code_address.0[19].into() {
+                    PrecompileCalls::Identity => {
+                        precompile_identity_ops(state, geth_steps[1].clone(), call.clone())?
+                    }
+                    _ => unimplemented!("only precompile identity supported"),
+                };
+                let caller_ctx_mut = state.caller_ctx_mut()?;
+                caller_ctx_mut.return_data = result.clone();
                 let length = min(result.len(), ret_length);
                 if length != 0 {
-                    caller_ctx.memory.extend_at_least(ret_offset + length);
+                    caller_ctx_mut.memory.extend_at_least(ret_offset + length);
                 }
-                caller_ctx.memory.0[ret_offset..ret_offset + length]
+                caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
                     .copy_from_slice(&result[..length]);
                 for (field, value) in [
                     (CallContextField::LastCalleeId, call.call_id.into()),
@@ -270,7 +278,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     );
                 }
                 exec_step.gas_cost = GasCost(real_cost);
-                Ok(vec![exec_step])
+                Ok(vec![exec_step, precompile_step])
             }
             // 2. Call to account with empty code.
             (false, _, true) => {

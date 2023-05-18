@@ -46,6 +46,14 @@ pub enum PrecompileCalls {
     Blake2F = 0x09,
 }
 
+impl From<PrecompileCalls> for Address {
+    fn from(value: PrecompileCalls) -> Self {
+        let mut addr = [0u8; 20];
+        addr[19] = value as u8;
+        Self(addr)
+    }
+}
+
 impl From<PrecompileCalls> for u64 {
     fn from(value: PrecompileCalls) -> Self {
         value as u64
@@ -55,6 +63,23 @@ impl From<PrecompileCalls> for u64 {
 impl From<PrecompileCalls> for usize {
     fn from(value: PrecompileCalls) -> Self {
         value as usize
+    }
+}
+
+impl From<u8> for PrecompileCalls {
+    fn from(value: u8) -> Self {
+        match value {
+            0x01 => Self::ECRecover,
+            0x02 => Self::Sha256,
+            0x03 => Self::Ripemd160,
+            0x04 => Self::Identity,
+            0x05 => Self::Modexp,
+            0x06 => Self::Bn128Add,
+            0x07 => Self::Bn128Mul,
+            0x08 => Self::Bn128Pairing,
+            0x09 => Self::Blake2F,
+            _ => unreachable!("precompile contracts only from 0x01 to 0x09"),
+        }
     }
 }
 
