@@ -225,35 +225,43 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
             (false, true, _) => {
                 assert!(call.is_success, "call to precompile should not fail");
                 let caller_ctx = state.caller_ctx()?;
+                let caller_memory = caller_ctx.memory.0.clone();
                 let code_address = code_address.unwrap();
                 let (result, contract_gas_cost) = execute_precompiled(
                     &code_address,
                     if args_length != 0 {
-                        &caller_ctx.memory.0[args_offset..args_offset + args_length]
+                        &caller_memory[args_offset..args_offset + args_length]
                     } else {
                         &[]
                     },
                     callee_gas_left,
                 );
+
                 log::trace!(
                     "precompile return data len {} gas {}",
                     result.len(),
                     contract_gas_cost
                 );
+
                 let precompile_step = match code_address.0[19].into() {
-                    PrecompileCalls::Identity => {
-                        precompile_identity_ops(state, geth_steps[1].clone(), call.clone())?
-                    }
+                    PrecompileCalls::Identity => precompile_identity_ops(
+                        state,
+                        geth_steps[1].clone(),
+                        call.clone(),
+                        caller_memory.as_slice(),
+                    )?,
                     _ => unimplemented!("only precompile identity supported"),
                 };
+
                 let caller_ctx_mut = state.caller_ctx_mut()?;
                 caller_ctx_mut.return_data = result.clone();
                 let length = min(result.len(), ret_length);
                 if length != 0 {
                     caller_ctx_mut.memory.extend_at_least(ret_offset + length);
+                    caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
+                        .copy_from_slice(&result[..length]);
                 }
-                caller_ctx_mut.memory.0[ret_offset..ret_offset + length]
-                    .copy_from_slice(&result[..length]);
+
                 for (field, value) in [
                     (CallContextField::LastCalleeId, call.call_id.into()),
                     (CallContextField::LastCalleeReturnDataOffset, 0.into()),
