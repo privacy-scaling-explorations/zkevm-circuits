@@ -42,7 +42,6 @@ impl RwMap {
     }
     /// Check value in the same way like StateCircuit
     pub fn check_value(&self) {
-        let mock_rand = Fr::from(0x1000u64);
         let err_msg_first = "first access reads don't change value";
         let err_msg_non_first = "non-first access reads don't change value";
         let rows = self.table_assignments();
@@ -64,19 +63,19 @@ impl RwMap {
                 key(prev_row) != key(row)
             };
             if !row.is_write() {
-                let value = row.value_assignment::<Fr>(mock_rand);
+                let value = row.value_assignment::<Fr>();
                 if is_first {
                     // value == init_value
                     let init_value = updates
                         .get(row)
-                        .map(|u| u.value_assignments(mock_rand).1)
+                        .map(|u| u.value_assignments().1)
                         .unwrap_or_default();
                     if value != init_value {
                         errs.push((idx, err_msg_first, *row, *prev_row));
                     }
                 } else {
                     // value == prev_value
-                    let prev_value = prev_row.value_assignment::<Fr>(mock_rand);
+                    let prev_value = prev_row.value_assignment();
 
                     if value != prev_value {
                         errs.push((idx, err_msg_non_first, *row, *prev_row));
@@ -397,16 +396,14 @@ impl Rw {
             address: self.address().unwrap_or_default().to_scalar().unwrap(),
             field_tag: F::from(self.field_tag().unwrap_or_default()),
             storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
-            value: self.value_assignment(randomness),
-            value_prev: self.value_prev_assignment(randomness).unwrap_or_default(),
+            value: word::Word::from_u256(self.value_assignment()),
+            value_prev: word::Word::from_u256(self.value_prev_assignment()).unwrap_or_default(),
             aux1: F::ZERO, // only used for AccountStorage::tx_id, which moved to key1.
-            aux2: self
-                .committed_value_assignment(randomness)
-                .unwrap_or_default(),
+            aux2: word::Word::from_u256(self.committed_value_assignment().unwrap_or_default()),
         }
     }
 
-    pub(crate) fn table_assignment<F: Field>(&self, randomness: Value<F>) -> RwRow<Value<F>> {
+    pub(crate) fn table_assignment<F: Field>(&self) -> RwRow<Value<F>> {
         RwRow {
             rw_counter: Value::known(F::from(self.rw_counter() as u64)),
             is_write: Value::known(F::from(self.is_write() as u64)),
@@ -414,21 +411,12 @@ impl Rw {
             id: Value::known(F::from(self.id().unwrap_or_default() as u64)),
             address: Value::known(self.address().unwrap_or_default().to_scalar().unwrap()),
             field_tag: Value::known(F::from(self.field_tag().unwrap_or_default())),
-            storage_key: randomness.map(|randomness| {
-                rlc::value(
-                    &self.storage_key().unwrap_or_default().to_le_bytes(),
-                    randomness,
-                )
-            }),
-            value: randomness.map(|randomness| self.value_assignment(randomness)),
-            value_prev: randomness
-                .map(|randomness| self.value_prev_assignment(randomness).unwrap_or_default()),
+            storage_key: word::Word::from_u256(self.storage_key().unwrap_or_default()),
+            value: word::Word::from_u256(self.value_assignment()),
+            value_prev: word::Word::from_u256(self.value_prev_assignment()),
             aux1: Value::known(F::ZERO), /* only used for AccountStorage::tx_id, which moved to
                                           * key1. */
-            aux2: randomness.map(|randomness| {
-                self.committed_value_assignment(randomness)
-                    .unwrap_or_default()
-            }),
+            aux2: Value::known(self.committed_value_assignment()),
         }
     }
 
@@ -561,69 +549,31 @@ impl Rw {
         }
     }
 
-    pub(crate) fn value_assignment<F: Field>(&self, randomness: F) -> F {
+    pub(crate) fn value_assignment(&self) -> Word {
         match self {
-            Self::Start { .. } => F::ZERO,
-            Self::CallContext {
-                field_tag, value, ..
-            } => {
-                match field_tag {
-                    // Only these two tags have values that may not fit into a scalar, so we need to
-                    // RLC.
-                    CallContextFieldTag::CodeHash | CallContextFieldTag::Value => {
-                        rlc::value(&value.to_le_bytes(), randomness)
-                    }
-                    _ => value.to_scalar().unwrap(),
-                }
-            }
-            Self::Account {
-                value, field_tag, ..
-            } => match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    rlc::value(&value.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => value.to_scalar().unwrap(),
-            },
-            Self::AccountStorage { value, .. } | Self::Stack { value, .. } => {
-                rlc::value(&value.to_le_bytes(), randomness)
-            }
-
-            Self::TxLog {
-                field_tag, value, ..
-            } => match field_tag {
-                TxLogFieldTag::Topic => rlc::value(&value.to_le_bytes(), randomness),
-                _ => value.to_scalar().unwrap(),
-            },
-
+            Self::Start { .. } => U256::zero(),
+            Self::CallContext { value, .. }
+            | Self::Account { value, .. }
+            | Self::AccountStorage { value, .. }
+            | Self::Stack { value, .. }
+            | Self::TxLog { value, .. } => value,
             Self::TxAccessListAccount { is_warm, .. }
-            | Self::TxAccessListAccountStorage { is_warm, .. } => F::from(*is_warm as u64),
-            Self::Memory { byte, .. } => F::from(u64::from(*byte)),
-            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => F::from(*value),
+            | Self::TxAccessListAccountStorage { is_warm, .. } => U256::from(*is_warm as u64),
+            Self::Memory { byte, .. } => U256::from(u64::from(*byte)),
+            Self::TxRefund { value, .. } | Self::TxReceipt { value, .. } => U256::from(*value),
         }
     }
 
-    pub(crate) fn value_prev_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    pub(crate) fn value_prev_assignment(&self) -> Option<Word> {
         match self {
-            Self::Account {
-                value_prev,
-                field_tag,
-                ..
-            } => Some(match field_tag {
-                AccountFieldTag::CodeHash | AccountFieldTag::Balance => {
-                    rlc::value(&value_prev.to_le_bytes(), randomness)
-                }
-                AccountFieldTag::Nonce | AccountFieldTag::NonExisting => {
-                    value_prev.to_scalar().unwrap()
-                }
-            }),
-            Self::AccountStorage { value_prev, .. } => {
-                Some(rlc::value(&value_prev.to_le_bytes(), randomness))
+            Self::Account { value_prev, .. } | Self::AccountStorage { value_prev, .. } => {
+                Some(value_prev)
             }
             Self::TxAccessListAccount { is_warm_prev, .. }
             | Self::TxAccessListAccountStorage { is_warm_prev, .. } => {
-                Some(F::from(*is_warm_prev as u64))
+                Some(U256::from(*is_warm_prev as u64))
             }
-            Self::TxRefund { value_prev, .. } => Some(F::from(*value_prev)),
+            Self::TxRefund { value_prev, .. } => Some(U256::from(*value_prev)),
             Self::Start { .. }
             | Self::Stack { .. }
             | Self::Memory { .. }
@@ -633,11 +583,11 @@ impl Rw {
         }
     }
 
-    fn committed_value_assignment<F: Field>(&self, randomness: F) -> Option<F> {
+    fn committed_value_assignment(&self) -> Option<Word> {
         match self {
             Self::AccountStorage {
                 committed_value, ..
-            } => Some(rlc::value(&committed_value.to_le_bytes(), randomness)),
+            } => Some(committed_value),
             _ => None,
         }
     }

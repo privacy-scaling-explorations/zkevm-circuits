@@ -1,6 +1,6 @@
 use super::{lookups, param::*};
 use crate::util::Expr;
-use eth_types::{Address, Field};
+use eth_types::{Address, Field, Word};
 use halo2_proofs::{
     circuit::{Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
@@ -8,13 +8,14 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use std::marker::PhantomData;
+use eth_types::ToLittleEndian;
 
 pub trait ToLimbs<const N: usize> {
     fn to_limbs(&self) -> [u16; N];
 }
 
 impl ToLimbs<N_LIMBS_ACCOUNT_ADDRESS> for Address {
-    fn to_limbs(&self) -> [u16; 10] {
+    fn to_limbs(&self) -> [u16; N_LIMBS_ACCOUNT_ADDRESS] {
         // address bytes are be.... maybe just have everything be later?
         // you will need this in the future later because it makes the key ordering more
         // obvious
@@ -24,7 +25,13 @@ impl ToLimbs<N_LIMBS_ACCOUNT_ADDRESS> for Address {
 }
 
 impl ToLimbs<N_LIMBS_RW_COUNTER> for u32 {
-    fn to_limbs(&self) -> [u16; 2] {
+    fn to_limbs(&self) -> [u16; N_LIMBS_RW_COUNTER] {
+        le_bytes_to_limbs(&self.to_le_bytes()).try_into().unwrap()
+    }
+}
+
+impl ToLimbs<N_LIMBS_WORD> for Word {
+    fn to_limbs(&self) -> [u16; N_LIMBS_WORD] {
         le_bytes_to_limbs(&self.to_le_bytes()).try_into().unwrap()
     }
 }
@@ -120,19 +127,50 @@ impl Config<u32, N_LIMBS_RW_COUNTER> {
     }
 }
 
-pub struct Chip<F: Field, T, const N: usize>
+impl Config<Word, N_LIMBS_WORD> {
+    pub fn assign<F: Field>(
+        &self,
+        region: &mut Region<'_, F>,
+        offset: usize,
+        value: Word,
+    ) -> Result<(), Error> {
+        for (i, &limb) in value.to_limbs().iter().enumerate() {
+            region.assign_advice(
+                || format!("limb[{}] in Word mpi", i),
+                self.limbs[i],
+                offset,
+                || Value::known(F::from(limb as u64)),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Annotates columns of this gadget embedded within a circuit region.
+    pub fn annotate_columns_in_region<F: Field>(&self, region: &mut Region<F>, prefix: &str) {
+        let mut annotations = Vec::new();
+        for (i, _) in self.limbs.iter().enumerate() {
+            annotations.push(format!("MPI_limbs_word_{}", i));
+        }
+        self.limbs
+            .iter()
+            .zip(annotations.iter())
+            .for_each(|(col, ann)| region.name_column(|| format!("{}_{}", prefix, ann), *col));
+    }
+}
+
+pub struct Chip<F: Field, T, const N_LIMBS: usize, const N_VALUES : usize>
 where
-    T: ToLimbs<N>,
+    T: ToLimbs<N_LIMBS>,
 {
-    config: Config<T, N>,
+    config: Config<T, N_LIMBS>,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field, T, const N: usize> Chip<F, T, N>
+impl<F: Field, T, const N_LIMBS: usize, const N_VALUES: usize> Chip<F, T, N_LIMBS, N_VALUES>
 where
-    T: ToLimbs<N>,
+    T: ToLimbs<N_LIMBS>,
 {
-    pub fn construct(config: Config<T, N>) -> Self {
+    pub fn construct(config: Config<T, N_LIMBS>) -> Self {
         Self {
             config,
             _marker: PhantomData,
@@ -142,22 +180,30 @@ where
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         selector: Column<Fixed>,
-        value: Column<Advice>,
+        values: [Column<Advice>;N_VALUES],
         lookup: lookups::Config,
-    ) -> Config<T, N> {
-        let limbs = [0; N].map(|_| meta.advice_column());
+    ) -> Config<T, N_LIMBS> {
+
+        assert_eq!(N_LIMBS & N_VALUES,0);
+        let limbs_per_value = N_LIMBS / N_VALUES;
+
+        let limbs = [0; N_LIMBS].map(|_| meta.advice_column());        
 
         for &limb in &limbs {
             lookup.range_check_u16(meta, "mpi limb fits into u16", |meta| {
                 meta.query_advice(limb, Rotation::cur())
             });
         }
-        meta.create_gate("mpi value matches claimed limbs", |meta| {
-            let selector = meta.query_fixed(selector, Rotation::cur());
-            let value = meta.query_advice(value, Rotation::cur());
-            let limbs = limbs.map(|limb| meta.query_advice(limb, Rotation::cur()));
-            vec![selector * (value - value_from_limbs(&limbs))]
-        });
+        
+        for (n,value) in values.iter().enumerate() {
+            meta.create_gate("mpi value matches claimed limbs", |meta| {
+                let selector = meta.query_fixed(selector, Rotation::cur());
+                let value_expr = meta.query_advice(*value, Rotation::cur());
+                let value_limbs = &limbs[n*limbs_per_value..(n+1)*limbs_per_value]; 
+                let limbs_expr = value_limbs.iter().map(|limb| meta.query_advice(*limb, Rotation::cur()));
+                vec![selector * (value_expr - value_from_limbs(&limbs_expr.collect::<Vec<_>>()))]
+            });    
+        }
 
         Config {
             limbs,

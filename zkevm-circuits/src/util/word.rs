@@ -81,9 +81,15 @@ impl<F: Field, const N: usize> WordExpr<F> for WordLimbs<Cell<F>, N> {
     }
 }
 
+impl<F: Field, const N: usize>  WordLimbs<F, N> {
+    pub fn is_zero_vartime(&self) -> bool {
+        self.limbs.iter().all(|limb| limb.is_zero_vartime())
+    }
+}
+
 // `Word`, special alias for Word2.
 #[derive(Clone, Debug, Copy, Default)]
-pub(crate) struct Word<T>(Word2<T>);
+pub struct Word<T>(Word2<T>);
 
 impl<T: Clone> Word<T> {
     pub fn new(limbs: [T; 2]) -> Self {
@@ -103,6 +109,12 @@ impl<T: Clone> Word<T> {
     pub fn to_lo_hi(&self) -> (&T, &T) {
         (&self.0.limbs[0], &self.0.limbs[1])
     }
+
+    pub fn into_lo_hi(self) -> (T, T) {
+        let [lo, hi] = self.0.limbs;
+        (lo,hi)
+    }
+
 }
 
 impl<T> std::ops::Deref for Word<T> {
@@ -114,6 +126,7 @@ impl<T> std::ops::Deref for Word<T> {
 }
 
 impl<F: Field> Word<F> {
+
     pub fn from_u256(value: eth_types::Word) -> Word<F> {
         let bytes = value.to_le_bytes();
         Word::new([
