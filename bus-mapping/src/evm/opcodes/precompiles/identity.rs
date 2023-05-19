@@ -1,10 +1,11 @@
-use eth_types::{Address, GethExecStep, ToWord, Word};
+use eth_types::GethExecStep;
 
 use crate::{
     circuit_input_builder::{
         Call, CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
     },
-    operation::{CallContextField, RWCounter},
+    evm::opcodes::precompiles::common_call_ctx_reads,
+    operation::RWCounter,
     precompile::PrecompileCalls,
     Error,
 };
@@ -18,35 +19,7 @@ pub fn gen_associated_ops(
     assert_eq!(call.code_address(), Some(PrecompileCalls::Identity.into()));
     let mut exec_step = state.new_step(&geth_step)?;
 
-    for (field, value) in [
-        (
-            CallContextField::IsSuccess,
-            Word::from(call.is_success as u64),
-        ),
-        (CallContextField::CalleeAddress, {
-            let addr: Address = PrecompileCalls::Identity.into();
-            addr.to_word()
-        }),
-        (CallContextField::CallerId, call.caller_id.into()),
-        (
-            CallContextField::CallDataOffset,
-            call.call_data_offset.into(),
-        ),
-        (
-            CallContextField::CallDataLength,
-            call.call_data_length.into(),
-        ),
-        (
-            CallContextField::ReturnDataOffset,
-            call.return_data_offset.into(),
-        ),
-        (
-            CallContextField::ReturnDataLength,
-            call.return_data_length.into(),
-        ),
-    ] {
-        state.call_context_read(&mut exec_step, call.call_id, field, value);
-    }
+    common_call_ctx_reads(state, &mut exec_step, &call);
 
     let rw_counter_start = state.block_ctx.rwc;
     if call.is_success && call.call_data_length > 0 {
