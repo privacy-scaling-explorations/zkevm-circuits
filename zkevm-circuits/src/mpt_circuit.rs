@@ -214,7 +214,7 @@ impl<F: Field> MPTConfig<F> {
             memory: memory.clone(),
         };
 
-        let _phase_config = PhaseConfig::new::<F>(vec![&keccak_table], 2, 2);
+        let _phase_config = PhaseConfig::new::<F>(2, 2, vec![&keccak_table]);
 
         let mut cb = MPTConstraintBuilder::new(33 + 10, None);
         meta.create_gate("MPT", |meta| {

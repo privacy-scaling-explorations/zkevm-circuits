@@ -122,6 +122,12 @@ pub(crate) enum CellType_<T: TableType> {
     Lookup(T),
 }
 
+impl<T: TableType> Default for CellType_<T> {
+    fn default() -> Self {
+        CellType_::StoragePhase1
+    }
+}
+
 pub trait TableType: Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, EnumIter)]
@@ -202,24 +208,24 @@ pub struct CellManager<F, T: TableType> {
 
 #[derive(Clone, Debug)]
 pub struct PhaseConfig<T> {
+    phase1: usize,
+    phase2: usize,
     phase3: Vec<(T, usize)>, //lookup
-    phase2: usize, // rlc
-    phase1: usize, // byte
 }
 
 impl<T: TableType> PhaseConfig<T> {
     pub fn new<F: Field>(
-        tables: Vec<&dyn LookupTable<F, T>>,
+        phase1: usize,
         phase2: usize, 
-        phase1: usize
+        tables: Vec<&dyn LookupTable<F, T>>
     ) -> Self {
         let phase3   = tables.iter().map(|t|
              (t.get_type(), t.columns().len())
             ).collect::<Vec<_>>();
         Self {
-            phase3,
-            phase2,
             phase1,
+            phase2,
+            phase3,
         }
     }
 }
@@ -268,6 +274,20 @@ impl<F: Field, T: TableType> CellManager<F, T> {
 
         let mut column_idx = 0;
 
+
+        // Mark columns used for byte lookup
+        for _ in 0..phase_config.phase1 {
+            assert_eq!(advices[column_idx].column_type().phase(), 0);
+            column_idx += 1;
+        }
+        
+        // Mark columns used for Phase2 constraints
+        for _ in 0..phase_config.phase2 {
+            assert_eq!(advices[column_idx].column_type().phase(), 1u8);
+            columns[column_idx].cell_type = CellType_::StoragePhase2;
+            column_idx += 1;
+        }
+
         // Mark columns used for lookups in Phase3
         for (table, count) in &phase_config.phase3 {
             for _ in 0usize..*count {
@@ -277,18 +297,6 @@ impl<F: Field, T: TableType> CellManager<F, T> {
             }
         }
 
-        // Mark columns used for Phase2 constraints
-        for _ in 0..phase_config.phase2 {
-            assert_eq!(advices[column_idx].column_type().phase(), 1u8);
-            columns[column_idx].cell_type = CellType_::StoragePhase2;
-            column_idx += 1;
-        }
-
-        // Mark columns used for byte lookup
-        for _ in 0..phase_config.phase1 {
-            assert_eq!(advices[column_idx].column_type().phase(), 0);
-            column_idx += 1;
-        }
 
         // Mark columns used for copy constraints
         for _ in 0..copy_columns {

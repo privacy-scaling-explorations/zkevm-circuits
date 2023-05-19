@@ -13,7 +13,7 @@ use gadgets::util::Scalar;
 use halo2_proofs::circuit::{SimpleFloorPlanner, layouter, Layouter, Region};
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::plonk::{Any, Circuit, FirstPhase, Challenge, SecondPhase, ThirdPhase, Fixed};
+use halo2_proofs::plonk::{Any, Circuit, FirstPhase, Challenge, SecondPhase, ThirdPhase, Fixed, Selector};
 use halo2_proofs::{
     circuit::{AssignedCell, Value},
     plonk::{ConstraintSystem, Advice, Column, Error, Expression, VirtualCells},
@@ -30,7 +30,7 @@ use halo2_proofs::{
 
 const MAX_DEG: usize = 5;
 const CM_HEIGHT: usize = 10;
-const COPY_COL_NUM: usize = 10;
+const COPY_COL_NUM: usize = 1;
 const REGION_HEIGHT: usize = 10;
 
 #[derive(Clone)]
@@ -53,6 +53,7 @@ impl<F: Field> LookupTable<F, SingleTable> for TestTable {
 
 #[derive(Clone)]
 pub struct TestConfig<F> {
+    pub(crate) sel: Selector,
     pub(crate) q_enable: Column<Fixed>,
     pub(crate) q_count: Column<Advice>,
     pub(crate) cell_columns: Vec<Column<Advice>>,
@@ -69,41 +70,48 @@ impl<F: Field> TestConfig<F> {
     ) -> Self {
         
         // Get columns
+        let sel = meta.selector();
         let q_enable = meta.fixed_column();
         let q_count = meta.advice_column();
         let cell_columns = (0..10)
             .map(|i| 
                 match i {
-                    0..=2 => meta.advice_column_in(ThirdPhase),
+                    0..=2 => meta.advice_column_in(FirstPhase),
                     3..=5 => meta.advice_column_in(SecondPhase),
-                    6..=9 => meta.advice_column_in(FirstPhase),
+                    6..=9 => meta.advice_column_in(ThirdPhase),
+                    10 => meta.advice_column_in(FirstPhase), // Copy
                     _ => unreachable!(),
                 }
             ).collect::<Vec<_>>();
 
         // Init cell manager and constraint builder
-        let phase_config: PhaseConfig<SingleTable> = PhaseConfig::new::<F>(vec![&table], 2, 3);
+        let phase_config: PhaseConfig<SingleTable> = PhaseConfig::new::<F>(3, 3, vec![&table]);
         let mut cm = CellManager::new(meta, CM_HEIGHT,&cell_columns,0,phase_config,COPY_COL_NUM );
-        let mut cb = ConstraintBuilder::new(MAX_DEG, Some(cm));
-        
+        let mut cb: ConstraintBuilder<F, SingleTable> = ConstraintBuilder::new(MAX_DEG, Some(cm));
+
         let mut cell_gadget = CellGadget::default();
         meta.create_gate("Test Gate", |meta| {
             // Config row counts
             circuit!([meta, cb], {
+                // All configuration of inner gadgets must be wrapped in ifx!
+                // it pushes a condition into cb, which is gonna be multiplied with the upcoming constraints.
+                // then if you turn off q_enable, your inner gadgets will be disabled.
+                // otherwise you'll see missing selector error.
                 ifx!(f!(q_enable) => {
                     require!(a!(q_count, 1) => a!(q_count) + 1.expr());
+                    // Init Gadgets
+                    cell_gadget = CellGadget::configure(
+                        &mut cb, 
+                        // Convert Challenge into Expression<F>
+                        meta.query_challenge(r1),
+                    );
                 })
             });
-            // Init Gadgets
-            cell_gadget = CellGadget::configure(
-                &mut cb, 
-                // Convert Challenge into Expression<F>
-                meta.query_challenge(r1),
-            );
             cb.generate_constraints()
         });
 
         Self {
+            sel,
             q_enable,
             q_count,
             cell_columns,
@@ -121,10 +129,14 @@ impl<F: Field> TestConfig<F> {
             || "cell gadget",
             |mut region| {
 
-                for offset in 0..50 {
+                self.sel.enable(&mut region, 0);
+                
+                for offset in 0..20 {
                     assignf!(region, (self.q_enable, offset) => 1.scalar())?;
                     assign!(region, (self.q_count, offset) => offset.scalar())?;
                 }
+                assign!(region, (self.q_count, 20) => 20.scalar())?;
+
                 // Value of challenge is obtained from layouter.
                 // We query it once during synthesis and
                 // make it accessable across Config through CachedRegion. 
@@ -144,7 +156,7 @@ impl<F: Field> TestConfig<F> {
         layouter.assign_region(
             || "fixed table",
             |mut region| {
-                for offset in 0..50 {
+                for offset in 0..10 {
                     // Don't need CachedRegion here since we don't cache intermediate values.
                     assignf!(region, (self.table.a, offset) => offset.scalar())?;
                     assignf!(region, (self.table.b, offset) => (offset + 1).scalar())?;
@@ -235,7 +247,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
             a: meta.fixed_column(),
             b: meta.fixed_column(),
         };
-        let _dummy_phase1 = meta.advice_column();
+        let _dummy_phase1 = meta.advice_column_in(FirstPhase);
         let r1 = meta.challenge_usable_after(FirstPhase);
         
         let config = TestConfig::new(meta, table, r1);
@@ -248,7 +260,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
         mut layouter: impl halo2_proofs::circuit::Layouter<F>
     ) -> Result<(), Error> {
         let r1 = layouter.get_challenge(r1);
-        config.load_fixed_table(&mut layouter);
+        config.load_fixed_table(&mut layouter)?;
         config.assign(&mut layouter, r1)
     }
 }
@@ -256,7 +268,7 @@ impl<F: Field> Circuit<F> for TestCircuit<F> {
 #[test]
 fn test() {
     let circuit = TestCircuit::<Fr>::default();
-    let prover = MockProver::<Fr>::run(5, &circuit, vec![]).unwrap();
+    let prover = MockProver::<Fr>::run(6, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par();
 
 }
