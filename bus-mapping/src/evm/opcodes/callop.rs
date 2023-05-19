@@ -273,7 +273,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
 
-                log::warn!("missing circuit part of precompile");
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;

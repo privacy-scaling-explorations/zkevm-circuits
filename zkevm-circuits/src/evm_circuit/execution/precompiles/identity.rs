@@ -1,7 +1,7 @@
 use bus_mapping::circuit_input_builder::{Call, CopyDataType};
-use eth_types::{evm_types::GasCost, Field};
+use eth_types::{evm_types::GasCost, Field, ToScalar};
 use gadgets::util::{and, not, Expr};
-use halo2_proofs::plonk::Error;
+use halo2_proofs::{circuit::Value, plonk::Error};
 
 use crate::{
     evm_circuit::{
@@ -137,13 +137,57 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
 
     fn assign_exec_step(
         &self,
-        _region: &mut CachedRegion<'_, '_, F>,
-        _offset: usize,
-        _block: &Block<F>,
-        _transaction: &Transaction,
-        _call: &Call,
-        _step: &ExecStep,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        block: &Block<F>,
+        _tx: &Transaction,
+        call: &Call,
+        step: &ExecStep,
     ) -> Result<(), Error> {
-        unimplemented!()
+        self.is_success.assign(
+            region,
+            offset,
+            Value::known(F::from(u64::from(call.is_success))),
+        )?;
+        self.callee_address.assign(
+            region,
+            offset,
+            Value::known(call.code_address().unwrap().to_scalar().unwrap()),
+        )?;
+        self.caller_id.assign(
+            region,
+            offset,
+            Value::known(F::from(call.caller_id.try_into().unwrap())),
+        )?;
+        self.call_data_offset.assign(
+            region,
+            offset,
+            Value::known(F::from(call.call_data_offset)),
+        )?;
+        self.call_data_length.assign(
+            region,
+            offset,
+            Value::known(F::from(call.call_data_length)),
+        )?;
+        self.return_data_offset.assign(
+            region,
+            offset,
+            Value::known(F::from(call.return_data_offset)),
+        )?;
+        self.return_data_length.assign(
+            region,
+            offset,
+            Value::known(F::from(call.return_data_length)),
+        )?;
+        self.call_data_length_zero
+            .assign(region, offset, F::from(call.call_data_length))?;
+        self.return_data_length_zero
+            .assign(region, offset, F::from(call.return_data_length))?;
+        self.copier_gadget
+            .assign(region, offset, call.call_data_length, 0)?;
+        self.restore_context
+            .assign(region, offset, block, call, step, 0)?;
+
+        Ok(())
     }
 }
