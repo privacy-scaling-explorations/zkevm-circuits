@@ -697,6 +697,10 @@ impl<F: Field, const IS_SUCCESS_CALL: bool> CommonCallGadget<F, IS_SUCCESS_CALL>
         self.callee_address.expr()
     }
 
+    pub fn callee_address_word(&self) -> Word<Expression<F>> {
+        self.callee_address.to_word()
+    }
+
     pub fn gas_expr(&self) -> Expression<F> {
         from_bytes::expr(&self.gas.limbs[..N_BYTES_GAS])
     }
@@ -844,7 +848,13 @@ pub(crate) struct SstoreGasGadget<F, T> {
 }
 
 impl<F: Field, T: WordExpr<F>> SstoreGasGadget<F, T> {
-    pub(crate) fn construct(cb: &mut EVMConstraintBuilder<F>, is_warm: Cell<F>, value: T, value_prev: T, original_value: T) -> Self {
+    pub(crate) fn construct(
+        cb: &mut EVMConstraintBuilder<F>,
+        is_warm: Cell<F>,
+        value: T,
+        value_prev: T,
+        original_value: T,
+    ) -> Self {
         let value_eq_prev = IsEqualWordGadget::construct(cb, value, value_prev);
         let original_eq_prev = IsEqualWordGadget::construct(cb, original_value, value_prev);
         let original_is_zero = IsZeroWordGadget::construct(cb, original_value);

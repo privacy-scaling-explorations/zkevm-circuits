@@ -258,7 +258,7 @@ impl<F: Field> Word<Expression<F>> {
     }
 
     // No overflow check on lo/hi limbs
-    pub fn add_unchecked(self, rhs: Self) -> Self {
+    pub fn add_unchecked(&self, rhs: Self) -> Self {
         Word::new([
             self.lo().clone() + rhs.lo().clone(),
             self.hi().clone() + rhs.hi().clone(),
@@ -266,11 +266,16 @@ impl<F: Field> Word<Expression<F>> {
     }
 
     // No underflow check on lo/hi limbs
-    pub fn sub_unchecked(self, rhs: Self) -> Self {
+    pub fn sub_unchecked(&self, rhs: Self) -> Self {
         Word::new([
             self.lo().clone() - rhs.lo().clone(),
             self.hi().clone() - rhs.hi().clone(),
         ])
+    }
+
+    // No overflow check
+    pub fn expr_unchecked(&self) -> Expression<F> {
+        self.lo().clone() * (1 << 128).expr() + self.hi().clone()
     }
 }
 

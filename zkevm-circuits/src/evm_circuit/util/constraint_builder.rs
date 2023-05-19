@@ -754,6 +754,17 @@ impl<'a, F: Field> EVMConstraintBuilder<'a, F> {
         word
     }
 
+    pub(crate) fn tx_context_as_account_address(
+        &mut self,
+        id: Expression<F>,
+        field_tag: TxContextFieldTag,
+        index: Option<Expression<F>>,
+    ) -> AccountAddress<F> {
+        let word = self.query_account_address();
+        self.tx_context_lookup(id, field_tag, index, word.to_word());
+        word
+    }
+
     pub(crate) fn tx_context_lookup(
         &mut self,
         id: Expression<F>,
