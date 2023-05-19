@@ -5,9 +5,9 @@
 // - *_le: Little-Endian bytes
 
 use crate::{
-    evm_circuit::util::{not, rlc},
+    evm_circuit::util::{from_bytes, not, rlc},
     table::KeccakTable,
-    util::{Challenges, Expr},
+    util::{word::Word, Challenges, Expr},
 };
 use ecc::{maingate, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
@@ -148,6 +148,7 @@ impl SignVerifyConfig {
         let q_rlc_evm_word = meta.selector();
         let q_rlc_keccak_input = meta.selector();
         let rlc = meta.advice_column_in(SecondPhase);
+        let output = meta.advice_column();
         meta.enable_equality(rlc);
 
         Self::configure_rlc(
@@ -173,13 +174,13 @@ impl SignVerifyConfig {
         let q_keccak = meta.complex_selector();
         meta.lookup_any("keccak", |meta| {
             // When address is 0, we disable the signature verification by using a dummy pk,
-            // msg_hash and signature which is not constrainted to match msg_hash_rlc nor
+            // msg_hash and signature which is not constrained to match msg_hash_rlc nor
             // the address.
             // Layout:
-            // | q_keccak |        a        |     rlc     |
-            // | -------- | --------------- | ----------- |
-            // |     1    | is_address_zero |    pk_rlc   |
-            // |          |                 | pk_hash_rlc |
+            // | q_keccak |        a        |     rlc     |    output   |
+            // | -------- | --------------- | ----------- | ----------- |
+            // |     1    | is_address_zero |    pk_rlc   |             |
+            // |          |                 |  pk_hash_lo | pk_hash_hi  |
             let q_keccak = meta.query_selector(q_keccak);
             let is_address_zero = meta.query_advice(main_gate_config.advices()[0], Rotation::cur());
             let is_enable = q_keccak * not::expr(is_address_zero);
@@ -188,13 +189,15 @@ impl SignVerifyConfig {
                 is_enable.clone(),
                 is_enable.clone() * meta.query_advice(rlc, Rotation::cur()),
                 is_enable.clone() * 64usize.expr(),
-                is_enable * meta.query_advice(rlc, Rotation::next()),
+                is_enable.clone() * meta.query_advice(rlc, Rotation::next()),
+                is_enable * meta.query_advice(output, Rotation::next()),
             ];
             let table = [
                 keccak_table.is_enabled,
                 keccak_table.input_rlc,
                 keccak_table.input_len,
-                keccak_table.output_rlc,
+                keccak_table.output.lo(),
+                keccak_table.output.hi(),
             ]
             .map(|column| meta.query_advice(column, Rotation::cur()));
 

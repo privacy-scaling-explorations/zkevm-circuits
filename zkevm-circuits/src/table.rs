@@ -889,8 +889,8 @@ pub struct KeccakTable {
     pub input_rlc: Column<Advice>, // RLC of input bytes
     /// Byte array input length
     pub input_len: Column<Advice>,
-    /// RLC of the hash result
-    pub output: word::Word<Column<Advice>>, // RLC of hash of input bytes
+    /// The hash result
+    pub output: word::Word<Column<Advice>>,
 }
 
 impl<F: Field> LookupTable<F> for KeccakTable {
