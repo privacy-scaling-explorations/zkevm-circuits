@@ -48,7 +48,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     iter,
 };
-pub use transaction::{Transaction, TransactionContext};
+pub use transaction::{Transaction, TransactionContext, TxL1Fee, TX_L1_FEE_PRECISION};
 
 /// Circuit Setup Parameters
 #[derive(Debug, Clone, Copy)]
@@ -451,6 +451,17 @@ impl<'a> CircuitInputBuilder {
         is_last_tx: bool,
     ) -> Result<(), Error> {
         let mut tx = self.new_tx(eth_tx, !geth_trace.failed)?;
+
+        // Sanity check for transaction L1 fee.
+        let tx_l1_fee = tx.l1_fee();
+        if tx_l1_fee != geth_trace.l1_fee {
+            log::error!(
+                "Mismatch tx_l1_fee: calculated = {}, real = {}",
+                tx_l1_fee,
+                geth_trace.l1_fee
+            );
+        }
+
         let mut tx_ctx = TransactionContext::new(eth_tx, geth_trace, is_last_tx)?;
         let mut debug_tx = tx.clone();
         debug_tx.input.clear();
