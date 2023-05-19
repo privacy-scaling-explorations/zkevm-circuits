@@ -139,8 +139,8 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
         self.assign_lo_hi(
             region,
             offset,
-            word.to_le_bytes()[0..N_BYTES_HALF_WORD],
-            word.to_le_bytes()[N_BYTES_HALF_WORD..],
+            word.to_le_bytes()[0..N_BYTES_HALF_WORD].try_into().ok(),
+            word.to_le_bytes()[N_BYTES_HALF_WORD..].try_into().ok(),
         )
     }
 
