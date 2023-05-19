@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::{or, Expr};
 use halo2_proofs::{
     circuit::Value,
@@ -8,9 +8,12 @@ use halo2_proofs::{
 };
 
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
-        transpose_val_ret, CachedRegion, Cell, CellType,
+    evm_circuit::{
+        param::N_BYTES_HALF_WORD,
+        util::{
+            constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
+            from_bytes, transpose_val_ret, CachedRegion, Cell, CellType,
+        },
     },
     util::word::{Word, WordExpr},
 };
@@ -83,6 +86,22 @@ impl<F: Field, T: WordExpr<F>> IsZeroWordGadget<F, T> {
         } else {
             F::from(0)
         })
+    }
+
+    pub(crate) fn assign_u256(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: eth_types::Word,
+    ) -> Result<F, Error> {
+        self.assign(
+            region,
+            offset,
+            Word::new([
+                from_bytes::value(&value.to_le_bytes()[0..N_BYTES_HALF_WORD]),
+                from_bytes::value(&value.to_le_bytes()[N_BYTES_HALF_WORD..]),
+            ]),
+        )
     }
 
     pub(crate) fn assign_value(

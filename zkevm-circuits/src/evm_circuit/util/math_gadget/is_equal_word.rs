@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use eth_types::Field;
+use eth_types::{Field, ToLittleEndian};
 use gadgets::util::and;
 use halo2_proofs::{
     circuit::Value,
@@ -8,8 +8,11 @@ use halo2_proofs::{
 };
 
 use crate::{
-    evm_circuit::util::{
-        constraint_builder::EVMConstraintBuilder, transpose_val_ret, CachedRegion,
+    evm_circuit::{
+        param::N_BYTES_HALF_WORD,
+        util::{
+            constraint_builder::EVMConstraintBuilder, from_bytes, transpose_val_ret, CachedRegion,
+        },
     },
     util::word::{Word, WordExpr},
 };
@@ -67,6 +70,22 @@ impl<F: Field, T1: WordExpr<F>, T2: WordExpr<F>> IsEqualWordGadget<F, T1, T2> {
             lhs.zip(rhs)
                 .map(|(lhs, rhs)| self.assign(region, offset, lhs, rhs)),
         )
+    }
+
+    pub(crate) fn assign_u256(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        lhs: eth_types::Word,
+        rhs: eth_types::Word,
+    ) -> Result<F, Error> {
+        let lhs_lo = from_bytes::value::<F>(&lhs.to_le_bytes()[0..N_BYTES_HALF_WORD]);
+        let lhs_hi = from_bytes::value::<F>(&lhs.to_le_bytes()[N_BYTES_HALF_WORD..]);
+        let rhs_lo = from_bytes::value::<F>(&rhs.to_le_bytes()[0..N_BYTES_HALF_WORD]);
+        let rhs_hi = from_bytes::value::<F>(&rhs.to_le_bytes()[N_BYTES_HALF_WORD..]);
+        self.is_zero_lo.assign(region, offset, rhs_lo - lhs_lo)?;
+        self.is_zero_hi.assign(region, offset, rhs_hi - lhs_hi)?;
+        Ok(F::from(2))
     }
 }
 

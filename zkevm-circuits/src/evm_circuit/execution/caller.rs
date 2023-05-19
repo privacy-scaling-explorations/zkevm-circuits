@@ -6,12 +6,15 @@ use crate::{
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            AccountAddress, CachedRegion,
+            CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::{word::WordExpr, Expr},
+    util::{
+        word::{WordCell, WordExpr},
+        Expr,
+    },
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToLittleEndian};
@@ -21,7 +24,7 @@ use halo2_proofs::plonk::Error;
 pub(crate) struct CallerGadget<F> {
     same_context: SameContextGadget<F>,
     // Using RLC to match against rw_table->stack_op value
-    caller_address: AccountAddress<F>,
+    caller_address: WordCell<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
@@ -30,9 +33,7 @@ impl<F: Field> ExecutionGadget<F> for CallerGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::CALLER;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        // TODO switch to query_word_unchecked once callcontext -> XXXaddress encoded to Word2 type
-        // properly refer discussion thread https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/1414/files#r1197845688
-        let caller_address = cb.query_account_address();
+        let caller_address = cb.query_word_unchecked();
 
         // Lookup rw_table -> call_context with caller address
         cb.call_context_lookup_read(
