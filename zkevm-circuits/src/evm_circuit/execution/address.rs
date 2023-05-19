@@ -1,20 +1,17 @@
 use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
-        param::N_BYTES_HALF_WORD,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_HALF_WORD},
         step::ExecutionState,
         util::{
             common_gadget::SameContextGadget,
             constraint_builder::{EVMConstraintBuilder, StepStateTransition, Transition::Delta},
-            CachedRegion,
+            AccountAddress, CachedRegion,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::CallContextFieldTag,
-    util::{
-        word::{WordCell, WordExpr},
-        Expr,
-    },
+    util::{word::WordExpr, Expr},
 };
 use bus_mapping::evm::OpcodeId;
 use eth_types::{Field, ToAddress, ToLittleEndian};
@@ -23,7 +20,7 @@ use halo2_proofs::plonk::Error;
 #[derive(Clone, Debug)]
 pub(crate) struct AddressGadget<F> {
     same_context: SameContextGadget<F>,
-    address: WordCell<F>,
+    address: AccountAddress<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
@@ -32,7 +29,9 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
     const EXECUTION_STATE: ExecutionState = ExecutionState::ADDRESS;
 
     fn configure(cb: &mut EVMConstraintBuilder<F>) -> Self {
-        let address = cb.query_word_unchecked();
+        // TODO switch to query_word_unchecked once callcontext -> XXXaddress encoded to Word2 type
+        // properly refer discussion thread https://github.com/privacy-scaling-explorations/zkevm-circuits/pull/1414/files#r1197845688
+        let address = cb.query_account_address();
 
         // Lookup callee address in call context.
         cb.call_context_lookup_read(None, CallContextFieldTag::CalleeAddress, address.to_word());
@@ -70,11 +69,12 @@ impl<F: Field> ExecutionGadget<F> for AddressGadget<F> {
         let address = block.rws[step.rw_indices[1]].stack_value();
         debug_assert_eq!(call.address, address.to_address());
 
-        self.address.assign_lo_hi(
+        self.address.assign(
             region,
             offset,
-            address.to_le_bytes()[0..N_BYTES_HALF_WORD].try_into().ok(),
-            address.to_le_bytes()[N_BYTES_HALF_WORD..].try_into().ok(),
+            address.to_le_bytes()[0..N_BYTES_ACCOUNT_ADDRESS]
+                .try_into()
+                .ok(),
         )?;
 
         Ok(())
