@@ -650,7 +650,7 @@ impl<F: Field> CopyCircuitConfig<F> {
             || format!("assign value_acc {}", *offset),
             self.value_acc,
             *offset,
-            || Value::known(F::zero()),
+            || Value::known(F::ZERO),
         )?;
         // rlc_acc
         region.assign_advice(
