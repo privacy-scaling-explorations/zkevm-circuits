@@ -128,7 +128,8 @@ impl<F: Field> StorageLeafConfig<F> {
                 // value is either stored directly in the RLP encoded string if short, or stored
                 // wrapped inside another RLP encoded string if long.
                 (value_rlc[is_s.idx()], value_rlp_rlc[is_s.idx()]) = ifx! {config.rlp_value[is_s.idx()].is_short() => {
-                    config.rlp_value[is_s.idx()].rlc(&r)
+                    let value_rlc = value_item[is_s.idx()].rlc_content();
+                    (value_rlc.clone(), value_rlc)
                 } elsex {
                     let value_rlc = value_item[is_s.idx()].rlc_content();
                     let value_rlp_rlc = (config.rlp_value[is_s.idx()].rlc_rlp(&r), r[0].clone()).rlc_chain(
@@ -349,12 +350,8 @@ impl<F: Field> StorageLeafConfig<F> {
                 offset,
                 &storage.value_rlp_bytes[is_s.idx()],
             )?;
-            value_rlc[is_s.idx()] = if value_witness.is_short() {
-                value_witness.rlc_value(ctx.r)
-            } else {
-                value_item[is_s.idx()].rlc_content(ctx.r)
-            };
-
+            value_rlc[is_s.idx()] = value_item[is_s.idx()].rlc_content(ctx.r);
+            
             ParentData::witness_store(
                 region,
                 offset,

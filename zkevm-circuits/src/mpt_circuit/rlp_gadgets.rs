@@ -289,11 +289,15 @@ impl<F: Field> RLPValueGadget<F> {
         let mut is_long = false;
         let mut is_very_long = false;
         let mut is_list = false;
-        match bytes[0] {
-            0..=RLP_SHORT_INCLUSIVE => is_short = true,
-            RLP_SHORT..=RLP_LONG => is_long = true,
-            RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
-            _ => is_list = true,
+        if bytes.len() == 0 {
+            is_short = true
+        } else {
+            match bytes[0] {
+                0..=RLP_SHORT_INCLUSIVE => is_short = true,
+                RLP_SHORT..=RLP_LONG => is_long = true,
+                RLP_LONG_EXCLUSIVE..=RLP_VALUE_MAX => is_very_long = true,
+                _ => is_list = true,
+            }
         }
 
         self.is_short.assign(region, offset, F::from(is_short))?;
