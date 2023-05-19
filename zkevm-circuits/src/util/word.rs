@@ -11,7 +11,10 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 
-use crate::evm_circuit::util::{from_bytes, CachedRegion, Cell};
+use crate::evm_circuit::{
+    param::N_BYTES_HALF_WORD,
+    util::{from_bytes, CachedRegion, Cell},
+};
 
 #[derive(Clone, Debug, Copy)]
 pub(crate) struct WordLimbs<T, const N: usize> {
@@ -125,6 +128,20 @@ impl<F: Field, const N: usize> WordLimbs<Cell<F>, N> {
             .concat()),
             _ => Err(Error::Synthesis),
         }
+    }
+
+    pub fn assign_u256(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        word: eth_types::Word,
+    ) -> Result<Vec<AssignedCell<F, F>>, Error> {
+        self.assign_lo_hi(
+            region,
+            offset,
+            word.to_le_bytes()[0..N_BYTES_HALF_WORD],
+            word.to_le_bytes()[N_BYTES_HALF_WORD..],
+        )
     }
 
     pub fn word_expr(&self) -> WordLimbs<Expression<F>, N> {
