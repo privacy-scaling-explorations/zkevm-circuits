@@ -250,7 +250,10 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         call.clone(),
                         caller_memory.as_slice(),
                     )?,
-                    _ => unimplemented!("only precompile identity supported"),
+                    _ => {
+                        log::warn!("precompile not handled");
+                        todo!();
+                    }
                 };
 
                 let caller_ctx_mut = state.caller_ctx_mut()?;
@@ -363,7 +366,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
 
                 Ok(vec![exec_step])
             }
-
             // 4. insufficient balance or error depth cases.
             (true, _, _) => {
                 for (field, value) in [
@@ -375,7 +377,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 }
                 state.handle_return(&mut exec_step, geth_steps, false)?;
                 Ok(vec![exec_step])
-            } //
+            }
         }
     }
 }

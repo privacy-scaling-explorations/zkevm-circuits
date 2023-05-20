@@ -237,8 +237,8 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_gadget = cb.condition(is_precompile, |cb| {
             PrecompileGadget::construct(
                 cb,
-                call_gadget.callee_address_expr(),
                 call_gadget.is_success.expr(),
+                call_gadget.callee_address_expr(),
                 cb.curr.state.call_id.expr(),
                 call_gadget.cd_address.offset(),
                 call_gadget.cd_address.length(),

@@ -24,7 +24,7 @@ pub(crate) fn execute_precompiled(address: &Address, input: &[u8], gas: u64) -> 
 }
 
 /// Addresses of the precompiled contracts.
-#[derive(Copy, Clone, Debug, EnumIter)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, EnumIter)]
 pub enum PrecompileCalls {
     /// Elliptic Curve Recovery
     ECRecover = 0x01,

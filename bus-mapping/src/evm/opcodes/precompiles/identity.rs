@@ -2,7 +2,7 @@ use eth_types::GethExecStep;
 
 use crate::{
     circuit_input_builder::{
-        Call, CircuitInputStateRef, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+        Call, CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
     evm::opcodes::precompiles::common_call_ctx_reads,
     operation::RWCounter,
@@ -16,8 +16,10 @@ pub fn gen_associated_ops(
     call: Call,
     memory_bytes: &[u8],
 ) -> Result<ExecStep, Error> {
+    log::info!("reached here in precompile identity");
     assert_eq!(call.code_address(), Some(PrecompileCalls::Identity.into()));
     let mut exec_step = state.new_step(&geth_step)?;
+    exec_step.exec_state = ExecState::Precompile(PrecompileCalls::Identity);
 
     common_call_ctx_reads(state, &mut exec_step, &call);
 

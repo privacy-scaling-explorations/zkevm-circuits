@@ -191,3 +191,38 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use eth_types::bytecode;
+    use mock::TestContext;
+
+    use crate::test_util::CircuitTestBuilder;
+
+    #[test]
+    fn precompile_identity_test() {
+        let bytecode = bytecode! {
+            // place params in memory
+            PUSH1(0xff)
+            PUSH1(0x00)
+            MSTORE
+            // do static call to 0x04
+            PUSH1(0x01)
+            PUSH1(0x3f)
+            PUSH1(0x01)
+            PUSH1(0x1f)
+            PUSH1(0x04)
+            PUSH4(0xffffffffu64)
+            STATICCALL
+            // put result on the stack
+            POP
+            PUSH1(0x20)
+            MLOAD
+        };
+
+        CircuitTestBuilder::new_from_test_ctx(
+            TestContext::<2, 1>::simple_ctx_with_bytecode(bytecode).unwrap(),
+        )
+        .run();
+    }
+}
