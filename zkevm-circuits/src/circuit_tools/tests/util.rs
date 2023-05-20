@@ -271,4 +271,19 @@ fn test() {
     let prover = MockProver::<Fr>::run(6, &circuit, vec![]).unwrap();
     prover.assert_satisfied_par();
 
+    use plotters::prelude::*;
+    let root = BitMapBackend::new("test.png", (1024, 768)).into_drawing_area();
+    root.fill(&WHITE).unwrap();
+    let root = root
+        .titled("Test Layout", ("sans-serif", 60))
+        .unwrap();
+
+    halo2_proofs::dev::CircuitLayout::default()
+        // Render the circuit onto your area!
+        // The first argument is the size parameter for the circuit.
+        .show_cell_annotations(true)
+        .region_by_name("cell gadget")
+        .render(6, &circuit.clone(), &root)
+        .unwrap();
+
 }
