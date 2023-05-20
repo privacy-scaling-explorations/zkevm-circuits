@@ -119,18 +119,15 @@ impl<C: CellTypeTrait> CellConfig<C> {
     pub fn init_columns<F: Field>(&self, meta: &mut ConstraintSystem<F>) -> Vec<Column<Advice>>{
         let mut columns = Vec::with_capacity(self.num_columns);
         match self.phase {
-            0 => {
-                columns.iter_mut()
-                    .map(|c| *c = meta.advice_column_in(FirstPhase));
-            },
-            1 => {
-                columns.iter_mut()
-                    .map(|c| *c = meta.advice_column_in(SecondPhase));
-            },
-            2 => {
-                columns.iter_mut()
-                    .map(|c| *c = meta.advice_column_in(ThirdPhase));
-            },
+            0 => columns.iter_mut()
+                    .map(|c| *c = meta.advice_column_in(FirstPhase))
+                    .collect::<Vec<()>>(),
+            1 => columns.iter_mut()
+                    .map(|c| *c = meta.advice_column_in(SecondPhase))
+                    .collect::<Vec<()>>(),
+            2 => columns.iter_mut()
+                    .map(|c| *c = meta.advice_column_in(ThirdPhase))
+                    .collect::<Vec<()>>(),
             _ => unreachable!(),
         };
         if self.is_permute {
@@ -140,17 +137,163 @@ impl<C: CellTypeTrait> CellConfig<C> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum CellType<T> {
-    StoragePhase1,
-    StoragePhase2,
-    StoragePermutation,
-    LookupByte,
-    Lookup(T),
-}
 
 pub trait CellTypeTrait: 
     Clone + Copy + Debug + PartialEq + Eq + PartialOrd + Ord + Hash {}
+
+
+#[derive(Clone, Debug)]
+pub(crate) struct CellColumn_<F, C> {
+    index: usize,
+    cell_type: C,
+    height: usize,
+    expr: Expression<F>,
+}
+
+
+#[derive(Clone, Debug)]
+pub struct CellManager_<F, C: CellTypeTrait> {
+    max_height: usize,
+    total_width: usize,
+    cells: HashMap<C, (usize, Vec<Cell<F>>)>,
+    cell_configs: Vec<CellConfig<C>>,
+    columns: Vec<CellColumn_<F, C>>,
+}
+
+impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
+    
+    // 一步到位
+    pub(crate) fn new<T: TableType + Into<C>>(
+        meta: &mut ConstraintSystem<F>,
+        mut cell_configs: Vec<CellConfig<C>>,
+        tables: Vec<&dyn LookupTable_<F, TableType_ = T>>,
+        offset: usize,
+        max_height: usize,
+    ) -> Self {
+
+        let mut cells = HashMap::new();
+        let mut cell_columns = Vec::new();
+        let mut total_width = 0;
+
+        // User need to put fixed columns after advice if have any
+        // permutation is not enable by default
+        for table in tables {
+            if !table.advice_columns().is_empty() {
+                cell_configs.push(CellConfig {
+                    cell_type: table.get_type_().into(),
+                    num_columns: table.advice_columns().len(),
+                    phase: table.phase(),
+                    is_permute: false,
+                });
+            }
+            if !table.fixed_columns().is_empty() {
+                cell_configs.push(CellConfig {
+                    cell_type: table.get_type_().into(),
+                    num_columns: table.fixed_columns().len(),
+                    phase: table.phase(),
+                    is_permute: false,
+                });
+            }
+        };
+
+        cell_configs
+            .iter()
+            .map(|c| {
+                let cols = c.init_columns(meta);
+                let mut cell_list = Vec::with_capacity(cols.len() * max_height);
+                let start_width = total_width;
+                query_expression(meta, |meta| {
+                    for w in 0..cols.len() {
+                        for h in 0..max_height {
+                            let cell: Cell<_> = Cell::new(meta, cols[w], offset + h, total_width);
+                            cell_list.push(cell);
+                        }
+                        cell_columns.push(CellColumn_ {
+                            index: w,
+                            cell_type: c.cell_type,
+                            height: 0,
+                            expr: cell_list[cols.len()-1].expr().clone(),
+                        });
+                        total_width += 1;
+                    }
+                });
+                cells.insert(c.cell_type, (start_width, cell_list));
+            }).collect::<Vec<()>>();
+
+        Self {
+            max_height,
+            total_width,
+            cells,
+            cell_configs,
+            columns: cell_columns,
+        }
+    }
+
+    pub(crate) fn get_width(&self) -> usize {
+        self.total_width
+    }
+
+    pub(crate) fn get_max_height(&self) -> usize {
+        self.max_height
+    }
+
+    pub(crate) fn set_max_height(&mut self, max_height: usize) {
+        self.max_height = max_height;
+    }
+
+    pub(crate) fn get_used_height(&self) -> usize {
+        self.columns
+            .iter()
+            .map(|column| column.height)
+            .max()
+            .unwrap()
+    }
+
+    pub(crate) fn get_config(&self, cell_type: C) -> &CellConfig<C> {
+        self.cell_configs
+            .iter()
+            .find(|c| c.cell_type == cell_type)
+            .expect("Cell type not found")
+    }
+
+    pub(crate) fn get_typed_columns(&self, cell_type: C) -> Vec<CellColumn_<F, C>> {
+        let (start_width, _) = self.cells.get(&cell_type).expect("Cell type not found");
+        let window = self.get_config(cell_type).num_columns;
+        self.columns[*start_width..window].to_owned()
+    }
+
+    pub(crate) fn query_cells(&mut self, cell_type: C, count: usize) -> Vec<Cell<F>> {
+        let mut targets = Vec::with_capacity(count);
+        let (start_width, cell_list) = self.cells.get(&cell_type).expect("Cell type not found");
+        let window = self.get_config(cell_type).num_columns;
+
+        while targets.len() < count {
+            // Iterate the window of columns designated for this CellType
+            // No need to find the best height because cells should be return in order
+            self.columns[*start_width..start_width + window]
+                .iter_mut()
+                .enumerate()
+                .map(|(i, c)| {
+                    assert!(c.cell_type == cell_type);
+                    if c.height < self.max_height { 
+                        targets.push(cell_list[i + c.height].clone());
+                        c.height += 1;
+                    }
+                }).collect::<Vec<()>>();
+        }
+        targets
+    }
+
+    pub(crate) fn query_cell(&mut self, cell_type: C) -> Cell<F> {
+        self.query_cells(cell_type, 1)[0].clone()
+    }
+}
+
+
+
+// ============================== Old Version =================================
+
+
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -224,158 +367,12 @@ pub(crate) struct CellColumn<F, T: TableType> {
     expr: Expression<F>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct CellColumn_<F, C> {
-    index: usize,
-    cell_type: C,
-    height: usize,
-    expr: Expression<F>,
-}
 
 impl<F: Field, T: Debug + TableType> Expr<F> for CellColumn<F, T> {
     fn expr(&self) -> Expression<F> {
         self.expr.clone()
     }
 }
-
-#[derive(Clone, Debug)]
-pub struct CellManager_<F, C: CellTypeTrait> {
-    max_height: usize,
-    total_width: usize,
-    cells: HashMap<C, (usize, Vec<Cell<F>>)>,
-    cell_configs: Vec<CellConfig<C>>,
-    columns: Vec<CellColumn_<F, C>>,
-}
-
-impl<F: Field, C: CellTypeTrait> CellManager_<F, C> {
-    
-    // 一步到位
-    pub(crate) fn new<T: TableType + Into<C>>(
-        meta: &mut ConstraintSystem<F>,
-        mut cell_configs: Vec<CellConfig<C>>,
-        tables: Vec<&dyn LookupTable_<F, TableType_ = T>>,
-        offset: usize,
-        max_height: usize,
-    ) -> Self {
-
-        let mut cells = HashMap::new();
-        let mut cell_columns = Vec::new();
-        let mut total_width = 0;
-
-        // User need to put fixed columns after advice if have any
-        // permutation is not enable by default
-        for table in tables {
-            if !table.advice_columns().is_empty() {
-                cell_configs.push(CellConfig {
-                    cell_type: table.get_type_().into(),
-                    num_columns: table.advice_columns().len(),
-                    phase: table.phase(),
-                    is_permute: false,
-                });
-            }
-            if !table.fixed_columns().is_empty() {
-                cell_configs.push(CellConfig {
-                    cell_type: table.get_type_().into(),
-                    num_columns: table.fixed_columns().len(),
-                    phase: table.phase(),
-                    is_permute: false,
-                });
-            }
-        };
-
-        cell_configs
-            .iter()
-            .map(|c| {
-                let cols = c.init_columns(meta);
-                let mut cell_list = Vec::with_capacity(cols.len() * max_height);
-                let start_width = total_width;
-                query_expression(meta, |meta| {
-                    for w in 0..cols.len() {
-                        for h in 0..max_height {
-                            let cell: Cell<_> = Cell::new(meta, cols[w], offset + h, total_width);
-                            cell_list.push(cell);
-                        }
-                        cell_columns.push(CellColumn_ {
-                            index: w,
-                            cell_type: c.cell_type,
-                            height: 0,
-                            expr: cell_list[cols.len()-1].expr().clone(),
-                        });
-                        total_width += 1;
-                    }
-                });
-                cells.insert(c.cell_type, (start_width, cell_list));
-            });
-
-        Self {
-            max_height,
-            total_width,
-            cells,
-            cell_configs,
-            columns: cell_columns,
-        }
-    }
-
-    pub(crate) fn get_width(&self) -> usize {
-        self.total_width
-    }
-
-    pub(crate) fn get_max_height(&self) -> usize {
-        self.max_height
-    }
-
-    pub(crate) fn set_max_height(&mut self, max_height: usize) {
-        self.max_height = max_height;
-    }
-
-    pub(crate) fn get_used_height(&self) -> usize {
-        self.columns
-            .iter()
-            .map(|column| column.height)
-            .max()
-            .unwrap()
-    }
-
-    pub(crate) fn get_config(&self, cell_type: C) -> &CellConfig<C> {
-        self.cell_configs
-            .iter()
-            .find(|c| c.cell_type == cell_type)
-            .expect("Cell type not found")
-    }
-
-    pub(crate) fn get_typed_columns(&self, cell_type: C) -> Vec<CellColumn_<F, C>> {
-        let (start_width, _) = self.cells.get(&cell_type).expect("Cell type not found");
-        let window = self.get_config(cell_type).num_columns;
-        self.columns[*start_width..window].to_owned()
-    }
-
-    pub(crate) fn query_cells(&mut self, cell_type: C, count: usize) -> Vec<Cell<F>> {
-        let mut targets = Vec::with_capacity(count);
-        let (start_width, cell_list) = self.cells.get(&cell_type).expect("Cell type not found");
-        let window = self.get_config(cell_type).num_columns;
-
-        while targets.len() < count {
-            // Iterate the window of columns designated for this CellType
-            // No need to find the best height because cells should be return in order
-            self.columns[*start_width..start_width + window]
-                .iter_mut()
-                .enumerate()
-                .map(|(i, c)| {
-                    assert!(c.cell_type == cell_type);
-                    if c.height < self.max_height { 
-                        targets.push(cell_list[i + c.height].clone());
-                        c.height += 1;
-                    }
-                });
-        }
-        targets
-    }
-
-    pub(crate) fn query_cell(&mut self, cell_type: C) -> Cell<F> {
-        self.query_cells(cell_type, 1)[0].clone()
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct CellManager<F, T: TableType> {
     // Thoughts (Cecilia): Integrate CellManager's function into Halo2's VirtualCell
