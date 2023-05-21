@@ -31,7 +31,7 @@ pub fn gen_associated_ops(
             .map(|b| (*b, false))
             .collect();
         for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
-            // push memory read
+            // push caller memory read
             state.push_op(
                 &mut exec_step,
                 RW::READ,
@@ -41,7 +41,7 @@ pub fn gen_associated_ops(
                     byte,
                 ),
             );
-            // push memory write
+            // push callee memory write
             state.push_op(
                 &mut exec_step,
                 RW::WRITE,
@@ -73,13 +73,13 @@ pub fn gen_associated_ops(
             .map(|b| (*b, false))
             .collect();
         for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
-            // push memory read
+            // push callee memory read
             state.push_op(
                 &mut exec_step,
                 RW::READ,
                 MemoryOp::new(call.call_id, i.into(), byte),
             );
-            // push memory write
+            // push caller memory write
             state.push_op(
                 &mut exec_step,
                 RW::WRITE,

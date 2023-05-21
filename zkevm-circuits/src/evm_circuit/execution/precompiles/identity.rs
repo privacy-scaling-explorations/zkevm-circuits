@@ -8,8 +8,8 @@ use crate::{
         execution::ExecutionGadget,
         step::ExecutionState,
         util::{
-            common_gadget::RestoreContextGadget, constraint_builder::EVMConstraintBuilder,
-            math_gadget::IsZeroGadget, memory_gadget::MemoryCopierGasGadget, CachedRegion, Cell,
+            constraint_builder::EVMConstraintBuilder, math_gadget::IsZeroGadget,
+            memory_gadget::MemoryCopierGasGadget, CachedRegion, Cell,
         },
     },
     table::CallContextFieldTag,
@@ -28,7 +28,6 @@ pub struct IdentityGadget<F> {
     call_data_length_zero: IsZeroGadget<F>,
     return_data_length_zero: IsZeroGadget<F>,
     copier_gadget: MemoryCopierGasGadget<F, { GasCost::PRECOMPILE_IDENTITY_PER_WORD }>,
-    restore_context: RestoreContextGadget<F>,
 }
 
 impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
@@ -60,7 +59,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length.expr(),
             0.expr(), // no memory expansion.
         );
-        let total_gas_cost = GasCost::PRECOMPILE_IDENTITY_BASE.expr() + copier_gadget.gas_cost();
+        let _total_gas_cost = GasCost::PRECOMPILE_IDENTITY_BASE.expr() + copier_gadget.gas_cost();
 
         let (call_data_length_zero, return_data_length_zero) = (
             IsZeroGadget::construct(cb, call_data_length.expr()),
@@ -70,7 +69,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         // copy table lookup to verify the copying of bytes:
         // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
         // - to the current call's memory (`call_data_length` bytes starting at `0`).
-        cb.condition(not::expr(call_data_length.expr()), |cb| {
+        cb.condition(not::expr(call_data_length_zero.expr()), |cb| {
             cb.copy_table_lookup(
                 caller_id.expr(),
                 CopyDataType::Memory.expr(),
@@ -81,7 +80,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
                 0.expr(),
                 call_data_length.expr(),
                 0.expr(),
-                0.expr(),
+                0.expr(), // TODO(rohit): rwc increment
             );
         });
 
@@ -105,19 +104,9 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
                     return_data_offset.expr(),
                     return_data_length.expr(),
                     0.expr(),
-                    0.expr(),
+                    0.expr(), // TODO(rohit): rwc increment
                 );
             },
-        );
-
-        let restore_context = RestoreContextGadget::construct(
-            cb,
-            is_success.expr(),       // the call could fail if gas was insufficient.
-            0.expr(),                // no more RW lookups.
-            0.expr(),                // return data offset for precompile call.
-            call_data_length.expr(), // return data length for precompile call.
-            total_gas_cost.expr(),   // gas cost for precompile call.
-            0.expr(),                // reversible RW counter does not increase.
         );
 
         Self {
@@ -131,7 +120,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length_zero,
             return_data_length_zero,
             copier_gadget,
-            restore_context,
         }
     }
 
@@ -185,8 +173,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             .assign(region, offset, F::from(call.return_data_length))?;
         self.copier_gadget
             .assign(region, offset, call.call_data_length, 0)?;
-        self.restore_context
-            .assign(region, offset, block, call, step, 11)?;
 
         Ok(())
     }

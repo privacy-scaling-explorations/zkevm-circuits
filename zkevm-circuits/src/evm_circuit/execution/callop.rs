@@ -1,28 +1,28 @@
-use crate::evm_circuit::{
-    execution::ExecutionGadget,
-    param::{N_BYTES_GAS, N_BYTES_U64},
-    step::ExecutionState,
-    util::{
-        and,
-        common_gadget::{CommonCallGadget, TransferGadget},
-        constraint_builder::{
-            ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
-            Transition::{Delta, To},
-        },
-        is_precompiled,
-        math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget},
-        not, or,
-        precompile::PrecompileGadget,
-        select, CachedRegion, Cell, Word,
-    },
-};
-
 use crate::{
-    evm_circuit::witness::{Block, Call, ExecStep, Transaction},
+    evm_circuit::{
+        execution::ExecutionGadget,
+        param::{N_BYTES_ACCOUNT_ADDRESS, N_BYTES_GAS, N_BYTES_U64},
+        step::ExecutionState,
+        util::{
+            and,
+            common_gadget::{CommonCallGadget, TransferGadget},
+            constraint_builder::{
+                ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
+                Transition::{Delta, To},
+            },
+            math_gadget::{
+                ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget,
+            },
+            not, or,
+            precompile::PrecompileGadget,
+            select, CachedRegion, Cell, Word,
+        },
+        witness::{Block, Call, ExecStep, Transaction},
+    },
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::evm::OpcodeId;
+use bus_mapping::{evm::OpcodeId, precompile::is_precompiled};
 use eth_types::{
     evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
 };
@@ -59,8 +59,8 @@ pub(crate) struct CallOpGadget<F> {
     one_64th_gas: ConstantDivisionGadget<F, N_BYTES_GAS>,
     capped_callee_gas_left: MinMaxGadget<F, N_BYTES_GAS>,
     // check if the call is a precompile call.
-    callee_address_zero: IsZeroGadget<F>,
-    callee_address_lt: LtGadget<F, 1>,
+    is_code_address_zero: IsZeroGadget<F>,
+    is_precompile_lt: LtGadget<F, N_BYTES_ACCOUNT_ADDRESS>,
     precompile_gadget: PrecompileGadget<F>,
 }
 
@@ -182,12 +182,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
 
         // whether the call is to a precompiled contract.
         // precompile contracts are stored from address 0x01 to 0x09.
-        let callee_address_lt =
-            LtGadget::construct(cb, call_gadget.callee_address_expr(), 10.expr());
-        let callee_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_code_address_zero = IsZeroGadget::construct(cb, call_gadget.callee_address_expr());
+        let is_precompile_lt =
+            LtGadget::construct(cb, call_gadget.callee_address_expr(), 0x0A.expr());
         let is_precompile = and::expr([
-            callee_address_lt.expr(),
-            not::expr(callee_address_zero.expr()),
+            not::expr(is_code_address_zero.expr()),
+            is_precompile_lt.expr(),
         ]);
 
         // Verify transfer only for CALL opcode in the successful case.  If value == 0,
@@ -199,7 +199,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 cb,
                 caller_address.expr(),
                 callee_address.expr(),
-                not::expr(call_gadget.callee_not_exists.expr()),
+                or::expr([
+                    not::expr(call_gadget.callee_not_exists.expr()),
+                    is_precompile.expr(),
+                ]),
                 call_gadget.value.clone(),
                 &mut callee_reversion_info,
             )
@@ -236,23 +239,41 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             all_but_one_64th_gas,
         );
 
-        // TODO: Handle precompiled
-        let precompile_gadget = cb.condition(is_precompile.expr(), |cb| {
-            PrecompileGadget::construct(
-                cb,
-                call_gadget.is_success.expr(),
-                call_gadget.callee_address_expr(),
-                cb.curr.state.call_id.expr(),
-                call_gadget.cd_address.offset(),
-                call_gadget.cd_address.length(),
-                call_gadget.rd_address.offset(),
-                call_gadget.rd_address.length(),
-            )
-        });
-
         let stack_pointer_delta =
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
+
+        // handle precompile calls.
+        let precompile_gadget = cb.condition(
+            and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
+            |cb| {
+                let precompile_gadget = PrecompileGadget::construct(
+                    cb,
+                    call_gadget.is_success.expr(),
+                    call_gadget.callee_address_expr(),
+                    cb.curr.state.call_id.expr(),
+                    call_gadget.cd_address.offset(),
+                    call_gadget.cd_address.length(),
+                    call_gadget.rd_address.offset(),
+                    call_gadget.rd_address.length(),
+                );
+                // Save caller's call state
+                for (field_tag, value) in [
+                    (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
+                    (CallContextFieldTag::LastCalleeReturnDataOffset, 0.expr()),
+                    (
+                        CallContextFieldTag::LastCalleeReturnDataLength,
+                        // return_data_len.expr(),
+                        1.expr(), // TODO(rohit): fix this.
+                    ),
+                ] {
+                    cb.call_context_lookup(true.expr(), None, field_tag, value);
+                }
+                precompile_gadget
+            },
+        );
+
+        // handle calls to empty code.
         cb.condition(
             and::expr([
                 not::expr(is_precompile.expr()),
@@ -328,6 +349,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             });
         });
 
+        // handle all other calls.
         cb.condition(
             and::expr([
                 not::expr(is_precompile.expr()),
@@ -467,8 +489,9 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             is_depth_ok,
             one_64th_gas,
             capped_callee_gas_left,
-            callee_address_zero,
-            callee_address_lt,
+            // precompile related fields.
+            is_code_address_zero,
+            is_precompile_lt,
             precompile_gadget,
         }
     }
@@ -489,7 +512,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let [tx_id, is_static, depth, current_callee_address] =
             [0, 3, 4, 5].map(|index| block.get_rws(step, index).call_context_value());
         let is_error_depth = depth.low_u64() > 1024;
-        let is_precompile = is_precompiled(&current_callee_address.to_address());
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         // This offset is used to change the index offset of `step.rw_indices`.
@@ -650,11 +672,16 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             F::from(gas_available - gas_available / 64),
         )?;
 
-        if is_precompile {
+        let code_address: F = callee_address.to_address().to_scalar().unwrap();
+        self.is_code_address_zero
+            .assign(region, offset, code_address)?;
+        self.is_precompile_lt
+            .assign(region, offset, code_address, 0x0Au64.into())?;
+        if is_precompiled(&callee_address.to_address()) {
             self.precompile_gadget.assign(
                 region,
                 offset,
-                current_callee_address.to_address().0[19].into(),
+                callee_address.to_address().0[19].into(),
             )?;
         }
 
