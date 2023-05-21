@@ -6,10 +6,13 @@ use crate::{
             constraint_builder::EVMConstraintBuilder,
             from_bytes,
             math_gadget::{ConstantDivisionGadget, IsZeroGadget, MinMaxGadget, RangeCheckGadget},
-            select, sum, Cell, CellType, MemoryAddress,
+            select, sum, MemoryAddress,
         },
     },
-    util::Expr,
+    util::{
+        cell_manager::{Cell, CellType},
+        Expr,
+    },
 };
 use array_init::array_init;
 use eth_types::{evm_types::GasCost, Field, ToLittleEndian, U256};

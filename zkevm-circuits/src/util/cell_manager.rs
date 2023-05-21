@@ -1,15 +1,20 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
+use gadgets::util::Expr;
 use halo2_proofs::{
     arithmetic::Field,
+    circuit::{AssignedCell, Value},
     halo2curves::FieldExt,
-    plonk::{Advice, Column, ConstraintSystem, Expression, VirtualCells},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, VirtualCells},
     poly::Rotation,
 };
 
-use crate::{evm_circuit::table::Table, util::query_expression};
+use crate::{
+    evm_circuit::{table::Table, util::CachedRegion},
+    util::query_expression,
+};
 
-#[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// CellType
 pub(crate) enum CellType {
     StoragePhase1,
@@ -19,6 +24,34 @@ pub(crate) enum CellType {
     Lookup(Table),
 }
 
+impl CellType {
+    // The phase that given `Expression` becomes evaluateable.
+    pub(crate) fn expr_phase<F: FieldExt>(expr: &Expression<F>) -> u8 {
+        use Expression::*;
+        match expr {
+            Challenge(challenge) => challenge.phase() + 1,
+            Advice(query) => query.phase(),
+            Constant(_) | Selector(_) | Fixed(_) | Instance(_) => 0,
+            Negated(a) | Expression::Scaled(a, _) => Self::expr_phase(a),
+            Sum(a, b) | Product(a, b) => std::cmp::max(Self::expr_phase(a), Self::expr_phase(b)),
+        }
+    }
+
+    /// Return the storage phase of phase
+    pub(crate) fn storage_for_phase(phase: u8) -> CellType {
+        match phase {
+            0 => CellType::StoragePhase1,
+            1 => CellType::StoragePhase2,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Return the storage cell of the expression
+    pub(crate) fn storage_for_expr<F: FieldExt>(expr: &Expression<F>) -> CellType {
+        Self::storage_for_phase(Self::expr_phase::<F>(expr))
+    }
+}
+
 #[derive(Clone, Debug)]
 /// Cell
 pub(crate) struct Cell<F> {
@@ -26,7 +59,7 @@ pub(crate) struct Cell<F> {
     pub(crate) column_expression: Expression<F>,
     pub(crate) column: Column<Advice>,
     pub(crate) column_idx: usize,
-    pub(crate) rotation: i32,
+    pub(crate) rotation: usize,
 
     // DEPRECATED: the same value as column_idx
     pub(crate) cell_column_index: usize,
@@ -37,10 +70,10 @@ impl<F: Field> Cell<F> {
         meta: &mut VirtualCells<F>,
         column: Column<Advice>,
         column_idx: usize,
-        rotation: i32,
+        rotation: usize,
     ) -> Cell<F> {
         Cell {
-            expression: meta.query_advice(column, Rotation(rotation)),
+            expression: meta.query_advice(column, Rotation(rotation as i32)),
             column_expression: meta.query_advice(column, Rotation::cur()),
             column,
             column_idx,
@@ -50,24 +83,73 @@ impl<F: Field> Cell<F> {
     }
 }
 
+impl<F: FieldExt> Cell<F> {
+    pub fn new_from_cs(
+        meta: &mut ConstraintSystem<F>,
+        column: Column<Advice>,
+        column_idx: usize,
+        rotation: usize,
+    ) -> Cell<F> {
+        query_expression(meta, |meta| Cell::new(meta, column, column_idx, rotation))
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        value: Value<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        region.assign_advice(
+            || {
+                format!(
+                    "Cell column: {:?} and rotation: {}",
+                    self.column, self.rotation
+                )
+            },
+            self.column,
+            offset + self.rotation,
+            || value,
+        )
+    }
+}
+
+impl<F: FieldExt> Expr<F> for Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+}
+
+impl<F: FieldExt> Expr<F> for &Cell<F> {
+    fn expr(&self) -> Expression<F> {
+        self.expression.clone()
+    }
+}
+
 #[derive(Debug, Clone)]
 /// CellColumn
-pub struct CellColumn {
+pub(crate) struct CellColumn {
     advice: Column<Advice>,
+    pub cell_type: CellType,
 }
 
 impl CellColumn {
-    fn new(advice: Column<Advice>) -> CellColumn {
-        CellColumn { advice }
+    pub fn new(advice: Column<Advice>, cell_type: CellType) -> CellColumn {
+        CellColumn { advice, cell_type }
+    }
+
+    pub fn expr<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) -> Expression<F> {
+        query_expression(meta, |meta| meta.query_advice(self.advice, Rotation::cur()))
     }
 }
 
 /// CellManagerStrategy
-pub(crate) trait CellManagerStrategy<F: Field> {
+pub(crate) trait CellManagerStrategy {
+    type Stats;
+
     /// on_creation
     fn on_creation(&mut self, columns: &mut CellManagerColumns);
     /// query_cell
-    fn query_cell(
+    fn query_cell<F: FieldExt>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
@@ -75,9 +157,11 @@ pub(crate) trait CellManagerStrategy<F: Field> {
     ) -> Cell<F>;
     /// get_height
     fn get_height(&self) -> usize;
+
+    fn get_stats(&self) -> Self::Stats;
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct CellManagerColumns {
     columns: HashMap<CellType, Vec<CellColumn>>,
 }
@@ -85,10 +169,10 @@ pub(crate) struct CellManagerColumns {
 impl CellManagerColumns {
     pub fn add_column(&mut self, cell_type: CellType, column: Column<Advice>) {
         if let Some(columns) = self.columns.get_mut(&cell_type) {
-            columns.push(CellColumn::new(column));
+            columns.push(CellColumn::new(column, cell_type));
         } else {
             self.columns
-                .insert(cell_type, vec![CellColumn::new(column)]);
+                .insert(cell_type, vec![CellColumn::new(column, cell_type)]);
         }
     }
 
@@ -123,18 +207,31 @@ impl CellManagerColumns {
     }
 }
 
-pub(crate) struct CellManager<F> {
+#[derive(Clone, Debug)]
+pub(crate) struct CellManager<S: CellManagerStrategy> {
     columns: CellManagerColumns,
-    strategy: dyn CellManagerStrategy<F>,
+    strategy: S,
 }
 
-impl<F: Field> CellManager<F> {
+impl<Stats, S: CellManagerStrategy<Stats = Stats>> CellManager<S> {
+    pub fn new(mut strategy: S) -> CellManager<S> {
+        let mut columns = CellManagerColumns::default();
+
+        strategy.on_creation(&mut columns);
+
+        CellManager { columns, strategy }
+    }
+
     /// query_cell
-    fn query_cell(&mut self, meta: &mut ConstraintSystem<F>, cell_type: CellType) -> Cell<F> {
+    pub fn query_cell<F: FieldExt>(
+        &mut self,
+        meta: &mut ConstraintSystem<F>,
+        cell_type: CellType,
+    ) -> Cell<F> {
         self.strategy.query_cell(&mut self.columns, meta, cell_type)
     }
     /// query_cells
-    fn query_cells(
+    pub fn query_cells<F: FieldExt>(
         &mut self,
         meta: &mut ConstraintSystem<F>,
         cell_type: CellType,
@@ -151,24 +248,39 @@ impl<F: Field> CellManager<F> {
     }
 
     /// get_height
-    fn get_height(&self) -> usize {
+    pub fn get_height(&self) -> usize {
         self.strategy.get_height()
     }
-}
 
-impl<F> CellManager<F> {
-    /// columns
-    fn columns(&self) -> Vec<CellColumn> {
+    pub fn columns(&self) -> Vec<CellColumn> {
         self.columns.columns()
     }
     /// get_width
-    fn get_width(&self) -> usize {
+    pub fn get_width(&self) -> usize {
         self.columns.get_width()
+    }
+
+    pub fn get_stats(&self) -> Stats {
+        todo!()
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CMFixedWidthStrategyDistribution(HashMap<CellType, Vec<Column<Advice>>>);
+
+impl CMFixedWidthStrategyDistribution {
+    pub(crate) fn add(&mut self, cell_type: CellType, advice: Column<Advice>) {
+        if let Some(v) = self.0.get_mut(&cell_type) {
+            v.push(advice);
+        } else {
+            self.0.insert(cell_type, vec![advice]);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct CMFixedWidthStrategy {
-    advices: HashMap<CellType, Vec<Column<Advice>>>,
+    advices: CMFixedWidthStrategyDistribution,
     height_offset: usize,
 
     next: HashMap<CellType, (usize, usize)>,
@@ -176,7 +288,7 @@ pub(crate) struct CMFixedWidthStrategy {
 
 impl CMFixedWidthStrategy {
     pub fn new_from_advice<F: Field>(
-        advices: HashMap<CellType, Vec<Column<Advice>>>,
+        advices: CMFixedWidthStrategyDistribution,
         height_offset: usize,
     ) -> CMFixedWidthStrategy {
         CMFixedWidthStrategy {
@@ -195,16 +307,16 @@ impl CMFixedWidthStrategy {
     }
 }
 
-impl<F: FieldExt> CellManagerStrategy<F> for CMFixedWidthStrategy {
+impl CellManagerStrategy for CMFixedWidthStrategy {
     fn on_creation(&mut self, columns: &mut CellManagerColumns) {
-        for (cell_type, advices) in self.advices.iter() {
+        for (cell_type, advices) in self.advices.0.iter() {
             for column in advices.iter() {
                 columns.add_column(*cell_type, *column)
             }
         }
     }
 
-    fn query_cell(
+    fn query_cell<F: FieldExt>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
@@ -216,14 +328,7 @@ impl<F: FieldExt> CellManagerStrategy<F> for CMFixedWidthStrategy {
             .get_column(cell_type, column_idx)
             .expect("column not found");
 
-        let cell = query_expression(meta, |meta| {
-            Cell::new(
-                meta,
-                column.advice,
-                column_idx,
-                (self.height_offset + row) as i32,
-            )
-        });
+        let cell = Cell::new_from_cs(meta, column.advice, column_idx, self.height_offset + row);
 
         column_idx += 1;
         if column_idx >= columns.get_cell_type_width(cell_type) {
@@ -250,6 +355,12 @@ impl<F: FieldExt> CellManagerStrategy<F> for CMFixedWidthStrategy {
             .max()
             .unwrap_or(0)
     }
+
+    type Stats = BTreeMap<CellType, (usize, usize, usize)>;
+
+    fn get_stats(&self) -> Self::Stats {
+        todo!()
+    }
 }
 
 pub(crate) struct CMFixedHeigthStrategy {
@@ -266,10 +377,10 @@ impl CMFixedHeigthStrategy {
     }
 }
 
-impl<F: FieldExt> CellManagerStrategy<F> for CMFixedHeigthStrategy {
+impl CellManagerStrategy for CMFixedHeigthStrategy {
     fn on_creation(&mut self, _columns: &mut CellManagerColumns) {}
 
-    fn query_cell(
+    fn query_cell<F: FieldExt>(
         &mut self,
         columns: &mut CellManagerColumns,
         meta: &mut ConstraintSystem<F>,
@@ -290,6 +401,12 @@ impl<F: FieldExt> CellManagerStrategy<F> for CMFixedHeigthStrategy {
     }
 
     fn get_height(&self) -> usize {
+        todo!()
+    }
+
+    type Stats = ();
+
+    fn get_stats(&self) -> Self::Stats {
         todo!()
     }
 }
@@ -332,8 +449,6 @@ impl CMFixedHeigthStrategy {
             advice
         };
 
-        query_expression(meta, |meta| {
-            Cell::new(meta, advice, column_idx, row_idx as i32)
-        })
+        Cell::new_from_cs(meta, advice, column_idx, row_idx)
     }
 }

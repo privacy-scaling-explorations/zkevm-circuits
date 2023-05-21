@@ -8,13 +8,13 @@ use crate::{
         step::{ExecutionState, Step},
         table::{FixedTableTag, Table},
         util::{
-            constraint_builder::EVMConstraintBuilder, rlc, CachedRegion, CellType, Expr,
-            StoredExpression, LOOKUP_CONFIG,
+            constraint_builder::EVMConstraintBuilder, rlc, CachedRegion, StoredExpression,
+            LOOKUP_CONFIG,
         },
         Advice, Column, Fixed,
     },
     table::LookupTable,
-    util::Challenges,
+    util::{cell_manager::CellType, Challenges},
 };
 use eth_types::{Field, Word, U256};
 pub(crate) use halo2_proofs::circuit::{Layouter, Value};
@@ -126,13 +126,14 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         let step_curr = Step::new(meta, advices, 0, false);
         let step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
         let mut cb = EVMConstraintBuilder::new(
+            meta,
             step_curr.clone(),
             step_next,
             &challenges_exprs,
             ExecutionState::STOP,
         );
         let math_gadget_container = G::configure_gadget_container(&mut cb);
-        let (constraints, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _, _) = cb.build();
 
         if !constraints.step.is_empty() {
             let step_constraints = constraints.step;
@@ -147,12 +148,13 @@ impl<F: Field, G: MathGadgetContainer<F>> Circuit<F> for UnitTestMathGadgetBaseC
         let cell_manager = step_curr.cell_manager.clone();
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
+                let column_expr = column.expr(meta);
                 if table == Table::Fixed {
                     let name = format!("{:?}", table);
                     meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                         let table_expressions = fixed_table.table_exprs(meta);
                         vec![(
-                            column.expr(),
+                            column_expr,
                             rlc::expr(&table_expressions, challenges_exprs.lookup_input()),
                         )]
                     });

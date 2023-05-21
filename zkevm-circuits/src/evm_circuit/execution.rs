@@ -4,7 +4,7 @@ use super::{
         FIXED_TABLE_LOOKUPS, KECCAK_TABLE_LOOKUPS, N_BYTE_LOOKUPS, N_COPY_COLUMNS,
         N_PHASE1_COLUMNS, RW_TABLE_LOOKUPS, TX_TABLE_LOOKUPS,
     },
-    util::{instrumentation::Instrument, CachedRegion, CellManager, StoredExpression},
+    util::{instrumentation::Instrument, CachedRegion, StoredExpression},
 };
 use crate::{
     evm_circuit::{
@@ -15,12 +15,15 @@ use crate::{
             constraint_builder::{
                 BaseConstraintBuilder, ConstrainBuilderCommon, EVMConstraintBuilder,
             },
-            rlc, CellType,
+            rlc,
         },
         witness::{Block, Call, ExecStep, Transaction},
     },
     table::LookupTable,
-    util::{query_expression, Challenges, Expr},
+    util::{
+        cell_manager::{CMFixedWidthStrategy, CellManager, CellType},
+        query_expression, Challenges, Expr,
+    },
 };
 use eth_types::{evm_unimplemented, Field};
 use gadgets::util::not;
@@ -620,19 +623,21 @@ impl<F: Field> ExecutionConfig<F> {
         let height = {
             let dummy_step_next = Step::new(meta, advices, MAX_STEP_HEIGHT, true);
             let mut cb = EVMConstraintBuilder::new(
+                meta,
                 step_curr.clone(),
                 dummy_step_next,
                 challenges,
                 G::EXECUTION_STATE,
             );
             G::configure(&mut cb);
-            let (_, _, height) = cb.build();
+            let (_, _, height, _) = cb.build();
             height
         };
 
         // Now actually configure the gadget with the correct minimal height
         let step_next = &Step::new(meta, advices, height, true);
         let mut cb = EVMConstraintBuilder::new(
+            meta,
             step_curr.clone(),
             step_next.clone(),
             challenges,
@@ -642,7 +647,6 @@ impl<F: Field> ExecutionConfig<F> {
         let gadget = G::configure(&mut cb);
 
         Self::configure_gadget_impl(
-            meta,
             q_usable,
             q_step,
             num_rows_until_next_step,
@@ -664,7 +668,6 @@ impl<F: Field> ExecutionConfig<F> {
 
     #[allow(clippy::too_many_arguments)]
     fn configure_gadget_impl(
-        meta: &mut ConstraintSystem<F>,
         q_usable: Selector,
         q_step: Column<Advice>,
         num_rows_until_next_step: Column<Advice>,
@@ -681,9 +684,8 @@ impl<F: Field> ExecutionConfig<F> {
         mut cb: EVMConstraintBuilder<F>,
     ) {
         // Enforce the step height for this opcode
-        let num_rows_until_next_step_next = query_expression(meta, |meta| {
-            meta.query_advice(num_rows_until_next_step, Rotation::next())
-        });
+        let num_rows_until_next_step_next = cb
+            .query_expression(|meta| meta.query_advice(num_rows_until_next_step, Rotation::next()));
         cb.require_equal(
             "num_rows_until_next_step_next := height - 1",
             num_rows_until_next_step_next,
@@ -692,7 +694,7 @@ impl<F: Field> ExecutionConfig<F> {
 
         instrument.on_gadget_built(execution_state, &cb);
 
-        let (constraints, stored_expressions, _) = cb.build();
+        let (constraints, stored_expressions, _, meta) = cb.build();
         debug_assert!(
             !height_map.contains_key(&execution_state),
             "execution state already configured"
@@ -807,11 +809,12 @@ impl<F: Field> ExecutionConfig<F> {
         keccak_table: &dyn LookupTable<F>,
         exp_table: &dyn LookupTable<F>,
         challenges: &Challenges<Expression<F>>,
-        cell_manager: &CellManager<F>,
+        cell_manager: &CellManager<CMFixedWidthStrategy>,
     ) {
         for column in cell_manager.columns().iter() {
             if let CellType::Lookup(table) = column.cell_type {
                 let name = format!("{:?}", table);
+                let column_expr = column.expr(meta);
                 meta.lookup_any(Box::leak(name.into_boxed_str()), |meta| {
                     let table_expressions = match table {
                         Table::Fixed => fixed_table,
@@ -825,7 +828,7 @@ impl<F: Field> ExecutionConfig<F> {
                     }
                     .table_exprs(meta);
                     vec![(
-                        column.expr(),
+                        column_expr,
                         rlc::expr(&table_expressions, challenges.lookup_input()),
                     )]
                 });
@@ -833,9 +836,10 @@ impl<F: Field> ExecutionConfig<F> {
         }
         for column in cell_manager.columns().iter() {
             if let CellType::LookupByte = column.cell_type {
+                let column_expr = column.expr(meta);
                 meta.lookup_any("Byte lookup", |meta| {
                     let byte_table_expression = byte_table.table_exprs(meta)[0].clone();
-                    vec![(column.expr(), byte_table_expression)]
+                    vec![(column_expr, byte_table_expression)]
                 });
             }
         }
