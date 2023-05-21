@@ -256,6 +256,36 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .copy_from_slice(&result[..length]);
                 }
 
+                for (field, value) in [
+                    (
+                        CallContextField::IsSuccess,
+                        Word::from(call.is_success as u64),
+                    ),
+                    (
+                        CallContextField::CalleeAddress,
+                        call.code_address().unwrap().to_word(),
+                    ),
+                    (CallContextField::CallerId, call.caller_id.into()),
+                    (
+                        CallContextField::CallDataOffset,
+                        call.call_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::CallDataLength,
+                        call.call_data_length.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataOffset,
+                        call.return_data_offset.into(),
+                    ),
+                    (
+                        CallContextField::ReturnDataLength,
+                        call.return_data_length.into(),
+                    ),
+                ] {
+                    state.call_context_write(&mut exec_step, call.call_id, field, value);
+                }
+
                 // return while restoring some of caller's context.
                 for (field, value) in [
                     (CallContextField::LastCalleeId, call.call_id.into()),

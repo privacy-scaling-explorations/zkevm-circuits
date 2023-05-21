@@ -247,6 +247,42 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
+                // Write to call's context.
+                for (field_tag, value) in [
+                    (
+                        CallContextFieldTag::IsSuccess,
+                        call_gadget.is_success.expr(),
+                    ),
+                    (
+                        CallContextFieldTag::CalleeAddress,
+                        call_gadget.callee_address_expr(),
+                    ),
+                    (CallContextFieldTag::CallerId, cb.curr.state.call_id.expr()),
+                    (
+                        CallContextFieldTag::CallDataOffset,
+                        call_gadget.cd_address.offset(),
+                    ),
+                    (
+                        CallContextFieldTag::CallDataLength,
+                        call_gadget.cd_address.length(),
+                    ),
+                    (
+                        CallContextFieldTag::ReturnDataOffset,
+                        call_gadget.rd_address.offset(),
+                    ),
+                    (
+                        CallContextFieldTag::ReturnDataLength,
+                        call_gadget.rd_address.length(),
+                    ),
+                ] {
+                    cb.call_context_lookup(
+                        true.expr(),
+                        Some(callee_call_id.expr()),
+                        field_tag,
+                        value,
+                    );
+                }
+
                 // Save caller's call state
                 for (field_tag, value) in [
                     (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
