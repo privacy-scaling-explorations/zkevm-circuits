@@ -22,7 +22,7 @@ use crate::{
     table::{AccountFieldTag, CallContextFieldTag},
     util::Expr,
 };
-use bus_mapping::{evm::OpcodeId, precompile::is_precompiled};
+use bus_mapping::{circuit_input_builder::CopyDataType, evm::OpcodeId, precompile::is_precompiled};
 use eth_types::{
     evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
 };
@@ -247,16 +247,6 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let precompile_gadget = cb.condition(
             and::expr([is_precompile.expr(), is_precheck_ok.expr()]),
             |cb| {
-                let precompile_gadget = PrecompileGadget::construct(
-                    cb,
-                    call_gadget.is_success.expr(),
-                    call_gadget.callee_address_expr(),
-                    cb.curr.state.call_id.expr(),
-                    call_gadget.cd_address.offset(),
-                    call_gadget.cd_address.length(),
-                    call_gadget.rd_address.offset(),
-                    call_gadget.rd_address.length(),
-                );
                 // Save caller's call state
                 for (field_tag, value) in [
                     (CallContextFieldTag::LastCalleeId, callee_call_id.expr()),
@@ -269,7 +259,35 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
                 ] {
                     cb.call_context_lookup(true.expr(), None, field_tag, value);
                 }
-                precompile_gadget
+
+                // copy table lookup to verify the copying of bytes:
+                // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
+                // - to the current call's memory (`call_data_length` bytes starting at `0`).
+                cb.condition(call_gadget.cd_address.has_length(), |cb| {
+                    cb.copy_table_lookup(
+                        cb.curr.state.call_id.expr(),
+                        CopyDataType::Memory.expr(),
+                        callee_call_id.expr(),
+                        CopyDataType::Memory.expr(),
+                        call_gadget.cd_address.offset(),
+                        call_gadget.cd_address.address(),
+                        0.expr(),
+                        call_gadget.cd_address.length(),
+                        0.expr(),
+                        2.expr() * call_gadget.cd_address.length(), // reads + writes
+                    );
+                });
+
+                PrecompileGadget::construct(
+                    cb,
+                    call_gadget.is_success.expr(),
+                    call_gadget.callee_address_expr(),
+                    cb.curr.state.call_id.expr(),
+                    call_gadget.cd_address.offset(),
+                    call_gadget.cd_address.length(),
+                    call_gadget.rd_address.offset(),
+                    call_gadget.rd_address.length(),
+                )
             },
         );
 

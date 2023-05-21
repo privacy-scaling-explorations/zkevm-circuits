@@ -5,7 +5,7 @@ use crate::{
         Call, CircuitInputStateRef, CopyDataType, CopyEvent, ExecState, ExecStep, NumberOrHash,
     },
     evm::opcodes::precompiles::common_call_ctx_reads,
-    operation::{MemoryOp, RWCounter, RW},
+    operation::{MemoryOp, RW},
     precompile::PrecompileCalls,
     Error,
 };
@@ -23,47 +23,6 @@ pub fn gen_associated_ops(
     common_call_ctx_reads(state, &mut exec_step, &call);
 
     let rw_counter_start = state.block_ctx.rwc;
-    if call.is_success && call.call_data_length > 0 {
-        let bytes: Vec<(u8, bool)> = memory_bytes
-            .iter()
-            .skip(call.call_data_offset as usize)
-            .take(call.call_data_length as usize)
-            .map(|b| (*b, false))
-            .collect();
-        for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
-            // push caller memory read
-            state.push_op(
-                &mut exec_step,
-                RW::READ,
-                MemoryOp::new(
-                    call.caller_id,
-                    (call.call_data_offset + i as u64).into(),
-                    byte,
-                ),
-            );
-            // push callee memory write
-            state.push_op(
-                &mut exec_step,
-                RW::WRITE,
-                MemoryOp::new(call.call_id, i.into(), byte),
-            );
-        }
-        state.push_copy(
-            &mut exec_step,
-            CopyEvent {
-                src_addr: call.call_data_offset,
-                src_addr_end: call.call_data_offset + call.call_data_length,
-                src_type: CopyDataType::Memory,
-                src_id: NumberOrHash::Number(call.caller_id),
-                dst_addr: 0,
-                dst_type: CopyDataType::Memory,
-                dst_id: NumberOrHash::Number(call.call_id),
-                log_id: None,
-                rw_counter_start,
-                bytes,
-            },
-        );
-    }
     if call.is_success && call.call_data_length > 0 && call.return_data_length > 0 {
         let length = std::cmp::min(call.call_data_length, call.return_data_length);
         let bytes: Vec<(u8, bool)> = memory_bytes
@@ -101,9 +60,7 @@ pub fn gen_associated_ops(
                 dst_type: CopyDataType::Memory,
                 dst_id: NumberOrHash::Number(call.caller_id),
                 log_id: None,
-                rw_counter_start: RWCounter(
-                    rw_counter_start.0 + (2 * call.call_data_length as usize),
-                ),
+                rw_counter_start,
                 bytes,
             },
         );

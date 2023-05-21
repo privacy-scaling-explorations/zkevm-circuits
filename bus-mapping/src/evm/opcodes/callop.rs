@@ -1,8 +1,10 @@
 use super::Opcode;
 use crate::{
-    circuit_input_builder::{CallKind, CircuitInputStateRef, CodeSource, ExecStep},
+    circuit_input_builder::{
+        CallKind, CircuitInputStateRef, CodeSource, CopyDataType, CopyEvent, ExecStep, NumberOrHash,
+    },
     evm::opcodes::precompiles::identity::gen_associated_ops as precompile_identity_ops,
-    operation::{AccountField, CallContextField, TxAccessListAccountOp},
+    operation::{AccountField, CallContextField, MemoryOp, TxAccessListAccountOp, RW},
     precompile::{execute_precompiled, is_precompiled, PrecompileCalls},
     state_db::CodeDB,
     Error,
@@ -245,19 +247,6 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     contract_gas_cost
                 );
 
-                let precompile_step = match code_address.0[19].into() {
-                    PrecompileCalls::Identity => precompile_identity_ops(
-                        state,
-                        geth_steps[1].clone(),
-                        call.clone(),
-                        caller_memory.as_slice(),
-                    )?,
-                    _ => {
-                        log::warn!("precompile not handled");
-                        todo!();
-                    }
-                };
-
                 let caller_ctx_mut = state.caller_ctx_mut()?;
                 caller_ctx_mut.return_data = result.clone();
                 let length = min(result.len(), ret_length);
@@ -278,6 +267,64 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                 ] {
                     state.call_context_write(&mut exec_step, current_call.call_id, field, value);
                 }
+
+                // insert a copy event for this step.
+                let rw_counter_start = state.block_ctx.rwc;
+                if call.is_success && call.call_data_length > 0 {
+                    let bytes: Vec<(u8, bool)> = caller_memory
+                        .iter()
+                        .skip(call.call_data_offset as usize)
+                        .take(call.call_data_length as usize)
+                        .map(|b| (*b, false))
+                        .collect();
+                    for (i, &(byte, _is_code)) in bytes.iter().enumerate() {
+                        // push caller memory read
+                        state.push_op(
+                            &mut exec_step,
+                            RW::READ,
+                            MemoryOp::new(
+                                call.caller_id,
+                                (call.call_data_offset + i as u64).into(),
+                                byte,
+                            ),
+                        );
+                        // push callee memory write
+                        state.push_op(
+                            &mut exec_step,
+                            RW::WRITE,
+                            MemoryOp::new(call.call_id, i.into(), byte),
+                        );
+                    }
+                    state.push_copy(
+                        &mut exec_step,
+                        CopyEvent {
+                            src_addr: call.call_data_offset,
+                            src_addr_end: call.call_data_offset + call.call_data_length,
+                            src_type: CopyDataType::Memory,
+                            src_id: NumberOrHash::Number(call.caller_id),
+                            dst_addr: 0,
+                            dst_type: CopyDataType::Memory,
+                            dst_id: NumberOrHash::Number(call.call_id),
+                            log_id: None,
+                            rw_counter_start,
+                            bytes,
+                        },
+                    );
+                }
+
+                let precompile_step = match code_address.0[19].into() {
+                    PrecompileCalls::Identity => precompile_identity_ops(
+                        state,
+                        geth_steps[1].clone(),
+                        call.clone(),
+                        caller_memory.as_slice(),
+                    )?,
+                    _ => {
+                        log::warn!("precompile not handled");
+                        todo!();
+                    }
+                };
+
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;

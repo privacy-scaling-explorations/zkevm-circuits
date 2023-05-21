@@ -66,24 +66,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             IsZeroGadget::construct(cb, return_data_length.expr()),
         );
 
-        // copy table lookup to verify the copying of bytes:
-        // - from caller's memory (`call_data_length` bytes starting at `call_data_offset`)
-        // - to the current call's memory (`call_data_length` bytes starting at `0`).
-        cb.condition(not::expr(call_data_length_zero.expr()), |cb| {
-            cb.copy_table_lookup(
-                caller_id.expr(),
-                CopyDataType::Memory.expr(),
-                cb.curr.state.call_id.expr(),
-                CopyDataType::Memory.expr(),
-                call_data_offset.expr(),
-                call_data_offset.expr() + call_data_length.expr(),
-                0.expr(),
-                call_data_length.expr(),
-                0.expr(),
-                0.expr(), // TODO(rohit): rwc increment
-            );
-        });
-
         // copy table lookup to verify the copying of bytes if the precompile call was successful.
         // - from precompile call's memory (`return_data_length` bytes starting at `0`)
         // - to caller's memory (`return_data_length` bytes starting at `return_data_offset`).
@@ -104,7 +86,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
                     return_data_offset.expr(),
                     return_data_length.expr(),
                     0.expr(),
-                    0.expr(), // TODO(rohit): rwc increment
+                    2.expr() * return_data_length.expr(), // reads + writes
                 );
             },
         );
@@ -127,10 +109,10 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         &self,
         region: &mut CachedRegion<'_, '_, F>,
         offset: usize,
-        block: &Block<F>,
+        _block: &Block<F>,
         _tx: &Transaction,
         call: &Call,
-        step: &ExecStep,
+        _step: &ExecStep,
     ) -> Result<(), Error> {
         self.is_success.assign(
             region,
