@@ -186,7 +186,7 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
         self.copier_gadget
             .assign(region, offset, call.call_data_length, 0)?;
         self.restore_context
-            .assign(region, offset, block, call, step, 0)?;
+            .assign(region, offset, block, call, step, 11)?;
 
         Ok(())
     }
@@ -212,7 +212,7 @@ mod test {
             PUSH1(0x01)
             PUSH1(0x1f)
             PUSH1(0x04)
-            PUSH4(0xffffffffu64)
+            PUSH1(0xff)
             STATICCALL
             // put result on the stack
             POP

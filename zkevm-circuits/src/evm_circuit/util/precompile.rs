@@ -8,6 +8,7 @@ use crate::evm_circuit::step::ExecutionState;
 use super::{
     constraint_builder::{ConstrainBuilderCommon, EVMConstraintBuilder},
     math_gadget::BinaryNumberGadget,
+    CachedRegion,
 };
 
 #[derive(Clone, Debug)]
@@ -77,5 +78,14 @@ impl<F: Field> PrecompileGadget<F> {
         });
 
         Self { address }
+    }
+
+    pub(crate) fn assign(
+        &self,
+        region: &mut CachedRegion<'_, '_, F>,
+        offset: usize,
+        address: PrecompileCalls,
+    ) -> Result<(), halo2_proofs::plonk::Error> {
+        self.address.assign(region, offset, address)
     }
 }

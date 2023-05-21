@@ -9,6 +9,7 @@ use crate::evm_circuit::{
             ConstrainBuilderCommon, EVMConstraintBuilder, ReversionInfo, StepStateTransition,
             Transition::{Delta, To},
         },
+        is_precompiled,
         math_gadget::{ConstantDivisionGadget, IsZeroGadget, LtGadget, LtWordGadget, MinMaxGadget},
         not, or,
         precompile::PrecompileGadget,
@@ -22,7 +23,9 @@ use crate::{
     util::Expr,
 };
 use bus_mapping::evm::OpcodeId;
-use eth_types::{evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToLittleEndian, ToScalar, U256};
+use eth_types::{
+    evm_types::GAS_STIPEND_CALL_WITH_VALUE, Field, ToAddress, ToLittleEndian, ToScalar, U256,
+};
 use halo2_proofs::{circuit::Value, plonk::Error};
 
 /// Gadget for call related opcodes. It supports `OpcodeId::CALL`,
@@ -234,7 +237,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         );
 
         // TODO: Handle precompiled
-        let precompile_gadget = cb.condition(is_precompile, |cb| {
+        let precompile_gadget = cb.condition(is_precompile.expr(), |cb| {
             PrecompileGadget::construct(
                 cb,
                 call_gadget.is_success.expr(),
@@ -251,7 +254,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             select::expr(is_call.expr() + is_callcode.expr(), 6.expr(), 5.expr());
         let memory_expansion = call_gadget.memory_expansion.clone();
         cb.condition(
-            and::expr(&[no_callee_code.expr(), is_precheck_ok.expr()]),
+            and::expr([
+                not::expr(is_precompile.expr()),
+                no_callee_code.expr(),
+                is_precheck_ok.expr(),
+            ]),
             |cb| {
                 // Save caller's call state
                 for field_tag in [
@@ -322,7 +329,11 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         });
 
         cb.condition(
-            and::expr(&[not::expr(no_callee_code), is_precheck_ok.expr()]),
+            and::expr([
+                not::expr(is_precompile.expr()),
+                not::expr(no_callee_code),
+                is_precheck_ok.expr(),
+            ]),
             |cb| {
                 // Save caller's call state
                 for (field_tag, value) in [
@@ -478,6 +489,7 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         let [tx_id, is_static, depth, current_callee_address] =
             [0, 3, 4, 5].map(|index| block.get_rws(step, index).call_context_value());
         let is_error_depth = depth.low_u64() > 1024;
+        let is_precompile = is_precompiled(&current_callee_address.to_address());
         self.is_depth_ok
             .assign(region, offset, F::from(depth.low_u64()), F::from(1025))?;
         // This offset is used to change the index offset of `step.rw_indices`.
@@ -637,6 +649,14 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             F::from(gas.low_u64()),
             F::from(gas_available - gas_available / 64),
         )?;
+
+        if is_precompile {
+            self.precompile_gadget.assign(
+                region,
+                offset,
+                current_callee_address.to_address().0[19].into(),
+            )?;
+        }
 
         Ok(())
     }

@@ -245,7 +245,7 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                     contract_gas_cost
                 );
 
-                let precompile_step = match code_address.0[19].into() {
+                let mut precompile_step = match code_address.0[19].into() {
                     PrecompileCalls::Identity => precompile_identity_ops(
                         state,
                         geth_steps[1].clone(),
@@ -267,17 +267,8 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
                         .copy_from_slice(&result[..length]);
                 }
 
-                for (field, value) in [
-                    (CallContextField::LastCalleeId, call.call_id.into()),
-                    (CallContextField::LastCalleeReturnDataOffset, 0.into()),
-                    (
-                        CallContextField::LastCalleeReturnDataLength,
-                        result.len().into(),
-                    ),
-                ] {
-                    state.call_context_write(&mut exec_step, current_call.call_id, field, value);
-                }
-
+                // return while restoring caller's context.
+                state.handle_restore_context(&mut precompile_step, geth_steps)?;
                 state.handle_return(&mut exec_step, geth_steps, false)?;
 
                 let real_cost = geth_steps[0].gas.0 - geth_steps[1].gas.0;
