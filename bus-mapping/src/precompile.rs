@@ -98,4 +98,9 @@ impl PrecompileCalls {
             Self::Blake2F => GasCost::PRECOMPILE_BLAKE2F,
         }
     }
+
+    /// Get the EVM address for this precompile call.
+    pub fn address(&self) -> u64 {
+        (*self).into()
+    }
 }

@@ -654,7 +654,10 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
         // only call opcode do transfer in sucessful case.
         let [caller_balance_pair, callee_balance_pair] =
             if is_call && !is_insufficient && !is_error_depth && !value.is_zero() {
-                [18, 19].map(|index| block.get_rws(step, index + rw_offset).account_value_pair())
+                let values = [18, 19]
+                    .map(|index| block.get_rws(step, index + rw_offset).account_value_pair());
+                rw_offset += 2;
+                values
             } else {
                 [(U256::zero(), U256::zero()), (U256::zero(), U256::zero())]
             };
@@ -781,7 +784,12 @@ impl<F: Field> ExecutionGadget<F> for CallOpGadget<F> {
             )?;
         }
         let precompile_return_length = if is_precompiled(&callee_address.to_address()) {
-            block.get_rws(step, 20 + rw_offset).call_context_value()
+            let value_rw = block.get_rws(step, 27 + rw_offset);
+            assert_eq!(
+                value_rw.field_tag(),
+                Some(CallContextFieldTag::LastCalleeReturnDataLength as u64),
+            );
+            value_rw.call_context_value()
         } else {
             0.into()
         };

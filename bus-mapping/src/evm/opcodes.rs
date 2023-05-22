@@ -103,6 +103,9 @@ use stackonlyop::StackOnlyOpcode;
 use stop::Stop;
 use swap::Swap;
 
+#[cfg(feature = "test")]
+pub use callop::tests::PrecompileCallArgs;
+
 /// Generic opcode trait which defines the logic of the
 /// [`Operation`](crate::operation::Operation) that should be generated for one
 /// or multiple [`ExecStep`](crate::circuit_input_builder::ExecStep) depending

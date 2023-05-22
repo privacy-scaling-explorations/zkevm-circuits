@@ -502,82 +502,97 @@ impl<const N_ARGS: usize> Opcode for CallOpcode<N_ARGS> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
-    use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Bytecode, Word};
-    use mock::{
-        test_ctx::{
-            helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
-            LoggerConfig,
-        },
-        TestContext,
-    };
+#[cfg(any(test, feature = "test"))]
+pub mod tests {
+    use eth_types::{evm_types::OpcodeId, Bytecode, Word};
+
+    /// Precompile call args
+    pub struct PrecompileCallArgs {
+        /// description for the instance of a precompile call.
+        pub name: &'static str,
+        /// the bytecode that when call can produce the desired precompile call.
+        pub setup_code: Bytecode,
+        /// the call's return data size.
+        pub ret_size: Word,
+        /// the call's return data offset.
+        pub ret_offset: Word,
+        /// the call's calldata offset.
+        pub call_data_offset: Word,
+        /// the call's calldata length.
+        pub call_data_length: Word,
+        /// the address to which the call is made, i.e. callee address.
+        pub address: Word,
+        /// the optional value sent along with the call.
+        pub value: Word,
+        /// the gas limit for the call.
+        pub gas: Word,
+        /// stack values during the call.
+        pub stack_value: Vec<(Word, Word)>,
+        /// maximum number of RW entries for the call.
+        pub max_rws: usize,
+    }
+
+    impl Default for PrecompileCallArgs {
+        fn default() -> Self {
+            PrecompileCallArgs {
+                name: "precompiled call",
+                setup_code: Bytecode::default(),
+                ret_size: Word::zero(),
+                ret_offset: Word::zero(),
+                call_data_offset: Word::zero(),
+                call_data_length: Word::zero(),
+                address: Word::zero(),
+                value: Word::zero(),
+                gas: Word::from(0xFFFFFFF),
+                stack_value: vec![],
+                max_rws: 1000,
+            }
+        }
+    }
+
+    impl PrecompileCallArgs {
+        /// Get the setup bytecode for call to a precompiled contract.
+        pub fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
+            assert!(
+                call_op.is_call(),
+                "invalid setup, {:?} is not a call op",
+                call_op
+            );
+            let mut code = self.setup_code.clone();
+            code.push(32, self.ret_size)
+                .push(32, self.ret_offset)
+                .push(32, self.call_data_length)
+                .push(32, self.call_data_offset);
+            if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
+                code.push(32, self.value);
+            }
+            code.push(32, self.address)
+                .push(32, self.gas)
+                .write_op(call_op)
+                .write_op(OpcodeId::POP);
+            for (offset, _) in self.stack_value.iter().rev() {
+                code.push(32, *offset).write_op(OpcodeId::MLOAD);
+            }
+
+            code
+        }
+    }
 
     // move this to circuit after circuit part is complete
     #[test]
     fn test_precompiled_call() {
-        struct PrecompileCall {
-            name: &'static str,
-            setup_code: Bytecode,
-            ret_size: Word,
-            ret_offset: Word,
-            call_data_offset: Word,
-            call_data_length: Word,
-            address: Word,
-            value: Word,
-            gas: Word,
-            stack_value: Vec<(Word, Word)>,
-            max_rws: usize,
-        }
-
-        impl Default for PrecompileCall {
-            fn default() -> Self {
-                PrecompileCall {
-                    name: "precompiled call",
-                    setup_code: Bytecode::default(),
-                    ret_size: Word::from(0),
-                    ret_offset: Word::from(0),
-                    call_data_offset: Word::from(0),
-                    call_data_length: Word::from(0),
-                    address: Word::from(0),
-                    value: Word::from(0),
-                    gas: Word::from(0xFFFFFFF),
-                    stack_value: vec![],
-                    max_rws: 1000,
-                }
-            }
-        }
-
-        impl PrecompileCall {
-            fn with_call_op(&self, call_op: OpcodeId) -> Bytecode {
-                assert!(
-                    call_op.is_call(),
-                    "invalid setup, {:?} is not a call op",
-                    call_op
-                );
-                let mut code = self.setup_code.clone();
-                code.push(32, self.ret_size)
-                    .push(32, self.ret_offset)
-                    .push(32, self.call_data_length)
-                    .push(32, self.call_data_offset);
-                if call_op == OpcodeId::CALL || call_op == OpcodeId::CALLCODE {
-                    code.push(32, self.value);
-                }
-                code.push(32, self.address)
-                    .push(32, self.gas)
-                    .write_op(call_op)
-                    .write_op(OpcodeId::POP);
-                for (offset, _) in self.stack_value.iter().rev() {
-                    code.push(32, *offset).write_op(OpcodeId::MLOAD);
-                }
-
-                code
-            }
-        }
+        use crate::{circuit_input_builder::CircuitsParams, mock::BlockData};
+        use eth_types::{bytecode, evm_types::OpcodeId, geth_types::GethData, word, Word};
+        use mock::{
+            test_ctx::{
+                helpers::{account_0_code_account_1_no_code, tx_from_1_to_0},
+                LoggerConfig,
+            },
+            TestContext,
+        };
 
         let test_vector = [
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecRecover",
                 setup_code: bytecode! {
                     PUSH32(word!("0x456e9aea5e197a1f1af7a3e85a3212fa4049a3ba34c2289b4c860fc0b0c64ef3")) // hash
@@ -603,7 +618,7 @@ mod tests {
                 )],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "SHA2-256",
                 setup_code: bytecode! {
                     PUSH1(0xFF) // data
@@ -621,7 +636,7 @@ mod tests {
                 )],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "RIPEMD-160",
                 setup_code: bytecode! {
                     PUSH1(0xFF) // data
@@ -639,7 +654,7 @@ mod tests {
                 )],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "identity",
                 setup_code: bytecode! {
                     PUSH16(word!("0123456789ABCDEF0123456789ABCDEF"))
@@ -653,7 +668,7 @@ mod tests {
                 stack_value: vec![(Word::from(0x20), word!("0123456789ABCDEF0123456789ABCDEF"))],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "modexp",
                 setup_code: bytecode! {
                     PUSH1(1) // Bsize
@@ -676,7 +691,7 @@ mod tests {
                 stack_value: vec![(Word::from(0x80), Word::from(8))],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecAdd",
                 setup_code: bytecode! {
                     PUSH1(1) // x1
@@ -708,7 +723,7 @@ mod tests {
                 ],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecMul",
                 setup_code: bytecode! {
                     PUSH1(1) // x1
@@ -737,7 +752,7 @@ mod tests {
                 ],
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "ecPairing",
                 setup_code: bytecode! {
                     PUSH32(word!("0x23a8eb0b0996252cb548a4487da97b02422ebc0e834613f954de6c7e0afdc1fc"))
@@ -783,7 +798,7 @@ mod tests {
                 max_rws: 3000,
                 ..Default::default()
             },
-            PrecompileCall {
+            PrecompileCallArgs {
                 name: "blake2f",
                 setup_code: bytecode! {
                     PUSH32(word!("0000000003000000000000000000000000000000010000000000000000000000"))
