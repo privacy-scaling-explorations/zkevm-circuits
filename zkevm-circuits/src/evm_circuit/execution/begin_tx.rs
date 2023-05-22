@@ -145,6 +145,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
         let tx_call_data_word_length =
             ConstantDivisionGadget::construct(cb, tx_call_data_length.expr() + 31.expr(), 32);
 
+        // Calculate gas cost of init code only for EIP-3860 of Shanghai.
         #[cfg(feature = "shanghai")]
         let init_code_gas_cost = select::expr(
             tx_is_create.expr(),
@@ -187,7 +188,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
             None,
         ); // rwc_delta += 1
 
-        // Query coinbase address for Shanghai.
+        // Query coinbase address.
         let coinbase = cb.query_cell();
         let is_coinbase_warm = cb.query_bool();
         cb.block_lookup(BlockContextFieldTag::Coinbase.expr(), None, coinbase.expr());
@@ -307,7 +308,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                 //   - Write Account (Caller) Nonce
                 //   - Write TxAccessListAccount (Caller)
                 //   - Write TxAccessListAccount (Callee)
-                //   - Write TxAccessListAccount (Coinbase) only for Shanghai
+                //   - Write TxAccessListAccount (Coinbase) only for EIP-3651 of Shanghai
                 //   - a TransferWithGasFeeGadget
                 //   - Write Account (Callee) Nonce (Reversible)
                 //   - Write CallContext Depth
@@ -366,7 +367,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
-                    //   - Write TxAccessListAccount (Coinbase) only for Shanghai
+                    //   - Write TxAccessListAccount (Coinbase) only for EIP-3651 of Shanghai
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
                     rw_counter: Delta(
@@ -413,7 +414,7 @@ impl<F: Field> ExecutionGadget<F> for BeginTxGadget<F> {
                     //   - Write Account Nonce
                     //   - Write TxAccessListAccount (Caller)
                     //   - Write TxAccessListAccount (Callee)
-                    //   - Write TxAccessListAccount (Coinbase) only for Shanghai
+                    //   - Write TxAccessListAccount (Coinbase) only for EIP-3651 of Shanghai
                     //   - Read Account CodeHash
                     //   - a TransferWithGasFeeGadget
                     //   - Write CallContext Depth

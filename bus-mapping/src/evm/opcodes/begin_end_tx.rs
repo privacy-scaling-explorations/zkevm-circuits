@@ -59,7 +59,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         nonce_prev.into(),
     )?;
 
-    // Add caller, callee and coinbase (only for Shanghai) to access list.
+    // Add caller, callee and coinbase (only for EIP-3651 of Shanghai) to access list.
     #[cfg(feature = "shanghai")]
     let accessed_addresses = [call.caller_address, call.address, state.block.coinbase];
     #[cfg(not(feature = "shanghai"))]
@@ -75,6 +75,7 @@ fn gen_begin_tx_steps(state: &mut CircuitInputStateRef) -> Result<ExecStep, Erro
         )?;
     }
 
+    // Calculate gas cost of init code only for EIP-3860 of Shanghai.
     #[cfg(feature = "shanghai")]
     let init_code_gas_cost = if state.tx.is_create() {
         (state.tx.tx.call_data.len() as u64 + 31) / 32 * eth_types::evm_types::INIT_CODE_WORD_GAS
