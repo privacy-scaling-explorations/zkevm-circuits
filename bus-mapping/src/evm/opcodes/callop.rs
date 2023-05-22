@@ -544,7 +544,7 @@ mod tests {
                     value: Word::from(0),
                     gas: Word::from(0xFFFFFFF),
                     stack_value: vec![],
-                    max_rws: 500,
+                    max_rws: 1000,
                 }
             }
         }
@@ -831,7 +831,7 @@ mod tests {
                         word!("8c9bcf367e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5"),
                     ),
                 ],
-                max_rws: 1500,
+                max_rws: 3000,
                 ..Default::default()
             },
         ];

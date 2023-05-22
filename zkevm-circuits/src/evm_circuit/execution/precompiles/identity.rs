@@ -7,10 +7,7 @@ use crate::{
     evm_circuit::{
         execution::ExecutionGadget,
         step::ExecutionState,
-        util::{
-            constraint_builder::EVMConstraintBuilder, memory_gadget::MemoryCopierGasGadget,
-            CachedRegion, Cell,
-        },
+        util::{constraint_builder::EVMConstraintBuilder, CachedRegion, Cell},
     },
     table::CallContextFieldTag,
     witness::{Block, ExecStep, Transaction},
@@ -25,7 +22,6 @@ pub struct IdentityGadget<F> {
     call_data_length: Cell<F>,
     return_data_offset: Cell<F>,
     return_data_length: Cell<F>,
-    copier_gadget: MemoryCopierGasGadget<F, { GasCost::PRECOMPILE_IDENTITY_PER_WORD }>,
 }
 
 impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
@@ -52,13 +48,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             GasCost::PRECOMPILE_IDENTITY_BASE.expr(),
         );
 
-        let copier_gadget = MemoryCopierGasGadget::construct(
-            cb,
-            call_data_length.expr(),
-            0.expr(), // no memory expansion.
-        );
-        let _total_gas_cost = GasCost::PRECOMPILE_IDENTITY_BASE.expr() + copier_gadget.gas_cost();
-
         Self {
             is_success,
             callee_address,
@@ -67,7 +56,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             call_data_length,
             return_data_offset,
             return_data_length,
-            copier_gadget,
         }
     }
 
@@ -115,8 +103,6 @@ impl<F: Field> ExecutionGadget<F> for IdentityGadget<F> {
             offset,
             Value::known(F::from(call.return_data_length)),
         )?;
-        self.copier_gadget
-            .assign(region, offset, call.call_data_length, 0)?;
 
         Ok(())
     }
